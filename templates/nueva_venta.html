@@ -411,7 +411,7 @@
             </div>
         </div>
 
-        <div class="card shadow-sm border-0 m-0 flex-grow-1">
+<div class="card shadow-sm border-0 m-0 flex-grow-1">
             <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
                 <div class="d-flex align-items-center gap-2">
                     <h5 class="mb-0 text-primary fw-light">Detalle de Cotización</h5>
@@ -448,11 +448,11 @@
 
             <div class="card-footer bg-white border-top p-3">
                 <div class="row justify-content-end">
-                    <div class="col-md-7 col-12"> 
-                        <table class="table table-sm table-borderless mb-0 align-middle">
+                    <div class="col-md-8 col-12"> 
+                        <table class="table table-sm table-borderless mb-0 align-middle text-nowrap">
                             <tr>
-                                <td class="text-end text-muted">Subtotal Inicial:</td>
-                                <td class="text-end fw-bold" id="lblSubtotalInicial" style="width: 120px;">0.00</td>
+                                <td class="text-end text-muted w-50">Subtotal Inicial:</td>
+                                <td class="text-end fw-bold fs-6" id="lblSubtotalInicial">0.00</td>
                             </tr>
                             <tr class="border-bottom">
                                 <td class="text-end">
@@ -462,37 +462,42 @@
                                             <option value="MONTO">$</option> <option value="PORCENTAJE">%</option>
                                         </select>
                                         <input type="number" id="inputDescuento" class="form-control form-control-sm border-danger text-end text-danger fw-bold" 
-                                            value="0" min="0" step="0.01" style="width: 80px;" 
+                                            value="0" min="0" step="0.01" style="width: 100px;" 
                                             onkeydown="return evitarNegativos(event)"
                                             oninput="validarInputDescuento(this); actualizarTotalesGlobales()">
                                     </div>
                                 </td>
-                                <td class="text-end fw-bold text-danger" id="lblMontoDescuento">- 0.00</td>
+                                <td class="text-end fw-bold text-danger fs-6" id="lblMontoDescuento">- 0.00</td>
                             </tr>
                             <tr>
                                 <td class="text-end text-muted small">Valor de Venta (Neto):</td>
-                                <td class="text-end fw-bold" id="lblSubtotalNeto">0.00</td>
+                                <td class="text-end fw-bold fs-6" id="lblSubtotalNeto">0.00</td>
                             </tr>
                             <tr>
                                 <td class="text-end text-muted">IGV (18%):</td>
-                                <td class="text-end fw-bold" id="lblIGV">0.00</td>
+                                <td class="text-end fw-bold fs-6" id="lblIGV">0.00</td>
                             </tr>
-                            <tr class="border-top bg-light">
-                                <td class="text-end fs-5 fw-bold text-dark pt-2">TOTAL:</td>
-                                <td class="text-end fs-5 fw-bold text-primary pt-2" id="lblTotal">0.00</td>
+                            <tr class="bg-light shadow-sm">
+                                <td colspan="2" class="p-0 border-top border-2 border-primary">
+                                    <div class="d-flex justify-content-end align-items-center py-3 pe-2">
+                                        <span class="fs-5 fw-bold text-dark me-4">TOTAL:</span>
+                                        <span class="fs-1 fw-bolder text-primary font-monospace m-0 p-0" id="lblTotal" style="letter-spacing: -1.5px; line-height: 1;">
+                                            0.00
+                                        </span>
+                                    </div>
+                                </td>
                             </tr>
                         </table>
                     </div>
                 </div>
                 
                 <div class="d-grid gap-2 mt-3">
-                    <button class="btn btn-warning btn-lg fw-bold shadow-sm" onclick="window.previsualizarVenta()">
+                    <button class="btn btn-warning btn-lg fw-bold shadow-sm py-3" onclick="window.previsualizarVenta()">
                         <i class="bi bi-save2"></i> GUARDAR COTIZACIÓN
                     </button>
                 </div>
             </div>
         </div>
-
     </div>
 </div>
 
@@ -3267,8 +3272,8 @@ function renderizarTabla() {
                     
                     <td class="text-center pt-3">
                         <input type="number" id="input_cant_${index}" 
-                               class="editable-cell text-center ${claseStock}" 
-                               style="width: 70px;" value="${item.cantidad}" min="1" step="1"
+                               class="editable-cell text-center ${claseStock} fw-bold text-primary" 
+                               style="min-width: 90px; font-size: 1.05rem;" value="${item.cantidad}" min="1" step="1"
                                onkeydown="return evitarNegativos(event)"
                                oninput="actualizarFilaSinRedibujar(${index}, 'cant', this.value)">
                     </td>
