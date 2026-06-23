@@ -3163,20 +3163,23 @@ def procesar_salida_almacen(order_id):
 @app.route('/setup_db_secreta')
 def setup_db_secreta():
     try:
-        # Esto crea tablas nuevas si no existen
-        db.create_all() 
+        # Lista de columnas que definiste en tu modelo pero que quizás no existen
+        columnas_faltantes = [
+            ("product", "estado", "VARCHAR(100)"),
+            ("product", "fecha_actualizacion", "TIMESTAMP"),
+            ("product", "actualizado_por", "VARCHAR(100)")
+        ]
         
-        # Esto fuerza la creación de la columna estado si no existe
-        # (Esto es lo que te estaba dando el error 500)
-        try:
-            db.session.execute(text("ALTER TABLE product ADD COLUMN estado VARCHAR(50);"))
-            db.session.commit()
-        except:
-            db.session.rollback() # Si ya existe, no hace nada y sigue
-            
-        return "<h1>Mantenimiento realizado.</h1><p>Intenta entrar a tu página nuevamente.</p>"
+        for tabla, columna, tipo in columnas_faltantes:
+            try:
+                db.session.execute(text(f"ALTER TABLE {tabla} ADD COLUMN {columna} {tipo};"))
+                db.session.commit()
+            except:
+                db.session.rollback() # Si ya existe, simplemente continúa
+        
+        return "<h1>Mantenimiento completado.</h1><p>Se han agregado las columnas faltantes.</p>"
     except Exception as e:
-        return f"<h1>Error</h1><p>{str(e)}</p>"
+        return f"<h1>Error grave:</h1><p>{str(e)}</p>"
 
 # --- ARRANQUE DE LA APLICACIÓN ---
 if __name__ == '__main__':
