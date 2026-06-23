@@ -205,7 +205,7 @@
                 {% endfor %}
             </tbody>
         </table>
-    </div>
+    </div>  
 
     <div class="card-footer bg-white border-top py-3">
         <nav aria-label="Navegación">
@@ -656,6 +656,12 @@
                     tbody.empty();
                     
                     d.items.forEach(item => {
+                        // 1. PREPARAMOS EL HTML DEL ESTADO (SI TIENE)
+                        let estadoHtml = '';
+                        if (item.estado_producto && item.estado_producto !== '' && item.estado_producto !== 'None') {
+                            estadoHtml = `<div class="mt-1"><span class="badge bg-danger text-white shadow-sm" style="font-size: 0.65rem; padding: 4px 8px;"><i class="bi bi-exclamation-triangle-fill"></i> ${item.estado_producto}</span></div>`;
+                        }
+
                         let row = `<tr>
                             <td class="ps-3">
                                 <div class="d-flex align-items-center">
@@ -663,7 +669,8 @@
                                 </div>
                             </td>
                             <td>
-                                <div class="fw-bold text-dark">${item.descripcion}</div>`;
+                                <div class="fw-bold text-dark">${item.descripcion}</div>
+                                ${estadoHtml} `;
                         
                         if(item.tipo === 'GLB' && item.componentes && item.componentes.length > 0) {
                             row += `<div class="mt-2 p-2 bg-white border rounded shadow-sm small">

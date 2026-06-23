@@ -53,30 +53,31 @@
 
 
 <div class="d-flex justify-content-between align-items-center mb-3">
-
     <h3>
-
         <i class="bi bi-file-earmark-text"></i> 
-
         {% if modo_edicion %}
-
             Editar Cotización #{{ "%05d"|format(orden.id) }}
-
         {% else %}
-
             Nueva Cotización
-
         {% endif %}
-
     </h3>
-
     <a href="{{ url_for('historial_ventas') }}" class="btn btn-outline-secondary btn-sm">Cancelar</a>
-
 </div>
 
-
-
 <input type="hidden" id="hidden_order_id" value="{{ orden.id if orden else '' }}">
+
+{% if info_importacion %}
+<div class="alert alert-info py-2 shadow-sm d-flex align-items-center mb-3">
+    <i class="bi bi-info-circle-fill fs-5 me-3 text-info"></i>
+    <div>
+        <h6 class="mb-0 fw-bold text-dark">Última actualización de inventario general</h6>
+        <small class="text-muted">
+            Sincronizado el <strong>{{ info_importacion.updated_at.strftime('%d/%m/%Y a las %H:%M') }}</strong> 
+            por <strong>{{ info_importacion.updated_by }}</strong>
+        </small>
+    </div>
+</div>
+{% endif %}
 
 
 
@@ -197,9 +198,14 @@
                     <input type="hidden" id="hidden_estado">
                     <input type="hidden" id="hidden_condicion">
 
-                    <div class="col-12 d-flex gap-2 mt-1 align-items-center">
+                    <div class="col-12 d-flex gap-2 mt-2 align-items-center">
                         <span id="badge_estado" class="badge bg-secondary opacity-50">Estado: -</span>
                         <span id="badge_condicion" class="badge bg-secondary opacity-50">Condición: -</span>
+                        
+                        <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2 fw-bold shadow-sm" onclick="window.abrirPortalSunat()" title="Verificar Deudas Coactivas en SUNAT directamente">
+                            <i class="bi bi-shield-exclamation"></i> Ver Deudas
+                        </button>
+
                         <small class="text-muted ms-auto fst-italic" id="lbl_origen_datos" style="font-size: 0.7rem;"></small>
                     </div>
                 </div>
@@ -989,55 +995,55 @@
         }
     }
 
-    window.aplicarDescuentoItem = function(index) {
-        let item = carrito[index];
-        let moneda = $('#selectMoneda').val();
-        let simbolo = moneda === 'PEN' ? 'S/' : '$';
+window.aplicarDescuentoItem = function(index) {
+    let item = carrito[index];
+    let moneda = $('#selectMoneda').val();
+    let simbolo = moneda === 'PEN' ? 'S/' : '$';
 
-        Swal.fire({
-            title: 'Descuento al Producto',
-            html: `
-                <div class="text-start small text-muted mb-2">${item.nombre}</div>
-                <select id="swal-desc-tipo" class="form-select mb-2">
-                    <option value="%">Porcentaje (%)</option>
-                    <option value="MONTO">Monto Directo c/u (${simbolo})</option>
-                </select>
-                <input id="swal-desc-valor" type="number" class="form-control" placeholder="Ej: 10" min="0" step="any">
-            `,
-            showCancelButton: true,
-            confirmButtonText: 'Aplicar',
-            cancelButtonText: 'Quitar Descuento',
-            confirmButtonColor: '#198754',
-        }).then(res => {
-            let tc = parseFloat($('#inputTC').val()) || 1;
-            let precioRealSinDesc = (moneda === 'PEN') ? (item.precioBase * tc) : item.precioBase;
+    Swal.fire({
+        title: 'Descuento al Producto',
+        html: `
+            <div class="text-start small text-muted mb-2">${item.nombre}</div>
+            <select id="swal-desc-tipo" class="form-select mb-2">
+                <option value="%">Porcentaje (%)</option>
+                <option value="MONTO">Monto Directo c/u (${simbolo})</option>
+            </select>
+            <input id="swal-desc-valor" type="number" class="form-control" placeholder="Ej: 10" min="0" step="any">
+        `,
+        showCancelButton: true,
+        confirmButtonText: 'Aplicar',
+        cancelButtonText: 'Quitar Descuento',
+        confirmButtonColor: '#198754',
+    }).then(res => {
+        let tc = parseFloat($('#inputTC').val()) || 1;
+        let precioRealSinDesc = (moneda === 'PEN') ? (item.precioBase * tc) : item.precioBase;
 
-            if (res.isConfirmed) {
-                let tipo = document.getElementById('swal-desc-tipo').value;
-                let valor = parseFloat(document.getElementById('swal-desc-valor').value) || 0;
+        if (res.isConfirmed) {
+            let tipo = document.getElementById('swal-desc-tipo').value;
+            let valor = parseFloat(document.getElementById('swal-desc-valor').value) || 0;
 
-                if (valor > 0) {
-                    if (tipo === 'MONTO' && valor >= precioRealSinDesc) {
-                        return Swal.fire('Error', `El descuento (${simbolo}${valor}) no puede ser mayor o igual al precio original (${simbolo}${precioRealSinDesc.toFixed(2)}).`, 'error');
-                    }
-                    item.desc_tipo = tipo; item.desc_valor = valor;
-                    if (tipo === '%') {
-                        if (valor >= 100) return Swal.fire('Error', 'No puede descontar el 100%.', 'error');
-                        item.precio = precioRealSinDesc * (1 - (valor / 100));
-                        item.desc_label = `Desc: -${valor}%`;
-                    } else {
-                        item.precio = precioRealSinDesc - valor;
-                        item.desc_label = `Desc: -${simbolo}${valor} c/u`;
-                    }
+            if (valor > 0) {
+                if (tipo === 'MONTO' && valor >= precioRealSinDesc) {
+                    return Swal.fire('Error', `El descuento (${simbolo}${valor}) no puede ser mayor o igual al precio original (${simbolo}${precioRealSinDesc.toFixed(2)}).`, 'error');
                 }
-            } else if (res.dismiss === Swal.DismissReason.cancel) {
-                item.desc_tipo = ''; item.desc_valor = 0; item.desc_label = '';
-                item.precio = precioRealSinDesc;
+                item.desc_tipo = tipo; item.desc_valor = valor;
+                if (tipo === '%') {
+                    if (valor >= 100) return Swal.fire('Error', 'No puede descontar el 100%.', 'error');
+                    item.precio = precioRealSinDesc * (1 - (valor / 100));
+                    item.desc_label = `Desc: -${valor}%`;
+                } else {
+                    item.precio = precioRealSinDesc - valor;
+                    item.desc_label = `Desc: -${simbolo}${valor} c/u`;
+                }
             }
-            item.subtotal = Math.round((item.cantidad * item.precio + Number.EPSILON) * 100) / 100;
-            renderizarTabla();
-        });
-    };
+        } else if (res.dismiss === Swal.DismissReason.cancel) {
+            item.desc_tipo = ''; item.desc_valor = 0; item.desc_label = '';
+            item.precio = precioRealSinDesc;
+        }
+        item.subtotal = Math.round((item.cantidad * item.precio + Number.EPSILON) * 100) / 100;
+        renderizarTabla();
+    });
+};
 
     window.aplicarDescuentoMasivo = function() {
         if (carrito.length === 0) return Swal.fire('Carrito Vacío', 'Agregue productos primero.', 'warning');
@@ -1094,115 +1100,6 @@
         });
     };
 
-
-
-
-
-    window.aplicarDescuentoItem = function(index) {
-
-        let item = carrito[index];
-
-        let moneda = $('#selectMoneda').val();
-
-        let simbolo = moneda === 'PEN' ? 'S/' : '$';
-
-
-
-        Swal.fire({
-
-            title: 'Descuento Especial',
-
-            html: `
-
-                <div class="text-start small text-muted mb-2">${item.nombre}</div>
-
-                <select id="swal-desc-tipo" class="form-select mb-2">
-
-                    <option value="%">Porcentaje (%)</option>
-
-                    <option value="MONTO">Monto Directo (${simbolo})</option>
-
-                </select>
-
-                <input id="swal-desc-valor" type="number" class="form-control" placeholder="Ej: 10" min="0" step="any">
-
-            `,
-
-            showCancelButton: true,
-
-            confirmButtonText: 'Aplicar',
-
-            cancelButtonText: 'Quitar Descuento',
-
-            confirmButtonColor: '#198754',
-
-        }).then(res => {
-
-            let tc = parseFloat($('#inputTC').val()) || 1;
-
-            let precioRealSinDesc = (moneda === 'PEN') ? (item.precioBase * tc) : item.precioBase;
-
-
-
-            if (res.isConfirmed) {
-
-                let tipo = document.getElementById('swal-desc-tipo').value;
-
-                let valor = parseFloat(document.getElementById('swal-desc-valor').value) || 0;
-
-
-
-                if (valor > 0) {
-
-                    item.desc_tipo = tipo;
-
-                    item.desc_valor = valor;
-
-
-
-                    if (tipo === '%') {
-
-                        item.precio = precioRealSinDesc * (1 - (valor / 100));
-
-                        item.desc_label = `Descuento: -${valor}%`;
-
-                    } else {
-
-                        item.precio = precioRealSinDesc - valor;
-
-                        if (item.precio < 0) item.precio = 0;
-
-                        item.desc_label = `Descuento: -${simbolo}${valor}`;
-
-                    }
-
-                }
-
-            } else if (res.dismiss === Swal.DismissReason.cancel) {
-
-                // Botón Quitar Descuento
-
-                item.desc_tipo = '';
-
-                item.desc_valor = 0;
-
-                item.desc_label = '';
-
-                item.precio = precioRealSinDesc;
-
-            }
-
-
-
-            // Recalculamos el subtotal de la fila y actualizamos la tabla
-
-            item.subtotal = Math.round((item.cantidad * item.precio + Number.EPSILON) * 100) / 100;
-
-            renderizarTabla();
-
-        });
-
-    };
 
 
 
@@ -2493,116 +2390,47 @@ document.getElementById('btnAgregar').addEventListener('click', () => {
 
 
 
-    // ======================================================
-
-    // CASO A: MODO PRODUCTO
-
-    // ======================================================
-
 // ======================================================
-
     // CASO A: MODO PRODUCTO (VALIDACIÓN MEJORADA)
-
     // ======================================================
-
     if (modoActual === 'PRODUCTO') {
-
         const idProd = $('#productoSelect').val(); 
-
         
-
-        // 1. Validar selección de producto
-
-        if(!idProd) {
-
-            return Swal.fire('Falta Producto', 'Busque y seleccione un producto de la lista.', 'warning'); 
-
-        }
-
-
-
-        // 2. Validar Cantidad (CRÍTICO)
-
-        // Usamos las variables 'cant' y 'precio' que ya definimos arriba
-
-        if (isNaN(cant) || cant <= 0) {
-
-            return Swal.fire('Error de Cantidad', 'La cantidad debe ser mayor a 0.', 'error');
-
-        }
-
-
-
-        // 3. Validar Precio (Decisión: Bloquear 0 para evitar errores)
-
-        if (isNaN(precio) || precio <= 0) {
-
-            return Swal.fire('Error de Precio', 'El precio debe ser mayor a 0.00', 'error');
-
-        }
-
-
+        if(!idProd) { return Swal.fire('Falta Producto', 'Busque y seleccione un producto de la lista.', 'warning'); }
+        if (isNaN(cant) || cant <= 0) { return Swal.fire('Error de Cantidad', 'La cantidad debe ser mayor a 0.', 'error'); }
+        if (isNaN(precio) || precio <= 0) { return Swal.fire('Error de Precio', 'El precio debe ser mayor a 0.00', 'error'); }
 
         const opt = $('#productoSelect').find(':selected'); 
-
         const stockProd = parseInt(opt.data('stock')) || 0;
-
+        
+        // --- CAPTURAMOS EL ESTADO Y LIMPIAMOS EL NOMBRE ---
+        const estadoProd = opt.data('estado') || ''; 
+        const nombreLimpio = opt.text().replace(/\[⚠️ .*?\]/g, '').trim();
+        
         unidadMedida = 'UND'; 
 
-
-
-        // Alerta visual de stock (Aviso no bloqueante)
-
         if (cant > stockProd) { 
-
-            Swal.mixin({ 
-
-                toast: true, position: 'top-end', showConfirmButton: false, timer: 4000 
-
-            }).fire({ icon: 'warning', title: '⚠️ Atención: Cantidad supera el Stock disponible' }); 
-
+            Swal.mixin({ toast: true, position: 'top-end', showConfirmButton: false, timer: 4000 }).fire({ icon: 'warning', title: '⚠️ Atención: Cantidad supera el Stock disponible' }); 
         }
-
         
-
-        // Lógica de agregado (Igual que antes)
-
         let itemExistente = carrito.find(item => item.id === idProd && item.tipo === 'PRODUCTO');
-
         
-
         if (itemExistente) { 
-
             itemExistente.cantidad += cant; 
-
             itemExistente.subtotal = parseFloat((itemExistente.cantidad * itemExistente.precio).toFixed(2)); 
-
         } else { 
-
             itemParaCarrito = { 
-
-                id: idProd, sku: opt.data('sku'), nombre: opt.text(), 
-
+                id: idProd, sku: opt.data('sku'), 
+                nombre: nombreLimpio, // <-- GUARDAMOS NOMBRE LIMPIO
+                estado: estadoProd,   // <-- GUARDAMOS EL ESTADO EN MEMORIA
                 stock: stockProd, cantidad: cant, precio: precio, precioBase: precioBase, 
-
                 subtotal: parseFloat((cant * precio).toFixed(2)), 
-
                 tipo_precio: 'Manual', tipo: 'PRODUCTO',
-
                 um: unidadMedida,
-
-                desc_tipo: '', 
-
-                desc_valor: 0, 
-
-                desc_label: ''
-
+                desc_tipo: '', desc_valor: 0, desc_label: ''
             }; 
-
             carrito.push(itemParaCarrito); 
-
         }
-
     }
 
     
@@ -2901,19 +2729,38 @@ document.getElementById('btnAgregar').addEventListener('click', () => {
 
     $('#productoSelect').select2({ 
         placeholder: "Buscar producto...", allowClear: true, width: '100%',
-        templateResult: function (d) { 
+        templateResult: function (d) {  
             if (!d.id) return d.text; 
-            return $(`
+            
+            // 1. Extraer estado y limpiar nombre (por si el backend lo manda pegado)
+            let estadoReal = $(d.element).data('estado') || '';
+            let nombreLimpio = d.text.replace(/\[⚠️ .*?\]/g, '').trim();
+
+            let html = `
                 <div class="prod-row">
                     <div class="prod-header">
                         <span class="prod-code">${$(d.element).data('sku')}</span>
                         <span class="prod-stock">Stk: ${$(d.element).data('stock')}</span>
                     </div>
-                    <div class="prod-desc">${d.text}</div>
-                </div>
-            `); 
+                    <div class="prod-desc">${nombreLimpio}</div>`;
+            
+            // Si hay estado, ponemos el badge amarillo
+            if (estadoReal && estadoReal !== '' && estadoReal !== 'None') {
+                html += `<div class="mt-1"><span class="badge bg-warning text-dark border shadow-sm" style="font-size: 0.7rem;"><i class="bi bi-exclamation-triangle-fill"></i> ${estadoReal}</span></div>`;
+            }
+            html += `</div>`;
+            return $(html); 
         },
-        templateSelection: function (d) { return d.text; },
+        templateSelection: function (d) { 
+            if (!d.id) return d.text; 
+            let estadoReal = $(d.element).data('estado') || '';
+            let nombreLimpio = d.text.replace(/\[⚠️ .*?\]/g, '').trim();
+
+            if (estadoReal && estadoReal !== '' && estadoReal !== 'None') {
+                return $(`<span>${nombreLimpio} <span class="badge bg-warning text-dark ms-2"><i class="bi bi-exclamation-triangle-fill"></i> ${estadoReal}</span></span>`);
+            }
+            return nombreLimpio; 
+        },
         matcher: (params, data) => { 
             if ($.trim(params.term) === '') return data; 
             var term = params.term.toLowerCase(); 
@@ -3210,110 +3057,111 @@ document.getElementById('btnAgregar').addEventListener('click', () => {
 
 
 
-// --- FUNCIÓN RENDERIZAR TABLA COMPLETA Y OPTIMIZADA ---
-
 function renderizarTabla() {
-        const tbody = $('#tablaCarrito'); 
-        tbody.empty();
-        
-        let moneda = $('#selectMoneda').val(); 
-        let simbolo = (moneda === 'PEN') ? 'S/' : '$';
+    const tbody = $('#tablaCarrito'); 
+    tbody.empty();
+    
+    let moneda = $('#selectMoneda').val(); 
+    let simbolo = (moneda === 'PEN') ? 'S/' : '$';
 
-        if(carrito.length > 0) $('#msgVacio').hide(); else $('#msgVacio').show();
+    if(carrito.length > 0) $('#msgVacio').hide(); else $('#msgVacio').show();
 
-        carrito.forEach((item, index) => {
-            let claseStock = ''; let badgeDisplay = 'none'; let textoBadge = '';
-            
-            if (item.tipo === 'PRODUCTO') {
-                if (item.cantidad > item.stock) {
-                    claseStock = 'stock-insuficiente'; badgeDisplay = 'inline-block'; textoBadge = `Sin Stock (Max: ${item.stock})`;
-                }
-            } else if (item.tipo === 'GLB' && item.componentes) {
-                let componenteFaltante = item.componentes.some(c => (c.qty * item.cantidad) > c.stock_individual);
-                if (componenteFaltante) {
-                    claseStock = 'stock-insuficiente'; badgeDisplay = 'inline-block'; textoBadge = `Componentes sin Stock`;
-                }
-            }
+    carrito.forEach((item, index) => {
+        let claseStock = ''; let badgeDisplay = 'none'; let textoBadge = '';
+        let nombreHtml = `${item.nombre}`;
 
-            let umVisual = item.um || (item.tipo === 'PRODUCTO' ? 'UND' : (item.tipo === 'FABRICACION' ? 'SRV' : 'GLB'));
-            let etiquetaTipo = ''; let botonVer = ''; 
-
-            if(item.tipo === 'FABRICACION') etiquetaTipo = '<span class="badge bg-warning text-dark ms-1" style="font-size:0.6rem">FAB</span>';
-            if(item.tipo === 'GLB') { 
-                etiquetaTipo = '<span class="badge bg-info text-dark ms-1" style="font-size:0.6rem">KIT</span>'; 
-                let colorOjo = (claseStock !== '') ? 'btn-danger' : 'btn-outline-info';
-                botonVer = `<button class="btn btn-sm ${colorOjo} me-1" onclick="verComponentes(${index})" title="Ver contenido"><i class="bi bi-eye-fill"></i></button>`;
-            }
-
-            // Lógica de Precio Tachado (Descuento)
-            let precioTachadoHtml = '';
-            let inputClass = 'editable-cell';
-            
-            if (item.desc_valor > 0) {
-                let tc_actual = parseFloat($('#inputTC').val()) || 1;
-                let precioOriginal = (moneda === 'PEN') ? (item.precioBase * tc_actual) : item.precioBase;
-                precioTachadoHtml = `<del class="text-muted d-block" style="font-size: 0.75rem; margin-bottom: -2px;">${precioOriginal.toFixed(2)}</del>`;
-                inputClass = 'editable-cell text-danger fw-bold border-danger bg-danger bg-opacity-10'; 
-            }
-
-            tbody.append(`
-                <tr id="fila-${index}">
-                    <td class="ps-3">
-                        <div class="product-name-cell" style="font-size: 0.85rem;">
-                            ${item.nombre} ${etiquetaTipo} <br> <span class="badge bg-danger mt-1">${item.desc_label}</span>
-                        </div>
-                        <div class="small text-muted fw-light">${item.sku}</div>
-                        <span class="badge bg-danger ms-1" style="font-size:0.6rem; display:${badgeDisplay};">
-                            <i class="bi bi-exclamation-triangle-fill"></i> ${textoBadge}
-                        </span>
-                    </td>
-
-                    <td class="text-center small text-muted fw-bold pt-3">${umVisual}</td>
-                    
-                    <td class="text-center pt-3">
-                        <input type="number" id="input_cant_${index}" 
-                               class="editable-cell text-center ${claseStock} fw-bold text-primary" 
-                               style="min-width: 90px; font-size: 1.05rem;" value="${item.cantidad}" min="1" step="1"
-                               onkeydown="return evitarNegativos(event)"
-                               oninput="actualizarFilaSinRedibujar(${index}, 'cant', this.value)">
-                    </td>
-
-                    <td class="text-end pt-2">
-                        ${precioTachadoHtml}
-                        <input type="number" id="input_precio_${index}" 
-                               class="${inputClass}" 
-                               style="width: 90px;" value="${item.precio}" min="0" step="any"
-                               onkeydown="return evitarNegativos(event)"
-                               onchange="actualizarFilaManual(${index}, this.value)">
-                    </td>
-
-                    <td class="text-end fw-bold text-dark small pt-3">
-                        ${simbolo} <span id="lbl_subtotal_${index}">${item.subtotal.toFixed(2)}</span>
-                    </td>
-
-                    <td class="text-center text-nowrap pt-3">
-                        ${botonVer}
-                        <button class="btn btn-sm btn-outline-warning border-0" onclick="aplicarDescuentoItem(${index})" title="Aplicar Descuento a este Item">
-                            <i class="bi bi-percent"></i>
-                        </button>
-                        <button class="btn btn-sm btn-outline-danger border-0" onclick="eliminarFila(${index})" title="Eliminar ítem">
-                            <i class="bi bi-trash"></i>
-                        </button>
-                    </td>
-                </tr>
-            `);
-        });
-
-        actualizarTotalesGlobales();
-        
-        const tcActual = parseFloat($('#inputTC').val()) || 0;
-        if(moneda === 'PEN') {
-            actualizarBadgeVisualTC(tcActual);
-        } else {
-            actualizarBadgeVisualTC(null);
+        if (item.estado && item.estado !== '' && item.estado !== 'None') {
+            nombreHtml += `<br><span class="badge bg-danger mt-1 text-white shadow-sm" style="font-size: 0.7rem; padding: 4px 8px;"><i class="bi bi-exclamation-triangle-fill"></i> ${item.estado}</span>`;
         }
-    }
+    
+        if (item.tipo === 'PRODUCTO') {
+            if (item.cantidad > item.stock) {
+                claseStock = 'stock-insuficiente'; badgeDisplay = 'inline-block'; textoBadge = `Sin Stock (Max: ${item.stock})`;
+            }
+        } else if (item.tipo === 'GLB' && item.componentes) {
+            let componenteFaltante = item.componentes.some(c => (c.qty * item.cantidad) > c.stock_individual);
+            if (componenteFaltante) {
+                claseStock = 'stock-insuficiente'; badgeDisplay = 'inline-block'; textoBadge = `Componentes sin Stock`;
+            }
+        }
 
+        let umVisual = item.um || (item.tipo === 'PRODUCTO' ? 'UND' : (item.tipo === 'FABRICACION' ? 'SRV' : 'GLB'));
+        let etiquetaTipo = ''; let botonVer = ''; 
+
+        if(item.tipo === 'FABRICACION') etiquetaTipo = '<span class="badge bg-warning text-dark ms-1" style="font-size:0.6rem">FAB</span>';
+        if(item.tipo === 'GLB') { 
+            etiquetaTipo = '<span class="badge bg-info text-dark ms-1" style="font-size:0.6rem">KIT</span>'; 
+            let colorOjo = (claseStock !== '') ? 'btn-danger' : 'btn-outline-info';
+            botonVer = `<button class="btn btn-sm ${colorOjo} me-1" onclick="verComponentes(${index})" title="Ver contenido"><i class="bi bi-eye-fill"></i></button>`;
+        }
+
+        let precioTachadoHtml = '';
+        let inputClass = 'editable-cell';
+        
+        if (item.desc_valor > 0) {
+            let tc_actual = parseFloat($('#inputTC').val()) || 1;
+            let precioOriginal = (moneda === 'PEN') ? (item.precioBase * tc_actual) : item.precioBase;
+            precioTachadoHtml = `<del class="text-muted d-block" style="font-size: 0.75rem; margin-bottom: -2px;">${precioOriginal.toFixed(2)}</del>`;
+            inputClass = 'editable-cell text-danger fw-bold border-danger bg-danger bg-opacity-10'; 
+        }
+
+        tbody.append(`
+            <tr id="fila-${index}">
+                <td class="ps-3">
+                    <div class="product-name-cell" style="font-size: 0.85rem;">
+                        ${nombreHtml} ${etiquetaTipo} <br> <span class="badge bg-danger mt-1">${item.desc_label}</span>
+                    </div>
+                    <div class="small text-muted fw-light">${item.sku}</div>
+                    <span id="badge_stock_${index}" class="badge bg-danger ms-1" style="font-size:0.6rem; display:${badgeDisplay};">
+                        <i class="bi bi-exclamation-triangle-fill"></i> ${textoBadge}
+                    </span>
+                </td>
+
+                <td class="text-center small text-muted fw-bold pt-3">${umVisual}</td>
+                
+                <td class="text-center pt-3">
+                    <input type="number" id="input_cant_${index}" 
+                           class="editable-cell text-center ${claseStock} fw-bold text-primary" 
+                           style="min-width: 90px; font-size: 1.05rem;" value="${item.cantidad}" min="1" step="1"
+                           onkeydown="return evitarNegativos(event)"
+                           oninput="actualizarFilaSinRedibujar(${index}, 'cant', this.value)">
+                </td>
+
+                <td class="text-end pt-2">
+                    ${precioTachadoHtml}
+                    <input type="number" id="input_precio_${index}" 
+                           class="${inputClass}" 
+                           style="width: 90px;" value="${item.precio}" min="0" step="any"
+                           onkeydown="return evitarNegativos(event)"
+                           onchange="actualizarFilaManual(${index}, this.value)">
+                </td>
+
+                <td class="text-end fw-bold text-dark small pt-3">
+                    ${simbolo} <span id="lbl_subtotal_${index}">${item.subtotal.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                </td>
+
+                <td class="text-center text-nowrap pt-3">
+                    ${botonVer}
+                    <button class="btn btn-sm btn-outline-warning border-0" onclick="aplicarDescuentoItem(${index})" title="Aplicar Descuento a este Item">
+                        <i class="bi bi-percent"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger border-0" onclick="eliminarFila(${index})" title="Eliminar ítem">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </td>
+            </tr>
+        `);
+    });
+
+    actualizarTotalesGlobales();
+    
+    const tcActual = parseFloat($('#inputTC').val()) || 0;
+    if(moneda === 'PEN') {
+        actualizarBadgeVisualTC(tcActual);
+    } else {
+        actualizarBadgeVisualTC(null);
+    }
+}
 
 
     // Función auxiliar para mostrar/ocultar el badge en el header de la tabla
@@ -3348,85 +3196,43 @@ function renderizarTabla() {
 
 // --- FUNCIÓN OPTIMIZADA: ACTUALIZA DATOS Y VERIFICA STOCK AL INSTANTE ---
 
-    window.actualizarFilaSinRedibujar = function(index, tipo, valor) {
+window.actualizarFilaSinRedibujar = function(index, tipo, valor) {
+    let val = parseFloat(valor);
+    if (isNaN(val) || val < 0) val = 0;
+    
+    let item = carrito[index];
 
-        let val = parseFloat(valor);
+    // 1. Actualizar memoria
+    if (tipo === 'cant') item.cantidad = val;
+    if (tipo === 'precio') item.precio = val;
 
-        if (isNaN(val) || val < 0) val = 0;
+    // 2. Recalcular subtotal
+    item.subtotal = Math.round((item.cantidad * item.precio + Number.EPSILON) * 100) / 100;
 
-        
+    // 3. Actualizar texto de subtotal
+    $(`#lbl_subtotal_${index}`).text(item.subtotal.toFixed(2));
 
-        let item = carrito[index];
-
-
-
-        // 1. Actualizar memoria
-
-        if (tipo === 'cant') item.cantidad = val;
-
-        if (tipo === 'precio') item.precio = val;
-
-
-
-        // 2. Recalcular subtotal
-
-        item.subtotal = Math.round((item.cantidad * item.precio + Number.EPSILON) * 100) / 100;
-
-
-
-        // 3. Actualizar texto de subtotal
-
-        $(`#lbl_subtotal_${index}`).text(item.subtotal.toFixed(2));
-
-
-
-        // 4. --- CORRECCIÓN CLAVE: VERIFICACIÓN DE STOCK EN TIEMPO REAL ---
-
-        // Buscamos el input y el badge de esa fila específica
-
-        const inputCant = document.getElementById(`input_cant_${index}`);
-
-        const badgeAviso = document.querySelector(`#fila-${index} .badge.bg-danger`); // El badge de alerta
-
-        
-
-        if (item.tipo === 'PRODUCTO') {
-
-            if (item.cantidad > item.stock) {
-
-                // SI FALTA STOCK: Pintar rojo y mostrar aviso
-
-                inputCant.classList.add('stock-insuficiente');
-
-                if(badgeAviso) {
-
-                    badgeAviso.style.display = 'inline-block';
-
-                    badgeAviso.innerHTML = `<i class="bi bi-exclamation-triangle-fill"></i> Sin Stock (Max: ${item.stock})`;
-
-                }
-
-            } else {
-
-                // SI HAY STOCK: Quitar rojo y ocultar aviso
-
-                inputCant.classList.remove('stock-insuficiente');
-
-                if(badgeAviso) badgeAviso.style.display = 'none';
-
+    // 4. VERIFICACIÓN DE STOCK EN TIEMPO REAL (CORREGIDA)
+    const inputCant = document.getElementById(`input_cant_${index}`);
+    // AHORA BUSCAMOS EL ID EXACTO DEL BADGE DE STOCK, YA NO UNA CLASE GENÉRICA
+    const badgeAviso = document.getElementById(`badge_stock_${index}`); 
+    
+    if (item.tipo === 'PRODUCTO') {
+        if (item.cantidad > item.stock) {
+            inputCant.classList.add('stock-insuficiente');
+            if(badgeAviso) {
+                badgeAviso.style.display = 'inline-block';
+                badgeAviso.innerHTML = `<i class="bi bi-exclamation-triangle-fill"></i> Sin Stock (Max: ${item.stock})`;
             }
-
+        } else {
+            inputCant.classList.remove('stock-insuficiente');
+            if(badgeAviso) badgeAviso.style.display = 'none';
         }
-
-        // ---------------------------------------------------------------
-
-
-
-        // 5. Recalcular totales generales
-
-        actualizarTotalesGlobales();
-
     }
+
+    // 5. Recalcular totales generales
+    actualizarTotalesGlobales();
+}
 
 
 
@@ -3532,65 +3338,32 @@ function renderizarTabla() {
 
     // Esta versión NO redibuja toda la tabla, solo actualiza los cálculos.
 
-    function actualizarFila(index, tipo, valor) {
+// --- FUNCIÓN ACTUALIZAR FILA (OPTIMIZADA) ---
+function actualizarFila(index, tipo, valor) {
+    let val = parseFloat(valor);
+    
+    // Validación básica
+    if (isNaN(val) || val < 0) val = 0;
+    
+    let item = carrito[index];
 
-        let val = parseFloat(valor);
-
-        
-
-        // Validación básica
-
-        if (isNaN(val) || val < 0) val = 0;
-
-        
-
-        let item = carrito[index];
-
-
-
-        if (tipo === 'cant') {
-
-            item.cantidad = val;
-
-        } else if (tipo === 'precio') {
-
-            item.precio = val;
-
-        }
-
-
-
-        // Recalcular subtotal de la fila
-
-        item.subtotal = Math.round((item.cantidad * item.precio + Number.EPSILON) * 100) / 100;
-
-        
-
-        // ACTUALIZACIÓN DOM PUNTUAL (Sin borrar el input donde escribes)
-
-        // Solo actualizamos el texto del subtotal de esa fila
-
-        $(`#lbl_subtotal_${index}`).text(item.subtotal.toFixed(2));
-
-
-
-        // Recalcular totales generales (Pie de página)
-
-        actualizarTotalesGlobales();
-
+    if (tipo === 'cant') {
+        item.cantidad = val;
+    } else if (tipo === 'precio') {
+        item.precio = val;
     }
 
+    // Recalcular subtotal de la fila
+    item.subtotal = Math.round((item.cantidad * item.precio + Number.EPSILON) * 100) / 100;
+    
+    // ACTUALIZACIÓN DOM PUNTUAL (Sin borrar el input donde escribes)
+    $(`#lbl_subtotal_${index}`).text(item.subtotal.toFixed(2));
+
+    // Recalcular totales generales (Pie de página)
+    actualizarTotalesGlobales();
+}
 
 
-    function actualizarFila(index, tipo, valor) {
-
-        let val = parseFloat(valor); if (isNaN(val)) val = 0; let item = carrito[index];
-
-        if (tipo === 'cant') item.cantidad = val; else if (tipo === 'precio') item.precio = val;
-
-        item.subtotal = Math.round((item.cantidad * item.precio + Number.EPSILON) * 100) / 100; renderizarTabla();
-
-    }
 
 
 
@@ -3652,20 +3425,13 @@ function renderizarTabla() {
 
 
 
-        // 5. Renderizar en HTML
-
-        $('#lblSubtotalInicial').text(`${simbolo} ${totalItems.toFixed(2)}`);
-
-        $('#lblMontoDescuento').text(`- ${simbolo} ${montoDescontado.toFixed(2)}`);
-
-        $('#lblSubtotalNeto').text(`${simbolo} ${subtotalNeto.toFixed(2)}`);
-
+        // 5. Renderizar en HTML con formato de miles (comas)
+        $('#lblSubtotalInicial').text(`${simbolo} ${totalItems.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`);
+        $('#lblMontoDescuento').text(`- ${simbolo} ${montoDescontado.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`);
+        $('#lblSubtotalNeto').text(`${simbolo} ${subtotalNeto.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`);
         
-
-        $('#lblIGV').text(`${simbolo} ${igv.toFixed(2)}`);
-
-        $('#lblTotal').text(`${simbolo} ${totalFinal.toFixed(2)}`);
-
+        $('#lblIGV').text(`${simbolo} ${igv.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`);
+        $('#lblTotal').text(`${simbolo} ${totalFinal.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`);
     }
 
 
@@ -4342,49 +4108,39 @@ function recalcularCarritoPorMoneda() {
 
 
 
-function mostrarModalResumen() {
-
+    function mostrarModalResumen() {
         $('#res_cliente').text($('#cli_nom').val());
-
         $('#res_ruc').text($('#cli_doc_select').val());
-
         let dir = $('#inputDireccionEntrega').val();
-
         if($('#selectEntrega').val() === 'Recojo') dir = "RECOJO EN TIENDA";
-
         $('#res_direccion').text(dir || '-');
-
+        
         let agenciaFinal = $('#selectReqAgencia').val() === 'SI' ? $('#inputAgencia').val() : 'NO REQUIERE';
         $('#res_calidad').html($('#inputCalidad').val() === 'SI' ? '<span class="text-success">✅ SÍ</span>' : '❌ NO');
         $('#res_penalidad').html($('#inputPenalidad').val() === 'SI' ? '<span class="text-danger">⚠️ SÍ</span>' : '❌ NO');
         $('#res_agencia').text(agenciaFinal);
 
-
-
         const tbody = $('#tablaResumenBody'); tbody.empty();
-
+        
         carrito.forEach(item => {
-
             let alertaStock = (item.tipo === 'PRODUCTO' && item.cantidad > item.stock) ? '<i class="bi bi-exclamation-circle-fill text-warning ms-1" title="Sin Stock"></i>' : '';
-
-            tbody.append(`<tr><td>${item.nombre} ${alertaStock}</td><td class="text-center fw-bold">${item.cantidad}</td><td class="text-end">${item.precio.toFixed(2)}</td><td class="text-end fw-bold">${item.subtotal.toFixed(2)}</td></tr>`);
-
+            
+            // --- ETIQUETA ROJA PARA EL RESUMEN ---
+            let alertaEstado = (item.estado && item.estado !== '' && item.estado !== 'None') ? `<br><span class="badge bg-danger" style="font-size: 0.65rem;"><i class="bi bi-exclamation-triangle-fill"></i> ${item.estado}</span>` : '';
+            
+            tbody.append(`<tr>
+                <td>${item.nombre} ${alertaStock} ${alertaEstado}</td>
+                <td class="text-center fw-bold">${item.cantidad}</td>
+                <td class="text-end">${item.precio.toFixed(2)}</td>
+                <td class="text-end fw-bold">${item.subtotal.toFixed(2)}</td>
+            </tr>`);
         });
 
-
-
         $('#res_neto').text($('#lblSubtotalNeto').text());
-
         $('#res_igv').text($('#lblIGV').text());
-
         $('#res_total').text($('#lblTotal').text());
-
         new bootstrap.Modal(document.getElementById('modalResumenVenta')).show();
-
     }
-
-
-
     // --- FUNCIÓN AUXILIAR PARA MOSTRAR EL MODAL FINAL ---
 
 // --- FUNCIÓN PARA GUARDAR O ACTUALIZAR ---
@@ -4523,28 +4279,22 @@ function mostrarModalResumen() {
 
 
 
-    function cargarProductos() {
-
+function cargarProductos() {
         const catId = $('#filtroFamiliaVenta').val(); const calFiltro = $('#filtroCalidadVenta').val();
-
         const select = $('#productoSelect'); select.empty().append(new Option('Cargando...', '', false, false));
-
         let url = catId ? `/api/productos_por_categoria/${catId}` : `/api/productos_por_categoria/0`; 
-
         fetch(url).then(r => r.json()).then(data => {
-
             select.empty().append(new Option('', '', true, true)); 
-
             let lista = data.productos; if(calFiltro) lista = lista.filter(p => p.calidad === calFiltro);
-
             if(lista.length === 0) select.empty().append(new Option('-- Vacío --', '', false, false));
-
-            else lista.forEach(p => { const o = new Option(p.nombre, p.id, false, false); $(o).attr({ 'data-sku': p.sku, 'data-stock': p.stock, 'data-punit': p.p_unidad }); select.append(o); });
-
+            else lista.forEach(p => { 
+                const o = new Option(p.nombre, p.id, false, false); 
+                // --- CAMBIO AQUÍ: Agregamos data-estado para que el Select2 lo pueda pintar ---
+                $(o).attr({ 'data-sku': p.sku, 'data-stock': p.stock, 'data-punit': p.p_unidad, 'data-estado': p.estado || '' }); 
+                select.append(o); 
+            });
             select.val(null).trigger('change');
-
         });
-
     }
 
 
@@ -4754,6 +4504,45 @@ function mostrarModalResumen() {
         modal.hide();
 
     }
+
+    // --- REDIRECCIÓN A SUNAT (VERSIÓN DEFINITIVA Y ESTABLE) ---
+    window.abrirPortalSunat = function() {
+        const ruc = $('#cli_doc_select').val();
+        
+        if (!ruc || ruc.length !== 11) {
+            return Swal.fire({
+                icon: 'warning',
+                title: 'Aviso',
+                text: 'Seleccione un cliente con RUC válido (11 dígitos) para auditar.'
+            });
+        }
+        
+        // Copiamos el RUC automáticamente
+        navigator.clipboard.writeText(ruc).then(() => {
+            // Aviso visual claro
+            Swal.fire({
+                toast: true,
+                position: 'top-end',
+                icon: 'info',
+                title: `RUC ${ruc} copiado`,
+                text: 'Presione Ctrl + V en la página de la SUNAT para buscar.',
+                showConfirmButton: false,
+                timer: 4500
+            });
+
+            // Abrir la página principal (la única que SUNAT no bloquea)
+            window.open('https://e-consultaruc.sunat.gob.pe/cl-ti-itmrconsruc/jcrS00Alias', '_blank');
+            
+        }).catch(err => {
+            // Plan B si el navegador bloquea el portapapeles
+            Swal.fire({
+                toast: true, position: 'top-end', icon: 'warning',
+                title: `Copie el RUC manualmente: ${ruc}`,
+                showConfirmButton: false, timer: 5000
+            });
+            window.open('https://e-consultaruc.sunat.gob.pe/cl-ti-itmrconsruc/jcrS00Alias', '_blank');
+        });
+    };
 
 </script>
 

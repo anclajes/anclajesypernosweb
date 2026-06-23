@@ -17,12 +17,17 @@ from werkzeug.utils import secure_filename
 from models import SystemConfig
 from num2words import num2words
 from sqlalchemy import text
+from flask_migrate import Migrate
 import os
 import io
+from flask import send_file
+import subprocess
+import tempfile
 import requests
 import re
 import pytz
 from werkzeug.security import generate_password_hash, check_password_hash
+from xhtml2pdf import pisa
 
 
 
@@ -62,6 +67,8 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 # Conectar la base de datos a la app
 db.init_app(app)
+
+migrate = Migrate(app, db)
 
 # --- RUTAS BÁSICAS (VISTAS) ---
 
@@ -718,6 +725,7 @@ def logout():
 
 # 1. ACTUALIZAR RUTA INVENTARIO (Para ver categorías nuevas vacías)
 # --- RUTA INVENTARIO (CORREGIDA) ---
+# --- RUTA INVENTARIO (CORREGIDA CON REGISTRO GLOBAL) ---
 @app.route('/inventario')
 def inventario():
     if session.get('user_id') is None: return redirect(url_for('login'))
@@ -742,10 +750,8 @@ def inventario():
     if calidad_filtro != 'todos':
         query = query.filter(Product.calidad == calidad_filtro)
 
-    # --- CORRECCIÓN CRÍTICA AQUÍ ---
+    # --- CORRECCIÓN CRÍTICA ---
     if stock_bajo == 'on':
-        # Antes tenías: query.filter(Product.stock_actual < 100) <-- ERROR (100 fijo)
-        # Ahora usamos la columna de la BD:
         query = query.filter(Product.stock_actual <= Product.stock_minimo)
 
     # Listas para los selects
@@ -754,8 +760,11 @@ def inventario():
     calidades = db.session.query(Product.calidad).distinct().order_by(Product.calidad).all()
     lista_calidades = [c[0] for c in calidades if c[0]]
 
+    # --- NUEVO: OBTENER ESTADOS ÚNICOS PARA EL AUTOCOMPLETADO ---
+    estados = db.session.query(Product.estado).filter(Product.estado != None, Product.estado != '').distinct().order_by(Product.estado).all()
+    lista_estados = [e[0] for e in estados]
+
     # Ordenar y Paginar
-    # Tip: Si está activo el filtro de stock bajo, ordenar por stock ascendente ayuda a ver los ceros primero.
     if stock_bajo == 'on':
         query = query.order_by(Product.stock_actual.asc())
     else:
@@ -763,6 +772,9 @@ def inventario():
 
     pagination = query.paginate(page=page, per_page=per_page, error_out=False)
     productos = pagination.items
+    
+    # --- NUEVO: CONSULTA DE ÚLTIMA IMPORTACIÓN MASIVA ---
+    info_importacion = SystemConfig.query.get('ultima_importacion')
     
     return render_template('inventario.html', 
                            productos=productos, 
@@ -772,8 +784,11 @@ def inventario():
                            search=search,
                            cat_filtro=cat_filtro,
                            calidad_filtro=calidad_filtro,
-                           stock_bajo=stock_bajo, # IMPORTANTE devolver esto al HTML
-                           limit=per_page)
+                           stock_bajo=stock_bajo, 
+                           limit=per_page,
+                           lista_estados=lista_estados,
+                           info_importacion=info_importacion) # <-- Pasado al HTML
+                           
 
 # --- API: OBTENER SIGUIENTE SKU (Magia Automática) ---
 @app.route('/api/next_sku/<int:category_id>')
@@ -811,13 +826,15 @@ def get_productos_por_categoria(category_id):
         
         lista = []
         for p in productos:
+            # Mandamos el nombre limpio y el estado como un dato independiente
             lista.append({
                 'id': p.id,
                 'sku': p.sku,
-                'nombre': p.nombre,
+                'nombre': p.nombre, 
                 'stock': p.stock_actual,
                 'p_unidad': p.precio_unidad,
-                'calidad': p.calidad  # <--- ¡AGREGA ESTA COMA Y ESTA LÍNEA!
+                'calidad': p.calidad,
+                'estado': p.estado if p.estado else '' # <-- ESTADO SEPARADO
             })
         return {'productos': lista}
         
@@ -1199,20 +1216,27 @@ def nueva_venta():
             return {'status': 'error', 'msg': str(e)}, 500
 
     # --- MÉTODO GET (MOSTRAR PANTALLA) ---
+# --- MÉTODO GET (MOSTRAR PANTALLA DE NUEVA VENTA) ---
     productos = Product.query.all()
     categorias = Category.query.all()
     
     tc_hoy = obtener_tipo_cambio(usuario_solicitante="Sistema Automático")
     config_tc = SystemConfig.query.get('tipo_cambio')
     
+    # --- NUEVO: CONSULTA DE ÚLTIMA IMPORTACIÓN MASIVA ---
+    info_importacion = SystemConfig.query.get('ultima_importacion')
+    
     return render_template('nueva_venta.html', 
                            productos=productos, 
                            categorias=categorias, 
                            tc=tc_hoy,
                            updated_at=config_tc.updated_at.strftime('%d/%m %H:%M') if config_tc else None,
-                           updated_by=config_tc.updated_by if config_tc else None)
+                           updated_by=config_tc.updated_by if config_tc else None,
+                           info_importacion=info_importacion) # <-- Pasado al HTML
 
 # --- EN APP.PY (Función DESCARGAR MAESTRA) ---
+from xhtml2pdf import pisa
+import io
 
 @app.route('/descargar_cotizacion/<int:order_id>')
 def descargar_cotizacion(order_id):
@@ -1232,7 +1256,7 @@ def descargar_cotizacion(order_id):
 
     if es_aprobado:
         # ES UNA ORDEN DE PEDIDO (OP)
-        template_name = "plantilla_orden_pedido.docx" # Asegúrate de crear este archivo (copia del otro)
+        template_name = "plantilla_orden_pedido.docx"
         titulo_doc = "ORDEN DE PEDIDO"
         codigo_visual = f"OP-{orden.id:05d}"
         
@@ -1244,8 +1268,6 @@ def descargar_cotizacion(order_id):
     doc = DocxTemplate(template_name)
 
     # --- B. PROCESAMIENTO DE DATOS (TU LÓGICA ORIGINAL) ---
-    
-    # Datos del vendedor
     cargo_mostrar = vendedor.cargo_formal if vendedor.cargo_formal else "Asesor Comercial"
     email_texto = vendedor.email_empresa if vendedor.email_empresa else "ventas@importbolts.com"
     celular_texto = vendedor.celular if vendedor.celular else ""
@@ -1265,7 +1287,6 @@ def descargar_cotizacion(order_id):
     i = 1
     
     for d in orden.details:
-        # Lógica de SKU
         sku_final = "SERV"
         if d.product:
             sku_final = d.product.sku
@@ -1282,7 +1303,6 @@ def descargar_cotizacion(order_id):
             titulo_limpio = d.nombre_personalizado_titulo.upper() if d.nombre_personalizado_titulo else ""
             sku_final = mapa_skus.get(titulo_limpio, 'SRV-GEN')
             
-            # Intento de rescate por BD si falló el mapa
             if sku_final == 'SRV-GEN':
                 prod_db = Product.query.filter_by(nombre=titulo_limpio).first()
                 if prod_db: sku_final = prod_db.sku
@@ -1336,12 +1356,9 @@ def descargar_cotizacion(order_id):
 
     # --- 3. CONTEXTO FINAL (Fusionado) ---
     context = {
-        # Variables de Configuración (NUEVAS)
         'titulo_documento': titulo_doc,
         'codigo_pedido': codigo_visual,
-        'mostrar_precios': mostrar_precios, # Variable clave para el IF en Word
-
-        # Variables de Datos (ORIGINALES)
+        'mostrar_precios': mostrar_precios,
         'fecha': orden.fecha.strftime("%d/%m/%Y"),
         'cliente_nombre': orden.cliente.nombre,
         'cliente_ruc': orden.cliente.documento,
@@ -1349,54 +1366,251 @@ def descargar_cotizacion(order_id):
         'cliente_telefono': orden.cliente.telefono or "",
         'contacto_atte': orden.atencion or "",
         'orden_compra': orden.orden_compra or "",
-
         'tipo_entrega': orden.tipo_entrega,
         'lugar_entrega': orden.direccion_envio,
         'plazo_entrega': texto_entrega,
-
         'vendedor_nombre': orden.vendedor.nombre_completo,
         'vendedor_cargo': cargo_mostrar,
         'vendedor_email': email_texto,
         'vendedor_celular': celular_texto,
-        
         'tbl_contents': lista_items,
         'simbolo': simbolo,
         'subtotal_bruto': f"{subtotal_bruto:,.2f}",
         'label_descuento': f"Descuento ({int(orden.descuento_valor)}%)" if orden.descuento_tipo == 'PORCENTAJE' else "Descuento",
         'monto_descuento': f"- {orden.descuento_total:,.2f}",
-        'subtotal_neto': f"{orden.subtotal:,.2f}", # Valor Venta
-        'subtotal': f"{orden.subtotal:,.2f}",      # Subtotal
+        'subtotal_neto': f"{orden.subtotal:,.2f}",
+        'subtotal': f"{orden.subtotal:,.2f}",
         'igv': f"{orden.igv:,.2f}",
         'total': f"{orden.total:,.2f}",
         'son_letras': total_letras,
-
         'condicion_pago': orden.condicion_pago or "Contado",
         'validez': orden.validez_oferta or "5 días",
         'observacion': orden.observacion or "",
+        'vendedor_usuario': vendedor.username,
+        'almacenero_nombre': orden.almacenero_nombre or "VERIFICADO",
+        'fecha_almacen': orden.fecha_verificacion_almacen.strftime('%d/%m/%Y %H:%M') if orden.fecha_verificacion_almacen else "---",
+        'gerente_nombre': orden.gerente_nombre or "APROBADO",
+        'fecha_gerencia': orden.fecha_aprobacion.strftime('%d/%m/%Y %H:%M') if orden.fecha_aprobacion else "---"
     }
     
     doc.render(context)
     
     # Nombre del archivo dinámico
     suffix = "_ALMACEN" if modo == 'almacen' else ""
-    nombre_archivo = f"{codigo_visual}_{orden.cliente.nombre[:10]}{suffix}.docx"
+    nombre_archivo_base = f"{codigo_visual}_{orden.cliente.nombre[:10]}{suffix}"
     
     # Limpiar caracteres raros del nombre de archivo
-    nombre_archivo = "".join([c for c in nombre_archivo if c.isalnum() or c in (' ', '.', '-', '_')]).strip()
+    nombre_archivo_base = "".join([c for c in nombre_archivo_base if c.isalnum() or c in (' ', '.', '-', '_')]).strip()
 
-    output = io.BytesIO()
-    doc.save(output)
-    output.seek(0)
+    # =====================================================================
+    # NUEVA LÓGICA: CONVERSIÓN A PDF USANDO LIBREOFFICE EN MEMORIA TEMPORAL
+    # =====================================================================
+    with tempfile.TemporaryDirectory() as tmpdir:
+        docx_path = os.path.join(tmpdir, f"{nombre_archivo_base}.docx")
+        pdf_path = os.path.join(tmpdir, f"{nombre_archivo_base}.pdf")
+        
+        # 1. Guardar el docx temporalmente
+        doc.save(docx_path)
+        
+        try:
+            # 2. Comando para convertir a PDF
+            comando = [
+                'libreoffice', '--headless', '--convert-to', 'pdf', 
+                '--outdir', tmpdir, docx_path
+            ]
+            
+            # (Opcional) Si estás probando en tu computadora con Windows localmente:
+            if os.name == 'nt':
+                # Ruta por defecto donde se instala LibreOffice en Windows
+                ruta_windows = r"C:\Program Files\LibreOffice\program\soffice.exe"
+                if os.path.exists(ruta_windows):
+                    comando[0] = ruta_windows
+                else:
+                    print("Advertencia: LibreOffice no encontrado en la ruta por defecto de Windows.")
+
+            # Ejecutar la conversión
+            subprocess.run(comando, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            
+            # 3. Leer el PDF generado
+            with open(pdf_path, 'rb') as f:
+                pdf_data = f.read()
+                
+            # 4. Enviar el PDF al usuario
+            return send_file(
+                io.BytesIO(pdf_data),
+                as_attachment=True,
+                download_name=f"{nombre_archivo_base}.pdf",
+                mimetype='application/pdf'
+            )
+            
+        except Exception as e:
+            print(f"Error al convertir a PDF: {str(e)}")
+            # FALLBACK DE SEGURIDAD: Si falla la conversión a PDF, descarga el Word normal
+            output = io.BytesIO()
+            doc.save(output)
+            output.seek(0)
+            return send_file(
+                output, 
+                as_attachment=True, 
+                download_name=f"{nombre_archivo_base}.docx",
+                mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+            )
+
+
+@app.route('/descargar_nota_pedido/<int:order_id>')
+def descargar_nota_pedido(order_id):
+    if session.get('role') not in ['admin', 'almacen', 'administracion']: 
+        return "Acceso denegado", 403
+        
+    # 1. Obtener datos básicos
+    orden = Order.query.get_or_404(order_id)
+    vendedor = orden.vendedor
     
-    return send_file(
-        output, 
-        as_attachment=True, 
-        download_name=nombre_archivo,
-        mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-    )
+    # Configuración estricta para Almacén
+    template_name = "plantilla_orden_pedido.docx"
+    titulo_doc = "NOTA DE PEDIDO (ALMACÉN)"
+    codigo_visual = f"NP-{orden.id:05d}"
+    mostrar_precios = False  # Opcional si usas la condicional en Word
 
+    doc = DocxTemplate(template_name)
 
-# --- ZONA DE ARCHIVOS ORDEN DE COMPRA (CLIENTE) ---
+    # 2. Procesamiento de Datos (Idéntico a tu lógica original)
+    cargo_mostrar = vendedor.cargo_formal if vendedor.cargo_formal else "Asesor Comercial"
+    email_texto = vendedor.email_empresa if vendedor.email_empresa else "ventas@importbolts.com"
+    celular_texto = vendedor.celular if vendedor.celular else ""
+
+    subtotal_bruto = orden.subtotal + orden.descuento_total
+
+    texto_entrega = "Inmediata / A coordinar"
+    if orden.fecha_entrega:
+        texto_entrega = orden.fecha_entrega.strftime("%d/%m/%Y")
+    
+    simbolo = "S/" if orden.moneda == 'PEN' else "$"
+    nombre_moneda = "SOLES" if orden.moneda == 'PEN' else "DOLARES AMERICANOS"
+
+    # Procesamiento de Items idéntico
+    lista_items = []
+    i = 1
+    for d in orden.details:
+        sku_final = "SERV"
+        if d.product:
+            sku_final = d.product.sku
+        elif d.item_type == 'FABRICACION':
+            mapa_skus = {
+                'SERVICIO DE CORTE': 'SRV-CORT',
+                'SERVICIO DE SOLDADURA': 'SRV-SOLD',
+                'SERVICIO DE GALVANIZADO': 'SRV-GALV',
+                'SERVICIO DE ZINCADO': 'SRV-ZINC',
+                'SERVICIO DE ROSCADO': 'SRV-ROSC',
+                'SERVICIO DE TROPICALIZADO': 'SRV-TROP',
+                'SERVICIO GENERAL': 'SRV-GEN'
+            }
+            titulo_limpio = d.nombre_personalizado_titulo.upper() if d.nombre_personalizado_titulo else ""
+            sku_final = mapa_skus.get(titulo_limpio, 'SRV-GEN')
+            if sku_final == 'SRV-GEN':
+                prod_db = Product.query.filter_by(nombre=titulo_limpio).first()
+                if prod_db: sku_final = prod_db.sku
+        elif d.item_type == 'GLB':
+            sku_final = "GLB-001" 
+
+        descripcion_rich = RichText()
+        estilo_fuente = {'font': 'Calibri', 'size': 18}
+
+        if d.product and d.item_type == 'PRODUCTO':
+            descripcion_rich.add(d.product.nombre, **estilo_fuente)
+        else:
+            titulo = d.nombre_personalizado_titulo.upper() if d.nombre_personalizado_titulo else ""
+            cuerpo = d.nombre_personalizado.upper() if d.nombre_personalizado else "" 
+            if titulo:
+                descripcion_rich.add(titulo, bold=True, **estilo_fuente)
+                if cuerpo: descripcion_rich.add(" ", **estilo_fuente) 
+            if cuerpo:
+                descripcion_rich.add(cuerpo, **estilo_fuente)
+
+        unidad_final = "UND" 
+        if d.item_type == 'FABRICACION': unidad_final = "SRV"
+        elif d.item_type == 'GLB': unidad_final = "GLB"
+        elif d.product and hasattr(d.product, 'unidad_medida'): 
+            unidad_final = d.product.unidad_medida or "UND"
+        
+        # Agregamos la ubicación del producto para facilitar el picking en almacén
+        ubicacion_final = d.product.ubicacion if (d.product and hasattr(d.product, 'ubicacion')) else ""
+
+        lista_items.append({
+            'item': i,
+            'sku': sku_final,
+            'ubicacion': ubicacion_final, # Nueva variable para tu tabla del Word
+            'cant': d.cantidad,
+            'um': unidad_final,
+            'desc': d.product.nombre if (d.product and d.item_type == 'PRODUCTO') else f"{titulo} {cuerpo}".strip(), # Texto plano limpio para Almacén si prefieres
+            'desc_rich': descripcion_rich
+        })
+        i += 1
+
+    # 3. Contexto con los datos de las firmas de auditoría
+    context = {
+        'titulo_documento': titulo_doc,
+        'codigo_pedido': codigo_visual,
+        'mostrar_precios': mostrar_precios,
+        'fecha': orden.fecha.strftime("%d/%m/%Y"),
+        'cliente_nombre': orden.cliente.nombre,
+        'cliente_ruc': orden.cliente.documento,
+        'cliente_direccion_fiscal': orden.cliente.direccion,
+        'cliente_telefono': orden.cliente.telefono or "",
+        'contacto_atte': orden.atencion or "",
+        'orden_compra': orden.orden_compra or "",
+        'tipo_entrega': orden.tipo_entrega,
+        'lugar_entrega': orden.direccion_envio,
+        'plazo_entrega': texto_entrega,
+        'tbl_contents': lista_items,
+        'observacion': orden.observacion or "",
+        
+        # Corregido: Ahora usan exactamente las mismas llaves que tu Word espera
+        'vendedor_nombre': vendedor.nombre_completo,
+        'vendedor_usuario': vendedor.username,
+        
+        'almacenero_nombre': orden.almacenero_nombre or "VERIFICADO",
+        'fecha_almacen': orden.fecha_verificacion_almacen.strftime('%d/%m/%Y %H:%M') if orden.fecha_verificacion_almacen else "---",
+        
+        'gerente_nombre': orden.gerente_nombre or "APROBADO",
+        'fecha_gerencia': orden.fecha_aprobacion.strftime('%d/%m/%Y %H:%M') if orden.fecha_aprobacion else "---"
+    }
+    
+    doc.render(context)
+    
+    nombre_archivo_base = f"{codigo_visual}_{orden.cliente.nombre[:10]}_ALMACEN"
+    nombre_archivo_base = "".join([c for c in nombre_archivo_base if c.isalnum() or c in (' ', '.', '-', '_')]).strip()
+
+    # 4. Conversión temporal transparente a PDF usando LibreOffice
+    with tempfile.TemporaryDirectory() as tmpdir:
+        docx_path = os.path.join(tmpdir, f"{nombre_archivo_base}.docx")
+        pdf_path = os.path.join(tmpdir, f"{nombre_archivo_base}.pdf")
+        doc.save(docx_path)
+        
+        try:
+            comando = ['libreoffice', '--headless', '--convert-to', 'pdf', '--outdir', tmpdir, docx_path]
+            if os.name == 'nt':
+                ruta_windows = r"C:\Program Files\LibreOffice\program\soffice.exe"
+                if os.path.exists(ruta_windows): comando[0] = ruta_windows
+
+            subprocess.run(comando, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            
+            with open(pdf_path, 'rb') as f:
+                pdf_data = f.read()
+                
+            return send_file(
+                io.BytesIO(pdf_data),
+                as_attachment=True,
+                download_name=f"{nombre_archivo_base}.pdf",
+                mimetype='application/pdf'
+            )
+        except Exception as e:
+            print("Error en conversión de Almacén:", str(e))
+            output = io.BytesIO()
+            doc.save(output)
+            output.seek(0)
+            return send_file(output, as_attachment=True, download_name=f"{nombre_archivo_base}.docx", mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+        
 
 # --- EN APP.PY (Ruta corregida para actualizaciones parciales) ---
 
@@ -1604,6 +1818,7 @@ def actualizar_minimos_masivos():
 
 # --- 2. IMPORTACIÓN CON KARDEX (CORREGIDO) ---
 # --- FUNCIÓN IMPORTAR EXCEL (Actualizada con Stock Mínimo) ---
+# --- 2. IMPORTACIÓN CON KARDEX (ACTUALIZADA CON REGISTRO GLOBAL Y ESTADOS) ---
 @app.route('/producto/importar', methods=['POST'])
 def importar_excel():
     if session.get('role') not in ['admin', 'almacen']: return "No autorizado", 403
@@ -1633,7 +1848,7 @@ def importar_excel():
             actualizados = 0
             
             for index, row in df.iterrows():
-                sku = str(row.get('CÓDIGO', '')).strip()
+                sku = str(row.get('CÓDIGO', row.get('CODIGO', ''))).strip()
                 if sku.endswith('.0'): sku = sku[:-2]
                 if not sku or sku.lower() == 'nan': continue 
 
@@ -1643,6 +1858,11 @@ def importar_excel():
                 ubicacion = str(row.get('UBICACION', '')).strip()
                 if ubicacion.lower() == 'nan': ubicacion = ""
                 
+                # --- CAPTURAR EL ESTADO DEL EXCEL ---
+                estado_val = str(row.get('ESTADO', '')).strip().upper()
+                if estado_val.lower() == 'nan' or estado_val == 'OK': 
+                    estado_val = "" # Lo dejamos vacío si está sano o dice OK
+                
                 # Stock Actual
                 try:
                     val = row.get('CANT. ACT.', 0)
@@ -1650,7 +1870,7 @@ def importar_excel():
                     stock_val = int(float(val)) if pd.notnull(val) else 0
                 except: stock_val = 0
 
-                # NUEVO: Stock Mínimo (Por defecto 10 si no existe en Excel)
+                # Stock Mínimo
                 try:
                     min_val = int(float(row.get('STOCK MÍNIMO', 10)))
                 except:
@@ -1671,21 +1891,29 @@ def importar_excel():
 
                 prod = Product.query.filter_by(sku=sku).first()
                 
+                # --- AUDITORÍA INDIVIDUAL POR PRODUCTO ---
+                hora_actual = hora_peru()
+                usuario_actual = session.get('username', 'Sistema')
+
                 if prod:
                     # ACTUALIZAR
                     prod.stock_actual = stock_val
-                    prod.stock_minimo = min_val # Actualizar mínimo
+                    prod.stock_minimo = min_val 
                     prod.nombre = nombre
                     prod.categoria = familia
                     prod.calidad = calidad
                     prod.ubicacion = ubicacion
+                    prod.estado = estado_val
+                    prod.fecha_actualizacion = hora_actual
+                    prod.actualizado_por = usuario_actual
                     actualizados += 1
                 else:
                     # CREAR
                     prod = Product(
                         sku=sku, nombre=nombre, categoria=familia, calidad=calidad,
-                        ubicacion=ubicacion, stock_actual=stock_val, stock_minimo=min_val, # Guardar mínimo
-                        precio_unidad=0.0, precio_caja=0.0, precio_docena=0.0, costo_referencial=0.0
+                        ubicacion=ubicacion, stock_actual=stock_val, stock_minimo=min_val,
+                        precio_unidad=0.0, precio_caja=0.0, precio_docena=0.0, costo_referencial=0.0,
+                        estado=estado_val, fecha_actualizacion=hora_actual, actualizado_por=usuario_actual
                     )
                     db.session.add(prod)
                     db.session.flush()
@@ -1699,6 +1927,22 @@ def importar_excel():
                     nuevos += 1
             
             db.session.commit()
+            
+            # --- NUEVO: REGISTRO MAPEO GLOBAL DE LA IMPORTACIÓN MASIVA ---
+            config_import = SystemConfig.query.get('ultima_importacion')
+            hora_global = hora_peru()
+            usuario_global = session.get('username', 'Sistema')
+            
+            if not config_import:
+                config_import = SystemConfig(key='ultima_importacion', value='EXITOSO', updated_at=hora_global, updated_by=usuario_global)
+                db.session.add(config_import)
+            else:
+                config_import.updated_at = hora_global
+                config_import.updated_by = usuario_global
+                
+            db.session.commit()
+            # -------------------------------------------------------------
+            
             flash(f'Proceso completado: {nuevos} nuevos, {actualizados} actualizados.')
             
         except Exception as e:
@@ -1722,6 +1966,8 @@ def nuevo_producto():
         nombre = request.form['nombre'].strip()
         calidad = request.form['calidad'].strip()
         ubicacion = request.form.get('ubicacion', '').strip()
+        estado_val = request.form.get('estado', '').strip().upper()
+        if estado_val == 'OK': estado_val = ""
         
         try:
             stock = int(request.form['stock'])
@@ -1790,6 +2036,8 @@ def editar_producto():
         nombre = request.form['nombre'].strip()
         nueva_familia = request.form.get('categoria', '').strip()
         nueva_calidad = request.form.get('calidad', '').strip()
+        estado_val = request.form.get('estado', '').strip().upper()
+        if estado_val == 'OK': estado_val = ""
         
         if not nombre:
             flash('⛔ Error: La descripción no puede estar vacía.')
@@ -1807,6 +2055,7 @@ def editar_producto():
         prod.ubicacion = request.form.get('ubicacion', '').strip()
         prod.categoria = nueva_familia
         prod.calidad = nueva_calidad
+        prod.estado = estado_val
         
         registrar_log(f"Editó producto {prod.sku}", "bi-pencil-fill", "text-warning")
         
@@ -2713,6 +2962,7 @@ def obtener_detalle_venta(order_id):
             items_data.append({
                 'sku': sku_mostrado,
                 'descripcion': nombre_mostrado,
+                'estado_producto': d.product.estado if d.product else '',
                 'cantidad': d.cantidad,
                 'precio': d.precio_aplicado,
                 'subtotal': d.subtotal,
@@ -2816,17 +3066,19 @@ def picking_almacen():
     if session.get('role') not in ['admin', 'almacen']: 
         return "Acceso denegado", 403
     
-    # 1. Cotizaciones que el vendedor mandó a revisar físicamente
+    # 1. Por verificar físicamente
     ordenes_por_verificar = Order.query.filter_by(estado='Por Verificar').order_by(Order.fecha.asc()).all()
     
-    # 2. Cotizaciones que Gerencia ya aprobó y deben descontarse del sistema
+    # 2. Por Despachar (Aprobadas por gerencia, listas para restar del kardex)
     ordenes_pendientes = Order.query.filter_by(estado='Aprobado').order_by(Order.fecha.asc()).all()
+    
+    # 3. Historial de salidas (Ya descontadas) - Traemos las últimas 30 para no saturar
+    ordenes_finalizadas = Order.query.filter(Order.estado.in_(['Entregado', 'Despachado'])).order_by(Order.fecha.desc()).limit(30).all()
     
     return render_template('picking_almacen.html', 
                            ordenes_verificar=ordenes_por_verificar,
-                           ordenes=ordenes_pendientes)
-
-# NUEVA RUTA PARA QUE ALMACÉN APRUEBE EL STOCK FÍSICO
+                           ordenes=ordenes_pendientes,
+                           ordenes_finalizadas=ordenes_finalizadas) # <-- Pasamos la nueva variable
 # NUEVA RUTA PARA QUE ALMACÉN APRUEBE EL STOCK FÍSICO
 @app.route('/api/confirmar_stock_fisico/<int:order_id>', methods=['POST'])
 def confirmar_stock_fisico(order_id):

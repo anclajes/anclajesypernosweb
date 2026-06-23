@@ -14,7 +14,7 @@
                         <i class="bi bi-currency-dollar"></i>
                     </div>
                 </div>
-                <h3 class="fw-bold mb-1">S/ {{ "%.2f"|format(ventas_mes) }}</h3>
+                <h2 class="display-6 fw-bold">S/ {{ "{:,.2f}".format(ventas_mes) }}</h2>
                 <div class="small text-muted">
                     <span class="text-success fw-bold"><i class="bi bi-arrow-up"></i> Hoy:</span> S/ {{ "%.2f"|format(ventas_hoy) }}
                 </div>
@@ -46,7 +46,7 @@
                         <i class="bi bi-graph-up"></i>
                     </div>
                 </div>
-                <h3 class="fw-bold mb-1">S/ {{ "%.2f"|format(prediccion) }}</h3>
+                <h2 class="display-6 fw-bold">S/ {{ "{:,.2f}".format(prediccion) }}</h2>
                 <div class="small text-muted">Cierre estimado del mes</div>
             </div>
         </div>
@@ -59,7 +59,7 @@
                     <div class="text-danger small fw-bold text-uppercase">Riesgo Stock</div>
                     <i class="bi bi-exclamation-circle text-danger"></i>
                 </div>
-                <h3 class="fw-bold mb-1">{{ total_alertas }}</h3>
+                <h2 class="display-6 fw-bold">{{ "{:,d}".format(total_alertas) }}</h2>
                 <div class="small text-muted">Productos requieren atención</div>
             </div>
         </div>

@@ -45,6 +45,10 @@ class Product(db.Model):
     precio_caja = db.Column(db.Float, default=0.0)
     costo_referencial = db.Column(db.Float, default=0.0)
 
+    estado = db.Column(db.String(100), nullable=True) # Para: oxidado, abierto, etc.
+    fecha_actualizacion = db.Column(db.DateTime, nullable=True) # Cuándo se subió
+    actualizado_por = db.Column(db.String(100), nullable=True) # Quién subió el Excel
+
 # --- 4. KARDEX ---
 class ProductMovement(db.Model):
     id = db.Column(db.Integer, primary_key=True)

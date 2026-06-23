@@ -3,6 +3,19 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h2>📦 Gestión de Inventario</h2>
+    <!-- CARTEL DE ÚLTIMA ACTUALIZACIÓN -->
+{% if info_importacion %}
+<div class="alert alert-info py-2 shadow-sm d-flex align-items-center mb-3">
+    <i class="bi bi-info-circle-fill fs-5 me-3 text-info"></i>
+    <div>
+        <h6 class="mb-0 fw-bold text-dark">Última actualización masiva de inventario</h6>
+        <small class="text-muted">
+            Sincronizado el <strong>{{ info_importacion.updated_at.strftime('%d/%m/%Y a las %H:%M') }}</strong> 
+            por <strong>{{ info_importacion.updated_by }}</strong>
+        </small>
+    </div>
+</div>
+{% endif %}
     <div class="d-flex gap-2">
         
         {% if session.get('role') in ['admin', 'almacen', 'administracion'] %}
@@ -101,7 +114,16 @@
                 {% for p in productos %}
                 <tr>
                     <td class="fw-bold text-primary ps-3">{{ p.sku }}</td>
-                    <td class="text-wrap" style="min-width: 250px;">{{ p.nombre }}</td>
+                    <td class="text-wrap" style="min-width: 250px;">
+                        {{ p.nombre }}
+                        <!-- Etiqueta de Estado -->
+                        {% if p.estado %}
+                            <br>
+                            <span class="badge bg-danger mt-1 text-white shadow-sm" style="font-size: 0.7rem;">
+                                <i class="bi bi-exclamation-triangle-fill"></i> {{ p.estado }}
+                            </span>
+                        {% endif %}
+                    </td>
                     <td><span class="badge bg-light text-dark border">{{ p.categoria }}</span></td>
                     <td class="text-nowrap text-muted">{% if p.ubicacion %}<i class="bi bi-geo-alt-fill text-danger small"></i> {{ p.ubicacion }}{% else %}-{% endif %}</td>
                     <td><span class="badge bg-secondary bg-opacity-25 text-dark">{{ p.calidad }}</span></td>
@@ -128,7 +150,7 @@
                         {% if session.get('role') == 'admin' %}
                             <div class="btn-group">
                                 <button class="btn btn-sm btn-outline-primary py-0" 
-                                        onclick="abrirEditar('{{p.id}}', '{{p.nombre}}', '{{p.stock_actual}}', '{{p.precio_unidad}}', '{{p.precio_caja}}', '{{p.ubicacion}}', '{{p.categoria}}', '{{p.calidad}}', '{{p.stock_minimo}}')">
+                                        onclick="abrirEditar('{{p.id}}', '{{p.nombre|replace("'", "\\'")|replace('"', '&quot;')}}', '{{p.stock_actual}}', '{{p.precio_unidad}}', '{{p.precio_caja}}', '{{p.ubicacion|default('', true)}}', '{{p.categoria}}', '{{p.calidad|default('', true)}}', '{{p.stock_minimo}}', '{{p.estado|default('', true)}}')">
                                     <i class="bi bi-pencil-fill"></i>
                                 </button>
                                 <a href="{{ url_for('eliminar_producto', prod_id=p.id) }}" 
@@ -260,6 +282,12 @@
                                    list="listCalidades" placeholder="Ej: ZINCADO" oninput="this.value = this.value.toUpperCase()">
                             <datalist id="listCalidades">{% for cal in lista_calidades %} <option value="{{ cal }}"> {% endfor %}</datalist>
                         </div>
+                        <div class="col-6">
+                            <label class="form-label small fw-bold">Estado Físico</label>
+                            <input type="text" name="estado" class="form-control form-control-sm text-uppercase border-warning" 
+                                list="listEstados" placeholder="Ej: OXIDADO (O dejar vacío)">
+                            <datalist id="listEstados">{% for est in lista_estados %} <option value="{{ est }}"> {% endfor %}</datalist>
+                        </div>
                         <div class="col-12">
                             <label class="form-label small fw-bold text-muted">Ubicación</label>
                             <input type="text" name="ubicacion" class="form-control text-uppercase" placeholder="Ej: PASILLO 4" oninput="this.value = this.value.toUpperCase()">
@@ -317,6 +345,12 @@
                             <input type="text" name="calidad" id="edit_calidad" class="form-control form-control-sm text-uppercase" list="listCalidadesEdit" required oninput="this.value = this.value.toUpperCase()">
                             <datalist id="listCalidadesEdit">{% for cal in lista_calidades %} <option value="{{ cal }}"> {% endfor %}</datalist>
                         </div>
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label small fw-bold text-warning">Estado Físico</label>
+                        <input type="text" name="estado" id="edit_estado" class="form-control form-control-sm text-uppercase border-warning" 
+                            list="listEstadosEdit" placeholder="Dejar vacío si está OK">
+                        <datalist id="listEstadosEdit">{% for est in lista_estados %} <option value="{{ est }}"> {% endfor %}</datalist>
                     </div>
                     <div class="mb-2">
                         <label class="form-label small fw-bold">Ubicación</label>
@@ -555,7 +589,7 @@
 
     
 
-    function abrirEditar(id, nombre, stock, punidad, pcaja, ubicacion, categoria, calidad, stockMin) {
+    function abrirEditar(id, nombre, stock, punidad, pcaja, ubicacion, categoria, calidad, stockMin, estado) {
         document.getElementById('edit_id').value = id;
         document.getElementById('edit_nombre').value = nombre;
         document.getElementById('edit_stock').value = stock;
@@ -563,6 +597,7 @@
         document.getElementById('edit_punidad').value = punidad;
         document.getElementById('edit_pcaja').value = pcaja;
         document.getElementById('edit_ubicacion').value = (ubicacion && ubicacion !== 'None') ? ubicacion : '';
+        document.getElementById('edit_estado').value = estado;
         document.getElementById('edit_categoria').value = categoria;
         document.getElementById('edit_calidad').value = (calidad && calidad !== 'None') ? calidad : '';
         document.getElementById('edit_url_origen').value = window.location.href;
@@ -576,6 +611,7 @@
             pcaja: parseFloat(pcaja),
             stock_min: stockMin
         };
+        originalData.estado = estado;
 
         new bootstrap.Modal(document.getElementById('modalEditar')).show();
     }
