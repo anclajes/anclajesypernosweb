@@ -19,38 +19,31 @@
     .empresa-datos { font-size: 7.5pt; text-align: center; line-height: 1; }
     
     .ruc-table { width: 100%; border: 1px solid #000; text-align: center; border-collapse: collapse; }
-    .ruc-table td { padding: 3px; font-weight: bold; border: none !important; }
+    .ruc-table td { padding: 2px; font-weight: bold; border: none !important; }
     .ruc-table .ruc-title { font-size: 11pt; border-bottom: 1px solid #000 !important; }
     .ruc-table .coti-title { font-size: 14pt; background-color: #e6e6e6; border-bottom: 1px solid #000 !important; padding: 4px; }
     .ruc-table .num-title { font-size: 11pt; }
 
-    /* --- 2. CAJAS EXTERIORES --- */
-    .caja-exterior { 
-        border: 1px solid #000; 
-        padding: 2px 4px; 
-        width: 100%;
-    }
-    .caja-exterior-nopad { 
-        border: 1px solid #000; 
-        width: 100%;
-    }
+    /* --- 2. CAJAS EXTERIORES (Limpias sin líneas interiores) --- */
+    .box-outer { border: 1px solid #000; width: 100%; border-collapse: collapse; }
+    .box-outer td.outer-td-pad { padding: 3px 4px; border: none !important; }
+    .box-outer td.outer-td-nopad { padding: 0px; border: none !important; }
     
-    .tbl-sin-lineas { width: 100%; border-collapse: collapse; }
-    .tbl-sin-lineas td { padding: 1px 2px; font-size: 8pt; line-height: 1; border: none !important; }
+    .tbl-inner { width: 100%; border-collapse: collapse; }
+    .tbl-inner td { padding: 1.5px 2px; font-size: 8pt; line-height: 1.1; border: none !important; }
 
+    /* Anchos Cliente */
     .lbl { font-weight: bold; width: 65pt; }
     .col { width: 10pt; text-align: center; font-weight: bold; }
     .val1 { width: 235pt; }
     .lbl2 { font-weight: bold; width: 55pt; }
     .val2 { width: 160pt; }
 
-    .c-lbl { font-weight: bold; width: 110pt; }
-    .c-val { width: 410pt; }
-
     /* --- 3. TABLA DE PRODUCTOS --- */
     .tbl-items { width: 100%; border-collapse: collapse; }
     .tbl-items th {
         background-color: #e6e6e6;
+        border-top: 1px solid #000 !important;
         border-bottom: 1px solid #000 !important;
         font-size: 7.5pt;
         font-weight: bold;
@@ -60,33 +53,46 @@
     .tbl-items td {
         font-size: 8pt;
         padding: 3px 2px;
-        border: none !important; 
+        border: none !important; /* MATA TODA LÍNEA INTERIOR */
     }
 
-    /* --- 4. TABLA DE APROBACIONES --- */
+    /* Anchos estrictos (Suman 520pt) para que nada se monte encima de nada */
+    .w-itm { width: 30pt; text-align: center; }
+    .w-cod { width: 80pt; text-align: center; }
+    .w-des { width: 250pt; text-align: left; }
+    .w-um  { width: 40pt; text-align: center; }
+    .w-can { width: 45pt; text-align: center; }
+    .w-ubi { width: 75pt; text-align: center; }
+
+    /* --- 4. CONDICIONES --- */
+    .c-lbl { font-weight: bold; width: 110pt; }
+    .c-val { width: 410pt; }
+
+    /* --- 5. TABLA FIRMAS --- */
     .tbl-firmas { width: 100%; border-collapse: collapse; text-align: center; }
     .tbl-firmas th {
         background-color: #e6e6e6;
-        border-bottom: 1px solid #000 !important;
         font-size: 7.5pt;
         font-weight: bold;
         padding: 4px;
+        border: none !important;
     }
     .tbl-firmas td {
-        padding: 5px; 
+        padding: 4px 5px; 
         font-size: 8pt;
         border: none !important; 
     }
+    .w-firma { width: 173pt; }
 </style>
 </head>
 <body>
 
-    <table border="0" cellpadding="0" cellspacing="0">
+    <table border="0" cellpadding="0" cellspacing="0" style="width: 100%;">
         <tr>
-            <td style="width: 20%; text-align: left; vertical-align: middle;">
+            <td style="width: 80pt; text-align: left; vertical-align: middle;">
                 <img src="{{ logo_path }}" style="width: 75px; height: auto;">
             </td>
-            <td style="width: 50%; vertical-align: middle;">
+            <td style="width: 280pt; vertical-align: middle;">
                 <div class="empresa-nombre">ANCLAJES Y PERNOS S.A.C.</div>
                 <div class="empresa-datos">
                     AV. SANTA ANA NRO 386 OTR. CHACRA CERRO<br>
@@ -95,7 +101,7 @@
                     Email: Lcachay@importbolts.com &ndash; vtineo@importbolts.com
                 </div>
             </td>
-            <td style="width: 30%; vertical-align: middle;">
+            <td style="width: 160pt; vertical-align: middle;">
                 <table class="ruc-table" border="0" cellpadding="0" cellspacing="0">
                     <tr><td class="ruc-title">R.U.C. 20601850509</td></tr>
                     <tr><td class="coti-title">{{ titulo_documento }}</td></tr>
@@ -117,87 +123,99 @@
         {% endif %}
     </div>
 
-    <div class="caja-exterior" style="margin-top: 2px; margin-bottom: 6px;">
-        <table class="tbl-sin-lineas" border="0" cellpadding="0" cellspacing="0">
+    <div class="box-outer" style="margin-top: 2px; margin-bottom: 6px;">
+        <table class="tbl-inner" border="0" cellpadding="0" cellspacing="0">
             <tr>
-                <td class="lbl">FECHA</td><td class="col">:</td><td class="val1">{{ fecha }}</td>
-                <td class="lbl2">RUC</td><td class="col">:</td><td class="val2">{{ cliente_ruc }}</td>
-            </tr>
-            <tr>
-                <td class="lbl">SE&Ntilde;OR</td><td class="col">:</td><td class="val1">{{ cliente_nombre }}</td>
-                <td class="lbl2">O/C</td><td class="col">:</td><td class="val2">{{ orden_compra }}</td>
-            </tr>
-            <tr>
-                <td class="lbl">DIRECCI&Oacute;N</td><td class="col">:</td><td class="val1">{{ cliente_direccion_fiscal }}</td>
-                <td class="lbl2">CEL VEND.</td><td class="col">:</td><td class="val2">{{ vendedor_celular }}</td>
-            </tr>
-            <tr>
-                <td class="lbl">ATTE</td><td class="col">:</td><td class="val1">{{ contacto_atte }}</td>
-                <td class="lbl2"></td><td class="col"></td><td class="val2"></td>
-            </tr>
-            <tr>
-                <td class="lbl">TEL&Eacute;FONO</td><td class="col">:</td><td class="val1">{{ cliente_telefono }}</td>
-                <td class="lbl2"></td><td class="col"></td><td class="val2"></td>
-            </tr>
-            <tr>
-                <td class="lbl">VENDEDOR</td><td class="col">:</td><td class="val1">{{ vendedor_nombre }}</td>
-                <td class="lbl2"></td><td class="col"></td><td class="val2"></td>
+                <td class="outer-td-pad">
+                    <table class="tbl-inner" border="0">
+                        <tr>
+                            <td class="lbl">FECHA</td><td class="col">:</td><td class="val1">{{ fecha }}</td>
+                            <td class="lbl2">RUC</td><td class="col">:</td><td class="val2">{{ cliente_ruc }}</td>
+                        </tr>
+                        <tr>
+                            <td class="lbl">SE&Ntilde;OR</td><td class="col">:</td><td class="val1">{{ cliente_nombre }}</td>
+                            <td class="lbl2">O/C</td><td class="col">:</td><td class="val2">{{ orden_compra }}</td>
+                        </tr>
+                        <tr>
+                            <td class="lbl">DIRECCI&Oacute;N</td><td class="col">:</td><td class="val1">{{ cliente_direccion_fiscal }}</td>
+                            <td class="lbl2">CEL VEND.</td><td class="col">:</td><td class="val2">{{ vendedor_celular }}</td>
+                        </tr>
+                        <tr>
+                            <td class="lbl">ATTE</td><td class="col">:</td><td class="val1">{{ contacto_atte }}</td>
+                            <td class="lbl2"></td><td class="col"></td><td class="val2"></td>
+                        </tr>
+                        <tr>
+                            <td class="lbl">TEL&Eacute;FONO</td><td class="col">:</td><td class="val1">{{ cliente_telefono }}</td>
+                            <td class="lbl2"></td><td class="col"></td><td class="val2"></td>
+                        </tr>
+                        <tr>
+                            <td class="lbl">VENDEDOR</td><td class="col">:</td><td class="val1">{{ vendedor_nombre }}</td>
+                            <td class="lbl2"></td><td class="col"></td><td class="val2"></td>
+                        </tr>
+                    </table>
+                </td>
             </tr>
         </table>
     </div>
 
     <div style="font-size: 8pt; margin-bottom: 3px;">Estimados se&ntilde;ores:<br><br>Por medio de la presente nos es grato cotizarles lo siguiente:</div>
 
-    <div class="caja-exterior-nopad">
+    <div class="box-outer">
         <table class="tbl-items" border="0" cellpadding="0" cellspacing="0">
             <thead>
                 <tr>
-                    <th style="width: 6%;">ITM</th>
-                    <th style="width: 15%;">CODIGO</th>
-                    <th style="width: 51%; text-align: left;">DESCRIPCION</th>
-                    <th style="width: 8%;">U.M</th>
-                    <th style="width: 8%;">CANT.</th>
-                    <th style="width: 12%; text-align: center;">UBICACION</th>
+                    <th class="w-itm">ITM</th>
+                    <th class="w-cod">CODIGO</th>
+                    <th class="w-des">DESCRIPCION</th>
+                    <th class="w-um">U.M</th>
+                    <th class="w-can">CANT.</th>
+                    <th class="w-ubi">UBICACION</th>
                 </tr>
             </thead>
             <tbody>
                 {% for i in tbl_contents %}
                 <tr>
-                    <td style="text-align: center;">{{ i.item }}</td>
-                    <td style="text-align: center;">{{ i.sku }}</td>
-                    <td>{{ i.desc | safe }}</td>
-                    <td style="text-align: center;">{{ i.um }}</td>
-                    <td style="text-align: center;">{{ i.cant }}</td>
-                    <td style="text-align: center;">{{ i.ubicacion }}</td>
+                    <td class="w-itm">{{ i.item }}</td>
+                    <td class="w-cod">{{ i.sku }}</td>
+                    <td class="w-des">{{ i.desc | safe }}</td>
+                    <td class="w-um">{{ i.um }}</td>
+                    <td class="w-can">{{ i.cant }}</td>
+                    <td class="w-ubi">{{ i.ubicacion }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
 
-    <div class="caja-exterior" style="margin-top: 10px;">
-        <table class="tbl-sin-lineas" border="0" cellpadding="0" cellspacing="0">
-            <tr><td class="c-lbl">VALIDEZ</td><td class="c-col">:</td><td class="c-val">{{ validez }}</td></tr>
-            <tr><td class="c-lbl">PLAZO DE ENTREGA</td><td class="c-col">:</td><td class="c-val">{{ plazo_entrega }}</td></tr>
-            <tr><td class="c-lbl">LUGAR DE ENTREGA</td><td class="c-col">:</td><td class="c-val">{{ lugar_entrega }}</td></tr>
-            <tr><td class="c-lbl">OBSERVACION</td><td class="c-col">:</td><td class="c-val">{{ observacion }}</td></tr>
+    <div class="box-outer" style="margin-top: 10px;">
+        <table class="tbl-inner" border="0" cellpadding="0" cellspacing="0">
+            <tr>
+                <td class="outer-td-pad">
+                    <table class="tbl-inner" border="0">
+                        <tr><td class="c-lbl">VALIDEZ</td><td class="c-col">:</td><td class="c-val">{{ validez }}</td></tr>
+                        <tr><td class="c-lbl">PLAZO DE ENTREGA</td><td class="c-col">:</td><td class="c-val">{{ plazo_entrega }}</td></tr>
+                        <tr><td class="c-lbl">LUGAR DE ENTREGA</td><td class="c-col">:</td><td class="c-val">{{ lugar_entrega }}</td></tr>
+                        <tr><td class="c-lbl">OBSERVACION</td><td class="c-col">:</td><td class="c-val">{{ observacion }}</td></tr>
+                    </table>
+                </td>
+            </tr>
         </table>
     </div>
 
-    <div class="caja-exterior-nopad" style="margin-top: 40px;">
+    <div class="box-outer" style="margin-top: 40px;">
         <table class="tbl-firmas" border="0" cellpadding="0" cellspacing="0">
             <thead>
                 <tr>
-                    <th style="width: 33%;">EMITIDO POR</th>
-                    <th style="width: 34%; border-left: 1px solid #000 !important; border-right: 1px solid #000 !important;">VERIFICADO FÍSICO</th>
-                    <th style="width: 33%;">APROBADO POR</th>
+                    <th class="w-firma">EMITIDO POR</th>
+                    <th class="w-firma">VERIFICADO FÍSICO</th>
+                    <th class="w-firma">APROBADO POR</th>
                 </tr>
             </thead>
             <tbody>
                 <tr>
-                    <td>{{ vendedor_nombre }}</td>
-                    <td style="border-left: 1px solid #000 !important; border-right: 1px solid #000 !important;">{{ fecha_almacen }}<br>{{ almacenero_nombre }}</td>
-                    <td>{{ fecha_gerencia }}<br>{{ gerente_nombre }}</td>
+                    <td class="w-firma">{{ vendedor_nombre }}</td>
+                    <td class="w-firma">{{ fecha_almacen }}<br>{{ almacenero_nombre }}</td>
+                    <td class="w-firma">{{ fecha_gerencia }}<br>{{ gerente_nombre }}</td>
                 </tr>
             </tbody>
         </table>

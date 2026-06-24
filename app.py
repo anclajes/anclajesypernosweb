@@ -2875,7 +2875,8 @@ def editar_venta(order_id):
             'precio': d.precio_aplicado,
             'precioBase': d.precio_aplicado,
             'subtotal': d.subtotal,
-            'um': 'UND' # Valor por defecto
+            'um': 'UND', # Valor por defecto
+            'estado_producto': d.product.estado if (d.product and d.product.estado) else ''
         }
 
         # Datos específicos por tipo
