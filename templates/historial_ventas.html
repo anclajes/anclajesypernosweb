@@ -189,7 +189,7 @@
                                 <button class="btn btn-light border shadow-sm" onclick="verDetalleCompleto('{{o.id}}')" title="Ver Detalle / Gestionar">
                                     <i class="bi bi-eye-fill text-primary"></i>
                                 </button>
-                                <a href="{{ url_for('descargar_cotizacion', order_id=o.id) }}" class="btn btn-light border text-danger shadow-sm" title="Descargar PDF">
+                                <a href="/descargar_cotizacion_v2/{{ o.id }}" class="btn btn-light border text-danger shadow-sm" title="Descargar PDF" target="_blank">
                                     <i class="bi bi-file-pdf-fill"></i> PDF
                                 </a>
                             </div>

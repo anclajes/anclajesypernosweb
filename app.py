@@ -1563,8 +1563,8 @@ def descargar_cotizacion_v2(order_id):
         total_letras = "---"
  
     # --- C. CONTEXTO PARA LA PLANTILLA HTML ---
-    logo_path = os.path.join(app.root_path, 'static', 'img', 'logo.png')
-    bancos_path = os.path.join(app.root_path, 'static', 'img', 'bancos.png')
+    logo_path = os.path.join(app.root_path, 'static', 'img', 'logo.png').replace('\\', '/')
+    bancos_path = os.path.join(app.root_path, 'static', 'img', 'bancos.png').replace('\\', '/')
  
     context = {
         'titulo_documento': titulo_doc,
@@ -1636,33 +1636,18 @@ def descargar_nota_pedido(order_id):
     if session.get('role') not in ['admin', 'almacen', 'administracion']: 
         return "Acceso denegado", 403
         
-    # 1. Obtener datos básicos
     orden = Order.query.get_or_404(order_id)
     vendedor = orden.vendedor
     
-    # Configuración estricta para Almacén
-    template_name = "plantilla_orden_pedido.docx"
     titulo_doc = "NOTA DE PEDIDO (ALMACÉN)"
     codigo_visual = f"NP-{orden.id:05d}"
-    mostrar_precios = False  # Opcional si usas la condicional en Word
-
-    doc = DocxTemplate(template_name)
-
-    # 2. Procesamiento de Datos (Idéntico a tu lógica original)
-    cargo_mostrar = vendedor.cargo_formal if vendedor.cargo_formal else "Asesor Comercial"
-    email_texto = vendedor.email_empresa if vendedor.email_empresa else "ventas@importbolts.com"
-    celular_texto = vendedor.celular if vendedor.celular else ""
-
-    subtotal_bruto = orden.subtotal + orden.descuento_total
+    mostrar_precios = False  # Almacén no necesita ver precios
 
     texto_entrega = "Inmediata / A coordinar"
     if orden.fecha_entrega:
         texto_entrega = orden.fecha_entrega.strftime("%d/%m/%Y")
-    
-    simbolo = "S/" if orden.moneda == 'PEN' else "$"
-    nombre_moneda = "SOLES" if orden.moneda == 'PEN' else "DOLARES AMERICANOS"
 
-    # Procesamiento de Items idéntico
+    # Procesamiento de Items (Formato HTML limpio para xhtml2pdf)
     lista_items = []
     i = 1
     for d in orden.details:
@@ -1671,12 +1656,9 @@ def descargar_nota_pedido(order_id):
             sku_final = d.product.sku
         elif d.item_type == 'FABRICACION':
             mapa_skus = {
-                'SERVICIO DE CORTE': 'SRV-CORT',
-                'SERVICIO DE SOLDADURA': 'SRV-SOLD',
-                'SERVICIO DE GALVANIZADO': 'SRV-GALV',
-                'SERVICIO DE ZINCADO': 'SRV-ZINC',
-                'SERVICIO DE ROSCADO': 'SRV-ROSC',
-                'SERVICIO DE TROPICALIZADO': 'SRV-TROP',
+                'SERVICIO DE CORTE': 'SRV-CORT', 'SERVICIO DE SOLDADURA': 'SRV-SOLD',
+                'SERVICIO DE GALVANIZADO': 'SRV-GALV', 'SERVICIO DE ZINCADO': 'SRV-ZINC',
+                'SERVICIO DE ROSCADO': 'SRV-ROSC', 'SERVICIO DE TROPICALIZADO': 'SRV-TROP',
                 'SERVICIO GENERAL': 'SRV-GEN'
             }
             titulo_limpio = d.nombre_personalizado_titulo.upper() if d.nombre_personalizado_titulo else ""
@@ -1687,19 +1669,16 @@ def descargar_nota_pedido(order_id):
         elif d.item_type == 'GLB':
             sku_final = "GLB-001" 
 
-        descripcion_rich = RichText()
-        estilo_fuente = {'font': 'Calibri', 'size': 18}
-
+        # Construir descripción HTML (Reemplazo del RichText viejo)
         if d.product and d.item_type == 'PRODUCTO':
-            descripcion_rich.add(d.product.nombre, **estilo_fuente)
+            descripcion_html = d.product.nombre
         else:
             titulo = d.nombre_personalizado_titulo.upper() if d.nombre_personalizado_titulo else ""
-            cuerpo = d.nombre_personalizado.upper() if d.nombre_personalizado else "" 
-            if titulo:
-                descripcion_rich.add(titulo, bold=True, **estilo_fuente)
-                if cuerpo: descripcion_rich.add(" ", **estilo_fuente) 
-            if cuerpo:
-                descripcion_rich.add(cuerpo, **estilo_fuente)
+            cuerpo = d.nombre_personalizado.upper() if d.nombre_personalizado else ""
+            partes = []
+            if titulo: partes.append(f"<b>{titulo}</b>")
+            if cuerpo: partes.append(cuerpo)
+            descripcion_html = " ".join(partes)
 
         unidad_final = "UND" 
         if d.item_type == 'FABRICACION': unidad_final = "SRV"
@@ -1707,23 +1686,25 @@ def descargar_nota_pedido(order_id):
         elif d.product and hasattr(d.product, 'unidad_medida'): 
             unidad_final = d.product.unidad_medida or "UND"
         
-        # Agregamos la ubicación del producto para facilitar el picking en almacén
         ubicacion_final = d.product.ubicacion if (d.product and hasattr(d.product, 'ubicacion')) else ""
 
         lista_items.append({
             'item': i,
             'sku': sku_final,
-            'ubicacion': ubicacion_final, # Nueva variable para tu tabla del Word
+            'ubicacion': ubicacion_final,
             'cant': d.cantidad,
             'um': unidad_final,
-            'desc': d.product.nombre if (d.product and d.item_type == 'PRODUCTO') else f"{titulo} {cuerpo}".strip(), # Texto plano limpio para Almacén si prefieres
-            'desc_rich': descripcion_rich
+            'desc': descripcion_html
         })
         i += 1
 
-    # 3. Contexto con los datos de las firmas de auditoría
+    # Rutas absolutas para imágenes
+    logo_path = os.path.join(app.root_path, 'static', 'img', 'logo.png').replace('\\', '/')
+
+    # Contexto para Jinja2
     context = {
         'titulo_documento': titulo_doc,
+        'estado_orden': orden.estado,
         'codigo_pedido': codigo_visual,
         'mostrar_precios': mostrar_precios,
         'fecha': orden.fecha.strftime("%d/%m/%Y"),
@@ -1737,53 +1718,39 @@ def descargar_nota_pedido(order_id):
         'lugar_entrega': orden.direccion_envio,
         'plazo_entrega': texto_entrega,
         'tbl_contents': lista_items,
-        'observacion': orden.observacion or "",
-        
-        # Corregido: Ahora usan exactamente las mismas llaves que tu Word espera
+        'observacion': orden.observacion or "Ninguna",
         'vendedor_nombre': vendedor.nombre_completo,
         'vendedor_usuario': vendedor.username,
-        
-        'almacenero_nombre': orden.almacenero_nombre or "VERIFICADO",
+        'vendedor_celular': vendedor.celular or "",
+        'vendedor_cargo': vendedor.cargo_formal or "Asesor Comercial",
+        'vendedor_email': vendedor.email_empresa or "ventas@importbolts.com",
+        'almacenero_nombre': orden.almacenero_nombre or "Pendiente",
         'fecha_almacen': orden.fecha_verificacion_almacen.strftime('%d/%m/%Y %H:%M') if orden.fecha_verificacion_almacen else "---",
-        
-        'gerente_nombre': orden.gerente_nombre or "APROBADO",
-        'fecha_gerencia': orden.fecha_aprobacion.strftime('%d/%m/%Y %H:%M') if orden.fecha_aprobacion else "---"
+        'gerente_nombre': orden.gerente_nombre or "Pendiente",
+        'fecha_gerencia': orden.fecha_aprobacion.strftime('%d/%m/%Y %H:%M') if orden.fecha_aprobacion else "---",
+        'logo_path': logo_path
     }
     
-    doc.render(context)
+    html_renderizado = render_template('pdf_orden_pedido.html', **context)
+
+    # Generar PDF en memoria
+    pdf_buffer = io.BytesIO()
+    resultado = pisa.CreatePDF(src=html_renderizado, dest=pdf_buffer, encoding='utf-8')
+
+    if resultado.err:
+        return f"<h2>Error generando PDF de Almacén</h2><pre>{html_renderizado}</pre>", 500
+
+    pdf_buffer.seek(0)
     
     nombre_archivo_base = f"{codigo_visual}_{orden.cliente.nombre[:10]}_ALMACEN"
     nombre_archivo_base = "".join([c for c in nombre_archivo_base if c.isalnum() or c in (' ', '.', '-', '_')]).strip()
 
-    # 4. Conversión temporal transparente a PDF usando LibreOffice
-    with tempfile.TemporaryDirectory() as tmpdir:
-        docx_path = os.path.join(tmpdir, f"{nombre_archivo_base}.docx")
-        pdf_path = os.path.join(tmpdir, f"{nombre_archivo_base}.pdf")
-        doc.save(docx_path)
-        
-        try:
-            comando = ['libreoffice', '--headless', '--convert-to', 'pdf', '--outdir', tmpdir, docx_path]
-            if os.name == 'nt':
-                ruta_windows = r"C:\Program Files\LibreOffice\program\soffice.exe"
-                if os.path.exists(ruta_windows): comando[0] = ruta_windows
-
-            subprocess.run(comando, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            
-            with open(pdf_path, 'rb') as f:
-                pdf_data = f.read()
-                
-            return send_file(
-                io.BytesIO(pdf_data),
-                as_attachment=True,
-                download_name=f"{nombre_archivo_base}.pdf",
-                mimetype='application/pdf'
-            )
-        except Exception as e:
-            print("Error en conversión de Almacén:", str(e))
-            output = io.BytesIO()
-            doc.save(output)
-            output.seek(0)
-            return send_file(output, as_attachment=True, download_name=f"{nombre_archivo_base}.docx", mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+    return send_file(
+        pdf_buffer,
+        as_attachment=True,
+        download_name=f"{nombre_archivo_base}.pdf",
+        mimetype='application/pdf'
+    )
         
 
 # --- EN APP.PY (Ruta corregida para actualizaciones parciales) ---

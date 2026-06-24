@@ -24,33 +24,20 @@
     .ruc-table .coti-title { font-size: 14pt; background-color: #e6e6e6; border-bottom: 1px solid #000; padding: 4px; }
     .ruc-table .num-title { font-size: 11pt; }
 
-    /* --- 2. TRUCO DE CAJAS EXTERIORES (Sin líneas internas) --- */
-    .box-outer { 
-        border: 1px solid #000; 
-        width: 100%; 
-        border-collapse: collapse; 
-    }
-    /* Padding para datos y condiciones */
+    /* --- 2. CAJAS EXTERIORES (Cliente, Condiciones, Firmas) --- */
+    .box-outer { border: 1px solid #000; width: 100%; border-collapse: collapse; }
     .box-outer td.outer-td-pad { padding: 2px; border: none; }
-    /* Sin padding para que el fondo gris de los productos toque los bordes */
     .box-outer td.outer-td-nopad { padding: 0px; border: none; }
     
     .tbl-inner { width: 100%; border-collapse: collapse; }
-    .tbl-inner td { 
-        padding: 1px 2px; /* Reducción al máximo */
-        font-size: 8pt; 
-        line-height: 1; 
-        border: 0px solid transparent !important; 
-    }
+    .tbl-inner td { padding: 1px 2px; font-size: 8pt; line-height: 1; border: none !important; }
 
-    /* Anchos Cliente */
     .lbl { font-weight: bold; width: 65pt; }
     .col { width: 10pt; text-align: center; font-weight: bold; }
     .val1 { width: 235pt; }
     .lbl2 { font-weight: bold; width: 55pt; }
     .val2 { width: 160pt; }
 
-    /* Anchos Condiciones */
     .c-lbl { font-weight: bold; width: 110pt; }
     .c-val { width: 410pt; }
 
@@ -62,38 +49,23 @@
         font-weight: bold;
         padding: 3px 2px;
         text-align: center;
-        border: none !important; /* MATA LA LÍNEA DEBAJO DEL TÍTULO */
-    }
-    .tbl-items td {
-        font-size: 8pt;
-        padding: 2px 2px;
         border: none !important; 
     }
+    .tbl-items td { font-size: 8pt; padding: 2px 2px; border: none !important; }
 
-    /* --- 4. TOTALES --- */
-    .tbl-totales { margin-top: 4px; width: 100%; border-collapse: collapse; }
-    .tbl-totales td { padding: 1px 4px; font-size: 8.5pt; line-height: 1; border: none; }
-    
-    /* Alineación de la tabla de totales */
-    .tbl-totales .t-lbl { text-align: right; width: 100pt; }
-    .tbl-totales .t-sim { text-align: center; width: 20pt; }
-    .tbl-totales .t-val { text-align: right; width: 60pt; }
-    
-    .row-total td { 
-        border-top: 1px solid #000; 
-        border-bottom: 1px solid #000; 
-        font-weight: bold; 
-        font-size: 9pt; 
-        background-color: #e6e6e6; 
+    /* --- 4. TABLA DE APROBACIONES (Sin lineas interiores) --- */
+    .tbl-firmas { width: 100%; border-collapse: collapse; text-align: center; }
+    .tbl-firmas th {
+        background-color: #e6e6e6;
+        font-size: 7.5pt;
+        font-weight: bold;
+        padding: 4px;
+        border: none !important; /* Quitamos la línea separadora */
     }
-    .row-total .t-lbl { border-left: 1px solid #000; }
-    .row-total .t-val { border-right: 1px solid #000; }
-
-    /* --- 5. FIRMA --- */
-    .firma-box { 
-        text-align: center; font-size: 8pt; margin-top: 20px; 
-        border-top: 1px solid #000; padding-top: 2px; width: 180pt; 
-        margin-left: auto; margin-right: auto; line-height: 1.1;
+    .tbl-firmas td {
+        padding: 4px 5px; /* Reducido drásticamente para quitar espacios en blanco */
+        font-size: 8pt;
+        border: none !important; /* Quitamos bordes verticales interiores */
     }
 </style>
 </head>
@@ -102,7 +74,7 @@
     <table style="width: 100%; border-collapse: collapse;">
         <tr>
             <td style="width: 20%; text-align: left; vertical-align: middle;">
-                <img src="{{ logo_path }}" style="width: 150px; height: auto;">
+                <img src="{{ logo_path }}" style="width: 75px; height: auto;">
             </td>
             <td style="width: 50%; vertical-align: middle;">
                 <div class="empresa-nombre">ANCLAJES Y PERNOS S.A.C.</div>
@@ -123,7 +95,19 @@
         </tr>
     </table>
 
-    <table class="box-outer" style="margin-top: 6px; margin-bottom: 6px;">
+    <div style="text-align: right; margin-top: 4px; margin-bottom: 2px;">
+        {% if estado_orden in ['Despachado', 'Entregado'] %}
+        <div style="display: inline-block; border: 2px solid #198754; color: #198754; font-size: 11pt; font-weight: bold; padding: 2px 8px; letter-spacing: 1px;">
+            &#10004; MERCADER&Iacute;A DESPACHADA
+        </div>
+        {% else %}
+        <div style="display: inline-block; border: 2px solid #dc3545; color: #dc3545; font-size: 11pt; font-weight: bold; padding: 2px 8px; letter-spacing: 1px;">
+            &#9888; FALTA DESPACHAR
+        </div>
+        {% endif %}
+    </div>
+
+    <table class="box-outer" style="margin-top: 2px; margin-bottom: 6px;">
         <tr>
             <td class="outer-td-pad">
                 <table class="tbl-inner">
@@ -166,15 +150,10 @@
                         <tr>
                             <th style="width: 6%;">ITM</th>
                             <th style="width: 16%;">CODIGO</th>
-                            <th style="width: 44%; text-align: left;">DESCRIPCION</th>
+                            <th style="width: 52%; text-align: left;">DESCRIPCION</th>
                             <th style="width: 8%;">U.M</th>
                             <th style="width: 8%;">CANT.</th>
-                            {% if mostrar_precios %}
-                            <th style="width: 9%; text-align: right;">P.UNIT</th>
-                            <th style="width: 9%; text-align: right;">TOTAL</th>
-                            {% else %}
-                            <th style="width: 18%; text-align: center;">UBICACION</th>
-                            {% endif %}
+                            <th style="width: 10%; text-align: center;">UBICACION</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -185,12 +164,7 @@
                             <td>{{ i.desc | safe }}</td>
                             <td style="text-align: center;">{{ i.um }}</td>
                             <td style="text-align: center;">{{ i.cant }}</td>
-                            {% if mostrar_precios %}
-                            <td style="text-align: right;">{{ i.unit }}</td>
-                            <td style="text-align: right;">{{ i.subtotal }}</td>
-                            {% else %}
                             <td style="text-align: center;">{{ i.ubicacion }}</td>
-                            {% endif %}
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -199,42 +173,10 @@
         </tr>
     </table>
 
-    <div style="font-size: 8pt; margin-top: 6px;">SON: {{ son_letras }}</div>
-
-    {% if mostrar_precios %}
-    <table style="width: 100%; border-collapse: collapse;">
-        <tr>
-            <td style="width: 65%;"></td> 
-            <td style="width: 35%; text-align: right;">
-                <table class="tbl-totales" align="right">
-                    <tr>
-                        <td class="t-lbl">SUBTOTAL</td><td class="t-sim">{{ simbolo }}</td><td class="t-val">{{ subtotal_bruto }}</td>
-                    </tr>
-                    <tr>
-                        <td class="t-lbl" style="color: #c00000;">{{ label_descuento }}</td>
-                        <td class="t-sim" style="color: #c00000;">{{ simbolo }}</td>
-                        <td class="t-val" style="color: #c00000;">{{ monto_descuento }}</td>
-                    </tr>
-                    <tr>
-                        <td class="t-lbl">VALOR VENTA</td><td class="t-sim">{{ simbolo }}</td><td class="t-val">{{ subtotal_neto }}</td>
-                    </tr>
-                    <tr>
-                        <td class="t-lbl">IGV (18%)</td><td class="t-sim">{{ simbolo }}</td><td class="t-val">{{ igv }}</td>
-                    </tr>
-                    <tr class="row-total">
-                        <td class="t-lbl">TOTAL</td><td class="t-sim">{{ simbolo }}</td><td class="t-val">{{ total }}</td>
-                    </tr>
-                </table>
-            </td>
-        </tr>
-    </table>
-    {% endif %}
-
-    <table class="box-outer" style="margin-top: 8px;">
+    <table class="box-outer" style="margin-top: 10px;">
         <tr>
             <td class="outer-td-pad">
                 <table class="tbl-inner">
-                    <tr><td class="c-lbl">CONDICION DE PAGO</td><td class="c-col">:</td><td class="c-val">{{ condicion_pago }}</td></tr>
                     <tr><td class="c-lbl">VALIDEZ</td><td class="c-col">:</td><td class="c-val">{{ validez }}</td></tr>
                     <tr><td class="c-lbl">PLAZO DE ENTREGA</td><td class="c-col">:</td><td class="c-val">{{ plazo_entrega }}</td></tr>
                     <tr><td class="c-lbl">LUGAR DE ENTREGA</td><td class="c-col">:</td><td class="c-val">{{ lugar_entrega }}</td></tr>
@@ -243,20 +185,26 @@
             </td>
         </tr>
     </table>
-    
-    <div style="font-size: 8pt; margin-top: 4px;">&iquest;Est&aacute;s listo para trabajar con nosotros?, no dudes en contactarnos.</div>
 
-    <table style="margin-top: 15px; width: 100%; border-collapse: collapse;">
+    <table class="box-outer" style="margin-top: 40px;">
         <tr>
-            <td style="width: 55%; vertical-align: bottom;">
-                <img src="{{ bancos_path }}" style="width: 350pt; height: auto;">
-            </td>
-            <td style="width: 45%; vertical-align: bottom;">
-                <div class="firma-box">
-                    <span style="font-weight: bold; font-size: 8.5pt;">{{ vendedor_nombre }}</span><br>
-                    {{ vendedor_cargo }}<br>
-                    {{ vendedor_email }}
-                </div>
+            <td class="outer-td-nopad">
+                <table class="tbl-firmas">
+                    <thead>
+                        <tr>
+                            <th style="width: 33.3%;">EMITIDO POR</th>
+                            <th style="width: 33.3%;">VERIFICADO FÍSICO</th>
+                            <th style="width: 33.3%;">APROBADO POR</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>{{ vendedor_nombre }}</td>
+                            <td>{{ fecha_almacen }}<br>{{ almacenero_nombre }}</td>
+                            <td>{{ fecha_gerencia }}<br>{{ gerente_nombre }}</td>
+                        </tr>
+                    </tbody>
+                </table>
             </td>
         </tr>
     </table>
