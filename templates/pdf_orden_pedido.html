@@ -53,30 +53,41 @@
     }
     .tbl-items td { font-size: 8pt; padding: 2px 2px; border: none !important; }
 
-    /* --- 4. TABLA DE APROBACIONES (Sin lineas interiores) --- */
+    /* ANCHOS FIJOS EN PT PARA EVITAR EL ERROR DE RENDER (-6.28e-09) */
+    .w-itm { width: 30pt; }
+    .w-cod { width: 80pt; }
+    .w-des { width: 270pt; text-align: left; }
+    .w-um { width: 40pt; }
+    .w-can { width: 40pt; }
+    .w-ubi { width: 70pt; text-align: center;}
+
+    /* --- 4. TABLA DE APROBACIONES --- */
     .tbl-firmas { width: 100%; border-collapse: collapse; text-align: center; }
     .tbl-firmas th {
         background-color: #e6e6e6;
         font-size: 7.5pt;
         font-weight: bold;
         padding: 4px;
-        border: none !important; /* Quitamos la línea separadora */
+        border: none !important; 
     }
     .tbl-firmas td {
-        padding: 4px 5px; /* Reducido drásticamente para quitar espacios en blanco */
+        padding: 4px 5px; 
         font-size: 8pt;
-        border: none !important; /* Quitamos bordes verticales interiores */
+        border: none !important; 
     }
+    /* Anchos fijos para las 3 columnas de firmas (176pt c/u) */
+    .w-firma { width: 176pt; }
+    .w-firma-medio { width: 176pt; border-left: 1px solid #000 !important; border-right: 1px solid #000 !important; }
 </style>
 </head>
 <body>
 
     <table style="width: 100%; border-collapse: collapse;">
         <tr>
-            <td style="width: 20%; text-align: left; vertical-align: middle;">
+            <td style="width: 100pt; text-align: left; vertical-align: middle;">
                 <img src="{{ logo_path }}" style="width: 75px; height: auto;">
             </td>
-            <td style="width: 50%; vertical-align: middle;">
+            <td style="width: 270pt; vertical-align: middle;">
                 <div class="empresa-nombre">ANCLAJES Y PERNOS S.A.C.</div>
                 <div class="empresa-datos">
                     AV. SANTA ANA NRO 386 OTR. CHACRA CERRO<br>
@@ -85,7 +96,7 @@
                     Email: Lcachay@importbolts.com &ndash; vtineo@importbolts.com
                 </div>
             </td>
-            <td style="width: 30%; vertical-align: middle;">
+            <td style="width: 160pt; vertical-align: middle;">
                 <table class="ruc-table">
                     <tr><td class="ruc-title">R.U.C. 20601850509</td></tr>
                     <tr><td class="coti-title">{{ titulo_documento }}</td></tr>
@@ -148,12 +159,12 @@
                 <table class="tbl-items">
                     <thead>
                         <tr>
-                            <th style="width: 6%;">ITM</th>
-                            <th style="width: 16%;">CODIGO</th>
-                            <th style="width: 52%; text-align: left;">DESCRIPCION</th>
-                            <th style="width: 8%;">U.M</th>
-                            <th style="width: 8%;">CANT.</th>
-                            <th style="width: 10%; text-align: center;">UBICACION</th>
+                            <th class="w-itm">ITM</th>
+                            <th class="w-cod">CODIGO</th>
+                            <th class="w-des">DESCRIPCION</th>
+                            <th class="w-um">U.M</th>
+                            <th class="w-can">CANT.</th>
+                            <th class="w-ubi">UBICACION</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -192,15 +203,15 @@
                 <table class="tbl-firmas">
                     <thead>
                         <tr>
-                            <th style="width: 33.3%;">EMITIDO POR</th>
-                            <th style="width: 33.3%;">VERIFICADO FÍSICO</th>
-                            <th style="width: 33.3%;">APROBADO POR</th>
+                            <th class="w-firma">EMITIDO POR</th>
+                            <th class="w-firma-medio">VERIFICADO FÍSICO</th>
+                            <th class="w-firma">APROBADO POR</th>
                         </tr>
                     </thead>
                     <tbody>
                         <tr>
                             <td>{{ vendedor_nombre }}</td>
-                            <td>{{ fecha_almacen }}<br>{{ almacenero_nombre }}</td>
+                            <td style="border-left: 1px solid #000 !important; border-right: 1px solid #000 !important;">{{ fecha_almacen }}<br>{{ almacenero_nombre }}</td>
                             <td>{{ fecha_gerencia }}<br>{{ gerente_nombre }}</td>
                         </tr>
                     </tbody>
