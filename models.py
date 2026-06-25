@@ -174,6 +174,13 @@ class OrderDetail(db.Model):
     precio_aplicado = db.Column(db.Float, nullable=False)
     tipo_precio_usado = db.Column(db.String(50))
     subtotal = db.Column(db.Float, nullable=False)
+
+    # --- NUEVOS CAMPOS (MEMORIA DE DESCUENTOS INDIVIDUALES) ---
+    precio_base = db.Column(db.Float, nullable=True)
+    desc_tipo = db.Column(db.String(10), default='')
+    desc_valor = db.Column(db.Float, default=0.0)
+    desc_label = db.Column(db.String(100), default='')
+    # ----------------------------------------------------------
     
     product = db.relationship('Product')
     

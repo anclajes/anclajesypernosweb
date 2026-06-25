@@ -3068,7 +3068,6 @@ function renderizarTabla() {
 
     carrito.forEach((item, index) => {
         let claseStock = ''; let badgeDisplay = 'none'; let textoBadge = '';
-        let nombreHtml = `${item.nombre}`;
 
         if (item.estado && item.estado !== '' && item.estado !== 'None') {
             nombreHtml += `<br><span class="badge bg-danger mt-1 text-white shadow-sm" style="font-size: 0.7rem; padding: 4px 8px;"><i class="bi bi-exclamation-triangle-fill"></i> ${item.estado}</span>`;
@@ -3095,6 +3094,15 @@ function renderizarTabla() {
             botonVer = `<button class="btn btn-sm ${colorOjo} me-1" onclick="verComponentes(${index})" title="Ver contenido"><i class="bi bi-eye-fill"></i></button>`;
         }
 
+// 1. Estado a prueba de balas
+        let estadoReal = item.estado || item.estado_producto || '';
+        let badgeEstadoHtml = '';
+        if (estadoReal && estadoReal !== '' && estadoReal !== 'None' && String(estadoReal).indexOf('undefined') === -1) {
+            badgeEstadoHtml = `<br><span class="badge bg-warning text-dark mt-1 border shadow-sm" style="font-size: 0.7rem;"><i class="bi bi-exclamation-triangle-fill"></i> ${estadoReal}</span>`;
+        }
+        
+        let nombreHtml = `${item.nombre} ${badgeEstadoHtml}`;
+
         let precioTachadoHtml = '';
         let inputClass = 'editable-cell';
         
@@ -3105,8 +3113,12 @@ function renderizarTabla() {
             inputClass = 'editable-cell text-danger fw-bold border-danger bg-danger bg-opacity-10'; 
         }
 
-        // --- CORRECCIÓN: Dibuja la etiqueta roja de descuento SOLO si realmente existe un descuento ---
-        let badgeDescHtml = (item.desc_label && item.desc_label !== '') ? `<br><span class="badge bg-danger mt-1">${item.desc_label}</span>` : '';
+        // 2. Descuento a prueba de balas (Adios undefined rojo)
+        let badgeDescHtml = '';
+        let labelDesc = item.desc_label || '';
+        if (labelDesc && labelDesc !== '' && String(labelDesc).indexOf('undefined') === -1) {
+            badgeDescHtml = `<br><span class="badge bg-danger mt-1">${labelDesc}</span>`;
+        }
 
         tbody.append(`
             <tr id="fila-${index}">
@@ -3119,7 +3131,6 @@ function renderizarTabla() {
                         <i class="bi bi-exclamation-triangle-fill"></i> ${textoBadge}
                     </span>
                 </td>
-
                 <td class="text-center small text-muted fw-bold pt-3">${umVisual}</td>
                 
                 <td class="text-center pt-3">

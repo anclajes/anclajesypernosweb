@@ -1164,7 +1164,13 @@ def nueva_venta():
                     cantidad=int(item['cantidad']),
                     precio_aplicado=float(item['precio']),
                     subtotal=float(item['subtotal']), # Guardamos el visual, pero el header ya cuadra
-                    tipo_precio_usado=item.get('tipo_precio', 'Manual')
+                    tipo_precio_usado=item.get('tipo_precio', 'Manual'),
+
+                    # --- GUARDADO DE DESCUENTOS ---
+                    precio_base=float(item.get('precioBase', item['precio'])),
+                    desc_tipo=item.get('desc_tipo', ''),
+                    desc_valor=float(item.get('desc_valor', 0.0)),
+                    desc_label=item.get('desc_label', '')
                 )
 
                 # --- VINCULACIÓN DE PRODUCTOS/SERVICIOS ---
@@ -2873,10 +2879,15 @@ def editar_venta(order_id):
             'stock': 0, 
             'cantidad': d.cantidad,
             'precio': d.precio_aplicado,
-            'precioBase': d.precio_aplicado,
             'subtotal': d.subtotal,
-            'um': 'UND', # Valor por defecto
-            'estado_producto': d.product.estado if (d.product and d.product.estado) else ''
+            'um': getattr(d.product, 'unidad_medida', 'UND'),
+            
+            # --- RECUPERACIÓN A PRUEBA DE FALLOS ---
+            'estado': d.product.estado if (d.product and hasattr(d.product, 'estado')) else '',
+            'precioBase': getattr(d, 'precio_base', d.precio_aplicado) or d.precio_aplicado,
+            'desc_tipo': getattr(d, 'desc_tipo', ''),
+            'desc_valor': getattr(d, 'desc_valor', 0.0) or 0.0,
+            'desc_label': getattr(d, 'desc_label', '') or ''  
         }
 
         # Datos específicos por tipo
@@ -3016,7 +3027,13 @@ def actualizar_venta():
                 cantidad=int(item['cantidad']),
                 precio_aplicado=float(item['precio']),
                 subtotal=float(item['subtotal']),
-                tipo_precio_usado='Manual'
+                tipo_precio_usado=item.get('tipo_precio', 'Manual'),
+                    
+                # --- GUARDADO DE DESCUENTOS ---
+                precio_base=float(item.get('precioBase', item['precio'])),
+                desc_tipo=item.get('desc_tipo', ''),
+                desc_valor=float(item.get('desc_valor', 0.0)),
+                desc_label=item.get('desc_label', '')
             )
             
             if tipo_item == 'PRODUCTO':
@@ -3305,11 +3322,15 @@ def procesar_salida_almacen(order_id):
 @app.route('/setup_db_secreta')
 def setup_db_secreta():
     try:
-        # Lista de columnas que definiste en tu modelo pero que quizás no existen
         columnas_faltantes = [
             ("product", "estado", "VARCHAR(100)"),
             ("product", "fecha_actualizacion", "TIMESTAMP"),
-            ("product", "actualizado_por", "VARCHAR(100)")
+            ("product", "actualizado_por", "VARCHAR(100)"),
+            # Nuevas columnas para OrderDetail
+            ("order_detail", "precio_base", "FLOAT"),
+            ("order_detail", "desc_tipo", "VARCHAR(10)"),
+            ("order_detail", "desc_valor", "FLOAT"),
+            ("order_detail", "desc_label", "VARCHAR(100)")
         ]
         
         for tabla, columna, tipo in columnas_faltantes:
@@ -3317,9 +3338,9 @@ def setup_db_secreta():
                 db.session.execute(text(f"ALTER TABLE {tabla} ADD COLUMN {columna} {tipo};"))
                 db.session.commit()
             except:
-                db.session.rollback() # Si ya existe, simplemente continúa
+                db.session.rollback() 
         
-        return "<h1>Mantenimiento completado.</h1><p>Se han agregado las columnas faltantes.</p>"
+        return "<h1>Mantenimiento completado.</h1><p>Se han agregado las columnas de descuentos.</p>"
     except Exception as e:
         return f"<h1>Error grave:</h1><p>{str(e)}</p>"
 
