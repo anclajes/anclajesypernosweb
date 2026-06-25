@@ -3057,7 +3057,7 @@ document.getElementById('btnAgregar').addEventListener('click', () => {
 
 
 
-function renderizarTabla() {
+    function renderizarTabla() {
     const tbody = $('#tablaCarrito'); 
     tbody.empty();
     
@@ -3069,10 +3069,6 @@ function renderizarTabla() {
     carrito.forEach((item, index) => {
         let claseStock = ''; let badgeDisplay = 'none'; let textoBadge = '';
 
-        if (item.estado && item.estado !== '' && item.estado !== 'None') {
-            nombreHtml += `<br><span class="badge bg-danger mt-1 text-white shadow-sm" style="font-size: 0.7rem; padding: 4px 8px;"><i class="bi bi-exclamation-triangle-fill"></i> ${item.estado}</span>`;
-        }
-    
         if (item.tipo === 'PRODUCTO') {
             if (item.cantidad > item.stock) {
                 claseStock = 'stock-insuficiente'; badgeDisplay = 'inline-block'; textoBadge = `Sin Stock (Max: ${item.stock})`;
@@ -3094,7 +3090,7 @@ function renderizarTabla() {
             botonVer = `<button class="btn btn-sm ${colorOjo} me-1" onclick="verComponentes(${index})" title="Ver contenido"><i class="bi bi-eye-fill"></i></button>`;
         }
 
-// 1. Estado a prueba de balas
+        // --- 1. CONSTRUCCIÓN SEGURA DEL NOMBRE Y ESTADO ---
         let estadoReal = item.estado || item.estado_producto || '';
         let badgeEstadoHtml = '';
         if (estadoReal && estadoReal !== '' && estadoReal !== 'None' && String(estadoReal).indexOf('undefined') === -1) {
@@ -3103,6 +3099,7 @@ function renderizarTabla() {
         
         let nombreHtml = `${item.nombre} ${badgeEstadoHtml}`;
 
+        // --- 2. CÁLCULO DE DESCUENTOS Y PRECIOS TACHADOS ---
         let precioTachadoHtml = '';
         let inputClass = 'editable-cell';
         
@@ -3113,13 +3110,13 @@ function renderizarTabla() {
             inputClass = 'editable-cell text-danger fw-bold border-danger bg-danger bg-opacity-10'; 
         }
 
-        // 2. Descuento a prueba de balas (Adios undefined rojo)
         let badgeDescHtml = '';
         let labelDesc = item.desc_label || '';
         if (labelDesc && labelDesc !== '' && String(labelDesc).indexOf('undefined') === -1) {
             badgeDescHtml = `<br><span class="badge bg-danger mt-1">${labelDesc}</span>`;
         }
 
+        // --- 3. DIBUJAR LA FILA EN EL HTML ---
         tbody.append(`
             <tr id="fila-${index}">
                 <td class="ps-3">
