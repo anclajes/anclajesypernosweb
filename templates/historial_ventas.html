@@ -615,9 +615,9 @@
                     $('#badgeEstadoModal').html(badgeHtml);
 
                     const btnDescargar = document.getElementById('btn_descargar_modal');
-                    btnDescargar.href = `/descargar_cotizacion/${d.id}`;
+                    btnDescargar.href = `/descargar_cotizacion_v2/${d.id}`;
                     if (d.estado === 'Aprobado') {
-                        btnDescargar.innerHTML = '<i class="bi bi-file-earmark-check-fill"></i> Descargar Orden Aprobada';
+                        btnDescargar.innerHTML = '<i class="bi bi-file-earmark-check-fill"></i> Descargar Cotización Aprobada';
                         btnDescargar.className = 'btn btn-success fw-bold shadow-sm';
                     } else {
                         btnDescargar.innerHTML = '<i class="bi bi-file-pdf-fill"></i> Descargar Cotización';
