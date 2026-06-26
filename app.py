@@ -3319,30 +3319,55 @@ def procesar_salida_almacen(order_id):
     
 
 # --- RUTA SECRETA PARA INICIALIZAR LA BASE DE DATOS EN RENDER ---
-@app.route('/setup_db_secreta')
-def setup_db_secreta():
+# --- RUTA SECRETA PARA CREAR/RESETEAR LA BASE DE DATOS DESDE EL NAVEGADOR ---
+@app.route('/reset_total_db_secreto')
+def reset_total_db_secreto():
     try:
-        columnas_faltantes = [
-            ("product", "estado", "VARCHAR(100)"),
-            ("product", "fecha_actualizacion", "TIMESTAMP"),
-            ("product", "actualizado_por", "VARCHAR(100)"),
-            # Nuevas columnas para OrderDetail
-            ("order_detail", "precio_base", "FLOAT"),
-            ("order_detail", "desc_tipo", "VARCHAR(10)"),
-            ("order_detail", "desc_valor", "FLOAT"),
-            ("order_detail", "desc_label", "VARCHAR(100)")
-        ]
+        # Importamos aquí para evitar errores de referencia circular
+        from models import User
+        from werkzeug.security import generate_password_hash
         
-        for tabla, columna, tipo in columnas_faltantes:
-            try:
-                db.session.execute(text(f"ALTER TABLE {tabla} ADD COLUMN {columna} {tipo};"))
-                db.session.commit()
-            except:
-                db.session.rollback() 
+        # 1. Borrar todo y crear de nuevo las tablas
+        db.drop_all()
+        db.create_all()
         
-        return "<h1>Mantenimiento completado.</h1><p>Se han agregado las columnas de descuentos.</p>"
+        # 2. Crear los usuarios base de tu sistema
+        admin = User(
+            username='admin', 
+            password=generate_password_hash('123'),  # Contraseña inicial
+            nombre_completo='Administrador General',
+            role='admin'
+        )
+        
+        jefe_ventas = User(
+            username='jefe', 
+            password=generate_password_hash('123'),
+            nombre_completo='Roberto Gómez (Jefe Ventas)', 
+            role='administracion'
+        )
+        
+        vendedor = User(
+            username='juan', 
+            password=generate_password_hash('123'),
+            nombre_completo='Juan Pérez (Vendedor)', 
+            role='vendedor'
+        )
+        
+        almacen = User(
+            username='pedro', 
+            password=generate_password_hash('123'),
+            nombre_completo='Pedro Castillo (Almacén)', 
+            role='almacen'
+        )
+        
+        db.session.add_all([admin, jefe_ventas, vendedor, almacen])
+        db.session.commit()
+        
+        return "<h1>¡Éxito!</h1><p>La base de datos ha sido reiniciada, las tablas han sido creadas y los usuarios base están listos. Ya puedes iniciar sesión.</p>"
+        
     except Exception as e:
-        return f"<h1>Error grave:</h1><p>{str(e)}</p>"
+        db.session.rollback()
+        return f"<h1>Error al configurar la Base de Datos:</h1><p>{str(e)}</p>"
 
 # --- ARRANQUE DE LA APLICACIÓN ---
 if __name__ == '__main__':
