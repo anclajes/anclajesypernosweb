@@ -390,7 +390,7 @@
                                 </tr>
                                 <tr>
                                     <td colspan="3"></td>
-                                    <td class="text-end small text-danger">DESCUENTO:</td>
+                                    <td class="text-end small text-danger fw-bold" id="view_descuento_label">DESCUENTO:</td>
                                     <td class="text-end pe-3 text-danger" id="view_descuento">- 0.00</td>
                                 </tr>
                                 <tr>
@@ -656,10 +656,32 @@
                     tbody.empty();
                     
                     d.items.forEach(item => {
-                        // 1. PREPARAMOS EL HTML DEL ESTADO (SI TIENE)
+// --- DENTRO DE verDetalleCompleto (historial_ventas.html) ---
+                    // ACTUALIZAR LABEL DEL DESCUENTO GENERAL
+                    let labelDescGeneral = "DESCUENTO:";
+                    if(d.descuento_total > 0) {
+                        if(d.descuento_tipo === 'PORCENTAJE') {
+                            labelDescGeneral = `DESCUENTO (${d.descuento_valor}%):`;
+                        } else {
+                            labelDescGeneral = `DESCUENTO (Fijo):`;
+                        }
+                    }
+                    $('#view_descuento_label').text(labelDescGeneral);
+
+                    const tbody = $('#view_tabla_items'); 
+                    tbody.empty();
+                    
+                    d.items.forEach(item => {
                         let estadoHtml = '';
                         if (item.estado_producto && item.estado_producto !== '' && item.estado_producto !== 'None') {
                             estadoHtml = `<div class="mt-1"><span class="badge bg-danger text-white shadow-sm" style="font-size: 0.65rem; padding: 4px 8px;"><i class="bi bi-exclamation-triangle-fill"></i> ${item.estado_producto}</span></div>`;
+                        }
+
+                        // AGREGAR DESCUENTO INDIVIDUAL VISUALMENTE
+                        let descuentoItemHtml = '';
+                        if(item.desc_valor > 0) {
+                            let textoDesc = item.desc_tipo === 'PORCENTAJE' ? `${item.desc_valor}%` : `${simbolo} ${item.desc_valor}`;
+                            descuentoItemHtml = `<div class="mt-1"><span class="badge bg-warning text-dark border border-warning" style="font-size:0.65rem"><i class="bi bi-tag-fill"></i> ${item.desc_label} (-${textoDesc})</span></div>`;
                         }
 
                         let row = `<tr>
@@ -670,7 +692,8 @@
                             </td>
                             <td>
                                 <div class="fw-bold text-dark">${item.descripcion}</div>
-                                ${estadoHtml} `;
+                                ${estadoHtml} 
+                                ${descuentoItemHtml}`;
                         
                         if(item.tipo === 'GLB' && item.componentes && item.componentes.length > 0) {
                             row += `<div class="mt-2 p-2 bg-white border rounded shadow-sm small">
@@ -686,7 +709,10 @@
 
                         row += `</td>
                                 <td class="text-center fw-bold fs-6">${item.cantidad}</td>
-                                <td class="text-end text-muted">${item.precio.toFixed(2)}</td>
+                                <td class="text-end text-muted">
+                                    ${item.desc_valor > 0 ? `<del class="text-danger" style="font-size:0.7rem">${item.precio_base.toFixed(2)}</del><br>` : ''}
+                                    ${item.precio.toFixed(2)}
+                                </td>
                                 <td class="text-end fw-bold pe-3">${item.subtotal.toFixed(2)}</td>
                             </tr>`;
                         

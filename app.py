@@ -3127,7 +3127,12 @@ def obtener_detalle_venta(order_id):
                 'subtotal': d.subtotal,
                 'tipo': d.item_type,
                 'componentes': comps_data, # Enviamos la lista al HTML
-                'check_almacen': d.check_almacen
+                'check_almacen': d.check_almacen,
+                # --- NUEVOS CAMPOS DE DESCUENTO INDIVIDUAL ---
+                'precio_base': getattr(d, 'precio_base', d.precio_aplicado) or d.precio_aplicado,
+                'desc_tipo': getattr(d, 'desc_tipo', ''),
+                'desc_valor': getattr(d, 'desc_valor', 0.0) or 0.0,
+                'desc_label': getattr(d, 'desc_label', '') or ''
             })
 
         # 3. Datos Generales (Manejo de nulos con "or '-'")
