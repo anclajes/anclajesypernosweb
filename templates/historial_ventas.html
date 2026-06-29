@@ -651,13 +651,6 @@
                         $('#box_motivo_rechazo').addClass('d-none');
                     }
 
-                    // --- LLENAR TABLA DE PRODUCTOS ---
-                    const tbody = $('#view_tabla_items'); 
-                    tbody.empty();
-                    
-                    d.items.forEach(item => {
-// --- DENTRO DE verDetalleCompleto (historial_ventas.html) ---
-                    // ACTUALIZAR LABEL DEL DESCUENTO GENERAL
                     let labelDescGeneral = "DESCUENTO:";
                     if(d.descuento_total > 0) {
                         if(d.descuento_tipo === 'PORCENTAJE') {
@@ -668,6 +661,7 @@
                     }
                     $('#view_descuento_label').text(labelDescGeneral);
 
+                    // --- LLENAR TABLA DE PRODUCTOS ---
                     const tbody = $('#view_tabla_items'); 
                     tbody.empty();
                     
