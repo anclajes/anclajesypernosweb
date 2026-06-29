@@ -623,38 +623,31 @@
 
 
 
-                <div class="row justify-content-end text-end">
-
-                    <div class="col-md-5">
+          <div class="row justify-content-end text-end">
+                    <div class="col-md-7"> <div class="d-flex justify-content-between border-bottom px-2">
+                            <span class="text-muted">Subtotal Inicial:</span>
+                            <strong id="res_subtotal_inicial">0.00</strong>
+                        </div>
+                        
+                        <div class="d-flex justify-content-between border-bottom px-2 text-danger d-none" id="div_res_descuento_global">
+                            <span id="res_lbl_desc_global" class="fw-bold">Descuento Global:</span>
+                            <strong id="res_val_desc_global">-0.00</strong>
+                        </div>
 
                         <div class="d-flex justify-content-between border-bottom px-2">
-
-                            <span class="text-muted">Total Neto:</span>
-
+                            <span class="text-muted">Valor de Venta (Neto):</span>
                             <strong id="res_neto">0.00</strong>
-
                         </div>
-
                         <div class="d-flex justify-content-between border-bottom px-2">
-
                             <span class="text-muted">IGV (18%):</span>
-
                             <strong id="res_igv">0.00</strong>
-
                         </div>
-
                         <div class="d-flex justify-content-between bg-warning bg-opacity-25 px-2 py-1 rounded mt-1">
-
                             <span class="fw-bold text-dark">TOTAL FINAL:</span>
-
                             <strong class="text-primary fs-5" id="res_total">0.00</strong>
-
                         </div>
-
                     </div>
-
                 </div>
-
             </div>
 
             <div class="modal-footer">
@@ -4135,24 +4128,44 @@ function recalcularCarritoPorMoneda() {
         
         carrito.forEach(item => {
             let alertaStock = (item.tipo === 'PRODUCTO' && item.cantidad > item.stock) ? '<i class="bi bi-exclamation-circle-fill text-warning ms-1" title="Sin Stock"></i>' : '';
-            
-            // --- ETIQUETA ROJA PARA EL RESUMEN ---
             let alertaEstado = (item.estado && item.estado !== '' && item.estado !== 'None') ? `<br><span class="badge bg-danger" style="font-size: 0.65rem;"><i class="bi bi-exclamation-triangle-fill"></i> ${item.estado}</span>` : '';
             
+            // --- NUEVO: MOSTRAR DESCUENTO INDIVIDUAL EN EL RESUMEN ---
+            let badgeDesc = '';
+            let labelDesc = item.desc_label || '';
+            if (labelDesc !== '' && String(labelDesc).indexOf('undefined') === -1) {
+                badgeDesc = `<br><span class="badge bg-danger mt-1" style="font-size: 0.65rem;">${labelDesc}</span>`;
+            }
+            
             tbody.append(`<tr>
-                <td>${item.nombre} ${alertaStock} ${alertaEstado}</td>
+                <td>${item.nombre} ${alertaStock} ${alertaEstado} ${badgeDesc}</td>
                 <td class="text-center fw-bold">${item.cantidad}</td>
                 <td class="text-end">${item.precio.toFixed(2)}</td>
                 <td class="text-end fw-bold">${item.subtotal.toFixed(2)}</td>
             </tr>`);
         });
 
+        // --- NUEVO: LLENAR TOTALES Y DESCUENTO GLOBAL ---
+        $('#res_subtotal_inicial').text($('#lblSubtotalInicial').text());
+        
+        let valDescG = parseFloat($('#inputDescuento').val()) || 0;
+        if (valDescG > 0) {
+            let tipoDesc = $('#tipoDescuento').val();
+            let labelG = tipoDesc === 'PORCENTAJE' ? `Desc. Global (-${valDescG}%):` : `Desc. Global (Monto):`;
+            
+            $('#res_lbl_desc_global').text(labelG);
+            $('#res_val_desc_global').text($('#lblMontoDescuento').text());
+            $('#div_res_descuento_global').removeClass('d-none').addClass('d-flex');
+        } else {
+            $('#div_res_descuento_global').removeClass('d-flex').addClass('d-none');
+        }
+
         $('#res_neto').text($('#lblSubtotalNeto').text());
         $('#res_igv').text($('#lblIGV').text());
         $('#res_total').text($('#lblTotal').text());
+        
         new bootstrap.Modal(document.getElementById('modalResumenVenta')).show();
     }
-    // --- FUNCIÓN AUXILIAR PARA MOSTRAR EL MODAL FINAL ---
 
 // --- FUNCIÓN PARA GUARDAR O ACTUALIZAR ---
 // --- FUNCIÓN PARA GUARDAR O ACTUALIZAR ---
