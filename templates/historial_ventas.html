@@ -649,6 +649,7 @@
                     }
 
                     // --- ETIQUETA DESCUENTO GLOBAL (DETECCIÓN INTELIGENTE) ---
+                    // --- ETIQUETA DESCUENTO GLOBAL (DETECCIÓN INTELIGENTE) ---
                     let labelDescGeneral = "DESCUENTO:";
                     if(d.descuento_total > 0) {
                         let tipoGlobal = (d.descuento_tipo || '').toString().toUpperCase().trim();
@@ -663,7 +664,8 @@
                         if(esPorcentajeGlobal) {
                             labelDescGeneral = `DESCUENTO (${parseFloat(d.descuento_valor)}%):`;
                         } else {
-                            labelDescGeneral = `DESCUENTO (MONTO FIJO):`;
+                            // Cambiado a un formato más limpio y consistente
+                            labelDescGeneral = `DESCUENTO (Fijo):`;
                         }
                     }
                     $('#view_descuento_label').text(labelDescGeneral);
