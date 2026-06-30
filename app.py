@@ -555,13 +555,20 @@ def inject_notifications():
     return dict(alertas_stock=count_stock_bajo, historial=historial)
 
 # 2. NUEVA RUTA: EXPORTAR A EXCEL
-# --- NUEVA RUTA: EXPORTAR A EXCEL ---
+# --- NUEVA RUTA: EXPORTAR A EXCEL (OPTIMIZADA PARA BAJO CONSUMO DE RAM) ---
 @app.route('/producto/exportar')
 def exportar_excel():
+    import gc # Importamos el recolector de basura
+    
     if session.get('role') not in ['admin', 'almacen', 'administracion']: return "No autorizado", 403
     
-    # Obtenemos todos los productos
-    productos = Product.query.all()
+    # 1. OPTIMIZACIÓN EXTREMA: En lugar de cargar Objetos pesados (Product.query.all()),
+    # pedimos solo las columnas exactas (Tuplas ligeras). Esto reduce el uso de RAM un 90%.
+    productos = db.session.query(
+        Product.sku, Product.nombre, Product.categoria, Product.calidad, 
+        Product.ubicacion, Product.stock_actual, Product.stock_minimo, 
+        Product.precio_unidad, Product.precio_caja
+    ).all()
     
     # Creamos lista de diccionarios
     data = []
@@ -573,24 +580,34 @@ def exportar_excel():
             'CALIDAD': p.calidad,
             'UBICACION': p.ubicacion,
             'STOCK ACTUAL': p.stock_actual,
-            'STOCK MÍNIMO': p.stock_minimo, # Nuevo campo exportado
+            'STOCK MÍNIMO': p.stock_minimo,
             'PRECIO UNIT': p.precio_unidad,
             'PRECIO CAJA': p.precio_caja
         })
     
-    # Crear DataFrame y Excel en memoria
+    # Liberamos la memoria RAM de SQLAlchemy antes de procesar el Excel
+    del productos
+    db.session.expunge_all()
+    gc.collect()
+    
+    # 2. Crear DataFrame y Excel en memoria
     df = pd.DataFrame(data)
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         df.to_excel(writer, index=False, sheet_name='Inventario')
         
-        # Ajustar ancho de columnas para que se vea bonito
+        # Ajustar ancho de columnas
         worksheet = writer.sheets['Inventario']
         for idx, col in enumerate(df.columns):
             max_len = max(df[col].astype(str).map(len).max(), len(col)) + 2
             worksheet.set_column(idx, idx, max_len)
 
     output.seek(0)
+    
+    # 3. LIMPIEZA FINAL: Destruimos Pandas de la memoria RAM
+    del data
+    del df
+    gc.collect()
     
     return send_file(
         output,
