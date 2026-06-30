@@ -2088,6 +2088,27 @@ def importar_excel():
             estado_v = clean_str(get_col(row_vals, 'ESTADO')).upper()
             if estado_v == 'OK': estado_v = ''
 
+                        # --- TRUNCADO DE SEGURIDAD (evita StringDataRightTruncation) ---
+            # Limpia caracteres raros/corruptos y limita longitud
+            import unicodedata
+
+            def limpiar_campo(valor, max_len):
+                if not valor:
+                    return ''
+                # Quitar caracteres de control y símbolos raros
+                limpio = ''.join(
+                    c for c in str(valor)
+                    if unicodedata.category(c)[0] not in ('C',)  # Elimina caracteres de control
+                    and ord(c) < 65536  # Elimina emojis/símbolos raros
+                ).strip()
+                return limpio[:max_len]
+
+            nombre    = limpiar_campo(nombre, 490)
+            familia   = limpiar_campo(familia, 190)
+            calidad   = limpiar_campo(calidad, 190)
+            ubicacion = limpiar_campo(ubicacion, 190)
+            estado_v  = limpiar_campo(estado_v, 90)
+
             stock_val = clean_int(get_col(row_vals, 'CANT. ACT.', 'STOCK', 'CANTIDAD', 'CANT.ACT.'))
             min_val   = clean_int(get_col(row_vals, 'STOCK MÍNIMO', 'STOCK MINIMO', 'MINIMO'), 10)
 
@@ -2225,6 +2246,21 @@ def importar_excel():
         gc.collect()
 
     return redirect(url_for('inventario'))
+
+
+@app.route('/fix_columnas_secreto_2026')
+def fix_columnas():
+    try:
+        with db.engine.connect() as conn:
+            conn.execute(text("ALTER TABLE product ALTER COLUMN nombre TYPE VARCHAR(500)"))
+            conn.execute(text("ALTER TABLE product ALTER COLUMN categoria TYPE VARCHAR(200)"))
+            conn.execute(text("ALTER TABLE product ALTER COLUMN calidad TYPE VARCHAR(200)"))
+            conn.execute(text("ALTER TABLE product ALTER COLUMN ubicacion TYPE VARCHAR(200)"))
+            conn.execute(text("ALTER TABLE product ALTER COLUMN estado TYPE VARCHAR(200)"))
+            conn.commit()
+        return "<h2>✅ Columnas ampliadas correctamente. Ya puedes importar el Excel grande.</h2>"
+    except Exception as e:
+        return f"<h2>Error: {str(e)}</h2>"
 
 # 2. ACTUALIZAR NUEVO PRODUCTO (Para responder JSON y no borrar datos)
 # --- FUNCIÓN NUEVO PRODUCTO (Actualizada) ---

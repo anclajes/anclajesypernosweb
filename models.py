@@ -32,10 +32,10 @@ class User(db.Model):
 class Product(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     sku = db.Column(db.String(50), unique=True, nullable=False) 
-    nombre = db.Column(db.String(200), nullable=False) 
-    categoria = db.Column(db.String(100), nullable=False) 
-    calidad = db.Column(db.String(100)) 
-    ubicacion = db.Column(db.String(100))
+    nombre = db.Column(db.String(500), nullable=False) 
+    categoria = db.Column(db.String(200), nullable=False) 
+    calidad = db.Column(db.String(200)) 
+    ubicacion = db.Column(db.String(200))
     stock_actual = db.Column(db.Integer, default=0)
     stock_minimo = db.Column(db.Integer, default=10)
     
