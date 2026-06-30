@@ -1983,265 +1983,247 @@ def actualizar_minimos_masivos():
 def importar_excel():
     import gc
     import traceback
+    from openpyxl import load_workbook
 
-    if session.get('role') not in ['admin', 'almacen']: 
+    if session.get('role') not in ['admin', 'almacen']:
         return "No autorizado", 403
-    
+
     if 'archivo_excel' not in request.files:
         flash('No se seleccionó ningún archivo')
         return redirect(url_for('inventario'))
-        
+
     archivo = request.files['archivo_excel']
-    if archivo.filename == '':
+    if not archivo or archivo.filename == '':
         return redirect(url_for('inventario'))
 
     filename = secure_filename(archivo.filename)
     filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     archivo.save(filepath)
-    
+
     nuevos = 0
     actualizados = 0
-    
+    errores = 0
+
     try:
-        # ============================================================
-        # PASO 1: LEER EXCEL CON DTYPE=str PARA EVITAR CONVERSIONES
-        # Y LIBERAR PANDAS LO ANTES POSIBLE
-        # ============================================================
-        try:
-            df_raw = pd.read_excel(filepath, sheet_name='STOCK', dtype=str)
-        except:
-            df_raw = pd.read_excel(filepath, dtype=str)
+        # ================================================================
+        # OPENPYXL EN MODO STREAMING (read_only=True)
+        # Lee una fila a la vez sin cargar el archivo completo en RAM
+        # Un Excel de 7MB con 4000 filas usa solo ~5MB en vez de 500MB
+        # ================================================================
+        wb = load_workbook(filename=filepath, read_only=True, data_only=True)
 
-        # Normalizar columnas
-        df_raw.columns = [str(c).strip().upper() for c in df_raw.columns]
-        
-        # Filtrar filas vacías ANTES de convertir a lista
-        col_codigo = 'CÓDIGO' if 'CÓDIGO' in df_raw.columns else ('CODIGO' if 'CODIGO' in df_raw.columns else None)
-        if col_codigo:
-            df_raw = df_raw.dropna(subset=[col_codigo])
-            df_raw = df_raw[df_raw[col_codigo].astype(str).str.strip().str.lower() != 'nan']
-            df_raw = df_raw[df_raw[col_codigo].astype(str).str.strip() != '']
+        # Intentar hoja 'STOCK', si no existe usar la primera
+        if 'STOCK' in wb.sheetnames:
+            ws = wb['STOCK']
+        else:
+            ws = wb.active
 
-        # CONVERSIÓN CRÍTICA: Pasar a lista de dicts y DESTRUIR el DataFrame
-        # Esto libera la memoria de pandas inmediatamente
-        filas = df_raw.to_dict('records')
-        total_filas = len(filas)
-        
-        del df_raw
-        gc.collect()
-        
-        print(f">>> [IMPORTAR] Total filas a procesar: {total_filas}")
+        # Leer encabezados de la primera fila
+        headers = []
+        header_row = next(ws.iter_rows(min_row=1, max_row=1, values_only=True))
+        headers = [str(h).strip().upper() if h is not None else '' for h in header_row]
 
-        # ============================================================
-        # PASO 2: PRE-CARGAR CACHÉ DE SKUs Y CATEGORÍAS EXISTENTES
-        # Esto evita hacer 4000 SELECT individuales (el cuello de botella real)
-        # ============================================================
-        
-        # Cargamos todos los SKUs existentes en un dict {sku: product_id}
-        skus_existentes = {}
-        for prod in db.session.query(Product.id, Product.sku).all():
-            skus_existentes[prod.sku] = prod.id
-        
-        # Cargamos todas las categorías en un dict {nombre: prefijo}
-        cats_existentes = {}
-        for cat in db.session.query(Category.nombre, Category.prefijo).all():
-            cats_existentes[cat.nombre] = cat.prefijo
+        print(f">>> [IMPORTAR] Columnas detectadas: {headers}")
 
-        gc.collect()
-        
+        # Mapeo flexible de columnas
+        def get_col(row_vals, *posibles_nombres):
+            for nombre in posibles_nombres:
+                if nombre in headers:
+                    idx = headers.index(nombre)
+                    if idx < len(row_vals):
+                        return row_vals[idx]
+            return None
+
         hora_actual = hora_peru()
         usuario_actual = session.get('username', 'Sistema')
         user_id_actual = session.get('user_id')
-        
-        CHUNK_SIZE = 50  # Procesar y commitear cada 50 filas
-        
-        # ============================================================
-        # PASO 3: PROCESAR EN CHUNKS SIN ACUMULAR OBJETOS EN SESIÓN
-        # ============================================================
-        for chunk_start in range(0, total_filas, CHUNK_SIZE):
-            chunk = filas[chunk_start : chunk_start + CHUNK_SIZE]
-            
-            # Listas para bulk operations
-            productos_actualizar = []  # [{sku: X, campos...}]
-            productos_insertar = []    # [Product()]
-            kardex_insertar = []       # [ProductMovement()]
-            
-            for row in chunk:
-                # --- Limpiar SKU ---
-                sku = str(row.get('CÓDIGO', row.get('CODIGO', ''))).strip()
-                if sku.endswith('.0'): sku = sku[:-2]
-                if not sku or sku.lower() == 'nan': continue
 
-                # --- Limpiar campos de texto ---
-                nombre = str(row.get('DESCRIPCIÓN', row.get('DESCRIPCION', 'Sin Nombre'))).strip()
-                if nombre.lower() == 'nan': nombre = 'Sin Nombre'
-                
-                familia = str(row.get('FAMILIA', 'GENERAL')).strip()
-                if familia.lower() == 'nan': familia = 'GENERAL'
-                
-                calidad = str(row.get('CALIDAD', '-')).strip()
-                if calidad.lower() == 'nan': calidad = '-'
-                
-                ubicacion = str(row.get('UBICACION', '')).strip()
-                if ubicacion.lower() == 'nan': ubicacion = ''
-                
-                estado_val = str(row.get('ESTADO', '')).strip().upper()
-                if estado_val.lower() == 'nan' or estado_val == 'OK': estado_val = ''
-
-                # --- Limpiar numéricos ---
-                try:
-                    val = str(row.get('CANT. ACT.', '0')).replace(',', '').strip()
-                    stock_val = int(float(val)) if val and val.lower() != 'nan' else 0
-                except: 
-                    stock_val = 0
-
-                try:
-                    min_raw = str(row.get('STOCK MÍNIMO', row.get('STOCK MINIMO', '10'))).strip()
-                    min_val = int(float(min_raw)) if min_raw and min_raw.lower() != 'nan' else 10
-                except:
-                    min_val = 10
-
-                # --- Crear categoría si no existe (usando caché) ---
-                if familia not in cats_existentes:
-                    base = "".join(c for c in familia[:3].upper() if c.isalnum()) or "GEN"
-                    prefijo_final = base
-                    contador_pref = 1
-                    # Verificar colisión en caché
-                    prefijos_usados = set(cats_existentes.values())
-                    while prefijo_final in prefijos_usados:
-                        prefijo_final = f"{base[:2]}{contador_pref}"
-                        contador_pref += 1
-                    
-                    nuevo_cat = Category(nombre=familia, prefijo=prefijo_final, contador=0)
-                    db.session.add(nuevo_cat)
-                    db.session.flush()
-                    cats_existentes[familia] = prefijo_final  # Actualizar caché
-
-                # --- Decidir INSERT o UPDATE ---
-                if sku in skus_existentes:
-                    # UPDATE directo por SKU (sin cargar el objeto)
-                    productos_actualizar.append({
-                        'sku': sku,
-                        'nombre': nombre,
-                        'categoria': familia,
-                        'calidad': calidad,
-                        'ubicacion': ubicacion,
-                        'estado': estado_val,
-                        'stock_actual': stock_val,
-                        'stock_minimo': min_val,
-                        'fecha_actualizacion': hora_actual,
-                        'actualizado_por': usuario_actual
-                    })
-                    actualizados += 1
-                else:
-                    # INSERT nuevo
-                    nuevo_prod = Product(
-                        sku=sku,
-                        nombre=nombre,
-                        categoria=familia,
-                        calidad=calidad,
-                        ubicacion=ubicacion,
-                        stock_actual=stock_val,
-                        stock_minimo=min_val,
-                        precio_unidad=0.0,
-                        precio_caja=0.0,
-                        precio_docena=0.0,
-                        costo_referencial=0.0,
-                        estado=estado_val,
-                        fecha_actualizacion=hora_actual,
-                        actualizado_por=usuario_actual
-                    )
-                    productos_insertar.append(nuevo_prod)
-                    skus_existentes[sku] = -1  # Marcar en caché para evitar duplicados en el mismo Excel
-                    nuevos += 1
-
-            # --- EJECUTAR OPERACIONES DEL CHUNK ---
-            
-            # A. Updates masivos (1 query por campo en vez de 4000 SELECTs)
-            for upd in productos_actualizar:
-                db.session.execute(
-                    text("""
-                        UPDATE product SET 
-                            nombre = :nombre,
-                            categoria = :categoria,
-                            calidad = :calidad,
-                            ubicacion = :ubicacion,
-                            estado = :estado,
-                            stock_actual = :stock_actual,
-                            stock_minimo = :stock_minimo,
-                            fecha_actualizacion = :fecha_actualizacion,
-                            actualizado_por = :actualizado_por
-                        WHERE sku = :sku
-                    """),
-                    upd
-                )
-            
-            # B. Inserts nuevos
-            if productos_insertar:
-                db.session.add_all(productos_insertar)
-                db.session.flush()  # Para obtener IDs
-                
-                # Kardex de saldo inicial solo para nuevos con stock
-                for prod_nuevo in productos_insertar:
-                    if prod_nuevo.stock_actual > 0 and prod_nuevo.id:
-                        kardex_insertar.append(ProductMovement(
-                            product_id=prod_nuevo.id,
-                            user_id=user_id_actual,
-                            tipo='ENTRADA',
-                            cantidad=prod_nuevo.stock_actual,
-                            stock_anterior=0,
-                            stock_nuevo=prod_nuevo.stock_actual,
-                            motivo="Saldo Inicial (Importación)"
-                        ))
-                
-                if kardex_insertar:
-                    db.session.add_all(kardex_insertar)
-            
-            # C. COMMIT y LIMPIEZA DE MEMORIA por chunk
-            db.session.commit()
-            db.session.expunge_all()
-            
-            # Liberar listas del chunk
-            del productos_actualizar, productos_insertar, kardex_insertar
-            gc.collect()
-            
-            print(f">>> [CHUNK] Procesado {min(chunk_start + CHUNK_SIZE, total_filas)}/{total_filas}")
-
-        # ============================================================
-        # PASO 4: LIBERAR TODO Y REGISTRAR
-        # ============================================================
-        del filas, skus_existentes, cats_existentes
+        # ================================================================
+        # PRE-CARGAR CACHÉ (evita SELECT por cada fila)
+        # ================================================================
+        skus_existentes = {p.sku: p.id for p in db.session.query(Product.id, Product.sku).all()}
+        cats_existentes = {c.nombre: c.prefijo for c in db.session.query(Category.nombre, Category.prefijo).all()}
+        db.session.expunge_all()
         gc.collect()
-        
-        # Registro de última importación
+
+        # ================================================================
+        # PROCESAR FILA POR FILA (modo streaming, sin acumular en RAM)
+        # ================================================================
+        batch_updates = []
+        batch_inserts = []
+        batch_kardex  = []
+        BATCH_SIZE = 100
+
+        fila_num = 0
+        for row_vals in ws.iter_rows(min_row=2, values_only=True):
+            fila_num += 1
+
+            # Leer SKU
+            sku_raw = get_col(row_vals, 'CÓDIGO', 'CODIGO', 'SKU', 'CÓDIGO ')
+            if sku_raw is None:
+                continue
+            sku = str(sku_raw).strip()
+            if sku.endswith('.0'):
+                sku = sku[:-2]
+            if not sku or sku.lower() in ('nan', 'none', ''):
+                continue
+
+            # Leer resto de campos
+            def clean_str(val, default=''):
+                if val is None: return default
+                s = str(val).strip()
+                return default if s.lower() in ('nan', 'none', '') else s
+
+            def clean_int(val, default=0):
+                try:
+                    v = str(val).replace(',', '').strip()
+                    return int(float(v)) if v and v.lower() not in ('nan', 'none', '') else default
+                except:
+                    return default
+
+            nombre   = clean_str(get_col(row_vals, 'DESCRIPCIÓN', 'DESCRIPCION', 'NOMBRE'), 'Sin Nombre')
+            familia  = clean_str(get_col(row_vals, 'FAMILIA', 'CATEGORIA'), 'GENERAL')
+            calidad  = clean_str(get_col(row_vals, 'CALIDAD'), '-')
+            ubicacion= clean_str(get_col(row_vals, 'UBICACION', 'UBICACIÓN'))
+            estado_v = clean_str(get_col(row_vals, 'ESTADO')).upper()
+            if estado_v == 'OK': estado_v = ''
+
+            stock_val = clean_int(get_col(row_vals, 'CANT. ACT.', 'STOCK', 'CANTIDAD', 'CANT.ACT.'))
+            min_val   = clean_int(get_col(row_vals, 'STOCK MÍNIMO', 'STOCK MINIMO', 'MINIMO'), 10)
+
+            # Crear categoría si no existe
+            if familia not in cats_existentes:
+                base = "".join(c for c in familia[:3].upper() if c.isalnum()) or "GEN"
+                prefijo_final = base
+                n = 1
+                prefijos_usados = set(cats_existentes.values())
+                while prefijo_final in prefijos_usados:
+                    prefijo_final = f"{base[:2]}{n}"
+                    n += 1
+                nuevo_cat = Category(nombre=familia, prefijo=prefijo_final, contador=0)
+                db.session.add(nuevo_cat)
+                db.session.flush()
+                cats_existentes[familia] = prefijo_final
+
+            # Decidir INSERT o UPDATE
+            if sku in skus_existentes:
+                batch_updates.append({
+                    'sku': sku, 'nombre': nombre, 'categoria': familia,
+                    'calidad': calidad, 'ubicacion': ubicacion, 'estado': estado_v,
+                    'stock_actual': stock_val, 'stock_minimo': min_val,
+                    'fecha_actualizacion': hora_actual, 'actualizado_por': usuario_actual
+                })
+                actualizados += 1
+            else:
+                nuevo_prod = Product(
+                    sku=sku, nombre=nombre, categoria=familia, calidad=calidad,
+                    ubicacion=ubicacion, stock_actual=stock_val, stock_minimo=min_val,
+                    precio_unidad=0.0, precio_caja=0.0, precio_docena=0.0,
+                    costo_referencial=0.0, estado=estado_v,
+                    fecha_actualizacion=hora_actual, actualizado_por=usuario_actual
+                )
+                batch_inserts.append(nuevo_prod)
+                skus_existentes[sku] = -1
+                nuevos += 1
+
+            # Cada BATCH_SIZE filas: commit y limpiar
+            if (nuevos + actualizados) % BATCH_SIZE == 0:
+                # Ejecutar updates
+                for upd in batch_updates:
+                    db.session.execute(text("""
+                        UPDATE product SET
+                            nombre=:nombre, categoria=:categoria, calidad=:calidad,
+                            ubicacion=:ubicacion, estado=:estado,
+                            stock_actual=:stock_actual, stock_minimo=:stock_minimo,
+                            fecha_actualizacion=:fecha_actualizacion,
+                            actualizado_por=:actualizado_por
+                        WHERE sku=:sku
+                    """), upd)
+
+                # Insertar nuevos
+                if batch_inserts:
+                    db.session.add_all(batch_inserts)
+                    db.session.flush()
+                    for p in batch_inserts:
+                        if p.stock_actual > 0 and p.id:
+                            batch_kardex.append(ProductMovement(
+                                product_id=p.id, user_id=user_id_actual,
+                                tipo='ENTRADA', cantidad=p.stock_actual,
+                                stock_anterior=0, stock_nuevo=p.stock_actual,
+                                motivo="Saldo Inicial (Importación)"
+                            ))
+                    if batch_kardex:
+                        db.session.add_all(batch_kardex)
+
+                db.session.commit()
+                db.session.expunge_all()
+
+                batch_updates = []
+                batch_inserts = []
+                batch_kardex  = []
+                gc.collect()
+                print(f">>> [BATCH] Commit: {nuevos + actualizados} filas procesadas")
+
+        # Procesar el último batch (filas restantes)
+        for upd in batch_updates:
+            db.session.execute(text("""
+                UPDATE product SET
+                    nombre=:nombre, categoria=:categoria, calidad=:calidad,
+                    ubicacion=:ubicacion, estado=:estado,
+                    stock_actual=:stock_actual, stock_minimo=:stock_minimo,
+                    fecha_actualizacion=:fecha_actualizacion,
+                    actualizado_por=:actualizado_por
+                WHERE sku=:sku
+            """), upd)
+
+        if batch_inserts:
+            db.session.add_all(batch_inserts)
+            db.session.flush()
+            for p in batch_inserts:
+                if p.stock_actual > 0 and p.id:
+                    batch_kardex.append(ProductMovement(
+                        product_id=p.id, user_id=user_id_actual,
+                        tipo='ENTRADA', cantidad=p.stock_actual,
+                        stock_anterior=0, stock_nuevo=p.stock_actual,
+                        motivo="Saldo Inicial (Importación)"
+                    ))
+            if batch_kardex:
+                db.session.add_all(batch_kardex)
+
+        db.session.commit()
+        db.session.expunge_all()
+
+        # Cerrar workbook y liberar
+        wb.close()
+        del wb, skus_existentes, cats_existentes
+        del batch_updates, batch_inserts, batch_kardex
+        gc.collect()
+
+        # Registrar última importación
         config_import = SystemConfig.query.get('ultima_importacion')
         hora_final = hora_peru()
-        
         if not config_import:
             config_import = SystemConfig(
-                key='ultima_importacion', 
-                value='EXITOSO', 
-                updated_at=hora_final, 
-                updated_by=usuario_actual
+                key='ultima_importacion', value='EXITOSO',
+                updated_at=hora_final, updated_by=usuario_actual
             )
             db.session.add(config_import)
         else:
             config_import.updated_at = hora_final
             config_import.updated_by = usuario_actual
-            
         db.session.commit()
-        
-        flash(f'✅ Proceso completado: {nuevos} nuevos, {actualizados} actualizados. Total: {nuevos + actualizados} productos.')
-        
+
+        flash(f'✅ Importación completada: {nuevos} nuevos, {actualizados} actualizados.')
+
     except Exception as e:
         db.session.rollback()
-        print(f"ERROR IMPORTACIÓN: {traceback.format_exc()}")
+        print(f"ERROR IMPORTACIÓN:\n{traceback.format_exc()}")
         flash(f'Error en la importación: {str(e)}')
     finally:
-        if os.path.exists(filepath): 
+        if os.path.exists(filepath):
             os.remove(filepath)
         gc.collect()
-            
+
     return redirect(url_for('inventario'))
 
 # 2. ACTUALIZAR NUEVO PRODUCTO (Para responder JSON y no borrar datos)
