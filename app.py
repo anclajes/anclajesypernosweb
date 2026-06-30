@@ -1982,8 +1982,10 @@ def actualizar_minimos_masivos():
 @app.route('/producto/importar', methods=['POST'])
 def importar_excel():
     import gc
+    import traceback
 
-    if session.get('role') not in ['admin', 'almacen']: return "No autorizado", 403
+    if session.get('role') not in ['admin', 'almacen']: 
+        return "No autorizado", 403
     
     if 'archivo_excel' not in request.files:
         flash('No se seleccionó ningún archivo')
@@ -1993,133 +1995,252 @@ def importar_excel():
     if archivo.filename == '':
         return redirect(url_for('inventario'))
 
-    if archivo:
-        filename = secure_filename(archivo.filename)
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        archivo.save(filepath)
-        
+    filename = secure_filename(archivo.filename)
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    archivo.save(filepath)
+    
+    nuevos = 0
+    actualizados = 0
+    
+    try:
+        # ============================================================
+        # PASO 1: LEER EXCEL CON DTYPE=str PARA EVITAR CONVERSIONES
+        # Y LIBERAR PANDAS LO ANTES POSIBLE
+        # ============================================================
         try:
-            try:
-                df = pd.read_excel(filepath, sheet_name='STOCK')
-            except:
-                df = pd.read_excel(filepath)
+            df_raw = pd.read_excel(filepath, sheet_name='STOCK', dtype=str)
+        except:
+            df_raw = pd.read_excel(filepath, dtype=str)
 
-            df.columns = [str(c).strip().upper() for c in df.columns]
-            
-            col_codigo = 'CÓDIGO' if 'CÓDIGO' in df.columns else ('CODIGO' if 'CODIGO' in df.columns else None)
-            if col_codigo:
-                df = df.dropna(subset=[col_codigo])
-                df = df[df[col_codigo].astype(str).str.strip().str.lower() != 'nan']
-                df = df[df[col_codigo].astype(str).str.strip() != '']
+        # Normalizar columnas
+        df_raw.columns = [str(c).strip().upper() for c in df_raw.columns]
+        
+        # Filtrar filas vacías ANTES de convertir a lista
+        col_codigo = 'CÓDIGO' if 'CÓDIGO' in df_raw.columns else ('CODIGO' if 'CODIGO' in df_raw.columns else None)
+        if col_codigo:
+            df_raw = df_raw.dropna(subset=[col_codigo])
+            df_raw = df_raw[df_raw[col_codigo].astype(str).str.strip().str.lower() != 'nan']
+            df_raw = df_raw[df_raw[col_codigo].astype(str).str.strip() != '']
 
-            nuevos = 0
-            actualizados = 0
+        # CONVERSIÓN CRÍTICA: Pasar a lista de dicts y DESTRUIR el DataFrame
+        # Esto libera la memoria de pandas inmediatamente
+        filas = df_raw.to_dict('records')
+        total_filas = len(filas)
+        
+        del df_raw
+        gc.collect()
+        
+        print(f">>> [IMPORTAR] Total filas a procesar: {total_filas}")
+
+        # ============================================================
+        # PASO 2: PRE-CARGAR CACHÉ DE SKUs Y CATEGORÍAS EXISTENTES
+        # Esto evita hacer 4000 SELECT individuales (el cuello de botella real)
+        # ============================================================
+        
+        # Cargamos todos los SKUs existentes en un dict {sku: product_id}
+        skus_existentes = {}
+        for prod in db.session.query(Product.id, Product.sku).all():
+            skus_existentes[prod.sku] = prod.id
+        
+        # Cargamos todas las categorías en un dict {nombre: prefijo}
+        cats_existentes = {}
+        for cat in db.session.query(Category.nombre, Category.prefijo).all():
+            cats_existentes[cat.nombre] = cat.prefijo
+
+        gc.collect()
+        
+        hora_actual = hora_peru()
+        usuario_actual = session.get('username', 'Sistema')
+        user_id_actual = session.get('user_id')
+        
+        CHUNK_SIZE = 50  # Procesar y commitear cada 50 filas
+        
+        # ============================================================
+        # PASO 3: PROCESAR EN CHUNKS SIN ACUMULAR OBJETOS EN SESIÓN
+        # ============================================================
+        for chunk_start in range(0, total_filas, CHUNK_SIZE):
+            chunk = filas[chunk_start : chunk_start + CHUNK_SIZE]
             
-            for index, row in df.iterrows():
+            # Listas para bulk operations
+            productos_actualizar = []  # [{sku: X, campos...}]
+            productos_insertar = []    # [Product()]
+            kardex_insertar = []       # [ProductMovement()]
+            
+            for row in chunk:
+                # --- Limpiar SKU ---
                 sku = str(row.get('CÓDIGO', row.get('CODIGO', ''))).strip()
                 if sku.endswith('.0'): sku = sku[:-2]
-                if not sku or sku.lower() == 'nan': continue 
+                if not sku or sku.lower() == 'nan': continue
 
-                nombre = str(row.get('DESCRIPCIÓN', 'Sin Nombre')).strip()
+                # --- Limpiar campos de texto ---
+                nombre = str(row.get('DESCRIPCIÓN', row.get('DESCRIPCION', 'Sin Nombre'))).strip()
+                if nombre.lower() == 'nan': nombre = 'Sin Nombre'
+                
                 familia = str(row.get('FAMILIA', 'GENERAL')).strip()
+                if familia.lower() == 'nan': familia = 'GENERAL'
+                
                 calidad = str(row.get('CALIDAD', '-')).strip()
+                if calidad.lower() == 'nan': calidad = '-'
+                
                 ubicacion = str(row.get('UBICACION', '')).strip()
-                if ubicacion.lower() == 'nan': ubicacion = ""
+                if ubicacion.lower() == 'nan': ubicacion = ''
                 
                 estado_val = str(row.get('ESTADO', '')).strip().upper()
-                if estado_val.lower() == 'nan' or estado_val == 'OK': 
-                    estado_val = "" 
-                
+                if estado_val.lower() == 'nan' or estado_val == 'OK': estado_val = ''
+
+                # --- Limpiar numéricos ---
                 try:
-                    val = row.get('CANT. ACT.', 0)
-                    if isinstance(val, str): val = val.replace(',', '')
-                    stock_val = int(float(val)) if pd.notnull(val) else 0
-                except: stock_val = 0
+                    val = str(row.get('CANT. ACT.', '0')).replace(',', '').strip()
+                    stock_val = int(float(val)) if val and val.lower() != 'nan' else 0
+                except: 
+                    stock_val = 0
 
                 try:
-                    min_val = int(float(row.get('STOCK MÍNIMO', 10)))
+                    min_raw = str(row.get('STOCK MÍNIMO', row.get('STOCK MINIMO', '10'))).strip()
+                    min_val = int(float(min_raw)) if min_raw and min_raw.lower() != 'nan' else 10
                 except:
                     min_val = 10
 
-                cat_obj = Category.query.filter_by(nombre=familia).first()
-                if not cat_obj:
+                # --- Crear categoría si no existe (usando caché) ---
+                if familia not in cats_existentes:
                     base = "".join(c for c in familia[:3].upper() if c.isalnum()) or "GEN"
                     prefijo_final = base
-                    contador = 1
-                    while Category.query.filter_by(prefijo=prefijo_final).first():
-                        prefijo_final = f"{base[:2]}{contador}"
-                        contador += 1
+                    contador_pref = 1
+                    # Verificar colisión en caché
+                    prefijos_usados = set(cats_existentes.values())
+                    while prefijo_final in prefijos_usados:
+                        prefijo_final = f"{base[:2]}{contador_pref}"
+                        contador_pref += 1
+                    
                     nuevo_cat = Category(nombre=familia, prefijo=prefijo_final, contador=0)
                     db.session.add(nuevo_cat)
                     db.session.flush()
+                    cats_existentes[familia] = prefijo_final  # Actualizar caché
 
-                prod = Product.query.filter_by(sku=sku).first()
-                
-                hora_actual = hora_peru()
-                usuario_actual = session.get('username', 'Sistema')
-
-                if prod:
-                    prod.stock_actual = stock_val
-                    prod.stock_minimo = min_val 
-                    prod.nombre = nombre
-                    prod.categoria = familia
-                    prod.calidad = calidad
-                    prod.ubicacion = ubicacion
-                    prod.estado = estado_val
-                    prod.fecha_actualizacion = hora_actual
-                    prod.actualizado_por = usuario_actual
+                # --- Decidir INSERT o UPDATE ---
+                if sku in skus_existentes:
+                    # UPDATE directo por SKU (sin cargar el objeto)
+                    productos_actualizar.append({
+                        'sku': sku,
+                        'nombre': nombre,
+                        'categoria': familia,
+                        'calidad': calidad,
+                        'ubicacion': ubicacion,
+                        'estado': estado_val,
+                        'stock_actual': stock_val,
+                        'stock_minimo': min_val,
+                        'fecha_actualizacion': hora_actual,
+                        'actualizado_por': usuario_actual
+                    })
                     actualizados += 1
                 else:
-                    prod = Product(
-                        sku=sku, nombre=nombre, categoria=familia, calidad=calidad,
-                        ubicacion=ubicacion, stock_actual=stock_val, stock_minimo=min_val,
-                        precio_unidad=0.0, precio_caja=0.0, precio_docena=0.0, costo_referencial=0.0,
-                        estado=estado_val, fecha_actualizacion=hora_actual, actualizado_por=usuario_actual
+                    # INSERT nuevo
+                    nuevo_prod = Product(
+                        sku=sku,
+                        nombre=nombre,
+                        categoria=familia,
+                        calidad=calidad,
+                        ubicacion=ubicacion,
+                        stock_actual=stock_val,
+                        stock_minimo=min_val,
+                        precio_unidad=0.0,
+                        precio_caja=0.0,
+                        precio_docena=0.0,
+                        costo_referencial=0.0,
+                        estado=estado_val,
+                        fecha_actualizacion=hora_actual,
+                        actualizado_por=usuario_actual
                     )
-                    db.session.add(prod)
-                    db.session.flush()
-                    
-                    if stock_val > 0:
-                        kardex = ProductMovement(
-                            product_id=prod.id, user_id=session['user_id'], tipo='ENTRADA',
-                            cantidad=stock_val, stock_anterior=0, stock_nuevo=stock_val, motivo="Saldo Inicial (Importación)"
-                        )
-                        db.session.add(kardex)
+                    productos_insertar.append(nuevo_prod)
+                    skus_existentes[sku] = -1  # Marcar en caché para evitar duplicados en el mismo Excel
                     nuevos += 1
 
-                # CORRECCIÓN: expunge_all() en lugar de clear()
-                if (index + 1) % 100 == 0:
-                    db.session.commit()
-                    db.session.expunge_all()
-                    gc.collect()
-
+            # --- EJECUTAR OPERACIONES DEL CHUNK ---
+            
+            # A. Updates masivos (1 query por campo en vez de 4000 SELECTs)
+            for upd in productos_actualizar:
+                db.session.execute(
+                    text("""
+                        UPDATE product SET 
+                            nombre = :nombre,
+                            categoria = :categoria,
+                            calidad = :calidad,
+                            ubicacion = :ubicacion,
+                            estado = :estado,
+                            stock_actual = :stock_actual,
+                            stock_minimo = :stock_minimo,
+                            fecha_actualizacion = :fecha_actualizacion,
+                            actualizado_por = :actualizado_por
+                        WHERE sku = :sku
+                    """),
+                    upd
+                )
+            
+            # B. Inserts nuevos
+            if productos_insertar:
+                db.session.add_all(productos_insertar)
+                db.session.flush()  # Para obtener IDs
+                
+                # Kardex de saldo inicial solo para nuevos con stock
+                for prod_nuevo in productos_insertar:
+                    if prod_nuevo.stock_actual > 0 and prod_nuevo.id:
+                        kardex_insertar.append(ProductMovement(
+                            product_id=prod_nuevo.id,
+                            user_id=user_id_actual,
+                            tipo='ENTRADA',
+                            cantidad=prod_nuevo.stock_actual,
+                            stock_anterior=0,
+                            stock_nuevo=prod_nuevo.stock_actual,
+                            motivo="Saldo Inicial (Importación)"
+                        ))
+                
+                if kardex_insertar:
+                    db.session.add_all(kardex_insertar)
+            
+            # C. COMMIT y LIMPIEZA DE MEMORIA por chunk
             db.session.commit()
             db.session.expunge_all()
             
-            del df 
+            # Liberar listas del chunk
+            del productos_actualizar, productos_insertar, kardex_insertar
             gc.collect()
             
-            config_import = SystemConfig.query.get('ultima_importacion')
-            hora_global = hora_peru()
-            usuario_global = session.get('username', 'Sistema')
+            print(f">>> [CHUNK] Procesado {min(chunk_start + CHUNK_SIZE, total_filas)}/{total_filas}")
+
+        # ============================================================
+        # PASO 4: LIBERAR TODO Y REGISTRAR
+        # ============================================================
+        del filas, skus_existentes, cats_existentes
+        gc.collect()
+        
+        # Registro de última importación
+        config_import = SystemConfig.query.get('ultima_importacion')
+        hora_final = hora_peru()
+        
+        if not config_import:
+            config_import = SystemConfig(
+                key='ultima_importacion', 
+                value='EXITOSO', 
+                updated_at=hora_final, 
+                updated_by=usuario_actual
+            )
+            db.session.add(config_import)
+        else:
+            config_import.updated_at = hora_final
+            config_import.updated_by = usuario_actual
             
-            if not config_import:
-                config_import = SystemConfig(key='ultima_importacion', value='EXITOSO', updated_at=hora_global, updated_by=usuario_global)
-                db.session.add(config_import)
-            else:
-                config_import.updated_at = hora_global
-                config_import.updated_by = usuario_global
-                
-            db.session.commit()
-            db.session.expunge_all()
-            
-            flash(f'Proceso completado: {nuevos} nuevos, {actualizados} actualizados.')
-            
-        except Exception as e:
-            db.session.rollback()
-            flash(f'Error en la importación: {str(e)}')
-        finally:
-            if os.path.exists(filepath): os.remove(filepath)
+        db.session.commit()
+        
+        flash(f'✅ Proceso completado: {nuevos} nuevos, {actualizados} actualizados. Total: {nuevos + actualizados} productos.')
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f"ERROR IMPORTACIÓN: {traceback.format_exc()}")
+        flash(f'Error en la importación: {str(e)}')
+    finally:
+        if os.path.exists(filepath): 
+            os.remove(filepath)
+        gc.collect()
             
     return redirect(url_for('inventario'))
 
