@@ -573,8 +573,6 @@
         });
     }
 
-    // CARGAR MODAL DE DETALLE (FUNCIÓN CORREGIDA)
-    // CARGAR MODAL DE DETALLE
 // CARGAR MODAL DE DETALLE (FUNCIÓN COMPLETA CON LÍNEA DE TIEMPO)
     function verDetalleCompleto(id) {
         ordenIdActual = id;
@@ -651,12 +649,13 @@
                         $('#box_motivo_rechazo').addClass('d-none');
                     }
 
+                    // --- ETIQUETA DESCUENTO GLOBAL ---
                     let labelDescGeneral = "DESCUENTO:";
                     if(d.descuento_total > 0) {
                         if(d.descuento_tipo === 'PORCENTAJE') {
                             labelDescGeneral = `DESCUENTO (${d.descuento_valor}%):`;
                         } else {
-                            labelDescGeneral = `DESCUENTO (Fijo):`;
+                            labelDescGeneral = `DESCUENTO (MONTO FIJO):`; // Modificado para mayor claridad
                         }
                     }
                     $('#view_descuento_label').text(labelDescGeneral);
@@ -671,11 +670,14 @@
                             estadoHtml = `<div class="mt-1"><span class="badge bg-danger text-white shadow-sm" style="font-size: 0.65rem; padding: 4px 8px;"><i class="bi bi-exclamation-triangle-fill"></i> ${item.estado_producto}</span></div>`;
                         }
 
-                        // AGREGAR DESCUENTO INDIVIDUAL VISUALMENTE
+                        // AGREGAR DESCUENTO INDIVIDUAL VISUALMENTE MÁS CLARO
                         let descuentoItemHtml = '';
                         if(item.desc_valor > 0) {
-                            let textoDesc = item.desc_tipo === 'PORCENTAJE' ? `${item.desc_valor}%` : `${simbolo} ${item.desc_valor}`;
-                            descuentoItemHtml = `<div class="mt-1"><span class="badge bg-warning text-dark border border-warning" style="font-size:0.65rem"><i class="bi bi-tag-fill"></i> ${item.desc_label} (-${textoDesc})</span></div>`;
+                            let textoDesc = item.desc_tipo === 'PORCENTAJE' 
+                                ? `Descuento: ${item.desc_valor}%` 
+                                : `Descuento Fijo: ${simbolo} ${parseFloat(item.desc_valor).toFixed(2)}`;
+                                
+                            descuentoItemHtml = `<div class="mt-1"><span class="badge bg-warning text-dark border border-warning" style="font-size:0.65rem"><i class="bi bi-tag-fill"></i> ${textoDesc}</span></div>`;
                         }
 
                         let row = `<tr>
@@ -704,10 +706,10 @@
                         row += `</td>
                                 <td class="text-center fw-bold fs-6">${item.cantidad}</td>
                                 <td class="text-end text-muted">
-                                    ${item.desc_valor > 0 ? `<del class="text-danger" style="font-size:0.7rem">${item.precio_base.toFixed(2)}</del><br>` : ''}
-                                    ${item.precio.toFixed(2)}
+                                    ${item.desc_valor > 0 ? `<del class="text-danger" style="font-size:0.7rem">${simbolo} ${parseFloat(item.precio_base).toFixed(2)}</del><br>` : ''}
+                                    ${simbolo} ${item.precio.toFixed(2)}
                                 </td>
-                                <td class="text-end fw-bold pe-3">${item.subtotal.toFixed(2)}</td>
+                                <td class="text-end fw-bold pe-3">${simbolo} ${item.subtotal.toFixed(2)}</td>
                             </tr>`;
                         
                         tbody.append(row);
@@ -715,8 +717,11 @@
 
                     $('#view_moneda').text(d.moneda);
                     $('#view_subtotal').text(simbolo + " " + d.subtotal.toFixed(2));
-                    $('#view_descuento').text("- " + d.descuento_total.toFixed(2));
-                    $('#view_igv').text(d.igv.toFixed(2));
+                    
+                    // Asegurando que el Símbolo Monetario y el Monto se muestren de forma transparente
+                    $('#view_descuento').text("- " + simbolo + " " + d.descuento_total.toFixed(2));
+                    $('#view_igv').text(simbolo + " " + d.igv.toFixed(2));
+                    
                     $('#view_total').text(simbolo + " " + d.total.toFixed(2));
 
                     // --- DIBUJAR LÍNEA DE TIEMPO (TIMELINE) ---
