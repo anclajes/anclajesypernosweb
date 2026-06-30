@@ -3172,7 +3172,11 @@ def obtener_detalle_venta(order_id):
             'subtotal': orden.subtotal,
             'igv': orden.igv,
             'total': orden.total,
+            # --- NUEVOS CAMPOS DE DESCUENTO GENERAL ---
             'descuento_total': orden.descuento_total,
+            'descuento_tipo': orden.descuento_tipo,
+            'descuento_valor': orden.descuento_valor,
+            
             'chofer_nombre': orden.chofer.username if orden.chofer else None,
             'peso_total': orden.peso_total,
             'cantidad_bultos': orden.cantidad_bultos,
@@ -3342,27 +3346,6 @@ def reset_total_db_secreto():
             password=generate_password_hash('123'),  # Contraseña inicial
             nombre_completo='Administrador General',
             role='admin'
-        )
-        
-        jefe_ventas = User(
-            username='jefe', 
-            password=generate_password_hash('123'),
-            nombre_completo='Roberto Gómez (Jefe Ventas)', 
-            role='administracion'
-        )
-        
-        vendedor = User(
-            username='juan', 
-            password=generate_password_hash('123'),
-            nombre_completo='Juan Pérez (Vendedor)', 
-            role='vendedor'
-        )
-        
-        almacen = User(
-            username='pedro', 
-            password=generate_password_hash('123'),
-            nombre_completo='Pedro Castillo (Almacén)', 
-            role='almacen'
         )
         
         db.session.add_all([admin, jefe_ventas, vendedor, almacen])
