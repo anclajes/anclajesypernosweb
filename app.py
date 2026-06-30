@@ -3348,7 +3348,7 @@ def reset_total_db_secreto():
             role='admin'
         )
         
-        db.session.add_all([admin, jefe_ventas, vendedor, almacen])
+        db.session.add_all([admin])
         db.session.commit()
         
         return "<h1>¡Éxito!</h1><p>La base de datos ha sido reiniciada, las tablas han sido creadas y los usuarios base están listos. Ya puedes iniciar sesión.</p>"
