@@ -1962,10 +1962,11 @@ def actualizar_minimos_masivos():
         db.session.rollback()
         return {'status': 'error', 'msg': str(e)}
 
-
-# --- 2. IMPORTACIÓN CON KARDEX (ACTUALIZADA CON REGISTRO GLOBAL, ESTADOS Y OPTIMIZACIÓN DE MEMORIA) ---
+# --- 2. IMPORTACIÓN CON KARDEX (OPTIMIZACIÓN EXTREMA DE MEMORIA) ---
 @app.route('/producto/importar', methods=['POST'])
 def importar_excel():
+    import gc  # <-- IMPORTANTE: Forzará a Python a vaciar la RAM físicamente
+
     if session.get('role') not in ['admin', 'almacen']: return "No autorizado", 403
     
     if 'archivo_excel' not in request.files:
@@ -2003,25 +2004,21 @@ def importar_excel():
                 ubicacion = str(row.get('UBICACION', '')).strip()
                 if ubicacion.lower() == 'nan': ubicacion = ""
                 
-                # --- CAPTURAR EL ESTADO DEL EXCEL ---
                 estado_val = str(row.get('ESTADO', '')).strip().upper()
                 if estado_val.lower() == 'nan' or estado_val == 'OK': 
-                    estado_val = "" # Lo dejamos vacío si está sano o dice OK
+                    estado_val = "" 
                 
-                # Stock Actual
                 try:
                     val = row.get('CANT. ACT.', 0)
                     if isinstance(val, str): val = val.replace(',', '')
                     stock_val = int(float(val)) if pd.notnull(val) else 0
                 except: stock_val = 0
 
-                # Stock Mínimo
                 try:
                     min_val = int(float(row.get('STOCK MÍNIMO', 10)))
                 except:
                     min_val = 10
 
-                # Lógica Categoría
                 cat_obj = Category.query.filter_by(nombre=familia).first()
                 if not cat_obj:
                     base = "".join(c for c in familia[:3].upper() if c.isalnum()) or "GEN"
@@ -2036,12 +2033,10 @@ def importar_excel():
 
                 prod = Product.query.filter_by(sku=sku).first()
                 
-                # --- AUDITORÍA INDIVIDUAL POR PRODUCTO ---
                 hora_actual = hora_peru()
                 usuario_actual = session.get('username', 'Sistema')
 
                 if prod:
-                    # ACTUALIZAR
                     prod.stock_actual = stock_val
                     prod.stock_minimo = min_val 
                     prod.nombre = nombre
@@ -2053,7 +2048,6 @@ def importar_excel():
                     prod.actualizado_por = usuario_actual
                     actualizados += 1
                 else:
-                    # CREAR
                     prod = Product(
                         sku=sku, nombre=nombre, categoria=familia, calidad=calidad,
                         ubicacion=ubicacion, stock_actual=stock_val, stock_minimo=min_val,
@@ -2071,16 +2065,21 @@ def importar_excel():
                         db.session.add(kardex)
                     nuevos += 1
 
-                # === TRUCO DE OPTIMIZACIÓN: GUARDADO POR LOTES (CADA 100 FILAS) ===
+                # === TRUCO DE OPTIMIZACIÓN EXTREMA: VACIAR RAM ===
                 if (index + 1) % 100 == 0:
                     db.session.commit()
-                    db.session.clear() # Libera por completo la memoria RAM de los objetos procesados
+                    db.session.expunge_all() # Desvincula los objetos guardados de SQLAlchemy
+                    gc.collect()             # Obliga al servidor a vaciar la RAM inmediatamente
 
-            # Commit definitivo para guardar las filas restantes que no completaron un lote de 100
+            # Guardar el sobrante final
             db.session.commit()
-            db.session.clear()
+            db.session.expunge_all()
             
-            # --- REGISTRO MAPEO GLOBAL DE LA IMPORTACIÓN MASIVA ---
+            # Destruir el peso del archivo Pandas de la memoria RAM
+            del df 
+            gc.collect()
+            
+            # --- REGISTRO MAPEO GLOBAL ---
             config_import = SystemConfig.query.get('ultima_importacion')
             hora_global = hora_peru()
             usuario_global = session.get('username', 'Sistema')
@@ -2093,8 +2092,7 @@ def importar_excel():
                 config_import.updated_by = usuario_global
                 
             db.session.commit()
-            db.session.clear() # Limpieza final del estado de la sesión
-            # -------------------------------------------------------------
+            db.session.expunge_all() 
             
             flash(f'Proceso completado: {nuevos} nuevos, {actualizados} actualizados.')
             
