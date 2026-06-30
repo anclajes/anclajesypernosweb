@@ -1962,10 +1962,10 @@ def actualizar_minimos_masivos():
         db.session.rollback()
         return {'status': 'error', 'msg': str(e)}
 
-# --- 2. IMPORTACIÓN CON KARDEX (OPTIMIZACIÓN EXTREMA DE MEMORIA) ---
+# --- 2. IMPORTACIÓN CON KARDEX (OPTIMIZACIÓN EXTREMA DE MEMORIA Y FILTRADO FANTASMA) ---
 @app.route('/producto/importar', methods=['POST'])
 def importar_excel():
-    import gc  # <-- IMPORTANTE: Forzará a Python a vaciar la RAM físicamente
+    import gc  # Forzará a Python a liberar RAM físicamente
 
     if session.get('role') not in ['admin', 'almacen']: return "No autorizado", 403
     
@@ -1988,8 +1988,18 @@ def importar_excel():
             except:
                 df = pd.read_excel(filepath)
 
+            # Normalizar nombres de columnas a mayúsculas
             df.columns = [str(c).strip().upper() for c in df.columns]
             
+            # --- FILTRO CRUCIAL: ELIMINAR FILAS FANTASMA/VACÍAS DEL EXCEL ---
+            col_codigo = 'CÓDIGO' if 'CÓDIGO' in df.columns else ('CODIGO' if 'CODIGO' in df.columns else None)
+            if col_codigo:
+                # Elimina filas donde el código sea completamente nulo (NaN)
+                df = df.dropna(subset=[col_codigo])
+                # Elimina filas donde el código sea un texto vacío o la palabra 'nan'
+                df = df[df[col_codigo].astype(str).str.strip().str.lower() != 'nan']
+                df = df[df[col_codigo].astype(str).str.strip() != '']
+
             nuevos = 0
             actualizados = 0
             
@@ -2065,17 +2075,17 @@ def importar_excel():
                         db.session.add(kardex)
                     nuevos += 1
 
-                # === TRUCO DE OPTIMIZACIÓN EXTREMA: VACIAR RAM ===
+                # === GUARDADO Y LIMPIEZA ABSOLUTA DE SESIÓN CADA 100 FILAS ===
                 if (index + 1) % 100 == 0:
                     db.session.commit()
-                    db.session.expunge_all() # Desvincula los objetos guardados de SQLAlchemy
-                    gc.collect()             # Obliga al servidor a vaciar la RAM inmediatamente
+                    db.session.clear()  # Vacía por completo el estado de la sesión de SQLAlchemy
+                    gc.collect()        # Libera la memoria RAM del sistema operativo
 
-            # Guardar el sobrante final
+            # Guardar registros finales pendientes
             db.session.commit()
-            db.session.expunge_all()
+            db.session.clear()
             
-            # Destruir el peso del archivo Pandas de la memoria RAM
+            # Destruir el peso del DataFrame y forzar limpieza final de RAM
             del df 
             gc.collect()
             
@@ -2092,7 +2102,7 @@ def importar_excel():
                 config_import.updated_by = usuario_global
                 
             db.session.commit()
-            db.session.expunge_all() 
+            db.session.clear() 
             
             flash(f'Proceso completado: {nuevos} nuevos, {actualizados} actualizados.')
             
