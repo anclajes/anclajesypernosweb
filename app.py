@@ -1979,10 +1979,9 @@ def actualizar_minimos_masivos():
         db.session.rollback()
         return {'status': 'error', 'msg': str(e)}
 
-# --- 2. IMPORTACIÓN CON KARDEX (OPTIMIZACIÓN EXTREMA DE MEMORIA Y FILTRADO FANTASMA) ---
 @app.route('/producto/importar', methods=['POST'])
 def importar_excel():
-    import gc  # Forzará a Python a liberar RAM físicamente
+    import gc
 
     if session.get('role') not in ['admin', 'almacen']: return "No autorizado", 403
     
@@ -2005,15 +2004,11 @@ def importar_excel():
             except:
                 df = pd.read_excel(filepath)
 
-            # Normalizar nombres de columnas a mayúsculas
             df.columns = [str(c).strip().upper() for c in df.columns]
             
-            # --- FILTRO CRUCIAL: ELIMINAR FILAS FANTASMA/VACÍAS DEL EXCEL ---
             col_codigo = 'CÓDIGO' if 'CÓDIGO' in df.columns else ('CODIGO' if 'CODIGO' in df.columns else None)
             if col_codigo:
-                # Elimina filas donde el código sea completamente nulo (NaN)
                 df = df.dropna(subset=[col_codigo])
-                # Elimina filas donde el código sea un texto vacío o la palabra 'nan'
                 df = df[df[col_codigo].astype(str).str.strip().str.lower() != 'nan']
                 df = df[df[col_codigo].astype(str).str.strip() != '']
 
@@ -2092,21 +2087,18 @@ def importar_excel():
                         db.session.add(kardex)
                     nuevos += 1
 
-                # === GUARDADO Y LIMPIEZA ABSOLUTA DE SESIÓN CADA 100 FILAS ===
+                # CORRECCIÓN: expunge_all() en lugar de clear()
                 if (index + 1) % 100 == 0:
                     db.session.commit()
-                    db.session.clear()  # Vacía por completo el estado de la sesión de SQLAlchemy
-                    gc.collect()        # Libera la memoria RAM del sistema operativo
+                    db.session.expunge_all()
+                    gc.collect()
 
-            # Guardar registros finales pendientes
             db.session.commit()
-            db.session.clear()
+            db.session.expunge_all()
             
-            # Destruir el peso del DataFrame y forzar limpieza final de RAM
             del df 
             gc.collect()
             
-            # --- REGISTRO MAPEO GLOBAL ---
             config_import = SystemConfig.query.get('ultima_importacion')
             hora_global = hora_peru()
             usuario_global = session.get('username', 'Sistema')
@@ -2119,7 +2111,7 @@ def importar_excel():
                 config_import.updated_by = usuario_global
                 
             db.session.commit()
-            db.session.clear() 
+            db.session.expunge_all()
             
             flash(f'Proceso completado: {nuevos} nuevos, {actualizados} actualizados.')
             
