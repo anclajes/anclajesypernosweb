@@ -650,21 +650,25 @@
 
                     // --- ETIQUETA DESCUENTO GLOBAL (DETECCIÓN INTELIGENTE) ---
                     // --- ETIQUETA DESCUENTO GLOBAL (DETECCIÓN INTELIGENTE) ---
+                    // --- ETIQUETA DESCUENTO GLOBAL (DETECCIÓN INTELIGENTE) ---
                     let labelDescGeneral = "DESCUENTO:";
+                    
+                    // CORRECCIÓN CLAVE: Calcular el subtotal bruto real sumando el subtotal neto y el descuento
+                    let subtotalBrutoCalculado = parseFloat(d.subtotal) + parseFloat(d.descuento_total);
+
                     if(d.descuento_total > 0) {
                         let tipoGlobal = (d.descuento_tipo || '').toString().toUpperCase().trim();
                         
-                        // Verificación matemática: subtotal * (valor / 100) == descuento_total
-                        let calculoPorcentaje = (d.subtotal * (d.descuento_valor / 100)).toFixed(2);
+                        // Verificación matemática: subtotal_bruto * (valor / 100) == descuento_total
+                        let calculoPorcentaje = (subtotalBrutoCalculado * (d.descuento_valor / 100)).toFixed(2);
                         let totalDescStr = parseFloat(d.descuento_total).toFixed(2);
                         
-                        // Validamos si dice PORCENTAJE o si la matemática coincide
+                        // Validamos si dice PORCENTAJE o si la matemática coincide con exactitud
                         let esPorcentajeGlobal = tipoGlobal.includes('PORC') || tipoGlobal.includes('%') || (calculoPorcentaje === totalDescStr && d.descuento_valor > 0);
 
                         if(esPorcentajeGlobal) {
                             labelDescGeneral = `DESCUENTO (${parseFloat(d.descuento_valor)}%):`;
                         } else {
-                            // Cambiado a un formato más limpio y consistente
                             labelDescGeneral = `DESCUENTO (Fijo):`;
                         }
                     }
@@ -680,13 +684,12 @@
                             estadoHtml = `<div class="mt-1"><span class="badge bg-danger text-white shadow-sm" style="font-size: 0.65rem; padding: 4px 8px;"><i class="bi bi-exclamation-triangle-fill"></i> ${item.estado_producto}</span></div>`;
                         }
 
-                        // AGREGAR DESCUENTO INDIVIDUAL (DETECCIÓN INTELIGENTE)
+                        // AGREGAR DESCUENTO INDIVIDUAL
                         let descuentoItemHtml = '';
                         if(item.desc_valor > 0) {
                             let tipoItem = (item.desc_tipo || '').toString().toUpperCase().trim();
                             let descLabel = (item.desc_label || '').toString();
                             
-                            // Validamos si el string o la etiqueta oculta tiene el símbolo de porcentaje "%"
                             let esPorcentajeItem = tipoItem.includes('PORC') || tipoItem.includes('%') || descLabel.includes('%');
                             
                             let textoDesc = esPorcentajeItem 
@@ -732,7 +735,9 @@
                     });
 
                     $('#view_moneda').text(d.moneda);
-                    $('#view_subtotal').text(simbolo + " " + parseFloat(d.subtotal).toFixed(2));
+                    
+                    // CORRECCIÓN VISUAL: Mostrar el Subtotal BRUTO arriba, para que tenga sentido restarle el descuento abajo.
+                    $('#view_subtotal').text(simbolo + " " + subtotalBrutoCalculado.toFixed(2));
                     
                     $('#view_descuento').text("- " + simbolo + " " + parseFloat(d.descuento_total).toFixed(2));
                     $('#view_igv').text(simbolo + " " + parseFloat(d.igv).toFixed(2));
