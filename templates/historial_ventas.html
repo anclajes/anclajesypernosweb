@@ -573,7 +573,7 @@
         });
     }
 
-// CARGAR MODAL DE DETALLE (FUNCIÓN COMPLETA CON LÍNEA DE TIEMPO)
+    // CARGAR MODAL DE DETALLE (FUNCIÓN COMPLETA CON LÍNEA DE TIEMPO)
     function verDetalleCompleto(id) {
         ordenIdActual = id;
         $('#modalTitulo').text('Cargando información...');
@@ -587,7 +587,7 @@
             .then(res => {
                 if(res.status === 'success') {
                     const d = res.data;
-                    ordenEstadoActual = d.estado; // Guardamos el estado para usarlo luego
+                    ordenEstadoActual = d.estado;
                     const simbolo = d.moneda === 'PEN' ? 'S/' : '$';
 
                     $('#modalTitulo').html(`Cotización <span class="text-primary">#${String(d.id).padStart(5, '0')}</span>`);
@@ -636,7 +636,6 @@
                     $('#view_fecha_entrega').text(d.fecha_entrega);
                     $('#view_lugar_entrega').text(d.direccion_entrega);
 
-                    // --- LLENADO DE CAMPOS NUEVOS (AGENCIA, CALIDAD, PENALIDAD) ---
                     $('#view_calidad').html(d.control_calidad === 'SI' ? '<span class="text-success fw-bold">✅ SÍ</span>' : '❌ NO');
                     $('#view_penalidad').html(d.penalidad === 'SI' ? '<span class="text-danger fw-bold">⚠️ SÍ</span>' : '❌ NO');
                     $('#view_agencia').text(d.agencia || 'NO REQUIERE');
@@ -649,13 +648,22 @@
                         $('#box_motivo_rechazo').addClass('d-none');
                     }
 
-                    // --- ETIQUETA DESCUENTO GLOBAL ---
+                    // --- ETIQUETA DESCUENTO GLOBAL (DETECCIÓN INTELIGENTE) ---
                     let labelDescGeneral = "DESCUENTO:";
                     if(d.descuento_total > 0) {
-                        if(d.descuento_tipo === 'PORCENTAJE') {
-                            labelDescGeneral = `DESCUENTO (${d.descuento_valor}%):`;
+                        let tipoGlobal = (d.descuento_tipo || '').toString().toUpperCase().trim();
+                        
+                        // Verificación matemática: subtotal * (valor / 100) == descuento_total
+                        let calculoPorcentaje = (d.subtotal * (d.descuento_valor / 100)).toFixed(2);
+                        let totalDescStr = parseFloat(d.descuento_total).toFixed(2);
+                        
+                        // Validamos si dice PORCENTAJE o si la matemática coincide
+                        let esPorcentajeGlobal = tipoGlobal.includes('PORC') || tipoGlobal.includes('%') || (calculoPorcentaje === totalDescStr && d.descuento_valor > 0);
+
+                        if(esPorcentajeGlobal) {
+                            labelDescGeneral = `DESCUENTO (${parseFloat(d.descuento_valor)}%):`;
                         } else {
-                            labelDescGeneral = `DESCUENTO (MONTO FIJO):`; // Modificado para mayor claridad
+                            labelDescGeneral = `DESCUENTO (MONTO FIJO):`;
                         }
                     }
                     $('#view_descuento_label').text(labelDescGeneral);
@@ -670,11 +678,17 @@
                             estadoHtml = `<div class="mt-1"><span class="badge bg-danger text-white shadow-sm" style="font-size: 0.65rem; padding: 4px 8px;"><i class="bi bi-exclamation-triangle-fill"></i> ${item.estado_producto}</span></div>`;
                         }
 
-                        // AGREGAR DESCUENTO INDIVIDUAL VISUALMENTE MÁS CLARO
+                        // AGREGAR DESCUENTO INDIVIDUAL (DETECCIÓN INTELIGENTE)
                         let descuentoItemHtml = '';
                         if(item.desc_valor > 0) {
-                            let textoDesc = item.desc_tipo === 'PORCENTAJE' 
-                                ? `Descuento: ${item.desc_valor}%` 
+                            let tipoItem = (item.desc_tipo || '').toString().toUpperCase().trim();
+                            let descLabel = (item.desc_label || '').toString();
+                            
+                            // Validamos si el string o la etiqueta oculta tiene el símbolo de porcentaje "%"
+                            let esPorcentajeItem = tipoItem.includes('PORC') || tipoItem.includes('%') || descLabel.includes('%');
+                            
+                            let textoDesc = esPorcentajeItem 
+                                ? `Descuento: ${parseFloat(item.desc_valor)}%` 
                                 : `Descuento Fijo: ${simbolo} ${parseFloat(item.desc_valor).toFixed(2)}`;
                                 
                             descuentoItemHtml = `<div class="mt-1"><span class="badge bg-warning text-dark border border-warning" style="font-size:0.65rem"><i class="bi bi-tag-fill"></i> ${textoDesc}</span></div>`;
@@ -716,20 +730,18 @@
                     });
 
                     $('#view_moneda').text(d.moneda);
-                    $('#view_subtotal').text(simbolo + " " + d.subtotal.toFixed(2));
+                    $('#view_subtotal').text(simbolo + " " + parseFloat(d.subtotal).toFixed(2));
                     
-                    // Asegurando que el Símbolo Monetario y el Monto se muestren de forma transparente
-                    $('#view_descuento').text("- " + simbolo + " " + d.descuento_total.toFixed(2));
-                    $('#view_igv').text(simbolo + " " + d.igv.toFixed(2));
+                    $('#view_descuento').text("- " + simbolo + " " + parseFloat(d.descuento_total).toFixed(2));
+                    $('#view_igv').text(simbolo + " " + parseFloat(d.igv).toFixed(2));
                     
-                    $('#view_total').text(simbolo + " " + d.total.toFixed(2));
+                    $('#view_total').text(simbolo + " " + parseFloat(d.total).toFixed(2));
 
                     // --- DIBUJAR LÍNEA DE TIEMPO (TIMELINE) ---
                     $('#step1_info').text(d.creador);
                     
                     let progreso = 0;
                     
-                    // PASO 2 AHORA ES ALMACÉN
                     if (d.f_verif_almacen) {
                         progreso = 33;
                         $('#step2_icon').removeClass('bg-light text-muted').addClass('bg-success text-white');
@@ -741,7 +753,6 @@
                         $('#step2_info').text('Pendiente');
                     }
 
-                    // PASO 3 AHORA ES CLIENTE
                     if (d.cliente_confirmado) {
                         progreso = 66;
                         $('#step3_icon').removeClass('bg-light text-muted').addClass('bg-success text-white');
@@ -753,7 +764,6 @@
                         $('#step3_info').text('Pendiente');
                     }
 
-                    // Paso 4: Gerencia
                     if (d.f_aprobacion) {
                         progreso = 100;
                         $('#step4_icon').removeClass('bg-light text-muted').addClass('bg-success text-white');
