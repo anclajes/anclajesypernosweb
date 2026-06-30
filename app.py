@@ -1963,9 +1963,7 @@ def actualizar_minimos_masivos():
         return {'status': 'error', 'msg': str(e)}
 
 
-# --- 2. IMPORTACIÓN CON KARDEX (CORREGIDO) ---
-# --- FUNCIÓN IMPORTAR EXCEL (Actualizada con Stock Mínimo) ---
-# --- 2. IMPORTACIÓN CON KARDEX (ACTUALIZADA CON REGISTRO GLOBAL Y ESTADOS) ---
+# --- 2. IMPORTACIÓN CON KARDEX (ACTUALIZADA CON REGISTRO GLOBAL, ESTADOS Y OPTIMIZACIÓN DE MEMORIA) ---
 @app.route('/producto/importar', methods=['POST'])
 def importar_excel():
     if session.get('role') not in ['admin', 'almacen']: return "No autorizado", 403
@@ -2072,10 +2070,17 @@ def importar_excel():
                         )
                         db.session.add(kardex)
                     nuevos += 1
-            
+
+                # === TRUCO DE OPTIMIZACIÓN: GUARDADO POR LOTES (CADA 100 FILAS) ===
+                if (index + 1) % 100 == 0:
+                    db.session.commit()
+                    db.session.clear() # Libera por completo la memoria RAM de los objetos procesados
+
+            # Commit definitivo para guardar las filas restantes que no completaron un lote de 100
             db.session.commit()
+            db.session.clear()
             
-            # --- NUEVO: REGISTRO MAPEO GLOBAL DE LA IMPORTACIÓN MASIVA ---
+            # --- REGISTRO MAPEO GLOBAL DE LA IMPORTACIÓN MASIVA ---
             config_import = SystemConfig.query.get('ultima_importacion')
             hora_global = hora_peru()
             usuario_global = session.get('username', 'Sistema')
@@ -2088,6 +2093,7 @@ def importar_excel():
                 config_import.updated_by = usuario_global
                 
             db.session.commit()
+            db.session.clear() # Limpieza final del estado de la sesión
             # -------------------------------------------------------------
             
             flash(f'Proceso completado: {nuevos} nuevos, {actualizados} actualizados.')
