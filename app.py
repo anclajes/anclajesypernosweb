@@ -2860,18 +2860,15 @@ def editar_categoria():
 
 @app.route('/gestion_ventas/aprobar/<int:order_id>', methods=['POST'])
 def aprobar_cotizacion_gerencia(order_id):
-    # Seguridad: Solo Admin/Gerencia puede aprobar
     if session.get('role') not in ['admin', 'administracion']: 
         return {'status': 'error', 'msg': 'No tiene permisos de Gerencia'}, 403
 
     orden = Order.query.get_or_404(order_id)
 
-    # Validación: No aprobar dos veces
-    if orden.estado == 'Aprobado':
+    if orden.estado in ['Por Despachar', 'Despachado', 'Entregado']:
         return {'status': 'error', 'msg': 'Esta orden ya fue aprobada.'}
 
     try:
-        # 1. VERIFICACIÓN DE STOCK VISUAL (Solo advierte si falta algo, pero NO descuenta)
         errores_stock = []
         
         for detalle in orden.details:
@@ -2888,25 +2885,20 @@ def aprobar_cotizacion_gerencia(order_id):
                         errores_stock.append(f"Componente {prod_c.sku} en Kit (Faltan {total_req - prod_c.stock_actual})")
 
         if errores_stock:
-            return {'status': 'error', 'msg': 'Stock insuficiente al momento de aprobar: ' + ', '.join(errores_stock)}
+            return {'status': 'error', 'msg': 'Stock insuficiente: ' + ', '.join(errores_stock)}
 
-        # 2. CAMBIO DE ESTADO (El stock NO se toca aquí)
-        orden.estado = 'Aprobado' 
-        
-        # --- NUEVO: REGISTRO DE QUIÉN Y CUÁNDO APROBÓ (TIMELINE) ---
+        # CAMBIO: Estado más claro
+        orden.estado = 'Por Despachar'
         orden.fecha_aprobacion = hora_peru() 
-        orden.gerente_nombre = session.get('nombre')    # Guarda qué gerente aprobó
-        # -----------------------------------------------------------
+        orden.gerente_nombre = session.get('nombre')
         
         db.session.commit()
         
-        return {'status': 'success', 'msg': f'Cotización aprobada. Se generó la Nota de Pedido NP-{orden.id:05d}. El pedido pasó a Almacén para su despacho.'}
+        return {'status': 'success', 'msg': f'Cotización aprobada. Pasó a Almacén como NP-{orden.id:05d} lista para despacho.'}
 
     except Exception as e:
         db.session.rollback()
-        return {'status': 'error', 'msg': f'Error crítico en transacción: {str(e)}'}
-
-# --- EN APP.PY ---
+        return {'status': 'error', 'msg': f'Error crítico: {str(e)}'}
 # --- EN APP.PY (Función historial_ventas AJUSTADA) ---
 
 @app.route('/historial_ventas')
@@ -2943,18 +2935,23 @@ def historial_ventas():
     vista = request.args.get('vista', 'borradores')
 
     if vista == 'borradores':
-        # Agregamos 'Stock Confirmado' a la lista
-        query = query.filter(Order.estado.in_(['Cotizacion', 'Observado', 'Stock Confirmado']))
+        query = query.filter(Order.estado.in_([
+            'Cotizacion', 'Observado', 'Stock Confirmado'
+        ]))
         if rol == 'vendedor' or solo_mias: 
             query = query.filter(Order.vendedor_id == user_id)
 
     elif vista == 'revision':
-        query = query.filter(Order.estado.in_(['Por Verificar', 'Pendiente Aprobacion']))
+        query = query.filter(Order.estado.in_([
+            'Por Verificar', 'Pendiente Aprobacion'
+        ]))
         if rol == 'vendedor' or solo_mias: 
             query = query.filter(Order.vendedor_id == user_id)
 
     elif vista == 'historial':
-        query = query.filter(Order.estado.in_(['Aprobado', 'Despachado', 'Entregado', 'Anulado', 'Rechazado']))
+        query = query.filter(Order.estado.in_([
+            'Por Despachar', 'Entregado', 'Despachado', 'Anulado', 'Rechazado'
+        ]))
         if rol == 'vendedor' or solo_mias: 
             query = query.filter(Order.vendedor_id == user_id)
 
@@ -3396,19 +3393,21 @@ def picking_almacen():
     if session.get('role') not in ['admin', 'almacen']: 
         return "Acceso denegado", 403
     
-    # 1. Por verificar físicamente
     ordenes_por_verificar = Order.query.filter_by(estado='Por Verificar').order_by(Order.fecha.asc()).all()
     
-    # 2. Por Despachar (Aprobadas por gerencia, listas para restar del kardex)
-    ordenes_pendientes = Order.query.filter_by(estado='Aprobado').order_by(Order.fecha.asc()).all()
+    # CAMBIO: nuevo estado
+    ordenes_pendientes = Order.query.filter_by(estado='Por Despachar').order_by(Order.fecha.asc()).all()
     
-    # 3. Historial de salidas (Ya descontadas) - Traemos las últimas 30 para no saturar
-    ordenes_finalizadas = Order.query.filter(Order.estado.in_(['Entregado', 'Despachado'])).order_by(Order.fecha.desc()).limit(30).all()
+    ordenes_finalizadas = Order.query.filter(
+        Order.estado.in_(['Entregado', 'Despachado'])
+    ).order_by(Order.fecha.desc()).limit(30).all()
     
     return render_template('picking_almacen.html', 
                            ordenes_verificar=ordenes_por_verificar,
                            ordenes=ordenes_pendientes,
-                           ordenes_finalizadas=ordenes_finalizadas) # <-- Pasamos la nueva variable
+                           ordenes_finalizadas=ordenes_finalizadas)
+
+
 # NUEVA RUTA PARA QUE ALMACÉN APRUEBE EL STOCK FÍSICO
 @app.route('/api/confirmar_stock_fisico/<int:order_id>', methods=['POST'])
 def confirmar_stock_fisico(order_id):
@@ -3434,14 +3433,12 @@ def procesar_salida_almacen(order_id):
     
     orden = Order.query.get_or_404(order_id)
     
-    if orden.estado != 'Aprobado':
-        return {'status': 'error', 'msg': 'La cotización ya fue procesada o no está aprobada.'}
+    # CAMBIO: validar nuevo estado
+    if orden.estado != 'Por Despachar':
+        return {'status': 'error', 'msg': 'La cotización no está lista para despacho.'}
         
     try:
-        # 1. EJECUTAR DESCUENTOS DE KARDEX (Lo que antes hacía Gerencia)
         for detalle in orden.details:
-            
-            # A. DESCUENTO PRODUCTO DIRECTO
             if detalle.product_id and detalle.item_type == 'PRODUCTO':
                 prod = Product.query.get(detalle.product_id)
                 stock_anterior = prod.stock_actual
@@ -3454,16 +3451,14 @@ def procesar_salida_almacen(order_id):
                     cantidad=detalle.cantidad,
                     stock_anterior=stock_anterior,
                     stock_nuevo=prod.stock_actual,
-                    motivo=f"Salida de Almacén COT-{orden.id:05d} (Cliente: {orden.cliente.nombre[:15]}...)"
+                    motivo=f"Salida Almacén NP-{orden.id:05d} ({orden.cliente.nombre[:15]})"
                 )
                 db.session.add(kardex)
 
-            # B. DESCUENTO COMPONENTES DE KIT (GLB)
             elif detalle.item_type == 'GLB':
                 for comp in detalle.kit_components:
                     prod_c = comp.product
                     cantidad_total = comp.cantidad_requerida * detalle.cantidad
-                    
                     stock_ant_c = prod_c.stock_actual
                     prod_c.stock_actual -= cantidad_total
                     
@@ -3474,15 +3469,15 @@ def procesar_salida_almacen(order_id):
                         cantidad=cantidad_total,
                         stock_anterior=stock_ant_c,
                         stock_nuevo=prod_c.stock_actual,
-                        motivo=f"Salida Kit COT-{orden.id:05d} - {detalle.nombre_personalizado_titulo[:15]}..."
+                        motivo=f"Salida Kit NP-{orden.id:05d} - {detalle.nombre_personalizado_titulo[:15]}"
                     )
                     db.session.add(kardex_c)
 
-        # 2. CAMBIAR ESTADO A FINALIZADO
-        orden.estado = 'Entregado' # Usamos "Entregado" para que el Vendedor lo vea como cerrado en su historial
+        # CAMBIO: Estado final más claro
+        orden.estado = 'Entregado'
         db.session.commit()
         
-        return {'status': 'success', 'msg': 'Stock descontado correctamente en Kardex.'}
+        return {'status': 'success', 'msg': 'Stock descontado. Orden cerrada como Entregada.'}
         
     except Exception as e:
         db.session.rollback()

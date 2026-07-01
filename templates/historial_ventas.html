@@ -169,7 +169,9 @@
                                 {% elif o.estado == 'Stock Confirmado' %}bg-primary text-white border border-primary
                                 {% elif o.estado == 'Pendiente Aprobacion' %}bg-warning text-dark border border-dark
                                 {% elif o.estado == 'Observado' %}bg-danger
-                                {% elif o.estado == 'Aprobado' %}bg-success
+                                {% elif o.estado == 'Por Despachar' %}bg-primary
+                                {% elif o.estado == 'Despachado' %}bg-success bg-opacity-75
+                                {% elif o.estado == 'Entregado' %}bg-success
                                 {% elif o.estado == 'Anulado' %}bg-dark
                                 {% else %}bg-secondary{% endif %}">
                                 
@@ -178,7 +180,9 @@
                                 {% elif o.estado == 'Stock Confirmado' %}📞 Esperando Cliente (Stock OK)
                                 {% elif o.estado == 'Pendiente Aprobacion' %}⏳ Revisión Gerencia
                                 {% elif o.estado == 'Observado' %}⚠️ CORREGIR (Devuelto)
-                                {% elif o.estado == 'Aprobado' %}✅ Aprobada / Lista
+                                {% elif o.estado == 'Por Despachar' %}📦 En Almacén (Por Despachar)
+                                {% elif o.estado == 'Despachado' %}🚚 Despachado
+                                {% elif o.estado == 'Entregado' %}✅ Entregado / Cerrado
                                 {% elif o.estado == 'Anulado' %}❌ Anulada
                                 {% else %}{{ o.estado }}{% endif %}
                             </span>
@@ -186,12 +190,25 @@
 
                         <td class="text-center">
                             <div class="btn-group btn-group-sm">
-                                <button class="btn btn-light border shadow-sm" onclick="verDetalleCompleto('{{o.id}}')" title="Ver Detalle / Gestionar">
+                                <button class="btn btn-light border shadow-sm" 
+                                        onclick="verDetalleCompleto('{{o.id}}')" 
+                                        title="Ver Detalle / Gestionar">
                                     <i class="bi bi-eye-fill text-primary"></i>
                                 </button>
-                                <a href="/descargar_cotizacion_v2/{{ o.id }}" class="btn btn-light border text-danger shadow-sm" title="Descargar PDF" target="_blank">
-                                    <i class="bi bi-file-pdf-fill"></i> PDF
+                                <a href="/descargar_cotizacion_v2/{{ o.id }}" 
+                                class="btn btn-light border text-danger shadow-sm" 
+                                title="Descargar Cotización PDF" 
+                                target="_blank">
+                                    <i class="bi bi-file-pdf-fill"></i> COT
                                 </a>
+                                {% if o.estado in ['Por Despachar', 'Despachado', 'Entregado'] %}
+                                <a href="/descargar_nota_pedido/{{ o.id }}" 
+                                class="btn btn-light border text-primary shadow-sm" 
+                                title="Descargar Nota de Pedido (Sin Precios - Para Almacén)" 
+                                target="_blank">
+                                    <i class="bi bi-file-earmark-check-fill"></i> NP
+                                </a>
+                                {% endif %}
                             </div>
                         </td>
                     </tr>
@@ -604,22 +621,43 @@
                         $('#view_oc_vacio').removeClass('d-none');
                     }
                     
-                    let badgeHtml = '<span class="badge bg-secondary">Borrador</span>';
-                    if(d.estado === 'Por Verificar') badgeHtml = '<span class="badge bg-info text-dark border border-info">🔎 En Almacén (Verificando Físico)</span>';
-                    if(d.estado === 'Pendiente Aprobacion') badgeHtml = '<span class="badge bg-warning text-dark border border-dark">⏳ En Gerencia (Stock Confirmado)</span>';
-                    if(d.estado === 'Aprobado') badgeHtml = '<span class="badge bg-success">🟢 Aprobada / Lista para el cliente</span>';
-                    if(d.estado === 'Anulado') badgeHtml = '<span class="badge bg-danger">🔴 Anulado</span>';
-                    if(d.estado === 'Observado') badgeHtml = '<span class="badge bg-danger text-white border border-white"><i class="bi bi-exclamation-circle"></i> OBSERVADO / CORREGIR</span>';
+                    let badgeHtml = '<span class="badge bg-secondary">📝 Borrador</span>';
+                    if(d.estado === 'Por Verificar') 
+                        badgeHtml = '<span class="badge bg-info text-dark border border-info">🔎 En Almacén (Verificando Físico)</span>';
+                    if(d.estado === 'Pendiente Aprobacion') 
+                        badgeHtml = '<span class="badge bg-warning text-dark border border-dark">⏳ En Gerencia (Pendiente Aprobación)</span>';
+                    if(d.estado === 'Por Despachar') 
+                        badgeHtml = '<span class="badge bg-primary">📦 En Almacén (Por Despachar)</span>';
+                    if(d.estado === 'Despachado') 
+                        badgeHtml = '<span class="badge bg-success bg-opacity-75">🚚 Despachado</span>';
+                    if(d.estado === 'Entregado') 
+                        badgeHtml = '<span class="badge bg-success">✅ Entregado / Cerrado</span>';
+                    if(d.estado === 'Anulado') 
+                        badgeHtml = '<span class="badge bg-danger">❌ Anulado</span>';
+                    if(d.estado === 'Observado') 
+                        badgeHtml = '<span class="badge bg-danger text-white"><i class="bi bi-exclamation-circle"></i> OBSERVADO / CORREGIR</span>';
                     $('#badgeEstadoModal').html(badgeHtml);
 
                     const btnDescargar = document.getElementById('btn_descargar_modal');
-                    btnDescargar.href = `/descargar_cotizacion_v2/${d.id}`;
-                    if (d.estado === 'Aprobado') {
-                        btnDescargar.innerHTML = '<i class="bi bi-file-earmark-check-fill"></i> Descargar Cotización Aprobada';
-                        btnDescargar.className = 'btn btn-success fw-bold shadow-sm';
+                    if (['Por Despachar', 'Despachado', 'Entregado'].includes(d.estado)) {
+                        btnDescargar.outerHTML = `
+                            <div id="btn_descargar_modal" class="d-flex gap-2">
+                                <a href="/descargar_cotizacion_v2/${d.id}" 
+                                class="btn btn-outline-danger fw-bold shadow-sm" target="_blank">
+                                    <i class="bi bi-file-pdf-fill"></i> Cotización
+                                </a>
+                                <a href="/descargar_nota_pedido/${d.id}" 
+                                class="btn btn-primary fw-bold shadow-sm" target="_blank">
+                                    <i class="bi bi-file-earmark-check-fill"></i> Nota de Pedido
+                                </a>
+                            </div>`;
                     } else {
-                        btnDescargar.innerHTML = '<i class="bi bi-file-pdf-fill"></i> Descargar Cotización';
-                        btnDescargar.className = 'btn btn-outline-danger fw-bold shadow-sm';
+                        btnDescargar.outerHTML = `
+                            <a id="btn_descargar_modal" 
+                            href="/descargar_cotizacion_v2/${d.id}" 
+                            class="btn btn-outline-danger fw-bold shadow-sm" target="_blank">
+                                <i class="bi bi-file-pdf-fill"></i> Descargar Cotización
+                            </a>`;
                     }
 
                     // --- LLENADO DE CAMPOS BÁSICOS ---
