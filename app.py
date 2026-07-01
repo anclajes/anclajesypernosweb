@@ -3591,7 +3591,7 @@ def reset_total_db_secreto():
         # 2. Crear los usuarios base de tu sistema
         admin = User(
             username='admin', 
-            password=generate_password_hash('123'),  # Contraseña inicial
+            password=generate_password_hash('181404'),  # Contraseña inicial
             nombre_completo='Administrador General',
             role='admin'
         )
