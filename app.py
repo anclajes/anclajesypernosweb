@@ -2121,7 +2121,7 @@ def importar_excel():
                 except:
                     return default
 
-            precio_unit = clean_float(get_col(row_vals, 'PRECIO UNIT', 'PRECIO UNIDAD', 'P. UNIT', 'PRECIO_UNIT', 'PRECIO UNITARIO'))
+            precio_unit = clean_float(get_col(row_vals, 'PRECIO UNI.','PRECIO UNIT', 'PRECIO UNIDAD', 'P. UNIT', 'PRECIO_UNIT', 'PRECIO UNITARIO'))
 
             # Crear categoría si no existe
             if familia not in cats_existentes:
