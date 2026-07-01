@@ -17,6 +17,7 @@ from werkzeug.utils import secure_filename
 from models import SystemConfig
 from num2words import num2words
 from sqlalchemy import text
+from sqlalchemy import or_, func, text, extract, String
 from flask_migrate import Migrate
 import os
 import io
@@ -3393,19 +3394,62 @@ def picking_almacen():
     if session.get('role') not in ['admin', 'almacen']: 
         return "Acceso denegado", 403
     
-    ordenes_por_verificar = Order.query.filter_by(estado='Por Verificar').order_by(Order.fecha.asc()).all()
+    # --- FILTROS PARA HISTORIAL ---
+    busqueda_hist = request.args.get('busqueda_hist', '').strip()
+    fecha_inicio_hist = request.args.get('fecha_inicio_hist', '')
+    fecha_fin_hist = request.args.get('fecha_fin_hist', '')
+    page_hist = request.args.get('page_hist', 1, type=int)
+
+    # --- QUERIES PRINCIPALES ---
+    ordenes_por_verificar = Order.query.filter_by(
+        estado='Por Verificar'
+    ).order_by(Order.fecha.asc()).all()
     
-    # CAMBIO: nuevo estado
-    ordenes_pendientes = Order.query.filter_by(estado='Por Despachar').order_by(Order.fecha.asc()).all()
+    ordenes_pendientes = Order.query.filter_by(
+        estado='Por Despachar'
+    ).order_by(Order.fecha.asc()).all()
     
-    ordenes_finalizadas = Order.query.filter(
+    # --- HISTORIAL CON FILTROS Y PAGINACIÓN ---
+    query_hist = Order.query.filter(
         Order.estado.in_(['Entregado', 'Despachado'])
-    ).order_by(Order.fecha.desc()).limit(30).all()
+    )
+    
+    if busqueda_hist:
+        # Solución anti-errores para buscar IDs numéricos (Si buscan "00052", lo convierte a "52")
+        term_id = busqueda_hist
+        if busqueda_hist.isdigit(): 
+            term_id = str(int(busqueda_hist))
+            
+        # Reemplazamos db.String por String de SQLAlchemy nativo
+        query_hist = query_hist.join(Client).filter(
+            or_(
+                Client.nombre.ilike(f'%{busqueda_hist}%'),
+                Client.documento.ilike(f'%{busqueda_hist}%'),
+                func.cast(Order.id, String).ilike(f'%{term_id}%')
+            )
+        )
+    
+    if fecha_inicio_hist:
+        query_hist = query_hist.filter(
+            Order.fecha >= datetime.strptime(fecha_inicio_hist, '%Y-%m-%d')
+        )
+    if fecha_fin_hist:
+        query_hist = query_hist.filter(
+            Order.fecha <= datetime.strptime(fecha_fin_hist + ' 23:59:59', '%Y-%m-%d %H:%M:%S')
+        )
+    
+    query_hist = query_hist.order_by(Order.fecha.desc())
+    pagination_hist = query_hist.paginate(page=page_hist, per_page=20, error_out=False)
+    ordenes_finalizadas = pagination_hist.items
     
     return render_template('picking_almacen.html', 
                            ordenes_verificar=ordenes_por_verificar,
                            ordenes=ordenes_pendientes,
-                           ordenes_finalizadas=ordenes_finalizadas)
+                           ordenes_finalizadas=ordenes_finalizadas,
+                           pagination_hist=pagination_hist,
+                           busqueda_hist=busqueda_hist,
+                           fecha_inicio_hist=fecha_inicio_hist,
+                           fecha_fin_hist=fecha_fin_hist)
 
 
 # NUEVA RUTA PARA QUE ALMACÉN APRUEBE EL STOCK FÍSICO
