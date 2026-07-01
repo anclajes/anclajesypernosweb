@@ -2113,6 +2113,16 @@ def importar_excel():
             stock_val = clean_int(get_col(row_vals, 'CANT. ACT.', 'STOCK', 'CANTIDAD', 'CANT.ACT.'))
             min_val   = clean_int(get_col(row_vals, 'STOCK MÍNIMO', 'STOCK MINIMO', 'MINIMO'), 10)
 
+            # --- LEER PRECIO UNITARIO (Si existe, si no queda en 0.0) ---
+            def clean_float(val, default=0.0):
+                try:
+                    v = str(val).replace(',', '').strip()
+                    return float(v) if v and v.lower() not in ('nan', 'none', '') else default
+                except:
+                    return default
+
+            precio_unit = clean_float(get_col(row_vals, 'PRECIO UNIT', 'PRECIO UNIDAD', 'P. UNIT', 'PRECIO_UNIT', 'PRECIO UNITARIO'))
+
             # Crear categoría si no existe
             if familia not in cats_existentes:
                 base = "".join(c for c in familia[:3].upper() if c.isalnum()) or "GEN"
@@ -2129,18 +2139,29 @@ def importar_excel():
 
             # Decidir INSERT o UPDATE
             if sku in skus_existentes:
-                batch_updates.append({
+                upd = {
                     'sku': sku, 'nombre': nombre, 'categoria': familia,
                     'calidad': calidad, 'ubicacion': ubicacion, 'estado': estado_v,
                     'stock_actual': stock_val, 'stock_minimo': min_val,
                     'fecha_actualizacion': hora_actual, 'actualizado_por': usuario_actual
-                })
+                }
+                # Solo actualiza el precio si el Excel trae un valor mayor a 0
+                if precio_unit > 0:
+                    upd['tiene_precio'] = True
+                    upd['precio_unidad'] = precio_unit
+                else:
+                    upd['tiene_precio'] = False
+                    upd['precio_unidad'] = 0.0
+
+                batch_updates.append(upd)
                 actualizados += 1
             else:
                 nuevo_prod = Product(
                     sku=sku, nombre=nombre, categoria=familia, calidad=calidad,
                     ubicacion=ubicacion, stock_actual=stock_val, stock_minimo=min_val,
-                    precio_unidad=0.0, precio_caja=0.0, precio_docena=0.0,
+                    precio_unidad=precio_unit,          # <-- Ahora toma el valor del Excel
+                    precio_caja=0.0,
+                    precio_docena=precio_unit,          # <-- Docena igual al unitario por defecto
                     costo_referencial=0.0, estado=estado_v,
                     fecha_actualizacion=hora_actual, actualizado_por=usuario_actual
                 )
@@ -2152,15 +2173,28 @@ def importar_excel():
             if (nuevos + actualizados) % BATCH_SIZE == 0:
                 # Ejecutar updates
                 for upd in batch_updates:
-                    db.session.execute(text("""
-                        UPDATE product SET
-                            nombre=:nombre, categoria=:categoria, calidad=:calidad,
-                            ubicacion=:ubicacion, estado=:estado,
-                            stock_actual=:stock_actual, stock_minimo=:stock_minimo,
-                            fecha_actualizacion=:fecha_actualizacion,
-                            actualizado_por=:actualizado_por
-                        WHERE sku=:sku
-                    """), upd)
+                    if upd.get('tiene_precio'):
+                        db.session.execute(text("""
+                            UPDATE product SET
+                                nombre=:nombre, categoria=:categoria, calidad=:calidad,
+                                ubicacion=:ubicacion, estado=:estado,
+                                stock_actual=:stock_actual, stock_minimo=:stock_minimo,
+                                precio_unidad=:precio_unidad,
+                                precio_docena=:precio_unidad,
+                                fecha_actualizacion=:fecha_actualizacion,
+                                actualizado_por=:actualizado_por
+                            WHERE sku=:sku
+                        """), upd)
+                    else:
+                        db.session.execute(text("""
+                            UPDATE product SET
+                                nombre=:nombre, categoria=:categoria, calidad=:calidad,
+                                ubicacion=:ubicacion, estado=:estado,
+                                stock_actual=:stock_actual, stock_minimo=:stock_minimo,
+                                fecha_actualizacion=:fecha_actualizacion,
+                                actualizado_por=:actualizado_por
+                            WHERE sku=:sku
+                        """), upd)
 
                 # Insertar nuevos
                 if batch_inserts:
@@ -2188,15 +2222,28 @@ def importar_excel():
 
         # Procesar el último batch (filas restantes)
         for upd in batch_updates:
-            db.session.execute(text("""
-                UPDATE product SET
-                    nombre=:nombre, categoria=:categoria, calidad=:calidad,
-                    ubicacion=:ubicacion, estado=:estado,
-                    stock_actual=:stock_actual, stock_minimo=:stock_minimo,
-                    fecha_actualizacion=:fecha_actualizacion,
-                    actualizado_por=:actualizado_por
-                WHERE sku=:sku
-            """), upd)
+            if upd.get('tiene_precio'):
+                db.session.execute(text("""
+                    UPDATE product SET
+                        nombre=:nombre, categoria=:categoria, calidad=:calidad,
+                        ubicacion=:ubicacion, estado=:estado,
+                        stock_actual=:stock_actual, stock_minimo=:stock_minimo,
+                        precio_unidad=:precio_unidad,
+                        precio_docena=:precio_unidad,
+                        fecha_actualizacion=:fecha_actualizacion,
+                        actualizado_por=:actualizado_por
+                    WHERE sku=:sku
+                """), upd)
+            else:
+                db.session.execute(text("""
+                    UPDATE product SET
+                        nombre=:nombre, categoria=:categoria, calidad=:calidad,
+                        ubicacion=:ubicacion, estado=:estado,
+                        stock_actual=:stock_actual, stock_minimo=:stock_minimo,
+                        fecha_actualizacion=:fecha_actualizacion,
+                        actualizado_por=:actualizado_por
+                    WHERE sku=:sku
+                """), upd)
 
         if batch_inserts:
             db.session.add_all(batch_inserts)
