@@ -2,298 +2,653 @@
 
 {% block content %}
 <style>
-    /* SOLUCIÓN AL PROBLEMA DE LAS VIÑETAS TRANSLÚCIDAS */
     .nav-pills .nav-link {
-        background-color: #e9ecef !important; /* Fondo gris sólido */
-        color: #495057 !important;            /* Texto oscuro legible */
+        background-color: #e9ecef !important;
+        color: #495057 !important;
         border: 1px solid #ced4da;
-        opacity: 1 !important;                /* Quita cualquier transparencia */
+        opacity: 1 !important;
         transition: all 0.2s;
     }
-    .nav-pills .nav-link:hover {
-        background-color: #dee2e6 !important;
-        color: #000 !important;
-    }
-    .nav-pills .nav-link.active {
-        background-color: #0d6efd !important; /* Azul sólido activo */
-        color: #ffffff !important;
-        border-color: #0d6efd;
-    }
+    .nav-pills .nav-link:hover { background-color: #dee2e6 !important; color: #000 !important; }
+    .nav-pills .nav-link.active { background-color: #0d6efd !important; color: #ffffff !important; border-color: #0d6efd; }
 </style>
 
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
-        <h2 class="mb-0 fw-bold text-dark"><i class="bi bi-box-arrow-up-right text-primary"></i> Operaciones de Almacén</h2>
+        <h2 class="mb-0 fw-bold text-dark">
+            <i class="bi bi-box-arrow-up-right text-primary"></i> Operaciones de Almacén
+        </h2>
         <p class="text-muted small mb-0">Verificación física y Despacho final</p>
     </div>
 </div>
 
 <ul class="nav nav-pills mb-4" id="pills-tab" role="tablist">
-  <li class="nav-item me-2" role="presentation">
-    <button class="nav-link active fw-bold px-4" id="pills-verificar-tab" data-bs-toggle="pill" data-bs-target="#pills-verificar" type="button" role="tab">
-        <i class="bi bi-search"></i> 1. Por Verificar Stock
-        {% if ordenes_verificar|length > 0 %}
-            <span class="badge bg-danger ms-2">{{ ordenes_verificar|length }}</span>
-        {% endif %}
-    </button>
-  </li>
-  <li class="nav-item" role="presentation">
-    <button class="nav-link fw-bold px-4" id="pills-despachar-tab" data-bs-toggle="pill" data-bs-target="#pills-despachar" type="button" role="tab">
-        <i class="bi bi-truck"></i> 2. Salidas Aprobadas
-        {% if ordenes|length > 0 %}
-            <span class="badge bg-primary ms-2">{{ ordenes|length }}</span>
-        {% endif %}
-    </button>
-  </li>
-  <li class="nav-item ms-2" role="presentation">
-    <button class="nav-link fw-bold px-4 text-secondary" id="pills-historial-tab" data-bs-toggle="pill" data-bs-target="#pills-historial" type="button" role="tab">
-        <i class="bi bi-archive-fill"></i> 3. Historial de Salidas
-    </button>
-  </li>
+    <li class="nav-item me-2" role="presentation">
+        <button class="nav-link active fw-bold px-4" id="pills-verificar-tab" 
+                data-bs-toggle="pill" data-bs-target="#pills-verificar" type="button" role="tab">
+            <i class="bi bi-search"></i> 1. Por Verificar
+            {% if ordenes_verificar|length > 0 %}
+                <span class="badge bg-danger ms-2">{{ ordenes_verificar|length }}</span>
+            {% endif %}
+        </button>
+    </li>
+    <li class="nav-item me-2" role="presentation">
+        <button class="nav-link fw-bold px-4" id="pills-despachar-tab" 
+                data-bs-toggle="pill" data-bs-target="#pills-despachar" type="button" role="tab">
+            <i class="bi bi-truck"></i> 2. Por Despachar
+            {% if ordenes|length > 0 %}
+                <span class="badge bg-primary ms-2">{{ ordenes|length }}</span>
+            {% endif %}
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link fw-bold px-4" id="pills-historial-tab" 
+                data-bs-toggle="pill" data-bs-target="#pills-historial" type="button" role="tab">
+            <i class="bi bi-archive-fill"></i> 3. Historial de Salidas
+            <span class="badge bg-secondary ms-2">{{ pagination_hist.total }}</span>
+        </button>
+    </li>
 </ul>
 
 <div class="tab-content" id="pills-tabContent">
-  
-  <div class="tab-pane fade show active" id="pills-verificar" role="tabpanel">
-      <div class="alert alert-info border-info small shadow-sm">
-          <i class="bi bi-info-circle-fill"></i> El vendedor solicita que vaya al estante y verifique si estos productos están físicamente disponibles antes de que Gerencia apruebe la venta.
-      </div>
-      
-      <div class="row">
-        {% for o in ordenes_verificar %}
-        <div class="col-lg-6 mb-4">
-            <div class="card h-100 shadow-sm border-0 border-start border-5 border-info">
-                <div class="card-header bg-white pt-3 pb-2">
-                    <div class="d-flex justify-content-between align-items-start">
-                        <div style="max-width: 70%;">
-                            <h5 class="fw-bold mb-1 text-info">COT-{{ "%05d"|format(o.id) }}</h5>
-                            <div class="small text-dark text-truncate"><i class="bi bi-building"></i> <strong>{{ o.cliente.nombre }}</strong></div>
-                        </div>
-                        <div class="text-end">
-                            <span class="badge bg-light text-dark border">Vendedor: {{ o.vendedor.username }}</span>
-                        </div>
-                    </div>
-                </div>
 
-                <div class="card-body">
-                    <h6 class="small fw-bold text-muted border-bottom pb-1 mb-2">Artículos a buscar:</h6>
-                    <div class="table-responsive border rounded mb-3">
-                        <table class="table table-sm table-hover align-middle mb-0">
-                            <thead class="table-light text-muted small">
-                                <tr>
-                                    <th>Cód/Ubic.</th>
-                                    <th>Producto</th>
-                                    <th class="text-center">Cant. Solicitada</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for d in o.details %}
-                                <tr>
-                                    <td class="small fw-bold text-muted">
-                                        {% if d.item_type == 'PRODUCTO' and d.product %}
-                                            {{ d.product.sku }}<br>
-                                            <span class="text-primary" style="font-size:0.7rem">{{ d.product.ubicacion or '' }}</span>
-                                        {% else %}
-                                            <span class="badge bg-info text-dark">KIT/SRV</span>
-                                        {% endif %}
-                                    </td>
-                                    <td class="small" style="max-width: 200px; white-space: normal;">
-                                        {% if d.item_type == 'PRODUCTO' and d.product %}
-                                            {{ d.product.nombre }}
-                                        {% else %}
-                                            <strong>{{ d.nombre_personalizado_titulo }}</strong> {{ d.nombre_personalizado }}
-                                        {% endif %}
-                                    </td>
-                                    <td class="text-center fw-bold fs-6 text-dark">
-                                        {{ d.cantidad }}
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-                
-                <div class="card-footer bg-light py-3 border-top-0 d-flex gap-2">
-                    <button class="btn btn-outline-danger w-50 fw-bold shadow-sm" onclick="abrirReporteFaltantes('{{ o.id }}')">
-                        <i class="bi bi-x-circle"></i> Faltan Piezas
-                    </button>
-                    <button class="btn btn-info text-white w-50 fw-bold shadow-sm" onclick="confirmarStockFisico('{{ o.id }}')">
-                        <i class="bi bi-check-all"></i> Stock OK (Todo Conforme)
-                    </button>
-                </div>
+    <!-- ========================================================= -->
+    <!-- TAB 1: POR VERIFICAR STOCK                                 -->
+    <!-- ========================================================= -->
+    <div class="tab-pane fade show active" id="pills-verificar" role="tabpanel">
+        <div class="alert alert-info border-info small shadow-sm">
+            <i class="bi bi-info-circle-fill"></i> 
+            El vendedor solicita que verifique si los productos están físicamente disponibles 
+            antes de que Gerencia apruebe la venta.
+        </div>
+
+        {% if ordenes_verificar %}
+        <!-- Vista tabla para muchos registros -->
+        <div class="card shadow-sm border-0 mb-3">
+            <div class="card-body p-0 table-responsive">
+                <table class="table table-hover align-middle mb-0 small">
+                    <thead class="table-dark text-uppercase">
+                        <tr>
+                            <th class="ps-3">N° COT</th>
+                            <th>Cliente</th>
+                            <th>Vendedor</th>
+                            <th>F. Solicitud</th>
+                            <th class="text-center">Items</th>
+                            <th class="text-center">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for o in ordenes_verificar %}
+                        <tr>
+                            <td class="ps-3 fw-bold text-info">COT-{{ "%05d"|format(o.id) }}</td>
+                            <td>
+                                <div class="fw-bold text-truncate" style="max-width:200px">{{ o.cliente.nombre }}</div>
+                                <small class="text-muted">{{ o.cliente.documento }}</small>
+                            </td>
+                            <td><i class="bi bi-person text-muted"></i> {{ o.vendedor.username }}</td>
+                            <td>
+                                <div>{{ o.fecha.strftime('%d/%m/%Y') }}</div>
+                                <small class="text-muted">{{ o.fecha.strftime('%H:%M') }}</small>
+                            </td>
+                            <td class="text-center">
+                                <span class="badge bg-info text-dark">{{ o.details|length }} items</span>
+                            </td>
+                            <td class="text-center">
+                                <button class="btn btn-sm btn-outline-primary me-1" 
+                                        onclick="verItemsVerificar('{{ o.id }}')" 
+                                        title="Ver lista de productos">
+                                    <i class="bi bi-eye-fill"></i> Ver Lista
+                                </button>
+                                <button class="btn btn-sm btn-outline-danger me-1" 
+                                        onclick="abrirReporteFaltantes('{{ o.id }}')" 
+                                        title="Reportar faltantes">
+                                    <i class="bi bi-x-circle"></i> Faltan
+                                </button>
+                                <button class="btn btn-sm btn-success" 
+                                        onclick="confirmarStockFisico('{{ o.id }}')" 
+                                        title="Confirmar stock OK">
+                                    <i class="bi bi-check-all"></i> OK
+                                </button>
+                            </td>
+                        </tr>
+                        <!-- Fila expandible con detalle de items -->
+                        <tr id="detalle_verificar_{{ o.id }}" class="d-none bg-light">
+                            <td colspan="6" class="p-3">
+                                <div class="card border-info border-2">
+                                    <div class="card-header bg-info bg-opacity-10 py-2">
+                                        <h6 class="mb-0 fw-bold text-info">
+                                            <i class="bi bi-list-check"></i> 
+                                            Artículos a Verificar — COT-{{ "%05d"|format(o.id) }} 
+                                            · {{ o.cliente.nombre }}
+                                        </h6>
+                                    </div>
+                                    <div class="card-body p-0">
+                                        <table class="table table-sm table-bordered mb-0">
+                                            <thead class="table-light small text-muted text-uppercase">
+                                                <tr>
+                                                    <th class="ps-3">Código</th>
+                                                    <th>Ubicación</th>
+                                                    <th>Producto</th>
+                                                    <th class="text-center">Cant. Pedida</th>
+                                                    <th class="text-center">Stock Actual</th>
+                                                    <th class="text-center">Estado</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {% for d in o.details %}
+                                                <tr>
+                                                    <td class="ps-3 fw-bold text-muted small">
+                                                        {% if d.item_type == 'PRODUCTO' and d.product %}
+                                                            {{ d.product.sku }}
+                                                        {% else %}
+                                                            <span class="badge bg-info text-dark">KIT/SRV</span>
+                                                        {% endif %}
+                                                    </td>
+                                                    <td class="text-primary small">
+                                                        {% if d.product %}
+                                                            <i class="bi bi-geo-alt-fill"></i> 
+                                                            {{ d.product.ubicacion or '—' }}
+                                                        {% else %}—{% endif %}
+                                                    </td>
+                                                    <td class="small" style="max-width:250px; white-space:normal">
+                                                        {% if d.item_type == 'PRODUCTO' and d.product %}
+                                                            {{ d.product.nombre }}
+                                                        {% else %}
+                                                            <strong>{{ d.nombre_personalizado_titulo }}</strong> 
+                                                            {{ d.nombre_personalizado }}
+                                                        {% endif %}
+                                                    </td>
+                                                    <td class="text-center fw-bold fs-6">{{ d.cantidad }}</td>
+                                                    <td class="text-center">
+                                                        {% if d.product %}
+                                                            <span class="badge {% if d.product.stock_actual >= d.cantidad %}bg-success{% else %}bg-danger{% endif %}">
+                                                                {{ d.product.stock_actual }}
+                                                            </span>
+                                                        {% else %}—{% endif %}
+                                                    </td>
+                                                    <td class="text-center">
+                                                        {% if d.product %}
+                                                            {% if d.product.stock_actual >= d.cantidad %}
+                                                                <span class="badge bg-success"><i class="bi bi-check-lg"></i> SUFICIENTE</span>
+                                                            {% else %}
+                                                                <span class="badge bg-danger"><i class="bi bi-exclamation-lg"></i> INSUFICIENTE</span>
+                                                            {% endif %}
+                                                        {% else %}
+                                                            <span class="badge bg-secondary">SERVICIO</span>
+                                                        {% endif %}
+                                                    </td>
+                                                </tr>
+                                                {% endfor %}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <div class="card-footer bg-white d-flex gap-2 justify-content-end py-2">
+                                        <button class="btn btn-sm btn-outline-danger" 
+                                                onclick="abrirReporteFaltantes('{{ o.id }}')">
+                                            <i class="bi bi-x-circle"></i> Reportar Faltantes
+                                        </button>
+                                        <button class="btn btn-sm btn-success fw-bold" 
+                                                onclick="confirmarStockFisico('{{ o.id }}')">
+                                            <i class="bi bi-check-all"></i> Todo Conforme — Confirmar Stock
+                                        </button>
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
             </div>
         </div>
         {% else %}
-        <div class="col-12 text-center text-muted py-5 mt-3">
+        <div class="text-center text-muted py-5">
             <div class="opacity-25 display-1"><i class="bi bi-search"></i></div>
             <h4 class="mt-3">Nada por verificar</h4>
-            <p>No hay nuevas solicitudes de verificación de stock por parte de los vendedores.</p>
+            <p>No hay solicitudes de verificación pendientes.</p>
         </div>
-        {% endfor %}
-      </div>
-  </div>
+        {% endif %}
+    </div>
 
-  <div class="tab-pane fade" id="pills-despachar" role="tabpanel">
-      <div class="row">
-        {% for o in ordenes %}
-            <div class="col-lg-6 mb-4">
-                <div class="card h-100 shadow-sm border-0 border-start border-5 border-primary">
-                    <div class="card-header bg-white pt-3 pb-2">
-                        <div class="d-flex justify-content-between align-items-start">
-                            <div style="max-width: 70%;">
-                                <h5 class="fw-bold mb-1 text-primary">COT-{{ "%05d"|format(o.id) }}</h5>
-                                <div class="small text-dark text-truncate"><i class="bi bi-building"></i> <strong>{{ o.cliente.nombre }}</strong></div>
-                            </div>
-                            <div class="text-end">
-                                <span class="badge bg-light text-dark border">Vendedor: {{ o.vendedor.username }}</span>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="card-body">
-                        <h6 class="small fw-bold text-muted border-bottom pb-1 mb-2">Lista de Empaque:</h6>
-                        <div class="table-responsive border rounded mb-3">
-                            <table class="table table-sm table-hover align-middle mb-0">
-                                <thead class="table-light text-muted small">
-                                    <tr>
-                                        <th class="text-center" style="width: 50px;"><i class="bi bi-check2-all fs-6 text-primary"></i></th>
-                                        <th>Cód/Ubic.</th>
-                                        <th>Producto</th>
-                                        <th class="text-center">Cant.</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {% for d in o.details %}
-                                    <tr>
-                                        <td class="text-center">
-                                            <input class="form-check-input check-picking-{{ o.id }} border-2 border-secondary" type="checkbox" style="cursor: pointer; width: 1.2rem; height: 1.2rem;" onchange="validarChecks('{{ o.id }}')">
-                                        </td>
-                                        <td class="small fw-bold text-muted">{% if d.item_type == 'PRODUCTO' and d.product %}{{ d.product.sku }}{% else %}SRV{% endif %}</td>
-                                        <td class="small" style="max-width: 200px; white-space: normal;">{% if d.item_type == 'PRODUCTO' and d.product %}{{ d.product.nombre }}{% else %}{{ d.nombre_personalizado }}{% endif %}</td>
-                                        <td class="text-center fw-bold fs-6 text-dark">{{ d.cantidad }}</td>
-                                    </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                    <div class="card-footer bg-light py-3 border-top-0 rounded-bottom">
-                        
-                        <div class="d-grid gap-2 mb-2">
-                            <a href="/descargar_nota_pedido/{{ o.id }}" class="btn btn-outline-danger fw-bold shadow-sm btn-sm">
-                                <i class="bi bi-file-earmark-pdf-fill"></i> IMPRIMIR NOTA DE PEDIDO (PDF)
-                            </a>
-                        </div>
+    <!-- ========================================================= -->
+    <!-- TAB 2: POR DESPACHAR                                       -->
+    <!-- ========================================================= -->
+    <div class="tab-pane fade" id="pills-despachar" role="tabpanel">
 
-                        <button id="btn_descontar_{{ o.id }}" class="btn btn-success w-100 fw-bold shadow-sm" disabled onclick="procesarSalida('{{ o.id }}')">
-                            <i class="bi bi-check-circle-fill"></i> DESCONTAR STOCK Y CERRAR
-                        </button>
-                    </div>
-                </div>
+        {% if ordenes %}
+        <div class="card shadow-sm border-0 mb-3">
+            <div class="card-body p-0 table-responsive">
+                <table class="table table-hover align-middle mb-0 small">
+                    <thead class="table-dark text-uppercase">
+                        <tr>
+                            <th class="ps-3">N° COT</th>
+                            <th>Cliente</th>
+                            <th>Vendedor</th>
+                            <th>F. Aprobación</th>
+                            <th>F. Entrega</th>
+                            <th class="text-center">Items</th>
+                            <th class="text-center">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for o in ordenes %}
+                        <tr>
+                            <td class="ps-3 fw-bold text-primary">COT-{{ "%05d"|format(o.id) }}</td>
+                            <td>
+                                <div class="fw-bold text-truncate" style="max-width:200px">{{ o.cliente.nombre }}</div>
+                                {% if o.orden_compra %}
+                                    <small class="text-primary"><i class="bi bi-receipt"></i> OC: {{ o.orden_compra }}</small>
+                                {% endif %}
+                            </td>
+                            <td><i class="bi bi-person text-muted"></i> {{ o.vendedor.username }}</td>
+                            <td>
+                                {% if o.fecha_aprobacion %}
+                                    <div>{{ o.fecha_aprobacion.strftime('%d/%m/%Y') }}</div>
+                                    <small class="text-muted">{{ o.fecha_aprobacion.strftime('%H:%M') }}</small>
+                                {% else %}—{% endif %}
+                            </td>
+                            <td>
+                                {% if o.fecha_entrega %}
+                                    <span class="fw-bold text-danger">
+                                        <i class="bi bi-calendar-event-fill"></i> 
+                                        {{ o.fecha_entrega.strftime('%d/%m/%Y') }}
+                                    </span>
+                                {% else %}
+                                    <span class="text-muted fst-italic">A coordinar</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                <span class="badge bg-primary">{{ o.details|length }} items</span>
+                            </td>
+                            <td class="text-center text-nowrap">
+                                <button class="btn btn-sm btn-outline-primary me-1" 
+                                        onclick="verItemsDespachar('{{ o.id }}')" 
+                                        title="Ver lista de empaque">
+                                    <i class="bi bi-eye-fill"></i> Lista
+                                </button>
+                                <a href="/descargar_nota_pedido/{{ o.id }}" 
+                                   class="btn btn-sm btn-outline-danger me-1" 
+                                   target="_blank" title="Imprimir Nota de Pedido">
+                                    <i class="bi bi-printer-fill"></i> NP
+                                </a>
+                                <button class="btn btn-sm btn-success fw-bold" 
+                                        id="btn_despachar_rapido_{{ o.id }}"
+                                        onclick="procesarSalidaRapido('{{ o.id }}')" 
+                                        title="Confirmar salida y descontar stock">
+                                    <i class="bi bi-check-circle-fill"></i> Despachar
+                                </button>
+                            </td>
+                        </tr>
+                        <!-- Fila expandible con checklist de empaque -->
+                        <tr id="detalle_despachar_{{ o.id }}" class="d-none bg-light">
+                            <td colspan="7" class="p-3">
+                                <div class="card border-primary border-2">
+                                    <div class="card-header bg-primary bg-opacity-10 py-2 d-flex justify-content-between">
+                                        <h6 class="mb-0 fw-bold text-primary">
+                                            <i class="bi bi-box-seam"></i> 
+                                            Lista de Empaque — COT-{{ "%05d"|format(o.id) }}
+                                        </h6>
+                                        <small class="text-muted">
+                                            Marque todos los items antes de despachar
+                                        </small>
+                                    </div>
+                                    <div class="card-body p-0">
+                                        <table class="table table-sm table-bordered mb-0">
+                                            <thead class="table-light small text-muted text-uppercase">
+                                                <tr>
+                                                    <th class="text-center" style="width:50px">
+                                                        <i class="bi bi-check2-all text-primary"></i>
+                                                    </th>
+                                                    <th>Código</th>
+                                                    <th>Ubicación</th>
+                                                    <th>Producto</th>
+                                                    <th class="text-center">Cant.</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {% for d in o.details %}
+                                                <tr>
+                                                    <td class="text-center">
+                                                        <input class="form-check-input check-picking-{{ o.id }} border-2 border-secondary" 
+                                                               type="checkbox" 
+                                                               style="cursor:pointer; width:1.2rem; height:1.2rem;" 
+                                                               onchange="validarChecksTabla('{{ o.id }}')">
+                                                    </td>
+                                                    <td class="small fw-bold text-muted">
+                                                        {% if d.item_type == 'PRODUCTO' and d.product %}
+                                                            {{ d.product.sku }}
+                                                        {% else %}SRV{% endif %}
+                                                    </td>
+                                                    <td class="small text-primary">
+                                                        {% if d.product %}
+                                                            <i class="bi bi-geo-alt-fill"></i> 
+                                                            {{ d.product.ubicacion or '—' }}
+                                                        {% else %}—{% endif %}
+                                                    </td>
+                                                    <td class="small" style="max-width:250px; white-space:normal">
+                                                        {% if d.item_type == 'PRODUCTO' and d.product %}
+                                                            {{ d.product.nombre }}
+                                                        {% else %}{{ d.nombre_personalizado }}{% endif %}
+                                                    </td>
+                                                    <td class="text-center fw-bold fs-6">{{ d.cantidad }}</td>
+                                                </tr>
+                                                {% endfor %}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <div class="card-footer bg-white d-flex gap-2 justify-content-between py-2">
+                                        <a href="/descargar_nota_pedido/{{ o.id }}" 
+                                           class="btn btn-sm btn-outline-danger" target="_blank">
+                                            <i class="bi bi-file-earmark-pdf-fill"></i> Imprimir NP
+                                        </a>
+                                        <button class="btn btn-sm btn-success fw-bold px-4" 
+                                                id="btn_descontar_{{ o.id }}" 
+                                                disabled 
+                                                onclick="procesarSalida('{{ o.id }}')">
+                                            <i class="bi bi-check-circle-fill"></i> 
+                                            Confirmar Todos los Items y Descontar Stock
+                                        </button>
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
             </div>
+        </div>
         {% else %}
-        <div class="col-12 text-center text-muted py-5 mt-3">
+        <div class="text-center text-muted py-5">
             <div class="opacity-25 display-1"><i class="bi bi-box-seam"></i></div>
             <h4 class="mt-3">Todo al día</h4>
-            <p>No hay cotizaciones aprobadas por Gerencia listas para despacho.</p>
+            <p>No hay pedidos aprobados pendientes de despacho.</p>
         </div>
-        {% endfor %}
-      </div>
-  </div>
-<div class="tab-pane fade" id="pills-historial" role="tabpanel">
-    <div class="alert alert-secondary border-secondary small shadow-sm">
-        <i class="bi bi-info-circle-fill"></i> Estas órdenes ya fueron procesadas y descontadas del Kardex.
+        {% endif %}
     </div>
-    
-    <div class="row">
-      {% for o in ordenes_finalizadas %}
-          <div class="col-lg-6 mb-4">
-              <div class="card h-100 shadow-sm border-0 border-start border-5 border-success bg-light">
-                  <div class="card-header bg-white pt-3 pb-2 d-flex justify-content-between align-items-center">
-                      <div>
-                          <h5 class="fw-bold mb-1 text-success text-decoration-line-through">COT-{{ "%05d"|format(o.id) }}</h5>
-                          <div class="small text-muted"><i class="bi bi-building"></i> {{ o.cliente.nombre }}</div>
-                      </div>
-                      <span class="badge bg-success shadow-sm fs-6"><i class="bi bi-check2-all"></i> DESPACHADO</span>
-                  </div>
-                  
-                  <div class="card-body">
-                      <table class="table table-sm table-bordered bg-white mb-3">
-                          <thead class="table-light text-uppercase" style="font-size: 0.7rem;">
-                              <tr>
-                                  <th>Cód.</th>
-                                  <th>Producto</th>
-                                  <th class="text-center">Cant.</th>
-                              </tr>
-                          </thead>
-                          <tbody style="font-size: 0.85rem;">
-                              {% for d in o.details %}
-                              <tr>
-                                  <td class="text-muted">{{ d.product.sku if d.product else 'SRV' }}</td>
-                                  <td>{{ d.product.nombre if d.product else d.nombre_personalizado }}</td>
-                                  <td class="text-center fw-bold">{{ d.cantidad }}</td>
-                              </tr>
-                              {% endfor %}
-                          </tbody>
-                      </table>
 
-                      <div class="row small text-muted">
-                          <div class="col-6"><strong>Vendedor:</strong> {{ o.vendedor.username }}</div>
-                          <div class="col-6"><strong>Fecha:</strong> {{ o.fecha.strftime('%d/%m/%Y') }}</div>
-                      </div>
-                  </div>
+    <!-- ========================================================= -->
+    <!-- TAB 3: HISTORIAL DE SALIDAS (TABLA CON FILTROS)            -->
+    <!-- ========================================================= -->
+    <div class="tab-pane fade" id="pills-historial" role="tabpanel">
 
-                  <div class="card-footer bg-white py-3 border-top-0">
-                      <a href="/descargar_nota_pedido/{{ o.id }}" class="btn btn-outline-secondary w-100 fw-bold shadow-sm btn-sm">
-                          <i class="bi bi-printer"></i> REIMPRIMIR CONSTANCIA (PDF)
-                      </a>
-                  </div>
-              </div>
-          </div>
-      {% else %}
-      <div class="col-12 text-center text-muted py-5 mt-3">
-          <div class="opacity-25 display-1"><i class="bi bi-archive"></i></div>
-          <h4 class="mt-3">Sin historial</h4>
-          <p>No hay despachos registrados aún.</p>
-      </div>
-      {% endfor %}
+        <!-- Filtros -->
+        <div class="card mb-3 border-0 shadow-sm bg-light">
+            <div class="card-body py-3">
+                <form method="GET" action="{{ url_for('picking_almacen') }}" id="formFiltrosHist">
+                    <div class="row g-2 align-items-end">
+                        <div class="col-md-4">
+                            <label class="small fw-bold text-muted">Buscar (N° COT / Cliente / RUC)</label>
+                            <div class="input-group input-group-sm">
+                                <span class="input-group-text bg-white">
+                                    <i class="bi bi-search"></i>
+                                </span>
+                                <input type="text" name="busqueda_hist" class="form-control" 
+                                       placeholder="Ej: 00012 o Empresa SAC..." 
+                                       value="{{ busqueda_hist }}">
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="small fw-bold text-muted">Desde</label>
+                            <input type="date" name="fecha_inicio_hist" class="form-control form-control-sm" 
+                                   value="{{ fecha_inicio_hist }}">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="small fw-bold text-muted">Hasta</label>
+                            <input type="date" name="fecha_fin_hist" class="form-control form-control-sm" 
+                                   value="{{ fecha_fin_hist }}">
+                        </div>
+                        <div class="col-md-2 d-flex gap-1">
+                            <button type="submit" class="btn btn-primary btn-sm fw-bold w-100">
+                                <i class="bi bi-funnel-fill"></i> Filtrar
+                            </button>
+                            <a href="{{ url_for('picking_almacen') }}" 
+                               class="btn btn-outline-secondary btn-sm" title="Limpiar">
+                                <i class="bi bi-arrow-counterclockwise"></i>
+                            </a>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Tabla principal historial -->
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
+                <h6 class="mb-0 fw-bold text-muted small text-uppercase">
+                    <i class="bi bi-archive-fill text-success"></i> 
+                    Salidas Registradas
+                </h6>
+                <span class="badge bg-success">
+                    {{ pagination_hist.total }} total
+                </span>
+            </div>
+            <div class="card-body p-0 table-responsive">
+                <table class="table table-hover align-middle mb-0 small">
+                    <thead class="table-dark text-uppercase">
+                        <tr>
+                            <th class="ps-3">N° COT</th>
+                            <th>Cliente</th>
+                            <th>Vendedor</th>
+                            <th>F. Salida</th>
+                            <th>F. Entrega</th>
+                            <th class="text-center">Items</th>
+                            <th class="text-center">Estado</th>
+                            <th class="text-center">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for o in ordenes_finalizadas %}
+                        <tr>
+                            <td class="ps-3 fw-bold text-success">
+                                COT-{{ "%05d"|format(o.id) }}
+                            </td>
+                            <td>
+                                <div class="fw-bold text-truncate" style="max-width:180px">
+                                    {{ o.cliente.nombre }}
+                                </div>
+                                <small class="text-muted">{{ o.cliente.documento }}</small>
+                                {% if o.orden_compra %}
+                                    <div>
+                                        <small class="text-primary">
+                                            <i class="bi bi-receipt"></i> OC: {{ o.orden_compra }}
+                                        </small>
+                                    </div>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <i class="bi bi-person text-muted"></i> {{ o.vendedor.username }}
+                                {% if o.gerente_nombre %}
+                                    <div>
+                                        <small class="text-muted">
+                                            <i class="bi bi-shield-check text-success"></i> 
+                                            {{ o.gerente_nombre }}
+                                        </small>
+                                    </div>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <div>{{ o.fecha.strftime('%d/%m/%Y') }}</div>
+                                <small class="text-muted">{{ o.fecha.strftime('%H:%M') }}</small>
+                            </td>
+                            <td>
+                                {% if o.fecha_entrega %}
+                                    <span class="text-success fw-bold">
+                                        <i class="bi bi-calendar-check-fill"></i> 
+                                        {{ o.fecha_entrega.strftime('%d/%m/%Y') }}
+                                    </span>
+                                {% else %}
+                                    <span class="text-muted fst-italic">—</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                <button class="btn btn-sm btn-outline-secondary" 
+                                        onclick="verItemsHistorial('{{ o.id }}')" 
+                                        title="Ver productos despachados">
+                                    <i class="bi bi-list-ul"></i> 
+                                    {{ o.details|length }}
+                                </button>
+                            </td>
+                            <td class="text-center">
+                                <span class="badge bg-success">
+                                    <i class="bi bi-check2-all"></i> 
+                                    {{ o.estado }}
+                                </span>
+                            </td>
+                            <td class="text-center text-nowrap">
+                                <a href="/descargar_nota_pedido/{{ o.id }}" 
+                                   class="btn btn-sm btn-outline-secondary" 
+                                   target="_blank" 
+                                   title="Reimprimir Nota de Pedido">
+                                    <i class="bi bi-printer-fill"></i> NP
+                                </a>
+                                <a href="/descargar_cotizacion_v2/{{ o.id }}" 
+                                   class="btn btn-sm btn-outline-danger ms-1" 
+                                   target="_blank" 
+                                   title="Ver Cotización Original">
+                                    <i class="bi bi-file-pdf-fill"></i> COT
+                                </a>
+                            </td>
+                        </tr>
+                        <!-- Fila expandible detalle historial -->
+                        <tr id="detalle_hist_{{ o.id }}" class="d-none bg-light">
+                            <td colspan="8" class="p-3">
+                                <div class="card border-success border-2">
+                                    <div class="card-header bg-success bg-opacity-10 py-2">
+                                        <h6 class="mb-0 fw-bold text-success">
+                                            <i class="bi bi-box-seam"></i> 
+                                            Productos Despachados — COT-{{ "%05d"|format(o.id) }}
+                                        </h6>
+                                    </div>
+                                    <div class="card-body p-0">
+                                        <table class="table table-sm table-bordered mb-0">
+                                            <thead class="table-light small text-muted text-uppercase">
+                                                <tr>
+                                                    <th class="ps-3">Código</th>
+                                                    <th>Producto</th>
+                                                    <th class="text-center">Cant. Despachada</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {% for d in o.details %}
+                                                <tr>
+                                                    <td class="ps-3 fw-bold text-muted small">
+                                                        {{ d.product.sku if d.product else 'SRV' }}
+                                                    </td>
+                                                    <td class="small" style="white-space:normal">
+                                                        {{ d.product.nombre if d.product else d.nombre_personalizado }}
+                                                    </td>
+                                                    <td class="text-center fw-bold">
+                                                        <span class="badge bg-success">{{ d.cantidad }}</span>
+                                                    </td>
+                                                </tr>
+                                                {% endfor %}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="8" class="text-center py-5 text-muted">
+                                <div class="opacity-25 fs-1"><i class="bi bi-archive"></i></div>
+                                <p class="mt-2">No se encontraron registros con los filtros aplicados.</p>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Paginación -->
+            {% if pagination_hist.pages > 1 %}
+            <div class="card-footer bg-white py-3">
+                <div class="d-flex justify-content-between align-items-center">
+                    <small class="text-muted">
+                        Mostrando {{ ordenes_finalizadas|length }} de 
+                        <strong>{{ pagination_hist.total }}</strong> registros · 
+                        Pág. {{ pagination_hist.page }} de {{ pagination_hist.pages }}
+                    </small>
+                    <ul class="pagination pagination-sm mb-0">
+                        <li class="page-item {% if not pagination_hist.has_prev %}disabled{% endif %}">
+                            <a class="page-link" href="{{ url_for('picking_almacen', 
+                               page_hist=pagination_hist.prev_num,
+                               busqueda_hist=busqueda_hist,
+                               fecha_inicio_hist=fecha_inicio_hist,
+                               fecha_fin_hist=fecha_fin_hist) }}#pills-historial-tab">
+                                Anterior
+                            </a>
+                        </li>
+                        {% for p in pagination_hist.iter_pages(left_edge=1, right_edge=1, left_current=1, right_current=1) %}
+                            {% if p %}
+                                <li class="page-item {% if p == pagination_hist.page %}active{% endif %}">
+                                    <a class="page-link" href="{{ url_for('picking_almacen',
+                                       page_hist=p,
+                                       busqueda_hist=busqueda_hist,
+                                       fecha_inicio_hist=fecha_inicio_hist,
+                                       fecha_fin_hist=fecha_fin_hist) }}#pills-historial-tab">
+                                        {{ p }}
+                                    </a>
+                                </li>
+                            {% else %}
+                                <li class="page-item disabled"><span class="page-link">...</span></li>
+                            {% endif %}
+                        {% endfor %}
+                        <li class="page-item {% if not pagination_hist.has_next %}disabled{% endif %}">
+                            <a class="page-link" href="{{ url_for('picking_almacen',
+                               page_hist=pagination_hist.next_num,
+                               busqueda_hist=busqueda_hist,
+                               fecha_inicio_hist=fecha_inicio_hist,
+                               fecha_fin_hist=fecha_fin_hist) }}#pills-historial-tab">
+                                Siguiente
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+            {% endif %}
+        </div>
     </div>
 </div>
 
+<!-- Modal Reportar Faltantes (sin cambios) -->
 <div class="modal fade" id="modalFaltaStock" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-centered">
         <div class="modal-content border-0 shadow">
             <div class="modal-header bg-danger text-white py-3">
-                <h5 class="modal-title fw-bold"><i class="bi bi-exclamation-triangle-fill me-2"></i> Reportar Piezas Faltantes</h5>
+                <h5 class="modal-title fw-bold">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i> Reportar Piezas Faltantes
+                </h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body bg-light">
                 <div class="alert alert-warning bg-warning bg-opacity-10 border-warning small">
-                    <i class="bi bi-info-circle-fill text-warning"></i> Seleccione en la lista los productos que <strong>no están completos en el estante</strong> e indique cuántos le están faltando. Esto se enviará al vendedor.
+                    <i class="bi bi-info-circle-fill text-warning"></i> 
+                    Seleccione los productos que <strong>no están completos</strong> e indique cuántos faltan.
                 </div>
-                
-                <div class="table-responsive bg-white border rounded shadow-sm mb-3" style="max-height: 350px; overflow-y: auto;">
+                <div class="table-responsive bg-white border rounded shadow-sm mb-3" 
+                     style="max-height: 350px; overflow-y: auto;">
                     <table class="table table-hover align-middle mb-0">
                         <thead class="table-light small text-muted sticky-top">
                             <tr>
-                                <th class="text-center" style="width: 60px;">Falta</th>
+                                <th class="text-center" style="width:60px">Falta</th>
                                 <th>Producto / SKU</th>
-                                <th class="text-center" style="width: 100px;">Pedido</th>
-                                <th class="text-center text-danger" style="width: 130px;">Faltan (Cant)</th>
+                                <th class="text-center" style="width:100px">Pedido</th>
+                                <th class="text-center text-danger" style="width:130px">Faltan (Cant)</th>
                             </tr>
                         </thead>
-                        <tbody id="lista_faltantes_body">
-                            </tbody>
+                        <tbody id="lista_faltantes_body"></tbody>
                     </table>
                 </div>
-
                 <label class="small fw-bold text-muted mb-1">Comentario Adicional (Opcional):</label>
-                <textarea id="faltante_comentario" class="form-control" rows="2" placeholder="Ej: Las 5 unidades restantes están oxidadas o dañadas..."></textarea>
+                <textarea id="faltante_comentario" class="form-control" rows="2" 
+                          placeholder="Ej: Las 5 unidades restantes están dañadas..."></textarea>
                 <input type="hidden" id="faltante_order_id">
             </div>
             <div class="modal-footer bg-white">
-                <button type="button" class="btn btn-outline-secondary fw-bold" data-bs-dismiss="modal">Cancelar</button>
-                <button type="button" class="btn btn-danger fw-bold px-4 shadow-sm" onclick="enviarReporteFalta()">
+                <button type="button" class="btn btn-outline-secondary fw-bold" 
+                        data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-danger fw-bold px-4 shadow-sm" 
+                        onclick="enviarReporteFalta()">
                     <i class="bi bi-send-fill"></i> ENVIAR REPORTE AL VENDEDOR
                 </button>
             </div>
@@ -301,193 +656,211 @@
     </div>
 </div>
 
-
 <script>
-    // ======================================================
-    // 1. FUNCIONES DEL FLUJO DE VERIFICAR STOCK
-    // ======================================================
-    
-    function confirmarStockFisico(orderId) {
-        Swal.fire({
-            title: '¿Stock Completo?',
-            text: "Confirmarás al vendedor y a gerencia que los productos están físicamente en el estante y listos para venderse.",
-            icon: 'success',
-            showCancelButton: true,
-            confirmButtonText: 'Sí, todo conforme',
-            confirmButtonColor: '#198754',
-            cancelButtonText: 'Cancelar'
-        }).then((result) => {
-            if (result.isConfirmed) {
-                Swal.fire({ title: 'Procesando...', didOpen: () => { Swal.showLoading() } });
-                fetch(`/api/confirmar_stock_fisico/${orderId}`, { method: 'POST' })
-                .then(r => r.json()).then(data => {
-                    if (data.status === 'success') {
-                        Swal.fire('¡Confirmado!', data.msg, 'success').then(() => location.reload());
-                    } else { Swal.fire('Error', data.msg, 'error'); }
-                });
-            }
-        });
-    }
+// ============================================================
+// TOGGLE FILAS EXPANDIBLES
+// ============================================================
+function verItemsVerificar(id) {
+    const fila = document.getElementById(`detalle_verificar_${id}`);
+    fila.classList.toggle('d-none');
+}
 
-    // ======================================================
-    // 2. LÓGICA DEL NUEVO MODAL DE PIEZAS FALTANTES
-    // ======================================================
+function verItemsDespachar(id) {
+    const fila = document.getElementById(`detalle_despachar_${id}`);
+    fila.classList.toggle('d-none');
+}
 
-    function abrirReporteFaltantes(orderId) {
-        Swal.fire({ title: 'Cargando lista...', allowOutsideClick: false, didOpen: () => { Swal.showLoading() } });
-        
-        // Obtenemos los items llamando a la API existente
-        fetch(`/api/obtener_detalle_venta/${orderId}`)
-        .then(r => r.json())
-        .then(res => {
-            Swal.close();
-            if(res.status === 'success') {
-                const tbody = document.getElementById('lista_faltantes_body');
-                tbody.innerHTML = '';
-                document.getElementById('faltante_order_id').value = orderId;
-                document.getElementById('faltante_comentario').value = '';
-                
-                res.data.items.forEach((item, index) => {
-                    // Ignoramos los servicios, ya que no tienen stock físico real
-                    if(item.tipo === 'FABRICACION') return; 
+function verItemsHistorial(id) {
+    const fila = document.getElementById(`detalle_hist_${id}`);
+    fila.classList.toggle('d-none');
+}
 
-                    tbody.innerHTML += `
-                        <tr>
-                            <td class="text-center">
-                                <input class="form-check-input border-secondary chk-falta shadow-sm" type="checkbox" data-index="${index}" style="width:1.4em; height:1.4em; cursor:pointer;" onchange="toggleFaltante(${index}, ${item.cantidad})">
-                            </td>
-                            <td class="small">
-                                <strong class="text-primary">${item.sku}</strong><br>
-                                <span class="text-dark">${item.descripcion}</span>
-                            </td>
-                            <td class="text-center fw-bold fs-6 text-dark bg-light">${item.cantidad}</td>
-                            <td class="text-center">
-                                <input type="number" id="input_falta_${index}" class="form-control text-center border-danger text-danger fw-bold shadow-sm" value="${item.cantidad}" min="1" max="${item.cantidad}" disabled>
-                            </td>
-                        </tr>
-                    `;
-                });
-                
-                new bootstrap.Modal(document.getElementById('modalFaltaStock')).show();
-            } else {
-                Swal.fire('Error', res.msg, 'error');
-            }
-        }).catch(err => {
-            Swal.fire('Error', 'Fallo al cargar los items del pedido', 'error');
-        });
-    }
+// ============================================================
+// 1. VERIFICAR STOCK
+// ============================================================
+function confirmarStockFisico(orderId) {
+    Swal.fire({
+        title: '¿Stock Completo?',
+        text: "Confirmarás que los productos están físicamente disponibles.",
+        icon: 'success',
+        showCancelButton: true,
+        confirmButtonText: 'Sí, todo conforme',
+        confirmButtonColor: '#198754',
+        cancelButtonText: 'Cancelar'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            Swal.fire({ title: 'Procesando...', didOpen: () => { Swal.showLoading() } });
+            fetch(`/api/confirmar_stock_fisico/${orderId}`, { method: 'POST' })
+            .then(r => r.json()).then(data => {
+                if (data.status === 'success') {
+                    Swal.fire('¡Confirmado!', data.msg, 'success').then(() => location.reload());
+                } else { Swal.fire('Error', data.msg, 'error'); }
+            });
+        }
+    });
+}
 
-    // Habilita o deshabilita el input de cantidad dependiendo del checkbox
-    function toggleFaltante(index, maxCant) {
-        const input = document.getElementById(`input_falta_${index}`);
-        const chk = document.querySelector(`.chk-falta[data-index="${index}"]`);
-        
+// ============================================================
+// 2. REPORTE DE FALTANTES
+// ============================================================
+function abrirReporteFaltantes(orderId) {
+    Swal.fire({ title: 'Cargando lista...', allowOutsideClick: false, didOpen: () => { Swal.showLoading() } });
+    fetch(`/api/obtener_detalle_venta/${orderId}`)
+    .then(r => r.json())
+    .then(res => {
+        Swal.close();
+        if (res.status === 'success') {
+            const tbody = document.getElementById('lista_faltantes_body');
+            tbody.innerHTML = '';
+            document.getElementById('faltante_order_id').value = orderId;
+            document.getElementById('faltante_comentario').value = '';
+            res.data.items.forEach((item, index) => {
+                if (item.tipo === 'FABRICACION') return;
+                tbody.innerHTML += `
+                    <tr>
+                        <td class="text-center">
+                            <input class="form-check-input border-secondary chk-falta shadow-sm" 
+                                   type="checkbox" data-index="${index}" 
+                                   style="width:1.4em; height:1.4em; cursor:pointer;" 
+                                   onchange="toggleFaltante(${index}, ${item.cantidad})">
+                        </td>
+                        <td class="small">
+                            <strong class="text-primary">${item.sku}</strong><br>
+                            <span class="text-dark">${item.descripcion}</span>
+                        </td>
+                        <td class="text-center fw-bold fs-6 text-dark bg-light">${item.cantidad}</td>
+                        <td class="text-center">
+                            <input type="number" id="input_falta_${index}" 
+                                   class="form-control text-center border-danger text-danger fw-bold shadow-sm" 
+                                   value="${item.cantidad}" min="1" max="${item.cantidad}" disabled>
+                        </td>
+                    </tr>`;
+            });
+            new bootstrap.Modal(document.getElementById('modalFaltaStock')).show();
+        } else { Swal.fire('Error', res.msg, 'error'); }
+    }).catch(() => Swal.fire('Error', 'Fallo al cargar los items', 'error'));
+}
+
+function toggleFaltante(index, maxCant) {
+    const input = document.getElementById(`input_falta_${index}`);
+    const chk = document.querySelector(`.chk-falta[data-index="${index}"]`);
+    if (chk.checked) { input.disabled = false; input.focus(); input.select(); }
+    else { input.disabled = true; input.value = maxCant; }
+}
+
+function enviarReporteFalta() {
+    const orderId = document.getElementById('faltante_order_id').value;
+    const comentario = document.getElementById('faltante_comentario').value.trim();
+    const checks = document.querySelectorAll('.chk-falta');
+    let detallesFalta = [], errores = false;
+    checks.forEach(chk => {
         if (chk.checked) {
-            input.disabled = false;
-            input.focus();
-            input.select();
-        } else {
-            input.disabled = true;
-            input.value = maxCant; // Se resetea al máximo pedido
-        }
-    }
-
-    function enviarReporteFalta() {
-        const orderId = document.getElementById('faltante_order_id').value;
-        const comentario = document.getElementById('faltante_comentario').value.trim();
-        const checks = document.querySelectorAll('.chk-falta');
-        
-        let detallesFalta = [];
-        let erroresValidacion = false;
-        
-        checks.forEach(chk => {
-            if (chk.checked) {
-                const idx = chk.getAttribute('data-index');
-                const tr = chk.closest('tr');
-                const skuItem = tr.querySelector('strong.text-primary').innerText;
-                const nombreItem = tr.querySelector('span.text-dark').innerText;
-                const cantPedida = parseInt(tr.querySelector('td:nth-child(3)').innerText);
-                const cantFalta = parseInt(document.getElementById(`input_falta_${idx}`).value);
-                
-                // Validación básica para evitar que reporten que faltan 0, o que faltan más de los pedidos
-                if (isNaN(cantFalta) || cantFalta <= 0 || cantFalta > cantPedida) {
-                    erroresValidacion = true;
-                    document.getElementById(`input_falta_${idx}`).classList.add('is-invalid');
-                } else {
-                    document.getElementById(`input_falta_${idx}`).classList.remove('is-invalid');
-                    detallesFalta.push(`• [${skuItem}] ${nombreItem} (Faltan: ${cantFalta} de ${cantPedida})`);
-                }
-            }
-        });
-
-        if (erroresValidacion) {
-            return Swal.fire('Error en Cantidad', 'Por favor revise las cantidades faltantes. No pueden ser cero ni mayores a lo solicitado.', 'warning');
-        }
-        
-        if (detallesFalta.length === 0 && comentario === '') {
-            return Swal.fire('Atención', 'Debe marcar al menos un producto como faltante o escribir un comentario.', 'warning');
-        }
-        
-        // Construimos el mensaje gigante para el vendedor
-        let mensajeFinal = "REPORTE DE ALMACÉN - PIEZAS FALTANTES:\n\n";
-        if (detallesFalta.length > 0) {
-            mensajeFinal += detallesFalta.join('\n') + "\n\n";
-        }
-        if (comentario !== '') {
-            mensajeFinal += `COMENTARIO DE ALMACÉN:\n${comentario}`;
-        }
-        
-        Swal.fire({ title: 'Notificando al Vendedor...', didOpen: () => { Swal.showLoading() } });
-        
-        // Enviamos el mensaje al mismo endpoint que usa Gerencia para observar
-        fetch('/gestion_ventas/observar', { 
-            method: 'POST', 
-            headers: {'Content-Type': 'application/json'}, 
-            body: JSON.stringify({ order_id: orderId, motivo: mensajeFinal }) 
-        })
-        .then(r => r.json()).then(data => { 
-            if(data.status === 'success') {
-                bootstrap.Modal.getInstance(document.getElementById('modalFaltaStock')).hide();
-                Swal.fire('Reporte Enviado', 'La cotización regresó al Vendedor para su corrección.', 'success')
-                .then(() => location.reload()); 
+            const idx = chk.getAttribute('data-index');
+            const tr = chk.closest('tr');
+            const sku = tr.querySelector('strong.text-primary').innerText;
+            const nombre = tr.querySelector('span.text-dark').innerText;
+            const pedido = parseInt(tr.querySelector('td:nth-child(3)').innerText);
+            const falta = parseInt(document.getElementById(`input_falta_${idx}`).value);
+            if (isNaN(falta) || falta <= 0 || falta > pedido) {
+                errores = true;
+                document.getElementById(`input_falta_${idx}`).classList.add('is-invalid');
             } else {
-                Swal.fire('Error', data.msg, 'error');
+                document.getElementById(`input_falta_${idx}`).classList.remove('is-invalid');
+                detallesFalta.push(`• [${sku}] ${nombre} (Faltan: ${falta} de ${pedido})`);
             }
-        }).catch(err => {
-            Swal.fire('Error', 'No se pudo enviar el reporte por un fallo de red.', 'error');
-        });
-    }
+        }
+    });
+    if (errores) return Swal.fire('Error', 'Revise las cantidades faltantes.', 'warning');
+    if (!detallesFalta.length && !comentario) 
+        return Swal.fire('Atención', 'Debe marcar al menos un producto o escribir un comentario.', 'warning');
+    let msg = "REPORTE DE ALMACÉN - PIEZAS FALTANTES:\n\n";
+    if (detallesFalta.length) msg += detallesFalta.join('\n') + "\n\n";
+    if (comentario) msg += `COMENTARIO:\n${comentario}`;
+    Swal.fire({ title: 'Enviando...', didOpen: () => { Swal.showLoading() } });
+    fetch('/gestion_ventas/observar', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order_id: orderId, motivo: msg })
+    }).then(r => r.json()).then(data => {
+        if (data.status === 'success') {
+            bootstrap.Modal.getInstance(document.getElementById('modalFaltaStock')).hide();
+            Swal.fire('Enviado', 'La cotización regresó al vendedor.', 'success').then(() => location.reload());
+        } else Swal.fire('Error', data.msg, 'error');
+    }).catch(() => Swal.fire('Error', 'Fallo de red.', 'error'));
+}
 
-    // ======================================================
-    // 3. FUNCIONES DEL FLUJO DE DESPACHO FINAL
-    // ======================================================
-    function validarChecks(orderId) {
-        const checkboxes = document.querySelectorAll(`.check-picking-${orderId}`);
-        const btn = document.getElementById(`btn_descontar_${orderId}`);
-        let todosMarcados = true;
-        checkboxes.forEach(chk => { if (!chk.checked) todosMarcados = false; });
-        btn.disabled = !todosMarcados;
-    }
+// ============================================================
+// 3. DESPACHO FINAL
+// ============================================================
+function validarChecksTabla(orderId) {
+    const checkboxes = document.querySelectorAll(`.check-picking-${orderId}`);
+    const btn = document.getElementById(`btn_descontar_${orderId}`);
+    let todos = true;
+    checkboxes.forEach(c => { if (!c.checked) todos = false; });
+    btn.disabled = !todos;
+}
 
-    function procesarSalida(orderId) {
-        Swal.fire({
-            title: '¿Confirmar Salida Física?',
-            text: "Al confirmar, se descontará permanentemente el stock del Kardex.",
-            icon: 'warning',
-            showCancelButton: true,
-            confirmButtonText: 'Sí, Descontar y Cerrar',
-            confirmButtonColor: '#198754',
-            cancelButtonText: 'Revisar nuevamente'
-        }).then((result) => {
-            if (result.isConfirmed) {
-                Swal.fire({ title: 'Procesando...', didOpen: () => { Swal.showLoading() } });
-                fetch(`/api/procesar_salida_almacen/${orderId}`, { method: 'POST' })
-                .then(r => r.json()).then(data => {
-                    if (data.status === 'success') Swal.fire('¡Despacho Exitoso!', data.msg, 'success').then(() => location.reload());
-                    else Swal.fire('Error', data.msg, 'error');
-                });
-            }
-        });
+// Despacho rápido desde la tabla (sin abrir checklist)
+function procesarSalidaRapido(orderId) {
+    Swal.fire({
+        title: '¿Confirmar Despacho?',
+        html: `<div class="text-start small">
+                   <p>Al confirmar:</p>
+                   <ul class="text-muted">
+                       <li>Se descontará el stock del Kardex permanentemente.</li>
+                       <li>La orden pasará a <strong>Historial de Salidas</strong>.</li>
+                   </ul>
+                   <div class="alert alert-warning py-1 small">
+                       Si necesita revisar la lista de ítems primero, 
+                       use el botón <strong>"Lista"</strong>.
+                   </div>
+               </div>`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Sí, Despachar',
+        confirmButtonColor: '#198754',
+        cancelButtonText: 'Revisar Lista'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            Swal.fire({ title: 'Procesando...', didOpen: () => { Swal.showLoading() } });
+            fetch(`/api/procesar_salida_almacen/${orderId}`, { method: 'POST' })
+            .then(r => r.json()).then(data => {
+                if (data.status === 'success') 
+                    Swal.fire('¡Despacho Exitoso!', data.msg, 'success').then(() => location.reload());
+                else Swal.fire('Error', data.msg, 'error');
+            });
+        }
+    });
+}
+
+// Despacho desde checklist expandido (requiere marcar todos)
+function procesarSalida(orderId) {
+    Swal.fire({
+        title: '¿Confirmar Salida Física?',
+        text: "Se descontará permanentemente el stock del Kardex.",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Sí, Descontar y Cerrar',
+        confirmButtonColor: '#198754',
+        cancelButtonText: 'Revisar nuevamente'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            Swal.fire({ title: 'Procesando...', didOpen: () => { Swal.showLoading() } });
+            fetch(`/api/procesar_salida_almacen/${orderId}`, { method: 'POST' })
+            .then(r => r.json()).then(data => {
+                if (data.status === 'success') 
+                    Swal.fire('¡Despacho Exitoso!', data.msg, 'success').then(() => location.reload());
+                else Swal.fire('Error', data.msg, 'error');
+            });
+        }
+    });
+}
+
+// Ir a tab historial si viene del paginador
+document.addEventListener('DOMContentLoaded', () => {
+    if (window.location.hash === '#pills-historial-tab') {
+        const tab = document.getElementById('pills-historial-tab');
+        if (tab) new bootstrap.Tab(tab).show();
     }
+});
 </script>
 {% endblock %}
