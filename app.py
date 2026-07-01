@@ -1657,7 +1657,7 @@ def descargar_cotizacion_v2(order_id):
 
 @app.route('/descargar_nota_pedido/<int:order_id>')
 def descargar_nota_pedido(order_id):
-    if session.get('role') not in ['admin', 'almacen', 'administracion']: 
+    if session.get('role') not in ['admin', 'almacen', 'administracion', 'vendedor']: 
         return "Acceso denegado", 403
         
     orden = Order.query.get_or_404(order_id)
