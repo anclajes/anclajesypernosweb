@@ -1,0 +1,966 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>📦 Gestión de Inventario</h2>
+    <!-- CARTEL DE ÚLTIMA ACTUALIZACIÓN -->
+{% if info_importacion %}
+<div class="alert alert-info py-2 shadow-sm d-flex align-items-center mb-3">
+    <i class="bi bi-info-circle-fill fs-5 me-3 text-info"></i>
+    <div>
+        <h6 class="mb-0 fw-bold text-dark">Última actualización masiva de inventario</h6>
+        <small class="text-muted">
+            Sincronizado el <strong>{{ info_importacion.updated_at.strftime('%d/%m/%Y a las %H:%M') }}</strong> 
+            por <strong>{{ info_importacion.updated_by }}</strong>
+        </small>
+    </div>
+</div>
+{% endif %}
+    <div class="d-flex gap-2">
+        
+        {% if session.get('role') in ['admin', 'almacen', 'administracion'] %}
+        <a href="{{ url_for('ver_kardex') }}" class="btn btn-outline-dark">
+            <i class="bi bi-clock-history"></i> Kardex
+        </a>
+        {% endif %}
+
+        {% if session.get('role') in ['admin', 'almacen'] %}
+        
+        <button class="btn btn-secondary" data-bs-toggle="modal" data-bs-target="#modalConfigMasiva" title="Ajustar Stock Mínimo por Familia">
+            <i class="bi bi-gear-wide-connected"></i> Mínimos
+        </button>
+
+        <a href="{{ url_for('exportar_excel_importbolts') }}" class="btn btn-outline-success">
+            <i class="bi bi-download"></i> Exportar
+        </a>
+        
+        <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#modalImportar">
+            <i class="bi bi-file-earmark-excel"></i> Importar
+        </button>
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalNuevo">
+            <i class="bi bi-plus-lg"></i> Nuevo Producto
+        </button>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card mb-4 bg-white border shadow-sm">
+    <div class="card-body py-3">
+        <form method="GET" action="{{ url_for('inventario_importbolts') }}" id="formFiltros">
+            <div class="row g-2 align-items-center">
+                <div class="col-md-3">
+                    <div class="input-group">
+                        <span class="input-group-text bg-light border-end-0 text-muted"><i class="bi bi-search"></i></span>
+                        <input type="text" name="busqueda" class="form-control border-start-0" placeholder="CÓDIGO o Descripción..." value="{{ search }}">
+                    </div>
+                </div>
+                
+                <div class="col-md-3">
+                    <select name="categoria" id="filtro_familia" class="form-select" onchange="document.getElementById('formFiltros').submit()">
+                        <option value="todos">-- Todas las Familias --</option>
+                        {% for cat in lista_categorias %}
+                        <option value="{{ cat }}" {% if cat_filtro == cat %}selected{% endif %}>{{ cat }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="col-md-2">
+                    <select name="calidad" id="filtro_calidad" class="form-select" onchange="document.getElementById('formFiltros').submit()">
+                        <option value="todos">-- Calidad --</option>
+                        {% for cal in lista_calidades %}
+                        <option value="{{ cal }}" {% if calidad_filtro == cal %}selected{% endif %}>{{ cal }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="col-md-2">
+                    <select name="per_page" class="form-select" onchange="document.getElementById('formFiltros').submit()">
+                        <option value="20" {% if limit == 20 %}selected{% endif %}>20 filas</option>
+                        <option value="50" {% if limit == 50 %}selected{% endif %}>50 filas</option>
+                        <option value="100" {% if limit == 100 %}selected{% endif %}>100 filas</option>
+                    </select>
+                </div>
+                
+                <div class="col-md-2 text-end">
+                    <div class="form-check form-switch d-inline-block border rounded py-2 px-2 bg-light w-100 text-center">
+                        <input class="form-check-input" type="checkbox" name="stock_bajo" id="checkStockBajo" 
+                            onchange="document.getElementById('formFiltros').submit()"
+                            {% if stock_bajo == 'on' %}checked{% endif %}>
+                        <label class="form-check-label fw-bold text-danger cursor-pointer small" for="checkStockBajo">Stock Bajo</label>
+                    </div>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card shadow-sm mb-3 border-0">
+    <div class="card-body p-0 table-responsive">
+        <table class="table table-hover table-striped mb-0 align-middle small">
+            <thead class="table-dark text-nowrap">
+                <tr>
+                    <th class="ps-3">CÓDIGO</th>
+                    <th>DESCRIPCIÓN</th>
+                    <th>FAMILIA</th>
+                    <th>UBICACIÓN</th>
+                    <th>CALIDAD</th>
+                    <th class="text-center">STOCK</th> 
+                    <th class="text-end">P. UNIT</th>
+                    <th class="text-end">P. CAJA</th>
+                    <th class="text-center pe-3">ACCIONES</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in productos %}
+                <tr>
+                    <td class="fw-bold text-primary ps-3">{{ p.sku }}</td>
+                    <td class="text-wrap" style="min-width: 250px;">
+                        {{ p.nombre }}
+                        <!-- Etiqueta de Estado -->
+                        {% if p.estado %}
+                            <br>
+                            <span class="badge bg-danger mt-1 text-white shadow-sm" style="font-size: 0.7rem;">
+                                <i class="bi bi-exclamation-triangle-fill"></i> {{ p.estado }}
+                            </span>
+                        {% endif %}
+                    </td>
+                    <td><span class="badge bg-light text-dark border">{{ p.categoria }}</span></td>
+                    <td class="text-nowrap text-muted">{% if p.ubicacion %}<i class="bi bi-geo-alt-fill text-danger small"></i> {{ p.ubicacion }}{% else %}-{% endif %}</td>
+                    <td><span class="badge bg-secondary bg-opacity-25 text-dark">{{ p.calidad }}</span></td>
+                    
+                    <td class="text-center">
+                        {% if p.stock_actual <= p.stock_minimo %}
+                            <span class="badge bg-danger-subtle text-danger border border-danger fw-bold">{{ p.stock_actual }}</span>
+                        {% else %}
+                            <span class="badge bg-success-subtle text-success border border-success">{{ p.stock_actual }}</span>
+                        {% endif %}
+                        
+                        {% if session.get('role') in ['admin', 'almacen'] %}
+                        <button class="btn btn-sm btn-light border ms-1 text-primary" title="Registrar Ingreso/Salida"
+                                onclick="abrirAjuste('{{p.id}}', '{{p.nombre}}', '{{p.stock_actual}}')">
+                            <i class="bi bi-arrow-left-right"></i>
+                        </button>
+                        {% endif %}
+                    </td>
+                    
+                    <td class="text-end text-muted">{% if p.precio_unidad > 0 %} $ {{ "%.2f"|format(p.precio_unidad) }} {% else %} - {% endif %}</td>
+                    <td class="text-end text-muted">{% if p.precio_caja > 0 %} $ {{ "%.2f"|format(p.precio_caja) }} {% else %} - {% endif %}</td>
+                    
+                    <td class="text-center text-nowrap pe-3">
+                        {% if session.get('role') == 'admin' %}
+                            <div class="btn-group">
+                                <button class="btn btn-sm btn-outline-primary py-0" 
+                                        onclick="abrirEditar('{{p.id}}', '{{p.nombre|replace("'", "\\'")|replace('"', '&quot;')}}', '{{p.stock_actual}}', '{{p.precio_unidad}}', '{{p.precio_caja}}', '{{p.ubicacion|default('', true)}}', '{{p.categoria}}', '{{p.calidad|default('', true)}}', '{{p.stock_minimo}}', '{{p.estado|default('', true)}}')">
+                                    <i class="bi bi-pencil-fill"></i>
+                                </button>
+                                <a href="{{ url_for('eliminar_producto_importbolts', prod_id=p.id) }}" class="btn btn-sm btn-outline-danger py-0" onclick="return confirm('⚠️ ¿Estás seguro?');">
+                                    <i class="bi bi-trash-fill"></i>
+                                </a>
+                            </div>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="9" class="text-center py-5 text-muted">No se encontraron productos.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="d-flex justify-content-between align-items-center mt-4">
+    <div class="text-muted small ms-2">
+        Mostrando página <b>{{ pagination.page }}</b> de <b>{{ pagination.pages }}</b> 
+        <span class="mx-2">|</span> 
+        Total: <span class="badge bg-light text-dark border">{{ pagination.total }}</span> productos
+    </div>
+
+    {% if pagination.pages > 1 %}
+    <ul class="pagination pagination-sm mb-0 me-2 shadow-sm">
+        <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
+            <a class="page-link" href="{{ url_for('inventario_importbolts', page=pagination.prev_num, busqueda=search, categoria=cat_filtro, calidad=calidad_filtro, stock_bajo=stock_bajo, per_page=limit) }}">Anterior</a>
+        </li>
+        {% for page_num in pagination.iter_pages(left_edge=1, right_edge=1, left_current=1, right_current=1) %}
+            {% if page_num %}
+                <li class="page-item {% if page_num == pagination.page %}active{% endif %}">
+                    <a class="page-link" href="{{ url_for('inventario_importbolts', page=page_num, busqueda=search, categoria=cat_filtro, calidad=calidad_filtro, stock_bajo=stock_bajo, per_page=limit) }}">{{ page_num }}</a>
+                </li>
+            {% else %}
+                <li class="page-item disabled"><span class="page-link">...</span></li>
+            {% endif %}
+        {% endfor %}
+        <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
+            <a class="page-link" href="{{ url_for('inventario_importbolts', page=pagination.next_num, busqueda=search, categoria=cat_filtro, calidad=calidad_filtro, stock_bajo=stock_bajo, per_page=limit) }}">Siguiente</a>
+        </li>
+    </ul>
+    {% endif %}
+</div>
+
+<div class="modal fade" id="modalImportar" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content border-danger"> 
+            <form action="{{ url_for('importar_excel_importbolts') }}" method="POST" enctype="multipart/form-data">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title"><i class="bi bi-exclamation-triangle-fill"></i> Carga Masiva (Reset)</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-danger bg-danger bg-opacity-10 border-danger">
+                        <h6 class="alert-heading fw-bold"><i class="bi bi-cone-striped"></i> ¡LEA ESTO ANTES DE SEGUIR!</h6>
+                        <p class="small mb-0 text-dark">
+                            Esta opción <strong>NO SUMA</strong> al stock actual. <br>
+                            Esta opción <strong>REEMPLAZA (SOBREESCRIBE)</strong> el stock existente.
+                        </p>
+                    </div>
+                    <div class="alert alert-secondary small">
+                        <strong>¿Cuándo usar esto?</strong>
+                        <ul class="mb-0 ps-3">
+                            <li>Carga inicial del sistema.</li>
+                            <li>Inventario físico anual (borrón y cuenta nueva).</li>
+                            <li>Actualización masiva de precios o nombres.</li>
+                        </ul>
+                        <hr class="my-1">
+                        <strong>NO USAR PARA:</strong> Compras diarias. Para eso use el botón de ajuste manual <i class="bi bi-arrow-left-right"></i>.
+                    </div>
+                    <hr>
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <span class="small fw-bold text-muted">Formato requerido:</span>
+                        <a href="{{ url_for('descargar_plantilla') }}" class="btn btn-outline-success btn-sm">
+                            <i class="bi bi-download"></i> Bajar Plantilla
+                        </a>
+                    </div>
+                    <div class="mb-3">
+                        <input type="file" name="archivo_excel" class="form-control" accept=".xlsx, .xls" required>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light">
+                    <button type="submit" class="btn btn-danger w-100 fw-bold">
+                        Entiendo los riesgos, Procesar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalNuevo" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title">Registrar Nuevo Producto</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="formNuevoProd">
+                    <div class="row g-2">
+                        <div class="col-12 mb-2">
+                            <label class="form-label small fw-bold">Familia / Categoría *</label>
+                            <div class="input-group">
+                                <select name="categoria_nombre" id="selectFamiliaNuevo" class="form-select" required onchange="actualizarPlaceholder()">
+                                    <option value="" selected disabled>-- Seleccione --</option>
+                                    {% for cat in lista_categorias %}
+                                    <option value="{{ cat }}">{{ cat }}</option>
+                                    {% endfor %}
+                                </select>
+                                <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#modalNuevaCat"><i class="bi bi-plus-lg"></i></button>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small fw-bold text-dark">CÓDIGO / SKU</label>
+                            <div class="input-group input-group-sm">
+                                <input type="text" name="sku" id="inputSKUNuevo" class="form-control fw-bold text-uppercase" 
+                                       placeholder="(Automático)" oninput="this.value = this.value.toUpperCase()">
+                                <button type="button" class="btn btn-outline-secondary" onclick="limpiarSku()"><i class="bi bi-magic"></i></button>
+                            </div>
+                            <div class="form-text text-primary small" id="skuHelpText">Se generará un código automático.</div>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small fw-bold">Calidad</label>
+                            <input type="text" name="calidad" class="form-control form-control-sm text-uppercase" 
+                                   list="listCalidades" placeholder="Ej: ZINCADO" oninput="this.value = this.value.toUpperCase()">
+                            <datalist id="listCalidades">{% for cal in lista_calidades %} <option value="{{ cal }}"> {% endfor %}</datalist>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small fw-bold">Estado Físico</label>
+                            <input type="text" name="estado" class="form-control form-control-sm text-uppercase border-warning" 
+                                list="listEstados" placeholder="Ej: OXIDADO (O dejar vacío)">
+                            <datalist id="listEstados">{% for est in lista_estados %} <option value="{{ est }}"> {% endfor %}</datalist>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label small fw-bold text-muted">Ubicación</label>
+                            <input type="text" name="ubicacion" class="form-control text-uppercase" placeholder="Ej: PASILLO 4" oninput="this.value = this.value.toUpperCase()">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label small">Descripción *</label>
+                            <input name="nombre" class="form-control text-uppercase" required oninput="this.value = this.value.toUpperCase()">
+                        </div>
+                        <div class="col-4">
+                            <label class="form-label small">Stock Inicial</label>
+                            <input type="number" name="stock" class="form-control" value="0" min="0" required>
+                        </div>
+                        <div class="col-4">
+                            <label class="form-label small fw-bold text-info">Stock Mínimo</label>
+                            <input type="number" name="stock_minimo" class="form-control" value="10" min="1">
+                        </div>
+                        <div class="col-4"><label class="form-label small">P. Unidad</label><input type="number" step="0.01" name="p_unidad" id="new_p_uni" class="form-control"></div>
+                        <div class="col-6"><label class="form-label small">P. Caja</label><input type="number" step="0.01" name="p_caja" id="new_p_caja" class="form-control" onchange="validarPrecios()"></div>
+                        <div class="col-12"><div class="alert alert-warning py-1 px-2 mt-2 d-none" id="alertPrecio" style="font-size: 0.8rem;">Precio Caja > Unitario.</div></div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-success w-100" onclick="guardarProductoAjax()">Guardar Producto</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalEditar" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form action="{{ url_for('editar_producto_importbolts') }}" method="POST" id="formEditarProd" onsubmit="confirmarEdicion(event)">
+                <input type="hidden" name="prod_id" id="edit_id">
+                <input type="hidden" name="url_origen" id="edit_url_origen">
+                <div class="modal-header bg-warning">
+                    <h5 class="modal-title fw-bold"><i class="bi bi-pencil-square"></i> Editar Información</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-2">
+                        <label class="form-label small fw-bold">Descripción *</label>
+                        <input id="edit_nombre" name="nombre" class="form-control text-uppercase" required oninput="this.value = this.value.toUpperCase()">
+                    </div>
+                    <div class="row g-2 mb-2">
+                        <div class="col-6">
+                            <label class="form-label small fw-bold">Familia *</label>
+                            <select name="categoria" id="edit_categoria" class="form-select form-select-sm" required>
+                                {% for cat in lista_categorias %}<option value="{{ cat }}">{{ cat }}</option>{% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small fw-bold">Calidad *</label>
+                            <input type="text" name="calidad" id="edit_calidad" class="form-control form-control-sm text-uppercase" list="listCalidadesEdit" required oninput="this.value = this.value.toUpperCase()">
+                            <datalist id="listCalidadesEdit">{% for cal in lista_calidades %} <option value="{{ cal }}"> {% endfor %}</datalist>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label small fw-bold text-warning">Estado Físico</label>
+                        <input type="text" name="estado" id="edit_estado" class="form-control form-control-sm text-uppercase border-warning" 
+                            list="listEstadosEdit" placeholder="Dejar vacío si está OK">
+                        <datalist id="listEstadosEdit">{% for est in lista_estados %} <option value="{{ est }}"> {% endfor %}</datalist>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small fw-bold">Ubicación</label>
+                        <input id="edit_ubicacion" name="ubicacion" class="form-control text-uppercase" oninput="this.value = this.value.toUpperCase()">
+                    </div>
+                    <div class="row g-2">
+                        <div class="col-4">
+                            <label class="form-label small fw-bold text-danger">Stock Actual</label>
+                            <input id="edit_stock" type="number" name="stock" class="form-control fw-bold bg-light" readonly>
+                            <div class="form-text" style="font-size: 0.6rem">No editable aquí.</div>
+                        </div>
+                        <div class="col-4">
+                            <label class="form-label small fw-bold text-info">Stock Mínimo</label>
+                            <input id="edit_stock_min" type="number" name="stock_minimo" class="form-control">
+                        </div>
+                        <div class="col-4"><label class="form-label small">P. Unidad</label><input id="edit_punidad" type="number" step="0.01" name="p_unidad" class="form-control"></div>
+                        <div class="col-4 offset-8"><label class="form-label small">P. Caja</label><input id="edit_pcaja" type="number" step="0.01" name="p_caja" class="form-control"></div>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-warning fw-bold">Guardar Cambios</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalNuevaCat">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-primary">
+            <form action="{{ url_for('nueva_categoria_importbolts') }}" method="POST">
+                <div class="modal-header bg-light py-2">
+                    <h6 class="modal-title fw-bold text-primary">Gestionar Familias</h6>
+                    <button type="button" class="btn-close small" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body pb-0">
+                    <div class="row g-2 align-items-end">
+                        <div class="col-6">
+                            <label class="small fw-bold">Nombre</label>
+                            <input name="cat_nombre" class="form-control form-control-sm text-uppercase" placeholder="Ej: SENSORES" required oninput="this.value = this.value.toUpperCase()">
+                        </div>
+                        <div class="col-3">
+                            <label class="small fw-bold">Prefijo</label>
+                            <input name="cat_prefijo" class="form-control form-control-sm text-uppercase" placeholder="AAA" maxlength="3" required oninput="this.value = this.value.toUpperCase()">
+                        </div>
+                        <div class="col-3">
+                            <button type="submit" class="btn btn-primary btn-sm w-100">Crear</button>
+                        </div>
+                    </div>
+                    <hr class="my-3">
+                </div>
+            </form>
+            <div class="modal-body pt-0" style="max-height: 300px; overflow-y: auto;">
+                <h6 class="small fw-bold text-muted mb-2">Familias Existentes</h6>
+                <ul class="list-group list-group-flush small border rounded" id="listaFamilias">
+                    {% for cat in lista_categorias %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center py-2 px-3 hover-bg-light" id="fila-cat-{{ loop.index }}">
+                        <span class="fw-medium">{{ cat }}</span>
+                        <div class="btn-group">
+                            <button type="button" class="btn btn-sm text-primary p-0 border-0 bg-transparent me-3" 
+                                    title="Renombrar familia"
+                                    onclick="renombrarFamilia('{{ cat }}')">
+                                <i class="bi bi-pencil-fill"></i>
+                            </button>
+                            <button type="button" class="btn btn-sm text-danger p-0 border-0 bg-transparent" 
+                                    title="Eliminar familia"
+                                    onclick="eliminarFamiliaAjax('{{ cat }}', 'fila-cat-{{ loop.index }}')">
+                                <i class="bi bi-trash-fill"></i>
+                            </button>
+                        </div>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            <div class="modal-footer p-1 bg-light">
+                <button type="button" class="btn btn-secondary btn-sm w-100" data-bs-dismiss="modal">Cerrar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalStock" tabindex="-1">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <form action="{{ url_for('ajustar_stock_importbolts') }}" method="POST">
+                <input type="hidden" name="prod_id" id="stock_id">
+                <input type="hidden" name="url_origen" id="stock_url_origen">
+                <div class="modal-header bg-dark text-white">
+                    <h5 class="modal-title fs-6"><i class="bi bi-arrow-left-right"></i> Movimiento Kardex</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="small fw-bold text-primary mb-2 text-center" id="stock_nombre">Producto...</p>
+                    <div class="alert alert-secondary py-1 text-center small mb-2">
+                        Stock Actual: <strong id="stock_display_actual">0</strong>
+                    </div>
+                    <div class="mb-2">
+                        <label class="small text-muted">Tipo de Movimiento</label>
+                        <select name="tipo" class="form-select form-select-sm" required>
+                            <option value="ingreso">➕ Ingreso (Compra/Devolución)</option>
+                            <option value="salida">➖ Salida (Venta/Merma)</option>
+                        </select>
+                    </div>
+                    <div class="mb-2"><label class="small text-muted">Cantidad</label><input type="number" name="cantidad" class="form-control form-control-sm" min="1" required></div>
+                    <div class="mb-0"><label class="small text-muted fw-bold">Motivo *</label><input type="text" name="motivo" class="form-control form-control-sm" placeholder="Ej: Venta #123, Ajuste..." required></div>
+                </div>
+                <div class="modal-footer p-1"><button type="submit" class="btn btn-dark w-100 btn-sm">Registrar Movimiento</button></div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalConfigMasiva" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content border-secondary">
+            <form id="formConfigMasiva" action="{{ url_for('actualizar_minimos_masivos_importbolts') }}" method="POST">
+                <div class="modal-header bg-secondary text-white">
+                    <h5 class="modal-title"><i class="bi bi-gear-wide-connected"></i> Configurar Stock Mínimo</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-light border small text-muted">
+                        <i class="bi bi-info-circle-fill text-primary"></i> 
+                        Defina reglas de abastecimiento. Ejemplo: "Todos los PERNOS INOX mínimo 100".
+                    </div>
+                    <div class="row g-2">
+                        <div class="col-12">
+                            <label class="form-label fw-bold small">1. Seleccione Familia *</label>
+                            <div class="input-group">
+                                <select name="categoria_nombre" id="mass_familia" class="form-select" onchange="cargarCalidadesDinamicas()">
+                                    <option value="" selected disabled>-- Seleccione --</option>
+                                    {% for cat in lista_categorias %}
+                                    <option value="{{ cat }}">{{ cat }}</option>
+                                    {% endfor %}
+                                </select>
+                                <button class="btn btn-outline-secondary" type="button" onclick="resetFiltrosMasivos()" title="Reiniciar filtros">
+                                    <i class="bi bi-arrow-counterclockwise"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-bold small">2. Filtre por Calidad (Opcional)</label>
+                            <select name="calidad_nombre" id="mass_calidad" class="form-select" disabled>
+                                <option value="TODAS" selected>-- Primero seleccione Familia --</option>
+                            </select>
+                            <div class="form-text small" id="helpCalidad">Si lo deja en TODAS, afecta a toda la familia.</div>
+                        </div>
+                        <div class="col-12 mt-3">
+                            <label class="form-label fw-bold text-info">3. Nuevo Stock Mínimo *</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-info text-white fw-bold">Cant.</span>
+                                <input type="number" name="nuevo_minimo" id="mass_cantidad" class="form-control fw-bold" placeholder="Ej: 50" min="0" required>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-dark w-100" onclick="confirmarMasivo()">
+                        <i class="bi bi-check2-circle"></i> Revisar y Aplicar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalPreviewMasivo" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow-lg">
+            <div class="modal-header bg-dark text-white py-3">
+                <h5 class="modal-title fw-bold"><i class="bi bi-list-check"></i> Seleccionar Productos</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body bg-light p-0">
+                <div class="alert alert-warning m-3 py-2 small border-warning text-dark">
+                    <i class="bi bi-exclamation-triangle-fill"></i> Desmarque los productos a los que <strong>NO</strong> desea aplicarles el nuevo stock mínimo.
+                </div>
+                
+                <div class="table-responsive bg-white border-top border-bottom" style="max-height: 400px;">
+                    <table class="table table-sm table-hover align-middle mb-0">
+                        <thead class="table-light sticky-top small text-muted text-uppercase">
+                            <tr>
+                                <th class="text-center" style="width: 50px;">
+                                    <input class="form-check-input border-secondary" type="checkbox" id="checkAllMasivo" checked onchange="toggleAllMasivo(this)" style="cursor: pointer; width: 1.2rem; height: 1.2rem;">
+                                </th>
+                                <th style="width: 20%;">Código</th>
+                                <th style="width: 45%;">Descripción</th>
+                                <th class="text-center" style="width: 15%;">Mín. Actual</th>
+                                <th class="text-center text-success" style="width: 20%;">Nuevo Mín.</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbodyPreviewMasivo">
+                            </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer d-flex justify-content-between bg-white py-3">
+                <div class="small text-muted fw-bold">
+                    Seleccionados: <span id="lblTotalAfectados" class="badge bg-primary fs-6">0</span>
+                </div>
+                <div>
+                    <button type="button" class="btn btn-outline-secondary me-2" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-success fw-bold px-4" id="btnGuardarMasivoFinal" onclick="guardarMasivoFinal()">
+                        <i class="bi bi-check-circle-fill"></i> Aplicar Cambios
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// --- INICIO DE CARGA (TODO LO QUE DEBE PASAR AL ABRIR LA PÁGINA) ---
+    document.addEventListener('DOMContentLoaded', () => {
+        
+        // 1. EL PARCHE DE SEGURIDAD (Para que te deje escribir en el modal)
+        const modales = document.querySelectorAll('.modal');
+        modales.forEach(m => m.removeAttribute('tabindex'));
+
+        document.body.addEventListener('shown.bs.modal', function (event) {
+            event.target.removeAttribute('tabindex');
+        });
+
+        // 2. LA LÓGICA DE FILTROS (¡NO BORRAR!)
+        // Esto asegura que si ya elegiste familia, se carguen sus calidades
+        const familiaActual = document.getElementById('filtro_familia').value;
+        if(familiaActual && familiaActual !== 'todos') {
+            cargarCalidadesFiltroMain(false); 
+        }
+    });
+
+    // --- VARIABLES GLOBALES ---
+    let originalData = {};
+
+    
+
+    function abrirEditar(id, nombre, stock, punidad, pcaja, ubicacion, categoria, calidad, stockMin, estado) {
+        document.getElementById('edit_id').value = id;
+        document.getElementById('edit_nombre').value = nombre;
+        document.getElementById('edit_stock').value = stock;
+        document.getElementById('edit_stock_min').value = stockMin; 
+        document.getElementById('edit_punidad').value = punidad;
+        document.getElementById('edit_pcaja').value = pcaja;
+        document.getElementById('edit_ubicacion').value = (ubicacion && ubicacion !== 'None') ? ubicacion : '';
+        document.getElementById('edit_estado').value = estado;
+        document.getElementById('edit_categoria').value = categoria;
+        document.getElementById('edit_calidad').value = (calidad && calidad !== 'None') ? calidad : '';
+        document.getElementById('edit_url_origen').value = window.location.href;
+
+        originalData = {
+            nombre: nombre,
+            ubicacion: (ubicacion && ubicacion !== 'None') ? ubicacion : '',
+            categoria: categoria,
+            calidad: (calidad && calidad !== 'None') ? calidad : '',
+            punidad: parseFloat(punidad),
+            pcaja: parseFloat(pcaja),
+            stock_min: stockMin
+        };
+        originalData.estado = estado;
+
+        new bootstrap.Modal(document.getElementById('modalEditar')).show();
+    }
+
+    // CAMBIO 3: CONFIRMACIÓN DETALLADA (RECUPERADO)
+    function confirmarEdicion(event) {
+        event.preventDefault();
+        const form = event.target;
+        const nuevoNombre = document.getElementById('edit_nombre').value.trim();
+        const nuevaUbicacion = document.getElementById('edit_ubicacion').value.trim();
+        const nuevaCat = document.getElementById('edit_categoria').value;
+        const nuevaCalidad = document.getElementById('edit_calidad').value;
+        const nuevoPUni = parseFloat(document.getElementById('edit_punidad').value);
+        const nuevoPCaja = parseFloat(document.getElementById('edit_pcaja').value);
+        const nuevoStockMin = parseInt(document.getElementById('edit_stock_min').value);
+
+        let cambios = [];
+
+        if (nuevoNombre !== originalData.nombre) cambios.push(`Descripción: <b>${originalData.nombre}</b> → <b>${nuevoNombre}</b>`);
+        if (nuevaUbicacion !== originalData.ubicacion) cambios.push(`Ubicación: <b>${originalData.ubicacion}</b> → <b>${nuevaUbicacion}</b>`);
+        if (nuevaCat !== originalData.categoria) cambios.push(`Familia: <b>${originalData.categoria}</b> → <b>${nuevaCat}</b>`);
+        if (nuevaCalidad !== originalData.calidad) cambios.push(`Calidad: <b>${originalData.calidad}</b> → <b>${nuevaCalidad}</b>`);
+        if (nuevoPUni !== originalData.punidad) cambios.push(`P. Unidad: <b>${originalData.punidad}</b> → <b>${nuevoPUni}</b>`);
+        if (nuevoPCaja !== originalData.pcaja) cambios.push(`P. Caja: <b>${originalData.pcaja}</b> → <b>${nuevoPCaja}</b>`);
+        if (nuevoStockMin != originalData.stock_min) cambios.push(`Stock Mínimo: <b>${originalData.stock_min}</b> → <b>${nuevoStockMin}</b>`);
+
+        if (cambios.length === 0) {
+            form.submit();
+        } else {
+            Swal.fire({
+                title: '¿Confirmar cambios?',
+                html: `Se modificarán:<br><ul class="text-start mb-0 small"><li>${cambios.join('</li><li>')}</li></ul>`,
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#ffc107',
+                cancelButtonColor: '#6c757d',
+                confirmButtonText: 'Sí, guardar',
+                cancelButtonText: 'Revisar'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    form.submit();
+                }
+            });
+        }
+    }
+
+    function confirmarMasivo() {
+        const familiaSelect = document.getElementById('mass_familia');
+        const cantidadInput = document.getElementById('mass_cantidad');
+        const calidadSelect = document.getElementById('mass_calidad');
+
+        const familia = familiaSelect.value;
+        const cantidad = cantidadInput.value;
+        const calidad = calidadSelect.value;
+
+        if (!familia) { Swal.fire({ icon: 'warning', title: 'Falta información', text: 'Por favor, seleccione una Familia.' }); return; }
+        if (!cantidad || cantidad === "") { Swal.fire({ icon: 'warning', title: 'Falta información', text: 'Ingrese el nuevo Stock Mínimo.' }); return; }
+        if (parseInt(cantidad) < 0) { Swal.fire({ icon: 'error', title: 'Cantidad inválida', text: 'No puede ser negativo.' }); return; }
+
+        let formData = new FormData();
+        formData.append('categoria_nombre', familia);
+        formData.append('calidad_nombre', calidad);
+
+        Swal.fire({ title: 'Analizando...', didOpen: () => { Swal.showLoading() } });
+
+        fetch('/api/preview_minimos_importbolts', { method: 'POST', body: formData })
+        .then(r => r.json())
+        .then(data => {
+            Swal.close();
+            if (data.status === 'success') {
+                if (data.total === 0) {
+                    let msgError = `No existen productos de la familia <b>"${familia}"</b>` + (calidad !== 'TODAS' ? ` con calidad <b>"${calidad}"</b>.` : `.`);
+                    Swal.fire({ icon: 'info', title: 'Sin coincidencias', html: msgError });
+                    return;
+                }
+                
+                // 1. Ocultar el modal de configuración
+                bootstrap.Modal.getInstance(document.getElementById('modalConfigMasiva')).hide();
+                
+                // 2. Llenar la tabla del nuevo modal
+                const tbody = document.getElementById('tbodyPreviewMasivo');
+                tbody.innerHTML = '';
+                
+                data.productos.forEach(p => {
+                    tbody.innerHTML += `
+                        <tr class="fila-masiva">
+                            <td class="text-center">
+                                <input class="form-check-input check-masivo border-secondary" type="checkbox" value="${p.id}" checked onchange="actualizarConteoMasivo()" style="cursor: pointer; width: 1.2rem; height: 1.2rem;">
+                            </td>
+                            <td class="small fw-bold text-primary">${p.sku}</td>
+                            <td class="small text-truncate" style="max-width: 300px;" title="${p.nombre}">${p.nombre}</td>
+                            <td class="text-center small fw-bold text-muted">${p.min_actual}</td>
+                            <td class="text-center fw-bold text-success">${cantidad}</td>
+                        </tr>
+                    `;
+                });
+                
+                document.getElementById('lblTotalAfectados').innerText = data.total;
+                document.getElementById('checkAllMasivo').checked = true;
+                document.getElementById('btnGuardarMasivoFinal').dataset.nuevoMinimo = cantidad;
+                
+                // 3. Mostrar el nuevo modal de la tabla
+                new bootstrap.Modal(document.getElementById('modalPreviewMasivo')).show();
+
+            } else { Swal.fire('Error', data.msg, 'error'); }
+        })
+        .catch(err => { console.error(err); Swal.fire('Error', 'Conexión fallida', 'error'); });
+    }
+
+    // Funciones de Checkboxes y Guardado Final
+    function toggleAllMasivo(source) {
+        const checkboxes = document.querySelectorAll('.check-masivo');
+        checkboxes.forEach(cb => cb.checked = source.checked);
+        actualizarConteoMasivo();
+    }
+
+    function actualizarConteoMasivo() {
+        const checkeds = document.querySelectorAll('.check-masivo:checked').length;
+        document.getElementById('lblTotalAfectados').innerText = checkeds;
+    }
+
+    function guardarMasivoFinal() {
+        const checkboxes = document.querySelectorAll('.check-masivo:checked');
+        const ids = Array.from(checkboxes).map(cb => parseInt(cb.value));
+        const nuevoMinimo = document.getElementById('btnGuardarMasivoFinal').dataset.nuevoMinimo;
+
+        if (ids.length === 0) {
+            return Swal.fire('Atención', 'Debe seleccionar al menos un producto de la lista.', 'warning');
+        }
+
+        Swal.fire({ title: 'Aplicando Cambios...', allowOutsideClick: false, didOpen: () => { Swal.showLoading() } });
+
+        fetch('/config/minimos_masivos_importbolts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids: ids, nuevo_minimo: nuevoMinimo })
+        })
+        .then(r => {
+            if (!r.ok) throw new Error("Error interno del servidor (Código " + r.status + ")");
+            return r.json();
+        })
+        .then(data => {
+            if (data.status === 'success') {
+                Swal.fire('¡Completado!', data.msg, 'success').then(() => location.reload());
+            } else {
+                Swal.fire('Error', data.msg, 'error');
+            }
+        })
+        .catch(err => {
+            console.error("Error en Fetch:", err);
+            Swal.close(); // Forzamos a que se cierre el "Cargando..."
+            Swal.fire('Error de Conexión', 'Ocurrió un problema de red o el servidor devolvió un error inesperado.', 'error');
+        });
+    }
+
+    function abrirAjuste(id, nombre, stockActual) {
+        document.getElementById('stock_id').value = id;
+        document.getElementById('stock_nombre').innerText = nombre;
+        document.getElementById('stock_display_actual').innerText = stockActual;
+        document.getElementById('stock_url_origen').value = window.location.href;
+        new bootstrap.Modal(document.getElementById('modalStock')).show();
+    }
+
+    function guardarProductoAjax() {
+        const form = document.getElementById('formNuevoProd');
+        if(!form.checkValidity()) { form.reportValidity(); return; }
+        const formData = new FormData(form);
+        fetch('/producto_importbolts/nuevo', { method: 'POST', body: formData })
+        .then(r => r.json())
+        .then(data => {
+            if (data.status === 'success') {
+                Swal.fire({ icon: 'success', title: '¡Creado!', text: `SKU: ${data.sku}`, timer: 1500, showConfirmButton: false })
+                .then(() => { window.location.href = `/inventario_importbolts?busqueda=${data.sku}`; });
+            } else {
+                Swal.fire({ icon: 'error', title: 'Error', text: data.msg });
+            }
+        });
+    }
+
+    function eliminarFamiliaAjax(nombreCategoria, idFilaHtml) {
+        Swal.fire({ title: '¿Eliminar familia?', text: `Se intentará borrar "${nombreCategoria}".`, icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Sí, borrar' })
+        .then((result) => {
+            if (result.isConfirmed) {
+                let formData = new FormData();
+                formData.append('nombre_cat', nombreCategoria);
+                fetch('/categoria_importbolts/eliminar', { method: 'POST', body: formData })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        Swal.fire({ icon: 'success', title: 'Eliminado', timer: 1000, showConfirmButton: false });
+                        const fila = document.getElementById(idFilaHtml);
+                        if(fila) fila.remove();
+                    } else { Swal.fire({ icon: 'error', title: 'No se puede', text: data.msg }); }
+                });
+            }
+        });
+    }
+
+    function limpiarSku() { document.getElementById('inputSKUNuevo').value = ""; actualizarPlaceholder(); }
+    
+    function actualizarPlaceholder() {
+        const fam = document.getElementById('selectFamiliaNuevo').value;
+        const inp = document.getElementById('inputSKUNuevo');
+        if (inp.value.trim() === "") inp.placeholder = fam ? `${fam.substring(0,3).toUpperCase()}-XXXX (Automático)` : "(Automático)";
+    }
+
+    document.getElementById('inputSKUNuevo').addEventListener('input', function() {
+        const h = document.getElementById('skuHelpText');
+        if(this.value.trim()!==""){ h.innerText="Código manual."; h.className="form-text text-warning small fw-bold"; }
+        else { h.innerText="Código automático."; h.className="form-text text-primary small"; actualizarPlaceholder(); }
+    });
+
+    function validarPrecios() {
+        const u=parseFloat(document.getElementById('new_p_uni').value)||0;
+        const c=parseFloat(document.getElementById('new_p_caja').value)||0;
+        const a=document.getElementById('alertPrecio');
+        if(c>u && u>0) a.classList.remove('d-none'); else a.classList.add('d-none');
+    }
+
+    // --- LÓGICA DE FILTROS DEPENDIENTES (CASCADA - MODAL MASIVO) ---
+    function cargarCalidadesDinamicas() {
+        const familia = document.getElementById('mass_familia').value;
+        const selectCalidad = document.getElementById('mass_calidad');
+        const helpText = document.getElementById('helpCalidad');
+
+        selectCalidad.innerHTML = '<option value="TODAS">Cargando...</option>';
+        selectCalidad.disabled = true;
+
+        if (!familia) { resetFiltrosMasivos(); return; }
+
+        let formData = new FormData();
+        formData.append('familia', familia);
+
+        fetch('/api/calidades_de_familia_importbolts', { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(data => {
+            selectCalidad.innerHTML = '';
+            let optionTodas = document.createElement('option');
+            optionTodas.value = 'TODAS'; optionTodas.text = '-- TODAS LAS CALIDADES --'; optionTodas.selected = true;
+            selectCalidad.appendChild(optionTodas);
+
+            if (data.status === 'success') {
+                data.calidades.forEach(cal => {
+                    let opt = document.createElement('option');
+                    opt.value = cal; opt.text = cal;
+                    selectCalidad.appendChild(opt);
+                });
+                selectCalidad.disabled = false;
+                helpText.innerText = `Se encontraron ${data.calidades.length} calidades.`;
+            } else { selectCalidad.innerHTML = '<option value="TODAS">Error</option>'; }
+        });
+    }
+
+    function resetFiltrosMasivos() {
+        const fam = document.getElementById('mass_familia');
+        const cal = document.getElementById('mass_calidad');
+        fam.value = "";
+        cal.innerHTML = '<option value="TODAS">-- Primero seleccione Familia --</option>';
+        cal.disabled = true;
+        document.getElementById('mass_cantidad').value = "";
+        document.getElementById('helpCalidad').innerText = "Si lo deja en TODAS, afecta a toda la familia.";
+    }
+
+function renombrarFamilia(nombreViejo) {
+        // 1. Ocultar temporalmente el modal de Bootstrap (Truco visual)
+        // Esto evita que Bootstrap pelee por el foco
+        const modalEl = document.getElementById('modalNuevaCat');
+        const modalInstance = bootstrap.Modal.getInstance(modalEl);
+        modalInstance.hide();
+
+        Swal.fire({
+            title: 'Renombrar Familia',
+            text: `Cambiar nombre de "${nombreViejo}" a:`,
+            input: 'text',
+            inputValue: nombreViejo,
+            showCancelButton: true,
+            confirmButtonText: 'Guardar',
+            cancelButtonText: 'Cancelar',
+            allowOutsideClick: false, // Importante para no cerrar por error
+            inputValidator: (value) => {
+                if (!value) return '¡Debes escribir un nombre!';
+            },
+            // 2. FORZAR FOCO AL ABRIR LA ALERTA
+            didOpen: () => {
+                const input = Swal.getInput();
+                input.focus();
+            }
+        }).then((result) => {
+            // 3. Volver a abrir el modal si cancela (opcional, o recargar)
+            if (result.dismiss === Swal.DismissReason.cancel) {
+                modalInstance.show();
+            }
+            
+            if (result.isConfirmed && result.value !== nombreViejo) {
+                let formData = new FormData();
+                formData.append('nombre_viejo', nombreViejo);
+                formData.append('nombre_nuevo', result.value);
+
+                fetch('/categoria_importbolts/editar', { method: 'POST', body: formData })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        Swal.fire('Éxito', data.msg, 'success').then(() => location.reload());
+                    } else {
+                        Swal.fire('Error', data.msg, 'error').then(() => modalInstance.show()); // Si falla, reabrimos modal
+                    }
+                });
+            }
+        });
+    }
+
+    // --- CORRECCIÓN FINAL: FILTRO PRINCIPAL (submit inmediato + carga lazy) ---
+    function cargarCalidadesFiltroMain(shouldSubmit = true) {
+        const familia = document.getElementById('filtro_familia').value;
+        const selectCalidad = document.getElementById('filtro_calidad');
+        
+        // 1. Si el usuario cambió la familia, enviamos form de una para filtrar rápido
+        if (shouldSubmit) {
+            document.getElementById('formFiltros').submit();
+            return; 
+        }
+
+        // 2. Si estamos en carga inicial (shouldSubmit=false), cargamos las opciones
+        // PERO respetamos la opción que ya viene seleccionada desde el servidor (Jinja)
+        const calidadSeleccionada = "{{ calidad_filtro }}"; // Valor actual desde Flask
+
+        let formData = new FormData();
+        formData.append('familia', familia);
+
+        fetch('/api/calidades_de_familia_importbolts', { method: 'POST', body: formData })
+        .then(r => r.json())
+        .then(data => {
+            // Guardamos la selección actual para restaurarla si existe en la nueva lista
+            const currentVal = selectCalidad.value;
+            selectCalidad.innerHTML = '';
+            
+            // Opción base
+            let optDef = document.createElement('option');
+            optDef.value = 'todos'; optDef.text = '-- Calidad --';
+            if(calidadSeleccionada === 'todos') optDef.selected = true;
+            selectCalidad.appendChild(optDef);
+
+            if (data.status === 'success') {
+                data.calidades.forEach(cal => {
+                    let opt = document.createElement('option');
+                    opt.value = cal; opt.text = cal;
+                    if (cal === calidadSeleccionada) opt.selected = true;
+                    selectCalidad.appendChild(opt);
+                });
+            }
+        });
+    }
+</script>
+{% endblock %}

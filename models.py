@@ -230,3 +230,48 @@ class AuditLog(db.Model):
     color = db.Column(db.String(20), default='text-primary')
     
     usuario = db.relationship('User', backref=db.backref('logs', lazy=True))
+
+# --- TABLAS EXCLUSIVAS PARA IMPORTBOLTS ---
+
+class CategoryImportBolts(db.Model):
+    __tablename__ = 'category_importbolts'
+    id = db.Column(db.Integer, primary_key=True)
+    nombre = db.Column(db.String(50), unique=True, nullable=False)
+    prefijo = db.Column(db.String(5), unique=True, nullable=False) 
+    contador = db.Column(db.Integer, default=0) 
+
+class ProductImportBolts(db.Model):
+    __tablename__ = 'product_importbolts'
+    id = db.Column(db.Integer, primary_key=True)
+    sku = db.Column(db.String(50), unique=True, nullable=False) 
+    nombre = db.Column(db.String(500), nullable=False) 
+    categoria = db.Column(db.String(200), nullable=False) 
+    calidad = db.Column(db.String(200)) 
+    ubicacion = db.Column(db.String(200))
+    stock_actual = db.Column(db.Integer, default=0)
+    stock_minimo = db.Column(db.Integer, default=10)
+    
+    unidades_por_caja = db.Column(db.Integer, default=100)
+    precio_unidad = db.Column(db.Float, default=0.0)
+    precio_docena = db.Column(db.Float, default=0.0)
+    precio_caja = db.Column(db.Float, default=0.0)
+    costo_referencial = db.Column(db.Float, default=0.0)
+
+    estado = db.Column(db.String(100), nullable=True) 
+    fecha_actualizacion = db.Column(db.DateTime, nullable=True) 
+    actualizado_por = db.Column(db.String(100), nullable=True) 
+
+class ProductMovementImportBolts(db.Model):
+    __tablename__ = 'product_movement_importbolts'
+    id = db.Column(db.Integer, primary_key=True)
+    fecha = db.Column(db.DateTime, default=hora_peru)
+    product_id = db.Column(db.Integer, db.ForeignKey('product_importbolts.id'), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False) # Usa el mismo User general
+    tipo = db.Column(db.String(10)) 
+    cantidad = db.Column(db.Integer, nullable=False)
+    stock_anterior = db.Column(db.Integer)
+    stock_nuevo = db.Column(db.Integer)
+    motivo = db.Column(db.String(200))
+
+    product = db.relationship('ProductImportBolts', backref='movements')
+    user = db.relationship('User', backref='movements_importbolts')

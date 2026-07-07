@@ -31,10 +31,28 @@
                 <a href="{{ url_for('index') }}" class="nav-link {{ 'active' if request.endpoint == 'index' }}">
                     <i class="bi bi-grid-1x2"></i> <span class="ms-2">Dashboard</span>
                 </a>
-                <a href="{{ url_for('inventario') }}" class="nav-link {{ 'active' if request.endpoint == 'inventario' }}">
-                    <i class="bi bi-boxes"></i> <span class="ms-2">Inventario</span>
-                </a>
 
+                <a class="nav-link" data-bs-toggle="collapse" href="#collapseInventario" role="button" aria-expanded="{{ 'true' if request.endpoint in ['inventario', 'inventario_importbolts', 'crear_producto', 'editar_producto'] else 'false' }}" aria-controls="collapseInventario">
+                    <i class="bi bi-boxes"></i> <span class="ms-2">Gestión de Inventarios</span>
+                    <i class="bi bi-chevron-down ms-auto" style="font-size: 0.8rem;"></i>
+                </a>
+                
+                <div class="collapse {{ 'show' if request.endpoint in ['inventario', 'inventario_importbolts', 'crear_producto', 'editar_producto'] else '' }}" id="collapseInventario">
+                    <ul class="nav flex-column ms-3 mb-2" style="border-left: 2px solid rgba(255,255,255,0.1);">
+                        <li>
+                            <a href="{{ url_for('inventario') }}" class="nav-link py-2 {{ 'active' if request.endpoint == 'inventario' }}">
+                                <i class="bi bi-circle fs-6 me-2"></i> Inventario Anclajes
+                            </a>
+                        </li>
+                        <li>
+                            <a href="{{ url_for('inventario_importbolts') }}" class="nav-link py-2 {{ 'active' if request.endpoint == 'inventario_importbolts' }}">
+                                <i class="bi bi-nut fs-6 me-2"></i> Inventario ImportBolts
+                            </a>
+                        </li>
+                        {% if session.get('role') in ['admin', 'almacen'] %}
+                        {% endif %}
+                    </ul>
+                </div>
                 {% if session.get('role') in ['admin', 'vendedor', 'administracion'] %}
                 <div class="nav-title">Comercial</div>
                 <a href="{{ url_for('nueva_venta') }}" class="nav-link {{ 'active' if request.endpoint == 'nueva_venta' }}">

@@ -1,5 +1,6 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 from models import db, User, Product, Category, Client, Order, OrderDetail, ProductMovement, AuditLog, SystemConfig,OrderKitComponent
+from models import ProductImportBolts, CategoryImportBolts, ProductMovementImportBolts
 from models import ProductMovement
 from models import Payment
 from models import Category
@@ -3573,7 +3574,611 @@ def procesar_salida_almacen(order_id):
     except Exception as e:
         db.session.rollback()
         return {'status': 'error', 'msg': f'Error en el descargo: {str(e)}'}
+
+# =========================================================================================
+# FUNCIONES CRUD Y LOGÍSTICA PARA IMPORTBOLTS (CREAR, EDITAR, ELIMINAR, EXPORTAR, CATEGORÍAS)
+# =========================================================================================
+
+@app.route('/inventario_importbolts')
+def inventario_importbolts():
+    if session.get('user_id') is None: return redirect(url_for('login'))
     
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
+    search = request.args.get('busqueda', '')
+    cat_filtro = request.args.get('categoria', 'todos')
+    calidad_filtro = request.args.get('calidad', 'todos')
+    stock_bajo = request.args.get('stock_bajo')
+
+    # Apuntamos a la nueva tabla
+    query = ProductImportBolts.query
+
+    if search:
+        query = query.filter(or_(ProductImportBolts.nombre.ilike(f"%{search}%"), ProductImportBolts.sku.ilike(f"%{search}%")))
+    if cat_filtro != 'todos':
+        query = query.filter(ProductImportBolts.categoria == cat_filtro)
+    if calidad_filtro != 'todos':
+        query = query.filter(ProductImportBolts.calidad == calidad_filtro)
+    if stock_bajo == 'on':
+        query = query.filter(ProductImportBolts.stock_actual <= ProductImportBolts.stock_minimo)
+
+    cats_db = CategoryImportBolts.query.order_by(CategoryImportBolts.nombre).all()
+    lista_categorias = [c.nombre for c in cats_db]
+    calidades = db.session.query(ProductImportBolts.calidad).distinct().order_by(ProductImportBolts.calidad).all()
+    lista_calidades = [c[0] for c in calidades if c[0]]
+    estados = db.session.query(ProductImportBolts.estado).filter(ProductImportBolts.estado != None, ProductImportBolts.estado != '').distinct().order_by(ProductImportBolts.estado).all()
+    lista_estados = [e[0] for e in estados]
+
+    if stock_bajo == 'on':
+        query = query.order_by(ProductImportBolts.stock_actual.asc())
+    else:
+        query = query.order_by(ProductImportBolts.id.asc())
+
+    pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+    productos = pagination.items
+    
+    info_importacion = SystemConfig.query.get('ultima_importacion_importbolts')
+    
+    return render_template('inventario_importbolts.html', 
+                           productos=productos, 
+                           lista_categorias=lista_categorias, 
+                           lista_calidades=lista_calidades,
+                           pagination=pagination,
+                           search=search,
+                           cat_filtro=cat_filtro,
+                           calidad_filtro=calidad_filtro,
+                           stock_bajo=stock_bajo, 
+                           limit=per_page,
+                           lista_estados=lista_estados,
+                           info_importacion=info_importacion)
+    
+
+@app.route('/producto_importbolts/ajustar_stock', methods=['POST'])
+def ajustar_stock_importbolts():
+    if session.get('role') not in ['admin', 'almacen']: return "No autorizado", 403
+    
+    prod_id = request.form['prod_id']
+    tipo_ajuste = request.form['tipo']
+    cantidad = int(request.form['cantidad'])
+    motivo_texto = request.form['motivo']
+    url_origen = request.form.get('url_origen')
+
+    prod = ProductImportBolts.query.get(prod_id)
+    stock_antes = prod.stock_actual
+    
+    tipo_kardex = ""
+    
+    if tipo_ajuste == 'ingreso':
+        prod.stock_actual += cantidad
+        tipo_kardex = "ENTRADA"
+        flash(f'Ingreso registrado: +{cantidad} en {prod.sku}')
+    else:
+        prod.stock_actual -= cantidad
+        tipo_kardex = "SALIDA"
+        flash(f'Salida registrada: -{cantidad} en {prod.sku}')
+        
+    kardex = ProductMovementImportBolts(
+        product_id=prod.id,
+        user_id=session['user_id'],
+        tipo=tipo_kardex,
+        cantidad=cantidad,
+        stock_anterior=stock_antes,
+        stock_nuevo=prod.stock_actual,
+        motivo=motivo_texto
+    )
+    db.session.add(kardex)
+    db.session.commit()
+    
+    if url_origen:
+        return redirect(url_origen)
+    
+    return redirect(url_for('inventario_importbolts'))
+
+@app.route('/producto_importbolts/importar', methods=['POST'])
+def importar_excel_importbolts():
+    import gc
+    import traceback
+    from openpyxl import load_workbook
+
+    if session.get('role') not in ['admin', 'almacen']:
+        return "No autorizado", 403
+
+    if 'archivo_excel' not in request.files:
+        flash('No se seleccionó ningún archivo')
+        return redirect(url_for('inventario_importbolts'))
+
+    archivo = request.files['archivo_excel']
+    if not archivo or archivo.filename == '':
+        return redirect(url_for('inventario_importbolts'))
+
+    filename = secure_filename(archivo.filename)
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    archivo.save(filepath)
+
+    nuevos = 0
+    actualizados = 0
+
+    try:
+        wb = load_workbook(filename=filepath, read_only=True, data_only=True)
+        ws = wb['STOCK'] if 'STOCK' in wb.sheetnames else wb.active
+        
+        header_row = next(ws.iter_rows(min_row=1, max_row=1, values_only=True))
+        headers = [str(h).strip().upper() if h is not None else '' for h in header_row]
+
+        def get_col(row_vals, *posibles_nombres):
+            for nombre in posibles_nombres:
+                if nombre in headers:
+                    idx = headers.index(nombre)
+                    if idx < len(row_vals): return row_vals[idx]
+            return None
+
+        hora_actual = hora_peru()
+        usuario_actual = session.get('username', 'Sistema')
+        user_id_actual = session.get('user_id')
+
+        # Cache de la tabla nueva
+        skus_existentes = {p.sku: p.id for p in db.session.query(ProductImportBolts.id, ProductImportBolts.sku).all()}
+        cats_existentes = {c.nombre: c.prefijo for c in db.session.query(CategoryImportBolts.nombre, CategoryImportBolts.prefijo).all()}
+        db.session.expunge_all()
+        gc.collect()
+
+        batch_updates = []
+        batch_inserts = []
+        batch_kardex  = []
+        BATCH_SIZE = 100
+
+        for row_vals in ws.iter_rows(min_row=2, values_only=True):
+            sku_raw = get_col(row_vals, 'CÓDIGO', 'CODIGO', 'SKU', 'CÓDIGO ')
+            if sku_raw is None: continue
+            sku = str(sku_raw).strip()
+            if sku.endswith('.0'): sku = sku[:-2]
+            if not sku or sku.lower() in ('nan', 'none', ''): continue
+
+            # Usar tus mismas funciones de limpieza `clean_str` y `limpiar_campo` aquí (las copias de tu código original)
+            def clean_str(val, default=''):
+                if val is None: return default
+                s = str(val).strip()
+                return default if s.lower() in ('nan', 'none', '') else s
+            def clean_int(val, default=0):
+                try:
+                    v = str(val).replace(',', '').strip()
+                    return int(float(v)) if v and v.lower() not in ('nan', 'none', '') else default
+                except: return default
+            def clean_float(val, default=0.0):
+                try:
+                    v = str(val).replace(',', '').strip()
+                    return float(v) if v and v.lower() not in ('nan', 'none', '') else default
+                except: return default
+
+            import unicodedata
+            def limpiar_campo(valor, max_len):
+                if not valor: return ''
+                limpio = ''.join(c for c in str(valor) if unicodedata.category(c)[0] not in ('C',) and ord(c) < 65536).strip()
+                return limpio[:max_len]
+
+            nombre    = limpiar_campo(clean_str(get_col(row_vals, 'DESCRIPCIÓN', 'DESCRIPCION', 'NOMBRE'), 'Sin Nombre'), 490)
+            familia   = limpiar_campo(clean_str(get_col(row_vals, 'FAMILIA', 'CATEGORIA'), 'GENERAL'), 190)
+            calidad   = limpiar_campo(clean_str(get_col(row_vals, 'CALIDAD'), '-'), 190)
+            ubicacion = limpiar_campo(clean_str(get_col(row_vals, 'UBICACION', 'UBICACIÓN')), 190)
+            estado_v  = limpiar_campo(clean_str(get_col(row_vals, 'ESTADO')).upper(), 90)
+            if estado_v == 'OK': estado_v = ''
+            
+            stock_val = clean_int(get_col(row_vals, 'CANT. ACT.', 'STOCK', 'CANTIDAD', 'CANT.ACT.'))
+            min_val   = clean_int(get_col(row_vals, 'STOCK MÍNIMO', 'STOCK MINIMO', 'MINIMO'), 10)
+            precio_unit = clean_float(get_col(row_vals, 'PRECIO UNI.','PRECIO UNIT', 'PRECIO UNIDAD', 'P. UNIT', 'PRECIO_UNIT', 'PRECIO UNITARIO'))
+
+            if familia not in cats_existentes:
+                base = "".join(c for c in familia[:3].upper() if c.isalnum()) or "GEN"
+                prefijo_final = base
+                n = 1
+                prefijos_usados = set(cats_existentes.values())
+                while prefijo_final in prefijos_usados:
+                    prefijo_final = f"{base[:2]}{n}"
+                    n += 1
+                nuevo_cat = CategoryImportBolts(nombre=familia, prefijo=prefijo_final, contador=0)
+                db.session.add(nuevo_cat)
+                db.session.flush()
+                cats_existentes[familia] = prefijo_final
+
+            if sku in skus_existentes:
+                upd = {
+                    'sku': sku, 'nombre': nombre, 'categoria': familia, 'calidad': calidad, 
+                    'ubicacion': ubicacion, 'estado': estado_v, 'stock_actual': stock_val, 
+                    'stock_minimo': min_val, 'fecha_actualizacion': hora_actual, 'actualizado_por': usuario_actual
+                }
+                if precio_unit > 0:
+                    upd['tiene_precio'] = True
+                    upd['precio_unidad'] = precio_unit
+                else:
+                    upd['tiene_precio'] = False
+                    upd['precio_unidad'] = 0.0
+                batch_updates.append(upd)
+                actualizados += 1
+            else:
+                nuevo_prod = ProductImportBolts(
+                    sku=sku, nombre=nombre, categoria=familia, calidad=calidad, ubicacion=ubicacion, 
+                    stock_actual=stock_val, stock_minimo=min_val, precio_unidad=precio_unit, 
+                    precio_caja=0.0, precio_docena=precio_unit, costo_referencial=0.0, estado=estado_v,
+                    fecha_actualizacion=hora_actual, actualizado_por=usuario_actual
+                )
+                batch_inserts.append(nuevo_prod)
+                skus_existentes[sku] = -1
+                nuevos += 1
+
+            if (nuevos + actualizados) % BATCH_SIZE == 0:
+                for upd in batch_updates:
+                    if upd.get('tiene_precio'):
+                        db.session.execute(text("""
+                            UPDATE product_importbolts SET
+                                nombre=:nombre, categoria=:categoria, calidad=:calidad, ubicacion=:ubicacion, estado=:estado,
+                                stock_actual=:stock_actual, stock_minimo=:stock_minimo, precio_unidad=:precio_unidad,
+                                precio_docena=:precio_unidad, fecha_actualizacion=:fecha_actualizacion, actualizado_por=:actualizado_por
+                            WHERE sku=:sku
+                        """), upd)
+                    else:
+                        db.session.execute(text("""
+                            UPDATE product_importbolts SET
+                                nombre=:nombre, categoria=:categoria, calidad=:calidad, ubicacion=:ubicacion, estado=:estado,
+                                stock_actual=:stock_actual, stock_minimo=:stock_minimo, fecha_actualizacion=:fecha_actualizacion, actualizado_por=:actualizado_por
+                            WHERE sku=:sku
+                        """), upd)
+                
+                if batch_inserts:
+                    db.session.add_all(batch_inserts)
+                    db.session.flush()
+                    for p in batch_inserts:
+                        if p.stock_actual > 0 and p.id:
+                            batch_kardex.append(ProductMovementImportBolts(
+                                product_id=p.id, user_id=user_id_actual, tipo='ENTRADA', cantidad=p.stock_actual,
+                                stock_anterior=0, stock_nuevo=p.stock_actual, motivo="Saldo Inicial (Importación)"
+                            ))
+                    if batch_kardex: db.session.add_all(batch_kardex)
+
+                db.session.commit()
+                batch_updates = []; batch_inserts = []; batch_kardex = []
+
+        # ÚLTIMO BATCH (Residuos)
+        for upd in batch_updates:
+            if upd.get('tiene_precio'):
+                db.session.execute(text("""
+                    UPDATE product_importbolts SET
+                        nombre=:nombre, categoria=:categoria, calidad=:calidad, ubicacion=:ubicacion, estado=:estado,
+                        stock_actual=:stock_actual, stock_minimo=:stock_minimo, precio_unidad=:precio_unidad,
+                        precio_docena=:precio_unidad, fecha_actualizacion=:fecha_actualizacion, actualizado_por=:actualizado_por
+                    WHERE sku=:sku
+                """), upd)
+            else:
+                db.session.execute(text("""
+                    UPDATE product_importbolts SET
+                        nombre=:nombre, categoria=:categoria, calidad=:calidad, ubicacion=:ubicacion, estado=:estado,
+                        stock_actual=:stock_actual, stock_minimo=:stock_minimo, fecha_actualizacion=:fecha_actualizacion, actualizado_por=:actualizado_por
+                    WHERE sku=:sku
+                """), upd)
+                
+        if batch_inserts:
+            db.session.add_all(batch_inserts)
+            db.session.flush()
+            for p in batch_inserts:
+                if p.stock_actual > 0 and p.id:
+                    batch_kardex.append(ProductMovementImportBolts(
+                        product_id=p.id, user_id=user_id_actual, tipo='ENTRADA', cantidad=p.stock_actual,
+                        stock_anterior=0, stock_nuevo=p.stock_actual, motivo="Saldo Inicial (Importación)"
+                    ))
+            if batch_kardex: db.session.add_all(batch_kardex)
+
+        db.session.commit()
+        
+        # Registro en SystemConfig separado
+        config_import = SystemConfig.query.get('ultima_importacion_importbolts')
+        hora_final = hora_peru()
+        if not config_import:
+            config_import = SystemConfig(key='ultima_importacion_importbolts', value='EXITOSO', updated_at=hora_final, updated_by=usuario_actual)
+            db.session.add(config_import)
+        else:
+            config_import.updated_at = hora_final
+            config_import.updated_by = usuario_actual
+        db.session.commit()
+
+        flash(f'✅ Importación completada en ImportBolts: {nuevos} nuevos, {actualizados} actualizados.')
+
+    except Exception as e:
+        db.session.rollback()
+        print(f"ERROR IMPORTACIÓN IMPORTBOLTS:\n{traceback.format_exc()}")
+        flash(f'Error en la importación: {str(e)}')
+    finally:
+            try:
+                if os.path.exists(filepath): 
+                    os.remove(filepath)
+            except Exception as err:
+                print(f"Aviso: Windows bloqueó la eliminación del temporal, se ignorará. Error: {err}")
+            gc.collect()
+
+    return redirect(url_for('inventario_importbolts'))
+
+
+
+
+@app.route('/producto_importbolts/nuevo', methods=['POST'])
+def nuevo_producto_importbolts():
+    if session.get('role') not in ['admin', 'almacen']: 
+        return {'status': 'error', 'msg': 'No autorizado'}, 403
+    
+    try:
+        sku_manual = request.form.get('sku', '').strip()
+        familia_nombre = request.form['categoria_nombre']
+        nombre = request.form['nombre'].strip()
+        calidad = request.form['calidad'].strip()
+        ubicacion = request.form.get('ubicacion', '').strip()
+        estado_val = request.form.get('estado', '').strip().upper()
+        if estado_val == 'OK': estado_val = ""
+        
+        try:
+            stock = int(request.form['stock'])
+            stock_min = int(request.form.get('stock_minimo', 10))
+            p_unidad = float(request.form['p_unidad']) if request.form['p_unidad'] else 0.0
+            p_caja = float(request.form['p_caja']) if request.form['p_caja'] else 0.0
+        except:
+            return {'status': 'error', 'msg': 'Formato numérico inválido'}
+
+        if not nombre: return {'status': 'error', 'msg': 'Falta la descripción'}
+        if stock < 0 or p_unidad < 0 or stock_min < 0: return {'status': 'error', 'msg': 'No negativos'}
+
+        sku_final = ""
+        if sku_manual:
+            sku_final = sku_manual.upper()
+            if ProductImportBolts.query.filter_by(sku=sku_final).first():
+                return {'status': 'error', 'msg': f'El SKU "{sku_final}" ya existe en ImportBolts.'}
+        else:
+            cat = CategoryImportBolts.query.filter_by(nombre=familia_nombre).first()
+            if not cat:
+                base = "".join(c for c in familia_nombre[:3].upper() if c.isalnum()) or "GEN"
+                cat = CategoryImportBolts(nombre=familia_nombre, prefijo=base, contador=0)
+                db.session.add(cat)
+            cat.contador += 1
+            sku_final = f"{cat.prefijo}-{str(cat.contador).zfill(4)}"
+
+        nuevo = ProductImportBolts(
+            sku=sku_final, nombre=nombre, categoria=familia_nombre, calidad=calidad,
+            ubicacion=ubicacion, stock_actual=stock, stock_minimo=stock_min,
+            precio_unidad=p_unidad, precio_caja=p_caja, precio_docena=p_unidad * 0.9, costo_referencial=0.0
+        )
+        db.session.add(nuevo)
+        db.session.flush()
+        
+        if stock > 0:
+            kardex = ProductMovementImportBolts(
+                product_id=nuevo.id, user_id=session['user_id'], tipo='ENTRADA',
+                cantidad=stock, stock_anterior=0, stock_nuevo=stock, motivo="Saldo Inicial (ImportBolts)"
+            )
+            db.session.add(kardex)
+
+        registrar_log(f"Creó producto ImportBolts {sku_final}", "bi-plus-circle-fill", "text-success")
+        db.session.commit()
+        
+        return {'status': 'success', 'msg': 'Creado', 'sku': sku_final}
+        
+    except Exception as e:
+        db.session.rollback()
+        return {'status': 'error', 'msg': str(e)}
+
+@app.route('/producto_importbolts/editar', methods=['POST'])
+def editar_producto_importbolts():
+    if session.get('role') != 'admin': return "Acceso denegado", 403
+    
+    try:
+        prod_id = request.form['prod_id']
+        url_origen = request.form.get('url_origen')
+        
+        prod = ProductImportBolts.query.get(prod_id)
+        if not prod:
+            flash('Producto no encontrado')
+            return redirect(url_for('inventario_importbolts'))
+
+        nombre = request.form['nombre'].strip()
+        nueva_familia = request.form.get('categoria', '').strip()
+        nueva_calidad = request.form.get('calidad', '').strip()
+        estado_val = request.form.get('estado', '').strip().upper()
+        if estado_val == 'OK': estado_val = ""
+        
+        if not nombre or not nueva_familia or not nueva_calidad:
+            flash('⛔ Error: Faltan datos obligatorios.')
+            return redirect(url_for('inventario_importbolts'))
+
+        prod.nombre = nombre
+        prod.stock_minimo = int(request.form.get('stock_minimo', 10))
+        prod.precio_unidad = float(request.form['p_unidad'])
+        prod.precio_caja = float(request.form['p_caja'])
+        prod.ubicacion = request.form.get('ubicacion', '').strip()
+        prod.categoria = nueva_familia
+        prod.calidad = nueva_calidad
+        prod.estado = estado_val
+        
+        registrar_log(f"Editó producto ImportBolts {prod.sku}", "bi-pencil-fill", "text-warning")
+        db.session.commit()
+        flash('✅ Producto actualizado correctamente.')
+        
+        if url_origen: return redirect(url_origen)
+            
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error al editar: {str(e)}')
+        
+    return redirect(url_for('inventario_importbolts'))
+
+@app.route('/producto_importbolts/eliminar/<int:prod_id>')
+def eliminar_producto_importbolts(prod_id):
+    if session.get('role') != 'admin': 
+        flash('No tiene permisos para eliminar.')
+        return redirect(url_for('inventario_importbolts'))
+    
+    try:
+        prod = ProductImportBolts.query.get_or_404(prod_id)
+        sku_eliminado = prod.sku
+
+        # Limpiar Kardex de ImportBolts
+        ProductMovementImportBolts.query.filter_by(product_id=prod_id).delete()
+        db.session.delete(prod)
+        db.session.commit()
+        
+        flash(f'✅ Producto {sku_eliminado} eliminado de ImportBolts.')
+        
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error al eliminar: {str(e)}')
+
+    return redirect(request.referrer or url_for('inventario_importbolts'))
+
+@app.route('/producto_importbolts/exportar')
+def exportar_excel_importbolts():
+    import gc
+    import io
+    import pandas as pd
+    if session.get('role') not in ['admin', 'almacen', 'administracion']: return "No autorizado", 403
+    
+    productos = db.session.query(
+        ProductImportBolts.sku, ProductImportBolts.nombre, ProductImportBolts.categoria, 
+        ProductImportBolts.calidad, ProductImportBolts.ubicacion, ProductImportBolts.stock_actual, 
+        ProductImportBolts.stock_minimo, ProductImportBolts.precio_unidad, ProductImportBolts.precio_caja
+    ).all()
+    
+    data = []
+    for p in productos:
+        data.append({
+            'CÓDIGO': p.sku, 'DESCRIPCIÓN': p.nombre, 'FAMILIA': p.categoria, 'CALIDAD': p.calidad,
+            'UBICACION': p.ubicacion, 'STOCK ACTUAL': p.stock_actual, 'STOCK MÍNIMO': p.stock_minimo,
+            'PRECIO UNIT': p.precio_unidad, 'PRECIO CAJA': p.precio_caja
+        })
+    
+    del productos
+    db.session.expunge_all()
+    gc.collect()
+    
+    df = pd.DataFrame(data)
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        df.to_excel(writer, index=False, sheet_name='Inventario')
+        worksheet = writer.sheets['Inventario']
+        for idx, col in enumerate(df.columns):
+            max_len = max(df[col].astype(str).map(len).max(), len(col)) + 2
+            worksheet.set_column(idx, idx, max_len)
+
+    output.seek(0)
+    del data; del df; gc.collect()
+    
+    return send_file(
+        output, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        as_attachment=True, download_name=f'Inventario_ImportBolts_Data_{hora_peru().strftime("%Y%m%d")}.xlsx'
+    )
+
+@app.route('/categoria_importbolts/nueva', methods=['POST'])
+def nueva_categoria_importbolts():
+    if session.get('role') not in ['admin', 'almacen']: return "No autorizado", 403
+    
+    nombre = request.form.get('cat_nombre', '').strip().upper()
+    prefijo = request.form.get('cat_prefijo', '').strip().upper()
+    
+    if not nombre or not prefijo:
+        flash('Error: Nombre y Prefijo son obligatorios')
+        return redirect(url_for('inventario_importbolts'))
+        
+    if CategoryImportBolts.query.filter_by(nombre=nombre).first():
+        flash('Error: Esa familia ya existe en ImportBolts.')
+        return redirect(url_for('inventario_importbolts'))
+        
+    try:
+        nueva = CategoryImportBolts(nombre=nombre, prefijo=prefijo, contador=0)
+        db.session.add(nueva)
+        db.session.commit()
+        flash(f'✅ Familia "{nombre}" creada en ImportBolts.')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Error: {str(e)}')
+        
+    return redirect(url_for('inventario_importbolts'))
+
+@app.route('/api/calidades_de_familia_importbolts', methods=['POST'])
+def calidades_de_familia_importbolts():
+    if session.get('user_id') is None: return {'status': 'error'}, 403
+    familia = request.form.get('familia')
+    try:
+        calidades = db.session.query(ProductImportBolts.calidad)\
+            .filter_by(categoria=familia).distinct()\
+            .order_by(ProductImportBolts.calidad).all()
+        return {'status': 'success', 'calidades': [c[0] for c in calidades if c[0]]}
+    except Exception as e:
+        return {'status': 'error', 'msg': str(e)}
+
+
+@app.route('/categoria_importbolts/eliminar', methods=['POST'])
+def eliminar_categoria_importbolts():
+    if session.get('role') != 'admin':
+        return {'status': 'error', 'msg': 'No autorizado'}, 403
+    cat_nombre = request.form.get('nombre_cat')
+    if ProductImportBolts.query.filter_by(categoria=cat_nombre).count() > 0:
+        return {'status': 'error', 'msg': f'⛔ "{cat_nombre}" tiene productos asociados.'}
+    cat = CategoryImportBolts.query.filter_by(nombre=cat_nombre).first()
+    if cat:
+        db.session.delete(cat)
+        db.session.commit()
+        return {'status': 'success', 'msg': f'Familia "{cat_nombre}" eliminada.'}
+    return {'status': 'error', 'msg': 'La familia no existe.'}
+
+
+@app.route('/categoria_importbolts/editar', methods=['POST'])
+def editar_categoria_importbolts():
+    if session.get('role') != 'admin':
+        return {'status': 'error', 'msg': 'No autorizado'}, 403
+    nombre_viejo = request.form.get('nombre_viejo')
+    nombre_nuevo = request.form.get('nombre_nuevo', '').strip().upper()
+    if not nombre_nuevo: return {'status': 'error', 'msg': 'Nombre vacío'}
+    if CategoryImportBolts.query.filter_by(nombre=nombre_nuevo).first():
+        return {'status': 'error', 'msg': f'Ya existe la familia "{nombre_nuevo}".'}
+    try:
+        cat = CategoryImportBolts.query.filter_by(nombre=nombre_viejo).first()
+        if cat: cat.nombre = nombre_nuevo
+        ProductImportBolts.query.filter_by(categoria=nombre_viejo)\
+            .update({ProductImportBolts.categoria: nombre_nuevo})
+        db.session.commit()
+        return {'status': 'success', 'msg': f'Familia renombrada a {nombre_nuevo}'}
+    except Exception as e:
+        db.session.rollback()
+        return {'status': 'error', 'msg': str(e)}
+
+
+@app.route('/api/preview_minimos_importbolts', methods=['POST'])
+def preview_minimos_importbolts():
+    if session.get('role') != 'admin': return {'status': 'error', 'msg': 'No autorizado'}, 403
+    familia = request.form.get('categoria_nombre')
+    calidad = request.form.get('calidad_nombre')
+    query = ProductImportBolts.query.filter_by(categoria=familia)
+    if calidad and calidad != 'TODAS':
+        query = query.filter_by(calidad=calidad)
+    productos = query.order_by(ProductImportBolts.sku.asc()).all()
+    lista = [{'id': p.id, 'sku': p.sku, 'nombre': p.nombre, 'min_actual': p.stock_minimo} for p in productos]
+    return {'status': 'success', 'total': len(lista), 'productos': lista}
+
+
+@app.route('/config/minimos_masivos_importbolts', methods=['POST'])
+def actualizar_minimos_masivos_importbolts():
+    if session.get('role') not in ['admin', 'almacen']:
+        return {'status': 'error', 'msg': 'No autorizado'}, 403
+    data = request.get_json()
+    if not data: return {'status': 'error', 'msg': 'No se recibieron datos.'}
+    ids = data.get('ids', [])
+    try:
+        nuevo_minimo = int(data.get('nuevo_minimo'))
+        if nuevo_minimo < 0: raise ValueError()
+    except:
+        return {'status': 'error', 'msg': 'Cantidad inválida.'}
+    if not ids: return {'status': 'error', 'msg': 'Seleccione al menos un producto.'}
+    try:
+        resultado = ProductImportBolts.query.filter(ProductImportBolts.id.in_(ids)).update(
+            {ProductImportBolts.stock_minimo: nuevo_minimo}, synchronize_session=False)
+        db.session.commit()
+        return {'status': 'success', 'msg': f'Se actualizaron {resultado} productos.'}
+    except Exception as e:
+        db.session.rollback()
+        return {'status': 'error', 'msg': str(e)}
 
 # --- RUTA SECRETA PARA INICIALIZAR LA BASE DE DATOS EN RENDER ---
 # --- RUTA SECRETA PARA CREAR/RESETEAR LA BASE DE DATOS DESDE EL NAVEGADOR ---
