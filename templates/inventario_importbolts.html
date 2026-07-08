@@ -1,14 +1,78 @@
 {% extends "base.html" %}
 
+{% block title %}Inventario Import Bolts{% endblock %}
+{% block subtitle %}Almacén Import Bolts & Estructure S.A.C.{% endblock %}
+
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h2>📦 Gestión de Inventario</h2>
-    <!-- CARTEL DE ÚLTIMA ACTUALIZACIÓN -->
+<!-- INYECCIÓN DE COLORES CORPORATIVOS PARA IMPORT BOLTS -->
+<style>
+    :root {
+        /* Azul corporativo del logo de Import Bolts */
+        --theme-primary: #004b87; 
+        /* Verde del hexágono central para dar contraste */
+        --theme-secondary: #80c342; 
+    }
+    .card-header-import {
+        background-color: var(--theme-primary);
+        color: white;
+        border-radius: 8px 8px 0 0;
+        border-bottom: 4px solid var(--theme-secondary);
+    }
+    .btn-brand {
+        background-color: var(--theme-primary);
+        color: white;
+    }
+    .btn-brand:hover { background-color: #003666; color: white; }
+    
+    /* Para resaltar bien la tabla con el color de Import Bolts y un toque verde */
+    .table-brand-header { 
+        background-color: #002e52 !important; 
+        color: white !important; 
+        border-bottom: 3px solid var(--theme-secondary) !important; 
+    }
+</style>
+
+<!-- BANNER IDENTIFICATIVO DE LA EMPRESA IMPORT BOLTS -->
+<div class="card shadow-sm border-0 mb-4" style="border-left: 6px solid var(--theme-secondary) !important;">
+    <div class="card-body d-flex justify-content-between align-items-center bg-white rounded py-2">
+        <div class="d-flex align-items-center">
+            <img src="{{ url_for('static', filename='img/logo_import.png') }}" alt="Logo Import Bolts" style="height: 60px; object-fit: contain;" class="me-4 pe-3 border-end">
+            <div>
+                <h2 class="mb-0 fw-bold" style="color: var(--theme-primary);">📦 Inventario: IMPORT BOLTS</h2>
+                <span class="text-muted small">Gestión y control de mercadería - Import Bolts & Estructure S.A.C.</span>
+            </div>
+        </div>
+        <div class="d-flex gap-2">
+            {% if session.get('role') in ['admin', 'almacen', 'administracion'] %}
+            <a href="{{ url_for('ver_kardex') }}" class="btn btn-outline-dark shadow-sm">
+                <i class="bi bi-clock-history"></i> Kardex
+            </a>
+            {% endif %}
+
+            {% if session.get('role') in ['admin', 'almacen'] %}
+            <button class="btn btn-secondary shadow-sm" data-bs-toggle="modal" data-bs-target="#modalConfigMasiva" title="Ajustar Stock Mínimo por Familia">
+                <i class="bi bi-gear-wide-connected"></i> Mínimos
+            </button>
+            <a href="{{ url_for('exportar_excel_importbolts') }}" class="btn btn-outline-success shadow-sm">
+                <i class="bi bi-download"></i> Exportar
+            </a>
+            <button class="btn btn-success shadow-sm fw-bold" data-bs-toggle="modal" data-bs-target="#modalImportar">
+                <i class="bi bi-file-earmark-excel"></i> Importar Excel
+            </button>
+            <button class="btn btn-brand shadow-sm fw-bold" data-bs-toggle="modal" data-bs-target="#modalNuevo">
+                <i class="bi bi-plus-lg"></i> Nuevo Producto
+            </button>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- CARTEL DE ÚLTIMA ACTUALIZACIÓN -->
 {% if info_importacion %}
-<div class="alert alert-info py-2 shadow-sm d-flex align-items-center mb-3">
-    <i class="bi bi-info-circle-fill fs-5 me-3 text-info"></i>
+<div class="alert py-2 shadow-sm d-flex align-items-center mb-3 border-0" style="background-color: #f2f9ed; border-left: 4px solid var(--theme-secondary) !important;">
+    <i class="bi bi-info-circle-fill fs-5 me-3" style="color: var(--theme-primary);"></i>
     <div>
-        <h6 class="mb-0 fw-bold text-dark">Última actualización masiva de inventario</h6>
+        <h6 class="mb-0 fw-bold" style="color: var(--theme-primary);">Última actualización masiva de inventario</h6>
         <small class="text-muted">
             Sincronizado el <strong>{{ info_importacion.updated_at.strftime('%d/%m/%Y a las %H:%M') }}</strong> 
             por <strong>{{ info_importacion.updated_by }}</strong>
@@ -16,47 +80,20 @@
     </div>
 </div>
 {% endif %}
-    <div class="d-flex gap-2">
-        
-        {% if session.get('role') in ['admin', 'almacen', 'administracion'] %}
-        <a href="{{ url_for('ver_kardex') }}" class="btn btn-outline-dark">
-            <i class="bi bi-clock-history"></i> Kardex
-        </a>
-        {% endif %}
 
-        {% if session.get('role') in ['admin', 'almacen'] %}
-        
-        <button class="btn btn-secondary" data-bs-toggle="modal" data-bs-target="#modalConfigMasiva" title="Ajustar Stock Mínimo por Familia">
-            <i class="bi bi-gear-wide-connected"></i> Mínimos
-        </button>
-
-        <a href="{{ url_for('exportar_excel_importbolts') }}" class="btn btn-outline-success">
-            <i class="bi bi-download"></i> Exportar
-        </a>
-        
-        <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#modalImportar">
-            <i class="bi bi-file-earmark-excel"></i> Importar
-        </button>
-        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalNuevo">
-            <i class="bi bi-plus-lg"></i> Nuevo Producto
-        </button>
-        {% endif %}
-    </div>
-</div>
-
-<div class="card mb-4 bg-white border shadow-sm">
+<div class="card mb-4 bg-white border shadow-sm rounded">
     <div class="card-body py-3">
         <form method="GET" action="{{ url_for('inventario_importbolts') }}" id="formFiltros">
             <div class="row g-2 align-items-center">
                 <div class="col-md-3">
                     <div class="input-group">
                         <span class="input-group-text bg-light border-end-0 text-muted"><i class="bi bi-search"></i></span>
-                        <input type="text" name="busqueda" class="form-control border-start-0" placeholder="CÓDIGO o Descripción..." value="{{ search }}">
+                        <input type="text" name="busqueda" class="form-control border-start-0 bg-light" placeholder="CÓDIGO o Descripción..." value="{{ search }}">
                     </div>
                 </div>
                 
                 <div class="col-md-3">
-                    <select name="categoria" id="filtro_familia" class="form-select" onchange="document.getElementById('formFiltros').submit()">
+                    <select name="categoria" id="filtro_familia" class="form-select bg-light" onchange="document.getElementById('formFiltros').submit()">
                         <option value="todos">-- Todas las Familias --</option>
                         {% for cat in lista_categorias %}
                         <option value="{{ cat }}" {% if cat_filtro == cat %}selected{% endif %}>{{ cat }}</option>
@@ -65,7 +102,7 @@
                 </div>
 
                 <div class="col-md-2">
-                    <select name="calidad" id="filtro_calidad" class="form-select" onchange="document.getElementById('formFiltros').submit()">
+                    <select name="calidad" id="filtro_calidad" class="form-select bg-light" onchange="document.getElementById('formFiltros').submit()">
                         <option value="todos">-- Calidad --</option>
                         {% for cal in lista_calidades %}
                         <option value="{{ cal }}" {% if calidad_filtro == cal %}selected{% endif %}>{{ cal }}</option>
@@ -74,7 +111,7 @@
                 </div>
 
                 <div class="col-md-2">
-                    <select name="per_page" class="form-select" onchange="document.getElementById('formFiltros').submit()">
+                    <select name="per_page" class="form-select bg-light" onchange="document.getElementById('formFiltros').submit()">
                         <option value="20" {% if limit == 20 %}selected{% endif %}>20 filas</option>
                         <option value="50" {% if limit == 50 %}selected{% endif %}>50 filas</option>
                         <option value="100" {% if limit == 100 %}selected{% endif %}>100 filas</option>
@@ -94,26 +131,26 @@
     </div>
 </div>
 
-<div class="card shadow-sm mb-3 border-0">
+<div class="card shadow-sm mb-3 border-0 rounded overflow-hidden">
     <div class="card-body p-0 table-responsive">
         <table class="table table-hover table-striped mb-0 align-middle small">
-            <thead class="table-dark text-nowrap">
+            <thead class="table-brand-header text-nowrap">
                 <tr>
-                    <th class="ps-3">CÓDIGO</th>
-                    <th>DESCRIPCIÓN</th>
-                    <th>FAMILIA</th>
-                    <th>UBICACIÓN</th>
-                    <th>CALIDAD</th>
-                    <th class="text-center">STOCK</th> 
-                    <th class="text-end">P. UNIT</th>
-                    <th class="text-end">P. CAJA</th>
-                    <th class="text-center pe-3">ACCIONES</th>
+                    <th class="ps-3 table-brand-header">CÓDIGO</th>
+                    <th class="table-brand-header">DESCRIPCIÓN</th>
+                    <th class="table-brand-header">FAMILIA</th>
+                    <th class="table-brand-header">UBICACIÓN</th>
+                    <th class="table-brand-header">CALIDAD</th>
+                    <th class="text-center table-brand-header">STOCK</th> 
+                    <th class="text-end table-brand-header">P. UNIT</th>
+                    <th class="text-end table-brand-header">P. CAJA</th>
+                    <th class="text-center pe-3 table-brand-header">ACCIONES</th>
                 </tr>
             </thead>
             <tbody>
                 {% for p in productos %}
                 <tr>
-                    <td class="fw-bold text-primary ps-3">{{ p.sku }}</td>
+                    <td class="fw-bold ps-3" style="color: var(--theme-primary);">{{ p.sku }}</td>
                     <td class="text-wrap" style="min-width: 250px;">
                         {{ p.nombre }}
                         <!-- Etiqueta de Estado -->
@@ -136,24 +173,26 @@
                         {% endif %}
                         
                         {% if session.get('role') in ['admin', 'almacen'] %}
-                        <button class="btn btn-sm btn-light border ms-1 text-primary" title="Registrar Ingreso/Salida"
+                        <button class="btn btn-sm btn-light border ms-1" style="color: var(--theme-primary);" title="Registrar Ingreso/Salida"
                                 onclick="abrirAjuste('{{p.id}}', '{{p.nombre}}', '{{p.stock_actual}}')">
                             <i class="bi bi-arrow-left-right"></i>
                         </button>
                         {% endif %}
                     </td>
                     
-                    <td class="text-end text-muted">{% if p.precio_unidad > 0 %} $ {{ "%.2f"|format(p.precio_unidad) }} {% else %} - {% endif %}</td>
-                    <td class="text-end text-muted">{% if p.precio_caja > 0 %} $ {{ "%.2f"|format(p.precio_caja) }} {% else %} - {% endif %}</td>
+                    <td class="text-end text-muted">{% if p.precio_unidad > 0 %} S/ {{ "%.2f"|format(p.precio_unidad) }} {% else %} - {% endif %}</td>
+                    <td class="text-end text-muted">{% if p.precio_caja > 0 %} S/ {{ "%.2f"|format(p.precio_caja) }} {% else %} - {% endif %}</td>
                     
                     <td class="text-center text-nowrap pe-3">
                         {% if session.get('role') == 'admin' %}
-                            <div class="btn-group">
+                            <div class="btn-group shadow-sm">
                                 <button class="btn btn-sm btn-outline-primary py-0" 
                                         onclick="abrirEditar('{{p.id}}', '{{p.nombre|replace("'", "\\'")|replace('"', '&quot;')}}', '{{p.stock_actual}}', '{{p.precio_unidad}}', '{{p.precio_caja}}', '{{p.ubicacion|default('', true)}}', '{{p.categoria}}', '{{p.calidad|default('', true)}}', '{{p.stock_minimo}}', '{{p.estado|default('', true)}}')">
                                     <i class="bi bi-pencil-fill"></i>
                                 </button>
-                                <a href="{{ url_for('eliminar_producto_importbolts', prod_id=p.id) }}" class="btn btn-sm btn-outline-danger py-0" onclick="return confirm('⚠️ ¿Estás seguro?');">
+                                <a href="{{ url_for('eliminar_producto_importbolts', prod_id=p.id) }}" 
+                                   class="btn btn-sm btn-outline-danger py-0" 
+                                   onclick="return confirm('⚠️ ¿Estás seguro?');">
                                     <i class="bi bi-trash-fill"></i>
                                 </a>
                             </div>
@@ -170,9 +209,9 @@
 
 <div class="d-flex justify-content-between align-items-center mt-4">
     <div class="text-muted small ms-2">
-        Mostrando página <b>{{ pagination.page }}</b> de <b>{{ pagination.pages }}</b> 
+        Mostrando página <b style="color: var(--theme-primary);">{{ pagination.page }}</b> de <b>{{ pagination.pages }}</b> 
         <span class="mx-2">|</span> 
-        Total: <span class="badge bg-light text-dark border">{{ pagination.total }}</span> productos
+        Total: <span class="badge text-white" style="background-color: var(--theme-primary);">{{ pagination.total }}</span> productos
     </div>
 
     {% if pagination.pages > 1 %}
@@ -183,7 +222,7 @@
         {% for page_num in pagination.iter_pages(left_edge=1, right_edge=1, left_current=1, right_current=1) %}
             {% if page_num %}
                 <li class="page-item {% if page_num == pagination.page %}active{% endif %}">
-                    <a class="page-link" href="{{ url_for('inventario_importbolts', page=page_num, busqueda=search, categoria=cat_filtro, calidad=calidad_filtro, stock_bajo=stock_bajo, per_page=limit) }}">{{ page_num }}</a>
+                    <a class="page-link" {% if page_num == pagination.page %}style="background-color: var(--theme-primary); border-color: var(--theme-primary); color: white;"{% endif %} href="{{ url_for('inventario_importbolts', page=page_num, busqueda=search, categoria=cat_filtro, calidad=calidad_filtro, stock_bajo=stock_bajo, per_page=limit) }}">{{ page_num }}</a>
                 </li>
             {% else %}
                 <li class="page-item disabled"><span class="page-link">...</span></li>
@@ -196,15 +235,23 @@
     {% endif %}
 </div>
 
+<!-- MODAL IMPORTAR CON AVISO DE IDENTIDAD DE MARCA (IMPORT BOLTS) -->
 <div class="modal fade" id="modalImportar" tabindex="-1">
     <div class="modal-dialog">
-        <div class="modal-content border-danger"> 
+        <div class="modal-content border-danger shadow-lg"> 
             <form action="{{ url_for('importar_excel_importbolts') }}" method="POST" enctype="multipart/form-data">
                 <div class="modal-header bg-danger text-white">
-                    <h5 class="modal-title"><i class="bi bi-exclamation-triangle-fill"></i> Carga Masiva (Reset)</h5>
+                    <h5 class="modal-title fw-bold"><i class="bi bi-exclamation-triangle-fill"></i> Carga Masiva (Reset)</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
-                <div class="modal-body">
+                <div class="modal-body bg-light">
+                    <!-- AVISO CRÍTICO DE IDENTIDAD DE EMPRESA -->
+                    <div class="alert alert-warning text-center border-warning border-2 p-3 mb-3 shadow-sm rounded">
+                        <img src="{{ url_for('static', filename='img/logo_import.png') }}" alt="Logo Import Bolts" style="height: 40px; margin-bottom: 10px;">
+                        <h5 class="fw-bold text-dark mb-1">USTED ESTÁ EN EL INVENTARIO DE IMPORT BOLTS</h5>
+                        <p class="small text-danger fw-bold mb-0">Por favor, verifique que su Excel sea el correcto. NO SUBIR ARCHIVOS DE ANCLAJES AQUÍ.</p>
+                    </div>
+
                     <div class="alert alert-danger bg-danger bg-opacity-10 border-danger">
                         <h6 class="alert-heading fw-bold"><i class="bi bi-cone-striped"></i> ¡LEA ESTO ANTES DE SEGUIR!</h6>
                         <p class="small mb-0 text-dark">
@@ -230,12 +277,12 @@
                         </a>
                     </div>
                     <div class="mb-3">
-                        <input type="file" name="archivo_excel" class="form-control" accept=".xlsx, .xls" required>
+                        <input type="file" name="archivo_excel" class="form-control form-control-lg border-danger shadow-sm" accept=".xlsx, .xls" required>
                     </div>
                 </div>
-                <div class="modal-footer bg-light">
-                    <button type="submit" class="btn btn-danger w-100 fw-bold">
-                        Entiendo los riesgos, Procesar
+                <div class="modal-footer bg-white">
+                    <button type="submit" class="btn btn-danger w-100 fw-bold fs-6 py-2 shadow-sm">
+                        Entiendo los riesgos, Procesar Excel de Import Bolts
                     </button>
                 </div>
             </form>

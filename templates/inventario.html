@@ -1,14 +1,68 @@
 {% extends "base.html" %}
 
+{% block title %}Inventario General{% endblock %}
+{% block subtitle %}Almacén Principal Anclajes y Pernos{% endblock %}
+
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h2>📦 Gestión de Inventario</h2>
-    <!-- CARTEL DE ÚLTIMA ACTUALIZACIÓN -->
+<style>
+    :root {
+        --theme-primary: #0B3D91; /* Azul Anclajes */
+        --theme-secondary: #ffc107; /* Amarillo detalle */
+    }
+    .card-header-anclajes {
+        background-color: var(--theme-primary);
+        color: white;
+        border-radius: 8px 8px 0 0;
+    }
+    .btn-brand {
+        background-color: var(--theme-primary);
+        color: white;
+    }
+    .btn-brand:hover { background-color: #082d6d; color: white; }
+    
+    /* Para resaltar bien la tabla */
+    .table-brand-header { background-color: #1a2b4c !important; color: white !important; }
+</style>
+
+<div class="card shadow-sm border-0 mb-4" style="border-left: 6px solid var(--theme-primary) !important;">
+    <div class="card-body d-flex justify-content-between align-items-center bg-white rounded py-2">
+        <div class="d-flex align-items-center">
+            <img src="{{ url_for('static', filename='img/logo.png') }}" alt="Logo Anclajes" style="height: 60px; object-fit: contain;" class="me-4 pe-3 border-end">
+            <div>
+                <h2 class="mb-0 fw-bold" style="color: var(--theme-primary);">📦 Inventario Central: ANCLAJES</h2>
+                <span class="text-muted small">Gestión y control de mercadería - Anclajes y Pernos SAC</span>
+            </div>
+        </div>
+        <div class="d-flex gap-2">
+            {% if session.get('role') in ['admin', 'almacen', 'administracion'] %}
+            <a href="{{ url_for('ver_kardex') }}" class="btn btn-outline-dark shadow-sm">
+                <i class="bi bi-clock-history"></i> Kardex
+            </a>
+            {% endif %}
+
+            {% if session.get('role') in ['admin', 'almacen'] %}
+            <button class="btn btn-secondary shadow-sm" data-bs-toggle="modal" data-bs-target="#modalConfigMasiva" title="Ajustar Stock Mínimo por Familia">
+                <i class="bi bi-gear-wide-connected"></i> Mínimos
+            </button>
+            <a href="{{ url_for('exportar_excel') }}" class="btn btn-outline-success shadow-sm">
+                <i class="bi bi-download"></i> Exportar
+            </a>
+            <button class="btn btn-success shadow-sm fw-bold" data-bs-toggle="modal" data-bs-target="#modalImportar">
+                <i class="bi bi-file-earmark-excel"></i> Importar Excel
+            </button>
+            <button class="btn btn-brand shadow-sm fw-bold" data-bs-toggle="modal" data-bs-target="#modalNuevo">
+                <i class="bi bi-plus-lg"></i> Nuevo Producto
+            </button>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
 {% if info_importacion %}
-<div class="alert alert-info py-2 shadow-sm d-flex align-items-center mb-3">
-    <i class="bi bi-info-circle-fill fs-5 me-3 text-info"></i>
+<div class="alert py-2 shadow-sm d-flex align-items-center mb-3 border-0" style="background-color: #e6f0fa; border-left: 4px solid var(--theme-primary) !important;">
+    <i class="bi bi-info-circle-fill fs-5 me-3" style="color: var(--theme-primary);"></i>
     <div>
-        <h6 class="mb-0 fw-bold text-dark">Última actualización masiva de inventario</h6>
+        <h6 class="mb-0 fw-bold" style="color: var(--theme-primary);">Última actualización masiva de inventario</h6>
         <small class="text-muted">
             Sincronizado el <strong>{{ info_importacion.updated_at.strftime('%d/%m/%Y a las %H:%M') }}</strong> 
             por <strong>{{ info_importacion.updated_by }}</strong>
@@ -16,33 +70,6 @@
     </div>
 </div>
 {% endif %}
-    <div class="d-flex gap-2">
-        
-        {% if session.get('role') in ['admin', 'almacen', 'administracion'] %}
-        <a href="{{ url_for('ver_kardex') }}" class="btn btn-outline-dark">
-            <i class="bi bi-clock-history"></i> Kardex
-        </a>
-        {% endif %}
-
-        {% if session.get('role') in ['admin', 'almacen'] %}
-        
-        <button class="btn btn-secondary" data-bs-toggle="modal" data-bs-target="#modalConfigMasiva" title="Ajustar Stock Mínimo por Familia">
-            <i class="bi bi-gear-wide-connected"></i> Mínimos
-        </button>
-
-        <a href="{{ url_for('exportar_excel') }}" class="btn btn-outline-success">
-            <i class="bi bi-download"></i> Exportar
-        </a>
-        
-        <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#modalImportar">
-            <i class="bi bi-file-earmark-excel"></i> Importar
-        </button>
-        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalNuevo">
-            <i class="bi bi-plus-lg"></i> Nuevo Producto
-        </button>
-        {% endif %}
-    </div>
-</div>
 
 <div class="card mb-4 bg-white border shadow-sm">
     <div class="card-body py-3">
@@ -94,29 +121,28 @@
     </div>
 </div>
 
-<div class="card shadow-sm mb-3 border-0">
+<div class="card shadow-sm mb-3 border-0 rounded overflow-hidden">
     <div class="card-body p-0 table-responsive">
         <table class="table table-hover table-striped mb-0 align-middle small">
-            <thead class="table-dark text-nowrap">
+            <thead class="table-brand-header text-nowrap">
                 <tr>
-                    <th class="ps-3">CÓDIGO</th>
-                    <th>DESCRIPCIÓN</th>
-                    <th>FAMILIA</th>
-                    <th>UBICACIÓN</th>
-                    <th>CALIDAD</th>
-                    <th class="text-center">STOCK</th> 
-                    <th class="text-end">P. UNIT</th>
-                    <th class="text-end">P. CAJA</th>
-                    <th class="text-center pe-3">ACCIONES</th>
+                    <th class="ps-3 table-brand-header">CÓDIGO</th>
+                    <th class="table-brand-header">DESCRIPCIÓN</th>
+                    <th class="table-brand-header">FAMILIA</th>
+                    <th class="table-brand-header">UBICACIÓN</th>
+                    <th class="table-brand-header">CALIDAD</th>
+                    <th class="text-center table-brand-header">STOCK</th> 
+                    <th class="text-end table-brand-header">P. UNIT</th>
+                    <th class="text-end table-brand-header">P. CAJA</th>
+                    <th class="text-center pe-3 table-brand-header">ACCIONES</th>
                 </tr>
             </thead>
             <tbody>
                 {% for p in productos %}
                 <tr>
-                    <td class="fw-bold text-primary ps-3">{{ p.sku }}</td>
+                    <td class="fw-bold ps-3" style="color: var(--theme-primary);">{{ p.sku }}</td>
                     <td class="text-wrap" style="min-width: 250px;">
                         {{ p.nombre }}
-                        <!-- Etiqueta de Estado -->
                         {% if p.estado %}
                             <br>
                             <span class="badge bg-danger mt-1 text-white shadow-sm" style="font-size: 0.7rem;">
@@ -136,19 +162,19 @@
                         {% endif %}
                         
                         {% if session.get('role') in ['admin', 'almacen'] %}
-                        <button class="btn btn-sm btn-light border ms-1 text-primary" title="Registrar Ingreso/Salida"
+                        <button class="btn btn-sm btn-light border ms-1" style="color: var(--theme-primary);" title="Registrar Ingreso/Salida"
                                 onclick="abrirAjuste('{{p.id}}', '{{p.nombre}}', '{{p.stock_actual}}')">
                             <i class="bi bi-arrow-left-right"></i>
                         </button>
                         {% endif %}
                     </td>
                     
-                    <td class="text-end text-muted">{% if p.precio_unidad > 0 %} $ {{ "%.2f"|format(p.precio_unidad) }} {% else %} - {% endif %}</td>
-                    <td class="text-end text-muted">{% if p.precio_caja > 0 %} $ {{ "%.2f"|format(p.precio_caja) }} {% else %} - {% endif %}</td>
+                    <td class="text-end text-muted">{% if p.precio_unidad > 0 %} S/ {{ "%.2f"|format(p.precio_unidad) }} {% else %} - {% endif %}</td>
+                    <td class="text-end text-muted">{% if p.precio_caja > 0 %} S/ {{ "%.2f"|format(p.precio_caja) }} {% else %} - {% endif %}</td>
                     
                     <td class="text-center text-nowrap pe-3">
                         {% if session.get('role') == 'admin' %}
-                            <div class="btn-group">
+                            <div class="btn-group shadow-sm">
                                 <button class="btn btn-sm btn-outline-primary py-0" 
                                         onclick="abrirEditar('{{p.id}}', '{{p.nombre|replace("'", "\\'")|replace('"', '&quot;')}}', '{{p.stock_actual}}', '{{p.precio_unidad}}', '{{p.precio_caja}}', '{{p.ubicacion|default('', true)}}', '{{p.categoria}}', '{{p.calidad|default('', true)}}', '{{p.stock_minimo}}', '{{p.estado|default('', true)}}')">
                                     <i class="bi bi-pencil-fill"></i>
@@ -172,9 +198,9 @@
 
 <div class="d-flex justify-content-between align-items-center mt-4">
     <div class="text-muted small ms-2">
-        Mostrando página <b>{{ pagination.page }}</b> de <b>{{ pagination.pages }}</b> 
+        Mostrando página <b style="color: var(--theme-primary);">{{ pagination.page }}</b> de <b>{{ pagination.pages }}</b> 
         <span class="mx-2">|</span> 
-        Total: <span class="badge bg-light text-dark border">{{ pagination.total }}</span> productos
+        Total: <span class="badge text-white" style="background-color: var(--theme-primary);">{{ pagination.total }}</span> productos
     </div>
 
     {% if pagination.pages > 1 %}
@@ -185,7 +211,7 @@
         {% for page_num in pagination.iter_pages(left_edge=1, right_edge=1, left_current=1, right_current=1) %}
             {% if page_num %}
                 <li class="page-item {% if page_num == pagination.page %}active{% endif %}">
-                    <a class="page-link" href="{{ url_for('inventario', page=page_num, busqueda=search, categoria=cat_filtro, calidad=calidad_filtro, stock_bajo=stock_bajo, per_page=limit) }}">{{ page_num }}</a>
+                    <a class="page-link" {% if page_num == pagination.page %}style="background-color: var(--theme-primary); border-color: var(--theme-primary); color: white;"{% endif %} href="{{ url_for('inventario', page=page_num, busqueda=search, categoria=cat_filtro, calidad=calidad_filtro, stock_bajo=stock_bajo, per_page=limit) }}">{{ page_num }}</a>
                 </li>
             {% else %}
                 <li class="page-item disabled"><span class="page-link">...</span></li>
@@ -200,13 +226,19 @@
 
 <div class="modal fade" id="modalImportar" tabindex="-1">
     <div class="modal-dialog">
-        <div class="modal-content border-danger"> 
+        <div class="modal-content border-danger shadow-lg"> 
             <form action="{{ url_for('importar_excel') }}" method="POST" enctype="multipart/form-data">
                 <div class="modal-header bg-danger text-white">
-                    <h5 class="modal-title"><i class="bi bi-exclamation-triangle-fill"></i> Carga Masiva (Reset)</h5>
+                    <h5 class="modal-title fw-bold"><i class="bi bi-exclamation-triangle-fill"></i> Carga Masiva (Reset)</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
-                <div class="modal-body">
+                <div class="modal-body bg-light">
+                    <div class="alert alert-warning text-center border-warning border-2 p-3 mb-3 shadow-sm rounded">
+                        <img src="{{ url_for('static', filename='img/logo.png') }}" alt="Logo Anclajes" style="height: 40px; margin-bottom: 10px;">
+                        <h5 class="fw-bold text-dark mb-1">USTED ESTÁ EN EL INVENTARIO DE ANCLAJES</h5>
+                        <p class="small text-danger fw-bold mb-0">Por favor, verifique que su Excel sea el correcto. NO SUBIR ARCHIVOS DE IMPORTBOTS AQUÍ.</p>
+                    </div>
+
                     <div class="alert alert-danger bg-danger bg-opacity-10 border-danger">
                         <h6 class="alert-heading fw-bold"><i class="bi bi-cone-striped"></i> ¡LEA ESTO ANTES DE SEGUIR!</h6>
                         <p class="small mb-0 text-dark">
@@ -232,12 +264,12 @@
                         </a>
                     </div>
                     <div class="mb-3">
-                        <input type="file" name="archivo_excel" class="form-control" accept=".xlsx, .xls" required>
+                        <input type="file" name="archivo_excel" class="form-control form-control-lg border-danger shadow-sm" accept=".xlsx, .xls" required>
                     </div>
                 </div>
-                <div class="modal-footer bg-light">
-                    <button type="submit" class="btn btn-danger w-100 fw-bold">
-                        Entiendo los riesgos, Procesar
+                <div class="modal-footer bg-white">
+                    <button type="submit" class="btn btn-danger w-100 fw-bold fs-6 py-2 shadow-sm">
+                        Entiendo los riesgos, Procesar Excel de Anclajes
                     </button>
                 </div>
             </form>
@@ -248,9 +280,9 @@
 <div class="modal fade" id="modalNuevo" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
-            <div class="modal-header bg-primary text-white">
+            <div class="modal-header text-white" style="background-color: var(--theme-primary);">
                 <h5 class="modal-title">Registrar Nuevo Producto</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <form id="formNuevoProd">
@@ -310,9 +342,9 @@
                     </div>
                 </form>
             </div>
-            <div class="modal-footer">
+            <div class="modal-footer bg-light">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                <button type="button" class="btn btn-success w-100" onclick="guardarProductoAjax()">Guardar Producto</button>
+                <button type="button" class="btn btn-success fw-bold px-4" onclick="guardarProductoAjax()">Guardar Producto</button>
             </div>
         </div>
     </div>
@@ -378,40 +410,39 @@
         </div>
     </div>
 </div>
-
 <div class="modal fade" id="modalNuevaCat">
     <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content border-primary">
+        <div class="modal-content border-0 shadow-lg">
             <form action="{{ url_for('nueva_categoria') }}" method="POST">
-                <div class="modal-header bg-light py-2">
-                    <h6 class="modal-title fw-bold text-primary">Gestionar Familias</h6>
-                    <button type="button" class="btn-close small" data-bs-dismiss="modal"></button>
+                <div class="modal-header text-white py-3" style="background-color: var(--theme-primary);">
+                    <h6 class="modal-title fw-bold"><i class="bi bi-tags-fill me-2"></i> Gestionar Familias</h6>
+                    <button type="button" class="btn-close btn-close-white small" data-bs-dismiss="modal"></button>
                 </div>
-                <div class="modal-body pb-0">
+                <div class="modal-body pb-0 mt-2">
                     <div class="row g-2 align-items-end">
                         <div class="col-6">
-                            <label class="small fw-bold">Nombre</label>
+                            <label class="small fw-bold text-muted">Nombre de Familia</label>
                             <input name="cat_nombre" class="form-control form-control-sm text-uppercase" placeholder="Ej: SENSORES" required oninput="this.value = this.value.toUpperCase()">
                         </div>
                         <div class="col-3">
-                            <label class="small fw-bold">Prefijo</label>
+                            <label class="small fw-bold text-muted">Prefijo</label>
                             <input name="cat_prefijo" class="form-control form-control-sm text-uppercase" placeholder="AAA" maxlength="3" required oninput="this.value = this.value.toUpperCase()">
                         </div>
                         <div class="col-3">
-                            <button type="submit" class="btn btn-primary btn-sm w-100">Crear</button>
+                            <button type="submit" class="btn btn-sm w-100 fw-bold" style="background-color: var(--theme-primary); color: white;">Crear</button>
                         </div>
                     </div>
-                    <hr class="my-3">
+                    <hr class="my-3 opacity-25">
                 </div>
             </form>
             <div class="modal-body pt-0" style="max-height: 300px; overflow-y: auto;">
-                <h6 class="small fw-bold text-muted mb-2">Familias Existentes</h6>
-                <ul class="list-group list-group-flush small border rounded" id="listaFamilias">
+                <h6 class="small fw-bold text-muted mb-2"><i class="bi bi-list-ul"></i> Familias Existentes</h6>
+                <ul class="list-group list-group-flush small border rounded shadow-sm" id="listaFamilias">
                     {% for cat in lista_categorias %}
-                    <li class="list-group-item d-flex justify-content-between align-items-center py-2 px-3 hover-bg-light" id="fila-cat-{{ loop.index }}">
-                        <span class="fw-medium">{{ cat }}</span>
+                    <li class="list-group-item d-flex justify-content-between align-items-center py-2 px-3 hover-bg-light border-bottom" id="fila-cat-{{ loop.index }}">
+                        <span class="fw-medium text-dark">{{ cat }}</span>
                         <div class="btn-group">
-                            <button type="button" class="btn btn-sm text-primary p-0 border-0 bg-transparent me-3" 
+                            <button type="button" class="btn btn-sm p-0 border-0 bg-transparent me-3" style="color: var(--theme-primary);"
                                     title="Renombrar familia"
                                     onclick="renombrarFamilia('{{ cat }}')">
                                 <i class="bi bi-pencil-fill"></i>
@@ -426,92 +457,100 @@
                     {% endfor %}
                 </ul>
             </div>
-            <div class="modal-footer p-1 bg-light">
-                <button type="button" class="btn btn-secondary btn-sm w-100" data-bs-dismiss="modal">Cerrar</button>
+            <div class="modal-footer p-2 bg-light border-top-0">
+                <button type="button" class="btn btn-secondary btn-sm w-100" data-bs-dismiss="modal">Cerrar Ventana</button>
             </div>
         </div>
     </div>
 </div>
 
 <div class="modal fade" id="modalStock" tabindex="-1">
-    <div class="modal-dialog modal-sm">
-        <div class="modal-content">
+    <div class="modal-dialog modal-sm modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg">
             <form action="{{ url_for('ajustar_stock') }}" method="POST">
                 <input type="hidden" name="prod_id" id="stock_id">
                 <input type="hidden" name="url_origen" id="stock_url_origen">
-                <div class="modal-header bg-dark text-white">
-                    <h5 class="modal-title fs-6"><i class="bi bi-arrow-left-right"></i> Movimiento Kardex</h5>
+                <div class="modal-header text-white" style="background-color: var(--theme-primary);">
+                    <h5 class="modal-title fs-6 fw-bold"><i class="bi bi-arrow-left-right me-2"></i> Movimiento Kardex</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <p class="small fw-bold text-primary mb-2 text-center" id="stock_nombre">Producto...</p>
-                    <div class="alert alert-secondary py-1 text-center small mb-2">
-                        Stock Actual: <strong id="stock_display_actual">0</strong>
+                    <p class="small fw-bold mb-2 text-center" style="color: var(--theme-primary);" id="stock_nombre">Producto...</p>
+                    <div class="alert py-2 text-center small mb-3 fw-medium" style="background-color: #e6f0fa; border: 1px solid #b8d4f2; color: var(--theme-primary);">
+                        Stock Actual: <strong id="stock_display_actual" class="fs-5">0</strong>
                     </div>
-                    <div class="mb-2">
-                        <label class="small text-muted">Tipo de Movimiento</label>
-                        <select name="tipo" class="form-select form-select-sm" required>
+                    <div class="mb-3">
+                        <label class="small text-muted fw-bold mb-1">Tipo de Movimiento</label>
+                        <select name="tipo" class="form-select form-select-sm shadow-sm" required>
                             <option value="ingreso">➕ Ingreso (Compra/Devolución)</option>
                             <option value="salida">➖ Salida (Venta/Merma)</option>
                         </select>
                     </div>
-                    <div class="mb-2"><label class="small text-muted">Cantidad</label><input type="number" name="cantidad" class="form-control form-control-sm" min="1" required></div>
-                    <div class="mb-0"><label class="small text-muted fw-bold">Motivo *</label><input type="text" name="motivo" class="form-control form-control-sm" placeholder="Ej: Venta #123, Ajuste..." required></div>
+                    <div class="mb-3">
+                        <label class="small text-muted fw-bold mb-1">Cantidad</label>
+                        <input type="number" name="cantidad" class="form-control form-control-sm shadow-sm" min="1" required>
+                    </div>
+                    <div class="mb-1">
+                        <label class="small text-muted fw-bold mb-1">Motivo *</label>
+                        <input type="text" name="motivo" class="form-control form-control-sm shadow-sm" placeholder="Ej: Venta #123, Ajuste..." required>
+                    </div>
                 </div>
-                <div class="modal-footer p-1"><button type="submit" class="btn btn-dark w-100 btn-sm">Registrar Movimiento</button></div>
+                <div class="modal-footer p-2 bg-light">
+                    <button type="submit" class="btn w-100 btn-sm fw-bold text-white shadow-sm" style="background-color: var(--theme-primary);">Registrar Movimiento</button>
+                </div>
             </form>
         </div>
     </div>
 </div>
 
 <div class="modal fade" id="modalConfigMasiva" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content border-secondary">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg">
             <form id="formConfigMasiva" action="{{ url_for('actualizar_minimos_masivos') }}" method="POST">
-                <div class="modal-header bg-secondary text-white">
-                    <h5 class="modal-title"><i class="bi bi-gear-wide-connected"></i> Configurar Stock Mínimo</h5>
+                <div class="modal-header text-white" style="background-color: var(--theme-primary);">
+                    <h5 class="modal-title fw-bold"><i class="bi bi-gear-wide-connected me-2"></i> Configurar Stock Mínimo</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
-                <div class="modal-body">
-                    <div class="alert alert-light border small text-muted">
-                        <i class="bi bi-info-circle-fill text-primary"></i> 
+                <div class="modal-body bg-light">
+                    <div class="alert bg-white border shadow-sm small text-muted">
+                        <i class="bi bi-info-circle-fill" style="color: var(--theme-primary);"></i> 
                         Defina reglas de abastecimiento. Ejemplo: "Todos los PERNOS INOX mínimo 100".
                     </div>
-                    <div class="row g-2">
+                    <div class="row g-3">
                         <div class="col-12">
-                            <label class="form-label fw-bold small">1. Seleccione Familia *</label>
-                            <div class="input-group">
-                                <select name="categoria_nombre" id="mass_familia" class="form-select" onchange="cargarCalidadesDinamicas()">
+                            <label class="form-label fw-bold small text-dark">1. Seleccione Familia *</label>
+                            <div class="input-group shadow-sm">
+                                <select name="categoria_nombre" id="mass_familia" class="form-select border-end-0" onchange="cargarCalidadesDinamicas()">
                                     <option value="" selected disabled>-- Seleccione --</option>
                                     {% for cat in lista_categorias %}
                                     <option value="{{ cat }}">{{ cat }}</option>
                                     {% endfor %}
                                 </select>
-                                <button class="btn btn-outline-secondary" type="button" onclick="resetFiltrosMasivos()" title="Reiniciar filtros">
-                                    <i class="bi bi-arrow-counterclockwise"></i>
+                                <button class="btn btn-white border border-start-0" type="button" onclick="resetFiltrosMasivos()" title="Reiniciar filtros">
+                                    <i class="bi bi-arrow-counterclockwise" style="color: var(--theme-primary);"></i>
                                 </button>
                             </div>
                         </div>
                         <div class="col-12">
-                            <label class="form-label fw-bold small">2. Filtre por Calidad (Opcional)</label>
-                            <select name="calidad_nombre" id="mass_calidad" class="form-select" disabled>
+                            <label class="form-label fw-bold small text-dark">2. Filtre por Calidad (Opcional)</label>
+                            <select name="calidad_nombre" id="mass_calidad" class="form-select shadow-sm" disabled>
                                 <option value="TODAS" selected>-- Primero seleccione Familia --</option>
                             </select>
                             <div class="form-text small" id="helpCalidad">Si lo deja en TODAS, afecta a toda la familia.</div>
                         </div>
-                        <div class="col-12 mt-3">
-                            <label class="form-label fw-bold text-info">3. Nuevo Stock Mínimo *</label>
-                            <div class="input-group">
-                                <span class="input-group-text bg-info text-white fw-bold">Cant.</span>
-                                <input type="number" name="nuevo_minimo" id="mass_cantidad" class="form-control fw-bold" placeholder="Ej: 50" min="0" required>
+                        <div class="col-12 mt-4">
+                            <label class="form-label fw-bold" style="color: var(--theme-primary);">3. Nuevo Stock Mínimo *</label>
+                            <div class="input-group shadow-sm">
+                                <span class="input-group-text text-white fw-bold border-0" style="background-color: var(--theme-primary);">Cant.</span>
+                                <input type="number" name="nuevo_minimo" id="mass_cantidad" class="form-control form-control-lg fw-bold text-center" placeholder="Ej: 50" min="0" required>
                             </div>
                         </div>
                     </div>
                 </div>
-                <div class="modal-footer bg-light">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="button" class="btn btn-dark w-100" onclick="confirmarMasivo()">
-                        <i class="bi bi-check2-circle"></i> Revisar y Aplicar
+                <div class="modal-footer bg-white">
+                    <button type="button" class="btn btn-light border" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn text-white fw-bold shadow-sm px-4" style="background-color: var(--theme-primary);" onclick="confirmarMasivo()">
+                        <i class="bi bi-check2-circle me-1"></i> Revisar y Aplicar
                     </button>
                 </div>
             </form>
@@ -522,26 +561,26 @@
 <div class="modal fade" id="modalPreviewMasivo" tabindex="-1" data-bs-backdrop="static">
     <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content border-0 shadow-lg">
-            <div class="modal-header bg-dark text-white py-3">
-                <h5 class="modal-title fw-bold"><i class="bi bi-list-check"></i> Seleccionar Productos</h5>
+            <div class="modal-header text-white py-3" style="background-color: var(--theme-primary);">
+                <h5 class="modal-title fw-bold"><i class="bi bi-list-check me-2"></i> Confirmar Selección de Productos</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body bg-light p-0">
-                <div class="alert alert-warning m-3 py-2 small border-warning text-dark">
-                    <i class="bi bi-exclamation-triangle-fill"></i> Desmarque los productos a los que <strong>NO</strong> desea aplicarles el nuevo stock mínimo.
+                <div class="alert alert-warning m-3 py-2 small border-warning text-dark shadow-sm">
+                    <i class="bi bi-exclamation-triangle-fill text-warning me-1"></i> Desmarque los productos a los que <strong>NO</strong> desea aplicarles el nuevo stock mínimo.
                 </div>
                 
                 <div class="table-responsive bg-white border-top border-bottom" style="max-height: 400px;">
                     <table class="table table-sm table-hover align-middle mb-0">
-                        <thead class="table-light sticky-top small text-muted text-uppercase">
+                        <thead class="sticky-top small text-white text-uppercase" style="background-color: #1a2b4c;">
                             <tr>
-                                <th class="text-center" style="width: 50px;">
-                                    <input class="form-check-input border-secondary" type="checkbox" id="checkAllMasivo" checked onchange="toggleAllMasivo(this)" style="cursor: pointer; width: 1.2rem; height: 1.2rem;">
+                                <th class="text-center py-2" style="width: 50px; background-color: inherit;">
+                                    <input class="form-check-input" type="checkbox" id="checkAllMasivo" checked onchange="toggleAllMasivo(this)" style="cursor: pointer; width: 1.2rem; height: 1.2rem;">
                                 </th>
-                                <th style="width: 20%;">Código</th>
-                                <th style="width: 45%;">Descripción</th>
-                                <th class="text-center" style="width: 15%;">Mín. Actual</th>
-                                <th class="text-center text-success" style="width: 20%;">Nuevo Mín.</th>
+                                <th class="py-2" style="width: 20%; background-color: inherit;">Código</th>
+                                <th class="py-2" style="width: 45%; background-color: inherit;">Descripción</th>
+                                <th class="text-center py-2" style="width: 15%; background-color: inherit;">Mín. Actual</th>
+                                <th class="text-center py-2 text-warning" style="width: 20%; background-color: inherit;">Nuevo Mín.</th>
                             </tr>
                         </thead>
                         <tbody id="tbodyPreviewMasivo">
@@ -551,12 +590,12 @@
             </div>
             <div class="modal-footer d-flex justify-content-between bg-white py-3">
                 <div class="small text-muted fw-bold">
-                    Seleccionados: <span id="lblTotalAfectados" class="badge bg-primary fs-6">0</span>
+                    Seleccionados: <span id="lblTotalAfectados" class="badge fs-6 shadow-sm" style="background-color: var(--theme-primary);">0</span>
                 </div>
                 <div>
-                    <button type="button" class="btn btn-outline-secondary me-2" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="button" class="btn btn-success fw-bold px-4" id="btnGuardarMasivoFinal" onclick="guardarMasivoFinal()">
-                        <i class="bi bi-check-circle-fill"></i> Aplicar Cambios
+                    <button type="button" class="btn btn-light border me-2" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-success fw-bold px-4 shadow-sm" id="btnGuardarMasivoFinal" onclick="guardarMasivoFinal()">
+                        <i class="bi bi-check-circle-fill me-1"></i> Aplicar Cambios
                     </button>
                 </div>
             </div>

@@ -1,76 +1,71 @@
 {% extends "base.html" %}
 
-
-
 {% block content %}
-
 <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
-
 <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
-
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 
-
-
 <style>
+    /* --- INYECCIÓN DE COLORES CORPORATIVOS PARA ANCLAJES --- */
+    :root {
+        --theme-primary: #0B3D91; /* Azul Anclajes */
+        --theme-secondary: #ffc107; /* Amarillo detalle */
+        --theme-light: #e6f0fa; /* Fondo azul muy claro */
+    }
 
     /* --- 1. PARCHE GLOBAL PARA QUE SELECT2 FUNCIONE EN BOOTSTRAP --- */
-
     .select2-container { width: 100% !important; display: block; }
-
     .select2-container .select2-selection--single { height: 31px !important; border: 1px solid #dee2e6; border-radius: 0.375rem; display: flex; align-items: center; background-color: #fff; }
-
     .select2-container--default .select2-selection--single .select2-selection__rendered { padding-left: 8px; line-height: normal; color: #212529; font-weight: bold; width: 100%; }
-
     .select2-container--default .select2-selection--single .select2-selection__arrow { height: 29px !important; right: 5px; }
-
     .select2-search--dropdown .select2-search__field { padding: 4px; border-radius: 4px; border: 1px solid #aaa; }
 
-
-
-/* --- 2. ESTILOS ESPECÍFICOS PARA EL BUSCADOR DE PRODUCTOS (TABLA) --- */
+    /* --- 2. ESTILOS ESPECÍFICOS PARA EL BUSCADOR DE PRODUCTOS (TABLA) --- */
     .select2-results__option { padding: 8px 10px; border-bottom: 1px solid #f0f0f0; }
     .prod-row { display: flex; flex-direction: column; width: 100%; }
     .prod-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
-    .prod-code { font-weight: 900; color: #0d6efd; font-size: 0.85rem; background-color: #e9ecef; padding: 2px 6px; border-radius: 4px; }
+    .prod-code { font-weight: 900; color: var(--theme-primary); font-size: 0.85rem; background-color: var(--theme-light); padding: 2px 6px; border-radius: 4px; }
     .prod-stock { text-align: right; font-weight: 800; color: #198754; font-size: 0.85rem; }
     .prod-desc { white-space: normal; /* Permite que el texto baje a la siguiente línea */ font-size: 0.9rem; color: #212529; line-height: 1.3; }
 
-
-
     /* --- 3. ESTILOS DE LA TABLA DE CARRITO --- */
-
     .editable-cell { background: #fff; border: 1px solid #dee2e6; border-radius: 4px; padding: 4px 8px; width: 100%; text-align: right; font-weight: 600; transition: border-color 0.2s; }
-
-    .editable-cell:focus { border-color: #0d6efd; outline: none; background: #f8f9fa; }
-
+    .editable-cell:focus { border-color: var(--theme-primary); outline: none; background: #f8f9fa; }
     .stock-insuficiente { background-color: #ffe6e6 !important; border-color: #dc3545 !important; color: #dc3545 !important; font-weight: bold; }
-
     .product-name-cell { white-space: normal !important; word-wrap: break-word; font-size: 0.9rem; line-height: 1.3; font-weight: 600; color: #212529; }
-
 </style>
 
-
-
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h3>
-        <i class="bi bi-file-earmark-text"></i> 
-        {% if modo_edicion %}
-            Editar Cotización #{{ "%05d"|format(orden.id) }}
-        {% else %}
-            Nueva Cotización
-        {% endif %}
-    </h3>
-    <a href="{{ url_for('historial_ventas') }}" class="btn btn-outline-secondary btn-sm">Cancelar</a>
+<div class="card shadow-sm border-0 mb-3" style="border-left: 6px solid var(--theme-primary) !important;">
+    <div class="card-body d-flex justify-content-between align-items-center bg-white rounded py-2">
+        <div class="d-flex align-items-center">
+            <img src="{{ url_for('static', filename='img/logo.png') }}" alt="Logo Anclajes" style="height: 50px; object-fit: contain;" class="me-4 pe-3 border-end">
+            <div>
+                <h4 class="mb-0 fw-bold" style="color: var(--theme-primary);">
+                    <i class="bi bi-file-earmark-text"></i> 
+                    {% if modo_edicion %}
+                        Editar Cotización #{{ "%05d"|format(orden.id) }}
+                    {% else %}
+                        Nueva Cotización
+                    {% endif %}
+                </h4>
+                <span class="text-muted small fw-medium">Módulo Comercial - Anclajes y Pernos SAC</span>
+            </div>
+        </div>
+        <div>
+            <a href="{{ url_for('historial_ventas') }}" class="btn btn-outline-secondary btn-sm shadow-sm fw-bold">
+                <i class="bi bi-x-circle me-1"></i> Cancelar
+            </a>
+        </div>
+    </div>
 </div>
 
 <input type="hidden" id="hidden_order_id" value="{{ orden.id if orden else '' }}">
 
 {% if info_importacion %}
-<div class="alert alert-info py-2 shadow-sm d-flex align-items-center mb-3">
-    <i class="bi bi-info-circle-fill fs-5 me-3 text-info"></i>
+<div class="alert py-2 shadow-sm d-flex align-items-center mb-3 border-0" style="background-color: var(--theme-light); border-left: 4px solid var(--theme-primary) !important;">
+    <i class="bi bi-info-circle-fill fs-5 me-3" style="color: var(--theme-primary);"></i>
     <div>
-        <h6 class="mb-0 fw-bold text-dark">Última actualización de inventario general</h6>
+        <h6 class="mb-0 fw-bold" style="color: var(--theme-primary);">Última actualización de inventario general</h6>
         <small class="text-muted">
             Sincronizado el <strong>{{ info_importacion.updated_at.strftime('%d/%m/%Y a las %H:%M') }}</strong> 
             por <strong>{{ info_importacion.updated_by }}</strong>
@@ -79,85 +74,50 @@
 </div>
 {% endif %}
 
-
-
-<div class="card mb-3 border-info shadow-sm">
-
-    <div class="card-body py-2 bg-info bg-opacity-10">
-
-        <div class="row align-items-center g-2">
-
-            <div class="col-auto">
-
-                <div class="input-group input-group-sm">
-
-                    <span class="input-group-text fw-bold bg-white text-dark border-primary">
-
+<div class="card mb-3 shadow-sm border-0" style="border-top: 3px solid var(--theme-primary) !important;">
+    <div class="card-body py-2 bg-white">
+        <div class="row align-items-center g-2 justify-content-between">
+            <div class="col-auto d-flex gap-3">
+                <div class="input-group input-group-sm shadow-sm">
+                    <span class="input-group-text fw-bold text-white border-0" style="background-color: var(--theme-primary);">
                         <i class="bi bi-currency-exchange me-1"></i> Moneda
-
                     </span>
-
-                    <select id="selectMoneda" class="form-select fw-bold text-primary border-primary" onchange="window.iniciarCambioMoneda(this)">
-
+                    <select id="selectMoneda" class="form-select fw-bold bg-light" style="color: var(--theme-primary); border-color: var(--theme-primary);" onchange="window.iniciarCambioMoneda(this)">
                         <option value="PEN">S/ SOLES (PEN)</option>
-
                         <option value="USD" selected>  $ DÓLARES (USD)</option>
-
                     </select>
-
                 </div>
-
-            </div>
-
-            <div class="col-auto">
-
-                <div class="input-group input-group-sm">
-
-                    <span class="input-group-text fw-bold bg-white text-muted">T.C. Venta</span>
-
-                    <input type="number" id="inputTC" class="form-control fw-bold text-end" 
-
+                <div class="input-group input-group-sm shadow-sm">
+                    <span class="input-group-text fw-bold bg-light text-muted border-secondary">T.C. Venta</span>
+                    <input type="number" id="inputTC" class="form-control fw-bold text-end border-secondary" 
                            value="{{ '%.3f'|format(tc) }}" step="0.001" style="width: 80px;" 
-
                            onchange="window.recalcularCarritoPorMoneda()" readonly>
-
-                    <button class="btn btn-light border bg-white" type="button" onclick="window.actualizarDolar()" title="Consultar SUNAT">
-
-                        <i class="bi bi-arrow-clockwise text-primary"></i>
-
+                    <button class="btn btn-light border-secondary bg-white" type="button" onclick="window.actualizarDolar()" title="Consultar SUNAT">
+                        <i class="bi bi-arrow-clockwise" style="color: var(--theme-primary);"></i>
                     </button>
-
                 </div>
-
             </div>
-
             <div class="col-auto">
-
-                <small class="text-muted text-nowrap" id="msgTC" style="font-size: 0.75rem; min-width: 100px;">
-
+                <small class="text-muted text-nowrap fw-medium" id="msgTC" style="font-size: 0.75rem;">
+                    <i class="bi bi-clock-history me-1"></i>
                     {% if updated_at %} Act: {{ updated_at }} ({{ updated_by if updated_by else 'Sistema' }}) {% else %} Dato del día {% endif %}
-
                 </small>
-
             </div>
-
         </div>
-
     </div>
-
 </div>
 
 <div class="row g-3">
     <div class="col-lg-4 col-md-12 d-flex flex-column gap-3">
         
-        <div class="card shadow-sm border-0 m-0">
-            <div class="card-header bg-primary text-white py-2 d-flex justify-content-between align-items-center">
-                <h6 class="mb-0 small fw-bold"><i class="bi bi-person-vcard"></i> 1. Cliente</h6>
+        <div class="card shadow-sm border-0 m-0 overflow-hidden">
+            <div class="card-header text-white py-2 d-flex justify-content-between align-items-center" style="background-color: var(--theme-primary);">
+                <h6 class="mb-0 small fw-bold"><i class="bi bi-person-vcard me-1"></i> 1. Cliente</h6>
                 <div>
-                    <button class="btn btn-sm btn-light text-dark py-0 me-1 fw-bold shadow-sm" onclick="window.abrirDirectorioClientes()" title="Ver lista de todos los clientes">
-                        <i class="bi bi-journal-bookmark-fill text-primary"></i> Directorio
+                    <button class="btn btn-sm btn-light py-0 me-1 fw-bold shadow-sm" style="color: var(--theme-primary);" onclick="window.abrirDirectorioClientes()" title="Ver lista de todos los clientes">
+                        <i class="bi bi-journal-bookmark-fill"></i> Directorio
                     </button>
-                    <button class="btn btn-sm btn-info text-primary py-0" onclick="window.guardarSoloCliente()" title="Guardar cambios de contacto">
+                    <button class="btn btn-sm btn-warning text-dark py-0 fw-bold shadow-sm" onclick="window.guardarSoloCliente()" title="Guardar cambios de contacto">
                         <i class="bi bi-save"></i> Guardar
                     </button>
                 </div>
@@ -165,108 +125,106 @@
             <div class="card-body bg-light">
                 <div class="row g-2">
                     <div class="col-12">
-                        <label class="small text-muted mb-1">RUC / DNI *</label>
+                        <label class="small text-muted mb-1 fw-bold">RUC / DNI *</label>
                         <div class="d-flex align-items-center w-100">
                             <div style="flex-grow: 1; min-width: 0;"> 
                                 <select id="cli_doc_select" style="width: 100%;"><option></option></select>
                             </div>
-                            <button class="btn btn-dark btn-sm ms-1" type="button" id="btnBuscarSunat" onclick="window.buscarClienteApi(false)" title="Consultar SUNAT"><i class="bi bi-search"></i></button>
-                            <button class="btn btn-outline-danger btn-sm ms-1" type="button" onclick="window.confirmarForzado()" title="Forzar actualización"><i class="bi bi-cloud-arrow-down-fill"></i></button>
+                            <button class="btn btn-dark btn-sm ms-1 shadow-sm" type="button" id="btnBuscarSunat" onclick="window.buscarClienteApi(false)" title="Consultar SUNAT"><i class="bi bi-search"></i></button>
+                            <button class="btn btn-outline-danger btn-sm ms-1 bg-white shadow-sm" type="button" onclick="window.confirmarForzado()" title="Forzar actualización"><i class="bi bi-cloud-arrow-down-fill"></i></button>
                         </div>
                     </div>
                     <div class="col-12">
-                        <label class="small text-muted mb-1">Nombre / Razón Social</label>
-                        <input type="text" id="cli_nom" class="form-control form-control-sm bg-white fw-bold" readonly>
+                        <label class="small text-muted mb-1 fw-bold">Nombre / Razón Social</label>
+                        <input type="text" id="cli_nom" class="form-control form-control-sm bg-white fw-bold shadow-sm border-0" readonly>
                     </div>
                     <div class="col-12">
-                        <label class="small text-muted mb-1">Dirección Fiscal (SUNAT)</label>
-                        <input type="text" id="cli_dir" class="form-control form-control-sm bg-white" readonly>
+                        <label class="small text-muted mb-1 fw-bold">Dirección Fiscal (SUNAT)</label>
+                        <input type="text" id="cli_dir" class="form-control form-control-sm bg-white shadow-sm border-0" readonly>
                     </div>
                     <div class="col-6">
-                        <label class="small text-muted mb-1">Teléfono (Editable)</label>
-                        <input type="text" id="cli_tel" class="form-control form-control-sm border-success" placeholder="Ingrese teléfono...">
+                        <label class="small text-muted mb-1 fw-bold">Teléfono (Editable)</label>
+                        <input type="text" id="cli_tel" class="form-control form-control-sm border-success shadow-sm" placeholder="Ingrese teléfono...">
                     </div>
                     <div class="col-6">
-                        <label class="small text-muted mb-1">Atención (Contacto)</label>
-                        <input type="text" id="cli_atte" class="form-control form-control-sm" placeholder="Ej: Sr. Juan">
+                        <label class="small text-muted mb-1 fw-bold">Atención (Contacto)</label>
+                        <input type="text" id="cli_atte" class="form-control form-control-sm shadow-sm" placeholder="Ej: Sr. Juan">
                     </div>
                     <div class="col-12">
-                        <label class="small text-muted mb-1">O/C Cliente (Opcional)</label>
-                        <input type="text" id="cli_oc" class="form-control form-control-sm" placeholder="N° Orden Compra">
+                        <label class="small text-muted mb-1 fw-bold">O/C Cliente (Opcional)</label>
+                        <input type="text" id="cli_oc" class="form-control form-control-sm shadow-sm" placeholder="N° Orden Compra">
                     </div>
                     
                     <input type="hidden" id="hidden_estado">
                     <input type="hidden" id="hidden_condicion">
 
-                    <div class="col-12 d-flex gap-2 mt-2 align-items-center">
+                    <div class="col-12 d-flex gap-2 mt-3 align-items-center bg-white p-2 border rounded shadow-sm">
                         <span id="badge_estado" class="badge bg-secondary opacity-50">Estado: -</span>
                         <span id="badge_condicion" class="badge bg-secondary opacity-50">Condición: -</span>
                         
                         <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2 fw-bold shadow-sm" onclick="window.abrirPortalSunat()" title="Verificar Deudas Coactivas en SUNAT directamente">
                             <i class="bi bi-shield-exclamation"></i> Ver Deudas
                         </button>
-
                         <small class="text-muted ms-auto fst-italic" id="lbl_origen_datos" style="font-size: 0.7rem;"></small>
                     </div>
                 </div>
             </div>
         </div>
 
-        <div class="card shadow-sm border-0 m-0">
-            <div class="card-header bg-light py-2">
-                <h6 class="mb-0 small fw-bold text-dark"><i class="bi bi-truck"></i> 3. Datos de Entrega</h6>
+        <div class="card shadow-sm border-0 m-0 overflow-hidden">
+            <div class="card-header bg-light py-2 border-bottom">
+                <h6 class="mb-0 small fw-bold text-dark"><i class="bi bi-truck" style="color: var(--theme-primary);"></i> 3. Datos de Entrega</h6>
             </div>
             <div class="card-body py-2">
                 <div class="row g-2 align-items-center">
                     <div class="col-6">
-                        <label class="small fw-bold">Fecha Entrega</label>
-                        <div class="input-group input-group-sm">
+                        <label class="small fw-bold text-muted">Fecha Entrega</label>
+                        <div class="input-group input-group-sm shadow-sm">
                             <input type="date" id="inputFechaEntrega" class="form-control border-warning">
-                            <span class="input-group-text bg-white text-muted" title="Limpiar" style="cursor:pointer" onclick="document.getElementById('inputFechaEntrega').value = ''"><i class="bi bi-x"></i></span>
+                            <span class="input-group-text bg-white text-muted border-warning" title="Limpiar" style="cursor:pointer" onclick="document.getElementById('inputFechaEntrega').value = ''"><i class="bi bi-x"></i></span>
                         </div>
-                        <div class="form-text fst-italic text-muted" style="font-size: 0.7rem;">Si se deja vacío: <strong>"A COORDINAR"</strong></div>
+                        <div class="form-text fst-italic text-muted" style="font-size: 0.7rem;">Vacío = <strong>"A COORDINAR"</strong></div>
                     </div>
                     <div class="col-6">
-                        <label class="small">Tipo Entrega</label>
-                        <select class="form-select form-select-sm" id="selectEntrega" onchange="window.toggleDireccionEntrega()">
+                        <label class="small fw-bold text-muted">Tipo Entrega</label>
+                        <select class="form-select form-select-sm shadow-sm border-secondary" id="selectEntrega" onchange="window.toggleDireccionEntrega()">
                             <option value="Recojo">Recojo Tienda</option>
                             <option value="Envio">Envío Domicilio/Obra</option>
                         </select>
                     </div>
                     
                     <div class="col-12" id="divDireccionEntrega" style="display: none;">
-                        <label class="small fw-bold text-primary">Dirección de Envío</label>
-                        <div class="input-group input-group-sm">
-                            <span class="input-group-text bg-white"><i class="bi bi-geo-alt-fill text-danger"></i></span>
-                            <input type="text" id="inputDireccionEntrega" class="form-control form-control-sm border-primary" placeholder="Confirme o edite la dirección...">
+                        <label class="small fw-bold" style="color: var(--theme-primary);">Dirección de Envío</label>
+                        <div class="input-group input-group-sm shadow-sm">
+                            <span class="input-group-text bg-white" style="border-color: var(--theme-primary);"><i class="bi bi-geo-alt-fill text-danger"></i></span>
+                            <input type="text" id="inputDireccionEntrega" class="form-control form-control-sm" style="border-color: var(--theme-primary);" placeholder="Confirme o edite la dirección...">
                         </div>
                     </div>
 
-                    <!-- NUEVO: SELECTOR DE AGENCIA INTELIGENTE -->
                     <div class="col-6 mt-2">
                         <label class="small fw-bold text-dark">¿Agencia?</label>
-                        <select id="selectReqAgencia" class="form-select form-select-sm border-secondary" onchange="window.toggleAgencia()">
+                        <select id="selectReqAgencia" class="form-select form-select-sm border-secondary shadow-sm" onchange="window.toggleAgencia()">
                             <option value="NO" selected>❌ NO</option>
                             <option value="SI">✅ SÍ</option>
                         </select>
                     </div>
                     <div class="col-6 mt-2" id="divNombreAgencia" style="display: none;">
-                        <label class="small fw-bold text-primary">Nombre Agencia *</label>
-                        <input type="text" id="inputAgencia" class="form-control form-control-sm border-primary" placeholder="Ej: Shalom, Marvisur...">
+                        <label class="small fw-bold" style="color: var(--theme-primary);">Nombre Agencia *</label>
+                        <input type="text" id="inputAgencia" class="form-control form-control-sm shadow-sm" style="border-color: var(--theme-primary);" placeholder="Ej: Shalom, Marvisur...">
                     </div>
                 </div>
             </div>
         </div>
 
-        <div class="card shadow-sm border-0 m-0">
-            <div class="card-header bg-light py-2">
-                <h6 class="mb-0 small fw-bold text-dark"><i class="bi bi-sliders"></i> 4. Condiciones Comerciales</h6>
+        <div class="card shadow-sm border-0 m-0 overflow-hidden">
+            <div class="card-header bg-light py-2 border-bottom">
+                <h6 class="mb-0 small fw-bold text-dark"><i class="bi bi-sliders" style="color: var(--theme-primary);"></i> 4. Condiciones Comerciales</h6>
             </div>
             <div class="card-body py-2">
                 <div class="row g-2">
                     <div class="col-6">
                         <label class="small fw-bold text-muted">Condición de Pago</label>
-                        <select id="inputCondicionPago" class="form-select form-select-sm">
+                        <select id="inputCondicionPago" class="form-select form-select-sm shadow-sm">
                             <option value="Contado">Contado</option>
                             <option value="Contra-entrega">Contra-entrega</option>
                             <option value="Crédito 7 días">Crédito 7 días</option>
@@ -277,7 +235,7 @@
                     </div>
                     <div class="col-6">
                         <label class="small fw-bold text-muted">Validez Oferta</label>
-                        <select id="inputValidez" class="form-select form-select-sm">
+                        <select id="inputValidez" class="form-select form-select-sm shadow-sm">
                             <option value="5 días">5 días</option>
                             <option value="7 días">7 días</option>
                             <option value="15 días">15 días</option>
@@ -286,8 +244,8 @@
                     </div>
 
                     <div class="col-6">
-                        <label class="small fw-bold text-primary"> Certificado de Calidad</label>
-                        <select id="inputCalidad" class="form-select form-select-sm border-primary fw-bold" required>
+                        <label class="small fw-bold" style="color: var(--theme-primary);"> Certificado de Calidad</label>
+                        <select id="inputCalidad" class="form-select form-select-sm fw-bold shadow-sm" style="border-color: var(--theme-primary); color: var(--theme-primary);" required>
                             <option value="" disabled selected>¿Requiere Certificado?</option>
                             <option value="SI">✅ SÍ REQUIERE</option>
                             <option value="NO">❌ NO REQUIERE</option>
@@ -295,7 +253,7 @@
                     </div>
                     <div class="col-6">
                         <label class="small fw-bold text-danger">Penalidad Retraso *</label>
-                        <select id="inputPenalidad" class="form-select form-select-sm border-danger fw-bold" required>
+                        <select id="inputPenalidad" class="form-select form-select-sm border-danger fw-bold text-danger shadow-sm" required>
                             <option value="" disabled selected>¿Aplica Penalidad?</option>
                             <option value="SI">⚠️ SÍ APLICA</option>
                             <option value="NO">❌ NO APLICA</option>
@@ -304,7 +262,7 @@
 
                     <div class="col-12 mt-2">
                         <label class="small fw-bold text-muted">Observaciones Adicionales</label>
-                        <textarea id="inputObservacion" class="form-control form-control-sm" rows="2" placeholder="Ej: Mercadería puesta en almacén..."></textarea>
+                        <textarea id="inputObservacion" class="form-control form-control-sm shadow-sm" rows="2" placeholder="Ej: Mercadería puesta en almacén..."></textarea>
                     </div>
                 </div>
             </div>
@@ -314,40 +272,40 @@
 
     <div class="col-lg-8 col-md-12 d-flex flex-column gap-3">
 
-        <div class="card shadow-sm border-0 m-0">
-            <div class="card-header bg-secondary text-white py-2 d-flex justify-content-between align-items-center">
-                <h6 class="mb-0 small fw-bold"><i class="bi bi-box-seam"></i> 2. Agregar Item</h6>
-                <div class="btn-group btn-group-sm" role="group">
+        <div class="card shadow-sm border-0 m-0 overflow-hidden">
+            <div class="card-header text-white py-2 d-flex justify-content-between align-items-center" style="background-color: var(--theme-primary);">
+                <h6 class="mb-0 small fw-bold"><i class="bi bi-box-seam me-1"></i> 2. Agregar Item a la Cotización</h6>
+                <div class="btn-group btn-group-sm bg-white rounded p-1 shadow-sm" role="group">
                     <input type="radio" class="btn-check" name="modeOption" id="modeProd" autocomplete="off" checked onclick="cambiarModo('PRODUCTO')">
-                    <label class="btn btn-outline-light" for="modeProd">Producto</label>
+                    <label class="btn btn-outline-primary border-0 fw-bold rounded-start" for="modeProd">Producto</label>
             
                     <input type="radio" class="btn-check" name="modeOption" id="modeFab" autocomplete="off" onclick="cambiarModo('FABRICACION')">
-                    <label class="btn btn-outline-light" for="modeFab">Fabricación</label>
+                    <label class="btn btn-outline-primary border-0 fw-bold" for="modeFab">Fabricación</label>
             
                     <input type="radio" class="btn-check" name="modeOption" id="modeGlb" autocomplete="off" onclick="cambiarModo('GLB')">
-                    <label class="btn btn-outline-light" for="modeGlb">Armado (GLB)</label>
+                    <label class="btn btn-outline-primary border-0 fw-bold rounded-end" for="modeGlb">Armado (GLB)</label>
                 </div>
             </div>
 
-            <div class="card-body">
+            <div class="card-body bg-light">
                 <div id="panelProducto">
                     <div class="row g-2 mb-2">
                         <div class="col-md-4 col-12">
                             <label class="small text-muted mb-1 fw-bold">1. Familia</label>
-                            <select class="form-select form-select-sm" id="filtroFamiliaVenta" onchange="window.cargarCalidadesVenta()">
+                            <select class="form-select form-select-sm shadow-sm border-secondary" id="filtroFamiliaVenta" onchange="window.cargarCalidadesVenta()">
                                 <option value="" selected>-- Seleccione --</option>
                                 {% for c in categorias %} <option value="{{ c.id }}" data-nombre="{{ c.nombre }}">{{ c.nombre }}</option> {% endfor %}
                             </select>
                         </div>
                         <div class="col-md-4 col-12">
                             <label class="small text-muted mb-1 fw-bold">2. Calidad</label>
-                            <select class="form-select form-select-sm" id="filtroCalidadVenta" disabled onchange="window.cargarProductos()">
+                            <select class="form-select form-select-sm shadow-sm border-secondary" id="filtroCalidadVenta" disabled onchange="window.cargarProductos()">
                                 <option value="">-- Espere familia --</option>
                             </select>
                         </div>
                         <div class="col-md-4 col-12">
-                            <label class="small text-muted mb-1 fw-bold">3. Buscar Producto</label>
-                            <select class="form-select" id="productoSelect" style="width: 100%;">
+                            <label class="small text-muted mb-1 fw-bold" style="color: var(--theme-primary) !important;">3. Buscar Producto</label>
+                            <select class="form-select shadow-sm" id="productoSelect" style="width: 100%;">
                                 <option value="" disabled selected>Escriba para buscar...</option>
                             </select>
                         </div>
@@ -358,59 +316,59 @@
                     <div class="row g-2 mb-2 align-items-end">
                         <div class="col-md-5">
                             <label class="small fw-bold text-muted">1. Tipo de Servicio</label>
-                            <div class="input-group input-group-sm">
-                                <select id="selTipoServicio" class="form-select fw-bold text-primary">
+                            <div class="input-group input-group-sm shadow-sm">
+                                <select id="selTipoServicio" class="form-select fw-bold text-primary border-secondary">
                                     <option value="SRV-GEN" data-titulo="SERVICIO GENERAL">-- CARGANDO --</option>
                                 </select>
-                                <button class="btn btn-outline-success" type="button" onclick="abrirModalNuevoServicio()" title="Crear Nuevo Tipo">
+                                <button class="btn btn-success" type="button" onclick="abrirModalNuevoServicio()" title="Crear Nuevo Tipo">
                                     <i class="bi bi-plus-lg"></i>
                                 </button>
                             </div>
                         </div>
                         <div class="col-md-7">
                             <label class="small fw-bold text-muted">2. Descripción (EETT)</label>
-                            <textarea id="fabDesc" class="form-control form-control-sm text-uppercase" rows="1" placeholder="Ej: ARANDELA PLANA..."></textarea>
+                            <textarea id="fabDesc" class="form-control form-control-sm text-uppercase shadow-sm border-secondary" rows="1" placeholder="Ej: ARANDELA PLANA..."></textarea>
                         </div>
                     </div>
                 </div>
             
                 <div id="panelGLB" class="d-none">
                     <div class="d-flex gap-3 align-items-center mb-2">
-                        <button class="btn btn-outline-dark btn-sm w-50" onclick="abrirModalGLB()">
-                            <i class="bi bi-layers-half"></i> Configurar Kit / Armado
+                        <button class="btn btn-dark btn-sm w-50 shadow-sm fw-bold" onclick="abrirModalGLB()">
+                            <i class="bi bi-layers-half me-1"></i> Configurar Kit / Armado
                         </button>
-                        <div id="glbPreview" class="small text-muted fst-italic w-50 border rounded p-1 bg-light m-0">Ningún kit configurado aún.</div>
+                        <div id="glbPreview" class="small text-muted fst-italic w-50 border rounded p-2 bg-white m-0 shadow-sm">Ningún kit configurado aún.</div>
                     </div>
                 </div>
 
-                <div class="row g-2 align-items-end mt-2 pt-2 border-top">
+                <div class="row g-2 align-items-end mt-2 pt-3 border-top">
                     <div class="col-md-2 col-4">
-                        <label class="small text-muted">Stock</label>
-                        <input type="text" id="info_stock" class="form-control form-control-sm bg-light fw-bold text-center" readonly>
+                        <label class="small text-muted fw-bold">Stock</label>
+                        <input type="text" id="info_stock" class="form-control form-control-sm bg-white fw-bold text-center border-0 shadow-sm" readonly>
                     </div>
                     <div class="col-md-2 col-4">
                         <label class="small text-muted fw-bold">Cant.</label>
-                        <input type="number" id="cantidadInput" class="form-control form-control-sm border-primary fw-bold text-center" 
+                        <input type="number" id="cantidadInput" class="form-control form-control-sm fw-bold text-center shadow-sm" style="border: 2px solid var(--theme-primary);" 
                                value="1" min="1" 
                                onkeydown="return filtroTeclas(event, 'entero')"
                                oninput="validarEntradaString(this, 0)">
                     </div>
                     <div class="col-md-3 col-4">
-                        <label class="small text-muted fw-bold text-primary">P. Unit (<span id="lblMonedaUnit">USD</span>)</label>
-                        <div class="input-group input-group-sm">
-                            <span class="input-group-text" id="simboloMonedaInput">$</span>
-                            <input type="number" id="precioManualInput" class="form-control fw-bold text-end" 
+                        <label class="small fw-bold" style="color: var(--theme-primary);">P. Unit (<span id="lblMonedaUnit">USD</span>)</label>
+                        <div class="input-group input-group-sm shadow-sm border rounded" style="border-color: var(--theme-primary) !important;">
+                            <span class="input-group-text bg-light border-0" id="simboloMonedaInput" style="color: var(--theme-primary);">$</span>
+                            <input type="number" id="precioManualInput" class="form-control fw-bold text-end border-0" 
                                    step="any" onkeydown="return filtroTeclas(event, 'decimal')" oninput="validarEntradaString(this, 6)">
                             <input type="hidden" id="precioBaseHidden"> 
                         </div>
                     </div>
-                    <div class="col-md-2 col-6 d-flex flex-column text-center">
-                        <small class="text-muted" style="font-size: 0.7rem;">Subtotal Límite</small>
+                    <div class="col-md-2 col-6 d-flex flex-column text-center bg-white border rounded p-1 shadow-sm">
+                        <small class="text-muted fw-bold" style="font-size: 0.65rem;">SUBTOTAL LÍMITE</small>
                         <strong class="text-dark fs-6" id="txt_subtotal_previo">$ 0.00</strong>
                     </div>
                     <div class="col-md-3 col-6">
-                        <button class="btn btn-success w-100 btn-sm fw-bold h-100" id="btnAgregar" disabled>
-                            <i class="bi bi-plus-lg"></i> AGREGAR A LA LISTA
+                        <button class="btn w-100 btn-sm fw-bold h-100 shadow-sm text-white" id="btnAgregar" style="background-color: var(--theme-primary);" disabled>
+                            <i class="bi bi-plus-circle-fill me-1"></i> AÑADIR A LISTA
                         </button>
                     </div>
                 </div>

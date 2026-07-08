@@ -12,183 +12,188 @@
     <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
     <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+
+    <style>
+        :root {
+            /* Colores por defecto (Se sobrescriben en cada inventario) */
+            --theme-primary: #0B3D91; /* Azul corporativo oscuro */
+            --theme-sidebar-bg: #111827;
+            --theme-sidebar-hover: rgba(255, 255, 255, 0.1);
+        }
+
+        body { font-family: 'Inter', sans-serif; background-color: #f4f6f9; }
+
+        /* Lógica del Sidebar Fijo y Colapsable */
+        .sidebar {
+            width: 260px;
+            height: 100vh;
+            position: fixed;
+            top: 0; left: 0;
+            background-color: var(--theme-sidebar-bg);
+            color: #fff;
+            transition: width 0.3s ease;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+        }
+        .main-content {
+            margin-left: 260px;
+            transition: margin-left 0.3s ease;
+            padding: 20px;
+        }
+        .topbar {
+            background: #fff;
+            padding: 15px 20px;
+            margin: -20px -20px 20px -20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .nav-link { color: #cbd5e1; display: flex; align-items: center; padding: 10px 15px; text-decoration: none; transition: 0.2s; white-space: nowrap; }
+        .nav-link:hover, .nav-link.active { background-color: var(--theme-sidebar-hover); color: #fff; border-radius: 6px; }
+        .nav-title { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px; color: #6b7280; padding: 15px 15px 5px; font-weight: bold; white-space: nowrap; }
+
+        /* --- CLASES PARA CUANDO SE CONTRAE EL MENÚ --- */
+        .sidebar-toggled .sidebar { width: 70px; }
+        .sidebar-toggled .main-content { margin-left: 70px; }
+        
+        /* Ocultar textos cuando está contraído */
+        .sidebar-toggled .sidebar .brand-text,
+        .sidebar-toggled .sidebar .nav-title,
+        .sidebar-toggled .sidebar .nav-link span,
+        .sidebar-toggled .sidebar .bi-chevron-down,
+        .sidebar-toggled .sidebar .user-info-text,
+        .sidebar-toggled .sidebar .bi-chevron-up {
+            display: none !important;
+        }
+        
+        /* Centrar íconos cuando está contraído */
+        .sidebar-toggled .sidebar-brand { justify-content: center; padding: 15px 0; }
+        .sidebar-toggled .nav-link { justify-content: center; padding: 15px 0; }
+        .sidebar-toggled .nav-link i { margin: 0 !important; font-size: 1.3rem; }
+        
+        .sidebar-brand { padding: 20px; display: flex; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.1); white-space: nowrap; }
+        .sidebar-brand img { max-height: 35px; width: auto; transition: 0.3s; }
+    </style>
 </head>
 <body>
 
     {% if session.get('user_id') %}
-    
     <div class="mobile-overlay" onclick="toggleSidebar()"></div>
 
     <nav class="sidebar" id="sidebar">
         <div class="sidebar-brand">
-            <i class="bi bi-box-seam-fill text-info me-2 fs-4"></i> 
-            <span>ANCLAJES Y PERNOS SAC</span>
+            <img src="{{ url_for('static', filename='img/logo.png') }}" alt="Logo" class="me-2" onerror="this.src='https://via.placeholder.com/35x35?text=Logo'">
+            <span class="fw-bold fs-6 brand-text">ANCLAJES SAC</span>
         </div>
 
-        <div class="overflow-auto flex-grow-1">
+        <div class="overflow-auto flex-grow-1 px-2">
             <div class="nav flex-column py-3">
                 <div class="nav-title">Principal</div>
                 <a href="{{ url_for('index') }}" class="nav-link {{ 'active' if request.endpoint == 'index' }}">
-                    <i class="bi bi-grid-1x2"></i> <span class="ms-2">Dashboard</span>
+                    <i class="bi bi-grid-1x2"></i> <span>Dashboard</span>
                 </a>
 
                 <a class="nav-link" data-bs-toggle="collapse" href="#collapseInventario" role="button" aria-expanded="{{ 'true' if request.endpoint in ['inventario', 'inventario_importbolts', 'crear_producto', 'editar_producto'] else 'false' }}" aria-controls="collapseInventario">
-                    <i class="bi bi-boxes"></i> <span class="ms-2">Gestión de Inventarios</span>
+                    <i class="bi bi-boxes"></i> <span>Gestión de Inventarios</span>
                     <i class="bi bi-chevron-down ms-auto" style="font-size: 0.8rem;"></i>
                 </a>
                 
                 <div class="collapse {{ 'show' if request.endpoint in ['inventario', 'inventario_importbolts', 'crear_producto', 'editar_producto'] else '' }}" id="collapseInventario">
-                    <ul class="nav flex-column ms-3 mb-2" style="border-left: 2px solid rgba(255,255,255,0.1);">
+                    <ul class="nav flex-column ms-2 mb-2" style="border-left: 1px solid rgba(255,255,255,0.1);">
                         <li>
-                            <a href="{{ url_for('inventario') }}" class="nav-link py-2 {{ 'active' if request.endpoint == 'inventario' }}">
-                                <i class="bi bi-circle fs-6 me-2"></i> Inventario Anclajes
+                            <a href="{{ url_for('inventario') }}" class="nav-link py-2 ps-3 {{ 'active' if request.endpoint == 'inventario' }}">
+                                <i class="bi bi-circle fs-6"></i> <span class="ms-2">Inv. Anclajes</span>
                             </a>
                         </li>
                         <li>
-                            <a href="{{ url_for('inventario_importbolts') }}" class="nav-link py-2 {{ 'active' if request.endpoint == 'inventario_importbolts' }}">
-                                <i class="bi bi-nut fs-6 me-2"></i> Inventario ImportBolts
+                            <a href="{{ url_for('inventario_importbolts') }}" class="nav-link py-2 ps-3 {{ 'active' if request.endpoint == 'inventario_importbolts' }}">
+                                <i class="bi bi-nut fs-6"></i> <span class="ms-2">Inv. ImportBolts</span>
                             </a>
                         </li>
-                        {% if session.get('role') in ['admin', 'almacen'] %}
-                        {% endif %}
                     </ul>
                 </div>
+
                 {% if session.get('role') in ['admin', 'vendedor', 'administracion'] %}
                 <div class="nav-title">Comercial</div>
                 <a href="{{ url_for('nueva_venta') }}" class="nav-link {{ 'active' if request.endpoint == 'nueva_venta' }}">
-                    <i class="bi bi-cart-plus"></i> <span class="ms-2">Nueva Cotización</span>
+                    <i class="bi bi-cart-plus"></i> <span>Nueva Cotización</span>
                 </a>
                 <a href="{{ url_for('historial_ventas') }}" class="nav-link {{ 'active' if request.endpoint == 'historial_ventas' }}">
-                    <i class="bi bi-receipt"></i> <span class="ms-2">Gestión Comercial</span>
+                    <i class="bi bi-receipt"></i> <span>Gestión Comercial</span>
                 </a>
                 {% endif %}
 
                 {% if session.get('role') in ['admin', 'almacen'] %}
                 <div class="nav-title">Logística</div>
                 <a href="{{ url_for('ver_kardex') }}" class="nav-link {{ 'active' if request.endpoint == 'ver_kardex' }}">
-                    <i class="bi bi-clock-history"></i> <span class="ms-2">Kardex</span>
+                    <i class="bi bi-clock-history"></i> <span>Kardex</span>
                 </a>
                 <a href="{{ url_for('picking_almacen') }}" class="nav-link {{ 'active' if request.endpoint == 'picking_almacen' }}">
-                    <i class="bi bi-box-arrow-up-right"></i> <span class="ms-2">Salidas (Picking)</span>
+                    <i class="bi bi-box-arrow-up-right"></i> <span>Salidas (Picking)</span>
                 </a>
                 {% endif %}
 
                 {% if session.get('role') == 'admin' %}
                 <div class="nav-title">Sistema</div>
                 <a href="{{ url_for('gestion_usuarios') }}" class="nav-link {{ 'active' if request.endpoint == 'gestion_usuarios' }}">
-                    <i class="bi bi-people"></i> <span class="ms-2">Usuarios</span>
+                    <i class="bi bi-people"></i> <span>Usuarios</span>
                 </a>
                 {% endif %}
-                
             </div>
         </div>
 
         <div class="border-top border-secondary border-opacity-25 p-3">
             <div class="dropup">
-                <a href="#" class="d-flex align-items-center text-decoration-none dropdown-toggle text-white" id="dropdownUser1" data-bs-toggle="dropdown" aria-expanded="false">
-                    <div class="rounded-circle bg-secondary d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0 border border-secondary" style="width: 32px; height: 32px;">
+                <a href="#" class="d-flex align-items-center text-decoration-none dropdown-toggle text-white w-100" id="dropdownUser1" data-bs-toggle="dropdown" aria-expanded="false">
+                    <div class="rounded-circle bg-primary d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0" style="width: 32px; height: 32px;">
                         {{ session.get('nombre')[0]|upper }}
                     </div>
                     <div class="ms-2 user-info-text overflow-hidden flex-grow-1">
                         <div class="text-white fw-medium text-truncate small">{{ session.get('nombre') }}</div>
                         <div class="text-white-50 small text-uppercase" style="font-size: 0.65rem;">{{ session.get('role') }}</div>
                     </div>
-                    <i class="bi bi-chevron-up text-white-50 small ms-2"></i>
+                    <i class="bi bi-chevron-up text-white-50 small"></i>
                 </a>
                 
-                <ul class="dropdown-menu dropdown-menu-dark shadow-lg mb-2" aria-labelledby="dropdownUser1">
+                <ul class="dropdown-menu dropdown-menu-dark shadow-lg mb-2 w-100" aria-labelledby="dropdownUser1">
                     <li><h6 class="dropdown-header text-uppercase small opacity-50">Mi Cuenta</h6></li>
-                    <li>
-                        <a class="dropdown-item py-2" href="{{ url_for('perfil_usuario') }}">
-                            <i class="bi bi-person-gear me-2 text-info"></i> Mi Perfil
-                        </a>
-                    </li>
+                    <li><a class="dropdown-item py-2" href="{{ url_for('perfil_usuario') }}"><i class="bi bi-person-gear me-2 text-info"></i> Mi Perfil</a></li>
                     <li><hr class="dropdown-divider border-secondary opacity-25"></li>
-                    <li>
-                        <a class="dropdown-item py-2 text-danger" href="{{ url_for('logout') }}">
-                            <i class="bi bi-box-arrow-right me-2"></i> Cerrar Sesión
-                        </a>
-                    </li>
+                    <li><a class="dropdown-item py-2 text-danger" href="{{ url_for('logout') }}"><i class="bi bi-box-arrow-right me-2"></i> Cerrar Sesión</a></li>
                 </ul>
             </div>
         </div>
     </nav>
 
     <main class="main-content">
-        <header class="topbar">
+        <header class="topbar rounded-bottom shadow-sm">
             <div class="d-flex align-items-center gap-3">
                 <button class="btn btn-light border btn-sm" id="btnToggle" onclick="toggleSidebar()">
                     <i class="bi bi-list fs-5"></i>
                 </button>
                 <div>
-                    <h5 class="mb-0 text-dark fw-bold">
-                        {% block title %}ANCLAJES Y PERNOS SAC ERP{% endblock %}
+                    <h5 class="mb-0 text-dark fw-bold" style="color: var(--theme-primary) !important;">
+                        {% block title %}ERP CORPORATIVO{% endblock %}
                     </h5>
-                    <small class="text-muted d-none d-md-block">{% block subtitle %}{% endblock %}</small>
+                    <small class="text-muted d-none d-md-block fw-medium">{% block subtitle %}{% endblock %}</small>
                 </div>
             </div>
             
             <div class="d-flex gap-3">
                 <div class="dropdown">
-                    <a class="btn btn-light border bg-white text-muted position-relative" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                    <a class="btn btn-light border bg-white text-muted position-relative" href="#" role="button" data-bs-toggle="dropdown">
                         <i class="bi bi-bell-fill"></i>
-                        
                         {% if alertas_stock > 0 %}
-                        <span class="position-absolute top-0 start-100 translate-middle p-1 bg-danger border border-light rounded-circle">
-                            <span class="visually-hidden">Alertas</span>
-                        </span>
+                        <span class="position-absolute top-0 start-100 translate-middle p-1 bg-danger border border-light rounded-circle"></span>
                         {% endif %}
                     </a>
-
-                    <ul class="dropdown-menu dropdown-menu-end shadow border-0 p-0" style="width: 320px; max-height: 400px; overflow-y: auto;">
-                        <li class="bg-light p-2 border-bottom d-flex justify-content-between align-items-center">
-                            <span class="small fw-bold text-uppercase text-muted ms-2">Actividad Reciente</span>
-                            <span class="badge bg-primary rounded-pill">{{ historial|length }}</span>
-                        </li>
-
-                        {% if alertas_stock > 0 %}
-                        <li>
-                            <a class="dropdown-item py-2 bg-danger bg-opacity-10" href="{{ url_for('inventario', stock_bajo='on') }}">
-                                <div class="d-flex align-items-center">
-                                    <i class="bi bi-exclamation-triangle-fill text-danger fs-4 me-3"></i>
-                                    <div>
-                                        <strong class="text-danger small">Stock Crítico Detectado</strong>
-                                        <div class="text-muted" style="font-size: 0.75rem;">
-                                            {{ alertas_stock }} productos requieren reposición.
-                                        </div>
-                                    </div>
-                                </div>
-                            </a>
-                        </li>
-                        {% endif %}
-                        
-                        {% if historial %}
-                            <li><hr class="dropdown-divider my-0"></li>
-                            {% for log in historial %}
-                            <li>
-                                <div class="dropdown-item py-2" style="cursor: default;">
-                                    <div class="d-flex">
-                                        <i class="{{ log.icono }} {{ log.color }} fs-5 me-3 mt-1"></i>
-                                        <div>
-                                            <div class="text-dark small fw-medium">{{ log.accion }}</div>
-                                            <div class="text-muted" style="font-size: 0.65rem;">
-                                                {{ log.usuario.username }} • {{ log.fecha.strftime('%d/%m %H:%M') }}
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </li>
-                            {% endfor %}
-                        {% else %}
-                            <li class="text-center py-4 text-muted small">
-                                <i class="bi bi-clock-history d-block mb-1 fs-4"></i>
-                                Sin actividad reciente
-                            </li>
-                        {% endif %}
-                    </ul>
-                </div>
+                    </div>
             </div>
-            </header>
+        </header>
 
         <div class="container-fluid px-0">
             <div id="flash-messages" data-messages='{{ get_flashed_messages() | tojson }}'></div>
@@ -204,14 +209,8 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // Lógica del Menú
         function toggleSidebar() {
-            const body = document.body;
-            if (window.innerWidth <= 768) {
-                body.classList.toggle('sidebar-mobile-show');
-            } else {
-                body.classList.toggle('sidebar-toggled');
-            }
+            document.body.classList.toggle('sidebar-toggled');
         }
 
         // Alertas SweetAlert
@@ -221,15 +220,7 @@
                 const messages = JSON.parse(flashDiv.dataset.messages);
                 messages.forEach(msg => {
                     const isError = msg.toLowerCase().includes('error') || msg.toLowerCase().includes('⛔');
-                    Swal.fire({
-                        toast: true,
-                        position: 'top-end',
-                        icon: isError ? 'error' : 'success',
-                        title: msg,
-                        showConfirmButton: false,
-                        timer: 3000,
-                        timerProgressBar: true
-                    });
+                    Swal.fire({ toast: true, position: 'top-end', icon: isError ? 'error' : 'success', title: msg, showConfirmButton: false, timer: 3000, timerProgressBar: true });
                 });
             }
         });
