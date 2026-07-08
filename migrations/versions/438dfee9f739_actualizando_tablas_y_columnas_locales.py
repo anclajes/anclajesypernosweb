@@ -61,11 +61,13 @@ def upgrade():
     sa.ForeignKeyConstraint(['user_id'], ['user.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
-    with op.batch_alter_table('order_detail', schema=None) as batch_op:
-        batch_op.add_column(sa.Column('precio_base', sa.Float(), nullable=True))
-        batch_op.add_column(sa.Column('desc_tipo', sa.String(length=10), nullable=True))
-        batch_op.add_column(sa.Column('desc_valor', sa.Float(), nullable=True))
-        batch_op.add_column(sa.Column('desc_label', sa.String(length=100), nullable=True))
+
+    # YA EXISTEN EN PRODUCCIÓN - no re-agregar
+    # with op.batch_alter_table('order_detail', schema=None) as batch_op:
+    #     batch_op.add_column(sa.Column('precio_base', sa.Float(), nullable=True))
+    #     batch_op.add_column(sa.Column('desc_tipo', sa.String(length=10), nullable=True))
+    #     batch_op.add_column(sa.Column('desc_valor', sa.Float(), nullable=True))
+    #     batch_op.add_column(sa.Column('desc_label', sa.String(length=100), nullable=True))
 
     with op.batch_alter_table('product', schema=None) as batch_op:
         batch_op.alter_column('nombre',
@@ -108,11 +110,11 @@ def downgrade():
                type_=sa.VARCHAR(length=200),
                existing_nullable=False)
 
-    with op.batch_alter_table('order_detail', schema=None) as batch_op:
-        batch_op.drop_column('desc_label')
-        batch_op.drop_column('desc_valor')
-        batch_op.drop_column('desc_tipo')
-        batch_op.drop_column('precio_base')
+    # with op.batch_alter_table('order_detail', schema=None) as batch_op:
+    #     batch_op.drop_column('desc_label')
+    #     batch_op.drop_column('desc_valor')
+    #     batch_op.drop_column('desc_tipo')
+    #     batch_op.drop_column('precio_base')
 
     op.drop_table('product_movement_importbolts')
     op.drop_table('product_importbolts')
