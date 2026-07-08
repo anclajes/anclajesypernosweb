@@ -634,9 +634,19 @@
 
     
 
+    // Función auxiliar para decodificar entidades HTML como &quot;
+    function decodificarHTML(html) {
+        let txt = document.createElement("textarea");
+        txt.innerHTML = html;
+        return txt.value;
+    }
+
     function abrirEditar(id, nombre, stock, punidad, pcaja, ubicacion, categoria, calidad, stockMin, estado) {
         document.getElementById('edit_id').value = id;
-        document.getElementById('edit_nombre').value = nombre;
+        
+        // AQUÍ ESTÁ LA MAGIA: decodificamos el nombre antes de asignarlo
+        document.getElementById('edit_nombre').value = decodificarHTML(nombre);
+        
         document.getElementById('edit_stock').value = stock;
         document.getElementById('edit_stock_min').value = stockMin; 
         document.getElementById('edit_punidad').value = punidad;
@@ -648,7 +658,7 @@
         document.getElementById('edit_url_origen').value = window.location.href;
 
         originalData = {
-            nombre: nombre,
+            nombre: decodificarHTML(nombre), // También lo guardamos decodificado aquí
             ubicacion: (ubicacion && ubicacion !== 'None') ? ubicacion : '',
             categoria: categoria,
             calidad: (calidad && calidad !== 'None') ? calidad : '',
