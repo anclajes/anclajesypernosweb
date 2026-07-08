@@ -17,29 +17,11 @@ depends_on = None
 
 
 def upgrade():
-    # Ya existen en producción, no se necesita re-agregar
-    # with op.batch_alter_table('product', schema=None) as batch_op:
-    #     batch_op.add_column(sa.Column('estado', sa.String(length=100), nullable=True))
-    #     batch_op.add_column(sa.Column('fecha_actualizacion', sa.DateTime(), nullable=True))
-    #     batch_op.add_column(sa.Column('actualizado_por', sa.String(length=100), nullable=True))
-
-    op.create_table('category_importbolts',
-        # ... (deja esto igual)
-    )
-    op.create_table('product_importbolts',
-        # ... (deja esto igual)
-    )
-    op.create_table('product_movement_importbolts',
-        # ... (deja esto igual)
-    )
+    # No-op: las columnas 'estado', 'fecha_actualizacion' y 'actualizado_por'
+    # de 'product' ya existen en producción. Las tablas de ImportBolts
+    # se crean en la migración 438dfee9f739.
+    pass
 
 
 def downgrade():
-    op.drop_table('product_movement_importbolts')
-    op.drop_table('product_importbolts')
-    op.drop_table('category_importbolts')
-
-    # with op.batch_alter_table('product', schema=None) as batch_op:
-    #     batch_op.drop_column('actualizado_por')
-    #     batch_op.drop_column('fecha_actualizacion')
-    #     batch_op.drop_column('estado')
+    pass
