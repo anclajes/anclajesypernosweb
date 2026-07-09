@@ -169,8 +169,8 @@
                         {% endif %}
                     </td>
                     
-                    <td class="text-end text-muted">{% if p.precio_unidad > 0 %} S/ {{ "%.2f"|format(p.precio_unidad) }} {% else %} - {% endif %}</td>
-                    <td class="text-end text-muted">{% if p.precio_caja > 0 %} S/ {{ "%.2f"|format(p.precio_caja) }} {% else %} - {% endif %}</td>
+                    <td class="text-end text-muted">{% if p.precio_unidad > 0 %} $ {{ "%.2f"|format(p.precio_unidad) }} {% else %} - {% endif %}</td>
+                    <td class="text-end text-muted">{% if p.precio_caja > 0 %} $ {{ "%.2f"|format(p.precio_caja) }} {% else %} - {% endif %}</td>
                     
                     <td class="text-center text-nowrap pe-3">
                         {% if session.get('role') == 'admin' %}
