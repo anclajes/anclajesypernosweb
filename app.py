@@ -20,6 +20,7 @@ from num2words import num2words
 from sqlalchemy import text
 from sqlalchemy import or_, func, text, extract, String
 from flask_migrate import Migrate
+from botocore.client import Config
 import os
 import io
 import subprocess
@@ -71,12 +72,12 @@ AWS_SECRET_ACCESS_KEY = os.environ.get('AWS_SECRET_ACCESS_KEY')
 AWS_REGION = os.environ.get('AWS_REGION', 'us-east-2')
 S3_BUCKET_NAME = os.environ.get('S3_BUCKET_NAME', 'anclajesypernosperu-archivos-145292398833-us-east-2-an')
 
-# Cliente de conexión S3
 s3_client = boto3.client(
     's3',
     aws_access_key_id=AWS_ACCESS_KEY_ID,
     aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
-    region_name=AWS_REGION
+    region_name=AWS_REGION,
+    config=Config(signature_version='s3v4')
 )
 
 # Carpeta EXCLUSIVA para Órdenes de Compra locales (Pre-AWS)
@@ -3400,6 +3401,7 @@ def obtener_detalle_venta(order_id):
             # Reemplaza la parte de Info y Logística por esto:
             'atencion': orden.atencion or '-',
             'orden_compra': orden.orden_compra or '-',
+            'archivo_oc': orden.archivo_oc,
             'condicion_pago': orden.condicion_pago or '-',
             'validez': orden.validez_oferta or '-',
             'observacion': orden.observacion or 'Ninguna',
