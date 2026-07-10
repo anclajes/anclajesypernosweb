@@ -270,6 +270,15 @@
                                    target="_blank" title="Imprimir Nota de Pedido">
                                     <i class="bi bi-printer-fill"></i> NP
                                 </a>
+
+                                <!-- NUEVO: BOTÓN DE ORDEN DE COMPRA (ALMACÉN) -->
+                                {% if o.archivo_oc %}
+                                <a href="/ver_oc/{{ o.archivo_oc }}" 
+                                class="btn btn-sm btn-outline-success me-1 fw-bold" target="_blank" title="Ver Orden de Compra Adjunta">
+                                    <i class="bi bi-paperclip"></i> OC
+                                </a>
+                                {% endif %}
+
                                 <button class="btn btn-sm btn-success fw-bold" 
                                         id="btn_despachar_rapido_{{ o.id }}"
                                         onclick="procesarSalidaRapido('{{ o.id }}')" 
@@ -506,6 +515,14 @@
                                    title="Ver Cotización Original">
                                     <i class="bi bi-file-pdf-fill"></i> COT
                                 </a>
+
+                                <!-- NUEVO: BOTÓN DE ORDEN DE COMPRA EN EL HISTORIAL -->
+                                {% if o.archivo_oc %}
+                                <a href="/ver_oc/{{ o.archivo_oc }}" 
+                                class="btn btn-sm btn-outline-success ms-1 fw-bold" target="_blank" title="Ver Orden de Compra Adjunta">
+                                    <i class="bi bi-paperclip"></i> OC
+                                </a>
+                                {% endif %}
                             </td>
                         </tr>
                         <!-- Fila expandible detalle historial -->

@@ -22,7 +22,6 @@ from sqlalchemy import or_, func, text, extract, String
 from flask_migrate import Migrate
 import os
 import io
-from flask import send_file
 import subprocess
 import tempfile
 import requests
@@ -64,9 +63,9 @@ app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = 'tesis_secreta_123'
 
-# Configuración de carpeta temporal para subidas
-app.config['UPLOAD_FOLDER'] = 'uploads'
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+# Carpeta EXCLUSIVA para Órdenes de Compra locales (Pre-AWS)
+app.config['UPLOAD_FOLDER_OC'] = os.path.join(os.getcwd(), 'uploads_oc')
+os.makedirs(app.config['UPLOAD_FOLDER_OC'], exist_ok=True)
 
 # Conectar la base de datos a la app
 db.init_app(app)
@@ -169,7 +168,6 @@ def index():
 # --- RUTA PARA CONSULTA RUC/DNI (CORREGIDA) ---
 # --- EN APP.PY ---
 
-# --- EN APP.PY ---
 
 @app.route('/api/consulta_documento', methods=['POST'])
 def consulta_documento():
@@ -1778,36 +1776,36 @@ def descargar_nota_pedido(order_id):
     )
         
 
-# --- EN APP.PY (Ruta corregida para actualizaciones parciales) ---
-
 @app.route('/subir_oc/<int:order_id>', methods=['POST'])
 def subir_oc(order_id):
-    if 'user_id' not in session: return {'status': 'error', 'msg': 'Login requerido'}, 401
+    if 'user_id' not in session: 
+        return {'status': 'error', 'msg': 'Login requerido'}, 401
     
     orden = Order.query.get_or_404(order_id)
-    
-    # Variables de control
     msg_exito = []
     
-    # 1. ACTUALIZAR NÚMERO (Solo si se envió la clave 'numero_oc_manual')
+    # 1. ACTUALIZAR NÚMERO (Si se escribió a mano)
     if 'numero_oc_manual' in request.form:
         nuevo_numero = request.form.get('numero_oc_manual').strip().upper()
         orden.orden_compra = nuevo_numero
         msg_exito.append("Número actualizado")
 
-    # 2. ACTUALIZAR ARCHIVO (Solo si se envió un archivo)
+    # 2. ACTUALIZAR ARCHIVO (Si se adjuntó PDF/Foto)
     archivo = request.files.get('archivo_pdf')
     if archivo and archivo.filename != '':
-        # Validar
+        # Validar extensión
         if not archivo.filename.lower().endswith(('.pdf', '.jpg', '.jpeg', '.png')):
             return {'status': 'error', 'msg': 'Formato no válido (Use PDF o Imagen)'}
 
-        # Guardar
+        # Generar nombre limpio e irrepetible
         ext = archivo.filename.split('.')[-1]
         nombre_limpio = secure_filename(f"OC_{orden.id:05d}_{orden.cliente.nombre[:10]}.{ext}")
-        path_destino = os.path.join(app.config['UPLOAD_FOLDER'], nombre_limpio)
+        
+        # Guardar físicamente en la carpeta dedicada
+        path_destino = os.path.join(app.config['UPLOAD_FOLDER_OC'], nombre_limpio)
         archivo.save(path_destino)
         
+        # Guardar en Base de Datos
         orden.archivo_oc = nombre_limpio
         msg_exito.append("Archivo subido")
 
@@ -1818,13 +1816,12 @@ def subir_oc(order_id):
         db.session.rollback()
         return {'status': 'error', 'msg': str(e)}
 
+
 @app.route('/ver_oc/<filename>')
 def ver_oc(filename):
-    # Sirve el archivo para descargar/ver
-    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
-
-# --- IMPORTANTE: ASEGURATE DE IMPORTAR send_from_directory ARRIBA ---
-# from flask import send_from_directory
+    # Sirve el archivo guardado localmente.
+    # Cuando pases a AWS, aquí solo cambiarás esta línea por un redirect() al link de S3.
+    return send_from_directory(app.config['UPLOAD_FOLDER_OC'], filename)
 
 @app.route('/categoria/nueva', methods=['POST'])
 def nueva_categoria():
@@ -2907,6 +2904,35 @@ def editar_categoria():
     
 # --- EN APP.PY ---
 
+
+# 1. GERENCIA HACE LA REVISIÓN INICIAL (Sin OC)
+@app.route('/gestion_ventas/revision_inicial/<int:order_id>', methods=['POST'])
+def revision_inicial_gerencia(order_id):
+    if session.get('role') not in ['admin', 'administracion']: 
+        return {'status': 'error', 'msg': 'No autorizado'}, 403
+
+    orden = Order.query.get_or_404(order_id)
+    orden.estado = 'Revision Inicial OK'
+    orden.fecha_revision_inicial = hora_peru()
+    
+    db.session.commit()
+    return {'status': 'success', 'msg': 'Revisión inicial aprobada. El vendedor ya puede pedir la OC al cliente.'}
+
+# 2. VENDEDOR SUBE OC Y PIDE APROBACIÓN FINAL (Modificado)
+@app.route('/api/confirmar_cliente/<int:order_id>', methods=['POST'])
+def confirmar_cliente(order_id):
+    orden = Order.query.get_or_404(order_id)
+    
+    if orden.vendedor_id != session.get('user_id'):
+        return {'status': 'error', 'msg': 'Solo el creador puede confirmar esto.'}, 403
+        
+    orden.cliente_confirmado = True
+    orden.fecha_confirmacion_cliente = hora_peru()
+    orden.estado = 'Pendiente Aprobacion Final' 
+    
+    db.session.commit()
+    return {'status': 'success', 'msg': 'Enviado a Gerencia para Aprobación Final (Validación OC).'}
+
 @app.route('/gestion_ventas/aprobar/<int:order_id>', methods=['POST'])
 def aprobar_cotizacion_gerencia(order_id):
     if session.get('role') not in ['admin', 'administracion']: 
@@ -2966,16 +2992,18 @@ def historial_ventas():
     # 1. QUERY BASE
     query = Order.query
     
+    # --- CORRECCIÓN: LISTA EXACTA DE ESTADOS SEGÚN EL JS ---
+    estados_revision = ['Por Verificar', 'Pendiente Aprobacion', 'Revision Pre-Cliente', 'Pendiente Aprobacion Final']
+    
     # 2. CONTADORES (Para los globos rojos/amarillos)
     cuentas = {
-        'rev': Order.query.filter(Order.estado.in_(['Por Verificar', 'Pendiente Aprobacion'])).count(),
+        'rev': Order.query.filter(Order.estado.in_(estados_revision)).count(),
         'obs': 0
     }
     if rol == 'vendedor':
         cuentas['obs'] = Order.query.filter(Order.vendedor_id == user_id, Order.estado == 'Observado').count()
         # El vendedor solo ve en el globo amarillo sus propios pedidos que están en revisión
-        cuentas['rev'] = Order.query.filter(Order.vendedor_id == user_id, Order.estado.in_(['Por Verificar', 'Pendiente Aprobacion'])).count()
-
+        cuentas['rev'] = Order.query.filter(Order.vendedor_id == user_id, Order.estado.in_(estados_revision)).count()
 
     # CAPTURAMOS EL NUEVO INTERRUPTOR
     solo_mias = request.args.get('solo_mias') == 'on'
@@ -2984,16 +3012,16 @@ def historial_ventas():
     vista = request.args.get('vista', 'borradores')
 
     if vista == 'borradores':
+        # AQUÍ ESTÁ EL VENDEDOR (Agregamos 'Aprobado Pre-Cliente' para que espere la OC)
         query = query.filter(Order.estado.in_([
-            'Cotizacion', 'Observado', 'Stock Confirmado'
+            'Cotizacion', 'Observado', 'Stock Confirmado', 'Aprobado Pre-Cliente'
         ]))
         if rol == 'vendedor' or solo_mias: 
             query = query.filter(Order.vendedor_id == user_id)
 
     elif vista == 'revision':
-        query = query.filter(Order.estado.in_([
-            'Por Verificar', 'Pendiente Aprobacion'
-        ]))
+        # AQUÍ ESTÁ GERENCIA Y ALMACÉN (Agregamos los nuevos estados de revisión)
+        query = query.filter(Order.estado.in_(estados_revision))
         if rol == 'vendedor' or solo_mias: 
             query = query.filter(Order.vendedor_id == user_id)
 
@@ -3003,9 +3031,6 @@ def historial_ventas():
         ]))
         if rol == 'vendedor' or solo_mias: 
             query = query.filter(Order.vendedor_id == user_id)
-
-    # --- 4. AHORA APLICAMOS LA BÚSQUEDA ---
-    # ... (el resto del código queda igual: busqueda, filtro_cliente, fechas, paginación) ...
 
     # --- 4. AHORA APLICAMOS LA BÚSQUEDA ---
     busqueda = request.args.get('busqueda')
@@ -3059,7 +3084,6 @@ def historial_ventas():
                            clientes=clientes,
                            cliente_seleccionado=filtro_cliente_ruc,
                            hoy=hora_peru().date())
-
 
 # --- RUTA PARA CARGAR LA EDICIÓN (GET) ---
 
@@ -3270,20 +3294,6 @@ def actualizar_venta():
         db.session.rollback()
         return {'status': 'error', 'msg': str(e)}, 500
     
-@app.route('/api/confirmar_cliente/<int:order_id>', methods=['POST'])
-def confirmar_cliente(order_id):
-    orden = Order.query.get_or_404(order_id)
-    
-    if orden.vendedor_id != session.get('user_id'):
-        return {'status': 'error', 'msg': 'Solo el creador de esta cotización puede confirmarla.'}, 403
-        
-    orden.cliente_confirmado = True
-    orden.fecha_confirmacion_cliente = hora_peru()
-    # CAMBIO: Ahora sí, viaja a Gerencia
-    orden.estado = 'Pendiente Aprobacion' 
-    
-    db.session.commit()
-    return {'status': 'success', 'msg': 'Confirmación registrada. Enviado a Gerencia para revisión final.'}
 
 @app.route('/api/obtener_detalle_venta/<int:order_id>')
 def obtener_detalle_venta(order_id):
@@ -3391,16 +3401,21 @@ def obtener_detalle_venta(order_id):
             
             'items': items_data,
 
-            # --- LÍNEA DE TIEMPO ---
+            # --- LÍNEA DE TIEMPO (5 PASOS) ---
             'creador': orden.vendedor.nombre_completo if orden.vendedor else 'Vendedor',
-            'cliente_confirmado': orden.cliente_confirmado,
-            'f_conf_cliente': orden.fecha_confirmacion_cliente.strftime('%d/%m/%Y %H:%M') if orden.fecha_confirmacion_cliente else None,
             
             'almacenero': orden.almacenero_nombre,
             'f_verif_almacen': orden.fecha_verificacion_almacen.strftime('%d/%m/%Y %H:%M') if orden.fecha_verificacion_almacen else None,
             
+            # --- CORREGIDO: SE ENVÍA EL NOMBRE DEL REVISOR INICIAL ---
+            'revisor_inicial': orden.revisor_inicial_nombre,
+            'f_revision_inicial': orden.fecha_revision_inicial.strftime('%d/%m/%Y %H:%M') if orden.fecha_revision_inicial else None,
+            
+            'cliente_confirmado': orden.cliente_confirmado,
+            'f_conf_cliente': orden.fecha_confirmacion_cliente.strftime('%d/%m/%Y %H:%M') if orden.fecha_confirmacion_cliente else None,
+            
             'gerente': orden.gerente_nombre,
-            'f_aprobacion': orden.fecha_aprobacion.strftime('%d/%m/%Y %H:%M') if orden.fecha_aprobacion else None,
+            'f_aprobacion_final': orden.fecha_aprobacion.strftime('%d/%m/%Y %H:%M') if orden.fecha_aprobacion else None,
         }
         
         return {'status': 'success', 'data': data}
@@ -3432,6 +3447,22 @@ def observar_cotizacion():
     db.session.commit()
     
     return {'status': 'success', 'msg': 'Cotización observada y devuelta.'}
+
+    # --- NUEVA RUTA PARA REGISTRAR LA FECHA DE LA REVISIÓN INICIAL ---
+@app.route('/api/aprobar_pre_cliente/<int:order_id>', methods=['POST'])
+def aprobar_pre_cliente(order_id):
+    if session.get('role') not in ['admin', 'administracion']: 
+        return {'status': 'error', 'msg': 'No autorizado'}, 403
+
+    orden = Order.query.get_or_404(order_id)
+    orden.estado = 'Aprobado Pre-Cliente'
+    orden.fecha_revision_inicial = hora_peru()
+    
+    # NUEVO: Guardamos el nombre del usuario que aprobó
+    orden.revisor_inicial_nombre = session.get('nombre', 'Administrador')
+    
+    db.session.commit()
+    return {'status': 'success', 'msg': 'Se ha autorizado el envío al cliente.'}
 
 # =======================================================
 # MÓDULO DE ALMACÉN: PICKING LITE (SALIDAS)
@@ -4182,6 +4213,32 @@ def actualizar_minimos_masivos_importbolts():
 
 # --- RUTA SECRETA PARA INICIALIZAR LA BASE DE DATOS EN RENDER ---
 # --- RUTA SECRETA PARA CREAR/RESETEAR LA BASE DE DATOS DESDE EL NAVEGADOR ---
+
+@app.route('/fix_estados_y_fechas')
+def fix_estados_y_fechas():
+    try:
+        with db.engine.connect() as conn:
+            # En SQLite no se puede modificar el tipo de columna, pero no importa 
+            # porque SQLite no aplica el límite estricto de caracteres.
+            # Solo agregamos la columna que falta:
+            conn.execute(text('ALTER TABLE "order" ADD COLUMN fecha_revision_inicial TIMESTAMP'))
+            conn.commit()
+        return "<h2>✅ Base de datos actualizada: Columna fecha_revision_inicial agregada con éxito.</h2>"
+    except Exception as e:
+        return f"<h2>Aviso: {str(e)} (Si dice 'duplicate column name', significa que ya se agregó).</h2>"
+    
+@app.route('/fix_revisor')
+def fix_revisor():
+    try:
+        from sqlalchemy import text
+        with db.engine.connect() as conn:
+            # Agregamos la nueva columna a la base de datos
+            conn.execute(text('ALTER TABLE "order" ADD COLUMN revisor_inicial_nombre VARCHAR(100)'))
+            conn.commit()
+        return "<h2>✅ Base de datos actualizada: Nombre de revisor agregado.</h2>"
+    except Exception as e:
+        return f"<h2>Aviso: {str(e)}</h2>"
+
 @app.route('/reset_total_db_secreto')
 def reset_total_db_secreto():
     try:
@@ -4209,6 +4266,34 @@ def reset_total_db_secreto():
     except Exception as e:
         db.session.rollback()
         return f"<h1>Error al configurar la Base de Datos:</h1><p>{str(e)}</p>"
+
+@app.route('/fix_render_db')
+def fix_render_db():
+    try:
+        from sqlalchemy import text
+        with db.engine.connect() as conn:
+            # 1. Ampliar el límite de caracteres de la columna 'estado' (VITAL)
+            try:
+                conn.execute(text('ALTER TABLE "order" ALTER COLUMN estado TYPE VARCHAR(50)'))
+            except Exception as e:
+                print(f"Aviso estado: {e}")
+
+            # 2. Agregar fecha de revisión inicial
+            try:
+                conn.execute(text('ALTER TABLE "order" ADD COLUMN fecha_revision_inicial TIMESTAMP'))
+            except Exception as e:
+                print(f"Aviso fecha_rev: {e}")
+
+            # 3. Agregar nombre del revisor
+            try:
+                conn.execute(text('ALTER TABLE "order" ADD COLUMN revisor_inicial_nombre VARCHAR(100)'))
+            except Exception as e:
+                print(f"Aviso revisor: {e}")
+
+            conn.commit()
+        return "<h2>✅ Base de datos en Render actualizada. Las columnas y tamaños ya coinciden con tu entorno local.</h2>"
+    except Exception as e:
+        return f"<h2>❌ Error general: {str(e)}</h2>"
 
 # --- ARRANQUE DE LA APLICACIÓN ---
 if __name__ == '__main__':

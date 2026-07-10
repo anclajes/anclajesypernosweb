@@ -166,8 +166,10 @@
                             <span class="badge 
                                 {% if o.estado == 'Cotizacion' %}bg-secondary
                                 {% elif o.estado == 'Por Verificar' %}bg-info text-dark border border-info
-                                {% elif o.estado == 'Stock Confirmado' %}bg-primary text-white border border-primary
-                                {% elif o.estado == 'Pendiente Aprobacion' %}bg-warning text-dark border border-dark
+                                {% elif o.estado == 'Stock Confirmado' %}bg-success text-white
+                                {% elif o.estado == 'Revision Pre-Cliente' %}bg-warning text-dark border border-warning shadow-sm
+                                {% elif o.estado == 'Aprobado Pre-Cliente' %}bg-info bg-gradient text-dark border border-info shadow-sm
+                                {% elif o.estado == 'Pendiente Aprobacion Final' %}bg-warning text-danger fw-bold border border-danger shadow-sm
                                 {% elif o.estado == 'Observado' %}bg-danger
                                 {% elif o.estado == 'Por Despachar' %}bg-primary
                                 {% elif o.estado == 'Despachado' %}bg-success bg-opacity-75
@@ -175,15 +177,17 @@
                                 {% elif o.estado == 'Anulado' %}bg-dark
                                 {% else %}bg-secondary{% endif %}">
                                 
-                                {% if o.estado == 'Cotizacion' %}📝 Borrador (Vendedor)
-                                {% elif o.estado == 'Por Verificar' %}🔎 Verificando Stock (Almacén)
-                                {% elif o.estado == 'Stock Confirmado' %}📞 Esperando Cliente (Stock OK)
-                                {% elif o.estado == 'Pendiente Aprobacion' %}⏳ Revisión Gerencia
+                                {% if o.estado == 'Cotizacion' %}📝 Borrador
+                                {% elif o.estado == 'Por Verificar' %}🔎 Almacén: Verificando
+                                {% elif o.estado == 'Stock Confirmado' %}📦 Stock OK
+                                {% elif o.estado == 'Revision Pre-Cliente' %}👀 Gerencia: Revisión Inicial
+                                {% elif o.estado == 'Aprobado Pre-Cliente' %}✅ Gerencia OK (Falta Cliente)
+                                {% elif o.estado == 'Pendiente Aprobacion Final' %}⏳ Gerencia: Aprobación Final (OC)
                                 {% elif o.estado == 'Observado' %}⚠️ CORREGIR (Devuelto)
-                                {% elif o.estado == 'Por Despachar' %}📦 En Almacén (Por Despachar)
+                                {% elif o.estado == 'Por Despachar' %}📦 Por Despachar
                                 {% elif o.estado == 'Despachado' %}🚚 Despachado
-                                {% elif o.estado == 'Entregado' %}✅ Entregado / Cerrado
-                                {% elif o.estado == 'Anulado' %}❌ Anulada
+                                {% elif o.estado == 'Entregado' %}✅ Entregado
+                                {% elif o.estado == 'Anulado' %}❌ Anulado
                                 {% else %}{{ o.estado }}{% endif %}
                             </span>
                         </td>
@@ -207,6 +211,16 @@
                                 title="Descargar Nota de Pedido (Sin Precios - Para Almacén)" 
                                 target="_blank">
                                     <i class="bi bi-file-earmark-check-fill"></i> NP
+                                </a>
+                                {% endif %}
+
+
+                                <!-- NUEVO: BOTÓN DE ORDEN DE COMPRA (SOLO SI EXISTE) -->
+                                {% if o.archivo_oc %}
+                                <a href="/ver_oc/{{ o.archivo_oc }}" 
+                                class="btn btn-light border text-success shadow-sm fw-bold" 
+                                title="Ver Orden de Compra Adjunta" target="_blank">
+                                    <i class="bi bi-paperclip"></i> OC
                                 </a>
                                 {% endif %}
                             </div>
@@ -265,25 +279,35 @@
                             </div>
                             
                             <div class="d-flex justify-content-between position-relative" style="z-index: 2;">
-                                <div class="text-center" style="width: 80px;">
+                                <!-- Paso 1: Borrador -->
+                                <div class="text-center" style="width: 70px;">
                                     <div id="step1_icon" class="rounded-circle bg-success text-white d-flex align-items-center justify-content-center mx-auto shadow-sm" style="width: 35px; height: 35px; border: 3px solid white;"><i class="bi bi-file-earmark-plus"></i></div>
-                                    <div class="small fw-bold mt-2 text-dark" style="font-size:0.7rem; line-height: 1;">Borrador</div>
+                                    <div class="small fw-bold mt-2 text-dark" style="font-size:0.65rem; line-height: 1.1;">Borrador</div>
                                     <div id="step1_info" class="text-muted" style="font-size:0.6rem;">...</div>
                                 </div>
-                                <div class="text-center" style="width: 80px;">
+                                <!-- Paso 2: Stock -->
+                                <div class="text-center" style="width: 70px;">
                                     <div id="step2_icon" class="rounded-circle bg-light text-muted d-flex align-items-center justify-content-center mx-auto border" style="width: 35px; height: 35px; border: 3px solid white;"><i class="bi bi-box-seam"></i></div>
-                                    <div class="small fw-bold mt-2 text-muted" id="step2_text" style="font-size:0.7rem; line-height: 1;">Stock OK</div>
+                                    <div class="small fw-bold mt-2 text-muted" id="step2_text" style="font-size:0.65rem; line-height: 1.1;">Stock OK</div>
                                     <div id="step2_info" class="text-muted" style="font-size:0.6rem;">Pendiente</div>
                                 </div>
+                                <!-- Paso 3: Revisión Inicial Gerencia -->
                                 <div class="text-center" style="width: 80px;">
-                                    <div id="step3_icon" class="rounded-circle bg-light text-muted d-flex align-items-center justify-content-center mx-auto border" style="width: 35px; height: 35px; border: 3px solid white;"><i class="bi bi-person-check"></i></div>
-                                    <div class="small fw-bold mt-2 text-muted" id="step3_text" style="font-size:0.7rem; line-height: 1;">OK Cliente</div>
+                                    <div id="step3_icon" class="rounded-circle bg-light text-muted d-flex align-items-center justify-content-center mx-auto border" style="width: 35px; height: 35px; border: 3px solid white;"><i class="bi bi-eye"></i></div>
+                                    <div class="small fw-bold mt-2 text-muted" id="step3_text" style="font-size:0.65rem; line-height: 1.1;">Rev. Inicial</div>
                                     <div id="step3_info" class="text-muted" style="font-size:0.6rem;">Pendiente</div>
                                 </div>
-                                <div class="text-center" style="width: 80px;">
-                                    <div id="step4_icon" class="rounded-circle bg-light text-muted d-flex align-items-center justify-content-center mx-auto border" style="width: 35px; height: 35px; border: 3px solid white;"><i class="bi bi-check-all"></i></div>
-                                    <div class="small fw-bold mt-2 text-muted" id="step4_text" style="font-size:0.7rem; line-height: 1;">Aprobado</div>
+                                <!-- Paso 4: Aprobación Cliente (Sube OC) -->
+                                <div class="text-center" style="width: 70px;">
+                                    <div id="step4_icon" class="rounded-circle bg-light text-muted d-flex align-items-center justify-content-center mx-auto border" style="width: 35px; height: 35px; border: 3px solid white;"><i class="bi bi-person-check"></i></div>
+                                    <div class="small fw-bold mt-2 text-muted" id="step4_text" style="font-size:0.65rem; line-height: 1.1;">OK Cliente</div>
                                     <div id="step4_info" class="text-muted" style="font-size:0.6rem;">Pendiente</div>
+                                </div>
+                                <!-- Paso 5: Aprobación Final Gerencia -->
+                                <div class="text-center" style="width: 80px;">
+                                    <div id="step5_icon" class="rounded-circle bg-light text-muted d-flex align-items-center justify-content-center mx-auto border" style="width: 35px; height: 35px; border: 3px solid white;"><i class="bi bi-check-all"></i></div>
+                                    <div class="small fw-bold mt-2 text-muted" id="step5_text" style="font-size:0.65rem; line-height: 1.1;">Aprob. Final</div>
+                                    <div id="step5_info" class="text-muted" style="font-size:0.6rem;">Pendiente</div>
                                 </div>
                             </div>
                         </div>
@@ -623,9 +647,19 @@
                     
                     let badgeHtml = '<span class="badge bg-secondary">📝 Borrador</span>';
                     if(d.estado === 'Por Verificar') 
-                        badgeHtml = '<span class="badge bg-info text-dark border border-info">🔎 En Almacén (Verificando Físico)</span>';
-                    if(d.estado === 'Pendiente Aprobacion') 
-                        badgeHtml = '<span class="badge bg-warning text-dark border border-dark">⏳ En Gerencia (Pendiente Aprobación)</span>';
+                        badgeHtml = '<span class="badge bg-info text-dark border border-info">🔎 Verificando Físico (Almacén)</span>';
+                    if(d.estado === 'Stock Confirmado') 
+                        badgeHtml = '<span class="badge bg-success bg-opacity-75 text-dark">📦 Stock OK (Falta rev. Gerencia)</span>';
+
+                    // NUEVOS ESTADOS
+                    if(d.estado === 'Revision Pre-Cliente') 
+                        badgeHtml = '<span class="badge bg-warning text-dark border border-dark">👀 Gerencia: Revisión Pre-Envío</span>';
+                    if(d.estado === 'Aprobado Pre-Cliente') 
+                        badgeHtml = '<span class="badge bg-primary">✅ Gerencia OK (Esperando OC Cliente)</span>';
+                    if(d.estado === 'Pendiente Aprobacion Final') 
+                        badgeHtml = '<span class="badge bg-warning text-dark border border-dark">⏳ Gerencia: Revisión Final (Con OC)</span>';
+
+                    // RESTO DE TUS ESTADOS
                     if(d.estado === 'Por Despachar') 
                         badgeHtml = '<span class="badge bg-primary">📦 En Almacén (Por Despachar)</span>';
                     if(d.estado === 'Despachado') 
@@ -636,6 +670,7 @@
                         badgeHtml = '<span class="badge bg-danger">❌ Anulado</span>';
                     if(d.estado === 'Observado') 
                         badgeHtml = '<span class="badge bg-danger text-white"><i class="bi bi-exclamation-circle"></i> OBSERVADO / CORREGIR</span>';
+
                     $('#badgeEstadoModal').html(badgeHtml);
 
                     const btnDescargar = document.getElementById('btn_descargar_modal');
@@ -782,42 +817,60 @@
                     
                     $('#view_total').text(simbolo + " " + parseFloat(d.total).toFixed(2));
 
-                    // --- DIBUJAR LÍNEA DE TIEMPO (TIMELINE) ---
+                    // --- DIBUJAR LÍNEA DE TIEMPO (TIMELINE - 5 PASOS) ---
                     $('#step1_info').text(d.creador);
-                    
+
                     let progreso = 0;
-                    
+
+                    // PASO 2: Verificación de Almacén
                     if (d.f_verif_almacen) {
-                        progreso = 33;
+                        progreso = 25;
                         $('#step2_icon').removeClass('bg-light text-muted').addClass('bg-success text-white');
                         $('#step2_text').removeClass('text-muted').addClass('text-dark');
-                        $('#step2_info').html(`${d.almacenero}<br>${d.f_verif_almacen}`);
+                        $('#step2_info').html(`${d.almacenero || 'Almacén'}<br>${d.f_verif_almacen}`);
                     } else {
                         $('#step2_icon').removeClass('bg-success text-white').addClass('bg-light text-muted');
                         $('#step2_text').removeClass('text-dark').addClass('text-muted');
                         $('#step2_info').text('Pendiente');
                     }
 
-                    if (d.cliente_confirmado) {
-                        progreso = 66;
+                    // PASO 3: Revisión Pre-Cliente (Gerencia)
+                    if (d.f_revision_inicial) {
+                        progreso = 50;
                         $('#step3_icon').removeClass('bg-light text-muted').addClass('bg-success text-white');
                         $('#step3_text').removeClass('text-muted').addClass('text-dark');
-                        $('#step3_info').text(d.f_conf_cliente);
+                        
+                        // --- AQUÍ ELIMINAMOS LA PALABRA FIJA "Gerencia" ---
+                        $('#step3_info').html(`${d.revisor_inicial || 'Gerencia'}<br>${d.f_revision_inicial}`);
+                        
                     } else {
                         $('#step3_icon').removeClass('bg-success text-white').addClass('bg-light text-muted');
                         $('#step3_text').removeClass('text-dark').addClass('text-muted');
                         $('#step3_info').text('Pendiente');
                     }
 
-                    if (d.f_aprobacion) {
-                        progreso = 100;
+                    // PASO 4: Confirmación del Cliente (Sube OC)
+                    if (d.f_conf_cliente) {
+                        progreso = 75;
                         $('#step4_icon').removeClass('bg-light text-muted').addClass('bg-success text-white');
                         $('#step4_text').removeClass('text-muted').addClass('text-dark');
-                        $('#step4_info').html(`${d.gerente}<br>${d.f_aprobacion}`);
+                        $('#step4_info').html(`${d.creador}<br>${d.f_conf_cliente}`); // <-- Agregado el nombre del creador/vendedor
                     } else {
                         $('#step4_icon').removeClass('bg-success text-white').addClass('bg-light text-muted');
                         $('#step4_text').removeClass('text-dark').addClass('text-muted');
                         $('#step4_info').text('Pendiente');
+                    }
+
+                    // PASO 5: Aprobación Final (Gerencia con OC)
+                    if (d.f_aprobacion_final) {
+                        progreso = 100;
+                        $('#step5_icon').removeClass('bg-light text-muted').addClass('bg-success text-white');
+                        $('#step5_text').removeClass('text-muted').addClass('text-dark');
+                        $('#step5_info').html(`${d.gerente || 'Gerencia'}<br>${d.f_aprobacion_final}`);
+                    } else {
+                        $('#step5_icon').removeClass('bg-success text-white').addClass('bg-light text-muted');
+                        $('#step5_text').removeClass('text-dark').addClass('text-muted');
+                        $('#step5_info').text('Pendiente');
                     }
 
                     $('#timeline_bar').css('width', `${progreso}%`);
@@ -834,7 +887,29 @@
             });
     }
 
-    // LOGICA DE OCULTAR BOTONES INTELIGENTE
+    function aprobarRevisionInicial(id) {
+        Swal.fire({
+            title: '¿Aprobar para envío al cliente?',
+            text: "Se registrará la fecha de revisión y el vendedor podrá pedir la OC.",
+            icon: 'info',
+            showCancelButton: true,
+            confirmButtonText: 'Sí, Aprobar',
+            confirmButtonColor: '#0d6efd'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                fetch(`/api/aprobar_pre_cliente/${id}`, { method: 'POST' })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        Swal.fire('Correcto', data.msg, 'success').then(() => location.reload());
+                    } else {
+                        Swal.fire('Error', data.msg || 'Hubo un problema', 'error');
+                    }
+                });
+            }
+        });
+    }
+
     function configurarBotones(estado, rol, id, vendedor_id, cliente_confirmado) {
         const btnEditar = document.getElementById('btn_ir_editar');
         const panelGerencia = document.getElementById('panel_acciones_gerencia');
@@ -847,13 +922,14 @@
 
         const miUsuarioId = parseInt("{{ session.get('user_id') }}");
         const esMiCotizacion = (parseInt(vendedor_id) === miUsuarioId);
+        const esGerencia = (rol === 'admin' || rol === 'administracion');
 
-        // Puede editar en cualquier estado previo a Aprobación final
-        if (['Cotizacion', 'Observado', 'Por Verificar', 'Stock Confirmado', 'Pendiente Aprobacion'].includes(estado) && esMiCotizacion) {
+        // Puede editar en estados iniciales e intermedios si fue rechazado
+        if (['Cotizacion', 'Observado', 'Por Verificar', 'Stock Confirmado', 'Aprobado Pre-Cliente'].includes(estado) && esMiCotizacion) {
             btnEditar.classList.remove('d-none'); 
         }
 
-        // ACCIÓN 1: VENDEDOR MANDA A ALMACÉN
+        // FLUJO 1: Vendedor envía a Almacén
         if (['Cotizacion', 'Observado'].includes(estado) && esMiCotizacion) {
             panelVendedor.classList.remove('d-none');
             panelVendedor.innerHTML = `
@@ -863,23 +939,50 @@
             `;
         }
 
-        // ACCIÓN 2: ALMACÉN YA DIJO "SÍ HAY". AHORA EL VENDEDOR CONFIRMA CON EL CLIENTE.
+        // FLUJO 2: Almacén confirmó stock -> Vendedor pide primera revisión a Gerencia
         if (estado === 'Stock Confirmado' && esMiCotizacion) {
             panelVendedor.classList.remove('d-none');
             panelVendedor.innerHTML = `
-                <button class="btn btn-success fw-bold px-4 shadow" onclick="marcarConfirmacionCliente(${id})">
-                    <i class="bi bi-person-check-fill"></i> El Cliente Confirmó (Enviar a Gerencia)
+                <button class="btn btn-warning fw-bold px-4 shadow" onclick="pedirRevisionGerenciaPreCliente(${id})">
+                    <i class="bi bi-eye"></i> Solicitar Revisión Pre-Cliente (Gerencia)
                 </button>
             `;
         }
 
-        // ACCIÓN 3: GERENCIA APRUEBA
-        if ((rol === 'admin' || rol === 'administracion') && estado === 'Pendiente Aprobacion') {
+        // FLUJO 3: Gerencia hace la primera revisión (Pre-Cliente)
+        if (estado === 'Revision Pre-Cliente' && esGerencia) {
             panelGerencia.classList.remove('d-none'); 
-            if (btnObservarGerencia) {
-                if (esMiCotizacion) btnObservarGerencia.classList.add('d-none');
-                else btnObservarGerencia.classList.remove('d-none');
-            }
+            panelGerencia.innerHTML = `
+                <button class="btn btn-outline-danger me-2" onclick="rechazarDesdeModal()">
+                    <i class="bi bi-x-circle"></i> Observar / Devolver
+                </button>
+                <button class="btn btn-primary fw-bold px-4 shadow" onclick="aprobarRevisionInicial(${id})">
+                    <i class="bi bi-check-circle-fill"></i> APROBAR ENVÍO A CLIENTE
+                </button>
+            `;
+        }
+
+        // FLUJO 4: Gerencia aprobó envío. Vendedor espera la confirmación/OC y envía a aprobación FINAL
+        if (estado === 'Aprobado Pre-Cliente' && esMiCotizacion) {
+            panelVendedor.classList.remove('d-none');
+            panelVendedor.innerHTML = `
+                <button class="btn btn-success fw-bold px-4 shadow" onclick="enviarGerenciaFinal(${id})">
+                    <i class="bi bi-check2-all"></i> Tengo OC. Solicitar Aprobación Final
+                </button>
+            `;
+        }
+
+        // FLUJO 5: Gerencia hace la aprobación final con la OC lista
+        if (estado === 'Pendiente Aprobacion Final' && esGerencia) {
+            panelGerencia.classList.remove('d-none');
+            panelGerencia.innerHTML = `
+                <button class="btn btn-outline-danger me-2" onclick="rechazarDesdeModal()">
+                    <i class="bi bi-x-circle"></i> Observar / Devolver
+                </button>
+                <button class="btn btn-success fw-bold px-4 shadow" onclick="aprobarDesdeModal()">
+                    <i class="bi bi-box-arrow-right"></i> APROBAR Y ENVIAR A ALMACÉN (DESPACHO)
+                </button>
+            `;
         }
     }
 
@@ -956,6 +1059,56 @@
             } 
         });
     }
+
+    function pedirRevisionGerenciaPreCliente(id) {
+    Swal.fire({
+        title: '¿Enviar a Gerencia?',
+        text: "Gerencia revisará los precios y condiciones antes de que se lo mandes al cliente.",
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Sí, Enviar a Revisión',
+        confirmButtonColor: '#ffc107'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            cambiarEstadoAPI(id, 'Revision Pre-Cliente', 'Cotización enviada a Gerencia para revisión previa.');
+        }
+    });
+}
+
+function enviarGerenciaFinal(id) {
+    // 1. Verificamos si existe el archivo adjunto visualmente en el modal
+    const ocVacia = !$('#view_oc_vacio').hasClass('d-none'); // True si NO hay archivo
+    
+    let mensaje = "¿Deseas enviar esta cotización para la aprobación final de gerencia?";
+    let tipoIcono = "question";
+    
+    // 2. MODO PRUEBAS: Advertencia amarilla, pero NO bloquea
+    if (ocVacia) {
+        mensaje = "⚠️ MODO PRUEBAS LOCAL: No has adjuntado una Orden de Compra (OC). En producción esto bloqueará el envío, pero por ahora puedes continuar.";
+        tipoIcono = "warning";
+    }
+
+    Swal.fire({
+        title: 'Confirmar OK del Cliente',
+        text: mensaje,
+        icon: tipoIcono,
+        showCancelButton: true,
+        confirmButtonText: 'Enviar a Gerencia',
+        confirmButtonColor: '#198754',
+        cancelButtonText: 'Cancelar'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            // Llama a tu ruta de Flask por AJAX
+            $.post(`/api/confirmar_cliente/${id}`, function(response) {
+                if(response.status === 'success') {
+                    Swal.fire('¡Enviado!', response.msg, 'success').then(() => location.reload());
+                } else {
+                    Swal.fire('Error', response.msg, 'error');
+                }
+            });
+        }
+    });
+}
 
     function aprobarDesdeModal() { if(ordenIdActual) { bootstrap.Modal.getInstance(document.getElementById('modalDetalleCompleto')).hide(); aprobarGerencia(ordenIdActual); } }
     

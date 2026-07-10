@@ -8,7 +8,7 @@ def hora_peru():
     # para que sea 100% compatible con la base de datos (offset-naive)
     return datetime.now(pytz.timezone('America/Lima')).replace(tzinfo=None)
 
-db = SQLAlchemy()
+db = SQLAlchemy()   
 
 # --- 1. CATEGORÍAS ---
 class Category(db.Model):
@@ -90,10 +90,11 @@ class Order(db.Model):
     chofer_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True) # Nuevo
     
     # --- ESTADOS Y DATOS GENERALES ---
-    estado = db.Column(db.String(20), default='Pendiente')
+    estado = db.Column(db.String(50), default='Pendiente')
     atencion = db.Column(db.String(100)) 
     orden_compra = db.Column(db.String(50)) # O/C del Cliente (Texto manual)
     archivo_oc = db.Column(db.String(255))  # Nombre del archivo PDF (OC_xxx.pdf)
+    
 
     # --- DATOS DE COTIZACIÓN ---
     condicion_pago = db.Column(db.String(50))
@@ -102,14 +103,19 @@ class Order(db.Model):
     observacion = db.Column(db.Text) # Nota del Vendedor (Logística)
     motivo_rechazo = db.Column(db.Text) # Nota del Gerente (Rechazo)
 
-    # --- RASTREO Y LÍNEA DE TIEMPO (NUEVOS CAMPOS) ---
+# --- RASTREO Y LÍNEA DE TIEMPO (NUEVOS CAMPOS) ---
     cliente_confirmado = db.Column(db.Boolean, default=False)
     fecha_confirmacion_cliente = db.Column(db.DateTime, nullable=True)
     
     fecha_verificacion_almacen = db.Column(db.DateTime, nullable=True)
     almacenero_nombre = db.Column(db.String(100), nullable=True)
     
-    fecha_aprobacion = db.Column(db.DateTime, nullable=True) # (Si ya lo tenías, déjalo)
+    # 2. NUEVO CAMPO: REVISIÓN INICIAL DE GERENCIA
+    fecha_revision_inicial = db.Column(db.DateTime, nullable=True)
+    revisor_inicial_nombre = db.Column(db.String(100), nullable=True)
+    
+    # 3. APROBACIÓN FINAL DE GERENCIA (Con Orden de Compra)
+    fecha_aprobacion = db.Column(db.DateTime, nullable=True) 
     gerente_nombre = db.Column(db.String(100), nullable=True)
 
     agencia = db.Column(db.String(150), nullable=True)
