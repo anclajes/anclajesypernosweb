@@ -1844,14 +1844,18 @@ def subir_oc(order_id):
 
 @app.route('/ver_oc/<filename>')
 def ver_oc(filename):
-    # Generar URL segura de lectura temporal (válida por 1 hora)
     try:
-        url = s3_client.generate_presigned_url(
-            'get_object',
-            Params={'Bucket': S3_BUCKET_NAME, 'Key': filename},
-            ExpiresIn=3600
+        # 1. El servidor se conecta a Amazon y lee el archivo en memoria
+        # Esto usa el mismo método exacto que la subida (que ya sabemos que funciona perfecto)
+        archivo_s3 = s3_client.get_object(Bucket=S3_BUCKET_NAME, Key=filename)
+
+        # 2. Le enviamos el archivo directamente a la pantalla del usuario
+        return send_file(
+            io.BytesIO(archivo_s3['Body'].read()),
+            mimetype='application/pdf',
+            as_attachment=False,  # False = Se abre como pestaña nueva. True = Fuerza descarga directa
+            download_name=filename
         )
-        return redirect(url)
     except Exception as e:
         return f"<h1>Error al recuperar el documento desde la nube</h1><p>{str(e)}</p>", 404
 
