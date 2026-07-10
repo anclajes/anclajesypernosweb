@@ -27,6 +27,8 @@ import tempfile
 import requests
 import re
 import pytz
+import boto3
+from botocore.exceptions import ClientError
 from werkzeug.security import generate_password_hash, check_password_hash
 from xhtml2pdf import pisa
 
@@ -62,6 +64,20 @@ if database_url.startswith("postgres://"):
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = 'tesis_secreta_123'
+
+# --- CONFIGURACIÓN DE AMAZON S3 ---
+AWS_ACCESS_KEY_ID = os.environ.get('AWS_ACCESS_KEY_ID')
+AWS_SECRET_ACCESS_KEY = os.environ.get('AWS_SECRET_ACCESS_KEY')
+AWS_REGION = os.environ.get('AWS_REGION', 'us-east-2')
+S3_BUCKET_NAME = os.environ.get('S3_BUCKET_NAME', 'anclajesypernosperu-archivos-145292398833-us-east-2-an')
+
+# Cliente de conexión S3
+s3_client = boto3.client(
+    's3',
+    aws_access_key_id=AWS_ACCESS_KEY_ID,
+    aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+    region_name=AWS_REGION
+)
 
 # Carpeta EXCLUSIVA para Órdenes de Compra locales (Pre-AWS)
 app.config['UPLOAD_FOLDER_OC'] = os.path.join(os.getcwd(), 'uploads_oc')
@@ -1784,44 +1800,58 @@ def subir_oc(order_id):
     orden = Order.query.get_or_404(order_id)
     msg_exito = []
     
-    # 1. ACTUALIZAR NÚMERO (Si se escribió a mano)
+    # 1. ACTUALIZAR NÚMERO MANUAL
     if 'numero_oc_manual' in request.form:
         nuevo_numero = request.form.get('numero_oc_manual').strip().upper()
-        orden.orden_compra = nuevo_numero
-        msg_exito.append("Número actualizado")
+        if nuevo_numero:
+            orden.orden_compra = nuevo_numero
+            msg_exito.append("Número actualizado")
 
-    # 2. ACTUALIZAR ARCHIVO (Si se adjuntó PDF/Foto)
+    # 2. SUBIR ARCHIVO A AMAZON S3
     archivo = request.files.get('archivo_pdf')
     if archivo and archivo.filename != '':
         # Validar extensión
         if not archivo.filename.lower().endswith(('.pdf', '.jpg', '.jpeg', '.png')):
             return {'status': 'error', 'msg': 'Formato no válido (Use PDF o Imagen)'}
 
-        # Generar nombre limpio e irrepetible
+        # Nombre limpio
         ext = archivo.filename.split('.')[-1]
         nombre_limpio = secure_filename(f"OC_{orden.id:05d}_{orden.cliente.nombre[:10]}.{ext}")
         
-        # Guardar físicamente en la carpeta dedicada
-        path_destino = os.path.join(app.config['UPLOAD_FOLDER_OC'], nombre_limpio)
-        archivo.save(path_destino)
-        
-        # Guardar en Base de Datos
-        orden.archivo_oc = nombre_limpio
-        msg_exito.append("Archivo subido")
+        try:
+            # Subir a S3 en lugar de disco local
+            s3_client.upload_fileobj(
+                archivo,
+                S3_BUCKET_NAME,
+                nombre_limpio,
+                ExtraArgs={"ContentType": archivo.content_type} # Permite previsualizar en el navegador
+            )
+            orden.archivo_oc = nombre_limpio
+            msg_exito.append("Archivo subido a AWS S3")
+            
+        except Exception as e:
+            return {'status': 'error', 'msg': f'Fallo al subir a la nube: {str(e)}'}
 
     try:
         db.session.commit()
         return {'status': 'success', 'msg': " y ".join(msg_exito) if msg_exito else "Sin cambios"}
     except Exception as e:
         db.session.rollback()
-        return {'status': 'error', 'msg': str(e)}
+        return {'status': 'error', 'msg': f'Error de Base de datos: {str(e)}'}
 
 
 @app.route('/ver_oc/<filename>')
 def ver_oc(filename):
-    # Sirve el archivo guardado localmente.
-    # Cuando pases a AWS, aquí solo cambiarás esta línea por un redirect() al link de S3.
-    return send_from_directory(app.config['UPLOAD_FOLDER_OC'], filename)
+    # Generar URL segura de lectura temporal (válida por 1 hora)
+    try:
+        url = s3_client.generate_presigned_url(
+            'get_object',
+            Params={'Bucket': S3_BUCKET_NAME, 'Key': filename},
+            ExpiresIn=3600
+        )
+        return redirect(url)
+    except Exception as e:
+        return f"<h1>Error al recuperar el documento desde la nube</h1><p>{str(e)}</p>", 404
 
 @app.route('/categoria/nueva', methods=['POST'])
 def nueva_categoria():
