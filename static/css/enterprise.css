@@ -1,29 +1,34 @@
 :root {
-    --sidebar-width: 250px;
+    --sidebar-width: 260px;
     --sidebar-collapsed-width: 70px;
     --header-height: 60px;
-    --primary-color: #0F172A; /* Color oscuro profesional */
+    --primary-color: #0F172A;
 }
 
 body {
     background-color: #f1f5f9;
     font-family: 'Inter', sans-serif;
-    overflow-x: hidden; /* Evita scroll horizontal indeseado en móvil */
+    overflow-x: hidden;
 }
 
 /* --- SIDEBAR (Menú Lateral) --- */
 .sidebar {
     width: var(--sidebar-width);
+    min-width: var(--sidebar-width);
+    max-width: var(--sidebar-width);
     height: 100vh;
     position: fixed;
     top: 0;
     left: 0;
     background: var(--primary-color);
     color: white;
-    transition: all 0.3s ease;
-    z-index: 1000;
+    transition: transform 0.3s ease, width 0.3s ease;
+    z-index: 1050;
     display: flex;
     flex-direction: column;
+    overflow-y: auto;
+    overflow-x: hidden;
+    transform: translateX(0);
 }
 
 .sidebar-brand {
@@ -34,8 +39,16 @@ body {
     font-weight: 700;
     font-size: 1.2rem;
     border-bottom: 1px solid rgba(255,255,255,0.1);
-    white-space: nowrap; /* Evita que el texto baje de línea al colapsar */
+    white-space: nowrap;
     overflow: hidden;
+    flex-shrink: 0;
+    color: #ffffff !important; /* Protege el color del texto */
+}
+
+.sidebar-brand img {
+    max-height: 35px;
+    width: auto;
+    object-fit: contain; /* Evita que el logo se estire o aplaste */
 }
 
 .nav-link {
@@ -46,17 +59,18 @@ body {
     white-space: nowrap;
     overflow: hidden;
     transition: 0.2s;
+    text-decoration: none;
 }
 
 .nav-link:hover, .nav-link.active {
     color: white;
     background: rgba(255,255,255,0.1);
-    border-left: 4px solid #3b82f6; /* Acento azul */
+    border-left: 4px solid #3b82f6;
 }
 
 .nav-link i {
     font-size: 1.1rem;
-    min-width: 30px; /* Espacio fijo para el ícono */
+    min-width: 30px;
 }
 
 .nav-title {
@@ -72,7 +86,7 @@ body {
 .main-content {
     margin-left: var(--sidebar-width);
     padding: 1.5rem;
-    transition: all 0.3s ease;
+    transition: margin-left 0.3s ease;
     min-height: 100vh;
 }
 
@@ -89,59 +103,120 @@ body {
     box-shadow: 0 1px 2px rgba(0,0,0,0.05);
 }
 
-/* --- ESTADO COLAPSADO (Solo Iconos - Desktop) --- */
-body.sidebar-toggled .sidebar {
-    width: var(--sidebar-collapsed-width);
+/* --- OVERLAY (fondo oscuro al abrir menú en móvil) --- */
+.mobile-overlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; width: 100vw; height: 100vh;
+    background: rgba(0,0,0,0.5);
+    z-index: 1040;
 }
 
-body.sidebar-toggled .main-content {
-    margin-left: var(--sidebar-collapsed-width);
+/* =========================================================
+   ESTADO COLAPSADO — SOLO EN DESKTOP (icon-only)
+   ========================================================= */
+@media (min-width: 769px) {
+    body.sidebar-toggled .sidebar {
+        width: var(--sidebar-collapsed-width);
+        min-width: var(--sidebar-collapsed-width);
+        max-width: var(--sidebar-collapsed-width);
+    }
+
+    body.sidebar-toggled .sidebar-brand img {
+        margin: 0 !important; /* Centra el logo perfectamente quitando el margen derecho */
+    }
+
+    body.sidebar-toggled .main-content {
+        margin-left: var(--sidebar-collapsed-width);
+    }
+
+    body.sidebar-toggled .sidebar .nav-link span,
+    body.sidebar-toggled .sidebar .nav-title,
+    body.sidebar-toggled .sidebar .user-info-text,
+    body.sidebar-toggled .sidebar-brand span,
+    body.sidebar-toggled .sidebar-brand .brand-text,
+    body.sidebar-toggled .sidebar .bi-chevron-down,
+    body.sidebar-toggled .sidebar .bi-chevron-up {
+        display: none !important;
+    }
+
+    body.sidebar-toggled .sidebar-brand {
+        justify-content: center;
+        padding: 0;
+    }
+
+    body.sidebar-toggled .nav-link {
+        justify-content: center;
+        padding: 0.8rem 0;
+    }
+
+    body.sidebar-toggled .nav-link i {
+        margin: 0;
+        font-size: 1.3rem;
+    }
 }
 
-body.sidebar-toggled .sidebar .nav-link span, 
-body.sidebar-toggled .sidebar .nav-title,
-body.sidebar-toggled .sidebar .user-info-text,
-body.sidebar-toggled .sidebar-brand span {
-    display: none; /* Oculta textos */
-}
-
-body.sidebar-toggled .sidebar .sidebar-brand {
-    justify-content: center;
-    padding: 0;
-}
-
-body.sidebar-toggled .sidebar .nav-link {
-    justify-content: center;
-    padding: 0.8rem 0;
-}
-
-/* --- RESPONSIVE MÓVIL (Celular) --- */
+/* =========================================================
+   RESPONSIVE MÓVIL — Sidebar completo, nunca colapsado
+   ========================================================= */
 @media (max-width: 768px) {
-    .sidebar {
-        margin-left: calc(var(--sidebar-width) * -1); /* Esconder menú a la izquierda */
-    }
-    
-    .main-content {
-        margin-left: 0; /* Contenido ocupa todo el ancho */
-        padding: 1rem;
+    html, body {
+        overflow-x: hidden;
+        width: 100%;
     }
 
-    /* Cuando el menú está activo en móvil */
-    body.sidebar-mobile-show .sidebar {
-        margin-left: 0;
-        width: var(--sidebar-width); /* En móvil siempre ancho completo al abrir */
+    .sidebar {
+        width: var(--sidebar-width) !important;
+        min-width: var(--sidebar-width) !important;
+        max-width: var(--sidebar-width) !important;
+        transform: translateX(-100%);
     }
-    
-    /* Fondo oscuro al abrir menú en móvil */
-    .mobile-overlay {
-        display: none;
-        position: fixed;
-        top: 0; left: 0; width: 100%; height: 100%;
-        background: rgba(0,0,0,0.5);
-        z-index: 999;
+
+    .main-content {
+        margin-left: 0 !important;
+        padding: 1rem;
+        width: 100%;
     }
-    
-    body.sidebar-mobile-show .mobile-overlay {
+
+    .topbar {
+        margin: -15px -15px 15px -15px;
+    }
+
+    body.sidebar-toggled {
+        overflow: hidden;
+    }
+
+    body.sidebar-toggled .sidebar {
+        transform: translateX(0) !important;
+    }
+
+    body.sidebar-toggled .mobile-overlay {
         display: block;
+    }
+
+    /* Forzar a que todo se muestre en celular usando inline-block */
+    body.sidebar-toggled .sidebar .nav-link span,
+    body.sidebar-toggled .sidebar .nav-title,
+    body.sidebar-toggled .sidebar .user-info-text,
+    body.sidebar-toggled .sidebar-brand span,
+    body.sidebar-toggled .sidebar-brand .brand-text,
+    body.sidebar-toggled .sidebar .bi-chevron-down,
+    body.sidebar-toggled .sidebar .bi-chevron-up {
+        display: inline-block !important;
+    }
+
+    body.sidebar-toggled .sidebar-brand {
+        justify-content: flex-start !important;
+        padding: 0 1.5rem !important;
+    }
+
+    body.sidebar-toggled .nav-link {
+        justify-content: flex-start !important;
+        padding: 0.8rem 1.5rem !important;
+    }
+
+    body.sidebar-toggled .nav-link i {
+        margin-right: 0.5rem !important;
+        font-size: 1.1rem !important;
     }
 }

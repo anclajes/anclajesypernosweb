@@ -1,60 +1,63 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
+<!-- ENCABEZADO RESPONSIVE -->
+<div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-4 gap-3">
     <div>
-        <h2 class="mb-0 fw-bold"><i class="bi bi-kanban text-primary"></i> Gestión Comercial</h2>
+        <h2 class="mb-0 fw-bold fs-4 fs-md-2"><i class="bi bi-kanban text-primary"></i> Gestión Comercial</h2>
         <p class="text-muted small mb-0">Administración de flujo de cotizaciones</p>
     </div>
-    <a href="{{ url_for('nueva_venta') }}" class="btn btn-success shadow-sm px-4 fw-bold">
+    <a href="{{ url_for('nueva_venta') }}" class="btn btn-success shadow-sm px-4 fw-bold w-100 w-md-auto">
         <i class="bi bi-plus-lg"></i> NUEVA COTIZACIÓN
     </a>
 </div>
 
-<ul class="nav nav-pills mb-3 gap-2 p-2 bg-white rounded shadow-sm">
-    <li class="nav-item">
+<!-- PESTAÑAS (NAVEGACIÓN) RESPONSIVE -->
+<ul class="nav nav-pills mb-3 gap-2 p-2 bg-white rounded shadow-sm flex-column flex-sm-row">
+    <li class="nav-item flex-sm-fill text-center">
         <a class="nav-link {% if vista_actual == 'borradores' and not request.args.get('busqueda') %}active{% endif %}" 
            href="{{ url_for('historial_ventas', vista='borradores') }}">
-            <i class="bi bi-pencil-square"></i> 1. En Proceso (Borradores)
+            <i class="bi bi-pencil-square"></i> <span class="d-sm-none d-md-inline">1.</span> En Proceso
             {% if cuentas.obs > 0 and session.get('role') == 'vendedor' %}
-                <span class="badge bg-danger ms-2 blink-anim">! {{ cuentas.obs }} DEVUELTOS</span>
+                <span class="badge bg-danger ms-1 blink-anim">! {{ cuentas.obs }} DEV</span>
             {% endif %}
         </a>
     </li>
-    <li class="nav-item">
+    <li class="nav-item flex-sm-fill text-center">
         <a class="nav-link {% if vista_actual == 'revision' %}active{% endif %}" 
            href="{{ url_for('historial_ventas', vista='revision') }}">
-            <i class="bi bi-hourglass-split"></i> 2. En Validación
+            <i class="bi bi-hourglass-split"></i> <span class="d-sm-none d-md-inline">2.</span> En Validación
             {% if cuentas.rev > 0 %}
                 <span class="badge bg-warning text-dark ms-1">{{ cuentas.rev }}</span>
             {% endif %}
         </a>
     </li>
-    <li class="nav-item ms-auto">
+    <li class="nav-item flex-sm-fill text-center ms-sm-auto">
         <a class="nav-link text-secondary {% if vista_actual == 'historial' %}active bg-secondary text-white{% endif %}" 
            href="{{ url_for('historial_ventas', vista='historial') }}">
-            <i class="bi bi-archive"></i> 3. Historial Final
+            <i class="bi bi-archive"></i> <span class="d-sm-none d-md-inline">3.</span> Historial Final
         </a>
     </li>
 </ul>
 
+<!-- FORMULARIO DE FILTROS RESPONSIVE -->
 <div class="card mb-4 bg-light border-0 shadow-sm">
     <div class="card-body py-3">
-        <form class="row g-2 align-items-end" method="GET" action="{{ url_for('historial_ventas') }}">
+        <form class="row g-3 align-items-end" method="GET" action="{{ url_for('historial_ventas') }}">
             <input type="hidden" name="vista" value="{{ vista_actual }}">
 
-            <div class="col-md-3">
-                <label class="small fw-bold text-muted">Buscador</label>
+            <div class="col-12 col-md-3">
+                <label class="small fw-bold text-muted mb-1">Buscador</label>
                 <div class="input-group input-group-sm">
-                    <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
-                    <input type="text" name="busqueda" class="form-control" placeholder="N° Pedido, Nombre..." value="{{ request.args.get('busqueda', '') }}">
+                    <span class="input-group-text bg-white border-end-0"><i class="bi bi-search"></i></span>
+                    <input type="text" name="busqueda" class="form-control border-start-0" placeholder="N° Pedido, Nombre..." value="{{ request.args.get('busqueda', '') }}">
                 </div>
             </div>
 
-            <div class="col-md-2">
-                <label class="small fw-bold text-muted">Cliente</label>
+            <div class="col-12 col-md-3">
+                <label class="small fw-bold text-muted mb-1">Cliente</label>
                 <select name="filtro_cliente" id="selectFiltroCliente" class="form-select form-select-sm" style="width: 100%">
-                    <option value="">Todos</option>
+                    <option value="">Todos los clientes</option>
                     {% for c in clientes %}
                         <option value="{{ c.documento }}" {% if cliente_seleccionado == c.documento %}selected{% endif %}>{{ c.nombre }}</option>
                     {% endfor %}
@@ -62,38 +65,39 @@
             </div>
 
             {% if session.get('role') in ['admin', 'administracion'] %}
-            <div class="col-md-2 d-flex align-items-end">
-                <div class="form-check form-switch border rounded bg-white d-flex align-items-center justify-content-center m-0 shadow-sm w-100" style="height: 31px;">
+            <div class="col-12 col-md-2">
+                <div class="form-check form-switch border rounded bg-white d-flex align-items-center justify-content-center m-0 shadow-sm py-1">
                     <input class="form-check-input mt-0 me-2" type="checkbox" name="solo_mias" id="checkSoloMias" 
                            onchange="this.form.submit()" {% if request.args.get('solo_mias') == 'on' %}checked{% endif %} style="cursor: pointer;">
-                    <label class="form-check-label fw-bold text-primary small mb-0" for="checkSoloMias" style="cursor: pointer;">Mis Cotizaciones</label>
+                    <label class="form-check-label fw-bold text-primary small mb-0" for="checkSoloMias" style="cursor: pointer;">Mis Cotiz.</label>
                 </div>
             </div>
             {% endif %}
 
-            <div class="col-md-3"> 
-                <div class="d-flex gap-1">
+            <div class="col-12 col-md-2"> 
+                <div class="d-flex gap-2">
                     <div class="w-50">
-                        <label class="small fw-bold text-muted" style="font-size: 0.7rem;">Desde</label>
-                        <input type="date" name="fecha_inicio" class="form-control form-control-sm px-1" value="{{ request.args.get('fecha_inicio', '') }}">
+                        <label class="small fw-bold text-muted mb-1" style="font-size: 0.7rem;">Desde</label>
+                        <input type="date" name="fecha_inicio" class="form-control form-control-sm" value="{{ request.args.get('fecha_inicio', '') }}">
                     </div>
                     <div class="w-50">
-                        <label class="small fw-bold text-muted" style="font-size: 0.7rem;">Hasta</label>
-                        <input type="date" name="fecha_fin" class="form-control form-control-sm px-1" value="{{ request.args.get('fecha_fin', '') }}">
+                        <label class="small fw-bold text-muted mb-1" style="font-size: 0.7rem;">Hasta</label>
+                        <input type="date" name="fecha_fin" class="form-control form-control-sm" value="{{ request.args.get('fecha_fin', '') }}">
                     </div>
                 </div>
             </div>
             
-            <div class="col-md-2 text-end">
-                <div class="d-flex gap-1">
-                    <button type="submit" class="btn btn-primary btn-sm fw-bold w-100" title="Aplicar Filtros"><i class="bi bi-funnel-fill"></i> Filtrar</button>
-                    <a href="{{ url_for('historial_ventas', vista=vista_actual) }}" class="btn btn-outline-secondary btn-sm" title="Limpiar"><i class="bi bi-arrow-counterclockwise"></i></a>
+            <div class="col-12 col-md-2 mt-3 mt-md-0">
+                <div class="d-flex gap-2">
+                    <button type="submit" class="btn btn-primary btn-sm fw-bold flex-grow-1" title="Aplicar Filtros"><i class="bi bi-funnel-fill"></i> Filtrar</button>
+                    <a href="{{ url_for('historial_ventas', vista=vista_actual) }}" class="btn btn-outline-secondary btn-sm px-3" title="Limpiar"><i class="bi bi-arrow-counterclockwise"></i></a>
                 </div>
             </div>
         </form>
     </div>
 </div>
 
+<!-- TABLA PRINCIPAL RESPONSIVE -->
 <div class="card shadow-sm border-0">
     <div class="card-body p-0 table-responsive" style="min-height: 300px;"> 
         <table class="table table-hover align-middle mb-0 text-nowrap">
@@ -112,21 +116,18 @@
             <tbody class="small">
                 {% for o in ordenes %}
                     <tr class="{% if o.estado == 'Observado' %}table-danger border-start border-5 border-danger{% endif %}">
-                        
                         <td class="ps-4 fw-bold">
                             {% if o.estado == 'Observado' %}
                                 <i class="bi bi-exclamation-triangle-fill text-danger me-1 blink-anim" title="Devuelto por Gerencia o Almacén"></i>
                             {% endif %}
                             {{ "%05d"|format(o.id) }}
                         </td>
-
                         <td>
                             <div class="d-flex flex-column">
                                 <span>{{ o.fecha.strftime('%d/%m/%Y') }}</span>
                                 <span class="text-muted" style="font-size:0.75rem">{{ o.fecha.strftime('%H:%M') }}</span>
                             </div>
                         </td>
-
                         <td>
                             {% if o.fecha_entrega %}
                                 <div class="text-danger fw-bold">
@@ -135,7 +136,6 @@
                             {% else %}
                                 <span class="text-muted fst-italic" style="font-size:0.75rem">A coordinar</span>
                             {% endif %}
-                            
                             <div class="mt-1 d-flex flex-column gap-1 align-items-start">
                                 {% if o.control_calidad == 'SI' %}
                                     <span class="badge bg-primary" style="font-size:0.65rem"><i class="bi bi-patch-check"></i> CERTIFICADO</span>
@@ -148,20 +148,16 @@
                                 {% endif %}
                             </div>
                         </td>
-                        
                         <td>
                             <div class="fw-bold text-truncate" style="max-width: 200px;">{{ o.cliente.nombre }}</div>
                             {% if o.orden_compra %}
                                 <div class="text-primary" style="font-size:0.75rem"><i class="bi bi-receipt"></i> OC: {{ o.orden_compra }}</div>
                             {% endif %}
                         </td>
-                        
                         <td class="text-muted"><i class="bi bi-person"></i> {{ o.vendedor.username }}</td>
-                        
                         <td class="text-end fw-bold font-monospace">
                             {{ "S/" if o.moneda == 'PEN' else "$" }} {{ "%.2f"|format(o.total) }}
                         </td>
-
                         <td class="text-center">
                             <span class="badge 
                                 {% if o.estado == 'Cotizacion' %}bg-secondary
@@ -180,10 +176,10 @@
                                 {% if o.estado == 'Cotizacion' %}📝 Borrador
                                 {% elif o.estado == 'Por Verificar' %}🔎 Almacén: Verificando
                                 {% elif o.estado == 'Stock Confirmado' %}📦 Stock OK
-                                {% elif o.estado == 'Revision Pre-Cliente' %}👀 Gerencia: Revisión Inicial
-                                {% elif o.estado == 'Aprobado Pre-Cliente' %}✅ Gerencia OK (Falta Cliente)
-                                {% elif o.estado == 'Pendiente Aprobacion Final' %}⏳ Gerencia: Aprobación Final (OC)
-                                {% elif o.estado == 'Observado' %}⚠️ CORREGIR (Devuelto)
+                                {% elif o.estado == 'Revision Pre-Cliente' %}👀 Gerencia: Revisión
+                                {% elif o.estado == 'Aprobado Pre-Cliente' %}✅ Gerencia OK
+                                {% elif o.estado == 'Pendiente Aprobacion Final' %}⏳ Gerencia: Aprob. Final
+                                {% elif o.estado == 'Observado' %}⚠️ CORREGIR
                                 {% elif o.estado == 'Por Despachar' %}📦 Por Despachar
                                 {% elif o.estado == 'Despachado' %}🚚 Despachado
                                 {% elif o.estado == 'Entregado' %}✅ Entregado
@@ -191,35 +187,21 @@
                                 {% else %}{{ o.estado }}{% endif %}
                             </span>
                         </td>
-
                         <td class="text-center">
                             <div class="btn-group btn-group-sm">
-                                <button class="btn btn-light border shadow-sm" 
-                                        onclick="verDetalleCompleto('{{o.id}}')" 
-                                        title="Ver Detalle / Gestionar">
+                                <button class="btn btn-light border shadow-sm" onclick="verDetalleCompleto('{{o.id}}')" title="Ver Detalle">
                                     <i class="bi bi-eye-fill text-primary"></i>
                                 </button>
-                                <a href="/descargar_cotizacion_v2/{{ o.id }}" 
-                                class="btn btn-light border text-danger shadow-sm" 
-                                title="Descargar Cotización PDF" 
-                                target="_blank">
+                                <a href="/descargar_cotizacion_v2/{{ o.id }}" class="btn btn-light border text-danger shadow-sm" title="Descargar PDF" target="_blank">
                                     <i class="bi bi-file-pdf-fill"></i> COT
                                 </a>
                                 {% if o.estado in ['Por Despachar', 'Despachado', 'Entregado'] %}
-                                <a href="/descargar_nota_pedido/{{ o.id }}" 
-                                class="btn btn-light border text-primary shadow-sm" 
-                                title="Descargar Nota de Pedido (Sin Precios - Para Almacén)" 
-                                target="_blank">
+                                <a href="/descargar_nota_pedido/{{ o.id }}" class="btn btn-light border text-primary shadow-sm" title="Nota de Pedido" target="_blank">
                                     <i class="bi bi-file-earmark-check-fill"></i> NP
                                 </a>
                                 {% endif %}
-
-
-                                <!-- NUEVO: BOTÓN DE ORDEN DE COMPRA (SOLO SI EXISTE) -->
                                 {% if o.archivo_oc %}
-                                <a href="/ver_oc/{{ o.archivo_oc }}" 
-                                class="btn btn-light border text-success shadow-sm fw-bold" 
-                                title="Ver Orden de Compra Adjunta" target="_blank">
+                                <a href="/ver_oc/{{ o.archivo_oc }}" class="btn btn-light border text-success shadow-sm fw-bold" title="Ver OC Adjunta" target="_blank">
                                     <i class="bi bi-paperclip"></i> OC
                                 </a>
                                 {% endif %}
@@ -236,74 +218,72 @@
                 {% endfor %}
             </tbody>
         </table>
-    </div>  
+    </div> 
 
+    <!-- PAGINACIÓN RESPONSIVE -->
     <div class="card-footer bg-white border-top py-3">
         <nav aria-label="Navegación">
-            <ul class="pagination justify-content-center mb-0 pagination-sm">
+            <ul class="pagination justify-content-center mb-0 pagination-sm flex-wrap gap-1">
                 <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
-                    <a class="page-link" href="{{ url_for('historial_ventas', page=pagination.prev_num, vista=vista_actual, busqueda=request.args.get('busqueda',''), filtro_vendedor=request.args.get('filtro_vendedor',''), fecha_inicio=request.args.get('fecha_inicio',''), fecha_fin=request.args.get('fecha_fin','')) }}">Anterior</a>
+                    <a class="page-link" href="{{ url_for('historial_ventas', page=pagination.prev_num, vista=vista_actual, busqueda=request.args.get('busqueda',''), filtro_vendedor=request.args.get('filtro_vendedor',''), fecha_inicio=request.args.get('fecha_inicio',''), fecha_fin=request.args.get('fecha_fin','')) }}">Ant</a>
                 </li>
                 <li class="page-item disabled">
-                    <span class="page-link text-muted">Pág. {{ pagination.page }} de {{ pagination.pages }}</span>
+                    <span class="page-link text-muted">Pág. {{ pagination.page }} / {{ pagination.pages }}</span>
                 </li>
                 <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
-                    <a class="page-link" href="{{ url_for('historial_ventas', page=pagination.next_num, vista=vista_actual, busqueda=request.args.get('busqueda',''), filtro_vendedor=request.args.get('filtro_vendedor',''), fecha_inicio=request.args.get('fecha_inicio',''), fecha_fin=request.args.get('fecha_fin','')) }}">Siguiente</a>
+                    <a class="page-link" href="{{ url_for('historial_ventas', page=pagination.next_num, vista=vista_actual, busqueda=request.args.get('busqueda',''), filtro_vendedor=request.args.get('filtro_vendedor',''), fecha_inicio=request.args.get('fecha_inicio',''), fecha_fin=request.args.get('fecha_fin','')) }}">Sig</a>
                 </li>
             </ul>
         </nav>
     </div>
 </div>
 
+<!-- MODAL DETALLE COMPLETO RESPONSIVE -->
 <div class="modal fade" id="modalDetalleCompleto" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-dialog modal-xl modal-fullscreen-md-down modal-dialog-scrollable">
         <div class="modal-content border-0 shadow-lg">
             
             <div class="modal-header bg-primary text-white py-3">
-                <div class="d-flex w-100 justify-content-between align-items-center">
-                    <div>
+                <div class="d-flex flex-column flex-sm-row w-100 justify-content-between align-items-start align-items-sm-center pe-3">
+                    <div class="mb-2 mb-sm-0">
                         <h5 class="modal-title fw-bold" id="modalTitulo"><i class="bi bi-file-text"></i> Cargando...</h5>
                         <div class="small opacity-75" id="modalSubtitulo">...</div>
                     </div>
-                    <div id="badgeEstadoModal" class="px-3"></div>
+                    <div id="badgeEstadoModal"></div>
                 </div>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
 
-            <div class="modal-body bg-light p-4">
-                <div class="card border-0 shadow-sm mb-4 bg-white">
-                    <div class="card-body p-3">
+            <div class="modal-body bg-light p-2 p-md-4">
+                
+                <!-- TIMELINE (Línea de tiempo) -->
+                <div class="card border-0 shadow-sm mb-3 bg-white overflow-auto">
+                    <div class="card-body p-3" style="min-width: 450px;"> 
                         <div class="position-relative m-4">
                             <div class="progress position-absolute" style="height: 4px; top: 50%; left: 0; right: 0; transform: translateY(-50%); z-index: 1;">
                                 <div id="timeline_bar" class="progress-bar bg-success" role="progressbar" style="width: 0%;"></div>
                             </div>
-                            
                             <div class="d-flex justify-content-between position-relative" style="z-index: 2;">
-                                <!-- Paso 1: Borrador -->
                                 <div class="text-center" style="width: 70px;">
                                     <div id="step1_icon" class="rounded-circle bg-success text-white d-flex align-items-center justify-content-center mx-auto shadow-sm" style="width: 35px; height: 35px; border: 3px solid white;"><i class="bi bi-file-earmark-plus"></i></div>
                                     <div class="small fw-bold mt-2 text-dark" style="font-size:0.65rem; line-height: 1.1;">Borrador</div>
                                     <div id="step1_info" class="text-muted" style="font-size:0.6rem;">...</div>
                                 </div>
-                                <!-- Paso 2: Stock -->
                                 <div class="text-center" style="width: 70px;">
                                     <div id="step2_icon" class="rounded-circle bg-light text-muted d-flex align-items-center justify-content-center mx-auto border" style="width: 35px; height: 35px; border: 3px solid white;"><i class="bi bi-box-seam"></i></div>
                                     <div class="small fw-bold mt-2 text-muted" id="step2_text" style="font-size:0.65rem; line-height: 1.1;">Stock OK</div>
                                     <div id="step2_info" class="text-muted" style="font-size:0.6rem;">Pendiente</div>
                                 </div>
-                                <!-- Paso 3: Revisión Inicial Gerencia -->
                                 <div class="text-center" style="width: 80px;">
                                     <div id="step3_icon" class="rounded-circle bg-light text-muted d-flex align-items-center justify-content-center mx-auto border" style="width: 35px; height: 35px; border: 3px solid white;"><i class="bi bi-eye"></i></div>
                                     <div class="small fw-bold mt-2 text-muted" id="step3_text" style="font-size:0.65rem; line-height: 1.1;">Rev. Inicial</div>
                                     <div id="step3_info" class="text-muted" style="font-size:0.6rem;">Pendiente</div>
                                 </div>
-                                <!-- Paso 4: Aprobación Cliente (Sube OC) -->
                                 <div class="text-center" style="width: 70px;">
                                     <div id="step4_icon" class="rounded-circle bg-light text-muted d-flex align-items-center justify-content-center mx-auto border" style="width: 35px; height: 35px; border: 3px solid white;"><i class="bi bi-person-check"></i></div>
                                     <div class="small fw-bold mt-2 text-muted" id="step4_text" style="font-size:0.65rem; line-height: 1.1;">OK Cliente</div>
                                     <div id="step4_info" class="text-muted" style="font-size:0.6rem;">Pendiente</div>
                                 </div>
-                                <!-- Paso 5: Aprobación Final Gerencia -->
                                 <div class="text-center" style="width: 80px;">
                                     <div id="step5_icon" class="rounded-circle bg-light text-muted d-flex align-items-center justify-content-center mx-auto border" style="width: 35px; height: 35px; border: 3px solid white;"><i class="bi bi-check-all"></i></div>
                                     <div class="small fw-bold mt-2 text-muted" id="step5_text" style="font-size:0.65rem; line-height: 1.1;">Aprob. Final</div>
@@ -314,16 +294,15 @@
                     </div>
                 </div>
                 
-                <div class="row g-4 mb-3">
-                    
-                    <div class="col-md-6 d-flex flex-column gap-3">
-                        
-                        <div class="card border-0 shadow-sm h-100">
+                <!-- BLOQUES DE INFO: Cliente, Entrega, Comercial -->
+                <div class="row g-3 mb-3">
+                    <div class="col-12 col-lg-6 d-flex flex-column gap-3">
+                        <div class="card border-0 shadow-sm">
                             <div class="card-header bg-white border-bottom-0 pt-3 pb-0">
                                 <h6 class="fw-bold text-primary small text-uppercase mb-0"><i class="bi bi-person-vcard"></i> 1. Cliente</h6>
                             </div>
                             <div class="card-body pt-2">
-                                <div class="fw-bold text-dark fs-6 mb-1 text-truncate" id="view_cliente">...</div>
+                                <div class="fw-bold text-dark fs-6 mb-1 text-wrap" id="view_cliente">...</div>
                                 <div class="small text-muted mb-1"><span class="badge bg-light text-dark border">RUC: <span id="view_ruc">...</span></span></div>
                                 <div class="small text-muted d-flex align-items-start mb-1"><i class="bi bi-geo-alt me-1 mt-1"></i> <span id="view_dir">...</span></div>
                                 <div class="small text-muted"><i class="bi bi-telephone me-1"></i> <span id="view_tel">...</span></div>
@@ -335,90 +314,88 @@
                                 <h6 class="fw-bold text-success small text-uppercase mb-0"><i class="bi bi-truck"></i> 2. Entrega Acordada</h6>
                             </div>
                             <div class="card-body pt-2">
-                                <div class="d-flex justify-content-between align-items-center mb-2 border-bottom pb-2">
-                                    <span class="badge bg-secondary" id="view_tipo_entrega">...</span>
-                                    <span class="fw-bold text-danger small"><i class="bi bi-calendar-event"></i> <span id="view_fecha_entrega">...</span></span>
+                                <div class="d-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center mb-2 border-bottom pb-2 gap-2">
+                                    <span class="badge bg-secondary w-100 w-sm-auto" id="view_tipo_entrega">...</span>
+                                    <span class="fw-bold text-danger small w-100 w-sm-auto text-sm-end"><i class="bi bi-calendar-event"></i> <span id="view_fecha_entrega">...</span></span>
                                 </div>
                                 <div class="small text-muted mb-2">
-                                    <i class="bi bi-pin-map-fill text-danger"></i> <span id="view_lugar_entrega" class="fw-bold text-dark">...</span>
+                                    <i class="bi bi-pin-map-fill text-danger"></i> <span id="view_lugar_entrega" class="fw-bold text-dark text-wrap">...</span>
                                 </div>
                                 <div class="small bg-light p-2 rounded border mt-2">
-                                    <span class="text-muted"><i class="bi bi-building-up"></i> Agencia de Transporte:</span> 
-                                    <span id="view_agencia" class="text-primary fw-bold ms-1">...</span>
+                                    <span class="text-muted d-block d-sm-inline"><i class="bi bi-building-up"></i> Agencia de Transporte:</span> 
+                                    <span id="view_agencia" class="text-primary fw-bold ms-sm-1 d-block d-sm-inline text-wrap">...</span>
                                 </div>
                             </div>
                         </div>
-
                     </div>
 
-                    <div class="col-md-6 d-flex flex-column gap-3">
-                        
+                    <div class="col-12 col-lg-6 d-flex flex-column gap-3">
                         <div class="card h-100 border-0 shadow-sm">
                             <div class="card-header bg-white border-bottom-0 pt-3 pb-0">
                                 <h6 class="fw-bold text-warning text-dark small text-uppercase mb-0"><i class="bi bi-briefcase"></i> 3. Info. Comercial</h6>
                             </div>
                             <div class="card-body pt-2">
-                                <table class="table table-sm table-borderless small mb-0">
-                                    <tr><td class="text-muted p-0 pb-2">Atención a:</td><td class="fw-bold p-0 pb-2 text-end text-dark" id="view_atte">...</td></tr>
-                                    <tr><td class="text-muted p-0 pb-2">O/C Cliente:</td><td class="fw-bold text-primary p-0 pb-2 text-end" id="view_oc">...</td></tr>
-                                    <tr><td class="text-muted p-0 pb-2">Condición Pago:</td><td class="p-0 pb-2 text-end"><span class="badge bg-info text-dark" id="view_pago">...</span></td></tr>
+                                <table class="table table-sm table-borderless small mb-0 w-100">
+                                    <tr><td class="text-muted p-0 pb-2 w-50">Atención a:</td><td class="fw-bold p-0 pb-2 text-end text-dark text-wrap w-50" id="view_atte">...</td></tr>
+                                    <tr><td class="text-muted p-0 pb-2">O/C Cliente:</td><td class="fw-bold text-primary p-0 pb-2 text-end text-wrap" id="view_oc">...</td></tr>
+                                    <tr><td class="text-muted p-0 pb-2">Condición Pago:</td><td class="p-0 pb-2 text-end"><span class="badge bg-info text-dark text-wrap" id="view_pago">...</span></td></tr>
                                     <tr class="border-bottom"><td class="text-muted p-0 pb-2">Validez Oferta:</td><td class="p-0 pb-2 text-end fw-bold" id="view_validez">...</td></tr>
                                     
                                     <tr><td colspan="2" class="pt-2 text-muted fw-bold" style="font-size: 0.7rem;">REQUISITOS ADICIONALES</td></tr>
-                                    <tr><td class="text-muted p-0 pb-1 align-middle">Certificado de Calidad:</td><td class="p-0 pb-1 text-end fs-6" id="view_calidad">...</td></tr>
-                                    <tr><td class="text-muted p-0 align-middle">Penalidad por Retraso:</td><td class="p-0 text-end fs-6" id="view_penalidad">...</td></tr>
+                                    <tr><td class="text-muted p-0 pb-1 align-middle">Certificado:</td><td class="p-0 pb-1 text-end fs-6" id="view_calidad">...</td></tr>
+                                    <tr><td class="text-muted p-0 align-middle">Penalidad:</td><td class="p-0 text-end fs-6" id="view_penalidad">...</td></tr>
                                 </table>
                             </div>
                         </div>
-
                     </div>
-
                 </div>
 
+                <!-- CARGA DE ORDEN DE COMPRA -->
                 <div class="card border-0 shadow-sm mb-3">
-                    <div class="card-header bg-light py-2 border-bottom-0 d-flex justify-content-between align-items-center">
-                        <h6 class="mb-0 fw-bold small text-uppercase text-muted"><i class="bi bi-paperclip"></i> Orden de Compra (Adjunto)</h6>
-                        <div id="view_oc_status" class="ms-auto">
-                            <a href="#" id="view_oc_link" target="_blank" class="badge bg-primary text-decoration-none px-3 py-2 d-none shadow-sm">
+                    <div class="card-header bg-light py-2 border-bottom-0 d-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center gap-2">
+                        <h6 class="mb-0 fw-bold small text-uppercase text-muted"><i class="bi bi-paperclip"></i> Orden de Compra Adjunta</h6>
+                        <div id="view_oc_status" class="ms-sm-auto w-100 w-sm-auto text-end">
+                            <a href="#" id="view_oc_link" target="_blank" class="btn btn-sm btn-primary px-3 py-1 d-none shadow-sm w-100 w-sm-auto">
                                 <i class="bi bi-eye-fill"></i> VER PDF
                             </a>
-                            <span id="view_oc_vacio" class="badge bg-secondary bg-opacity-25 text-muted fw-normal">Sin archivo adjunto</span>
+                            <span id="view_oc_vacio" class="badge bg-secondary bg-opacity-25 text-muted fw-normal w-100 w-sm-auto">Sin archivo</span>
                         </div>
                     </div>
-                    <div class="card-body py-2 px-3 bg-white rounded-bottom">
-                        <div class="row g-3 align-items-center">
-                            <div class="col-md-6 border-end">
+                    <div class="card-body py-3 px-3 bg-white rounded-bottom">
+                        <div class="row g-3 align-items-end">
+                            <div class="col-12 col-md-6 border-md-end">
                                 <label class="small text-muted fw-bold mb-1">Cargar/Actualizar Número O/C</label>
                                 <div class="input-group input-group-sm">
                                     <span class="input-group-text bg-light border-end-0"><i class="bi bi-hash"></i></span>
                                     <input type="text" id="input_numero_oc" class="form-control border-start-0 text-uppercase fw-bold text-dark" placeholder="Ej: 4500-123">
-                                    <button class="btn btn-outline-success" type="button" onclick="guardarSoloNumero()" title="Guardar solo el número"><i class="bi bi-floppy2-fill"></i></button>
+                                    <button class="btn btn-outline-success px-3" type="button" onclick="guardarSoloNumero()" title="Guardar"><i class="bi bi-floppy2-fill"></i></button>
                                 </div>
                             </div>
-                            <div class="col-md-6">
+                            <div class="col-12 col-md-6">
                                 <label class="small text-muted fw-bold mb-1">Subir Archivo PDF/Foto</label>
                                 <div class="input-group input-group-sm">
                                     <input type="file" id="input_file_oc" class="form-control" accept=".pdf,.jpg,.png,.jpeg">
-                                    <button class="btn btn-outline-primary" type="button" onclick="guardarSoloArchivo()" title="Subir archivo"><i class="bi bi-cloud-arrow-up-fill"></i></button>
+                                    <button class="btn btn-outline-primary px-3" type="button" onclick="guardarSoloArchivo()" title="Subir"><i class="bi bi-cloud-arrow-up-fill"></i></button>
                                 </div>
                             </div>
                         </div>
                     </div>
                 </div>
 
+                <!-- TABLA DE ITEMS DEL MODAL -->
                 <div class="card border-0 shadow-sm">
                     <div class="card-header bg-white py-2">
                         <h6 class="mb-0 fw-bold small text-uppercase text-muted"><i class="bi bi-list-check"></i> Detalle de Productos</h6>
                     </div>
                     <div class="card-body p-0 table-responsive">
-                        <table class="table table-hover align-middle mb-0">
+                        <table class="table table-hover align-middle mb-0 text-nowrap">
                             <thead class="bg-light small text-uppercase text-muted">
                                 <tr>
-                                    <th class="ps-3 border-0" style="width: 15%">Código</th>
-                                    <th class="border-0" style="width: 45%">Descripción</th>
-                                    <th class="text-center border-0" style="width: 10%">Cant.</th>
-                                    <th class="text-end border-0" style="width: 15%">P. Unit</th>
-                                    <th class="text-end pe-3 border-0" style="width: 15%">Subtotal</th>
+                                    <th class="ps-3 border-0">Código</th>
+                                    <th class="border-0">Descripción</th>
+                                    <th class="text-center border-0">Cant.</th>
+                                    <th class="text-end border-0">P. Unit</th>
+                                    <th class="text-end pe-3 border-0">Subtotal</th>
                                 </tr>
                             </thead>
                             <tbody id="view_tabla_items" class="small">
@@ -431,7 +408,7 @@
                                 </tr>
                                 <tr>
                                     <td colspan="3"></td>
-                                    <td class="text-end small text-danger fw-bold" id="view_descuento_label">DESCUENTO:</td>
+                                    <td class="text-end small text-danger fw-bold" id="view_descuento_label">DESC.:</td>
                                     <td class="text-end pe-3 text-danger" id="view_descuento">- 0.00</td>
                                 </tr>
                                 <tr>
@@ -443,20 +420,21 @@
                                     <td colspan="3" class="ps-3 pt-3">
                                         <span class="badge bg-light text-dark border fw-normal">Moneda: <strong id="view_moneda"></strong></span>
                                     </td>
-                                    <td class="text-end pt-3 fs-5 fw-bold text-dark">TOTAL:</td>
-                                    <td class="text-end pe-3 pt-3 fs-5 fw-bold text-primary" id="view_total">0.00</td>
+                                    <td class="text-end pt-3 fs-6 fs-md-5 fw-bold text-dark">TOTAL:</td>
+                                    <td class="text-end pe-3 pt-3 fs-6 fs-md-5 fw-bold text-primary" id="view_total">0.00</td>
                                 </tr>
                             </tfoot>
                         </table>
                     </div>
                 </div>
 
+                <!-- ALERTAS DEL MODAL -->
                 <div id="box_motivo_rechazo" class="alert alert-danger border-danger mt-3 mb-2 d-none shadow-sm fade show">
                     <div class="d-flex align-items-center">
                         <div class="fs-2 me-3"><i class="bi bi-shield-x"></i></div>
                         <div>
                             <h6 class="fw-bold text-uppercase mb-0">Corrección Requerida</h6>
-                            <div class="fst-italic mt-1" id="view_motivo_rechazo">...</div>
+                            <div class="fst-italic mt-1 small" id="view_motivo_rechazo">...</div>
                         </div>
                     </div>
                 </div>
@@ -470,30 +448,30 @@
 
             </div>
 
-            <div class="modal-footer bg-white d-flex justify-content-between align-items-center">
-                <div>
-                    <a href="#" id="btn_descargar_modal" class="btn btn-outline-dark fw-bold shadow-sm">
-                        <i class="bi bi-file-earmark-arrow-down-fill"></i> Descargar
-                    </a>
-                </div>
+            <!-- FOOTER DEL MODAL CON BOTONES APILADOS EN MÓVIL -->
+            <div class="modal-footer bg-white d-flex flex-column flex-md-row justify-content-between align-items-stretch align-items-md-center gap-2 py-3">
+                
+                <a href="#" id="btn_descargar_modal" class="btn btn-outline-dark fw-bold shadow-sm w-100 w-md-auto mb-2 mb-md-0">
+                    <i class="bi bi-file-earmark-arrow-down-fill"></i> Descargar PDF
+                </a>
 
-                <div class="d-flex gap-2">
-                    <button id="btn_ir_editar" class="btn btn-outline-secondary fw-bold" onclick="irAEditar()">
+                <div class="d-flex flex-column flex-md-row gap-2 w-100 w-md-auto">
+                    <button id="btn_ir_editar" class="btn btn-outline-secondary fw-bold w-100 w-md-auto" onclick="irAEditar()">
                         <i class="bi bi-pencil"></i> Editar
                     </button>
 
-                    <div id="panel_acciones_gerencia" class="d-none">
-                        <button id="btn_observar_gerencia" class="btn btn-outline-danger me-2" onclick="rechazarDesdeModal()">
+                    <div id="panel_acciones_gerencia" class="d-none d-flex flex-column flex-md-row gap-2 w-100 w-md-auto">
+                        <button id="btn_observar_gerencia" class="btn btn-outline-danger w-100 w-md-auto" onclick="rechazarDesdeModal()">
                             <i class="bi bi-x-circle"></i> Observar / Devolver
                         </button>
-                        <button class="btn btn-success fw-bold px-4 shadow" onclick="aprobarDesdeModal()">
+                        <button class="btn btn-success fw-bold px-4 shadow w-100 w-md-auto" onclick="aprobarDesdeModal()">
                             <i class="bi bi-check-circle-fill"></i> APROBAR PEDIDO
                         </button>
                     </div>
 
-                    <div id="panel_acciones_vendedor" class="d-none">
-                        <button class="btn btn-info text-dark border border-info fw-bold px-4 shadow" onclick="solicitarVerificacionFisicaDesdeModal()">
-                            <i class="bi bi-search"></i> Solicitar Verificación de Stock (Almacén)
+                    <div id="panel_acciones_vendedor" class="d-none w-100 w-md-auto">
+                        <button class="btn btn-info text-dark border border-info fw-bold shadow w-100 w-md-auto" onclick="solicitarVerificacionFisicaDesdeModal()">
+                            <i class="bi bi-search"></i> Verificación de Stock (Almacén)
                         </button>
                     </div>
                 </div>
