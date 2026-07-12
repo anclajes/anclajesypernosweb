@@ -32,34 +32,34 @@
     }
 </style>
 
-<!-- BANNER IDENTIFICATIVO DE LA EMPRESA IMPORT BOLTS -->
+<!-- BANNER IDENTIFICATIVO DE LA EMPRESA IMPORT BOLTS (RESPONSIVE) -->
 <div class="card shadow-sm border-0 mb-4" style="border-left: 6px solid var(--theme-secondary) !important;">
-    <div class="card-body d-flex justify-content-between align-items-center bg-white rounded py-2">
-        <div class="d-flex align-items-center">
-            <img src="{{ url_for('static', filename='img/logo_import.png') }}" alt="Logo Import Bolts" style="height: 60px; object-fit: contain;" class="me-4 pe-3 border-end">
+    <div class="card-body d-flex flex-column flex-lg-row justify-content-between align-items-start align-items-lg-center bg-white rounded py-3 gap-3">
+        <div class="d-flex flex-column flex-sm-row align-items-start align-items-sm-center gap-3">
+            <img src="{{ url_for('static', filename='img/logo_import.png') }}" alt="Logo Import Bolts" style="height: 60px; object-fit: contain;" class="pe-0 pe-sm-3 border-0 border-sm-end">
             <div>
-                <h2 class="mb-0 fw-bold" style="color: var(--theme-primary);">📦 Inventario: IMPORT BOLTS</h2>
+                <h2 class="mb-0 fw-bold fs-4 fs-sm-2" style="color: var(--theme-primary);">📦 Inventario: IMPORT BOLTS</h2>
                 <span class="text-muted small">Gestión y control de mercadería - Import Bolts & Estructure S.A.C.</span>
             </div>
         </div>
-        <div class="d-flex gap-2">
+        <div class="d-flex flex-column flex-sm-row flex-wrap gap-2 w-100 w-lg-auto">
             {% if session.get('role') in ['admin', 'almacen', 'administracion'] %}
-            <a href="{{ url_for('ver_kardex') }}" class="btn btn-outline-dark shadow-sm">
+            <a href="{{ url_for('ver_kardex') }}" class="btn btn-outline-dark shadow-sm w-100 w-sm-auto">
                 <i class="bi bi-clock-history"></i> Kardex
             </a>
             {% endif %}
 
             {% if session.get('role') in ['admin', 'almacen'] %}
-            <button class="btn btn-secondary shadow-sm" data-bs-toggle="modal" data-bs-target="#modalConfigMasiva" title="Ajustar Stock Mínimo por Familia">
+            <button class="btn btn-secondary shadow-sm w-100 w-sm-auto" data-bs-toggle="modal" data-bs-target="#modalConfigMasiva" title="Ajustar Stock Mínimo por Familia">
                 <i class="bi bi-gear-wide-connected"></i> Mínimos
             </button>
-            <a href="{{ url_for('exportar_excel_importbolts') }}" class="btn btn-outline-success shadow-sm">
+            <a href="{{ url_for('exportar_excel_importbolts') }}" class="btn btn-outline-success shadow-sm w-100 w-sm-auto">
                 <i class="bi bi-download"></i> Exportar
             </a>
-            <button class="btn btn-success shadow-sm fw-bold" data-bs-toggle="modal" data-bs-target="#modalImportar">
+            <button class="btn btn-success shadow-sm fw-bold w-100 w-sm-auto" data-bs-toggle="modal" data-bs-target="#modalImportar">
                 <i class="bi bi-file-earmark-excel"></i> Importar Excel
             </button>
-            <button class="btn btn-brand shadow-sm fw-bold" data-bs-toggle="modal" data-bs-target="#modalNuevo">
+            <button class="btn btn-brand shadow-sm fw-bold w-100 w-sm-auto" data-bs-toggle="modal" data-bs-target="#modalNuevo">
                 <i class="bi bi-plus-lg"></i> Nuevo Producto
             </button>
             {% endif %}
@@ -72,7 +72,7 @@
 <div class="alert py-2 shadow-sm d-flex align-items-center mb-3 border-0" style="background-color: #f2f9ed; border-left: 4px solid var(--theme-secondary) !important;">
     <i class="bi bi-info-circle-fill fs-5 me-3" style="color: var(--theme-primary);"></i>
     <div>
-        <h6 class="mb-0 fw-bold" style="color: var(--theme-primary);">Última actualización masiva de inventario</h6>
+        <h6 class="mb-0 fw-bold fs-6" style="color: var(--theme-primary);">Última actualización masiva de inventario</h6>
         <small class="text-muted">
             Sincronizado el <strong>{{ info_importacion.updated_at.strftime('%d/%m/%Y a las %H:%M') }}</strong> 
             por <strong>{{ info_importacion.updated_by }}</strong>
@@ -81,18 +81,19 @@
 </div>
 {% endif %}
 
+<!-- FILTROS RESPONSIVE -->
 <div class="card mb-4 bg-white border shadow-sm rounded">
     <div class="card-body py-3">
         <form method="GET" action="{{ url_for('inventario_importbolts') }}" id="formFiltros">
             <div class="row g-2 align-items-center">
-                <div class="col-md-3">
+                <div class="col-12 col-md-4 col-lg-3">
                     <div class="input-group">
                         <span class="input-group-text bg-light border-end-0 text-muted"><i class="bi bi-search"></i></span>
                         <input type="text" name="busqueda" class="form-control border-start-0 bg-light" placeholder="CÓDIGO o Descripción..." value="{{ search }}">
                     </div>
                 </div>
                 
-                <div class="col-md-3">
+                <div class="col-12 col-sm-6 col-md-4 col-lg-3">
                     <select name="categoria" id="filtro_familia" class="form-select bg-light" onchange="document.getElementById('formFiltros').submit()">
                         <option value="todos">-- Todas las Familias --</option>
                         {% for cat in lista_categorias %}
@@ -101,7 +102,7 @@
                     </select>
                 </div>
 
-                <div class="col-md-2">
+                <div class="col-12 col-sm-6 col-md-4 col-lg-2">
                     <select name="calidad" id="filtro_calidad" class="form-select bg-light" onchange="document.getElementById('formFiltros').submit()">
                         <option value="todos">-- Calidad --</option>
                         {% for cal in lista_calidades %}
@@ -110,7 +111,7 @@
                     </select>
                 </div>
 
-                <div class="col-md-2">
+                <div class="col-6 col-md-6 col-lg-2">
                     <select name="per_page" class="form-select bg-light" onchange="document.getElementById('formFiltros').submit()">
                         <option value="20" {% if limit == 20 %}selected{% endif %}>20 filas</option>
                         <option value="50" {% if limit == 50 %}selected{% endif %}>50 filas</option>
@@ -118,7 +119,7 @@
                     </select>
                 </div>
                 
-                <div class="col-md-2 text-end">
+                <div class="col-6 col-md-6 col-lg-2 text-end">
                     <div class="form-check form-switch d-inline-block border rounded py-2 px-2 bg-light w-100 text-center">
                         <input class="form-check-input" type="checkbox" name="stock_bajo" id="checkStockBajo" 
                             onchange="document.getElementById('formFiltros').submit()"
@@ -131,9 +132,10 @@
     </div>
 </div>
 
+<!-- TABLA PRINCIPAL RESPONSIVE -->
 <div class="card shadow-sm mb-3 border-0 rounded overflow-hidden">
     <div class="card-body p-0 table-responsive">
-        <table class="table table-hover table-striped mb-0 align-middle small">
+        <table class="table table-hover table-striped mb-0 align-middle small text-nowrap">
             <thead class="table-brand-header text-nowrap">
                 <tr>
                     <th class="ps-3 table-brand-header">CÓDIGO</th>
@@ -183,7 +185,7 @@
                     <td class="text-end text-muted">{% if p.precio_unidad > 0 %} $ {{ "%.2f"|format(p.precio_unidad) }} {% else %} - {% endif %}</td>
                     <td class="text-end text-muted">{% if p.precio_caja > 0 %} $ {{ "%.2f"|format(p.precio_caja) }} {% else %} - {% endif %}</td>
                     
-                    <td class="text-center text-nowrap pe-3">
+                    <td class="text-center pe-3">
                         {% if session.get('role') == 'admin' %}
                             <div class="btn-group shadow-sm">
                                 <button class="btn btn-sm btn-outline-primary py-0" 
@@ -207,25 +209,28 @@
     </div>
 </div>
 
-<div class="d-flex justify-content-between align-items-center mt-4">
-    <div class="text-muted small ms-2">
+<!-- PAGINACIÓN RESPONSIVE -->
+<div class="d-flex flex-column flex-md-row justify-content-between align-items-center mt-4 gap-3">
+    <div class="text-muted small text-center text-md-start">
         Mostrando página <b style="color: var(--theme-primary);">{{ pagination.page }}</b> de <b>{{ pagination.pages }}</b> 
-        <span class="mx-2">|</span> 
+        <span class="mx-2 d-none d-sm-inline">|</span> 
+        <br class="d-block d-sm-none">
         Total: <span class="badge text-white" style="background-color: var(--theme-primary);">{{ pagination.total }}</span> productos
     </div>
 
     {% if pagination.pages > 1 %}
-    <ul class="pagination pagination-sm mb-0 me-2 shadow-sm">
+    <ul class="pagination pagination-sm mb-0 shadow-sm flex-wrap justify-content-center">
         <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
             <a class="page-link" href="{{ url_for('inventario_importbolts', page=pagination.prev_num, busqueda=search, categoria=cat_filtro, calidad=calidad_filtro, stock_bajo=stock_bajo, per_page=limit) }}">Anterior</a>
         </li>
+        <li class="page-item disabled d-sm-none"><span class="page-link">{{ pagination.page }}</span></li>
         {% for page_num in pagination.iter_pages(left_edge=1, right_edge=1, left_current=1, right_current=1) %}
             {% if page_num %}
-                <li class="page-item {% if page_num == pagination.page %}active{% endif %}">
+                <li class="page-item d-none d-sm-block {% if page_num == pagination.page %}active{% endif %}">
                     <a class="page-link" {% if page_num == pagination.page %}style="background-color: var(--theme-primary); border-color: var(--theme-primary); color: white;"{% endif %} href="{{ url_for('inventario_importbolts', page=page_num, busqueda=search, categoria=cat_filtro, calidad=calidad_filtro, stock_bajo=stock_bajo, per_page=limit) }}">{{ page_num }}</a>
                 </li>
             {% else %}
-                <li class="page-item disabled"><span class="page-link">...</span></li>
+                <li class="page-item disabled d-none d-sm-block"><span class="page-link">...</span></li>
             {% endif %}
         {% endfor %}
         <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
@@ -237,7 +242,7 @@
 
 <!-- MODAL IMPORTAR CON AVISO DE IDENTIDAD DE MARCA (IMPORT BOLTS) -->
 <div class="modal fade" id="modalImportar" tabindex="-1">
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-dialog-centered modal-fullscreen-sm-down">
         <div class="modal-content border-danger shadow-lg"> 
             <form action="{{ url_for('importar_excel_importbolts') }}" method="POST" enctype="multipart/form-data">
                 <div class="modal-header bg-danger text-white">
@@ -248,7 +253,7 @@
                     <!-- AVISO CRÍTICO DE IDENTIDAD DE EMPRESA -->
                     <div class="alert alert-warning text-center border-warning border-2 p-3 mb-3 shadow-sm rounded">
                         <img src="{{ url_for('static', filename='img/logo_import.png') }}" alt="Logo Import Bolts" style="height: 40px; margin-bottom: 10px;">
-                        <h5 class="fw-bold text-dark mb-1">USTED ESTÁ EN EL INVENTARIO DE IMPORT BOLTS</h5>
+                        <h5 class="fw-bold text-dark mb-1 fs-6">USTED ESTÁ EN EL INVENTARIO DE IMPORT BOLTS</h5>
                         <p class="small text-danger fw-bold mb-0">Por favor, verifique que su Excel sea el correcto. NO SUBIR ARCHIVOS DE ANCLAJES AQUÍ.</p>
                     </div>
 
@@ -270,9 +275,9 @@
                         <strong>NO USAR PARA:</strong> Compras diarias. Para eso use el botón de ajuste manual <i class="bi bi-arrow-left-right"></i>.
                     </div>
                     <hr>
-                    <div class="d-flex justify-content-between align-items-center mb-3">
+                    <div class="d-flex flex-column flex-sm-row justify-content-between align-items-center gap-2 mb-3">
                         <span class="small fw-bold text-muted">Formato requerido:</span>
-                        <a href="{{ url_for('descargar_plantilla') }}" class="btn btn-outline-success btn-sm">
+                        <a href="{{ url_for('descargar_plantilla') }}" class="btn btn-outline-success btn-sm w-100 w-sm-auto">
                             <i class="bi bi-download"></i> Bajar Plantilla
                         </a>
                     </div>
@@ -282,7 +287,7 @@
                 </div>
                 <div class="modal-footer bg-white">
                     <button type="submit" class="btn btn-danger w-100 fw-bold fs-6 py-2 shadow-sm">
-                        Entiendo los riesgos, Procesar Excel de Import Bolts
+                        Entiendo los riesgos, Procesar Excel
                     </button>
                 </div>
             </form>
@@ -290,12 +295,13 @@
     </div>
 </div>
 
+<!-- MODAL NUEVO (GRILLA RESPONSIVE) -->
 <div class="modal fade" id="modalNuevo" tabindex="-1">
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-dialog-centered modal-fullscreen-sm-down modal-lg">
         <div class="modal-content">
             <div class="modal-header bg-primary text-white">
                 <h5 class="modal-title">Registrar Nuevo Producto</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <form id="formNuevoProd">
@@ -312,7 +318,7 @@
                                 <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#modalNuevaCat"><i class="bi bi-plus-lg"></i></button>
                             </div>
                         </div>
-                        <div class="col-6">
+                        <div class="col-12 col-sm-6">
                             <label class="form-label small fw-bold text-dark">CÓDIGO / SKU</label>
                             <div class="input-group input-group-sm">
                                 <input type="text" name="sku" id="inputSKUNuevo" class="form-control fw-bold text-uppercase" 
@@ -321,50 +327,59 @@
                             </div>
                             <div class="form-text text-primary small" id="skuHelpText">Se generará un código automático.</div>
                         </div>
-                        <div class="col-6">
+                        <div class="col-12 col-sm-6">
                             <label class="form-label small fw-bold">Calidad</label>
                             <input type="text" name="calidad" class="form-control form-control-sm text-uppercase" 
                                    list="listCalidades" placeholder="Ej: ZINCADO" oninput="this.value = this.value.toUpperCase()">
                             <datalist id="listCalidades">{% for cal in lista_calidades %} <option value="{{ cal }}"> {% endfor %}</datalist>
                         </div>
-                        <div class="col-6">
+                        <div class="col-12 col-sm-6">
                             <label class="form-label small fw-bold">Estado Físico</label>
                             <input type="text" name="estado" class="form-control form-control-sm text-uppercase border-warning" 
                                 list="listEstados" placeholder="Ej: OXIDADO (O dejar vacío)">
                             <datalist id="listEstados">{% for est in lista_estados %} <option value="{{ est }}"> {% endfor %}</datalist>
                         </div>
-                        <div class="col-12">
+                        <div class="col-12 col-sm-6">
                             <label class="form-label small fw-bold text-muted">Ubicación</label>
-                            <input type="text" name="ubicacion" class="form-control text-uppercase" placeholder="Ej: PASILLO 4" oninput="this.value = this.value.toUpperCase()">
+                            <input type="text" name="ubicacion" class="form-control form-control-sm text-uppercase" placeholder="Ej: PASILLO 4" oninput="this.value = this.value.toUpperCase()">
                         </div>
                         <div class="col-12">
-                            <label class="form-label small">Descripción *</label>
+                            <label class="form-label small fw-bold">Descripción *</label>
                             <input name="nombre" class="form-control text-uppercase" required oninput="this.value = this.value.toUpperCase()">
                         </div>
-                        <div class="col-4">
+                        <div class="col-12 col-sm-4">
                             <label class="form-label small">Stock Inicial</label>
                             <input type="number" name="stock" class="form-control" value="0" min="0" required>
                         </div>
-                        <div class="col-4">
+                        <div class="col-12 col-sm-4">
                             <label class="form-label small fw-bold text-info">Stock Mínimo</label>
                             <input type="number" name="stock_minimo" class="form-control" value="10" min="1">
                         </div>
-                        <div class="col-4"><label class="form-label small">P. Unidad</label><input type="number" step="0.01" name="p_unidad" id="new_p_uni" class="form-control"></div>
-                        <div class="col-6"><label class="form-label small">P. Caja</label><input type="number" step="0.01" name="p_caja" id="new_p_caja" class="form-control" onchange="validarPrecios()"></div>
-                        <div class="col-12"><div class="alert alert-warning py-1 px-2 mt-2 d-none" id="alertPrecio" style="font-size: 0.8rem;">Precio Caja > Unitario.</div></div>
+                        <div class="col-12 col-sm-4">
+                            <label class="form-label small">P. Unidad</label>
+                            <input type="number" step="0.01" name="p_unidad" id="new_p_uni" class="form-control">
+                        </div>
+                        <div class="col-12 col-sm-4 ms-sm-auto">
+                            <label class="form-label small">P. Caja</label>
+                            <input type="number" step="0.01" name="p_caja" id="new_p_caja" class="form-control" onchange="validarPrecios()">
+                        </div>
+                        <div class="col-12">
+                            <div class="alert alert-warning py-1 px-2 mt-2 d-none" id="alertPrecio" style="font-size: 0.8rem;">Precio Caja > Unitario.</div>
+                        </div>
                     </div>
                 </form>
             </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                <button type="button" class="btn btn-success w-100" onclick="guardarProductoAjax()">Guardar Producto</button>
+            <div class="modal-footer d-flex flex-column flex-sm-row">
+                <button type="button" class="btn btn-secondary w-100 w-sm-auto mb-2 mb-sm-0" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-success w-100 w-sm-auto" onclick="guardarProductoAjax()">Guardar Producto</button>
             </div>
         </div>
     </div>
 </div>
 
+<!-- MODAL EDITAR (GRILLA RESPONSIVE) -->
 <div class="modal fade" id="modalEditar" tabindex="-1">
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-dialog-centered modal-fullscreen-sm-down modal-lg">
         <div class="modal-content">
             <form action="{{ url_for('editar_producto_importbolts') }}" method="POST" id="formEditarProd" onsubmit="confirmarEdicion(event)">
                 <input type="hidden" name="prod_id" id="edit_id">
@@ -379,45 +394,51 @@
                         <input id="edit_nombre" name="nombre" class="form-control text-uppercase" required oninput="this.value = this.value.toUpperCase()">
                     </div>
                     <div class="row g-2 mb-2">
-                        <div class="col-6">
+                        <div class="col-12 col-sm-6">
                             <label class="form-label small fw-bold">Familia *</label>
                             <select name="categoria" id="edit_categoria" class="form-select form-select-sm" required>
                                 {% for cat in lista_categorias %}<option value="{{ cat }}">{{ cat }}</option>{% endfor %}
                             </select>
                         </div>
-                        <div class="col-6">
+                        <div class="col-12 col-sm-6">
                             <label class="form-label small fw-bold">Calidad *</label>
                             <input type="text" name="calidad" id="edit_calidad" class="form-control form-control-sm text-uppercase" list="listCalidadesEdit" required oninput="this.value = this.value.toUpperCase()">
                             <datalist id="listCalidadesEdit">{% for cal in lista_calidades %} <option value="{{ cal }}"> {% endfor %}</datalist>
                         </div>
-                    </div>
-                    <div class="col-6">
-                        <label class="form-label small fw-bold text-warning">Estado Físico</label>
-                        <input type="text" name="estado" id="edit_estado" class="form-control form-control-sm text-uppercase border-warning" 
-                            list="listEstadosEdit" placeholder="Dejar vacío si está OK">
-                        <datalist id="listEstadosEdit">{% for est in lista_estados %} <option value="{{ est }}"> {% endfor %}</datalist>
-                    </div>
-                    <div class="mb-2">
-                        <label class="form-label small fw-bold">Ubicación</label>
-                        <input id="edit_ubicacion" name="ubicacion" class="form-control text-uppercase" oninput="this.value = this.value.toUpperCase()">
+                        <div class="col-12 col-sm-6">
+                            <label class="form-label small fw-bold text-warning">Estado Físico</label>
+                            <input type="text" name="estado" id="edit_estado" class="form-control form-control-sm text-uppercase border-warning" 
+                                list="listEstadosEdit" placeholder="Dejar vacío si está OK">
+                            <datalist id="listEstadosEdit">{% for est in lista_estados %} <option value="{{ est }}"> {% endfor %}</datalist>
+                        </div>
+                        <div class="col-12 col-sm-6">
+                            <label class="form-label small fw-bold">Ubicación</label>
+                            <input id="edit_ubicacion" name="ubicacion" class="form-control form-control-sm text-uppercase" oninput="this.value = this.value.toUpperCase()">
+                        </div>
                     </div>
                     <div class="row g-2">
-                        <div class="col-4">
+                        <div class="col-12 col-sm-4">
                             <label class="form-label small fw-bold text-danger">Stock Actual</label>
                             <input id="edit_stock" type="number" name="stock" class="form-control fw-bold bg-light" readonly>
                             <div class="form-text" style="font-size: 0.6rem">No editable aquí.</div>
                         </div>
-                        <div class="col-4">
+                        <div class="col-12 col-sm-4">
                             <label class="form-label small fw-bold text-info">Stock Mínimo</label>
                             <input id="edit_stock_min" type="number" name="stock_minimo" class="form-control">
                         </div>
-                        <div class="col-4"><label class="form-label small">P. Unidad</label><input id="edit_punidad" type="number" step="0.01" name="p_unidad" class="form-control"></div>
-                        <div class="col-4 offset-8"><label class="form-label small">P. Caja</label><input id="edit_pcaja" type="number" step="0.01" name="p_caja" class="form-control"></div>
+                        <div class="col-12 col-sm-4">
+                            <label class="form-label small">P. Unidad</label>
+                            <input id="edit_punidad" type="number" step="0.01" name="p_unidad" class="form-control">
+                        </div>
+                        <div class="col-12 col-sm-4 ms-sm-auto mt-2 mt-sm-0">
+                            <label class="form-label small">P. Caja</label>
+                            <input id="edit_pcaja" type="number" step="0.01" name="p_caja" class="form-control">
+                        </div>
                     </div>
                 </div>
-                <div class="modal-footer bg-light">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="submit" class="btn btn-warning fw-bold">Guardar Cambios</button>
+                <div class="modal-footer bg-light d-flex flex-column flex-sm-row">
+                    <button type="button" class="btn btn-secondary w-100 w-sm-auto mb-2 mb-sm-0" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-warning fw-bold w-100 w-sm-auto">Guardar Cambios</button>
                 </div>
             </form>
         </div>
@@ -425,7 +446,7 @@
 </div>
 
 <div class="modal fade" id="modalNuevaCat">
-    <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-dialog modal-dialog-centered modal-fullscreen-sm-down">
         <div class="modal-content border-primary">
             <form action="{{ url_for('nueva_categoria_importbolts') }}" method="POST">
                 <div class="modal-header bg-light py-2">
@@ -434,15 +455,15 @@
                 </div>
                 <div class="modal-body pb-0">
                     <div class="row g-2 align-items-end">
-                        <div class="col-6">
+                        <div class="col-12 col-sm-6">
                             <label class="small fw-bold">Nombre</label>
                             <input name="cat_nombre" class="form-control form-control-sm text-uppercase" placeholder="Ej: SENSORES" required oninput="this.value = this.value.toUpperCase()">
                         </div>
-                        <div class="col-3">
+                        <div class="col-6 col-sm-3">
                             <label class="small fw-bold">Prefijo</label>
                             <input name="cat_prefijo" class="form-control form-control-sm text-uppercase" placeholder="AAA" maxlength="3" required oninput="this.value = this.value.toUpperCase()">
                         </div>
-                        <div class="col-3">
+                        <div class="col-6 col-sm-3">
                             <button type="submit" class="btn btn-primary btn-sm w-100">Crear</button>
                         </div>
                     </div>
@@ -479,7 +500,7 @@
 </div>
 
 <div class="modal fade" id="modalStock" tabindex="-1">
-    <div class="modal-dialog modal-sm">
+    <div class="modal-dialog modal-sm modal-dialog-centered">
         <div class="modal-content">
             <form action="{{ url_for('ajustar_stock_importbolts') }}" method="POST">
                 <input type="hidden" name="prod_id" id="stock_id">
@@ -503,18 +524,18 @@
                     <div class="mb-2"><label class="small text-muted">Cantidad</label><input type="number" name="cantidad" class="form-control form-control-sm" min="1" required></div>
                     <div class="mb-0"><label class="small text-muted fw-bold">Motivo *</label><input type="text" name="motivo" class="form-control form-control-sm" placeholder="Ej: Venta #123, Ajuste..." required></div>
                 </div>
-                <div class="modal-footer p-1"><button type="submit" class="btn btn-dark w-100 btn-sm">Registrar Movimiento</button></div>
+                <div class="modal-footer p-1"><button type="submit" class="btn btn-dark w-100 btn-sm py-2">Registrar Movimiento</button></div>
             </form>
         </div>
     </div>
 </div>
 
 <div class="modal fade" id="modalConfigMasiva" tabindex="-1">
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content border-secondary">
             <form id="formConfigMasiva" action="{{ url_for('actualizar_minimos_masivos_importbolts') }}" method="POST">
                 <div class="modal-header bg-secondary text-white">
-                    <h5 class="modal-title"><i class="bi bi-gear-wide-connected"></i> Configurar Stock Mínimo</h5>
+                    <h5 class="modal-title fs-6 fw-bold"><i class="bi bi-gear-wide-connected"></i> Configurar Stock Mínimo</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
@@ -553,9 +574,9 @@
                         </div>
                     </div>
                 </div>
-                <div class="modal-footer bg-light">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="button" class="btn btn-dark w-100" onclick="confirmarMasivo()">
+                <div class="modal-footer bg-light d-flex flex-column flex-sm-row">
+                    <button type="button" class="btn btn-secondary w-100 w-sm-auto mb-2 mb-sm-0" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-dark w-100 w-sm-auto" onclick="confirmarMasivo()">
                         <i class="bi bi-check2-circle"></i> Revisar y Aplicar
                     </button>
                 </div>
@@ -565,42 +586,43 @@
 </div>
 
 <div class="modal fade" id="modalPreviewMasivo" tabindex="-1" data-bs-backdrop="static">
-    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable modal-fullscreen-sm-down">
         <div class="modal-content border-0 shadow-lg">
             <div class="modal-header bg-dark text-white py-3">
-                <h5 class="modal-title fw-bold"><i class="bi bi-list-check"></i> Seleccionar Productos</h5>
+                <h5 class="modal-title fw-bold fs-6"><i class="bi bi-list-check"></i> Seleccionar Productos</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body bg-light p-0">
-                <div class="alert alert-warning m-3 py-2 small border-warning text-dark">
+                <div class="alert alert-warning m-2 m-sm-3 py-2 small border-warning text-dark">
                     <i class="bi bi-exclamation-triangle-fill"></i> Desmarque los productos a los que <strong>NO</strong> desea aplicarles el nuevo stock mínimo.
                 </div>
                 
                 <div class="table-responsive bg-white border-top border-bottom" style="max-height: 400px;">
-                    <table class="table table-sm table-hover align-middle mb-0">
+                    <table class="table table-sm table-hover align-middle mb-0 text-nowrap">
                         <thead class="table-light sticky-top small text-muted text-uppercase">
                             <tr>
                                 <th class="text-center" style="width: 50px;">
-                                    <input class="form-check-input border-secondary" type="checkbox" id="checkAllMasivo" checked onchange="toggleAllMasivo(this)" style="cursor: pointer; width: 1.2rem; height: 1.2rem;">
+                                    <input class="form-check-input border-secondary m-0" type="checkbox" id="checkAllMasivo" checked onchange="toggleAllMasivo(this)" style="cursor: pointer; width: 1.2rem; height: 1.2rem;">
                                 </th>
                                 <th style="width: 20%;">Código</th>
-                                <th style="width: 45%;">Descripción</th>
+                                <th style="min-width: 200px;">Descripción</th>
                                 <th class="text-center" style="width: 15%;">Mín. Actual</th>
                                 <th class="text-center text-success" style="width: 20%;">Nuevo Mín.</th>
                             </tr>
                         </thead>
                         <tbody id="tbodyPreviewMasivo">
-                            </tbody>
+                            <!-- Inyectado por JS -->
+                        </tbody>
                     </table>
                 </div>
             </div>
-            <div class="modal-footer d-flex justify-content-between bg-white py-3">
-                <div class="small text-muted fw-bold">
+            <div class="modal-footer flex-column flex-sm-row justify-content-between bg-white py-3">
+                <div class="small text-muted fw-bold mb-2 mb-sm-0 w-100 text-center text-sm-start">
                     Seleccionados: <span id="lblTotalAfectados" class="badge bg-primary fs-6">0</span>
                 </div>
-                <div>
-                    <button type="button" class="btn btn-outline-secondary me-2" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="button" class="btn btn-success fw-bold px-4" id="btnGuardarMasivoFinal" onclick="guardarMasivoFinal()">
+                <div class="d-flex w-100 w-sm-auto flex-column flex-sm-row gap-2">
+                    <button type="button" class="btn btn-outline-secondary w-100 w-sm-auto" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-success fw-bold px-4 w-100 w-sm-auto shadow-sm" id="btnGuardarMasivoFinal" onclick="guardarMasivoFinal()">
                         <i class="bi bi-check-circle-fill"></i> Aplicar Cambios
                     </button>
                 </div>

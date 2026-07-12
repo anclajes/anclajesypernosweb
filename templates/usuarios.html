@@ -4,30 +4,32 @@
 {% block subtitle %}Directorio y Control de Accesos{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <div class="input-group w-50 shadow-sm">
+<!-- ENCABEZADO Y BUSCADOR RESPONSIVE -->
+<div class="d-flex flex-column flex-md-row justify-content-between align-items-stretch align-items-md-center mb-4 gap-3">
+    <div class="input-group w-100 w-md-50 shadow-sm">
         <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
         <input type="text" id="filtroTabla" class="form-control border-start-0" placeholder="Buscar por nombre o usuario..." onkeyup="filtrarTabla()">
     </div>
 
-    <button class="btn btn-primary shadow-sm fw-bold px-4" onclick="abrirModalCrear()">
+    <button class="btn btn-primary shadow-sm fw-bold px-4 w-100 w-md-auto py-2 py-md-1" onclick="abrirModalCrear()">
         <i class="bi bi-person-plus-fill me-2"></i> Nuevo Usuario
     </button>
 </div>
 
+<!-- TABLA PRINCIPAL RESPONSIVE -->
 <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
     <div class="card-header bg-white py-3 border-0">
         <h6 class="mb-0 fw-bold text-muted text-uppercase small ls-1">Personal Registrado</h6>
     </div>
     
     <div class="table-responsive">
-        <table class="table align-middle table-hover mb-0" id="tablaUsuarios">
+        <table class="table align-middle table-hover mb-0 text-nowrap" id="tablaUsuarios">
             <thead class="bg-light">
                 <tr>
-                    <th class="ps-4 text-uppercase text-muted small fw-bold">Perfil</th>
-                    <th class="text-uppercase text-muted small fw-bold">Rol / Cargo</th>
-                    <th class="text-uppercase text-muted small fw-bold">Contacto</th>
-                    <th class="text-end pe-4 text-uppercase text-muted small fw-bold">Acciones</th>
+                    <th class="ps-4 text-uppercase text-muted small fw-bold" style="min-width: 250px;">Perfil</th>
+                    <th class="text-uppercase text-muted small fw-bold" style="min-width: 150px;">Rol / Cargo</th>
+                    <th class="text-uppercase text-muted small fw-bold" style="min-width: 180px;">Contacto</th>
+                    <th class="text-center pe-4 text-uppercase text-muted small fw-bold" style="min-width: 100px;">Acciones</th>
                 </tr>
             </thead>
             <tbody>
@@ -35,13 +37,13 @@
                 <tr>
                     <td class="ps-4">
                         <div class="d-flex align-items-center gap-3">
-                            <div class="rounded-circle d-flex align-items-center justify-content-center fw-bold text-white shadow-sm" 
+                            <div class="rounded-circle d-flex align-items-center justify-content-center fw-bold text-white shadow-sm flex-shrink-0" 
                                  style="width: 42px; height: 42px; font-size: 1.1rem; background-color: {{ 'var(--bs-primary)' if u.role == 'admin' else '#6c757d' }};">
                                 {{ u.username[0]|upper }}
                             </div>
-                            <div class="d-flex flex-column">
-                                <span class="fw-bold text-dark">{{ u.nombre_completo }}</span>
-                                <div class="d-flex align-items-center">
+                            <div class="d-flex flex-column text-wrap">
+                                <span class="fw-bold text-dark lh-sm">{{ u.nombre_completo }}</span>
+                                <div class="d-flex align-items-center mt-1">
                                     <small class="text-muted me-1">@{{ u.username }}</small>
                                     {% if u.role == 'admin' %}
                                     <i class="bi bi-shield-fill-check text-primary" style="font-size: 0.75rem;" title="Super Admin"></i>
@@ -77,13 +79,13 @@
                         {% endif %}
                         
                         {% if u.email_empresa %}
-                            <div class="text-muted small text-truncate" style="max-width: 150px;" title="{{u.email_empresa}}">
+                            <div class="text-muted small text-truncate" style="max-width: 180px;" title="{{u.email_empresa}}">
                                 <i class="bi bi-envelope"></i> {{ u.email_empresa }}
                             </div>
                         {% endif %}
                     </td>
 
-                    <td class="text-end pe-4">
+                    <td class="text-center pe-4">
                         <div class="btn-group">
                             <button class="btn btn-sm btn-light border text-primary" 
                                     onclick="abrirModalEditar('{{u.id}}', '{{u.nombre_completo}}', '{{u.username}}', '{{u.role}}', '{{u.celular}}','{{u.cargo_formal}}', '{{u.email_empresa}}')"
@@ -114,8 +116,9 @@
     </div>
 </div>
 
+<!-- MODAL USUARIO RESPONSIVE -->
 <div class="modal fade" id="modalUsuario" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
-    <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-dialog modal-dialog-centered modal-fullscreen-sm-down">
         <div class="modal-content border-0 shadow-lg rounded-4">
             <form action="{{ url_for('guardar_usuario') }}" method="POST" autocomplete="off">
                 <input type="hidden" name="user_id" id="userId">
@@ -129,30 +132,30 @@
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
 
-                <div class="modal-body p-4">
+                <div class="modal-body p-4 bg-white">
                     
                     <h6 class="text-primary fw-bold small text-uppercase border-bottom pb-2 mb-3">
                         <i class="bi bi-person-vcard me-1"></i> Datos Personales
                     </h6>
                     <div class="row g-2 mb-3">
-                        <div class="col-6">
+                        <div class="col-12 col-sm-6">
                             <label class="form-label small fw-bold text-muted">Nombres <span class="text-danger">*</span></label>
                             <input type="text" name="nombres" id="inputNombres" class="form-control bg-light" required>
                         </div>
-                        <div class="col-6">
+                        <div class="col-12 col-sm-6">
                             <label class="form-label small fw-bold text-muted">Apellidos <span class="text-danger">*</span></label>
                             <input type="text" name="apellidos" id="inputApellidos" class="form-control bg-light" required>
                         </div>
                     </div>
 
                     <div class="row g-2 mb-3">
-                        <div class="col-6">
+                        <div class="col-12 col-sm-6">
                             <label class="form-label small fw-bold text-muted">Celular</label>
                             <input type="tel" name="celular" id="inputCelular" class="form-control" 
                                    placeholder="999..." pattern="9[0-9]{8}" maxlength="9" 
                                    oninput="this.value = this.value.replace(/[^0-9]/g, '')">
                         </div>
-                        <div class="col-6">
+                        <div class="col-12 col-sm-6">
                             <label class="form-label small fw-bold text-muted">Cargo</label>
                             <input type="text" name="cargo_formal" id="inputCargo" class="form-control" placeholder="Ej: Vendedor Sr.">
                         </div>
@@ -178,14 +181,14 @@
                     </div>
 
                     <div class="row g-2">
-                        <div class="col-6">
+                        <div class="col-12 col-sm-6">
                             <label class="form-label small fw-bold text-muted">Usuario (Login)</label>
                             <div class="input-group">
                                 <span class="input-group-text bg-light text-muted">@</span>
                                 <input type="text" name="username" id="inputUser" class="form-control fw-bold" required>
                             </div>
                         </div>
-                        <div class="col-6">
+                        <div class="col-12 col-sm-6">
                             <label class="form-label small fw-bold text-muted">Contraseña</label>
                             <div class="input-group">
                                 <input type="password" name="password" id="inputPass" class="form-control border-end-0" placeholder="Nueva clave...">
@@ -205,9 +208,9 @@
 
                 </div>
 
-                <div class="modal-footer border-top-0 px-4 pb-4">
-                    <button type="button" class="btn btn-light border" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="submit" class="btn btn-primary fw-bold px-4">
+                <div class="modal-footer bg-light border-top-0 px-4 py-3 d-flex flex-column flex-sm-row rounded-bottom-4">
+                    <button type="button" class="btn btn-outline-secondary w-100 w-sm-auto mb-2 mb-sm-0" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-primary fw-bold px-4 w-100 w-sm-auto shadow-sm">
                         <i class="bi bi-check-lg me-1"></i> Guardar
                     </button>
                 </div>

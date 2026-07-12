@@ -35,12 +35,13 @@
     .product-name-cell { white-space: normal !important; word-wrap: break-word; font-size: 0.9rem; line-height: 1.3; font-weight: 600; color: #212529; }
 </style>
 
+<!-- ENCABEZADO RESPONSIVE -->
 <div class="card shadow-sm border-0 mb-3" style="border-left: 6px solid var(--theme-primary) !important;">
-    <div class="card-body d-flex justify-content-between align-items-center bg-white rounded py-2">
-        <div class="d-flex align-items-center">
-            <img src="{{ url_for('static', filename='img/logo.png') }}" alt="Logo Anclajes" style="height: 50px; object-fit: contain;" class="me-4 pe-3 border-end">
+    <div class="card-body d-flex flex-column flex-sm-row justify-content-between align-items-center bg-white rounded py-2 gap-2">
+        <div class="d-flex flex-column flex-sm-row align-items-center text-center text-sm-start">
+            <img src="{{ url_for('static', filename='img/logo.png') }}" alt="Logo Anclajes" style="height: 50px; object-fit: contain;" class="me-0 me-sm-4 pe-0 pe-sm-3 border-0 border-sm-end mb-2 mb-sm-0">
             <div>
-                <h4 class="mb-0 fw-bold" style="color: var(--theme-primary);">
+                <h4 class="mb-0 fw-bold fs-5 fs-sm-4" style="color: var(--theme-primary);">
                     <i class="bi bi-file-earmark-text"></i> 
                     {% if modo_edicion %}
                         Editar Cotización #{{ "%05d"|format(orden.id) }}
@@ -51,8 +52,8 @@
                 <span class="text-muted small fw-medium">Módulo Comercial - Anclajes y Pernos SAC</span>
             </div>
         </div>
-        <div>
-            <a href="{{ url_for('historial_ventas') }}" class="btn btn-outline-secondary btn-sm shadow-sm fw-bold">
+        <div class="w-100 w-sm-auto mt-2 mt-sm-0">
+            <a href="{{ url_for('historial_ventas') }}" class="btn btn-outline-secondary btn-sm shadow-sm fw-bold w-100">
                 <i class="bi bi-x-circle me-1"></i> Cancelar
             </a>
         </div>
@@ -62,8 +63,8 @@
 <input type="hidden" id="hidden_order_id" value="{{ orden.id if orden else '' }}">
 
 {% if info_importacion %}
-<div class="alert py-2 shadow-sm d-flex align-items-center mb-3 border-0" style="background-color: var(--theme-light); border-left: 4px solid var(--theme-primary) !important;">
-    <i class="bi bi-info-circle-fill fs-5 me-3" style="color: var(--theme-primary);"></i>
+<div class="alert py-2 shadow-sm d-flex flex-column flex-sm-row align-items-center text-center text-sm-start mb-3 border-0" style="background-color: var(--theme-light); border-left: 4px solid var(--theme-primary) !important;">
+    <i class="bi bi-info-circle-fill fs-4 me-0 me-sm-3 mb-2 mb-sm-0" style="color: var(--theme-primary);"></i>
     <div>
         <h6 class="mb-0 fw-bold" style="color: var(--theme-primary);">Última actualización de inventario general</h6>
         <small class="text-muted">
@@ -74,10 +75,11 @@
 </div>
 {% endif %}
 
+<!-- BARRA DE MONEDA Y TIPO DE CAMBIO RESPONSIVE -->
 <div class="card mb-3 shadow-sm border-0" style="border-top: 3px solid var(--theme-primary) !important;">
     <div class="card-body py-2 bg-white">
         <div class="row align-items-center g-2 justify-content-between">
-            <div class="col-auto d-flex gap-3">
+            <div class="col-12 col-md-auto d-flex flex-column flex-sm-row gap-2">
                 <div class="input-group input-group-sm shadow-sm">
                     <span class="input-group-text fw-bold text-white border-0" style="background-color: var(--theme-primary);">
                         <i class="bi bi-currency-exchange me-1"></i> Moneda
@@ -88,16 +90,16 @@
                     </select>
                 </div>
                 <div class="input-group input-group-sm shadow-sm">
-                    <span class="input-group-text fw-bold bg-light text-muted border-secondary">T.C. Venta</span>
+                    <span class="input-group-text fw-bold bg-light text-muted border-secondary w-sm-auto w-25">T.C. Venta</span>
                     <input type="number" id="inputTC" class="form-control fw-bold text-end border-secondary" 
-                           value="{{ '%.3f'|format(tc) }}" step="0.001" style="width: 80px;" 
+                           value="{{ '%.3f'|format(tc) }}" step="0.001" style="min-width: 80px;" 
                            onchange="window.recalcularCarritoPorMoneda()" readonly>
                     <button class="btn btn-light border-secondary bg-white" type="button" onclick="window.actualizarDolar()" title="Consultar SUNAT">
                         <i class="bi bi-arrow-clockwise" style="color: var(--theme-primary);"></i>
                     </button>
                 </div>
             </div>
-            <div class="col-auto">
+            <div class="col-12 col-md-auto text-center text-md-end">
                 <small class="text-muted text-nowrap fw-medium" id="msgTC" style="font-size: 0.75rem;">
                     <i class="bi bi-clock-history me-1"></i>
                     {% if updated_at %} Act: {{ updated_at }} ({{ updated_by if updated_by else 'Sistema' }}) {% else %} Dato del día {% endif %}
@@ -108,16 +110,18 @@
 </div>
 
 <div class="row g-3">
+    <!-- COLUMNA IZQUIERDA (CLIENTES Y DATOS) -->
     <div class="col-lg-4 col-md-12 d-flex flex-column gap-3">
         
+        <!-- CARD CLIENTE -->
         <div class="card shadow-sm border-0 m-0 overflow-hidden">
-            <div class="card-header text-white py-2 d-flex justify-content-between align-items-center" style="background-color: var(--theme-primary);">
+            <div class="card-header text-white py-2 d-flex flex-wrap justify-content-between align-items-center gap-2" style="background-color: var(--theme-primary);">
                 <h6 class="mb-0 small fw-bold"><i class="bi bi-person-vcard me-1"></i> 1. Cliente</h6>
-                <div>
-                    <button class="btn btn-sm btn-light py-0 me-1 fw-bold shadow-sm" style="color: var(--theme-primary);" onclick="window.abrirDirectorioClientes()" title="Ver lista de todos los clientes">
+                <div class="d-flex gap-1 w-100 w-sm-auto justify-content-end">
+                    <button class="btn btn-sm btn-light py-0 fw-bold shadow-sm flex-fill flex-sm-grow-0" style="color: var(--theme-primary);" onclick="window.abrirDirectorioClientes()" title="Ver lista de todos los clientes">
                         <i class="bi bi-journal-bookmark-fill"></i> Directorio
                     </button>
-                    <button class="btn btn-sm btn-warning text-dark py-0 fw-bold shadow-sm" onclick="window.guardarSoloCliente()" title="Guardar cambios de contacto">
+                    <button class="btn btn-sm btn-warning text-dark py-0 fw-bold shadow-sm flex-fill flex-sm-grow-0" onclick="window.guardarSoloCliente()" title="Guardar cambios de contacto">
                         <i class="bi bi-save"></i> Guardar
                     </button>
                 </div>
@@ -126,12 +130,12 @@
                 <div class="row g-2">
                     <div class="col-12">
                         <label class="small text-muted mb-1 fw-bold">RUC / DNI *</label>
-                        <div class="d-flex align-items-center w-100">
+                        <div class="d-flex align-items-stretch w-100 gap-1">
                             <div style="flex-grow: 1; min-width: 0;"> 
                                 <select id="cli_doc_select" style="width: 100%;"><option></option></select>
                             </div>
-                            <button class="btn btn-dark btn-sm ms-1 shadow-sm" type="button" id="btnBuscarSunat" onclick="window.buscarClienteApi(false)" title="Consultar SUNAT"><i class="bi bi-search"></i></button>
-                            <button class="btn btn-outline-danger btn-sm ms-1 bg-white shadow-sm" type="button" onclick="window.confirmarForzado()" title="Forzar actualización"><i class="bi bi-cloud-arrow-down-fill"></i></button>
+                            <button class="btn btn-dark btn-sm shadow-sm" type="button" id="btnBuscarSunat" onclick="window.buscarClienteApi(false)" title="Consultar SUNAT"><i class="bi bi-search"></i></button>
+                            <button class="btn btn-outline-danger btn-sm bg-white shadow-sm" type="button" onclick="window.confirmarForzado()" title="Forzar actualización"><i class="bi bi-cloud-arrow-down-fill"></i></button>
                         </div>
                     </div>
                     <div class="col-12">
@@ -142,11 +146,11 @@
                         <label class="small text-muted mb-1 fw-bold">Dirección Fiscal (SUNAT)</label>
                         <input type="text" id="cli_dir" class="form-control form-control-sm bg-white shadow-sm border-0" readonly>
                     </div>
-                    <div class="col-6">
+                    <div class="col-12 col-sm-6">
                         <label class="small text-muted mb-1 fw-bold">Teléfono (Editable)</label>
                         <input type="text" id="cli_tel" class="form-control form-control-sm border-success shadow-sm" placeholder="Ingrese teléfono...">
                     </div>
-                    <div class="col-6">
+                    <div class="col-12 col-sm-6">
                         <label class="small text-muted mb-1 fw-bold">Atención (Contacto)</label>
                         <input type="text" id="cli_atte" class="form-control form-control-sm shadow-sm" placeholder="Ej: Sr. Juan">
                     </div>
@@ -158,26 +162,27 @@
                     <input type="hidden" id="hidden_estado">
                     <input type="hidden" id="hidden_condicion">
 
-                    <div class="col-12 d-flex gap-2 mt-3 align-items-center bg-white p-2 border rounded shadow-sm">
+                    <div class="col-12 d-flex flex-wrap gap-2 mt-3 align-items-center bg-white p-2 border rounded shadow-sm">
                         <span id="badge_estado" class="badge bg-secondary opacity-50">Estado: -</span>
                         <span id="badge_condicion" class="badge bg-secondary opacity-50">Condición: -</span>
                         
-                        <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2 fw-bold shadow-sm" onclick="window.abrirPortalSunat()" title="Verificar Deudas Coactivas en SUNAT directamente">
+                        <button type="button" class="btn btn-sm btn-outline-danger py-0 px-2 fw-bold shadow-sm mt-1 mt-sm-0 flex-grow-1 flex-sm-grow-0" onclick="window.abrirPortalSunat()" title="Verificar Deudas Coactivas en SUNAT">
                             <i class="bi bi-shield-exclamation"></i> Ver Deudas
                         </button>
-                        <small class="text-muted ms-auto fst-italic" id="lbl_origen_datos" style="font-size: 0.7rem;"></small>
+                        <small class="text-muted w-100 text-end fst-italic" id="lbl_origen_datos" style="font-size: 0.7rem;"></small>
                     </div>
                 </div>
             </div>
         </div>
 
+        <!-- CARD ENTREGA -->
         <div class="card shadow-sm border-0 m-0 overflow-hidden">
             <div class="card-header bg-light py-2 border-bottom">
                 <h6 class="mb-0 small fw-bold text-dark"><i class="bi bi-truck" style="color: var(--theme-primary);"></i> 3. Datos de Entrega</h6>
             </div>
             <div class="card-body py-2">
                 <div class="row g-2 align-items-center">
-                    <div class="col-6">
+                    <div class="col-12 col-sm-6">
                         <label class="small fw-bold text-muted">Fecha Entrega</label>
                         <div class="input-group input-group-sm shadow-sm">
                             <input type="date" id="inputFechaEntrega" class="form-control border-warning">
@@ -185,7 +190,7 @@
                         </div>
                         <div class="form-text fst-italic text-muted" style="font-size: 0.7rem;">Vacío = <strong>"A COORDINAR"</strong></div>
                     </div>
-                    <div class="col-6">
+                    <div class="col-12 col-sm-6">
                         <label class="small fw-bold text-muted">Tipo Entrega</label>
                         <select class="form-select form-select-sm shadow-sm border-secondary" id="selectEntrega" onchange="window.toggleDireccionEntrega()">
                             <option value="Recojo">Recojo Tienda</option>
@@ -201,14 +206,14 @@
                         </div>
                     </div>
 
-                    <div class="col-6 mt-2">
+                    <div class="col-12 col-sm-6 mt-2">
                         <label class="small fw-bold text-dark">¿Agencia?</label>
                         <select id="selectReqAgencia" class="form-select form-select-sm border-secondary shadow-sm" onchange="window.toggleAgencia()">
                             <option value="NO" selected>❌ NO</option>
                             <option value="SI">✅ SÍ</option>
                         </select>
                     </div>
-                    <div class="col-6 mt-2" id="divNombreAgencia" style="display: none;">
+                    <div class="col-12 col-sm-6 mt-2" id="divNombreAgencia" style="display: none;">
                         <label class="small fw-bold" style="color: var(--theme-primary);">Nombre Agencia *</label>
                         <input type="text" id="inputAgencia" class="form-control form-control-sm shadow-sm" style="border-color: var(--theme-primary);" placeholder="Ej: Shalom, Marvisur...">
                     </div>
@@ -216,13 +221,14 @@
             </div>
         </div>
 
+        <!-- CARD COMERCIAL -->
         <div class="card shadow-sm border-0 m-0 overflow-hidden">
             <div class="card-header bg-light py-2 border-bottom">
                 <h6 class="mb-0 small fw-bold text-dark"><i class="bi bi-sliders" style="color: var(--theme-primary);"></i> 4. Condiciones Comerciales</h6>
             </div>
             <div class="card-body py-2">
                 <div class="row g-2">
-                    <div class="col-6">
+                    <div class="col-12 col-sm-6">
                         <label class="small fw-bold text-muted">Condición de Pago</label>
                         <select id="inputCondicionPago" class="form-select form-select-sm shadow-sm">
                             <option value="Contado">Contado</option>
@@ -233,7 +239,7 @@
                             <option value="Factura Negociable">Factura Negociable</option>
                         </select>
                     </div>
-                    <div class="col-6">
+                    <div class="col-12 col-sm-6">
                         <label class="small fw-bold text-muted">Validez Oferta</label>
                         <select id="inputValidez" class="form-select form-select-sm shadow-sm">
                             <option value="5 días">5 días</option>
@@ -243,7 +249,7 @@
                         </select>
                     </div>
 
-                    <div class="col-6">
+                    <div class="col-12 col-sm-6">
                         <label class="small fw-bold" style="color: var(--theme-primary);"> Certificado de Calidad</label>
                         <select id="inputCalidad" class="form-select form-select-sm fw-bold shadow-sm" style="border-color: var(--theme-primary); color: var(--theme-primary);" required>
                             <option value="" disabled selected>¿Requiere Certificado?</option>
@@ -251,7 +257,7 @@
                             <option value="NO">❌ NO REQUIERE</option>
                         </select>
                     </div>
-                    <div class="col-6">
+                    <div class="col-12 col-sm-6">
                         <label class="small fw-bold text-danger">Penalidad Retraso *</label>
                         <select id="inputPenalidad" class="form-select form-select-sm border-danger fw-bold text-danger shadow-sm" required>
                             <option value="" disabled selected>¿Aplica Penalidad?</option>
@@ -270,40 +276,41 @@
         
     </div>
 
+    <!-- COLUMNA DERECHA (AGREGAR PRODUCTOS Y CARRITO) -->
     <div class="col-lg-8 col-md-12 d-flex flex-column gap-3">
 
         <div class="card shadow-sm border-0 m-0 overflow-hidden">
-            <div class="card-header text-white py-2 d-flex justify-content-between align-items-center" style="background-color: var(--theme-primary);">
-                <h6 class="mb-0 small fw-bold"><i class="bi bi-box-seam me-1"></i> 2. Agregar Item a la Cotización</h6>
-                <div class="btn-group btn-group-sm bg-white rounded p-1 shadow-sm" role="group">
+            <div class="card-header text-white py-2 d-flex flex-column flex-sm-row justify-content-between align-items-center gap-2" style="background-color: var(--theme-primary);">
+                <h6 class="mb-0 small fw-bold w-100 w-sm-auto"><i class="bi bi-box-seam me-1"></i> 2. Agregar Item</h6>
+                <div class="btn-group btn-group-sm bg-white rounded p-1 shadow-sm d-flex w-100 w-sm-auto" role="group">
                     <input type="radio" class="btn-check" name="modeOption" id="modeProd" autocomplete="off" checked onclick="cambiarModo('PRODUCTO')">
-                    <label class="btn btn-outline-primary border-0 fw-bold rounded-start" for="modeProd">Producto</label>
+                    <label class="btn btn-outline-primary border-0 fw-bold rounded-start w-100" for="modeProd">Producto</label>
             
                     <input type="radio" class="btn-check" name="modeOption" id="modeFab" autocomplete="off" onclick="cambiarModo('FABRICACION')">
-                    <label class="btn btn-outline-primary border-0 fw-bold" for="modeFab">Fabricación</label>
+                    <label class="btn btn-outline-primary border-0 fw-bold w-100" for="modeFab">Fabricación</label>
             
                     <input type="radio" class="btn-check" name="modeOption" id="modeGlb" autocomplete="off" onclick="cambiarModo('GLB')">
-                    <label class="btn btn-outline-primary border-0 fw-bold rounded-end" for="modeGlb">Armado (GLB)</label>
+                    <label class="btn btn-outline-primary border-0 fw-bold rounded-end w-100" for="modeGlb">Armado</label>
                 </div>
             </div>
 
             <div class="card-body bg-light">
                 <div id="panelProducto">
                     <div class="row g-2 mb-2">
-                        <div class="col-md-4 col-12">
+                        <div class="col-12 col-md-4">
                             <label class="small text-muted mb-1 fw-bold">1. Familia</label>
                             <select class="form-select form-select-sm shadow-sm border-secondary" id="filtroFamiliaVenta" onchange="window.cargarCalidadesVenta()">
                                 <option value="" selected>-- Seleccione --</option>
                                 {% for c in categorias %} <option value="{{ c.id }}" data-nombre="{{ c.nombre }}">{{ c.nombre }}</option> {% endfor %}
                             </select>
                         </div>
-                        <div class="col-md-4 col-12">
+                        <div class="col-12 col-md-4">
                             <label class="small text-muted mb-1 fw-bold">2. Calidad</label>
                             <select class="form-select form-select-sm shadow-sm border-secondary" id="filtroCalidadVenta" disabled onchange="window.cargarProductos()">
                                 <option value="">-- Espere familia --</option>
                             </select>
                         </div>
-                        <div class="col-md-4 col-12">
+                        <div class="col-12 col-md-4">
                             <label class="small text-muted mb-1 fw-bold" style="color: var(--theme-primary) !important;">3. Buscar Producto</label>
                             <select class="form-select shadow-sm" id="productoSelect" style="width: 100%;">
                                 <option value="" disabled selected>Escriba para buscar...</option>
@@ -314,7 +321,7 @@
 
                 <div id="panelFabricacion" class="d-none">
                     <div class="row g-2 mb-2 align-items-end">
-                        <div class="col-md-5">
+                        <div class="col-12 col-md-5">
                             <label class="small fw-bold text-muted">1. Tipo de Servicio</label>
                             <div class="input-group input-group-sm shadow-sm">
                                 <select id="selTipoServicio" class="form-select fw-bold text-primary border-secondary">
@@ -325,7 +332,7 @@
                                 </button>
                             </div>
                         </div>
-                        <div class="col-md-7">
+                        <div class="col-12 col-md-7 mt-2 mt-md-0">
                             <label class="small fw-bold text-muted">2. Descripción (EETT)</label>
                             <textarea id="fabDesc" class="form-control form-control-sm text-uppercase shadow-sm border-secondary" rows="1" placeholder="Ej: ARANDELA PLANA..."></textarea>
                         </div>
@@ -333,41 +340,41 @@
                 </div>
             
                 <div id="panelGLB" class="d-none">
-                    <div class="d-flex gap-3 align-items-center mb-2">
-                        <button class="btn btn-dark btn-sm w-50 shadow-sm fw-bold" onclick="abrirModalGLB()">
+                    <div class="d-flex flex-column flex-sm-row gap-3 align-items-stretch align-items-sm-center mb-2">
+                        <button class="btn btn-dark btn-sm w-100 w-sm-50 shadow-sm fw-bold" onclick="abrirModalGLB()">
                             <i class="bi bi-layers-half me-1"></i> Configurar Kit / Armado
                         </button>
-                        <div id="glbPreview" class="small text-muted fst-italic w-50 border rounded p-2 bg-white m-0 shadow-sm">Ningún kit configurado aún.</div>
+                        <div id="glbPreview" class="small text-muted fst-italic w-100 w-sm-50 border rounded p-2 bg-white m-0 shadow-sm text-center text-sm-start">Ningún kit configurado aún.</div>
                     </div>
                 </div>
 
                 <div class="row g-2 align-items-end mt-2 pt-3 border-top">
-                    <div class="col-md-2 col-4">
+                    <div class="col-4 col-sm-2">
                         <label class="small text-muted fw-bold">Stock</label>
                         <input type="text" id="info_stock" class="form-control form-control-sm bg-white fw-bold text-center border-0 shadow-sm" readonly>
                     </div>
-                    <div class="col-md-2 col-4">
+                    <div class="col-4 col-sm-2">
                         <label class="small text-muted fw-bold">Cant.</label>
                         <input type="number" id="cantidadInput" class="form-control form-control-sm fw-bold text-center shadow-sm" style="border: 2px solid var(--theme-primary);" 
                                value="1" min="1" 
                                onkeydown="return filtroTeclas(event, 'entero')"
                                oninput="validarEntradaString(this, 0)">
                     </div>
-                    <div class="col-md-3 col-4">
-                        <label class="small fw-bold" style="color: var(--theme-primary);">P. Unit (<span id="lblMonedaUnit">USD</span>)</label>
+                    <div class="col-4 col-sm-3">
+                        <label class="small fw-bold text-nowrap" style="color: var(--theme-primary);">P. Unit (<span id="lblMonedaUnit">USD</span>)</label>
                         <div class="input-group input-group-sm shadow-sm border rounded" style="border-color: var(--theme-primary) !important;">
-                            <span class="input-group-text bg-light border-0" id="simboloMonedaInput" style="color: var(--theme-primary);">$</span>
-                            <input type="number" id="precioManualInput" class="form-control fw-bold text-end border-0" 
+                            <span class="input-group-text bg-light border-0 px-1 px-sm-2" id="simboloMonedaInput" style="color: var(--theme-primary);">$</span>
+                            <input type="number" id="precioManualInput" class="form-control fw-bold text-end border-0 px-1" 
                                    step="any" onkeydown="return filtroTeclas(event, 'decimal')" oninput="validarEntradaString(this, 6)">
                             <input type="hidden" id="precioBaseHidden"> 
                         </div>
                     </div>
-                    <div class="col-md-2 col-6 d-flex flex-column text-center bg-white border rounded p-1 shadow-sm">
+                    <div class="col-12 col-sm-5 col-md-2 mt-3 mt-sm-0 d-flex flex-column text-center bg-white border rounded p-1 shadow-sm">
                         <small class="text-muted fw-bold" style="font-size: 0.65rem;">SUBTOTAL LÍMITE</small>
                         <strong class="text-dark fs-6" id="txt_subtotal_previo">$ 0.00</strong>
                     </div>
-                    <div class="col-md-3 col-6">
-                        <button class="btn w-100 btn-sm fw-bold h-100 shadow-sm text-white" id="btnAgregar" style="background-color: var(--theme-primary);" disabled>
+                    <div class="col-12 col-sm-12 col-md-3 mt-2 mt-md-0">
+                        <button class="btn w-100 btn-sm fw-bold h-100 shadow-sm text-white py-2 py-md-1" id="btnAgregar" style="background-color: var(--theme-primary);" disabled>
                             <i class="bi bi-plus-circle-fill me-1"></i> AÑADIR A LISTA
                         </button>
                     </div>
@@ -375,8 +382,8 @@
             </div>
         </div>
 
-<div class="card shadow-sm border-0 m-0 flex-grow-1">
-            <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
+        <div class="card shadow-sm border-0 m-0 flex-grow-1">
+            <div class="card-header bg-white border-bottom py-3 d-flex flex-column flex-sm-row justify-content-between align-items-center gap-2">
                 <div class="d-flex align-items-center gap-2">
                     <h5 class="mb-0 text-primary fw-light">Detalle de Cotización</h5>
                     <button class="btn btn-sm btn-warning shadow-sm fw-bold ms-2" onclick="aplicarDescuentoMasivo()" title="Aplicar descuento a todos los ítems">
@@ -390,15 +397,15 @@
                         
             <div class="card-body p-0 d-flex flex-column h-100">
                 <div class="table-responsive flex-grow-1" style="min-height: 250px; overflow-y: auto;">
-                    <table class="table table-sm table-hover mb-0 align-middle">
+                    <table class="table table-sm table-hover mb-0 align-middle text-nowrap">
                         <thead class="table-light sticky-top small text-muted text-uppercase">
                             <tr>
-                                <th style="width: 40%;" class="ps-3">Descripción</th>
-                                <th class="text-center" style="width: 10%;">U.M.</th> 
-                                <th class="text-center" style="width: 15%;">Cant.</th>
-                                <th class="text-end" style="width: 15%;">P. Unit</th>
-                                <th class="text-end" style="width: 15%;">Total</th>
-                                <th style="width: 5%;"></th>
+                                <th style="min-width: 200px;" class="ps-3">Descripción</th>
+                                <th class="text-center" style="min-width: 60px;">U.M.</th> 
+                                <th class="text-center" style="min-width: 80px;">Cant.</th>
+                                <th class="text-end" style="min-width: 100px;">P. Unit</th>
+                                <th class="text-end" style="min-width: 100px;">Total</th>
+                                <th style="min-width: 50px;"></th>
                             </tr>
                         </thead>
                         <tbody id="tablaCarrito"></tbody>
@@ -420,7 +427,7 @@
                             </tr>
                             <tr class="border-bottom">
                                 <td class="text-end">
-                                    <div class="d-flex justify-content-end align-items-center gap-2">
+                                    <div class="d-flex flex-wrap justify-content-end align-items-center gap-2">
                                         <label class="small text-danger fw-bold me-1">Descuento:</label>
                                         <select id="tipoDescuento" class="form-select form-select-sm border-danger text-danger fw-bold" style="width: 70px;" onchange="actualizarTotalesGlobales()">
                                             <option value="MONTO">$</option> <option value="PORCENTAJE">%</option>
@@ -444,8 +451,8 @@
                             <tr class="bg-light shadow-sm">
                                 <td colspan="2" class="p-0 border-top border-2 border-primary">
                                     <div class="d-flex justify-content-end align-items-center py-3 pe-2">
-                                        <span class="fs-5 fw-bold text-dark me-4">TOTAL:</span>
-                                        <span class="fs-1 fw-bolder text-primary font-monospace m-0 p-0" id="lblTotal" style="letter-spacing: -1.5px; line-height: 1;">
+                                        <span class="fs-6 fs-md-5 fw-bold text-dark me-2 me-md-4">TOTAL:</span>
+                                        <span class="fs-3 fs-md-1 fw-bolder text-primary font-monospace m-0 p-0" id="lblTotal" style="letter-spacing: -1px; line-height: 1;">
                                             0.00
                                         </span>
                                     </div>
@@ -465,445 +472,272 @@
     </div>
 </div>
 
-
+<!-- MODAL NUEVO SERVICIO -->
 <div class="modal fade" id="modalNuevoServicio" tabindex="-1">
-
     <div class="modal-dialog modal-sm modal-dialog-centered">
-
         <div class="modal-content">
-
             <div class="modal-header bg-success text-white py-2">
-
                 <h6 class="modal-title small fw-bold">Nuevo Tipo de Servicio</h6>
-
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-
             </div>
-
             <div class="modal-body">
-
                 <label class="small fw-bold text-muted">Nombre del Servicio</label>
-
                 <input type="text" id="inputNombreServicioNuevo" class="form-control form-control-sm text-uppercase mb-2" 
-
                        placeholder="Ej: SERVICIO DE TORNO">
-
                 <div class="alert alert-light border p-2 mb-0 small text-muted">
-
                     <i class="bi bi-info-circle"></i> Se generará un SKU automático (ej: SRV-TORN) y se guardará en el catálogo.
-
                 </div>
-
             </div>
-
             <div class="modal-footer p-1">
-
                 <button type="button" class="btn btn-primary btn-sm w-100" onclick="guardarNuevoServicio()">
-
                     <i class="bi bi-save"></i> GUARDAR
-
                 </button>
-
             </div>
-
         </div>
-
     </div>
-
 </div>
 
-
-
+<!-- MODAL RESUMEN DE COTIZACIÓN RESPONSIVE -->
 <div class="modal fade" id="modalResumenVenta" tabindex="-1" data-bs-backdrop="static">
-
-    <div class="modal-dialog modal-lg modal-dialog-centered">
-
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-fullscreen-sm-down">
         <div class="modal-content border-0 shadow-lg">
-
-            <div class="modal-header bg-primary text-white">
-
-                <h5 class="modal-title fw-bold"><i class="bi bi-clipboard-check"></i> Revisar Cotización</h5>
-
+            <div class="modal-header bg-primary text-white py-3">
+                <h5 class="modal-title fw-bold fs-5"><i class="bi bi-clipboard-check"></i> Revisar Cotización</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-
             </div>
-
-            <div class="modal-body bg-light">
-
+            <div class="modal-body bg-light p-2 p-md-3">
+                
                 <div class="card mb-3 border-0 shadow-sm">
-
-                    <div class="card-body py-2">
-
+                    <div class="card-body py-2 px-3">
                         <h6 class="text-primary fw-bold border-bottom pb-1 mb-2">Datos del Cliente y Condiciones</h6>
-                        <div class="row small">
-                            <div class="col-md-8"><strong>Razón Social:</strong> <span id="res_cliente"></span></div>
-                            <div class="col-md-4"><strong>RUC:</strong> <span id="res_ruc"></span></div>
-                            <div class="col-12 mt-1"><strong>Lugar Entrega:</strong> <span id="res_direccion" class="text-muted"></span></div>
-                            <!-- NUEVOS CAMPOS A MOSTRAR -->
-                            <div class="col-md-4 mt-2"><strong>Calidad:</strong> <span id="res_calidad"></span></div>
-                            <div class="col-md-4 mt-2"><strong>Penalidad:</strong> <span id="res_penalidad"></span></div>
-                            <div class="col-md-4 mt-2"><strong>Agencia:</strong> <span id="res_agencia" class="text-primary fw-bold"></span></div>
+                        <div class="row small g-2">
+                            <div class="col-12 col-md-8"><strong>Razón Social:</strong> <span id="res_cliente" class="text-wrap"></span></div>
+                            <div class="col-12 col-md-4"><strong>RUC:</strong> <span id="res_ruc"></span></div>
+                            <div class="col-12 mt-1"><strong>Lugar Entrega:</strong> <span id="res_direccion" class="text-muted text-wrap"></span></div>
+                            <div class="col-12 col-sm-4 mt-2 border-top border-sm-0 pt-2 pt-sm-0"><strong>Calidad:</strong> <span id="res_calidad"></span></div>
+                            <div class="col-12 col-sm-4 mt-2"><strong>Penalidad:</strong> <span id="res_penalidad"></span></div>
+                            <div class="col-12 col-sm-4 mt-2"><strong>Agencia:</strong> <span id="res_agencia" class="text-primary fw-bold text-wrap"></span></div>
                         </div>
-
                     </div>
-
                 </div>
 
-
-
-                <h6 class="text-primary fw-bold border-bottom pb-1 mb-2">Items a Cotizar</h6>
-
-                <div class="table-responsive bg-white rounded border mb-3" style="max-height: 250px; overflow-y: auto;">
-
-                    <table class="table table-sm table-striped mb-0 small">
-
-                        <thead class="table-light sticky-top">
-
+                <h6 class="text-primary fw-bold border-bottom pb-1 mb-2 px-1">Items a Cotizar</h6>
+                <div class="table-responsive bg-white rounded border mb-3 shadow-sm" style="max-height: 250px; overflow-y: auto;">
+                    <table class="table table-sm table-striped mb-0 small text-nowrap">
+                        <thead class="table-light sticky-top shadow-sm">
                             <tr>
-
-                                <th>Descripción</th>
-
-                                <th class="text-center">Cant.</th>
-
-                                <th class="text-end">P.Unit</th>
-
-                                <th class="text-end">Total</th>
-
+                                <th style="min-width: 200px;" class="ps-2">Descripción</th>
+                                <th class="text-center" style="min-width: 60px;">Cant.</th>
+                                <th class="text-end" style="min-width: 80px;">P.Unit</th>
+                                <th class="text-end pe-2" style="min-width: 90px;">Total</th>
                             </tr>
-
                         </thead>
-
                         <tbody id="tablaResumenBody"></tbody>
-
                     </table>
-
                 </div>
 
-
-
-          <div class="row justify-content-end text-end">
-                    <div class="col-md-7"> <div class="d-flex justify-content-between border-bottom px-2">
+                <div class="row justify-content-end text-end mt-3 px-1">
+                    <div class="col-12 col-md-8 col-lg-7"> 
+                        <div class="d-flex justify-content-between border-bottom px-2 pb-1 mb-1">
                             <span class="text-muted">Subtotal Inicial:</span>
                             <strong id="res_subtotal_inicial">0.00</strong>
                         </div>
                         
-                        <div class="d-flex justify-content-between border-bottom px-2 text-danger d-none" id="div_res_descuento_global">
+                        <div class="d-flex justify-content-between border-bottom px-2 pb-1 mb-1 text-danger d-none" id="div_res_descuento_global">
                             <span id="res_lbl_desc_global" class="fw-bold">Descuento Global:</span>
                             <strong id="res_val_desc_global">-0.00</strong>
                         </div>
 
-                        <div class="d-flex justify-content-between border-bottom px-2">
+                        <div class="d-flex justify-content-between border-bottom px-2 pb-1 mb-1">
                             <span class="text-muted">Valor de Venta (Neto):</span>
                             <strong id="res_neto">0.00</strong>
                         </div>
-                        <div class="d-flex justify-content-between border-bottom px-2">
+                        
+                        <div class="d-flex justify-content-between border-bottom px-2 pb-1 mb-1">
                             <span class="text-muted">IGV (18%):</span>
                             <strong id="res_igv">0.00</strong>
                         </div>
-                        <div class="d-flex justify-content-between bg-warning bg-opacity-25 px-2 py-1 rounded mt-1">
-                            <span class="fw-bold text-dark">TOTAL FINAL:</span>
-                            <strong class="text-primary fs-5" id="res_total">0.00</strong>
+                        
+                        <div class="d-flex justify-content-between align-items-center bg-warning bg-opacity-25 px-2 py-2 rounded mt-2 shadow-sm border border-warning border-opacity-25">
+                            <span class="fw-bold text-dark fs-6">TOTAL FINAL:</span>
+                            <strong class="text-primary fs-4 font-monospace" id="res_total" style="letter-spacing: -1px;">0.00</strong>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <div class="modal-footer">
-
-                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Corregir Datos</button>
-
-                <button type="button" class="btn btn-success fw-bold px-4" onclick="confirmarYGuardar()">
-
-                    <i class="bi bi-check-circle-fill"></i> GENERAR COTIZACIÓN
-
+            <div class="modal-footer bg-white d-flex flex-column flex-sm-row justify-content-between gap-2 py-3">
+                <button type="button" class="btn btn-outline-secondary w-100 w-sm-auto" data-bs-dismiss="modal">Corregir Datos</button>
+                <button type="button" class="btn btn-success fw-bold px-4 w-100 w-sm-auto shadow-sm py-2 py-sm-1" onclick="confirmarYGuardar()">
+                    <i class="bi bi-check-circle-fill me-1"></i> GENERAR COTIZACIÓN
                 </button>
-
             </div>
-
         </div>
-
     </div>
-
 </div>
 
-
-
+<!-- MODAL CREADOR DE ARMADOS / KITS (GLB) RESPONSIVE -->
 <div class="modal fade" id="modalGLB" tabindex="-1" data-bs-backdrop="static">
-
-    <div class="modal-dialog modal-xl modal-dialog-centered"> <div class="modal-content">
-
-            <div class="modal-header bg-primary text-white py-2">
-
-                <h6 class="modal-title fw-bold"><i class="bi bi-layers-half"></i> Configuración de Item Global / Kit / Servicio</h6>
-
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-fullscreen-lg-down modal-dialog-scrollable"> 
+        <div class="modal-content border-0 shadow-lg">
+            <div class="modal-header bg-primary text-white py-3">
+                <h6 class="modal-title fw-bold fs-5"><i class="bi bi-layers-half"></i> Configuración de Item Global / Kit</h6>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-
             </div>
-
             
-
-            <div class="modal-body bg-light">
-
-                <div class="row h-100">
-
+            <div class="modal-body bg-light p-2 p-md-4">
+                <div class="row h-100 g-3">
                     
-
-                    <div class="col-lg-5 col-12 d-flex flex-column border-end">
-
+                    <!-- COLUMNA IZQUIERDA: DEFINICIÓN (Arriba en móviles) -->
+                    <div class="col-lg-5 col-12 d-flex flex-column border-lg-end border-bottom border-lg-bottom-0 pb-3 pb-lg-0 pe-lg-3">
                         <h6 class="text-primary fw-bold small mb-3 border-bottom pb-2">1. Definición del Entregable</h6>
-
                         
-
                         <div class="mb-3">
-
-                            <label class="small fw-bold text-muted">Título Corto (Saldrá en Negrita)</label>
-
-                            <input type="text" id="glbTitulo" class="form-control fw-bold text-uppercase border-primary" 
-
+                            <label class="small fw-bold text-muted mb-1">Título Corto (Saldrá en Negrita)</label>
+                            <input type="text" id="glbTitulo" class="form-control fw-bold text-uppercase border-primary shadow-sm" 
                                    placeholder="Ej: INSERTO BASE TRANSFORMADOR C8 x 11.5">
-
                         </div>
-
-
 
                         <div class="mb-1">
-
-                            <label class="small fw-bold text-muted">Descripción Técnica / EETT</label>
-
-                            <div class="btn-group btn-group-sm w-100 mb-1" role="group">
-
-                                <button type="button" class="btn btn-outline-secondary" onclick="insertarSimbolo('Ø')" title="Diámetro">Ø</button>
-
-                                <button type="button" class="btn btn-outline-secondary" onclick="insertarSimbolo('Φ')" title="Phi Vertical">Φ</button>
-
-                                <button type="button" class="btn btn-outline-secondary" onclick="insertarSimbolo('@')" title="Arroba">@</button>
-
-                                <button type="button" class="btn btn-outline-secondary" onclick="insertarSimbolo('½')" title="Un medio">½</button>
-
-                                <button type="button" class="btn btn-outline-secondary" onclick="insertarSimbolo('¼')" title="Un cuarto">¼</button>
-
-                                <button type="button" class="btn btn-outline-secondary" onclick="insertarSimbolo('¾')" title="Tres cuartos">¾</button>
-
-                                <button type="button" class="btn btn-outline-secondary" onclick="insertarSimbolo(String.fromCharCode(34))" title="Pulgadas">"</button>
-
-                                <button type="button" class="btn btn-outline-secondary" onclick="insertarSimbolo('mm')" title="Milímetros">mm</button>
-
-                                <button type="button" class="btn btn-outline-secondary" onclick="insertarSimbolo(' + ')" title="Más con espacio"> + </button>
-
+                            <label class="small fw-bold text-muted mb-1">Descripción Técnica / EETT</label>
+                            
+                            <!-- Botones matemáticos envueltos de manera responsiva -->
+                            <div class="d-flex flex-wrap gap-1 mb-2">
+                                <button type="button" class="btn btn-sm btn-outline-secondary flex-grow-1 px-1" onclick="insertarSimbolo('Ø')" title="Diámetro">Ø</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary flex-grow-1 px-1" onclick="insertarSimbolo('Φ')" title="Phi Vertical">Φ</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary flex-grow-1 px-1" onclick="insertarSimbolo('@')" title="Arroba">@</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary flex-grow-1 px-1" onclick="insertarSimbolo('½')" title="Un medio">½</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary flex-grow-1 px-1" onclick="insertarSimbolo('¼')" title="Un cuarto">¼</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary flex-grow-1 px-1" onclick="insertarSimbolo('¾')" title="Tres cuartos">¾</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary flex-grow-1 px-1" onclick="insertarSimbolo(String.fromCharCode(34))" title="Pulgadas">"</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary flex-grow-1 px-1" onclick="insertarSimbolo('mm')" title="Milímetros">mm</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary flex-grow-1 px-1 fw-bold" onclick="insertarSimbolo(' + ')" title="Más con espacio"> + </button>
                             </div>
-
                         </div>
 
-
-
-                        <div class="flex-grow-1">
-
-                            <textarea id="glbDescripcion" class="form-control small" style="height: 150px; font-family: monospace; font-size: 0.85rem;" 
-
+                        <div class="flex-grow-1 d-flex flex-column">
+                            <textarea id="glbDescripcion" class="form-control small shadow-sm flex-grow-1" style="min-height: 120px; font-family: monospace; font-size: 0.85rem;" 
                                       placeholder="Ej: Contiene por juego: 01 canal C 8x11.5 de 3.7 m + 01 plancha..."></textarea>
-
-                            <div class="form-text small fst-italic text-end">Use la barra superior para símbolos especiales.</div>
-
+                            <div class="form-text small fst-italic text-end mt-1">Use la barra superior para símbolos especiales.</div>
                         </div>
-
                     </div>
 
-
-
-                    <div class="col-lg-7 col-12 ps-lg-4 mt-3 mt-lg-0">
-
+                    <!-- COLUMNA DERECHA: COMPONENTES (Abajo en móviles) -->
+                    <div class="col-lg-7 col-12 ps-lg-3">
                         <h6 class="text-success fw-bold small mb-3 border-bottom pb-2">2. Composición (Salida de Inventario)</h6>
-
                         
-
                         <div class="card border-0 shadow-sm mb-3">
-
-                            <div class="card-body p-2 bg-white rounded">
-
+                            <div class="card-body p-3 bg-white rounded">
                                 <div class="row g-2">
-
-                                    <div class="col-6">
-
-                                        <label class="small text-muted mb-0">Familia</label>
-
+                                    <div class="col-12 col-sm-6">
+                                        <label class="small text-muted mb-1 fw-bold">Familia</label>
                                         <select class="form-select form-select-sm" id="filtroFamiliaGLB" onchange="window.cargarCalidadesGLB()">
-
                                             <option value="" selected>-- Buscar Familia --</option>
-
                                             {% for c in categorias %} 
-
                                                 <option value="{{ c.id }}" data-nombre="{{ c.nombre }}">{{ c.nombre }}</option> 
-
                                             {% endfor %}
-
                                         </select>
-
                                     </div>
-
-                                    <div class="col-6">
-
-                                        <label class="small text-muted mb-0">Calidad</label>
-
+                                    <div class="col-12 col-sm-6">
+                                        <label class="small text-muted mb-1 fw-bold">Calidad</label>
                                         <select class="form-select form-select-sm" id="filtroCalidadGLB" disabled onchange="window.cargarProductosGLB()">
-
                                             <option value="">-- Seleccione --</option>
-
                                         </select>
-
                                     </div>
-
-                                    <div class="col-12">
-
-                                        <label class="small text-muted mb-0">Producto</label>
-
-                                        <div class="input-group input-group-sm">
-
-                                            <select id="selectHijoGLB" class="form-select" style="width: 70%;">
-
+                                    <div class="col-12 mt-2">
+                                        <label class="small text-muted mb-1 fw-bold">Producto</label>
+                                        <div class="d-flex flex-column flex-sm-row gap-2 w-100">
+                                            <select id="selectHijoGLB" class="form-select form-select-sm flex-grow-1" style="min-width: 0;">
                                                 <option value="">Buscar componente...</option>
-
                                             </select>
-
-                                            <input type="number" id="cantHijoGLB" class="form-control text-center fw-bold" value="1" placeholder="Cant" style="width: 15%;">
-
-                                            <button class="btn btn-success" onclick="agregarHijoGLB()"><i class="bi bi-plus-lg"></i></button>
-
+                                            <div class="d-flex gap-2">
+                                                <input type="number" id="cantHijoGLB" class="form-control form-control-sm text-center fw-bold" value="1" placeholder="Cant" style="width: 80px;">
+                                                <button class="btn btn-sm btn-success fw-bold px-3 shadow-sm" onclick="agregarHijoGLB()"><i class="bi bi-plus-lg"></i></button>
+                                            </div>
                                         </div>
-
                                     </div>
-
                                 </div>
-
                             </div>
-
                         </div>
 
-
-
-                        <div class="border rounded bg-white p-0" style="height: 200px; overflow-y: auto;">
-
-                            <table class="table table-sm table-striped mb-0 small align-middle">
-
+                        <div class="table-responsive border rounded bg-white p-0 shadow-sm" style="min-height: 150px; max-height: 250px; overflow-y: auto;">
+                            <table class="table table-sm table-striped mb-0 small align-middle text-nowrap">
                                 <thead class="table-light sticky-top">
-
                                     <tr>
-
-                                        <th class="ps-2">Componente Seleccionado</th>
-
+                                        <th class="ps-3" style="min-width: 250px;">Componente Seleccionado</th>
                                         <th class="text-center" style="width: 80px;">Cant.</th>
-
-                                        <th style="width: 40px;"></th>
-
+                                        <th style="width: 50px;"></th>
                                     </tr>
-
                                 </thead>
-
                                 <tbody id="listaHijosGLB">
-
-                                    </tbody>
-
+                                    <!-- Las filas se agregarán acá dinámicamente -->
+                                </tbody>
                             </table>
-
                         </div>
-
-                        <div class="text-end mt-1">
-
-                            <small class="text-muted" id="conteoComponentes">0 items agregados</small>
-
+                        <div class="text-end mt-2">
+                            <small class="text-muted fw-bold badge bg-light text-dark border" id="conteoComponentes">0 items agregados</small>
                         </div>
-
                     </div>
-
                 </div>
-
             </div>
-
             
-
-            <div class="modal-footer py-2 bg-light">
-
-                <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
-
-                <button type="button" class="btn btn-primary btn-sm px-4 fw-bold shadow-sm" onclick="guardarConfigGLB()">
-
-                    <i class="bi bi-check-circle-fill"></i> CONFIRMAR CONFIGURACIÓN
-
+            <div class="modal-footer py-3 bg-white d-flex flex-column flex-sm-row justify-content-between gap-2 border-top">
+                <button type="button" class="btn btn-outline-secondary w-100 w-sm-auto" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary px-4 fw-bold shadow-sm w-100 w-sm-auto py-2 py-sm-1" onclick="guardarConfigGLB()">
+                    <i class="bi bi-check-circle-fill me-1"></i> CONFIRMAR CONFIGURACIÓN
                 </button>
-
             </div>
-
         </div>
-
     </div>
-
 </div>
 
-
-
+<!-- MODAL DIRECTORIO CLIENTES RESPONSIVE -->
 <div class="modal fade" id="modalDirectorio" tabindex="-1" aria-hidden="true">
-
-    <div class="modal-dialog modal-lg modal-dialog-scrollable">
-
-        <div class="modal-content">
-
-            <div class="modal-header bg-primary text-white py-2">
-
-                <h6 class="modal-title fw-bold"><i class="bi bi-people-fill"></i> Directorio de Clientes Guardados</h6>
-
+    <div class="modal-dialog modal-xl modal-dialog-scrollable modal-fullscreen-md-down">
+        <div class="modal-content border-0 shadow-lg">
+            <div class="modal-header bg-primary text-white py-3">
+                <h5 class="modal-title fw-bold fs-5"><i class="bi bi-people-fill me-1"></i> Directorio de Clientes Guardados</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-
             </div>
-
-            <div class="modal-body">
-
-                <div class="input-group mb-3 sticky-top" style="top: -16px; background: white; padding-top: 10px; z-index: 10;">
-
-                    <span class="input-group-text bg-light"><i class="bi bi-search"></i></span>
-
-                    <input type="text" id="filtroDirectorio" class="form-control" placeholder="Filtrar por Nombre o RUC..." onkeyup="filtrarTablaClientes()">
-
+            <div class="modal-body bg-light p-2 p-md-3">
+                
+                <div class="input-group mb-3 sticky-top shadow-sm" style="top: 0; z-index: 10;">
+                    <span class="input-group-text bg-white border-end-0 text-primary"><i class="bi bi-search"></i></span>
+                    <input type="text" id="filtroDirectorio" class="form-control border-start-0 py-2" placeholder="Filtrar por Nombre o RUC..." onkeyup="filtrarTablaClientes()">
                 </div>
 
-
-
-                <div class="table-responsive">
-
-                    <table class="table table-sm table-hover table-striped align-middle" id="tablaClientes">
-
-                        <thead class="table-light text-muted small text-uppercase">
-
-                            <tr>
-
-                                <th style="width: 15%;">RUC/DNI</th>
-
-                                <th style="width: 40%;">Razón Social</th> <th style="width: 10%;" class="d-none d-md-table-cell">Estado</th>
-
-                                <th style="width: 20%;">Última Act.</th>
-
-                                <th style="width: 15%;" class="text-end">Acción</th>
-
-                            </tr>
-
-                        </thead>
-
-                        <tbody id="bodyDirectorio">
-
-                            <tr><td colspan="5" class="text-center text-muted py-3">Cargando...</td></tr>
-
-                        </tbody>
-
-                    </table>
-
+                <div class="card border-0 shadow-sm">
+                    <div class="card-body p-0">
+                        <div class="table-responsive" style="max-height: 60vh;">
+                            <table class="table table-sm table-hover table-striped align-middle text-nowrap mb-0" id="tablaClientes">
+                                <thead class="table-light text-muted small text-uppercase sticky-top">
+                                    <tr>
+                                        <th style="min-width: 120px;" class="ps-3">RUC/DNI</th>
+                                        <th style="min-width: 250px;">Razón Social</th> 
+                                        <th style="min-width: 100px;" class="d-none d-md-table-cell text-center">Estado</th>
+                                        <th style="min-width: 150px;" class="d-none d-lg-table-cell">Última Act.</th>
+                                        <th style="min-width: 100px;" class="text-center pe-3">Acción</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="bodyDirectorio">
+                                    <tr>
+                                        <td colspan="5" class="text-center text-muted py-5">
+                                            <div class="spinner-border spinner-border-sm text-primary mb-2" role="status"></div><br>
+                                            Cargando clientes...
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                 </div>
-
             </div>
-
+            <div class="modal-footer bg-white">
+                <button type="button" class="btn btn-secondary w-100 w-sm-auto fw-bold" data-bs-dismiss="modal">Cerrar</button>
+            </div>
         </div>
-
     </div>
-
 </div>
-
 
 
 <script>

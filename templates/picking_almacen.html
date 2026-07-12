@@ -13,18 +13,20 @@
     .nav-pills .nav-link.active { background-color: #0d6efd !important; color: #ffffff !important; border-color: #0d6efd; }
 </style>
 
-<div class="d-flex justify-content-between align-items-center mb-4">
+<!-- ENCABEZADO RESPONSIVE -->
+<div class="d-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center mb-4 gap-2">
     <div>
-        <h2 class="mb-0 fw-bold text-dark">
+        <h2 class="mb-0 fw-bold text-dark fs-4 fs-sm-2">
             <i class="bi bi-box-arrow-up-right text-primary"></i> Operaciones de Almacén
         </h2>
         <p class="text-muted small mb-0">Verificación física y Despacho final</p>
     </div>
 </div>
 
-<ul class="nav nav-pills mb-4" id="pills-tab" role="tablist">
-    <li class="nav-item me-2" role="presentation">
-        <button class="nav-link active fw-bold px-4" id="pills-verificar-tab" 
+<!-- PESTAÑAS RESPONSIVE (APILADAS EN MÓVIL) -->
+<ul class="nav nav-pills flex-column flex-md-row mb-4 gap-2" id="pills-tab" role="tablist">
+    <li class="nav-item flex-fill text-center" role="presentation">
+        <button class="nav-link active fw-bold px-4 w-100" id="pills-verificar-tab" 
                 data-bs-toggle="pill" data-bs-target="#pills-verificar" type="button" role="tab">
             <i class="bi bi-search"></i> 1. Por Verificar
             {% if ordenes_verificar|length > 0 %}
@@ -32,8 +34,8 @@
             {% endif %}
         </button>
     </li>
-    <li class="nav-item me-2" role="presentation">
-        <button class="nav-link fw-bold px-4" id="pills-despachar-tab" 
+    <li class="nav-item flex-fill text-center" role="presentation">
+        <button class="nav-link fw-bold px-4 w-100" id="pills-despachar-tab" 
                 data-bs-toggle="pill" data-bs-target="#pills-despachar" type="button" role="tab">
             <i class="bi bi-truck"></i> 2. Por Despachar
             {% if ordenes|length > 0 %}
@@ -41,8 +43,8 @@
             {% endif %}
         </button>
     </li>
-    <li class="nav-item" role="presentation">
-        <button class="nav-link fw-bold px-4" id="pills-historial-tab" 
+    <li class="nav-item flex-fill text-center" role="presentation">
+        <button class="nav-link fw-bold px-4 w-100" id="pills-historial-tab" 
                 data-bs-toggle="pill" data-bs-target="#pills-historial" type="button" role="tab">
             <i class="bi bi-archive-fill"></i> 3. Historial de Salidas
             <span class="badge bg-secondary ms-2">{{ pagination_hist.total }}</span>
@@ -53,7 +55,7 @@
 <div class="tab-content" id="pills-tabContent">
 
     <!-- ========================================================= -->
-    <!-- TAB 1: POR VERIFICAR STOCK                                 -->
+    <!-- TAB 1: POR VERIFICAR STOCK                                -->
     <!-- ========================================================= -->
     <div class="tab-pane fade show active" id="pills-verificar" role="tabpanel">
         <div class="alert alert-info border-info small shadow-sm">
@@ -63,10 +65,9 @@
         </div>
 
         {% if ordenes_verificar %}
-        <!-- Vista tabla para muchos registros -->
         <div class="card shadow-sm border-0 mb-3">
-            <div class="card-body p-0 table-responsive">
-                <table class="table table-hover align-middle mb-0 small">
+            <div class="card-body p-0 table-responsive" style="min-height: 250px;">
+                <table class="table table-hover align-middle mb-0 small text-nowrap">
                     <thead class="table-dark text-uppercase">
                         <tr>
                             <th class="ps-3">N° COT</th>
@@ -94,41 +95,37 @@
                                 <span class="badge bg-info text-dark">{{ o.details|length }} items</span>
                             </td>
                             <td class="text-center">
-                                <button class="btn btn-sm btn-outline-primary me-1" 
-                                        onclick="verItemsVerificar('{{ o.id }}')" 
-                                        title="Ver lista de productos">
-                                    <i class="bi bi-eye-fill"></i> Ver Lista
-                                </button>
-                                <button class="btn btn-sm btn-outline-danger me-1" 
-                                        onclick="abrirReporteFaltantes('{{ o.id }}')" 
-                                        title="Reportar faltantes">
-                                    <i class="bi bi-x-circle"></i> Faltan
-                                </button>
-                                <button class="btn btn-sm btn-success" 
-                                        onclick="confirmarStockFisico('{{ o.id }}')" 
-                                        title="Confirmar stock OK">
-                                    <i class="bi bi-check-all"></i> OK
-                                </button>
+                                <div class="btn-group btn-group-sm d-flex flex-column flex-sm-row gap-1 border-0">
+                                    <button class="btn btn-outline-primary" onclick="verItemsVerificar('{{ o.id }}')" title="Ver lista de productos">
+                                        <i class="bi bi-eye-fill"></i> <span class="d-none d-md-inline">Ver Lista</span>
+                                    </button>
+                                    <button class="btn btn-outline-danger" onclick="abrirReporteFaltantes('{{ o.id }}')" title="Reportar faltantes">
+                                        <i class="bi bi-x-circle"></i> <span class="d-none d-md-inline">Faltan</span>
+                                    </button>
+                                    <button class="btn btn-success" onclick="confirmarStockFisico('{{ o.id }}')" title="Confirmar stock OK">
+                                        <i class="bi bi-check-all"></i> <span class="d-none d-md-inline">OK</span>
+                                    </button>
+                                </div>
                             </td>
                         </tr>
                         <!-- Fila expandible con detalle de items -->
                         <tr id="detalle_verificar_{{ o.id }}" class="d-none bg-light">
-                            <td colspan="6" class="p-3">
+                            <td colspan="6" class="p-2 p-md-3">
                                 <div class="card border-info border-2">
                                     <div class="card-header bg-info bg-opacity-10 py-2">
-                                        <h6 class="mb-0 fw-bold text-info">
+                                        <h6 class="mb-0 fw-bold text-info small">
                                             <i class="bi bi-list-check"></i> 
                                             Artículos a Verificar — COT-{{ "%05d"|format(o.id) }} 
-                                            · {{ o.cliente.nombre }}
+                                            <span class="d-block d-sm-inline">· {{ o.cliente.nombre }}</span>
                                         </h6>
                                     </div>
-                                    <div class="card-body p-0">
-                                        <table class="table table-sm table-bordered mb-0">
+                                    <div class="card-body p-0 table-responsive">
+                                        <table class="table table-sm table-bordered mb-0 text-nowrap">
                                             <thead class="table-light small text-muted text-uppercase">
                                                 <tr>
                                                     <th class="ps-3">Código</th>
                                                     <th>Ubicación</th>
-                                                    <th>Producto</th>
+                                                    <th style="min-width: 150px;">Producto</th>
                                                     <th class="text-center">Cant. Pedida</th>
                                                     <th class="text-center">Stock Actual</th>
                                                     <th class="text-center">Estado</th>
@@ -146,8 +143,7 @@
                                                     </td>
                                                     <td class="text-primary small">
                                                         {% if d.product %}
-                                                            <i class="bi bi-geo-alt-fill"></i> 
-                                                            {{ d.product.ubicacion or '—' }}
+                                                            <i class="bi bi-geo-alt-fill"></i> {{ d.product.ubicacion or '—' }}
                                                         {% else %}—{% endif %}
                                                     </td>
                                                     <td class="small" style="max-width:250px; white-space:normal">
@@ -169,12 +165,12 @@
                                                     <td class="text-center">
                                                         {% if d.product %}
                                                             {% if d.product.stock_actual >= d.cantidad %}
-                                                                <span class="badge bg-success"><i class="bi bi-check-lg"></i> SUFICIENTE</span>
+                                                                <span class="badge bg-success"><i class="bi bi-check-lg"></i> OK</span>
                                                             {% else %}
-                                                                <span class="badge bg-danger"><i class="bi bi-exclamation-lg"></i> INSUFICIENTE</span>
+                                                                <span class="badge bg-danger"><i class="bi bi-exclamation-lg"></i> FALTA</span>
                                                             {% endif %}
                                                         {% else %}
-                                                            <span class="badge bg-secondary">SERVICIO</span>
+                                                            <span class="badge bg-secondary">SRV</span>
                                                         {% endif %}
                                                     </td>
                                                 </tr>
@@ -182,14 +178,12 @@
                                             </tbody>
                                         </table>
                                     </div>
-                                    <div class="card-footer bg-white d-flex gap-2 justify-content-end py-2">
-                                        <button class="btn btn-sm btn-outline-danger" 
-                                                onclick="abrirReporteFaltantes('{{ o.id }}')">
+                                    <div class="card-footer bg-white d-flex flex-column flex-sm-row gap-2 justify-content-end py-2">
+                                        <button class="btn btn-sm btn-outline-danger w-100 w-sm-auto" onclick="abrirReporteFaltantes('{{ o.id }}')">
                                             <i class="bi bi-x-circle"></i> Reportar Faltantes
                                         </button>
-                                        <button class="btn btn-sm btn-success fw-bold" 
-                                                onclick="confirmarStockFisico('{{ o.id }}')">
-                                            <i class="bi bi-check-all"></i> Todo Conforme — Confirmar Stock
+                                        <button class="btn btn-sm btn-success fw-bold w-100 w-sm-auto" onclick="confirmarStockFisico('{{ o.id }}')">
+                                            <i class="bi bi-check-all"></i> Todo Conforme
                                         </button>
                                     </div>
                                 </div>
@@ -203,27 +197,26 @@
         {% else %}
         <div class="text-center text-muted py-5">
             <div class="opacity-25 display-1"><i class="bi bi-search"></i></div>
-            <h4 class="mt-3">Nada por verificar</h4>
-            <p>No hay solicitudes de verificación pendientes.</p>
+            <h4 class="mt-3 fs-5">Nada por verificar</h4>
+            <p class="small">No hay solicitudes de verificación pendientes.</p>
         </div>
         {% endif %}
     </div>
 
     <!-- ========================================================= -->
-    <!-- TAB 2: POR DESPACHAR                                       -->
+    <!-- TAB 2: POR DESPACHAR                                      -->
     <!-- ========================================================= -->
     <div class="tab-pane fade" id="pills-despachar" role="tabpanel">
-
         {% if ordenes %}
         <div class="card shadow-sm border-0 mb-3">
-            <div class="card-body p-0 table-responsive">
-                <table class="table table-hover align-middle mb-0 small">
+            <div class="card-body p-0 table-responsive" style="min-height: 250px;">
+                <table class="table table-hover align-middle mb-0 small text-nowrap">
                     <thead class="table-dark text-uppercase">
                         <tr>
                             <th class="ps-3">N° COT</th>
                             <th>Cliente</th>
                             <th>Vendedor</th>
-                            <th>F. Aprobación</th>
+                            <th class="d-none d-md-table-cell">F. Aprobación</th>
                             <th>F. Entrega</th>
                             <th class="text-center">Items</th>
                             <th class="text-center">Acciones</th>
@@ -234,13 +227,13 @@
                         <tr>
                             <td class="ps-3 fw-bold text-primary">COT-{{ "%05d"|format(o.id) }}</td>
                             <td>
-                                <div class="fw-bold text-truncate" style="max-width:200px">{{ o.cliente.nombre }}</div>
+                                <div class="fw-bold text-truncate" style="max-width:150px">{{ o.cliente.nombre }}</div>
                                 {% if o.orden_compra %}
                                     <small class="text-primary"><i class="bi bi-receipt"></i> OC: {{ o.orden_compra }}</small>
                                 {% endif %}
                             </td>
                             <td><i class="bi bi-person text-muted"></i> {{ o.vendedor.username }}</td>
-                            <td>
+                            <td class="d-none d-md-table-cell">
                                 {% if o.fecha_aprobacion %}
                                     <div>{{ o.fecha_aprobacion.strftime('%d/%m/%Y') }}</div>
                                     <small class="text-muted">{{ o.fecha_aprobacion.strftime('%H:%M') }}</small>
@@ -249,8 +242,7 @@
                             <td>
                                 {% if o.fecha_entrega %}
                                     <span class="fw-bold text-danger">
-                                        <i class="bi bi-calendar-event-fill"></i> 
-                                        {{ o.fecha_entrega.strftime('%d/%m/%Y') }}
+                                        <i class="bi bi-calendar-event-fill"></i> {{ o.fecha_entrega.strftime('%d/%m/%Y') }}
                                     </span>
                                 {% else %}
                                     <span class="text-muted fst-italic">A coordinar</span>
@@ -259,102 +251,78 @@
                             <td class="text-center">
                                 <span class="badge bg-primary">{{ o.details|length }} items</span>
                             </td>
-                            <td class="text-center text-nowrap">
-                                <button class="btn btn-sm btn-outline-primary me-1" 
-                                        onclick="verItemsDespachar('{{ o.id }}')" 
-                                        title="Ver lista de empaque">
-                                    <i class="bi bi-eye-fill"></i> Lista
-                                </button>
-                                <a href="/descargar_nota_pedido/{{ o.id }}" 
-                                   class="btn btn-sm btn-outline-danger me-1" 
-                                   target="_blank" title="Imprimir Nota de Pedido">
-                                    <i class="bi bi-printer-fill"></i> NP
-                                </a>
-
-                                <!-- NUEVO: BOTÓN DE ORDEN DE COMPRA (ALMACÉN) -->
-                                {% if o.archivo_oc %}
-                                <a href="/ver_oc/{{ o.archivo_oc }}" 
-                                class="btn btn-sm btn-outline-success me-1 fw-bold" target="_blank" title="Ver Orden de Compra Adjunta">
-                                    <i class="bi bi-paperclip"></i> OC
-                                </a>
-                                {% endif %}
-
-                                <button class="btn btn-sm btn-success fw-bold" 
-                                        id="btn_despachar_rapido_{{ o.id }}"
-                                        onclick="procesarSalidaRapido('{{ o.id }}')" 
-                                        title="Confirmar salida y descontar stock">
-                                    <i class="bi bi-check-circle-fill"></i> Despachar
-                                </button>
+                            <td class="text-center">
+                                <div class="d-flex flex-column flex-md-row justify-content-center gap-1 border-0">
+                                    <button class="btn btn-sm btn-outline-primary" onclick="verItemsDespachar('{{ o.id }}')" title="Ver lista de empaque">
+                                        <i class="bi bi-eye-fill"></i> <span class="d-none d-md-inline">Lista</span>
+                                    </button>
+                                    <a href="/descargar_nota_pedido/{{ o.id }}" class="btn btn-sm btn-outline-danger" target="_blank" title="Imprimir Nota de Pedido">
+                                        <i class="bi bi-printer-fill"></i> <span class="d-none d-md-inline">NP</span>
+                                    </a>
+                                    {% if o.archivo_oc %}
+                                    <a href="/ver_oc/{{ o.archivo_oc }}" class="btn btn-sm btn-outline-success fw-bold" target="_blank" title="Ver OC Adjunta">
+                                        <i class="bi bi-paperclip"></i> <span class="d-none d-md-inline">OC</span>
+                                    </a>
+                                    {% endif %}
+                                    <button class="btn btn-sm btn-success fw-bold" id="btn_despachar_rapido_{{ o.id }}" onclick="procesarSalidaRapido('{{ o.id }}')" title="Confirmar salida y descontar stock">
+                                        <i class="bi bi-check-circle-fill"></i> <span class="d-none d-md-inline">Despachar</span>
+                                    </button>
+                                </div>
                             </td>
                         </tr>
                         <!-- Fila expandible con checklist de empaque -->
                         <tr id="detalle_despachar_{{ o.id }}" class="d-none bg-light">
-                            <td colspan="7" class="p-3">
+                            <td colspan="7" class="p-2 p-md-3">
                                 <div class="card border-primary border-2">
-                                    <div class="card-header bg-primary bg-opacity-10 py-2 d-flex justify-content-between">
-                                        <h6 class="mb-0 fw-bold text-primary">
+                                    <div class="card-header bg-primary bg-opacity-10 py-2 d-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center">
+                                        <h6 class="mb-1 mb-sm-0 fw-bold text-primary small">
                                             <i class="bi bi-box-seam"></i> 
-                                            Lista de Empaque — COT-{{ "%05d"|format(o.id) }}
+                                            Lista Empaque — COT-{{ "%05d"|format(o.id) }}
                                         </h6>
-                                        <small class="text-muted">
-                                            Marque todos los items antes de despachar
-                                        </small>
+                                        <small class="text-muted" style="font-size: 0.7rem;">Marque todos los items antes de despachar</small>
                                     </div>
-                                    <div class="card-body p-0">
-                                        <table class="table table-sm table-bordered mb-0">
+                                    <div class="card-body p-0 table-responsive">
+                                        <table class="table table-sm table-bordered mb-0 text-nowrap">
                                             <thead class="table-light small text-muted text-uppercase">
                                                 <tr>
-                                                    <th class="text-center" style="width:50px">
-                                                        <i class="bi bi-check2-all text-primary"></i>
-                                                    </th>
+                                                    <th class="text-center" style="width:40px"><i class="bi bi-check2-all text-primary"></i></th>
                                                     <th>Código</th>
                                                     <th>Ubicación</th>
-                                                    <th>Producto</th>
+                                                    <th style="min-width: 150px;">Producto</th>
                                                     <th class="text-center">Cant.</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
                                                 {% for d in o.details %}
                                                 <tr>
-                                                    <td class="text-center">
-                                                        <input class="form-check-input check-picking-{{ o.id }} border-2 border-secondary" 
-                                                               type="checkbox" 
-                                                               style="cursor:pointer; width:1.2rem; height:1.2rem;" 
+                                                    <td class="text-center align-middle">
+                                                        <input class="form-check-input check-picking-{{ o.id }} border-2 border-secondary m-0" 
+                                                               type="checkbox" style="cursor:pointer; width:1.2rem; height:1.2rem;" 
                                                                onchange="validarChecksTabla('{{ o.id }}')">
                                                     </td>
-                                                    <td class="small fw-bold text-muted">
-                                                        {% if d.item_type == 'PRODUCTO' and d.product %}
-                                                            {{ d.product.sku }}
-                                                        {% else %}SRV{% endif %}
+                                                    <td class="small fw-bold text-muted align-middle">
+                                                        {% if d.item_type == 'PRODUCTO' and d.product %}{{ d.product.sku }}{% else %}SRV{% endif %}
                                                     </td>
-                                                    <td class="small text-primary">
-                                                        {% if d.product %}
-                                                            <i class="bi bi-geo-alt-fill"></i> 
-                                                            {{ d.product.ubicacion or '—' }}
-                                                        {% else %}—{% endif %}
+                                                    <td class="small text-primary align-middle">
+                                                        {% if d.product %}<i class="bi bi-geo-alt-fill"></i> {{ d.product.ubicacion or '—' }}{% else %}—{% endif %}
                                                     </td>
-                                                    <td class="small" style="max-width:250px; white-space:normal">
+                                                    <td class="small align-middle" style="max-width:250px; white-space:normal">
                                                         {% if d.item_type == 'PRODUCTO' and d.product %}
                                                             {{ d.product.nombre }}
                                                         {% else %}{{ d.nombre_personalizado }}{% endif %}
                                                     </td>
-                                                    <td class="text-center fw-bold fs-6">{{ d.cantidad }}</td>
+                                                    <td class="text-center fw-bold fs-6 align-middle">{{ d.cantidad }}</td>
                                                 </tr>
                                                 {% endfor %}
                                             </tbody>
                                         </table>
                                     </div>
-                                    <div class="card-footer bg-white d-flex gap-2 justify-content-between py-2">
-                                        <a href="/descargar_nota_pedido/{{ o.id }}" 
-                                           class="btn btn-sm btn-outline-danger" target="_blank">
+                                    <div class="card-footer bg-white d-flex flex-column flex-sm-row gap-2 justify-content-between py-2">
+                                        <a href="/descargar_nota_pedido/{{ o.id }}" class="btn btn-sm btn-outline-danger w-100 w-sm-auto" target="_blank">
                                             <i class="bi bi-file-earmark-pdf-fill"></i> Imprimir NP
                                         </a>
-                                        <button class="btn btn-sm btn-success fw-bold px-4" 
-                                                id="btn_descontar_{{ o.id }}" 
-                                                disabled 
-                                                onclick="procesarSalida('{{ o.id }}')">
-                                            <i class="bi bi-check-circle-fill"></i> 
-                                            Confirmar Todos los Items y Descontar Stock
+                                        <button class="btn btn-sm btn-success fw-bold px-4 w-100 w-sm-auto" id="btn_descontar_{{ o.id }}" disabled onclick="procesarSalida('{{ o.id }}')">
+                                            <i class="bi bi-check-circle-fill"></i> Confirmar Salida Total
                                         </button>
                                     </div>
                                 </div>
@@ -368,14 +336,14 @@
         {% else %}
         <div class="text-center text-muted py-5">
             <div class="opacity-25 display-1"><i class="bi bi-box-seam"></i></div>
-            <h4 class="mt-3">Todo al día</h4>
-            <p>No hay pedidos aprobados pendientes de despacho.</p>
+            <h4 class="mt-3 fs-5">Todo al día</h4>
+            <p class="small">No hay pedidos aprobados pendientes de despacho.</p>
         </div>
         {% endif %}
     </div>
 
     <!-- ========================================================= -->
-    <!-- TAB 3: HISTORIAL DE SALIDAS (TABLA CON FILTROS)            -->
+    <!-- TAB 3: HISTORIAL DE SALIDAS (TABLA CON FILTROS)           -->
     <!-- ========================================================= -->
     <div class="tab-pane fade" id="pills-historial" role="tabpanel">
 
@@ -384,33 +352,26 @@
             <div class="card-body py-3">
                 <form method="GET" action="{{ url_for('picking_almacen') }}" id="formFiltrosHist">
                     <div class="row g-2 align-items-end">
-                        <div class="col-md-4">
-                            <label class="small fw-bold text-muted">Buscar (N° COT / Cliente / RUC)</label>
+                        <div class="col-12 col-md-4">
+                            <label class="small fw-bold text-muted">Buscar (N° COT / Cliente)</label>
                             <div class="input-group input-group-sm">
-                                <span class="input-group-text bg-white">
-                                    <i class="bi bi-search"></i>
-                                </span>
-                                <input type="text" name="busqueda_hist" class="form-control" 
-                                       placeholder="Ej: 00012 o Empresa SAC..." 
-                                       value="{{ busqueda_hist }}">
+                                <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+                                <input type="text" name="busqueda_hist" class="form-control" placeholder="Ej: Empresa SAC..." value="{{ busqueda_hist }}">
                             </div>
                         </div>
-                        <div class="col-md-3">
+                        <div class="col-6 col-md-3">
                             <label class="small fw-bold text-muted">Desde</label>
-                            <input type="date" name="fecha_inicio_hist" class="form-control form-control-sm" 
-                                   value="{{ fecha_inicio_hist }}">
+                            <input type="date" name="fecha_inicio_hist" class="form-control form-control-sm" value="{{ fecha_inicio_hist }}">
                         </div>
-                        <div class="col-md-3">
+                        <div class="col-6 col-md-3">
                             <label class="small fw-bold text-muted">Hasta</label>
-                            <input type="date" name="fecha_fin_hist" class="form-control form-control-sm" 
-                                   value="{{ fecha_fin_hist }}">
+                            <input type="date" name="fecha_fin_hist" class="form-control form-control-sm" value="{{ fecha_fin_hist }}">
                         </div>
-                        <div class="col-md-2 d-flex gap-1">
+                        <div class="col-12 col-md-2 d-flex gap-1 mt-2 mt-md-0">
                             <button type="submit" class="btn btn-primary btn-sm fw-bold w-100">
                                 <i class="bi bi-funnel-fill"></i> Filtrar
                             </button>
-                            <a href="{{ url_for('picking_almacen') }}" 
-                               class="btn btn-outline-secondary btn-sm" title="Limpiar">
+                            <a href="{{ url_for('picking_almacen') }}" class="btn btn-outline-secondary btn-sm" title="Limpiar">
                                 <i class="bi bi-arrow-counterclockwise"></i>
                             </a>
                         </div>
@@ -423,21 +384,18 @@
         <div class="card shadow-sm border-0">
             <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
                 <h6 class="mb-0 fw-bold text-muted small text-uppercase">
-                    <i class="bi bi-archive-fill text-success"></i> 
-                    Salidas Registradas
+                    <i class="bi bi-archive-fill text-success"></i> Salidas Registradas
                 </h6>
-                <span class="badge bg-success">
-                    {{ pagination_hist.total }} total
-                </span>
+                <span class="badge bg-success">{{ pagination_hist.total }} total</span>
             </div>
-            <div class="card-body p-0 table-responsive">
-                <table class="table table-hover align-middle mb-0 small">
+            <div class="card-body p-0 table-responsive" style="min-height: 300px;">
+                <table class="table table-hover align-middle mb-0 small text-nowrap">
                     <thead class="table-dark text-uppercase">
                         <tr>
                             <th class="ps-3">N° COT</th>
                             <th>Cliente</th>
-                            <th>Vendedor</th>
-                            <th>F. Salida</th>
+                            <th class="d-none d-md-table-cell">Vendedor</th>
+                            <th class="d-none d-lg-table-cell">F. Salida</th>
                             <th>F. Entrega</th>
                             <th class="text-center">Items</th>
                             <th class="text-center">Estado</th>
@@ -447,113 +405,82 @@
                     <tbody>
                         {% for o in ordenes_finalizadas %}
                         <tr>
-                            <td class="ps-3 fw-bold text-success">
-                                COT-{{ "%05d"|format(o.id) }}
-                            </td>
+                            <td class="ps-3 fw-bold text-success">COT-{{ "%05d"|format(o.id) }}</td>
                             <td>
-                                <div class="fw-bold text-truncate" style="max-width:180px">
-                                    {{ o.cliente.nombre }}
-                                </div>
-                                <small class="text-muted">{{ o.cliente.documento }}</small>
+                                <div class="fw-bold text-truncate" style="max-width:150px">{{ o.cliente.nombre }}</div>
                                 {% if o.orden_compra %}
-                                    <div>
-                                        <small class="text-primary">
-                                            <i class="bi bi-receipt"></i> OC: {{ o.orden_compra }}
-                                        </small>
-                                    </div>
+                                    <div><small class="text-primary"><i class="bi bi-receipt"></i> OC: {{ o.orden_compra }}</small></div>
                                 {% endif %}
                             </td>
-                            <td>
+                            <td class="d-none d-md-table-cell">
                                 <i class="bi bi-person text-muted"></i> {{ o.vendedor.username }}
                                 {% if o.gerente_nombre %}
-                                    <div>
-                                        <small class="text-muted">
-                                            <i class="bi bi-shield-check text-success"></i> 
-                                            {{ o.gerente_nombre }}
-                                        </small>
-                                    </div>
+                                    <div><small class="text-muted"><i class="bi bi-shield-check text-success"></i> {{ o.gerente_nombre }}</small></div>
                                 {% endif %}
                             </td>
-                            <td>
+                            <td class="d-none d-lg-table-cell">
                                 <div>{{ o.fecha.strftime('%d/%m/%Y') }}</div>
                                 <small class="text-muted">{{ o.fecha.strftime('%H:%M') }}</small>
                             </td>
                             <td>
                                 {% if o.fecha_entrega %}
-                                    <span class="text-success fw-bold">
-                                        <i class="bi bi-calendar-check-fill"></i> 
-                                        {{ o.fecha_entrega.strftime('%d/%m/%Y') }}
-                                    </span>
+                                    <span class="text-success fw-bold"><i class="bi bi-calendar-check-fill"></i> {{ o.fecha_entrega.strftime('%d/%m/%Y') }}</span>
                                 {% else %}
                                     <span class="text-muted fst-italic">—</span>
                                 {% endif %}
                             </td>
                             <td class="text-center">
-                                <button class="btn btn-sm btn-outline-secondary" 
-                                        onclick="verItemsHistorial('{{ o.id }}')" 
-                                        title="Ver productos despachados">
-                                    <i class="bi bi-list-ul"></i> 
-                                    {{ o.details|length }}
+                                <button class="btn btn-sm btn-outline-secondary" onclick="verItemsHistorial('{{ o.id }}')" title="Ver productos despachados">
+                                    <i class="bi bi-list-ul"></i> {{ o.details|length }}
                                 </button>
                             </td>
                             <td class="text-center">
-                                <span class="badge bg-success">
-                                    <i class="bi bi-check2-all"></i> 
-                                    {{ o.estado }}
-                                </span>
+                                <span class="badge bg-success"><i class="bi bi-check2-all"></i> {{ o.estado }}</span>
                             </td>
-                            <td class="text-center text-nowrap">
-                                <a href="/descargar_nota_pedido/{{ o.id }}" 
-                                   class="btn btn-sm btn-outline-secondary" 
-                                   target="_blank" 
-                                   title="Reimprimir Nota de Pedido">
-                                    <i class="bi bi-printer-fill"></i> NP
-                                </a>
-                                <a href="/descargar_cotizacion_v2/{{ o.id }}" 
-                                   class="btn btn-sm btn-outline-danger ms-1" 
-                                   target="_blank" 
-                                   title="Ver Cotización Original">
-                                    <i class="bi bi-file-pdf-fill"></i> COT
-                                </a>
-
-                                <!-- NUEVO: BOTÓN DE ORDEN DE COMPRA EN EL HISTORIAL -->
-                                {% if o.archivo_oc %}
-                                <a href="/ver_oc/{{ o.archivo_oc }}" 
-                                class="btn btn-sm btn-outline-success ms-1 fw-bold" target="_blank" title="Ver Orden de Compra Adjunta">
-                                    <i class="bi bi-paperclip"></i> OC
-                                </a>
-                                {% endif %}
+                            <td class="text-center">
+                                <div class="d-flex flex-column flex-sm-row justify-content-center gap-1 border-0">
+                                    <a href="/descargar_nota_pedido/{{ o.id }}" class="btn btn-sm btn-outline-secondary" target="_blank" title="Reimprimir NP">
+                                        <i class="bi bi-printer-fill"></i> <span class="d-none d-md-inline">NP</span>
+                                    </a>
+                                    <a href="/descargar_cotizacion_v2/{{ o.id }}" class="btn btn-sm btn-outline-danger" target="_blank" title="Ver Cotización Original">
+                                        <i class="bi bi-file-pdf-fill"></i> <span class="d-none d-md-inline">COT</span>
+                                    </a>
+                                    {% if o.archivo_oc %}
+                                    <a href="/ver_oc/{{ o.archivo_oc }}" class="btn btn-sm btn-outline-success fw-bold" target="_blank" title="Ver OC Adjunta">
+                                        <i class="bi bi-paperclip"></i> <span class="d-none d-md-inline">OC</span>
+                                    </a>
+                                    {% endif %}
+                                </div>
                             </td>
                         </tr>
                         <!-- Fila expandible detalle historial -->
                         <tr id="detalle_hist_{{ o.id }}" class="d-none bg-light">
-                            <td colspan="8" class="p-3">
+                            <td colspan="8" class="p-2 p-md-3">
                                 <div class="card border-success border-2">
                                     <div class="card-header bg-success bg-opacity-10 py-2">
-                                        <h6 class="mb-0 fw-bold text-success">
-                                            <i class="bi bi-box-seam"></i> 
-                                            Productos Despachados — COT-{{ "%05d"|format(o.id) }}
+                                        <h6 class="mb-0 fw-bold text-success small">
+                                            <i class="bi bi-box-seam"></i> Despachados — COT-{{ "%05d"|format(o.id) }}
                                         </h6>
                                     </div>
-                                    <div class="card-body p-0">
-                                        <table class="table table-sm table-bordered mb-0">
+                                    <div class="card-body p-0 table-responsive">
+                                        <table class="table table-sm table-bordered mb-0 text-nowrap">
                                             <thead class="table-light small text-muted text-uppercase">
                                                 <tr>
                                                     <th class="ps-3">Código</th>
-                                                    <th>Producto</th>
-                                                    <th class="text-center">Cant. Despachada</th>
+                                                    <th style="min-width: 150px;">Producto</th>
+                                                    <th class="text-center">Cant.</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
                                                 {% for d in o.details %}
                                                 <tr>
-                                                    <td class="ps-3 fw-bold text-muted small">
+                                                    <td class="ps-3 fw-bold text-muted small align-middle">
                                                         {{ d.product.sku if d.product else 'SRV' }}
                                                     </td>
-                                                    <td class="small" style="white-space:normal">
+                                                    <td class="small align-middle" style="white-space:normal">
                                                         {{ d.product.nombre if d.product else d.nombre_personalizado }}
                                                     </td>
-                                                    <td class="text-center fw-bold">
+                                                    <td class="text-center fw-bold align-middle">
                                                         <span class="badge bg-success">{{ d.cantidad }}</span>
                                                     </td>
                                                 </tr>
@@ -568,7 +495,7 @@
                         <tr>
                             <td colspan="8" class="text-center py-5 text-muted">
                                 <div class="opacity-25 fs-1"><i class="bi bi-archive"></i></div>
-                                <p class="mt-2">No se encontraron registros con los filtros aplicados.</p>
+                                <p class="mt-2 small">No se encontraron registros con los filtros aplicados.</p>
                             </td>
                         </tr>
                         {% endfor %}
@@ -576,48 +503,30 @@
                 </table>
             </div>
 
-            <!-- Paginación -->
+            <!-- Paginación Responsive -->
             {% if pagination_hist.pages > 1 %}
             <div class="card-footer bg-white py-3">
-                <div class="d-flex justify-content-between align-items-center">
-                    <small class="text-muted">
-                        Mostrando {{ ordenes_finalizadas|length }} de 
-                        <strong>{{ pagination_hist.total }}</strong> registros · 
+                <div class="d-flex flex-column flex-sm-row justify-content-between align-items-center gap-2">
+                    <small class="text-muted text-center text-sm-start">
+                        Mostrando {{ ordenes_finalizadas|length }} de <strong>{{ pagination_hist.total }}</strong> registros <br class="d-block d-sm-none">
                         Pág. {{ pagination_hist.page }} de {{ pagination_hist.pages }}
                     </small>
-                    <ul class="pagination pagination-sm mb-0">
+                    <ul class="pagination pagination-sm mb-0 flex-wrap justify-content-center">
                         <li class="page-item {% if not pagination_hist.has_prev %}disabled{% endif %}">
-                            <a class="page-link" href="{{ url_for('picking_almacen', 
-                               page_hist=pagination_hist.prev_num,
-                               busqueda_hist=busqueda_hist,
-                               fecha_inicio_hist=fecha_inicio_hist,
-                               fecha_fin_hist=fecha_fin_hist) }}#pills-historial-tab">
-                                Anterior
-                            </a>
+                            <a class="page-link" href="{{ url_for('picking_almacen', page_hist=pagination_hist.prev_num, busqueda_hist=busqueda_hist, fecha_inicio_hist=fecha_inicio_hist, fecha_fin_hist=fecha_fin_hist) }}#pills-historial-tab">Ant</a>
                         </li>
+                        <li class="page-item disabled d-sm-none"><span class="page-link">{{ pagination_hist.page }}</span></li>
                         {% for p in pagination_hist.iter_pages(left_edge=1, right_edge=1, left_current=1, right_current=1) %}
                             {% if p %}
-                                <li class="page-item {% if p == pagination_hist.page %}active{% endif %}">
-                                    <a class="page-link" href="{{ url_for('picking_almacen',
-                                       page_hist=p,
-                                       busqueda_hist=busqueda_hist,
-                                       fecha_inicio_hist=fecha_inicio_hist,
-                                       fecha_fin_hist=fecha_fin_hist) }}#pills-historial-tab">
-                                        {{ p }}
-                                    </a>
+                                <li class="page-item d-none d-sm-block {% if p == pagination_hist.page %}active{% endif %}">
+                                    <a class="page-link" href="{{ url_for('picking_almacen', page_hist=p, busqueda_hist=busqueda_hist, fecha_inicio_hist=fecha_inicio_hist, fecha_fin_hist=fecha_fin_hist) }}#pills-historial-tab">{{ p }}</a>
                                 </li>
                             {% else %}
-                                <li class="page-item disabled"><span class="page-link">...</span></li>
+                                <li class="page-item disabled d-none d-sm-block"><span class="page-link">...</span></li>
                             {% endif %}
                         {% endfor %}
                         <li class="page-item {% if not pagination_hist.has_next %}disabled{% endif %}">
-                            <a class="page-link" href="{{ url_for('picking_almacen',
-                               page_hist=pagination_hist.next_num,
-                               busqueda_hist=busqueda_hist,
-                               fecha_inicio_hist=fecha_inicio_hist,
-                               fecha_fin_hist=fecha_fin_hist) }}#pills-historial-tab">
-                                Siguiente
-                            </a>
+                            <a class="page-link" href="{{ url_for('picking_almacen', page_hist=pagination_hist.next_num, busqueda_hist=busqueda_hist, fecha_inicio_hist=fecha_inicio_hist, fecha_fin_hist=fecha_fin_hist) }}#pills-historial-tab">Sig</a>
                         </li>
                     </ul>
                 </div>
@@ -627,46 +536,42 @@
     </div>
 </div>
 
-<!-- Modal Reportar Faltantes (sin cambios) -->
+<!-- Modal Reportar Faltantes (Responsive) -->
 <div class="modal fade" id="modalFaltaStock" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-fullscreen-sm-down">
         <div class="modal-content border-0 shadow">
             <div class="modal-header bg-danger text-white py-3">
-                <h5 class="modal-title fw-bold">
-                    <i class="bi bi-exclamation-triangle-fill me-2"></i> Reportar Piezas Faltantes
+                <h5 class="modal-title fw-bold fs-5">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i> Reportar Faltantes
                 </h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body bg-light">
-                <div class="alert alert-warning bg-warning bg-opacity-10 border-warning small">
+            <div class="modal-body bg-light p-2 p-md-3">
+                <div class="alert alert-warning bg-warning bg-opacity-10 border-warning small p-2">
                     <i class="bi bi-info-circle-fill text-warning"></i> 
                     Seleccione los productos que <strong>no están completos</strong> e indique cuántos faltan.
                 </div>
-                <div class="table-responsive bg-white border rounded shadow-sm mb-3" 
-                     style="max-height: 350px; overflow-y: auto;">
-                    <table class="table table-hover align-middle mb-0">
-                        <thead class="table-light small text-muted sticky-top">
+                <div class="table-responsive bg-white border rounded shadow-sm mb-3" style="max-height: 350px; overflow-y: auto;">
+                    <table class="table table-hover align-middle mb-0 text-nowrap">
+                        <thead class="table-light small text-muted sticky-top shadow-sm">
                             <tr>
-                                <th class="text-center" style="width:60px">Falta</th>
-                                <th>Producto / SKU</th>
-                                <th class="text-center" style="width:100px">Pedido</th>
-                                <th class="text-center text-danger" style="width:130px">Faltan (Cant)</th>
+                                <th class="text-center" style="width:50px">Falta</th>
+                                <th style="min-width: 150px;">Producto / SKU</th>
+                                <th class="text-center" style="width:70px">Pedido</th>
+                                <th class="text-center text-danger" style="width:100px">Faltan (Cant)</th>
                             </tr>
                         </thead>
                         <tbody id="lista_faltantes_body"></tbody>
                     </table>
                 </div>
                 <label class="small fw-bold text-muted mb-1">Comentario Adicional (Opcional):</label>
-                <textarea id="faltante_comentario" class="form-control" rows="2" 
-                          placeholder="Ej: Las 5 unidades restantes están dañadas..."></textarea>
+                <textarea id="faltante_comentario" class="form-control" rows="2" placeholder="Ej: Las 5 unidades restantes están dañadas..."></textarea>
                 <input type="hidden" id="faltante_order_id">
             </div>
-            <div class="modal-footer bg-white">
-                <button type="button" class="btn btn-outline-secondary fw-bold" 
-                        data-bs-dismiss="modal">Cancelar</button>
-                <button type="button" class="btn btn-danger fw-bold px-4 shadow-sm" 
-                        onclick="enviarReporteFalta()">
-                    <i class="bi bi-send-fill"></i> ENVIAR REPORTE AL VENDEDOR
+            <div class="modal-footer bg-white d-flex flex-column flex-sm-row gap-2">
+                <button type="button" class="btn btn-outline-secondary fw-bold w-100 w-sm-auto" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-danger fw-bold shadow-sm w-100 w-sm-auto py-2 py-sm-1" onclick="enviarReporteFalta()">
+                    <i class="bi bi-send-fill me-1"></i> ENVIAR REPORTE
                 </button>
             </div>
         </div>
