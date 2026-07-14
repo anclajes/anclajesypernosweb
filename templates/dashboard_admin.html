@@ -112,6 +112,106 @@
     </div>
 </div>
 
+<!-- RESUMEN DE ESTADOS CRÍTICOS PARA GERENCIA -->
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+        <div class="card border-warning border-start border-4 shadow-sm h-100">
+            <div class="card-body py-2 px-3 text-center">
+                <div class="text-muted small fw-bold text-uppercase mb-1">Rev. Inicial</div>
+                <h3 class="mb-0 text-warning">{{ alertas_gerencia.revision_pre_cliente }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card border-danger border-start border-4 shadow-sm h-100">
+            <div class="card-body py-2 px-3 text-center">
+                <div class="text-muted small fw-bold text-uppercase mb-1">Aprob. Final</div>
+                <h3 class="mb-0 text-danger">{{ alertas_gerencia.aprobacion_final }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card border-info border-start border-4 shadow-sm h-100">
+            <div class="card-body py-2 px-3 text-center">
+                <div class="text-muted small fw-bold text-uppercase mb-1">Almacén Verificando</div>
+                <h3 class="mb-0 text-info">{{ alertas_gerencia.por_verificar_stock }}</h3>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card border-danger bg-danger bg-opacity-10 shadow-sm h-100">
+            <div class="card-body py-2 px-3 text-center">
+                <div class="text-danger small fw-bold text-uppercase mb-1">Observados</div>
+                <h3 class="mb-0 text-danger fw-bold">{{ alertas_gerencia.observados }}</h3>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- TABLA RÁPIDA DE ESTADO DE COTIZACIONES -->
+<div class="card shadow-sm border-0 mb-4">
+    <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+        <h5 class="mb-0 fw-bold text-primary"><i class="bi bi-activity"></i> Radar de Cotizaciones Activas</h5>
+        <a href="{{ url_for('historial_ventas') }}" class="btn btn-sm btn-outline-primary">Ver panel completo</a>
+    </div>
+    <div class="card-body p-0 table-responsive" style="max-height: 400px; overflow-y: auto;">
+        <table class="table table-hover align-middle mb-0 text-nowrap">
+            <thead class="bg-light small text-uppercase text-muted sticky-top">
+                <tr>
+                    <th class="ps-4">Código</th>
+                    <th>Cliente</th>
+                    <th>Vendedor</th>
+                    <th class="text-end">Monto</th>
+                    <th class="text-center">Estado Actual</th>
+                </tr>
+            </thead>
+            <tbody class="small">
+                {% for o in cotizaciones_recientes %}
+                <tr class="{% if o.estado == 'Observado' %}table-danger{% elif o.estado in ['Revision Pre-Cliente', 'Pendiente Aprobacion Final'] %}table-warning{% endif %}">
+                    <td class="ps-4 fw-bold text-secondary">{{ "%05d"|format(o.id) }}</td>
+                    <td>
+                        <div class="fw-bold text-truncate" style="max-width: 200px;">{{ o.cliente.nombre }}</div>
+                        <div class="text-muted" style="font-size:0.75rem">{{ o.fecha.strftime('%d/%m/%Y %H:%M') }}</div>
+                    </td>
+                    <td><i class="bi bi-person text-muted"></i> {{ o.vendedor.username }}</td>
+                    <td class="text-end fw-bold font-monospace">
+                        {{ "S/" if o.moneda == 'PEN' else "$" }} {{ "%.2f"|format(o.total) }}
+                    </td>
+                    <td class="text-center">
+                        <!-- Etiquetas clonadas de tu historial de ventas para consistencia -->
+                        <span class="badge 
+                            {% if o.estado == 'Cotizacion' %}bg-secondary
+                            {% elif o.estado == 'Por Verificar' %}bg-info text-dark border border-info
+                            {% elif o.estado == 'Stock Confirmado' %}bg-success text-white
+                            {% elif o.estado == 'Revision Pre-Cliente' %}bg-warning text-dark shadow-sm
+                            {% elif o.estado == 'Aprobado Pre-Cliente' %}bg-info bg-gradient text-dark
+                            {% elif o.estado == 'Pendiente Aprobacion Final' %}bg-warning text-danger fw-bold border border-danger shadow-sm blink-anim
+                            {% elif o.estado == 'Observado' %}bg-danger
+                            {% elif o.estado == 'Por Despachar' %}bg-primary
+                            {% else %}bg-secondary{% endif %}">
+                            
+                            {% if o.estado == 'Cotizacion' %}📝 Borrador
+                            {% elif o.estado == 'Por Verificar' %}🔎 Almacén verificando
+                            {% elif o.estado == 'Stock Confirmado' %}📦 Stock OK
+                            {% elif o.estado == 'Revision Pre-Cliente' %}👀 Requiere tu revisión
+                            {% elif o.estado == 'Aprobado Pre-Cliente' %}✅ Aprob. Pre-Cliente
+                            {% elif o.estado == 'Pendiente Aprobacion Final' %}⏳ Falta Aprob. Final
+                            {% elif o.estado == 'Observado' %}⚠️ Observado
+                            {% elif o.estado == 'Por Despachar' %}📦 Por Despachar
+                            {% else %}{{ o.estado }}{% endif %}
+                        </span>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="5" class="text-center py-4 text-muted">No hay cotizaciones activas en este momento.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
     const ctx = document.getElementById('chartProductos').getContext('2d');

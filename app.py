@@ -65,6 +65,7 @@ if database_url.startswith("postgres://"):
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = 'tesis_secreta_123'
+app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024
 
 # --- CONFIGURACIÓN DE AMAZON S3 ---
 # Usamos .strip() para limpiar cualquier espacio invisible o salto de línea
@@ -105,7 +106,7 @@ def index():
     total_alertas = Product.query.filter(Product.stock_actual < UMBRAL_STOCK).count()
     alertas_muestra = Product.query.filter(Product.stock_actual < UMBRAL_STOCK).limit(5).all()
     
-    # ======================================================
+# ======================================================
     # VISTA 1: ADMIN Y ADMINISTRACIÓN (DASHBOARD BI GLOBAL)
     # ======================================================
     if rol in ['admin', 'administracion']:
@@ -114,7 +115,7 @@ def index():
         ventas_mes = db.session.query(func.sum(Order.total)).filter(extract('year', Order.fecha) == hoy.year, extract('month', Order.fecha) == hoy.month).scalar() or 0
         pedidos_pendientes = Order.query.filter(Order.estado == 'Pendiente').count()
         
-        # B. Ranking de Vendedores (CORREGIDO AQUÍ)
+        # B. Ranking de Vendedores
         ranking = db.session.query(
             User.username, 
             User.nombre_completo, 
@@ -136,6 +137,20 @@ def index():
         dias_transcurridos = hoy.day
         promedio_diario = ventas_mes / dias_transcurridos if dias_transcurridos > 0 else 0
         prediccion_fin_mes = promedio_diario * 30
+
+        # ---> [NUEVO CÓDIGO] E. Seguimiento de Cotizaciones (Para el Gerente) <---
+        # Traemos las últimas 15 cotizaciones que no estén cerradas/anuladas
+        cotizaciones_recientes = Order.query.filter(
+            Order.estado.notin_(['Entregado', 'Anulado', 'Despachado'])
+        ).order_by(Order.fecha.desc()).limit(15).all()
+
+        # Conteo rápido por estados críticos
+        alertas_gerencia = {
+            'revision_pre_cliente': Order.query.filter_by(estado='Revision Pre-Cliente').count(),
+            'aprobacion_final': Order.query.filter_by(estado='Pendiente Aprobacion Final').count(),
+            'observados': Order.query.filter_by(estado='Observado').count(),
+            'por_verificar_stock': Order.query.filter_by(estado='Por Verificar').count()
+        }
         
         return render_template('dashboard_admin.html', 
                                ventas_hoy=ventas_hoy,
@@ -145,7 +160,9 @@ def index():
                                top_productos=top_productos,
                                prediccion=prediccion_fin_mes,
                                alertas=alertas_muestra,      
-                               total_alertas=total_alertas)
+                               total_alertas=total_alertas,
+                               cotizaciones_recientes=cotizaciones_recientes, # <-- PASAMOS ESTO
+                               alertas_gerencia=alertas_gerencia)             # <-- Y ESTO
 
     # ======================================================
     # VISTA 2: VENDEDOR (MI RENDIMIENTO PERSONAL)
@@ -1801,6 +1818,15 @@ def subir_oc(order_id):
     
     orden = Order.query.get_or_404(order_id)
     msg_exito = []
+
+    # NUEVA LÓGICA: Eliminar Archivo
+    if request.form.get('eliminar_archivo') == 'SI':
+        if orden.archivo_oc:
+            # Opcional: Aquí podrías eliminar el archivo físicamente de Amazon S3 usando s3_client.delete_object
+            orden.archivo_oc = None
+            msg_exito.append("Archivo eliminado")
+            db.session.commit()
+            return {'status': 'success', 'msg': 'Archivo eliminado correctamente'}
     
     # 1. ACTUALIZAR NÚMERO MANUAL
     if 'numero_oc_manual' in request.form:
@@ -1829,7 +1855,7 @@ def subir_oc(order_id):
                 ExtraArgs={"ContentType": archivo.content_type} # Permite previsualizar en el navegador
             )
             orden.archivo_oc = nombre_limpio
-            msg_exito.append("Archivo subido a AWS S3")
+            msg_exito.append("Archivo subido")
             
         except Exception as e:
             return {'status': 'error', 'msg': f'Fallo al subir a la nube: {str(e)}'}
