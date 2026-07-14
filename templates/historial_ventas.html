@@ -375,7 +375,7 @@
                                 </div>
                             </div>
                             <div class="col-12 col-md-6">
-                                <label class="small text-muted fw-bold mb-1">Subir Archivo PDF/Foto</label>
+                                <label class="small text-muted fw-bold mb-1">Subir Archivo PDF/Foto (MAX 5MB)</label>
                                 <div class="input-group input-group-sm">
                                     <input type="file" id="input_file_oc" class="form-control" accept=".pdf,.jpg,.png,.jpeg">
                                     <button class="btn btn-outline-primary px-3" type="button" onclick="guardarSoloArchivo()" title="Subir"><i class="bi bi-cloud-arrow-up-fill"></i></button>
@@ -623,8 +623,21 @@
                     $('#input_numero_oc').val(d.orden_compra || '');
 
                     if(d.archivo_oc) {
-                        $('#view_oc_link').removeClass('d-none').attr('href', `/ver_oc/${d.archivo_oc}`);
-                        $('#view_oc_vacio').addClass('d-none');
+                                    // 1. Detectamos la extensión del archivo
+                    const extension = d.archivo_oc.split('.').pop().toLowerCase();
+                    const esImagen = ['jpg', 'jpeg', 'png', 'gif'].includes(extension);
+
+                                    // 2. Cambiamos el texto e ícono dependiendo de si es imagen o PDF
+                    const textoBoton = esImagen ? 
+                        '<i class="bi bi-image"></i> VER IMAGEN' : 
+                        '<i class="bi bi-file-earmark-pdf"></i> VER PDF';
+                    
+                    $('#view_oc_link')
+                        .html(textoBoton)
+                        .removeClass('d-none')
+                        .attr('href', `/ver_oc/${d.archivo_oc}`);
+                        
+                    $('#view_oc_vacio').addClass('d-none');
                         
                         // Solo mostrar botón de eliminar si NO está en estados finales bloqueados
                         if(['Aprobado Pre-Cliente', 'Observado', 'Cotizacion'].includes(d.estado)) {
