@@ -1819,14 +1819,35 @@ def subir_oc(order_id):
     orden = Order.query.get_or_404(order_id)
     msg_exito = []
 
-    # NUEVA LÓGICA: Eliminar Archivo
+    # ==============================================================
+    # CASO A: EL USUARIO HIZO CLIC EN "QUITAR ARCHIVO" (Papelera)
+    # ==============================================================
     if request.form.get('eliminar_archivo') == 'SI':
         if orden.archivo_oc:
-            # Opcional: Aquí podrías eliminar el archivo físicamente de Amazon S3 usando s3_client.delete_object
+            try:
+                # ¡Esta es la línea que borra físicamente el archivo en Amazon S3!
+                s3_client.delete_object(Bucket=S3_BUCKET_NAME, Key=orden.archivo_oc)
+            except Exception as e:
+                print(f"Aviso: No se pudo borrar de S3: {e}")
+            
+            # Borramos el registro en la Base de Datos
             orden.archivo_oc = None
-            msg_exito.append("Archivo eliminado")
             db.session.commit()
-            return {'status': 'success', 'msg': 'Archivo eliminado correctamente'}
+            return jsonify({'status': 'success', 'msg': 'Archivo eliminado correctamente'})
+
+    # ==============================================================
+    # CASO B: EL USUARIO ESTÁ SUBIENDO UN ARCHIVO (Nuevo o Reemplazo)
+    # ==============================================================
+    if 'archivo' in request.files:
+        file = request.files['archivo']
+        if file.filename != '':
+            
+            # LIMPIEZA PREVIA: Si ya había un archivo antes, lo borramos de S3
+            if orden.archivo_oc:
+                try:
+                    s3_client.delete_object(Bucket=S3_BUCKET_NAME, Key=orden.archivo_oc)
+                except Exception as e:
+                    print(f"Aviso: No se pudo borrar archivo antiguo de S3: {e}")
     
     # 1. ACTUALIZAR NÚMERO MANUAL
     if 'numero_oc_manual' in request.form:
@@ -1871,15 +1892,25 @@ def subir_oc(order_id):
 @app.route('/ver_oc/<filename>')
 def ver_oc(filename):
     try:
-        # 1. El servidor se conecta a Amazon y lee el archivo en memoria
-        # Esto usa el mismo método exacto que la subida (que ya sabemos que funciona perfecto)
+        # 1. Conectamos a Amazon
         archivo_s3 = s3_client.get_object(Bucket=S3_BUCKET_NAME, Key=filename)
 
-        # 2. Le enviamos el archivo directamente a la pantalla del usuario
+        # 2. Detectar dinámicamente si es PDF o Imagen
+        extension = filename.rsplit('.', 1)[-1].lower()
+        if extension == 'pdf':
+            tipo_mime = 'application/pdf'
+        elif extension in ['jpg', 'jpeg']:
+            tipo_mime = 'image/jpeg'
+        elif extension == 'png':
+            tipo_mime = 'image/png'
+        else:
+            tipo_mime = 'application/octet-stream' # Por defecto
+
+        # 3. Enviar el archivo con el formato correcto
         return send_file(
             io.BytesIO(archivo_s3['Body'].read()),
-            mimetype='application/pdf',
-            as_attachment=False,  # False = Se abre como pestaña nueva. True = Fuerza descarga directa
+            mimetype=tipo_mime,  # <--- AQUÍ ESTÁ LA MAGIA
+            as_attachment=False,
             download_name=filename
         )
     except Exception as e:
