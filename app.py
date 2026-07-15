@@ -4333,34 +4333,6 @@ def fix_revisor():
     except Exception as e:
         return f"<h2>Aviso: {str(e)}</h2>"
 
-@app.route('/reset_total_db_secreto')
-def reset_total_db_secreto():
-    try:
-        # Importamos aquí para evitar errores de referencia circular
-        from models import User
-        from werkzeug.security import generate_password_hash
-        
-        # 1. Borrar todo y crear de nuevo las tablas
-        db.drop_all()
-        db.create_all()
-        
-        # 2. Crear los usuarios base de tu sistema
-        admin = User(
-            username='admin', 
-            password=generate_password_hash('181404'),  # Contraseña inicial
-            nombre_completo='Administrador General',
-            role='admin'
-        )
-        
-        db.session.add_all([admin])
-        db.session.commit()
-        
-        return "<h1>¡Éxito!</h1><p>La base de datos ha sido reiniciada, las tablas han sido creadas y los usuarios base están listos. Ya puedes iniciar sesión.</p>"
-        
-    except Exception as e:
-        db.session.rollback()
-        return f"<h1>Error al configurar la Base de Datos:</h1><p>{str(e)}</p>"
-
 @app.route('/fix_render_db')
 def fix_render_db():
     try:
