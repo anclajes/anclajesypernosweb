@@ -54,6 +54,9 @@ def registrar_log(accion, icono='bi-info-circle', color='text-primary'):
 
 app = Flask(__name__)
 
+app.config['UPLOAD_FOLDER'] = 'uploads' # Define la carpeta temporal
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True) # Crea la carpeta si no exist
+
 # --- CONFIGURACIÓN DE BASE DE DATOS (Inteligente para la Nube) ---
 # Intenta obtener la URL de Render/Railway. Si no existe, usa SQLite en tu PC.
 database_url = os.getenv('DATABASE_URL', 'sqlite:///importbolts.db')
