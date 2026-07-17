@@ -241,19 +241,18 @@
                     </thead>
                     <tbody>
                         {% for o in ordenes %}
-                        <!-- 1. BÚSQUEDA PREVIA DE STOCK FALTANTE -->
+                        <!-- 1. BÚSQUEDA PREVIA DE STOCK FALTANTE (Forzamos |float para comparar números reales) -->
                         {% set ns = namespace(falta_stock=false) %}
                         {% for d in o.details %}
-                            {% if d.product and d.product.stock_actual < d.cantidad %}
+                            {% if d.product and d.product.stock_actual|float < d.cantidad|float %}
                                 {% set ns.falta_stock = true %}
                             {% endif %}
                         {% endfor %}
 
-                        <!-- 2. PINTAMOS LA FILA DE ROJO SI FALTA STOCK -->
+                        <!-- 2. FILA PRINCIPAL CON ALERTA ROJA -->
                         <tr class="{% if ns.falta_stock %}table-danger border-start border-5 border-danger{% endif %}">
                             <td class="ps-3 fw-bold text-primary">
                                 COT-{{ "%05d"|format(o.id) }}
-                                <!-- 3. ALERTA VISIBLE DEBAJO DEL CÓDIGO -->
                                 {% if ns.falta_stock %}
                                     <div class="mt-1">
                                         <span class="badge bg-danger blink-anim shadow-sm" style="font-size:0.65rem">
@@ -281,7 +280,6 @@
                                         <i class="bi bi-calendar-check text-primary"></i> {{ o.calc_fecha_maxima.strftime('%d/%m/%Y') }}
                                     </div>
                                     
-                                    <!-- LÓGICA DE COLORES DE URGENCIA -->
                                     {% if o.dias_restantes < 0 %}
                                         <span class="badge bg-danger blink-anim border border-danger w-100 py-1" style="font-size: 0.7rem;">
                                             <i class="bi bi-exclamation-triangle-fill"></i> ATRASADO ({{ o.dias_restantes * -1 }} días)
@@ -321,7 +319,6 @@
                                     </a>
                                     {% endif %}
                                     
-                                    <!-- 4. BLOQUEAMOS EL DESPACHO DIRECTO SI FALTA STOCK -->
                                     {% if ns.falta_stock %}
                                         <button class="btn btn-sm btn-danger fw-bold blink-anim" onclick="verItemsDespachar('{{ o.id }}')" title="Falta stock, revisa la lista">
                                             <i class="bi bi-exclamation-triangle-fill"></i> Ver Faltante
@@ -333,7 +330,65 @@
                                     {% endif %}
                                 </div>
                             </td>
-                        </tr>   
+                        </tr> 
+                        
+                        <!-- ESTA ES LA FILA EXPANDIBLE QUE HABÍA DESAPARECIDO -->
+                        <tr id="detalle_despachar_{{ o.id }}" class="d-none bg-light">
+                            <td colspan="7" class="p-2 p-md-3">
+                                <div class="card border-primary border-2">
+                                    <div class="card-header bg-primary bg-opacity-10 py-2 d-flex justify-content-between align-items-center">
+                                        <h6 class="mb-0 fw-bold text-primary small">
+                                            <i class="bi bi-box-seam"></i> Checklist de Despacho — COT-{{ "%05d"|format(o.id) }}
+                                        </h6>
+                                    </div>
+                                    <div class="card-body p-0 table-responsive">
+                                        <table class="table table-sm table-bordered mb-0 text-nowrap">
+                                            <thead class="table-light small text-muted text-uppercase">
+                                                <tr>
+                                                    <th class="text-center" style="width: 50px;">Check</th>
+                                                    <th class="ps-3">Código</th>
+                                                    <th>Ubicación</th>
+                                                    <th style="min-width: 150px;">Producto</th>
+                                                    <th class="text-center">Cant.</th>
+                                                    <th class="text-center">Stock Físico</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {% for d in o.details %}
+                                                <tr>
+                                                    <td class="text-center align-middle">
+                                                        <input type="checkbox" class="form-check-input border-secondary check-picking-{{ o.id }}" style="width: 1.5em; height: 1.5em; cursor: pointer;" onchange="validarChecksTabla('{{ o.id }}')">
+                                                    </td>
+                                                    <td class="ps-3 fw-bold text-muted small align-middle">
+                                                        {{ d.product.sku if d.product else 'SRV' }}
+                                                    </td>
+                                                    <td class="text-primary small align-middle">
+                                                        {% if d.product %}<i class="bi bi-geo-alt-fill"></i> {{ d.product.ubicacion or '—' }}{% else %}—{% endif %}
+                                                    </td>
+                                                    <td class="small align-middle" style="white-space:normal">
+                                                        {{ d.product.nombre if d.product else d.nombre_personalizado }}
+                                                    </td>
+                                                    <td class="text-center fw-bold align-middle fs-6">{{ d.cantidad }}</td>
+                                                    <td class="text-center align-middle">
+                                                        {% if d.product %}
+                                                            <span class="badge {% if d.product.stock_actual|float >= d.cantidad|float %}bg-success{% else %}bg-danger blink-anim{% endif %}">
+                                                                {{ d.product.stock_actual }}
+                                                            </span>
+                                                        {% else %}—{% endif %}
+                                                    </td>
+                                                </tr>
+                                                {% endfor %}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <div class="card-footer bg-white d-flex justify-content-end py-2">
+                                        <button class="btn btn-sm btn-success fw-bold" id="btn_descontar_{{ o.id }}" onclick="procesarSalida('{{ o.id }}')" disabled>
+                                            <i class="bi bi-check-circle-fill"></i> Descontar Stock y Cerrar
+                                        </button>
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
                         {% endfor %}
                     </tbody>
                 </table>

@@ -3620,10 +3620,15 @@ def picking_almacen():
     for o in ordenes_pendientes:
         fecha_base = getattr(o, 'fecha_aprobacion', o.fecha) 
         
-        # ---> AQUÍ ESTÁ EL CAMBIO (Validación segura para el 0) <---
         dias_habiles = getattr(o, 'dias_habiles_entrega', None)
+        
+        # Validación súper segura: si existe, es un número, y si es 0, lo maneja directo.
         if dias_habiles is not None and str(dias_habiles).strip() != '':
-            o.calc_fecha_maxima = sumar_dias_habiles(fecha_base, int(dias_habiles))
+            dias_int = int(dias_habiles)
+            if dias_int == 0:
+                o.calc_fecha_maxima = fecha_base # ¡ENTREGAR HOY!
+            else:
+                o.calc_fecha_maxima = sumar_dias_habiles(fecha_base, dias_int)
         elif o.fecha_entrega:
             o.calc_fecha_maxima = o.fecha_entrega
         else:
