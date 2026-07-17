@@ -136,11 +136,20 @@
                                 </div>
                             {% endif %}
                             
-                            {% if o.dias_habiles_entrega %}
-                                <div class="badge bg-warning text-dark border border-warning shadow-sm mb-1 calc-fecha-proyectada" data-dias="{{ o.dias_habiles_entrega }}" title="Días hábiles tras aprobar la OC">
-                                    <i class="bi bi-stopwatch"></i> {{ o.dias_habiles_entrega }} Días Háb. <span class="proyeccion-span text-danger fw-bold ms-1"></span>
-                                </div>
+                            {% if o.dias_habiles_entrega is not none and o.dias_habiles_entrega|string != '' %}
+                                {% if o.dias_habiles_entrega|string == '0' %}
+                                    <!-- Caso 0: Entrega Inmediata -->
+                                    <div class="badge bg-success text-white border border-success shadow-sm mb-1" title="Entrega Inmediata">
+                                        <i class="bi bi-lightning-charge-fill"></i> Inmediata (Hoy)
+                                    </div>
+                                {% else %}
+                                    <!-- Caso > 0: Días Hábiles Normales -->
+                                    <div class="badge bg-warning text-dark border border-warning shadow-sm mb-1 calc-fecha-proyectada" data-dias="{{ o.dias_habiles_entrega }}" title="Días hábiles tras aprobar la OC">
+                                        <i class="bi bi-stopwatch"></i> {{ o.dias_habiles_entrega }} Días Háb. <span class="proyeccion-span text-danger fw-bold ms-1"></span>
+                                    </div>
+                                {% endif %}
                             {% elif not o.fecha_entrega %}
+                                <!-- Caso Vacío: A coordinar -->
                                 <span class="text-muted fst-italic" style="font-size:0.75rem">A coordinar</span>
                             {% endif %}
                             

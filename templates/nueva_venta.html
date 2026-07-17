@@ -1013,7 +1013,7 @@ window.aplicarDescuentoItem = function(index) {
             tipo_entrega: "{{ orden.tipo_entrega }}",
 
                 // --- NUEVO: RECUPERAR DÍAS HÁBILES ---
-            dias_habiles: "{{ orden.dias_habiles_entrega|default('', true) }}",
+            dias_habiles: "{% if orden.dias_habiles_entrega is not none %}{{ orden.dias_habiles_entrega }}{% endif %}",
 
             fecha: "{{ orden.fecha_entrega.strftime('%Y-%m-%d') if orden.fecha_entrega else '' }}",
             condicion: "{{ orden.condicion_pago }}",
