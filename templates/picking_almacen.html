@@ -348,7 +348,14 @@
                                                             {{ d.product.nombre }}
                                                         {% else %}{{ d.nombre_personalizado }}{% endif %}
                                                     </td>
-                                                    <td class="text-center fw-bold fs-6 align-middle">{{ d.cantidad }}</td>
+                                                    <td class="text-center align-middle">
+                                                        <div class="fw-bold fs-6">{{ d.cantidad }}</div>
+                                                        {% if d.product and d.product.stock_actual < d.cantidad %}
+                                                            <span class="badge bg-danger blink-anim mt-1" style="font-size:0.6rem">
+                                                                <i class="bi bi-exclamation-triangle"></i> ¡Stock actual: {{ d.product.stock_actual }}!
+                                                            </span>
+                                                        {% endif %}
+                                                    </td>
                                                 </tr>
                                                 {% endfor %}
                                             </tbody>
@@ -814,11 +821,15 @@ function procesarSalida(orderId) {
     });
 }
 
-// Ir a tab historial si viene del paginador
+// ABRIR PESTAÑA CORRECTA AUTOMÁTICAMENTE AL RECARGAR O FILTRAR
 document.addEventListener('DOMContentLoaded', () => {
-    if (window.location.hash === '#pills-historial-tab') {
-        const tab = document.getElementById('pills-historial-tab');
-        if (tab) new bootstrap.Tab(tab).show();
+    let hash = window.location.hash;
+    if (hash) {
+        // Busca la pestaña que coincida con el hash (ej: #pills-despachar-tab)
+        let tabElement = document.querySelector(hash);
+        if (tabElement) {
+            new bootstrap.Tab(tabElement).show();
+        }
     }
 });
 </script>

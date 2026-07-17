@@ -114,7 +114,7 @@ def index():
     
     rol = session.get('role')
     user_id = session.get('user_id')
-    hoy = (datetime.now() + timedelta(days=2)).date()  # hoy = hora_peru().date()
+    hoy = hora_peru().date()  # hoy = hora_peru().date()
     
     # --- DATOS COMUNES (Alertas de Stock) ---
     UMBRAL_STOCK = 100 
@@ -3699,6 +3699,26 @@ def procesar_salida_almacen(order_id):
     # CAMBIO: validar nuevo estado
     if orden.estado != 'Por Despachar':
         return {'status': 'error', 'msg': 'La cotización no está lista para despacho.'}
+    
+    # ==============================================================
+    # 1. VERIFICACIÓN DE SEGURIDAD: ¿Aún hay stock suficiente?
+    # ==============================================================
+    for detalle in orden.details:
+        if detalle.item_type == 'PRODUCTO' and detalle.product_id:
+            prod = Product.query.get(detalle.product_id)
+            if prod.stock_actual < detalle.cantidad:
+                return {'status': 'error', 'msg': f'¡ALERTA! El stock de {prod.sku} bajó a {prod.stock_actual}. No alcanza para despachar las {detalle.cantidad} unidades requeridas. Espere reposición.'}
+                
+        elif detalle.item_type == 'GLB':
+            for comp in detalle.kit_components:
+                prod_c = comp.product
+                cant_req = comp.cantidad_requerida * detalle.cantidad
+                if prod_c.stock_actual < cant_req:
+                    return {'status': 'error', 'msg': f'¡ALERTA! Falta stock en kit para {prod_c.sku}. Hay {prod_c.stock_actual}, necesita {cant_req}.'}
+
+    # ==============================================================
+    # 2. DESCARGO (Si pasó la validación, el try se ejecuta normal)
+    # ==============================================================
         
     try:
         for detalle in orden.details:

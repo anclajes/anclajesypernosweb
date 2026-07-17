@@ -185,13 +185,26 @@
                     
                     <!-- TIEMPO DE ENTREGA -->
                     <div class="col-12 col-sm-6">
-                        <label class="small fw-bold text-muted">Tiempo de Entrega</label>
+                        <div class="d-flex justify-content-between align-items-end mb-1">
+                            <label class="small fw-bold text-muted mb-0">Tiempo de Entrega</label>
+                            
+                            <!-- Checkbox de Entrega Inmediata -->
+                            <div class="form-check form-switch m-0 d-flex align-items-center">
+                                <input class="form-check-input mt-0 me-2" type="checkbox" id="chkInmediata" onchange="toggleInmediata()" style="cursor:pointer">
+                                <label class="form-check-label small fw-bold text-success" for="chkInmediata" style="cursor:pointer; font-size:0.7rem">Inmediata (Hoy)</label>
+                            </div>
+                        </div>
+                        
                         <div class="input-group input-group-sm shadow-sm">
                             <span class="input-group-text bg-white border-warning"><i class="bi bi-calendar-day text-warning"></i></span>
-                            <input type="number" id="inputDiasHabiles" class="form-control border-warning" min="1" max="90" placeholder="Ej: 15">
+                            <!-- Validación estricta con oninput -->
+                            <input type="number" id="inputDiasHabiles" class="form-control border-warning" 
+                                min="1" max="90" step="1" 
+                                oninput="if(this.value !== '') { this.value = Math.abs(Math.round(this.value)); if(this.value == 0) this.value = ''; }" 
+                                placeholder="Ej: 15">
                             <span class="input-group-text bg-white text-muted border-warning fw-bold">Días Hábiles</span>
                         </div>
-                        <div class="form-text fst-italic text-muted" style="font-size: 0.7rem;">Vacío = <strong>"A COORDINAR"</strong>. Rango: 1 a 90 días.</div>
+                        <div class="form-text fst-italic text-muted" style="font-size: 0.7rem;">Vacío = <strong>"A COORDINAR"</strong>.</div>
                     </div>
 
                     <!-- TIPO DE ENTREGA -->
@@ -4278,6 +4291,20 @@ function cargarProductos() {
         }
 
     }
+
+    function toggleInmediata() {
+    const chk = document.getElementById('chkInmediata');
+    const input = document.getElementById('inputDiasHabiles');
+    if(chk.checked) {
+        input.value = '0'; // 0 significa hoy para la matemática de la fecha
+        input.setAttribute('readonly', true);
+        input.classList.add('bg-light');
+    } else {
+        input.value = '';
+        input.removeAttribute('readonly');
+        input.classList.remove('bg-light');
+    }
+}
 
 
 
