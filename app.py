@@ -1206,8 +1206,7 @@ def nueva_venta():
                 tipo_entrega=tipo_entrega,
                 direccion_envio=dir_entrega_final,
                 fecha_entrega=fecha_obj,
-
-                fecha_entrega=fecha_obj,
+                
                 dias_habiles_entrega=dias_habiles_val, # Guardamos el valor (1-90)
 
                 agencia=data.get('agencia', 'NO REQUIERE'),              # <--- ASEGÚRATE DE ESTO
