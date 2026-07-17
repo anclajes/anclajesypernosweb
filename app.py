@@ -114,7 +114,7 @@ def index():
     
     rol = session.get('role')
     user_id = session.get('user_id')
-    hoy = hora_peru().date()
+    hoy = (datetime.now() + timedelta(days=2)).date()  # hoy = hora_peru().date()
     
     # --- DATOS COMUNES (Alertas de Stock) ---
     UMBRAL_STOCK = 100 
