@@ -4371,8 +4371,11 @@ def fix_revisor():
 def fix_render_db():
     try:
         from sqlalchemy import text
-        with db.engine.connect() as conn:
-            # 1. Ampliar el límite de caracteres de la columna 'estado' (VITAL)
+        # El secreto está aquí: isolation_level="AUTOCOMMIT"
+        # Esto evita que un error previo (como "la columna ya existe") bloquee las siguientes.
+        with db.engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+            
+            # 1. Ampliar el límite de caracteres de la columna 'estado'
             try:
                 conn.execute(text('ALTER TABLE "order" ALTER COLUMN estado TYPE VARCHAR(50)'))
             except Exception as e:
@@ -4390,14 +4393,13 @@ def fix_render_db():
             except Exception as e:
                 print(f"Aviso revisor: {e}")
                 
-            # 4. NUEVO: Agregar días hábiles de entrega
+            # 4. NUEVO: Agregar días hábiles de entrega (ESTE ES EL QUE FALTABA)
             try:
                 conn.execute(text('ALTER TABLE "order" ADD COLUMN dias_habiles_entrega INTEGER'))
             except Exception as e:
                 print(f"Aviso dias_habiles: {e}")
 
-            conn.commit()
-        return "<h2>✅ Base de datos en Render actualizada. Las columnas y tamaños ya coinciden con tu entorno local.</h2>"
+        return "<h2>✅ Base de datos en Render actualizada. Las columnas se procesaron de forma independiente.</h2>"
     except Exception as e:
         return f"<h2>❌ Error general: {str(e)}</h2>"
 
