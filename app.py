@@ -3620,8 +3620,10 @@ def picking_almacen():
     for o in ordenes_pendientes:
         fecha_base = getattr(o, 'fecha_aprobacion', o.fecha) 
         
-        if getattr(o, 'dias_habiles_entrega', None):
-            o.calc_fecha_maxima = sumar_dias_habiles(fecha_base, o.dias_habiles_entrega)
+        # ---> AQUÍ ESTÁ EL CAMBIO (Validación segura para el 0) <---
+        dias_habiles = getattr(o, 'dias_habiles_entrega', None)
+        if dias_habiles is not None and str(dias_habiles).strip() != '':
+            o.calc_fecha_maxima = sumar_dias_habiles(fecha_base, int(dias_habiles))
         elif o.fecha_entrega:
             o.calc_fecha_maxima = o.fecha_entrega
         else:
@@ -3632,7 +3634,7 @@ def picking_almacen():
         else:
             o.dias_restantes = 9999
             
-        # --- APLICAR ORDENAMIENTO ---
+    # --- APLICAR ORDENAMIENTO ---
     if orden_despacho == 'urgencia':
         # Ordena de menor a mayor cantidad de días (los atrasados o más próximos primero)
         ordenes_pendientes.sort(key=lambda x: x.dias_restantes)

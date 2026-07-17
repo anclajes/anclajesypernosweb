@@ -241,8 +241,27 @@
                     </thead>
                     <tbody>
                         {% for o in ordenes %}
-                        <tr>
-                            <td class="ps-3 fw-bold text-primary">COT-{{ "%05d"|format(o.id) }}</td>
+                        <!-- 1. BÚSQUEDA PREVIA DE STOCK FALTANTE -->
+                        {% set ns = namespace(falta_stock=false) %}
+                        {% for d in o.details %}
+                            {% if d.product and d.product.stock_actual < d.cantidad %}
+                                {% set ns.falta_stock = true %}
+                            {% endif %}
+                        {% endfor %}
+
+                        <!-- 2. PINTAMOS LA FILA DE ROJO SI FALTA STOCK -->
+                        <tr class="{% if ns.falta_stock %}table-danger border-start border-5 border-danger{% endif %}">
+                            <td class="ps-3 fw-bold text-primary">
+                                COT-{{ "%05d"|format(o.id) }}
+                                <!-- 3. ALERTA VISIBLE DEBAJO DEL CÓDIGO -->
+                                {% if ns.falta_stock %}
+                                    <div class="mt-1">
+                                        <span class="badge bg-danger blink-anim shadow-sm" style="font-size:0.65rem">
+                                            <i class="bi bi-exclamation-triangle-fill"></i> ¡FALTA STOCK!
+                                        </span>
+                                    </div>
+                                {% endif %}
+                            </td>
                             <td>
                                 <div class="fw-bold text-truncate" style="max-width:150px">{{ o.cliente.nombre }}</div>
                                 {% if o.orden_compra %}
@@ -301,77 +320,20 @@
                                         <i class="bi bi-paperclip"></i> <span class="d-none d-md-inline">OC</span>
                                     </a>
                                     {% endif %}
-                                    <button class="btn btn-sm btn-success fw-bold" id="btn_despachar_rapido_{{ o.id }}" onclick="procesarSalidaRapido('{{ o.id }}')" title="Confirmar salida y descontar stock">
-                                        <i class="bi bi-check-circle-fill"></i> <span class="d-none d-md-inline">Despachar</span>
-                                    </button>
-                                </div>
-                            </td>
-                        </tr>
-                        <!-- Fila expandible con checklist de empaque -->
-                        <tr id="detalle_despachar_{{ o.id }}" class="d-none bg-light">
-                            <td colspan="7" class="p-2 p-md-3">
-                                <div class="card border-primary border-2">
-                                    <div class="card-header bg-primary bg-opacity-10 py-2 d-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center">
-                                        <h6 class="mb-1 mb-sm-0 fw-bold text-primary small">
-                                            <i class="bi bi-box-seam"></i> 
-                                            Lista Empaque — COT-{{ "%05d"|format(o.id) }}
-                                        </h6>
-                                        <small class="text-muted" style="font-size: 0.7rem;">Marque todos los items antes de despachar</small>
-                                    </div>
-                                    <div class="card-body p-0 table-responsive">
-                                        <table class="table table-sm table-bordered mb-0 text-nowrap">
-                                            <thead class="table-light small text-muted text-uppercase">
-                                                <tr>
-                                                    <th class="text-center" style="width:40px"><i class="bi bi-check2-all text-primary"></i></th>
-                                                    <th>Código</th>
-                                                    <th>Ubicación</th>
-                                                    <th style="min-width: 150px;">Producto</th>
-                                                    <th class="text-center">Cant.</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {% for d in o.details %}
-                                                <tr>
-                                                    <td class="text-center align-middle">
-                                                        <input class="form-check-input check-picking-{{ o.id }} border-2 border-secondary m-0" 
-                                                               type="checkbox" style="cursor:pointer; width:1.2rem; height:1.2rem;" 
-                                                               onchange="validarChecksTabla('{{ o.id }}')">
-                                                    </td>
-                                                    <td class="small fw-bold text-muted align-middle">
-                                                        {% if d.item_type == 'PRODUCTO' and d.product %}{{ d.product.sku }}{% else %}SRV{% endif %}
-                                                    </td>
-                                                    <td class="small text-primary align-middle">
-                                                        {% if d.product %}<i class="bi bi-geo-alt-fill"></i> {{ d.product.ubicacion or '—' }}{% else %}—{% endif %}
-                                                    </td>
-                                                    <td class="small align-middle" style="max-width:250px; white-space:normal">
-                                                        {% if d.item_type == 'PRODUCTO' and d.product %}
-                                                            {{ d.product.nombre }}
-                                                        {% else %}{{ d.nombre_personalizado }}{% endif %}
-                                                    </td>
-                                                    <td class="text-center align-middle">
-                                                        <div class="fw-bold fs-6">{{ d.cantidad }}</div>
-                                                        {% if d.product and d.product.stock_actual < d.cantidad %}
-                                                            <span class="badge bg-danger blink-anim mt-1" style="font-size:0.6rem">
-                                                                <i class="bi bi-exclamation-triangle"></i> ¡Stock actual: {{ d.product.stock_actual }}!
-                                                            </span>
-                                                        {% endif %}
-                                                    </td>
-                                                </tr>
-                                                {% endfor %}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                    <div class="card-footer bg-white d-flex flex-column flex-sm-row gap-2 justify-content-between py-2">
-                                        <a href="/descargar_nota_pedido/{{ o.id }}" class="btn btn-sm btn-outline-danger w-100 w-sm-auto" target="_blank">
-                                            <i class="bi bi-file-earmark-pdf-fill"></i> Imprimir NP
-                                        </a>
-                                        <button class="btn btn-sm btn-success fw-bold px-4 w-100 w-sm-auto" id="btn_descontar_{{ o.id }}" disabled onclick="procesarSalida('{{ o.id }}')">
-                                            <i class="bi bi-check-circle-fill"></i> Confirmar Salida Total
+                                    
+                                    <!-- 4. BLOQUEAMOS EL DESPACHO DIRECTO SI FALTA STOCK -->
+                                    {% if ns.falta_stock %}
+                                        <button class="btn btn-sm btn-danger fw-bold blink-anim" onclick="verItemsDespachar('{{ o.id }}')" title="Falta stock, revisa la lista">
+                                            <i class="bi bi-exclamation-triangle-fill"></i> Ver Faltante
                                         </button>
-                                    </div>
+                                    {% else %}
+                                        <button class="btn btn-sm btn-success fw-bold" id="btn_despachar_rapido_{{ o.id }}" onclick="procesarSalidaRapido('{{ o.id }}')" title="Confirmar salida y descontar stock">
+                                            <i class="bi bi-check-circle-fill"></i> <span class="d-none d-md-inline">Despachar</span>
+                                        </button>
+                                    {% endif %}
                                 </div>
                             </td>
-                        </tr>
+                        </tr>   
                         {% endfor %}
                     </tbody>
                 </table>
