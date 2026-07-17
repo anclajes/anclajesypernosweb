@@ -137,8 +137,8 @@
                             {% endif %}
                             
                             {% if o.dias_habiles_entrega %}
-                                <div class="badge bg-warning text-dark border border-warning shadow-sm mb-1" title="Días hábiles tras aprobar la OC">
-                                    <i class="bi bi-stopwatch"></i> {{ o.dias_habiles_entrega }} Días Háb.
+                                <div class="badge bg-warning text-dark border border-warning shadow-sm mb-1 calc-fecha-proyectada" data-dias="{{ o.dias_habiles_entrega }}" title="Días hábiles tras aprobar la OC">
+                                    <i class="bi bi-stopwatch"></i> {{ o.dias_habiles_entrega }} Días Háb. <span class="proyeccion-span text-danger fw-bold ms-1"></span>
                                 </div>
                             {% elif not o.fecha_entrega %}
                                 <span class="text-muted fst-italic" style="font-size:0.75rem">A coordinar</span>
@@ -521,20 +521,29 @@
 
     let ordenEstadoActual = null;
     
-    // Función para sumar días hábiles saltando Sábados (6) y Domingos (0)
+// Función ajustada: Solo salta Domingos (0)
 function calcularFechaAproximada(diasHabiles) {
-    let fecha = new Date(); // Toma la fecha actual (hoy)
+    let fecha = new Date();
     let agregados = 0;
     while (agregados < diasHabiles) {
         fecha.setDate(fecha.getDate() + 1);
-        // Si no es domingo (0) ni sábado (6), sumamos 1 día al contador
-        if (fecha.getDay() !== 0 && fecha.getDay() !== 6) {
+        if (fecha.getDay() !== 0) { // Si no es Domingo, cuenta como día laborable
             agregados++;
         }
     }
-    // Retorna en formato: "14 ago." o similar
     return fecha.toLocaleDateString('es-PE', { day: '2-digit', month: 'short' });
-}// NUEVA VARIABLE PARA SABER SI ESTÁ EN REVISIÓN
+}
+
+// NUEVO: Auto-calcular fechas proyectadas directamente en la tabla principal
+document.addEventListener("DOMContentLoaded", function() {
+    document.querySelectorAll('.calc-fecha-proyectada').forEach(el => {
+        let dias = parseInt(el.getAttribute('data-dias'));
+        if(!isNaN(dias)){
+            let fechaProy = calcularFechaAproximada(dias);
+            el.querySelector('.proyeccion-span').innerText = `(Máx: ${fechaProy})`;
+        }
+    });
+});
 
 // NUEVA ADVERTENCIA AL EDITAR
     function irAEditar() {

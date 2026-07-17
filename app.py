@@ -36,17 +36,16 @@ from xhtml2pdf import pisa
 
 
 
-def sumar_dias_habiles(fecha_inicio, dias_habiles):
-    """Suma días hábiles a una fecha dada, omitiendo fines de semana."""
-    dias_agregados = 0
+# FUNCIÓN PARA SUMAR DÍAS HÁBILES (Lunes a Sábado) EN PYTHON
+def sumar_dias_habiles(fecha_inicio, dias):
+    if not fecha_inicio or not dias: 
+        return None
+    dias_restantes = int(dias)
     fecha_actual = fecha_inicio
-    
-    while dias_agregados < dias_habiles:
+    while dias_restantes > 0:
         fecha_actual += timedelta(days=1)
-        # weekday(): 0=Lunes, 1=Martes... 5=Sábado, 6=Domingo
-        if fecha_actual.weekday() < 5: 
-            dias_agregados += 1
-            
+        if fecha_actual.weekday() != 6:  # 6 es Domingo en Python
+            dias_restantes -= 1
     return fecha_actual
 
 def hora_peru():
@@ -3611,27 +3610,37 @@ def picking_almacen():
     fecha_fin_hist = request.args.get('fecha_fin_hist', '')
     page_hist = request.args.get('page_hist', 1, type=int)
 
-    # --- QUERIES PRINCIPALES ---
-    ordenes_por_verificar = Order.query.filter_by(
-        estado='Por Verificar'
-    ).order_by(Order.fecha.asc()).all()
+    ordenes_por_verificar = Order.query.filter_by(estado='Por Verificar').order_by(Order.fecha.asc()).all()
+    ordenes_pendientes = Order.query.filter_by(estado='Por Despachar').all()
     
-    ordenes_pendientes = Order.query.filter_by(
-        estado='Por Despachar'
-    ).order_by(Order.fecha.asc()).all()
-    
-    # --- HISTORIAL CON FILTROS Y PAGINACIÓN ---
-    query_hist = Order.query.filter(
-        Order.estado.in_(['Entregado', 'Despachado'])
-    )
-    
+    # --- CÁLCULO DE URGENCIA PARA ALMACÉN ---
+    hoy = datetime.now().date()
+    for o in ordenes_pendientes:
+        # Usamos fecha_aprobacion si existe, sino usamos fecha de creación como respaldo
+        fecha_base = getattr(o, 'fecha_aprobacion', o.fecha) 
+        
+        if getattr(o, 'dias_habiles_entrega', None):
+            o.calc_fecha_maxima = sumar_dias_habiles(fecha_base, o.dias_habiles_entrega)
+        elif o.fecha_entrega:
+            o.calc_fecha_maxima = o.fecha_entrega
+        else:
+            o.calc_fecha_maxima = None
+        
+        # Calcular cuántos días faltan
+        if o.calc_fecha_maxima:
+            o.dias_restantes = (o.calc_fecha_maxima.date() - hoy).days
+        else:
+            o.dias_restantes = 9999  # Sin fecha límite, se va al final de la cola
+            
+    # ORDENAR POR URGENCIA: Los que tienen menos días restantes van primero
+    ordenes_pendientes.sort(key=lambda x: x.dias_restantes)
+
+    # --- HISTORIAL CON FILTROS ---
+    query_hist = Order.query.filter(Order.estado.in_(['Entregado', 'Despachado']))
     if busqueda_hist:
-        # Solución anti-errores para buscar IDs numéricos (Si buscan "00052", lo convierte a "52")
         term_id = busqueda_hist
         if busqueda_hist.isdigit(): 
             term_id = str(int(busqueda_hist))
-            
-        # Reemplazamos db.String por String de SQLAlchemy nativo
         query_hist = query_hist.join(Client).filter(
             or_(
                 Client.nombre.ilike(f'%{busqueda_hist}%'),
@@ -3639,24 +3648,18 @@ def picking_almacen():
                 func.cast(Order.id, String).ilike(f'%{term_id}%')
             )
         )
-    
     if fecha_inicio_hist:
-        query_hist = query_hist.filter(
-            Order.fecha >= datetime.strptime(fecha_inicio_hist, '%Y-%m-%d')
-        )
+        query_hist = query_hist.filter(Order.fecha >= datetime.strptime(fecha_inicio_hist, '%Y-%m-%d'))
     if fecha_fin_hist:
-        query_hist = query_hist.filter(
-            Order.fecha <= datetime.strptime(fecha_fin_hist + ' 23:59:59', '%Y-%m-%d %H:%M:%S')
-        )
+        query_hist = query_hist.filter(Order.fecha <= datetime.strptime(fecha_fin_hist + ' 23:59:59', '%Y-%m-%d %H:%M:%S'))
     
     query_hist = query_hist.order_by(Order.fecha.desc())
     pagination_hist = query_hist.paginate(page=page_hist, per_page=20, error_out=False)
-    ordenes_finalizadas = pagination_hist.items
     
     return render_template('picking_almacen.html', 
                            ordenes_verificar=ordenes_por_verificar,
                            ordenes=ordenes_pendientes,
-                           ordenes_finalizadas=ordenes_finalizadas,
+                           ordenes_finalizadas=pagination_hist.items,
                            pagination_hist=pagination_hist,
                            busqueda_hist=busqueda_hist,
                            fecha_inicio_hist=fecha_inicio_hist,

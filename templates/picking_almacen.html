@@ -11,6 +11,9 @@
     }
     .nav-pills .nav-link:hover { background-color: #dee2e6 !important; color: #000 !important; }
     .nav-pills .nav-link.active { background-color: #0d6efd !important; color: #ffffff !important; border-color: #0d6efd; }
+
+    .blink-anim { animation: blinker 1.5s linear infinite; }
+    @keyframes blinker { 50% { opacity: 0.5; } }
 </style>
 
 <!-- ENCABEZADO RESPONSIVE -->
@@ -217,7 +220,7 @@
                             <th>Cliente</th>
                             <th>Vendedor</th>
                             <th class="d-none d-md-table-cell">F. Aprobación</th>
-                            <th>F. Entrega</th>
+                            <th>Límite Entrega</th>
                             <th class="text-center">Items</th>
                             <th class="text-center">Acciones</th>
                         </tr>
@@ -240,12 +243,32 @@
                                 {% else %}—{% endif %}
                             </td>
                             <td>
-                                {% if o.fecha_entrega %}
-                                    <span class="fw-bold text-danger">
-                                        <i class="bi bi-calendar-event-fill"></i> {{ o.fecha_entrega.strftime('%d/%m/%Y') }}
-                                    </span>
+                                {% if o.calc_fecha_maxima %}
+                                    <div class="fw-bold text-dark mb-1">
+                                        <i class="bi bi-calendar-check text-primary"></i> {{ o.calc_fecha_maxima.strftime('%d/%m/%Y') }}
+                                    </div>
+                                    
+                                    <!-- LÓGICA DE COLORES DE URGENCIA -->
+                                    {% if o.dias_restantes < 0 %}
+                                        <span class="badge bg-danger blink-anim border border-danger w-100 py-1" style="font-size: 0.7rem;">
+                                            <i class="bi bi-exclamation-triangle-fill"></i> ATRASADO ({{ o.dias_restantes * -1 }} días)
+                                        </span>
+                                    {% elif o.dias_restantes == 0 %}
+                                        <span class="badge bg-danger w-100 py-1" style="font-size: 0.7rem;">
+                                            <i class="bi bi-bell-fill"></i> ¡ENTREGAR HOY!
+                                        </span>
+                                    {% elif o.dias_restantes <= 2 %}
+                                        <span class="badge bg-warning text-dark border border-warning w-100 py-1" style="font-size: 0.7rem;">
+                                            <i class="bi bi-clock-history"></i> Faltan {{ o.dias_restantes }} días
+                                        </span>
+                                    {% else %}
+                                        <span class="badge bg-success bg-opacity-75 w-100 py-1" style="font-size: 0.7rem;">
+                                            <i class="bi bi-shield-check"></i> Faltan {{ o.dias_restantes }} días
+                                        </span>
+                                    {% endif %}
+                                    
                                 {% else %}
-                                    <span class="text-muted fst-italic">A coordinar</span>
+                                    <span class="text-muted fst-italic">Sin fecha límite</span>
                                 {% endif %}
                             </td>
                             <td class="text-center">
