@@ -128,14 +128,23 @@
                                 <span class="text-muted" style="font-size:0.75rem">{{ o.fecha.strftime('%H:%M') }}</span>
                             </div>
                         </td>
+                        <!-- REEMPLAZA LA COLUMNA DE FECHA EN TU TABLA -->
                         <td>
                             {% if o.fecha_entrega %}
-                                <div class="text-danger fw-bold">
-                                    <i class="bi bi-calendar-event-fill"></i> {{ o.fecha_entrega.strftime('%d/%m/%Y') }}
+                                <div class="text-danger fw-bold mb-1">
+                                    <i class="bi bi-calendar-check-fill"></i> {{ o.fecha_entrega.strftime('%d/%m/%Y') }}
                                 </div>
-                            {% else %}
+                            {% endif %}
+                            
+                            {% if o.dias_habiles_entrega %}
+                                <div class="badge bg-warning text-dark border border-warning shadow-sm mb-1" title="Días hábiles tras aprobar la OC">
+                                    <i class="bi bi-stopwatch"></i> {{ o.dias_habiles_entrega }} Días Háb.
+                                </div>
+                            {% elif not o.fecha_entrega %}
                                 <span class="text-muted fst-italic" style="font-size:0.75rem">A coordinar</span>
                             {% endif %}
+                            
+                            <!-- Aquí siguen tus otros badges (calidad, agencia, penalidad)... -->
                             <div class="mt-1 d-flex flex-column gap-1 align-items-start">
                                 {% if o.control_calidad == 'SI' %}
                                     <span class="badge bg-primary" style="font-size:0.65rem"><i class="bi bi-patch-check"></i> CERTIFICADO</span>
@@ -316,7 +325,18 @@
                             <div class="card-body pt-2">
                                 <div class="d-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center mb-2 border-bottom pb-2 gap-2">
                                     <span class="badge bg-secondary w-100 w-sm-auto" id="view_tipo_entrega">...</span>
-                                    <span class="fw-bold text-danger small w-100 w-sm-auto text-sm-end"><i class="bi bi-calendar-event"></i> <span id="view_fecha_entrega">...</span></span>
+                                    
+                                    <div class="text-sm-end w-100 w-sm-auto">
+                                        <!-- Contenedor para Fecha Fija o 'A coordinar' -->
+                                        <span class="fw-bold text-danger small d-block" id="box_view_fecha">
+                                            <i class="bi bi-calendar-event"></i> <span id="view_fecha_entrega">...</span>
+                                        </span>
+                                        <!-- Contenedor para los Días Hábiles (Se activa con JS si existe el dato) -->
+                                        <div class="badge bg-warning text-dark border border-warning shadow-sm d-none mt-1" id="box_view_dias_habiles" style="text-align: right;">
+                                            <i class="bi bi-stopwatch"></i> <span id="view_dias_habiles"></span> Días Hábiles
+                                            <div class="text-muted fst-italic" style="font-size: 0.65rem;" id="view_fecha_aprox"></div>
+                                        </div>
+                                    </div>
                                 </div>
                                 <div class="small text-muted mb-2">
                                     <i class="bi bi-pin-map-fill text-danger"></i> <span id="view_lugar_entrega" class="fw-bold text-dark text-wrap">...</span>
@@ -499,7 +519,22 @@
     
     let ordenIdActual = null;
 
-    let ordenEstadoActual = null; // NUEVA VARIABLE PARA SABER SI ESTÁ EN REVISIÓN
+    let ordenEstadoActual = null;
+    
+    // Función para sumar días hábiles saltando Sábados (6) y Domingos (0)
+function calcularFechaAproximada(diasHabiles) {
+    let fecha = new Date(); // Toma la fecha actual (hoy)
+    let agregados = 0;
+    while (agregados < diasHabiles) {
+        fecha.setDate(fecha.getDate() + 1);
+        // Si no es domingo (0) ni sábado (6), sumamos 1 día al contador
+        if (fecha.getDay() !== 0 && fecha.getDay() !== 6) {
+            agregados++;
+        }
+    }
+    // Retorna en formato: "14 ago." o similar
+    return fecha.toLocaleDateString('es-PE', { day: '2-digit', month: 'short' });
+}// NUEVA VARIABLE PARA SABER SI ESTÁ EN REVISIÓN
 
 // NUEVA ADVERTENCIA AL EDITAR
     function irAEditar() {
@@ -714,6 +749,37 @@
                     $('#view_tipo_entrega').text(d.tipo_entrega);
                     $('#view_fecha_entrega').text(d.fecha_entrega);
                     $('#view_lugar_entrega').text(d.direccion_entrega);
+
+                                        // 1. Manejo de Fecha Fija (Si la hay)
+                    if (d.fecha_entrega && d.fecha_entrega !== 'None' && d.fecha_entrega !== '') {
+                        $('#view_fecha_entrega').text(d.fecha_entrega);
+                        $('#box_view_fecha').removeClass('d-none');
+                    } else {
+                        $('#box_view_fecha').addClass('d-none');
+                    }
+
+                    // 2. Manejo de Días Hábiles y Proyección
+                    if (d.dias_habiles_entrega) {
+                        $('#view_dias_habiles').text(d.dias_habiles_entrega);
+                        
+                        // Calculamos la fecha proyectada
+                        let fechaProyectada = calcularFechaAproximada(parseInt(d.dias_habiles_entrega));
+                        $('#view_fecha_aprox').html(`Si aprueba hoy: <strong>${fechaProyectada}</strong>`);
+                        
+                        $('#box_view_dias_habiles').removeClass('d-none');
+                        
+                        // Si la cotización tiene días hábiles, ocultamos la frase aburrida de "A coordinar"
+                        if (!d.fecha_entrega || d.fecha_entrega === 'None') {
+                            $('#box_view_fecha').addClass('d-none');
+                        }
+                    } else {
+                        $('#box_view_dias_habiles').addClass('d-none');
+                        // Si no tiene NI fecha NI días hábiles, mostramos "A coordinar"
+                        if (!d.fecha_entrega || d.fecha_entrega === 'None') {
+                            $('#box_view_fecha').removeClass('d-none');
+                            $('#view_fecha_entrega').text('A coordinar');
+                        }
+                    }
 
                     $('#view_calidad').html(d.control_calidad === 'SI' ? '<span class="text-success fw-bold">✅ SÍ</span>' : '❌ NO');
                     $('#view_penalidad').html(d.penalidad === 'SI' ? '<span class="text-danger fw-bold">⚠️ SÍ</span>' : '❌ NO');

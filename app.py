@@ -1078,7 +1078,6 @@ def eliminar_usuario(user_id):
     return redirect(url_for('gestion_usuarios'))
 
 # --- MODIFICAR LA RUTA NUEVA_VENTA EN APP.PY ---
-# --- MODIFICAR LA RUTA NUEVA_VENTA EN APP.PY ---
 @app.route('/nueva_venta', methods=['GET', 'POST'])
 def nueva_venta():
     # --- MÉTODO POST (GUARDAR COTIZACIÓN) ---
@@ -3516,6 +3515,7 @@ def obtener_detalle_venta(order_id):
             'tipo_entrega': orden.tipo_entrega or '-',
             'fecha_entrega': orden.fecha_entrega.strftime('%d/%m/%Y') if orden.fecha_entrega else 'A coordinar',
             'direccion_entrega': orden.direccion_envio or '-',
+            'dias_habiles_entrega': orden.dias_habiles_entrega or '-',
             
             # Financiero
             'moneda': orden.moneda,
