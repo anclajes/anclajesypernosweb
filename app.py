@@ -36,6 +36,19 @@ from xhtml2pdf import pisa
 
 
 
+def sumar_dias_habiles(fecha_inicio, dias_habiles):
+    """Suma días hábiles a una fecha dada, omitiendo fines de semana."""
+    dias_agregados = 0
+    fecha_actual = fecha_inicio
+    
+    while dias_agregados < dias_habiles:
+        fecha_actual += timedelta(days=1)
+        # weekday(): 0=Lunes, 1=Martes... 5=Sábado, 6=Domingo
+        if fecha_actual.weekday() < 5: 
+            dias_agregados += 1
+            
+    return fecha_actual
+
 def hora_peru():
     # Obtiene la hora exacta de Lima, pero le quita la 'etiqueta' de zona horaria (.replace)
     # para que sea 100% compatible con la base de datos (offset-naive)
@@ -1102,6 +1115,10 @@ def nueva_venta():
             fecha_str = data.get('fecha_entrega')
             fecha_obj = datetime.strptime(fecha_str, '%Y-%m-%d').date() if fecha_str else None
 
+            # --- NUEVO: Procesar Días Hábiles ---
+            dias_habiles_str = data.get('dias_habiles_entrega')
+            dias_habiles_val = int(dias_habiles_str) if dias_habiles_str else None
+
             # Procesar fecha de vencimiento (Validez Oferta)
             dias_validez = 5 # Default
             validez_txt = data.get('validez_oferta', '5 días')
@@ -1189,6 +1206,10 @@ def nueva_venta():
                 tipo_entrega=tipo_entrega,
                 direccion_envio=dir_entrega_final,
                 fecha_entrega=fecha_obj,
+
+                fecha_entrega=fecha_obj,
+                dias_habiles_entrega=dias_habiles_val, # Guardamos el valor (1-90)
+
                 agencia=data.get('agencia', 'NO REQUIERE'),              # <--- ASEGÚRATE DE ESTO
                 control_calidad=data.get('control_calidad', 'NO'),       # <--- ASEGÚRATE DE ESTO
                 penalidad=data.get('penalidad', 'NO'),                   # <--- ASEGÚRATE DE ESTO
@@ -1546,8 +1567,14 @@ def descargar_cotizacion_v2(order_id):
  
     subtotal_bruto = orden.subtotal + orden.descuento_total
  
-    texto_entrega = "Inmediata / A coordinar"
-    if orden.fecha_entrega:
+    # Fecha de Entrega Dinámica
+    texto_entrega = "A coordinar"
+    
+    # Si la orden NO está aprobada y tiene días hábiles, mostramos el texto en días
+    if orden.dias_habiles_entrega and not es_aprobado:
+        texto_entrega = f"{orden.dias_habiles_entrega} días hábiles"
+    # Si ya se aprobó (o si se forzó una fecha manual), mostramos la fecha exacta
+    elif orden.fecha_entrega:
         texto_entrega = orden.fecha_entrega.strftime("%d/%m/%Y")
  
     simbolo = "S/" if orden.moneda == 'PEN' else "$"
@@ -3062,6 +3089,11 @@ def aprobar_cotizacion_gerencia(order_id):
         orden.estado = 'Por Despachar'
         orden.fecha_aprobacion = hora_peru() 
         orden.gerente_nombre = session.get('nombre')
+
+        # --- NUEVO: CÁLCULO DE FECHA DE ENTREGA REAL ---
+        if orden.dias_habiles_entrega:
+            # Calcula la fecha real sumando los días hábiles a la fecha de hoy
+            orden.fecha_entrega = sumar_dias_habiles(hora_peru().date(), orden.dias_habiles_entrega)
         
         db.session.commit()
         
@@ -3307,6 +3339,10 @@ def actualizar_venta():
             orden.fecha_entrega = datetime.strptime(f_entrega, '%Y-%m-%d').date()
         else:
             orden.fecha_entrega = None
+
+        # --- NUEVO: Actualizar Días Hábiles ---
+        d_habiles = data.get('dias_habiles_entrega')
+        orden.dias_habiles_entrega = int(d_habiles) if d_habiles else None
             
         # Corregimos el problema de la dirección vacía en Recojo
         tipo_ent = data.get('tipo_entrega')
@@ -4358,6 +4394,12 @@ def fix_render_db():
                 conn.execute(text('ALTER TABLE "order" ADD COLUMN revisor_inicial_nombre VARCHAR(100)'))
             except Exception as e:
                 print(f"Aviso revisor: {e}")
+                
+            # 4. NUEVO: Agregar días hábiles de entrega
+            try:
+                conn.execute(text('ALTER TABLE "order" ADD COLUMN dias_habiles_entrega INTEGER'))
+            except Exception as e:
+                print(f"Aviso dias_habiles: {e}")
 
             conn.commit()
         return "<h2>✅ Base de datos en Render actualizada. Las columnas y tamaños ya coinciden con tu entorno local.</h2>"

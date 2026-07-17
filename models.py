@@ -138,6 +138,9 @@ class Order(db.Model):
     tipo_entrega = db.Column(db.String(20)) 
     direccion_envio = db.Column(db.String(200))
     fecha_entrega = db.Column(db.Date)
+
+    # NUEVO CAMPO: Días hábiles de entrega
+    dias_habiles_entrega = db.Column(db.Integer, nullable=True)
     
     # Datos de Almacén (Nuevos)
     peso_total = db.Column(db.String(50))      

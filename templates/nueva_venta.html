@@ -182,13 +182,15 @@
             </div>
             <div class="card-body py-2">
                 <div class="row g-2 align-items-center">
-                    <div class="col-12 col-sm-6">
-                        <label class="small fw-bold text-muted">Fecha Entrega</label>
-                        <div class="input-group input-group-sm shadow-sm">
-                            <input type="date" id="inputFechaEntrega" class="form-control border-warning">
-                            <span class="input-group-text bg-white text-muted border-warning" title="Limpiar" style="cursor:pointer" onclick="document.getElementById('inputFechaEntrega').value = ''"><i class="bi bi-x"></i></span>
+                        <div class="col-12 col-sm-6">
+                            <label class="small fw-bold text-muted">Tiempo de Entrega</label>
+                            <div class="input-group input-group-sm shadow-sm">
+                                <span class="input-group-text bg-white border-warning"><i class="bi bi-calendar-day text-warning"></i></span>
+                                <input type="number" id="inputDiasHabiles" class="form-control border-warning" min="1" max="90" placeholder="Ej: 15">
+                                <span class="input-group-text bg-white text-muted border-warning fw-bold">Días Hábiles</span>
+                            </div>
+                            <div class="form-text fst-italic text-muted" style="font-size: 0.7rem;">Vacío = <strong>"A COORDINAR"</strong>. Rango: 1 a 90 días.</div>
                         </div>
-                        <div class="form-text fst-italic text-muted" style="font-size: 0.7rem;">Vacío = <strong>"A COORDINAR"</strong></div>
                     </div>
                     <div class="col-12 col-sm-6">
                         <label class="small fw-bold text-muted">Tipo Entrega</label>
@@ -990,6 +992,10 @@ window.aplicarDescuentoItem = function(index) {
             atte: "{{ orden.atencion or '' }}",
             oc: "{{ orden.orden_compra or '' }}",
             tipo_entrega: "{{ orden.tipo_entrega }}",
+
+                // --- NUEVO: RECUPERAR DÍAS HÁBILES ---
+            dias_habiles: "{{ orden.dias_habiles_entrega if orden.dias_habiles_entrega else '' }}",
+
             fecha: "{{ orden.fecha_entrega.strftime('%Y-%m-%d') if orden.fecha_entrega else '' }}",
             condicion: "{{ orden.condicion_pago }}",
             validez: "{{ orden.validez_oferta }}",
@@ -1016,6 +1022,9 @@ window.aplicarDescuentoItem = function(index) {
         $('#cli_oc').val(datosCliente.oc);
 
         // Llenar logística
+        $('#inputDiasHabiles').val(datosCliente.dias_habiles);
+        $('#selectEntrega').val(datosCliente.tipo_entrega);
+        
         $('#inputFechaEntrega').val(datosCliente.fecha);
         $('#selectEntrega').val(datosCliente.tipo_entrega);
         if(datosCliente.tipo_entrega === 'Envio'){
@@ -4007,6 +4016,9 @@ function recalcularCarritoPorMoneda() {
             validez_oferta: $('#inputValidez').val(),
             plazo_entrega_texto: "", 
             observacion: $('#inputObservacion').val(),
+
+            // --- NUEVO CAMPO DE DÍAS HÁBILES CAPTURADO ---
+            dias_habiles_entrega: $('#inputDiasHabiles').val(),
             
             fecha_entrega: $('#inputFechaEntrega').val(), 
             tipo_entrega: $('#selectEntrega').val(), 
