@@ -3612,11 +3612,12 @@ def picking_almacen():
 
     ordenes_por_verificar = Order.query.filter_by(estado='Por Verificar').order_by(Order.fecha.asc()).all()
     ordenes_pendientes = Order.query.filter_by(estado='Por Despachar').all()
+
+    orden_despacho = request.args.get('orden_despacho', 'llegada') # Por defecto: llegada
     
     # --- CÁLCULO DE URGENCIA PARA ALMACÉN ---
     hoy = datetime.now().date()
     for o in ordenes_pendientes:
-        # Usamos fecha_aprobacion si existe, sino usamos fecha de creación como respaldo
         fecha_base = getattr(o, 'fecha_aprobacion', o.fecha) 
         
         if getattr(o, 'dias_habiles_entrega', None):
@@ -3626,14 +3627,18 @@ def picking_almacen():
         else:
             o.calc_fecha_maxima = None
         
-        # Calcular cuántos días faltan
         if o.calc_fecha_maxima:
             o.dias_restantes = (o.calc_fecha_maxima.date() - hoy).days
         else:
-            o.dias_restantes = 9999  # Sin fecha límite, se va al final de la cola
+            o.dias_restantes = 9999
             
-    # ORDENAR POR URGENCIA: Los que tienen menos días restantes van primero
-    ordenes_pendientes.sort(key=lambda x: x.dias_restantes)
+        # --- APLICAR ORDENAMIENTO ---
+    if orden_despacho == 'urgencia':
+        # Ordena de menor a mayor cantidad de días (los atrasados o más próximos primero)
+        ordenes_pendientes.sort(key=lambda x: x.dias_restantes)
+    else:
+        # Ordena por la fecha en la que entró al sistema/se aprobó (First In, First Out)
+        ordenes_pendientes.sort(key=lambda x: x.fecha)
 
     # --- HISTORIAL CON FILTROS ---
     query_hist = Order.query.filter(Order.estado.in_(['Entregado', 'Despachado']))
