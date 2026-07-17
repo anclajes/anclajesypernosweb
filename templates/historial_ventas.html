@@ -140,10 +140,6 @@
                                 <div class="badge bg-warning text-dark border border-warning shadow-sm mb-1" title="Días hábiles tras aprobar la OC">
                                     <i class="bi bi-stopwatch"></i> {{ o.dias_habiles_entrega }} Días Háb.
                                 </div>
-                            {% elif not o.fecha_entrega %}
-                                <span class="text-muted fst-italic" style="font-size:0.75rem">A coordinar</span>
-                            {% endif %}
-                            
                             <!-- Aquí siguen tus otros badges (calidad, agencia, penalidad)... -->
                             <div class="mt-1 d-flex flex-column gap-1 align-items-start">
                                 {% if o.control_calidad == 'SI' %}
