@@ -181,17 +181,20 @@
                 <h6 class="mb-0 small fw-bold text-dark"><i class="bi bi-truck" style="color: var(--theme-primary);"></i> 3. Datos de Entrega</h6>
             </div>
             <div class="card-body py-2">
-                <div class="row g-2 align-items-center">
-                        <div class="col-12 col-sm-6">
-                            <label class="small fw-bold text-muted">Tiempo de Entrega</label>
-                            <div class="input-group input-group-sm shadow-sm">
-                                <span class="input-group-text bg-white border-warning"><i class="bi bi-calendar-day text-warning"></i></span>
-                                <input type="number" id="inputDiasHabiles" class="form-control border-warning" min="1" max="90" placeholder="Ej: 15">
-                                <span class="input-group-text bg-white text-muted border-warning fw-bold">Días Hábiles</span>
-                            </div>
-                            <div class="form-text fst-italic text-muted" style="font-size: 0.7rem;">Vacío = <strong>"A COORDINAR"</strong>. Rango: 1 a 90 días.</div>
+                <div class="row g-2 align-items-start">
+                    
+                    <!-- TIEMPO DE ENTREGA -->
+                    <div class="col-12 col-sm-6">
+                        <label class="small fw-bold text-muted">Tiempo de Entrega</label>
+                        <div class="input-group input-group-sm shadow-sm">
+                            <span class="input-group-text bg-white border-warning"><i class="bi bi-calendar-day text-warning"></i></span>
+                            <input type="number" id="inputDiasHabiles" class="form-control border-warning" min="1" max="90" placeholder="Ej: 15">
+                            <span class="input-group-text bg-white text-muted border-warning fw-bold">Días Hábiles</span>
                         </div>
+                        <div class="form-text fst-italic text-muted" style="font-size: 0.7rem;">Vacío = <strong>"A COORDINAR"</strong>. Rango: 1 a 90 días.</div>
                     </div>
+
+                    <!-- TIPO DE ENTREGA -->
                     <div class="col-12 col-sm-6">
                         <label class="small fw-bold text-muted">Tipo Entrega</label>
                         <select class="form-select form-select-sm shadow-sm border-secondary" id="selectEntrega" onchange="window.toggleDireccionEntrega()">
@@ -215,6 +218,7 @@
                             <option value="SI">✅ SÍ</option>
                         </select>
                     </div>
+                    
                     <div class="col-12 col-sm-6 mt-2" id="divNombreAgencia" style="display: none;">
                         <label class="small fw-bold" style="color: var(--theme-primary);">Nombre Agencia *</label>
                         <input type="text" id="inputAgencia" class="form-control form-control-sm shadow-sm" style="border-color: var(--theme-primary);" placeholder="Ej: Shalom, Marvisur...">
@@ -994,7 +998,7 @@ window.aplicarDescuentoItem = function(index) {
             tipo_entrega: "{{ orden.tipo_entrega }}",
 
                 // --- NUEVO: RECUPERAR DÍAS HÁBILES ---
-            dias_habiles: "{{ orden.dias_habiles_entrega if orden.dias_habiles_entrega else '' }}",
+            dias_habiles: "{{ orden.dias_habiles_entrega|default('', true) }}",
 
             fecha: "{{ orden.fecha_entrega.strftime('%Y-%m-%d') if orden.fecha_entrega else '' }}",
             condicion: "{{ orden.condicion_pago }}",
@@ -1024,7 +1028,7 @@ window.aplicarDescuentoItem = function(index) {
         // Llenar logística
         $('#inputDiasHabiles').val(datosCliente.dias_habiles);
         $('#selectEntrega').val(datosCliente.tipo_entrega);
-        
+
         $('#inputFechaEntrega').val(datosCliente.fecha);
         $('#selectEntrega').val(datosCliente.tipo_entrega);
         if(datosCliente.tipo_entrega === 'Envio'){
@@ -3421,6 +3425,8 @@ function recalcularCarritoPorMoneda() {
             validez_oferta: $('#inputValidez').val(),
             plazo_entrega_texto: "", 
             observacion: $('#inputObservacion').val(),
+
+            dias_habiles_entrega: $('#inputDiasHabiles').val(),
             
             fecha_entrega: $('#inputFechaEntrega').val(), 
             tipo_entrega: $('#selectEntrega').val(), 
