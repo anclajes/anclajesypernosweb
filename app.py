@@ -1206,7 +1206,7 @@ def nueva_venta():
                 tipo_entrega=tipo_entrega,
                 direccion_envio=dir_entrega_final,
                 fecha_entrega=fecha_obj,
-                
+
                 dias_habiles_entrega=dias_habiles_val, # Guardamos el valor (1-90)
 
                 agencia=data.get('agencia', 'NO REQUIERE'),              # <--- ASEGÚRATE DE ESTO
@@ -4350,9 +4350,6 @@ def actualizar_minimos_masivos_importbolts():
 def fix_estados_y_fechas():
     try:
         with db.engine.connect() as conn:
-            # En SQLite no se puede modificar el tipo de columna, pero no importa 
-            # porque SQLite no aplica el límite estricto de caracteres.
-            # Solo agregamos la columna que falta:
             conn.execute(text('ALTER TABLE "order" ADD COLUMN fecha_revision_inicial TIMESTAMP'))
             conn.commit()
         return "<h2>✅ Base de datos actualizada: Columna fecha_revision_inicial agregada con éxito.</h2>"
@@ -4364,7 +4361,6 @@ def fix_revisor():
     try:
         from sqlalchemy import text
         with db.engine.connect() as conn:
-            # Agregamos la nueva columna a la base de datos
             conn.execute(text('ALTER TABLE "order" ADD COLUMN revisor_inicial_nombre VARCHAR(100)'))
             conn.commit()
         return "<h2>✅ Base de datos actualizada: Nombre de revisor agregado.</h2>"
