@@ -195,13 +195,15 @@
                             </div>
                         </div>
                         
-                        <div class="input-group input-group-sm shadow-sm">
+                        <!-- Agregamos flex-nowrap para que no se apachurre -->
+                        <div class="input-group input-group-sm shadow-sm flex-nowrap">
                             <span class="input-group-text bg-white border-warning"><i class="bi bi-calendar-day text-warning"></i></span>
-                            <!-- Validación estricta con oninput -->
-                            <input type="number" id="inputDiasHabiles" class="form-control border-warning" 
-                                min="1" max="90" step="1" 
-                                oninput="if(this.value !== '') { this.value = Math.abs(Math.round(this.value)); if(this.value == 0) this.value = ''; }" 
-                                placeholder="Ej: 15">
+                            
+                            <!-- type="text" pero con teclado numérico. El oninput elimina cualquier signo raro inmediatamente -->
+                            <input type="text" inputmode="numeric" id="inputDiasHabiles" class="form-control border-warning text-center fw-bold" 
+                                oninput="if(this.value !== 'HOY') this.value = this.value.replace(/[^0-9]/g, '');" 
+                                placeholder="Ej: 15" style="min-width: 70px;">
+                                
                             <span class="input-group-text bg-white text-muted border-warning fw-bold">Días Hábiles</span>
                         </div>
                         <div class="form-text fst-italic text-muted" style="font-size: 0.7rem;">Vacío = <strong>"A COORDINAR"</strong>.</div>
@@ -1039,7 +1041,13 @@ window.aplicarDescuentoItem = function(index) {
         $('#cli_oc').val(datosCliente.oc);
 
         // Llenar logística
-        $('#inputDiasHabiles').val(datosCliente.dias_habiles);
+        if (datosCliente.dias_habiles === '0' || datosCliente.dias_habiles === 0 || String(datosCliente.dias_habiles).toUpperCase() === 'HOY') {
+            $('#chkInmediata').prop('checked', true);
+            toggleInmediata(); // Esto lo pintará de verde y le pondrá "HOY"
+        } else {
+            $('#inputDiasHabiles').val(datosCliente.dias_habiles);
+        }
+
         $('#selectEntrega').val(datosCliente.tipo_entrega);
 
         $('#inputFechaEntrega').val(datosCliente.fecha);
@@ -3423,6 +3431,11 @@ function recalcularCarritoPorMoneda() {
             if (!agenciaFinal) agenciaFinal = 'NO REQUIERE'; // Seguridad extra
         }
 
+        let diasHabilesValor = $('#inputDiasHabiles').val();
+        if (diasHabilesValor === 'HOY') {
+            diasHabilesValor = '0'; // Lo convertimos a 0 para guardar en BD
+        }
+
         // 6. CONSTRUIR PAYLOAD CON LOS 3 CAMPOS NUEVOS
         const payload = {
             order_id: orderIdEditing, 
@@ -3439,7 +3452,7 @@ function recalcularCarritoPorMoneda() {
             plazo_entrega_texto: "", 
             observacion: $('#inputObservacion').val(),
 
-            dias_habiles_entrega: $('#inputDiasHabiles').val(),
+            dias_habiles_entrega: diasHabilesValor,
             
             fecha_entrega: $('#inputFechaEntrega').val(), 
             tipo_entrega: $('#selectEntrega').val(), 
@@ -4020,6 +4033,11 @@ function recalcularCarritoPorMoneda() {
             if (!agenciaFinal) agenciaFinal = 'NO REQUIERE'; // Seguridad extra
         }
 
+        let diasHabilesValor = $('#inputDiasHabiles').val();
+        if (diasHabilesValor === 'HOY') {
+            diasHabilesValor = '0'; // Lo convertimos a 0 para guardar en BD
+        }
+
         // 4. CONSTRUIR PAYLOAD (AQUÍ ESTÁ EL TRUCO PARA QUE PYTHON LO GUARDE)
         const payload = {
             order_id: orderIdEditing, 
@@ -4037,7 +4055,7 @@ function recalcularCarritoPorMoneda() {
             observacion: $('#inputObservacion').val(),
 
             // --- NUEVO CAMPO DE DÍAS HÁBILES CAPTURADO ---
-            dias_habiles_entrega: $('#inputDiasHabiles').val(),
+            dias_habiles_entrega: diasHabilesValor,
             
             fecha_entrega: $('#inputFechaEntrega').val(), 
             tipo_entrega: $('#selectEntrega').val(), 
@@ -4292,17 +4310,19 @@ function cargarProductos() {
 
     }
 
-    function toggleInmediata() {
+function toggleInmediata() {
     const chk = document.getElementById('chkInmediata');
     const input = document.getElementById('inputDiasHabiles');
     if(chk.checked) {
-        input.value = '0'; // 0 significa hoy para la matemática de la fecha
+        input.value = 'HOY'; // Texto claro
         input.setAttribute('readonly', true);
-        input.classList.add('bg-light');
+        input.classList.add('bg-success', 'text-white');
+        input.classList.remove('border-warning', 'bg-white', 'text-dark');
     } else {
         input.value = '';
         input.removeAttribute('readonly');
-        input.classList.remove('bg-light');
+        input.classList.remove('bg-success', 'text-white');
+        input.classList.add('border-warning', 'bg-white', 'text-dark');
     }
 }
 
