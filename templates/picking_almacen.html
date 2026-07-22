@@ -511,6 +511,9 @@
                                         <i class="bi bi-paperclip"></i> <span class="d-none d-md-inline">OC</span>
                                     </a>
                                     {% endif %}
+                                    <button class="btn btn-sm btn-outline-warning fw-bold text-dark" onclick="procesarDevolucion('{{ o.id }}')" title="Registrar Devolución de Mercadería">
+                                        <i class="bi bi-arrow-return-left"></i> <span class="d-none d-md-inline">Devolver</span>
+                                    </button>
                                 </div>
                             </td>
                         </tr>
@@ -834,6 +837,44 @@ function procesarSalida(orderId) {
                     Swal.fire('¡Despacho Exitoso!', data.msg, 'success').then(() => location.reload());
                 else Swal.fire('Error', data.msg, 'error');
             });
+        }
+    });
+}
+
+// ============================================================
+// 4. DEVOLUCIÓN DE STOCK (DESDE HISTORIAL)
+// ============================================================
+function procesarDevolucion(orderId) {
+    Swal.fire({
+        title: '¿Registrar Devolución?',
+        html: `<div class="text-start small">
+                   <p>Al confirmar, el sistema hará lo siguiente automáticamente:</p>
+                   <ul class="text-dark fw-bold">
+                       <li>Cambiará el estado de la venta a "Devuelto".</li>
+                       <li>Sumará los productos de regreso al inventario web.</li>
+                       <li>Registrará el ingreso en el Kardex.</li>
+                   </ul>
+                   <div class="alert alert-warning py-2 mt-3 mb-0" style="font-size: 0.8rem;">
+                       <strong><i class="bi bi-exclamation-triangle-fill"></i> Sincronización Excel:</strong><br>
+                       Si actualizaste el stock mediante tu archivo Excel recientemente, recuerda volver a cargar el archivo al final del día para garantizar que la base maestra coincida al 100% con este reingreso automático.
+                   </div>
+               </div>`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Sí, Reingresar Stock',
+        confirmButtonColor: '#ffc107',
+        cancelButtonText: 'Cancelar'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            Swal.fire({ title: 'Procesando devolución...', didOpen: () => { Swal.showLoading() } });
+            fetch(`/api/procesar_devolucion/${orderId}`, { method: 'POST' })
+            .then(r => r.json()).then(data => {
+                if (data.status === 'success') {
+                    Swal.fire('¡Devolución Completada!', data.msg, 'success').then(() => location.reload());
+                } else {
+                    Swal.fire('Error', data.msg, 'error');
+                }
+            }).catch(() => Swal.fire('Error', 'Fallo de conexión al procesar la devolución.', 'error'));
         }
     });
 }
