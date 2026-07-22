@@ -189,6 +189,7 @@
                                 {% elif o.estado == 'Despachado' %}bg-success bg-opacity-75
                                 {% elif o.estado == 'Entregado' %}bg-success
                                 {% elif o.estado == 'Anulado' %}bg-dark
+                                {% elif o.estado == 'Devuelto' %}bg-dark text-white border border-dark shadow-sm
                                 {% else %}bg-secondary{% endif %}">
                                 
                                 {% if o.estado == 'Cotizacion' %}📝 Borrador
@@ -202,6 +203,7 @@
                                 {% elif o.estado == 'Despachado' %}🚚 Despachado
                                 {% elif o.estado == 'Entregado' %}✅ Entregado
                                 {% elif o.estado == 'Anulado' %}❌ Anulado
+                                {% elif o.estado == 'Devuelto' %}↩️ Devuelto (Almacén)
                                 {% else %}{{ o.estado }}{% endif %}
                             </span>
                         </td>
@@ -729,6 +731,8 @@ document.addEventListener("DOMContentLoaded", function() {
                         badgeHtml = '<span class="badge bg-danger">❌ Anulado</span>';
                     if(d.estado === 'Observado') 
                         badgeHtml = '<span class="badge bg-danger text-white"><i class="bi bi-exclamation-circle"></i> OBSERVADO / CORREGIR</span>';
+                    if(d.estado === 'Devuelto') 
+                        badgeHtml = '<span class="badge bg-dark text-white border border-light shadow-sm"><i class="bi bi-arrow-return-left"></i> ↩️ DEVUELTO A ALMACÉN (Stock recuperado)</span>';
 
                     $('#badgeEstadoModal').html(badgeHtml);
 

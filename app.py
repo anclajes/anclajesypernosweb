@@ -3152,7 +3152,7 @@ def historial_ventas():
 
     elif vista == 'historial':
         query = query.filter(Order.estado.in_([
-            'Por Despachar', 'Entregado', 'Despachado', 'Anulado', 'Rechazado'
+            'Por Despachar', 'Entregado', 'Despachado', 'Anulado', 'Rechazado', 'Devuelto'
         ]))
         if rol == 'vendedor' or solo_mias: 
             query = query.filter(Order.vendedor_id == user_id)
@@ -3667,6 +3667,8 @@ def picking_almacen():
     
     query_hist = query_hist.order_by(Order.fecha.desc())
     pagination_hist = query_hist.paginate(page=page_hist, per_page=20, error_out=False)
+
+    ordenes_devueltas = Order.query.filter(Order.estado.in_(['Devuelto', 'Anulado'])).order_by(Order.fecha.desc()).all()
     
     return render_template('picking_almacen.html', 
                            ordenes_verificar=ordenes_por_verificar,
@@ -3675,7 +3677,8 @@ def picking_almacen():
                            pagination_hist=pagination_hist,
                            busqueda_hist=busqueda_hist,
                            fecha_inicio_hist=fecha_inicio_hist,
-                           fecha_fin_hist=fecha_fin_hist)
+                           fecha_fin_hist=fecha_fin_hist,
+                           ordenes_devueltas=ordenes_devueltas)
 
 
 # NUEVA RUTA PARA QUE ALMACÉN APRUEBE EL STOCK FÍSICO
