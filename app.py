@@ -3773,6 +3773,67 @@ def procesar_salida_almacen(order_id):
         db.session.rollback()
         return {'status': 'error', 'msg': f'Error en el descargo: {str(e)}'}
 
+@app.route('/api/procesar_devolucion/<int:order_id>', methods=['POST'])
+def procesar_devolucion(order_id):
+    if session.get('role') not in ['admin', 'almacen']: 
+        return {'status': 'error', 'msg': 'No autorizado'}, 403
+    
+    orden = Order.query.get_or_404(order_id)
+    
+    if orden.estado not in ['Entregado', 'Despachado']:
+        return {'status': 'error', 'msg': 'Solo se pueden devolver órdenes que ya han salido de almacén.'}
+    
+    try:
+        # ==============================================================
+        # REINGRESO DE STOCK Y REGISTRO EN KARDEX
+        # ==============================================================
+        for detalle in orden.details:
+            if detalle.product_id and detalle.item_type == 'PRODUCTO':
+                prod = Product.query.get(detalle.product_id)
+                stock_anterior = prod.stock_actual
+                # Sumamos el stock de regreso
+                prod.stock_actual += detalle.cantidad
+                
+                kardex = ProductMovement(
+                    product_id=prod.id,
+                    user_id=session['user_id'],
+                    tipo='ENTRADA',
+                    cantidad=detalle.cantidad,
+                    stock_anterior=stock_anterior,
+                    stock_nuevo=prod.stock_actual,
+                    motivo=f"Ingreso por Devolución - NP-{orden.id:05d}"
+                )
+                db.session.add(kardex)
+
+            elif detalle.item_type == 'GLB':
+                for comp in detalle.kit_components:
+                    prod_c = comp.product
+                    cantidad_total = comp.cantidad_requerida * detalle.cantidad
+                    stock_ant_c = prod_c.stock_actual
+                    # Sumamos el stock de los componentes del kit
+                    prod_c.stock_actual += cantidad_total
+                    
+                    kardex_c = ProductMovement(
+                        product_id=prod_c.id,
+                        user_id=session['user_id'],
+                        tipo='ENTRADA',
+                        cantidad=cantidad_total,
+                        stock_anterior=stock_ant_c,
+                        stock_nuevo=prod_c.stock_actual,
+                        motivo=f"Ingreso Devolución Kit NP-{orden.id:05d} - {detalle.nombre_personalizado_titulo[:15]}"
+                    )
+                    db.session.add(kardex_c)
+
+        # Cambiamos el estado a Devuelto
+        orden.estado = 'Devuelto'
+        db.session.commit()
+        
+        return {'status': 'success', 'msg': 'Stock reingresado automáticamente y orden marcada como Devuelta.'}
+        
+    except Exception as e:
+        db.session.rollback()
+        return {'status': 'error', 'msg': f'Error en el reingreso: {str(e)}'}
+
 # =========================================================================================
 # FUNCIONES CRUD Y LOGÍSTICA PARA IMPORTBOLTS (CREAR, EDITAR, ELIMINAR, EXPORTAR, CATEGORÍAS)
 # =========================================================================================
