@@ -666,12 +666,17 @@
                             </td>
                             <td>
                                 <!-- AQUÍ MOSTRAMOS EL MOTIVO -->
+                                {% set texto_motivo = o.detalle_cancelacion or o.motivo_anulacion or o.motivo_devolucion or o.motivo_rechazo %}
+                                
                                 {% if o.categoria_cancelacion %}
                                     <span class="badge bg-secondary mb-1">{{ o.categoria_cancelacion }}</span>
-                                    {% if o.detalle_cancelacion %}
-                                        <br><small class="text-muted text-wrap" style="max-width: 200px; display: inline-block;">{{ o.detalle_cancelacion }}</small>
-                                    {% endif %}
-                                {% else %}
+                                {% endif %}
+                                
+                                {% if texto_motivo %}
+                                    <div class="text-danger fw-bold mt-1 text-wrap" style="max-width: 250px; font-size: 0.8rem;">
+                                        <i class="bi bi-exclamation-octagon-fill"></i> {{ texto_motivo }}
+                                    </div>
+                                {% elif not o.categoria_cancelacion %}
                                     <span class="text-muted fst-italic">Sin motivo registrado</span>
                                 {% endif %}
                             </td>
