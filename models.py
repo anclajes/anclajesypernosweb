@@ -139,6 +139,8 @@ class Order(db.Model):
     direccion_envio = db.Column(db.String(200))
     fecha_entrega = db.Column(db.Date)
 
+    fecha_devolucion = db.Column(db.DateTime, nullable=True)
+
     # NUEVO CAMPO: Días hábiles de entrega
     dias_habiles_entrega = db.Column(db.Integer, nullable=True)
     

@@ -3829,6 +3829,7 @@ def procesar_devolucion(order_id):
 
         # Cambiamos el estado a Devuelto
         orden.estado = 'Devuelto'
+        orden.fecha_devolucion = hora_peru()
         db.session.commit()
         
         return {'status': 'success', 'msg': 'Stock reingresado automáticamente y orden marcada como Devuelta.'}
@@ -4492,13 +4493,21 @@ def fix_render_db():
             except Exception as e:
                 print(f"Aviso revisor: {e}")
                 
-            # 4. NUEVO: Agregar días hábiles de entrega (ESTE ES EL QUE FALTABA)
+            # 4. Agregar días hábiles de entrega
             try:
                 conn.execute(text('ALTER TABLE "order" ADD COLUMN dias_habiles_entrega INTEGER'))
             except Exception as e:
                 print(f"Aviso dias_habiles: {e}")
 
-        return "<h2>✅ Base de datos en Render actualizada. Las columnas se procesaron de forma independiente.</h2>"
+            # -------------------------------------------------------------
+            # 5. NUEVO: AGREGAR FECHA DE DEVOLUCIÓN PARA ANULADOS/DEVUELTOS
+            # -------------------------------------------------------------
+            try:
+                conn.execute(text('ALTER TABLE "order" ADD COLUMN fecha_devolucion TIMESTAMP'))
+            except Exception as e:
+                print(f"Aviso fecha_devolucion: {e}")
+
+        return "<h2>✅ Base de datos en Render actualizada. Las columnas (incluyendo fecha_devolucion) se procesaron de forma independiente.</h2>"
     except Exception as e:
         return f"<h2>❌ Error general: {str(e)}</h2>"
 

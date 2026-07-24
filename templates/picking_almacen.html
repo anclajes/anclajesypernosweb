@@ -608,7 +608,7 @@
         </div>
     </div>
 
-    <!-- ========================================================= -->
+<!-- ========================================================= -->
     <!-- TAB 4: DEVUELTOS Y ANULADOS                               -->
     <!-- ========================================================= -->
     <div class="tab-pane fade" id="pills-devueltos" role="tabpanel">
@@ -626,32 +626,102 @@
                             <th class="ps-3">N° COT</th>
                             <th>Cliente</th>
                             <th>Vendedor</th>
-                            <th>F. Registro</th>
-                            <th class="text-center">Items</th>
+                            <th title="Fecha original de creación">F. Registro</th>
+                            <th title="Fecha exacta de la devolución o anulación">F. Cierre</th>
                             <th class="text-center">Estado</th>
+                            <th class="text-center">Acciones</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for o in ordenes_devueltas %}
+                        <!-- Fila Principal -->
                         <tr class="bg-light bg-opacity-50">
                             <td class="ps-3 fw-bold text-dark">COT-{{ "%05d"|format(o.id) }}</td>
                             <td>
                                 <div class="fw-bold text-truncate" style="max-width:200px">{{ o.cliente.nombre }}</div>
+                                {% if o.orden_compra %}
+                                    <small class="text-primary"><i class="bi bi-receipt"></i> OC: {{ o.orden_compra }}</small>
+                                {% endif %}
                             </td>
                             <td><i class="bi bi-person text-muted"></i> {{ o.vendedor.username }}</td>
                             <td>
                                 <div>{{ o.fecha.strftime('%d/%m/%Y') }}</div>
                                 <small class="text-muted">{{ o.fecha.strftime('%H:%M') }}</small>
                             </td>
-                            <td class="text-center">
-                                <span class="badge bg-secondary">{{ o.details|length }} items</span>
+                            <td>
+                                {% if o.fecha_devolucion %}
+                                    <div class="fw-bold text-danger">{{ o.fecha_devolucion.strftime('%d/%m/%Y') }}</div>
+                                    <small class="text-muted">{{ o.fecha_devolucion.strftime('%H:%M') }}</small>
+                                {% else %}
+                                    <span class="text-muted fst-italic">—</span>
+                                {% endif %}
                             </td>
                             <td class="text-center">
                                 {% if o.estado == 'Devuelto' %}
-                                    <span class="badge bg-dark border border-secondary shadow-sm"><i class="bi bi-arrow-return-left"></i> Devuelto (Stock Retornado)</span>
+                                    <span class="badge bg-dark shadow-sm"><i class="bi bi-arrow-return-left"></i> Devuelto (Stock IN)</span>
                                 {% else %}
                                     <span class="badge bg-danger shadow-sm"><i class="bi bi-x-circle"></i> Anulado</span>
                                 {% endif %}
+                            </td>
+                            <td class="text-center">
+                                <div class="d-flex flex-column flex-sm-row justify-content-center gap-1 border-0">
+                                    <!-- Botón Ver Ítems -->
+                                    <button class="btn btn-sm btn-outline-secondary" onclick="verItemsDevueltos('{{ o.id }}')" title="Ver productos retornados">
+                                        <i class="bi bi-list-ul"></i> {{ o.details|length }} Items
+                                    </button>
+                                    
+                                    <!-- Documentos Históricos -->
+                                    <a href="/descargar_nota_pedido/{{ o.id }}" class="btn btn-sm btn-outline-secondary" target="_blank" title="Ver NP (Si existió)">
+                                        <i class="bi bi-printer-fill"></i> <span class="d-none d-md-inline">NP</span>
+                                    </a>
+                                    <a href="/descargar_cotizacion_v2/{{ o.id }}" class="btn btn-sm btn-outline-danger" target="_blank" title="Ver COT original">
+                                        <i class="bi bi-file-pdf-fill"></i> <span class="d-none d-md-inline">COT</span>
+                                    </a>
+                                    {% if o.archivo_oc %}
+                                    <a href="/ver_oc/{{ o.archivo_oc }}" class="btn btn-sm btn-outline-success fw-bold" target="_blank" title="Ver OC Adjunta">
+                                        <i class="bi bi-paperclip"></i> <span class="d-none d-md-inline">OC</span>
+                                    </a>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+
+                        <!-- Fila Expandible (Detalle de Productos) -->
+                        <tr id="detalle_devuelto_{{ o.id }}" class="d-none bg-white">
+                            <td colspan="7" class="p-2 p-md-3">
+                                <div class="card border-dark border-2 border-opacity-25">
+                                    <div class="card-header bg-dark bg-opacity-10 py-2">
+                                        <h6 class="mb-0 fw-bold text-dark small">
+                                            <i class="bi bi-box-seam"></i> Detalle de Mercadería — COT-{{ "%05d"|format(o.id) }}
+                                        </h6>
+                                    </div>
+                                    <div class="card-body p-0 table-responsive">
+                                        <table class="table table-sm table-bordered mb-0 text-nowrap">
+                                            <thead class="table-light small text-muted text-uppercase">
+                                                <tr>
+                                                    <th class="ps-3">Código</th>
+                                                    <th style="min-width: 150px;">Producto</th>
+                                                    <th class="text-center">Cant. Retornada / Anulada</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {% for d in o.details %}
+                                                <tr>
+                                                    <td class="ps-3 fw-bold text-muted small align-middle">
+                                                        {{ d.product.sku if d.product else 'SRV' }}
+                                                    </td>
+                                                    <td class="small align-middle" style="white-space:normal">
+                                                        {{ d.product.nombre if d.product else d.nombre_personalizado }}
+                                                    </td>
+                                                    <td class="text-center fw-bold align-middle">
+                                                        <span class="badge bg-dark">{{ d.cantidad }}</span>
+                                                    </td>
+                                                </tr>
+                                                {% endfor %}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
                             </td>
                         </tr>
                         {% endfor %}
@@ -946,6 +1016,11 @@ function procesarDevolucion(orderId) {
             }).catch(() => Swal.fire('Error', 'Fallo de conexión al procesar la devolución.', 'error'));
         }
     });
+}
+
+function verItemsDevueltos(id) {
+    const fila = document.getElementById(`detalle_devuelto_${id}`);
+    fila.classList.toggle('d-none');
 }
 
 // ABRIR PESTAÑA CORRECTA AUTOMÁTICAMENTE AL RECARGAR O FILTRAR
