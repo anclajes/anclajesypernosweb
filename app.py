@@ -3838,6 +3838,32 @@ def procesar_devolucion(order_id):
         db.session.rollback()
         return {'status': 'error', 'msg': f'Error en el reingreso: {str(e)}'}
 
+@app.route('/api/cancelar_despacho/<int:order_id>', methods=['POST'])
+def cancelar_despacho(order_id):
+    if 'user_id' not in session:
+        return {'status': 'error', 'msg': 'Sesión expirada'}, 401
+
+    orden = Order.query.get_or_404(order_id)
+    
+    if orden.estado != 'Por Despachar':
+        return {'status': 'error', 'msg': 'La orden no está en estado Por Despachar'}, 400
+
+    try:
+        # 1. CAMBIAMOS EL ESTADO AL NUEVO NOMBRE
+        orden.estado = 'Despacho Cancelado'
+        
+        # 2. Registramos cuándo se canceló usando la misma columna de cierre
+        orden.fecha_devolucion = hora_peru() 
+
+        # NO TOCAMOS EL STOCK ACTUAL DE LOS PRODUCTOS
+
+        db.session.commit()
+        return {'status': 'success', 'msg': 'Despacho cancelado. La orden fue enviada al Historial de Ventas.'}
+    
+    except Exception as e:
+        db.session.rollback()
+        return {'status': 'error', 'msg': str(e)}, 500
+
 # =========================================================================================
 # FUNCIONES CRUD Y LOGÍSTICA PARA IMPORTBOLTS (CREAR, EDITAR, ELIMINAR, EXPORTAR, CATEGORÍAS)
 # =========================================================================================

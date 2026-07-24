@@ -337,6 +337,11 @@
                                             <i class="bi bi-check-circle-fill"></i> <span class="d-none d-md-inline">Despachar</span>
                                         </button>
                                     {% endif %}
+                                        <button onclick="cancelarDespacho('{{ o.id }}', 'COT-{{ "%05d"|format(o.id) }}')" 
+                                            class="btn btn-sm btn-outline-danger" 
+                                            title="Cancelar despacho (Enviar a historial)">
+                                        <i class="bi bi-x-octagon-fill"></i> Cancelar
+                                    </button>
                                 </div>
                             </td>
                         </tr> 
@@ -671,9 +676,6 @@
                                     </button>
                                     
                                     <!-- Documentos Históricos -->
-                                    <a href="/descargar_nota_pedido/{{ o.id }}" class="btn btn-sm btn-outline-secondary" target="_blank" title="Ver NP (Si existió)">
-                                        <i class="bi bi-printer-fill"></i> <span class="d-none d-md-inline">NP</span>
-                                    </a>
                                     <a href="/descargar_cotizacion_v2/{{ o.id }}" class="btn btn-sm btn-outline-danger" target="_blank" title="Ver COT original">
                                         <i class="bi bi-file-pdf-fill"></i> <span class="d-none d-md-inline">COT</span>
                                     </a>
@@ -1021,6 +1023,25 @@ function procesarDevolucion(orderId) {
 function verItemsDevueltos(id) {
     const fila = document.getElementById(`detalle_devuelto_${id}`);
     fila.classList.toggle('d-none');
+}
+
+function cancelarDespacho(orderId, numeroCot) {
+    if(confirm(`¿Estás seguro de CANCELAR el despacho de la ${numeroCot}?\n\nLa orden desaparecerá de almacén y regresará al Historial de Ventas como 'Despacho Cancelado'. No se afectará el stock.`)) {
+        
+        fetch(`/api/cancelar_despacho/${orderId}`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'}
+        })
+        .then(response => response.json())
+        .then(data => {
+            if(data.status === 'success') {
+                alert(data.msg);
+                location.reload(); 
+            } else {
+                alert('Error: ' + data.msg);
+            }
+        });
+    }
 }
 
 // ABRIR PESTAÑA CORRECTA AUTOMÁTICAMENTE AL RECARGAR O FILTRAR
