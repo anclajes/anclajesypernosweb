@@ -3790,18 +3790,15 @@ def procesar_devolucion(order_id):
         return {'status': 'error', 'msg': 'No autorizado'}, 403
     
     orden = Order.query.get_or_404(order_id)
-    
     if orden.estado not in ['Entregado', 'Despachado']:
-        return {'status': 'error', 'msg': 'Solo se pueden devolver órdenes que ya han salido de almacén.'}
+        return {'status': 'error', 'msg': 'Solo se pueden devolver órdenes despachadas.'}
     
-    # --- NUEVO: CAPTURAR EL MOTIVO ---
-    data = request.get_json() or {}
-    motivo_dev = data.get('motivo', 'Devolución sin motivo especificado')
+    # LECTURA A PRUEBA DE FALLOS
+    data = request.get_json(silent=True) or request.form
+    motivo_dev = data.get('motivo', '') or 'Devolución sin motivo especificado'
 
     try:
-        # ==============================================================
-        # REINGRESO DE STOCK Y REGISTRO EN KARDEX (MANTENER TU CÓDIGO)
-        # ==============================================================
+        # --- LÓGICA DE REINGRESO DE STOCK Y KARDEX (Se mantiene igual) ---
         for detalle in orden.details:
             if detalle.product_id and detalle.item_type == 'PRODUCTO':
                 prod = Product.query.get(detalle.product_id)
@@ -3809,13 +3806,10 @@ def procesar_devolucion(order_id):
                 prod.stock_actual += detalle.cantidad
                 
                 kardex = ProductMovement(
-                    product_id=prod.id,
-                    user_id=session['user_id'],
-                    tipo='ENTRADA',
-                    cantidad=detalle.cantidad,
-                    stock_anterior=stock_anterior,
+                    product_id=prod.id, user_id=session['user_id'], tipo='ENTRADA',
+                    cantidad=detalle.cantidad, stock_anterior=stock_anterior,
                     stock_nuevo=prod.stock_actual,
-                    motivo=f"Ingreso por Devolución - NP-{orden.id:05d} | Motivo: {motivo_dev}" # Opcional: registrar motivo en Kardex
+                    motivo=f"Devolución NP-{orden.id:05d} | {motivo_dev}"
                 )
                 db.session.add(kardex)
 
@@ -3827,28 +3821,48 @@ def procesar_devolucion(order_id):
                     prod_c.stock_actual += cantidad_total
                     
                     kardex_c = ProductMovement(
-                        product_id=prod_c.id,
-                        user_id=session['user_id'],
-                        tipo='ENTRADA',
-                        cantidad=cantidad_total,
-                        stock_anterior=stock_ant_c,
-                        stock_nuevo=prod_c.stock_actual,
-                        motivo=f"Ingreso Dev. Kit NP-{orden.id:05d} - {detalle.nombre_personalizado_titulo[:15]}"
+                        product_id=prod_c.id, user_id=session['user_id'], tipo='ENTRADA',
+                        cantidad=cantidad_total, stock_anterior=stock_ant_c, stock_nuevo=prod_c.stock_actual,
+                        motivo=f"Dev. Kit NP-{orden.id:05d}"
                     )
                     db.session.add(kardex_c)
 
-        # Cambiamos el estado, guardamos fecha y EL MOTIVO
+        # GUARDAMOS FECHAS Y MOTIVOS
         orden.estado = 'Devuelto'
         orden.fecha_devolucion = hora_peru()
-        orden.motivo_devolucion = motivo_dev # <--- AQUÍ SE GUARDA
+        orden.fecha_cancelacion = hora_peru() # Usado para tabla principal
+        orden.motivo_devolucion = motivo_dev
+        orden.detalle_cancelacion = motivo_dev # Usado para tabla principal
 
         db.session.commit()
-        
-        return {'status': 'success', 'msg': 'Stock reingresado automáticamente y orden marcada como Devuelta.'}
+        return {'status': 'success', 'msg': 'Stock reingresado y orden Devuelta.'}
         
     except Exception as e:
         db.session.rollback()
-        return {'status': 'error', 'msg': f'Error en el reingreso: {str(e)}'}
+        return {'status': 'error', 'msg': f'Error: {str(e)}'}
+
+@app.route('/api/anular_cotizacion/<int:order_id>', methods=['POST'])
+def anular_cotizacion(order_id):
+    if 'user_id' not in session: 
+        return {'status': 'error', 'msg': 'No autorizado'}, 401
+    
+    orden = Order.query.get_or_404(order_id)
+    
+    data = request.get_json(silent=True) or request.form
+    motivo = data.get('motivo') or data.get('detalle_cancelacion') or 'Anulado manualmente'
+
+    try:
+        orden.estado = 'Anulado'
+        orden.fecha_cancelacion = hora_peru()
+        orden.motivo_anulacion = motivo
+        orden.detalle_cancelacion = motivo
+        orden.usuario_cancela_id = session['user_id']
+        
+        db.session.commit()
+        return {'status': 'success', 'msg': 'Cotización anulada correctamente.'}
+    except Exception as e:
+        db.session.rollback()
+        return {'status': 'error', 'msg': str(e)}
 
 @app.route('/api/cancelar_despacho/<int:order_id>', methods=['POST'])
 def cancelar_despacho(order_id):
@@ -3856,26 +3870,27 @@ def cancelar_despacho(order_id):
         return {'status': 'error', 'msg': 'Sesión expirada'}, 401
 
     orden = Order.query.get_or_404(order_id)
-    
     if orden.estado != 'Por Despachar':
         return {'status': 'error', 'msg': 'La orden no está en estado Por Despachar'}, 400
 
-    # --- NUEVO: CAPTURAR EL MOTIVO ---
-    data = request.get_json() or {}
-    motivo = data.get('motivo', 'Sin motivo especificado')
+    # LECTURA A PRUEBA DE FALLOS (Soporta JSON y FormData)
+    data = request.get_json(silent=True) or request.form
+    motivo = data.get('motivo', '') or data.get('detalle_cancelacion', 'Cancelado sin motivo')
 
     try:
         orden.estado = 'Despacho Cancelado'
-        orden.fecha_devolucion = hora_peru() 
         
-        # Guardamos el motivo para las estadísticas futuras
+        # Guardamos la fecha en ambas columnas por seguridad
+        orden.fecha_cancelacion = hora_peru() 
+        orden.fecha_devolucion = hora_peru()  
+        
+        # Guardamos el motivo en todas las columnas de incidencia
         orden.motivo_anulacion = motivo 
-
-        # NO TOCAMOS EL STOCK ACTUAL DE LOS PRODUCTOS
+        orden.detalle_cancelacion = motivo 
+        orden.usuario_cancela_id = session['user_id']
 
         db.session.commit()
         return {'status': 'success', 'msg': 'Despacho cancelado. La orden fue enviada al Historial.'}
-    
     except Exception as e:
         db.session.rollback()
         return {'status': 'error', 'msg': str(e)}, 500

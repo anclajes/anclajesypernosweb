@@ -112,6 +112,12 @@
                     <th class="ps-4">Código</th>
                     <th>F. Creación</th>
                     <th>F. Entrega</th>
+                    {% if vista_actual == 'incidencias' %}
+                        <th>F. Incidencia</th>
+                        <th>Motivo del Rechazo/Anulación</th>
+                    {% else %}
+                        <th>F. Entrega</th>
+                    {% endif %}
                     <th>Cliente</th>
                     <th>Vendedor</th>
                     <th class="text-end">Total</th>
@@ -135,43 +141,64 @@
                             </div>
                         </td>
                         <!-- REEMPLAZA LA COLUMNA DE FECHA EN TU TABLA -->
-                        <td>
-                            {% if o.fecha_entrega %}
-                                <div class="text-danger fw-bold mb-1">
-                                    <i class="bi bi-calendar-check-fill"></i> {{ o.fecha_entrega.strftime('%d/%m/%Y') }}
-                                </div>
-                            {% endif %}
-                            
-                            {% if o.dias_habiles_entrega is not none and o.dias_habiles_entrega|string != '' %}
-                                {% if o.dias_habiles_entrega|string == '0' %}
-                                    <!-- Caso 0: Entrega Inmediata -->
-                                    <div class="badge bg-success text-white border border-success shadow-sm mb-1" title="Entrega Inmediata">
-                                        <i class="bi bi-lightning-charge-fill"></i> Inmediata (Hoy)
-                                    </div>
+                        <!-- COLUMNAS DINÁMICAS: ENTREGA (Normal) O INCIDENCIA (Pestaña 4) -->
+                        {% if vista_actual == 'incidencias' %}
+                            <!-- COLUMNA: F. Incidencia -->
+                            <td>
+                                {% if o.fecha_cancelacion %}
+                                    <div class="fw-bold text-dark"><i class="bi bi-calendar-x"></i> {{ o.fecha_cancelacion.strftime('%d/%m/%Y') }}</div>
+                                    <div class="text-muted" style="font-size:0.75rem">{{ o.fecha_cancelacion.strftime('%H:%M') }}</div>
+                                {% elif o.fecha_devolucion %}
+                                    <div class="fw-bold text-dark"><i class="bi bi-calendar-x"></i> {{ o.fecha_devolucion.strftime('%d/%m/%Y') }}</div>
+                                    <div class="text-muted" style="font-size:0.75rem">{{ o.fecha_devolucion.strftime('%H:%M') }}</div>
                                 {% else %}
-                                    <!-- Caso > 0: Días Hábiles Normales -->
-                                    <div class="badge bg-warning text-dark border border-warning shadow-sm mb-1 calc-fecha-proyectada" data-dias="{{ o.dias_habiles_entrega }}" title="Días hábiles tras aprobar la OC">
-                                        <i class="bi bi-stopwatch"></i> {{ o.dias_habiles_entrega }} Días Háb. <span class="proyeccion-span text-danger fw-bold ms-1"></span>
+                                    <span class="text-muted">---</span>
+                                {% endif %}
+                            </td>
+
+                            <!-- COLUMNA: Motivo / Detalle -->
+                            <td>
+                                <div class="text-wrap text-danger fw-bold" style="max-width: 250px; font-size: 0.8rem;">
+                                    <i class="bi bi-exclamation-octagon-fill"></i> 
+                                    {{ o.detalle_cancelacion or o.motivo_anulacion or o.motivo_devolucion or o.motivo_rechazo or 'Sin motivo registrado' }}
+                                </div>
+                            </td>
+                        {% else %}
+                            <!-- COLUMNA ORIGINAL: F. Entrega (Se muestra en el resto de pestañas) -->
+                            <td>
+                                {% if o.fecha_entrega %}
+                                    <div class="text-danger fw-bold mb-1">
+                                        <i class="bi bi-calendar-check-fill"></i> {{ o.fecha_entrega.strftime('%d/%m/%Y') }}
                                     </div>
                                 {% endif %}
-                            {% elif not o.fecha_entrega %}
-                                <!-- Caso Vacío: A coordinar -->
-                                <span class="text-muted fst-italic" style="font-size:0.75rem">A coordinar</span>
-                            {% endif %}
-                            
-                            <!-- Aquí siguen tus otros badges (calidad, agencia, penalidad)... -->
-                            <div class="mt-1 d-flex flex-column gap-1 align-items-start">
-                                {% if o.control_calidad == 'SI' %}
-                                    <span class="badge bg-primary" style="font-size:0.65rem"><i class="bi bi-patch-check"></i> CERTIFICADO</span>
+                                
+                                {% if o.dias_habiles_entrega is not none and o.dias_habiles_entrega|string != '' %}
+                                    {% if o.dias_habiles_entrega|string == '0' %}
+                                        <div class="badge bg-success text-white border border-success shadow-sm mb-1" title="Entrega Inmediata">
+                                            <i class="bi bi-lightning-charge-fill"></i> Inmediata (Hoy)
+                                        </div>
+                                    {% else %}
+                                        <div class="badge bg-warning text-dark border border-warning shadow-sm mb-1 calc-fecha-proyectada" data-dias="{{ o.dias_habiles_entrega }}" title="Días hábiles tras aprobar la OC">
+                                            <i class="bi bi-stopwatch"></i> {{ o.dias_habiles_entrega }} Días Háb. <span class="proyeccion-span text-danger fw-bold ms-1"></span>
+                                        </div>
+                                    {% endif %}
+                                {% elif not o.fecha_entrega %}
+                                    <span class="text-muted fst-italic" style="font-size:0.75rem">A coordinar</span>
                                 {% endif %}
-                                {% if o.agencia and o.agencia != 'NO REQUIERE' %}
-                                    <span class="badge bg-info text-dark" style="font-size:0.65rem" title="Agencia"><i class="bi bi-truck"></i> {{ o.agencia|truncate(15) }}</span>
-                                {% endif %}
-                                {% if o.penalidad == 'SI' %}
-                                    <span class="badge bg-danger" style="font-size:0.65rem"><i class="bi bi-exclamation-octagon"></i> PENALIDAD</span>
-                                {% endif %}
-                            </div>
-                        </td>
+                                
+                                <div class="mt-1 d-flex flex-column gap-1 align-items-start">
+                                    {% if o.control_calidad == 'SI' %}
+                                        <span class="badge bg-primary" style="font-size:0.65rem"><i class="bi bi-patch-check"></i> CERTIFICADO</span>
+                                    {% endif %}
+                                    {% if o.agencia and o.agencia != 'NO REQUIERE' %}
+                                        <span class="badge bg-info text-dark" style="font-size:0.65rem" title="Agencia"><i class="bi bi-truck"></i> {{ o.agencia|truncate(15) }}</span>
+                                    {% endif %}
+                                    {% if o.penalidad == 'SI' %}
+                                        <span class="badge bg-danger" style="font-size:0.65rem"><i class="bi bi-exclamation-octagon"></i> PENALIDAD</span>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        {% endif %}
                         <td>
                             <div class="fw-bold text-truncate" style="max-width: 200px;">{{ o.cliente.nombre }}</div>
                             {% if o.orden_compra %}
@@ -818,15 +845,17 @@ document.addEventListener("DOMContentLoaded", function() {
                     $('#view_agencia').text(d.agencia || 'NO REQUIERE');
                     
                     $('#view_obs').text(d.observacion);
-                    if (d.estado === 'Observado' && d.motivo_rechazo) {
-                        $('#view_motivo_rechazo').text(d.motivo_rechazo);
+                    
+                    // LÓGICA MEJORADA: Muestra la alerta roja para CUALQUIER tipo de incidencia
+                    const estadosConIncidencia = ['Observado', 'Anulado', 'Despacho Cancelado', 'Devuelto'];
+                    if (estadosConIncidencia.includes(d.estado)) {
+                        // Buscamos el texto en cualquiera de las variables que devuelve el backend
+                        let textoMotivo = d.detalle_cancelacion || d.motivo_anulacion || d.motivo_devolucion || d.motivo_rechazo || 'Sin motivo registrado';
+                        $('#view_motivo_rechazo').text(textoMotivo);
                         $('#box_motivo_rechazo').removeClass('d-none'); 
                     } else {
                         $('#box_motivo_rechazo').addClass('d-none');
                     }
-
-                    // --- ETIQUETA DESCUENTO GLOBAL (DETECCIÓN INTELIGENTE) ---
-                    // --- ETIQUETA DESCUENTO GLOBAL (DETECCIÓN INTELIGENTE) ---
                     // --- ETIQUETA DESCUENTO GLOBAL (DETECCIÓN INTELIGENTE) ---
                     let labelDescGeneral = "DESCUENTO:";
                     
