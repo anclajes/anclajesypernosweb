@@ -2,6 +2,7 @@
 
 {% block content %}
 <style>
+    
     .nav-pills .nav-link {
         background-color: #e9ecef !important;
         color: #495057 !important;
@@ -632,7 +633,8 @@
                             <th>Cliente</th>
                             <th>Vendedor</th>
                             <th title="Fecha original de creación">F. Registro</th>
-                            <th title="Fecha exacta de la devolución o anulación">F. Cierre</th>
+                            <th title="Fecha exacta de la devolución o anulación">F. Incidencia</th>
+                            <th>Motivo / Detalle</th>
                             <th class="text-center">Estado</th>
                             <th class="text-center">Acciones</th>
                         </tr>
@@ -654,18 +656,30 @@
                                 <small class="text-muted">{{ o.fecha.strftime('%H:%M') }}</small>
                             </td>
                             <td>
-                                {% if o.fecha_devolucion %}
-                                    <div class="fw-bold text-danger">{{ o.fecha_devolucion.strftime('%d/%m/%Y') }}</div>
-                                    <small class="text-muted">{{ o.fecha_devolucion.strftime('%H:%M') }}</small>
+                                <!-- AQUÍ MOSTRAMOS LA FECHA Y HORA EXACTA DE LA CANCELACIÓN/DEVOLUCIÓN -->
+                                {% if o.fecha_cancelacion %}
+                                    <div class="fw-bold text-danger">{{ o.fecha_cancelacion.strftime('%d/%m/%Y') }}</div>
+                                    <small class="text-muted"><i class="bi bi-clock"></i> {{ o.fecha_cancelacion.strftime('%H:%M:%S') }}</small>
                                 {% else %}
                                     <span class="text-muted fst-italic">—</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <!-- AQUÍ MOSTRAMOS EL MOTIVO -->
+                                {% if o.categoria_cancelacion %}
+                                    <span class="badge bg-secondary mb-1">{{ o.categoria_cancelacion }}</span>
+                                    {% if o.detalle_cancelacion %}
+                                        <br><small class="text-muted text-wrap" style="max-width: 200px; display: inline-block;">{{ o.detalle_cancelacion }}</small>
+                                    {% endif %}
+                                {% else %}
+                                    <span class="text-muted fst-italic">Sin motivo registrado</span>
                                 {% endif %}
                             </td>
                             <td class="text-center">
                                 {% if o.estado == 'Devuelto' %}
                                     <span class="badge bg-dark shadow-sm"><i class="bi bi-arrow-return-left"></i> Devuelto (Stock IN)</span>
                                 {% else %}
-                                    <span class="badge bg-danger shadow-sm"><i class="bi bi-x-circle"></i> Anulado</span>
+                                    <span class="badge bg-danger shadow-sm"><i class="bi bi-x-circle"></i> Cancelado</span>
                                 {% endif %}
                             </td>
                             <td class="text-center">
@@ -687,6 +701,7 @@
                                 </div>
                             </td>
                         </tr>
+                        <!-- ... (Deja tu Fila Expandible Detalle de Productos tal cual está) ... -->
 
                         <!-- Fila Expandible (Detalle de Productos) -->
                         <tr id="detalle_devuelto_{{ o.id }}" class="d-none bg-white">
@@ -987,28 +1002,50 @@ function procesarSalida(orderId) {
 // ============================================================
 function procesarDevolucion(orderId) {
     Swal.fire({
-        title: '¿Registrar Devolución?',
-        html: `<div class="text-start small">
-                   <p>Al confirmar, el sistema hará lo siguiente automáticamente:</p>
-                   <ul class="text-dark fw-bold">
-                       <li>Cambiará el estado de la venta a "Devuelto".</li>
-                       <li>Sumará los productos de regreso al inventario web.</li>
-                       <li>Registrará el ingreso en el Kardex.</li>
-                   </ul>
-                   <div class="alert alert-warning py-2 mt-3 mb-0" style="font-size: 0.8rem;">
-                       <strong><i class="bi bi-exclamation-triangle-fill"></i> Sincronización Excel:</strong><br>
-                       Si actualizaste el stock mediante tu archivo Excel recientemente, recuerda volver a cargar el archivo al final del día para garantizar que la base maestra coincida al 100% con este reingreso automático.
-                   </div>
-               </div>`,
+        title: 'Registrar Devolución',
+        html: `
+            <div class="text-start small">
+                <p>La venta cambiará a "Devuelto" y el stock reingresará al sistema.</p>
+                
+                <label class="form-label fw-bold mt-2">Motivo de la Devolución:</label>
+                <select id="motivo_devolucion" class="form-select mb-2" onchange="toggleDetalle('motivo_devolucion', 'detalle_devolucion')">
+                    <option value="" disabled selected>Seleccione un motivo...</option>
+                    <option value="Producto dañado o defectuoso">Producto dañado o defectuoso</option>
+                    <option value="Producto equivocado (Error de almacén)">Producto equivocado (Error almacén)</option>
+                    <option value="Cliente insatisfecho con la calidad">Cliente insatisfecho con la calidad</option>
+                    <option value="Pedido duplicado">Pedido duplicado</option>
+                    <option value="Otro">Otro (Especificar)</option>
+                </select>
+                <textarea id="detalle_devolucion" class="form-control d-none" placeholder="Escriba el detalle de la devolución aquí..." rows="2"></textarea>
+            </div>`,
         icon: 'warning',
         showCancelButton: true,
         confirmButtonText: 'Sí, Reingresar Stock',
         confirmButtonColor: '#ffc107',
-        cancelButtonText: 'Cancelar'
+        cancelButtonText: 'Cancelar',
+        preConfirm: () => {
+            const motivo = document.getElementById('motivo_devolucion').value;
+            const detalle = document.getElementById('detalle_devolucion').value;
+            if (!motivo) {
+                Swal.showValidationMessage('Debe seleccionar un motivo principal.');
+                return false;
+            }
+            if (motivo === 'Otro' && !detalle.trim()) {
+                Swal.showValidationMessage('Debe especificar el detalle en la caja de texto.');
+                return false;
+            }
+            return { motivo: motivo, detalle: detalle };
+        }
     }).then((result) => {
         if (result.isConfirmed) {
             Swal.fire({ title: 'Procesando devolución...', didOpen: () => { Swal.showLoading() } });
-            fetch(`/api/procesar_devolucion/${orderId}`, { method: 'POST' })
+            
+            // ATENCIÓN: Enviamos los datos por POST en formato JSON
+            fetch(`/api/procesar_devolucion/${orderId}`, { 
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(result.value) 
+            })
             .then(r => r.json()).then(data => {
                 if (data.status === 'success') {
                     Swal.fire('¡Devolución Completada!', data.msg, 'success').then(() => location.reload());
@@ -1025,35 +1062,79 @@ function verItemsDevueltos(id) {
     fila.classList.toggle('d-none');
 }
 
-// CÓDIGO NUEVO
+// ============================================================
+// CANCELAR DESPACHO (DESDE "POR DESPACHAR")
+// ============================================================
 function cancelarDespacho(orderId, codigoVisual) {
     Swal.fire({
-        title: '¿Estás seguro?',
-        text: `¿Deseas CANCELAR el despacho de la ${codigoVisual}? La orden regresará al Historial de Ventas como 'Despacho Cancelado'. No se afectará el stock.`,
-        icon: 'warning',
+        title: 'Cancelar Despacho',
+        html: `
+            <div class="text-start small">
+                <p>¿Cancelar el despacho de la <strong>${codigoVisual}</strong>? La orden irá a Incidencias y no se descontará stock.</p>
+                
+                <label class="form-label fw-bold mt-2">Motivo de Cancelación:</label>
+                <select id="motivo_cancelacion" class="form-select mb-2" onchange="toggleDetalle('motivo_cancelacion', 'detalle_cancelacion')">
+                    <option value="" disabled selected>Seleccione un motivo...</option>
+                    <option value="Cliente canceló a última hora">Cliente canceló a última hora</option>
+                    <option value="Quiebre de stock físico (Faltante)">Quiebre de stock físico (Faltante)</option>
+                    <option value="Dirección o contacto erróneo">Dirección o contacto erróneo</option>
+                    <option value="Problema con la agencia de transporte">Problema con la agencia de transporte</option>
+                    <option value="Otro">Otro (Especificar)</option>
+                </select>
+                <textarea id="detalle_cancelacion" class="form-control d-none" placeholder="Escriba el detalle de la cancelación aquí..." rows="2"></textarea>
+            </div>`,
+        icon: 'error',
         showCancelButton: true,
-        confirmButtonColor: '#3085d6',
-        cancelButtonColor: '#d33',
+        confirmButtonColor: '#d33',
+        cancelButtonColor: '#6c757d',
         confirmButtonText: 'Sí, cancelar despacho',
-        cancelButtonText: 'No, mantener'
+        cancelButtonText: 'No, mantener',
+        preConfirm: () => {
+            const motivo = document.getElementById('motivo_cancelacion').value;
+            const detalle = document.getElementById('detalle_cancelacion').value;
+            if (!motivo) {
+                Swal.showValidationMessage('Debe seleccionar un motivo principal.');
+                return false;
+            }
+            if (motivo === 'Otro' && !detalle.trim()) {
+                Swal.showValidationMessage('Debe especificar el detalle en la caja de texto.');
+                return false;
+            }
+            return { motivo: motivo, detalle: detalle };
+        }
     }).then((result) => {
         if (result.isConfirmed) {
-            // Aquí va tu código original para llamar a la API
-            // Ejemplo usando fetch:
+            Swal.fire({ title: 'Cancelando...', didOpen: () => { Swal.showLoading() } });
+            
+            // ATENCIÓN: Enviamos los datos por POST en formato JSON
             fetch(`/api/cancelar_despacho/${orderId}`, {
-                method: 'POST'
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(result.value)
             })
             .then(response => response.json())
             .then(data => {
                 if (data.status === 'success') {
-                    Swal.fire('¡Cancelado!', data.msg, 'success')
-                    .then(() => location.reload()); // Recarga la página para actualizar la tabla
+                    Swal.fire('¡Cancelado!', data.msg, 'success').then(() => location.reload()); 
                 } else {
                     Swal.fire('Error', data.msg, 'error');
                 }
-            });
+            }).catch(() => Swal.fire('Error', 'Fallo de conexión.', 'error'));
         }
     });
+}
+
+// Función auxiliar para mostrar/ocultar el textarea cuando eligen "Otro"
+function toggleDetalle(selectId, textareaId) {
+    const select = document.getElementById(selectId);
+    const textarea = document.getElementById(textareaId);
+    if (select.value === 'Otro') {
+        textarea.classList.remove('d-none');
+        textarea.focus();
+    } else {
+        textarea.classList.add('d-none');
+        textarea.value = ''; // Limpiar si cambian de opinión
+    }
 }
 
 // ABRIR PESTAÑA CORRECTA AUTOMÁTICAMENTE AL RECARGAR O FILTRAR

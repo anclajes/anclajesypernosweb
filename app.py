@@ -3157,6 +3157,14 @@ def historial_ventas():
         if rol == 'vendedor' or solo_mias: 
             query = query.filter(Order.vendedor_id == user_id)
 
+    elif vista == 'incidencias':
+        # AQUÍ VAN LAS ANULACIONES, CANCELACIONES Y DEVOLUCIONES
+        query = query.filter(Order.estado.in_([
+            'Anulado', 'Rechazado', 'Despacho Cancelado', 'Devuelto'
+        ]))
+        if rol == 'vendedor' or solo_mias: 
+            query = query.filter(Order.vendedor_id == user_id)
+
     # --- 4. AHORA APLICAMOS LA BÚSQUEDA ---
     busqueda = request.args.get('busqueda')
     if busqueda:
@@ -3786,15 +3794,18 @@ def procesar_devolucion(order_id):
     if orden.estado not in ['Entregado', 'Despachado']:
         return {'status': 'error', 'msg': 'Solo se pueden devolver órdenes que ya han salido de almacén.'}
     
+    # --- NUEVO: CAPTURAR EL MOTIVO ---
+    data = request.get_json() or {}
+    motivo_dev = data.get('motivo', 'Devolución sin motivo especificado')
+
     try:
         # ==============================================================
-        # REINGRESO DE STOCK Y REGISTRO EN KARDEX
+        # REINGRESO DE STOCK Y REGISTRO EN KARDEX (MANTENER TU CÓDIGO)
         # ==============================================================
         for detalle in orden.details:
             if detalle.product_id and detalle.item_type == 'PRODUCTO':
                 prod = Product.query.get(detalle.product_id)
                 stock_anterior = prod.stock_actual
-                # Sumamos el stock de regreso
                 prod.stock_actual += detalle.cantidad
                 
                 kardex = ProductMovement(
@@ -3804,7 +3815,7 @@ def procesar_devolucion(order_id):
                     cantidad=detalle.cantidad,
                     stock_anterior=stock_anterior,
                     stock_nuevo=prod.stock_actual,
-                    motivo=f"Ingreso por Devolución - NP-{orden.id:05d}"
+                    motivo=f"Ingreso por Devolución - NP-{orden.id:05d} | Motivo: {motivo_dev}" # Opcional: registrar motivo en Kardex
                 )
                 db.session.add(kardex)
 
@@ -3813,7 +3824,6 @@ def procesar_devolucion(order_id):
                     prod_c = comp.product
                     cantidad_total = comp.cantidad_requerida * detalle.cantidad
                     stock_ant_c = prod_c.stock_actual
-                    # Sumamos el stock de los componentes del kit
                     prod_c.stock_actual += cantidad_total
                     
                     kardex_c = ProductMovement(
@@ -3823,13 +3833,15 @@ def procesar_devolucion(order_id):
                         cantidad=cantidad_total,
                         stock_anterior=stock_ant_c,
                         stock_nuevo=prod_c.stock_actual,
-                        motivo=f"Ingreso Devolución Kit NP-{orden.id:05d} - {detalle.nombre_personalizado_titulo[:15]}"
+                        motivo=f"Ingreso Dev. Kit NP-{orden.id:05d} - {detalle.nombre_personalizado_titulo[:15]}"
                     )
                     db.session.add(kardex_c)
 
-        # Cambiamos el estado a Devuelto
+        # Cambiamos el estado, guardamos fecha y EL MOTIVO
         orden.estado = 'Devuelto'
         orden.fecha_devolucion = hora_peru()
+        orden.motivo_devolucion = motivo_dev # <--- AQUÍ SE GUARDA
+
         db.session.commit()
         
         return {'status': 'success', 'msg': 'Stock reingresado automáticamente y orden marcada como Devuelta.'}
@@ -3848,17 +3860,21 @@ def cancelar_despacho(order_id):
     if orden.estado != 'Por Despachar':
         return {'status': 'error', 'msg': 'La orden no está en estado Por Despachar'}, 400
 
+    # --- NUEVO: CAPTURAR EL MOTIVO ---
+    data = request.get_json() or {}
+    motivo = data.get('motivo', 'Sin motivo especificado')
+
     try:
-        # 1. CAMBIAMOS EL ESTADO AL NUEVO NOMBRE
         orden.estado = 'Despacho Cancelado'
-        
-        # 2. Registramos cuándo se canceló usando la misma columna de cierre
         orden.fecha_devolucion = hora_peru() 
+        
+        # Guardamos el motivo para las estadísticas futuras
+        orden.motivo_anulacion = motivo 
 
         # NO TOCAMOS EL STOCK ACTUAL DE LOS PRODUCTOS
 
         db.session.commit()
-        return {'status': 'success', 'msg': 'Despacho cancelado. La orden fue enviada al Historial de Ventas.'}
+        return {'status': 'success', 'msg': 'Despacho cancelado. La orden fue enviada al Historial.'}
     
     except Exception as e:
         db.session.rollback()
@@ -4497,46 +4513,61 @@ def fix_revisor():
 def fix_render_db():
     try:
         from sqlalchemy import text
-        # El secreto está aquí: isolation_level="AUTOCOMMIT"
-        # Esto evita que un error previo (como "la columna ya existe") bloquee las siguientes.
+        # isolation_level="AUTOCOMMIT" evita que un error previo bloquee las siguientes consultas
         with db.engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
             
-            # 1. Ampliar el límite de caracteres de la columna 'estado'
+            # 1. Chofer ID (ubicado arriba en el modelo, pero faltaba registrar)
             try:
-                conn.execute(text('ALTER TABLE "order" ALTER COLUMN estado TYPE VARCHAR(50)'))
+                conn.execute(text('ALTER TABLE "order" ADD COLUMN chofer_id INTEGER'))
             except Exception as e:
-                print(f"Aviso estado: {e}")
+                print(f"Aviso chofer_id: {e}")
 
-            # 2. Agregar fecha de revisión inicial
+            # 2. Datos de Almacén (Nuevos)
             try:
-                conn.execute(text('ALTER TABLE "order" ADD COLUMN fecha_revision_inicial TIMESTAMP'))
+                conn.execute(text('ALTER TABLE "order" ADD COLUMN peso_total VARCHAR(50)'))
             except Exception as e:
-                print(f"Aviso fecha_rev: {e}")
-
-            # 3. Agregar nombre del revisor
-            try:
-                conn.execute(text('ALTER TABLE "order" ADD COLUMN revisor_inicial_nombre VARCHAR(100)'))
-            except Exception as e:
-                print(f"Aviso revisor: {e}")
+                print(f"Aviso peso_total: {e}")
                 
-            # 4. Agregar días hábiles de entrega
             try:
-                conn.execute(text('ALTER TABLE "order" ADD COLUMN dias_habiles_entrega INTEGER'))
+                conn.execute(text('ALTER TABLE "order" ADD COLUMN cantidad_bultos VARCHAR(50)'))
             except Exception as e:
-                print(f"Aviso dias_habiles: {e}")
+                print(f"Aviso cantidad_bultos: {e}")
 
-            # -------------------------------------------------------------
-            # 5. NUEVO: AGREGAR FECHA DE DEVOLUCIÓN PARA ANULADOS/DEVUELTOS
-            # -------------------------------------------------------------
+            # 3. Categorías y detalles de Cancelación / Rechazos
             try:
-                conn.execute(text('ALTER TABLE "order" ADD COLUMN fecha_devolucion TIMESTAMP'))
+                conn.execute(text('ALTER TABLE "order" ADD COLUMN categoria_cancelacion VARCHAR(100)'))
             except Exception as e:
-                print(f"Aviso fecha_devolucion: {e}")
+                print(f"Aviso categoria_cancelacion: {e}")
 
-        return "<h2>✅ Base de datos en Render actualizada. Las columnas (incluyendo fecha_devolucion) se procesaron de forma independiente.</h2>"
+            try:
+                conn.execute(text('ALTER TABLE "order" ADD COLUMN detalle_cancelacion TEXT'))
+            except Exception as e:
+                print(f"Aviso detalle_cancelacion: {e}")
+
+            try:
+                conn.execute(text('ALTER TABLE "order" ADD COLUMN fecha_cancelacion TIMESTAMP'))
+            except Exception as e:
+                print(f"Aviso fecha_cancelacion: {e}")
+
+            try:
+                conn.execute(text('ALTER TABLE "order" ADD COLUMN usuario_cancela_id INTEGER'))
+            except Exception as e:
+                print(f"Aviso usuario_cancela_id: {e}")
+
+            # 4. Motivos de Anulación y Devolución
+            try:
+                conn.execute(text('ALTER TABLE "order" ADD COLUMN motivo_anulacion VARCHAR(255)'))
+            except Exception as e:
+                print(f"Aviso motivo_anulacion: {e}")
+
+            try:
+                conn.execute(text('ALTER TABLE "order" ADD COLUMN motivo_devolucion VARCHAR(255)'))
+            except Exception as e:
+                print(f"Aviso motivo_devolucion: {e}")
+
+        return "<h2>✅ Base de datos en Render actualizada. Solo se agregaron los últimos campos faltantes.</h2>"
     except Exception as e:
         return f"<h2>❌ Error general: {str(e)}</h2>"
-
 # --- ARRANQUE DE LA APLICACIÓN ---
 if __name__ == '__main__':
     # host='0.0.0.0' permite que otras PCs/celulares en la red te vean

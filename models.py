@@ -151,6 +151,14 @@ class Order(db.Model):
     # --- ESTADO DE PAGO ---
     monto_pagado = db.Column(db.Float, default=0.0)
     estado_pago = db.Column(db.String(20), default='Pendiente') 
+
+    categoria_cancelacion = db.Column(db.String(100), nullable=True) # Ej: 'Precio muy alto'
+    detalle_cancelacion = db.Column(db.Text, nullable=True) # Para cuando eligen "Otro"
+    fecha_cancelacion = db.Column(db.DateTime, nullable=True)
+    usuario_cancela_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+
+    motivo_anulacion = db.Column(db.String(255), nullable=True)
+    motivo_devolucion = db.Column(db.String(255), nullable=True)
     
     # --- RELACIONES (AQUÍ ESTÁ LA CORRECCIÓN DEL ERROR) ---
     
