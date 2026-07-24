@@ -1025,23 +1025,35 @@ function verItemsDevueltos(id) {
     fila.classList.toggle('d-none');
 }
 
-function cancelarDespacho(orderId, numeroCot) {
-    if(confirm(`¿Estás seguro de CANCELAR el despacho de la ${numeroCot}?\n\nLa orden desaparecerá de almacén y regresará al Historial de Ventas como 'Despacho Cancelado'. No se afectará el stock.`)) {
-        
-        fetch(`/api/cancelar_despacho/${orderId}`, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'}
-        })
-        .then(response => response.json())
-        .then(data => {
-            if(data.status === 'success') {
-                alert(data.msg);
-                location.reload(); 
-            } else {
-                alert('Error: ' + data.msg);
-            }
-        });
-    }
+// CÓDIGO NUEVO
+function cancelarDespacho(orderId, codigoVisual) {
+    Swal.fire({
+        title: '¿Estás seguro?',
+        text: `¿Deseas CANCELAR el despacho de la ${codigoVisual}? La orden regresará al Historial de Ventas como 'Despacho Cancelado'. No se afectará el stock.`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#3085d6',
+        cancelButtonColor: '#d33',
+        confirmButtonText: 'Sí, cancelar despacho',
+        cancelButtonText: 'No, mantener'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            // Aquí va tu código original para llamar a la API
+            // Ejemplo usando fetch:
+            fetch(`/api/cancelar_despacho/${orderId}`, {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    Swal.fire('¡Cancelado!', data.msg, 'success')
+                    .then(() => location.reload()); // Recarga la página para actualizar la tabla
+                } else {
+                    Swal.fire('Error', data.msg, 'error');
+                }
+            });
+        }
+    });
 }
 
 // ABRIR PESTAÑA CORRECTA AUTOMÁTICAMENTE AL RECARGAR O FILTRAR

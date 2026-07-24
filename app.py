@@ -3152,7 +3152,7 @@ def historial_ventas():
 
     elif vista == 'historial':
         query = query.filter(Order.estado.in_([
-            'Por Despachar', 'Entregado', 'Despachado', 'Anulado', 'Rechazado', 'Devuelto'
+            'Por Despachar', 'Entregado', 'Despachado', 'Anulado', 'Rechazado', 'Devuelto', 'Despacho Cancelado'
         ]))
         if rol == 'vendedor' or solo_mias: 
             query = query.filter(Order.vendedor_id == user_id)
