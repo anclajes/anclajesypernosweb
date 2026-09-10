@@ -33,6 +33,26 @@
     .editable-cell:focus { border-color: var(--theme-primary); outline: none; background: #f8f9fa; }
     .stock-insuficiente { background-color: #ffe6e6 !important; border-color: #dc3545 !important; color: #dc3545 !important; font-weight: bold; }
     .product-name-cell { white-space: normal !important; word-wrap: break-word; font-size: 0.9rem; line-height: 1.3; font-weight: 600; color: #212529; }
+
+    /* --- 4. AJUSTE ESPECÍFICO: PERMITIR QUE EL NOMBRE DEL PRODUCTO SE VEA COMPLETO --- */
+    #productoSelect + .select2-container .select2-selection--single {
+        height: auto !important;
+        min-height: 42px;
+        padding: 6px 10px;
+        white-space: normal;
+        display: flex;
+        align-items: center;
+    }
+    #productoSelect + .select2-container .select2-selection--single .select2-selection__rendered {
+        white-space: normal;
+        line-height: 1.3;
+        word-break: break-word;
+        padding-left: 4px;
+        padding-right: 20px; /* deja espacio para la flechita */
+    }
+    #productoSelect + .select2-container .select2-selection--single .select2-selection__arrow {
+        height: 100% !important;
+    }
 </style>
 
 <!-- ENCABEZADO RESPONSIVE -->
@@ -400,20 +420,22 @@
                     </div>
 
                     <div class="row g-2 mb-2">
-                        <div class="col-12 col-md-4">
+                        <div class="col-12 col-sm-6">
                             <label class="small text-muted mb-1 fw-bold">1. Familia</label>
                             <select class="form-select form-select-sm shadow-sm border-secondary" id="filtroFamiliaVenta" onchange="window.cargarCalidadesVenta()">
                                 <option value="" selected>-- Seleccione --</option>
                                 {% for c in categorias %} <option value="{{ c.id }}" data-nombre="{{ c.nombre }}">{{ c.nombre }}</option> {% endfor %}
                             </select>
                         </div>
-                        <div class="col-12 col-md-4">
+                        <div class="col-12 col-sm-6">
                             <label class="small text-muted mb-1 fw-bold">2. Calidad</label>
                             <select class="form-select form-select-sm shadow-sm border-secondary" id="filtroCalidadVenta" disabled onchange="window.cargarProductos()">
                                 <option value="">-- Espere familia --</option>
                             </select>
                         </div>
-                        <div class="col-12 col-md-4">
+                    </div>
+                    <div class="row g-2 mb-2">
+                        <div class="col-12">
                             <label class="small text-muted mb-1 fw-bold" style="color: var(--theme-primary) !important;">3. Buscar Producto</label>
                             <div class="input-group input-group-sm mb-1 shadow-sm">
                                 <span class="input-group-text bg-warning bg-opacity-25 border-warning" title="Escaneo rápido de código"><i class="bi bi-upc-scan"></i></span>
@@ -424,7 +446,7 @@
                             <select class="form-select shadow-sm" id="productoSelect" style="width: 100%;">
                                 <option value="" disabled selected>Escriba el código o la descripción...</option>
                             </select>
-                        </div>  
+                        </div>
                     </div>
                 </div>
 
@@ -2830,15 +2852,8 @@ document.getElementById('btnAgregar').addEventListener('click', () => {
     });
 
         $('#productoSelect').on('select2:select', function (e) {
-
-            const opt = $(this).find(':selected'); stockActualSeleccionado = parseInt(opt.data('stock')) || 0;
-
-            $('#info_stock').val(stockActualSeleccionado); let precioBaseUSD = parseFloat(opt.data('punit')) || 0;
-
-            $('#precioBaseHidden').val(precioBaseUSD); calcularPrecioUnitarioVisual(); $('#precioManualInput').focus(); document.getElementById('btnAgregar').disabled = false;
-
-            compararPrecioAlerta();
-
+            const opt = this.options[this.selectedIndex];
+            aplicarProductoAlPanel(opt);
         });
 
         $('#productoSelect').on('select2:clear', function (e) { stockActualSeleccionado = 0; $('#info_stock').val(""); $('#precioBaseHidden').val(""); $('#precioManualInput').val(""); document.getElementById('btnAgregar').disabled = true; calcularSubtotalPrevio(); });
@@ -4616,6 +4631,21 @@ function cargarProductos() {
     });
 }
 
+// Centraliza lo que pasa cuando se elige un producto: carga stock, precio base,
+// enfoca el precio y habilita el botón. Se usa tanto al elegir del dropdown
+// como al escanear un código exacto.
+function aplicarProductoAlPanel(opt) {
+    if (!opt) return;
+    stockActualSeleccionado = parseInt(opt.getAttribute('data-stock')) || 0;
+    $('#info_stock').val(stockActualSeleccionado);
+    let precioBaseUSD = parseFloat(opt.getAttribute('data-punit')) || 0;
+    $('#precioBaseHidden').val(precioBaseUSD);
+    calcularPrecioUnitarioVisual();
+    $('#precioManualInput').focus();
+    document.getElementById('btnAgregar').disabled = false;
+    compararPrecioAlerta();
+}
+
 function buscarPorCodigoExacto() {
     const codigo = document.getElementById('inputEscaneoRapido').value.trim();
     if (!codigo) return;
@@ -4634,6 +4664,7 @@ function buscarPorCodigoExacto() {
 
     if (encontrado) {
         $('#productoSelect').val(encontrado.value).trigger('change');
+        aplicarProductoAlPanel(encontrado);   // <-- NUEVO: activa precio/stock/botón
         document.getElementById('inputEscaneoRapido').value = '';
         document.getElementById('inputEscaneoRapido').focus();
         return;
@@ -4667,8 +4698,10 @@ function buscarPorCodigoExacto() {
             'data-estado': match.estado || '', 'data-origen': inventarioActivo
         });
         select2.append(o).trigger('change');
+        aplicarProductoAlPanel(o);   // <-- NUEVO: activa precio/stock/botón
 
         document.getElementById('inputEscaneoRapido').value = '';
+        document.getElementById('inputEscaneoRapido').focus();
     });
 }
 
