@@ -89,6 +89,18 @@
                     <i class="bi bi-arrow-left-right me-2"></i> <span>Traslados Inter-Empresa</span>
                 </a>
                 {% endif %}
+
+                {% if session.get('role') in ['admin', 'administracion'] %}
+                <div class="nav-title">Sistema</div>
+                {% if session.get('role') == 'admin' %}
+                <a href="{{ url_for('gestion_usuarios') }}" class="nav-link {{ 'active' if request.endpoint == 'gestion_usuarios' }}">
+                    <i class="bi bi-people me-2"></i> <span>Usuarios</span>
+                </a>
+                {% endif %}
+                <a href="{{ url_for('metas_vendedores') }}" class="nav-link {{ 'active' if request.endpoint == 'metas_vendedores' }}">
+                    <i class="bi bi-bullseye me-2"></i> <span>Metas de Venta</span>
+                </a>
+                {% endif %}
             </div>
         </div>
 
