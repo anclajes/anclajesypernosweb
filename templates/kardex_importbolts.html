@@ -116,9 +116,15 @@
                         {% else %}
                             <span class="badge bg-danger-subtle text-danger border border-danger px-3">SALIDA</span>
                         {% endif %}
+                        {% if 'Inter-Empresa' in m.motivo or 'Retorno de mercadería' in m.motivo %}
+                            <br>
+                            <span class="badge mt-1" style="background-color:#6f42c1; color:white; font-size:0.6rem;" title="Movimiento por traslado/venta entre Anclajes e ImportBolts">
+                                <i class="bi bi-arrow-left-right"></i> INTER-EMPRESA
+                            </span>
+                        {% endif %}
                     </td>
                     
-                    <td class="fst-italic text-truncate" style="max-width: 200px;" title="{{ m.motivo }}">
+                    <td class="fst-italic" style="max-width: 280px; white-space: normal; word-break: break-word; font-size: 0.85rem;">
                         {{ m.motivo }}
                     </td>
                     

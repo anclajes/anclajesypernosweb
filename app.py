@@ -4013,6 +4013,7 @@ def ver_kardex():
     tipo_mov = request.args.get('tipo')
     if tipo_mov and tipo_mov in ['ENTRADA', 'SALIDA']:
         query = query.filter(ProductMovement.tipo == tipo_mov)
+        
 
     # ---> NUEVO: FILTRO PARA OCULTAR SALDOS INICIALES <---
     ocultar_iniciales = request.args.get('ocultar_iniciales')
@@ -4028,6 +4029,15 @@ def ver_kardex():
         start = datetime.strptime(fecha_inicio, '%Y-%m-%d')
         end = datetime.strptime(fecha_fin + " 23:59:59", '%Y-%m-%d %H:%M:%S')
         query = query.filter(ProductMovement.fecha.between(start, end))
+
+    solo_interempresa = request.args.get('solo_interempresa')
+    if solo_interempresa == 'on':
+        query = query.filter(
+            or_(
+                ProductMovement.motivo.ilike('%Inter-Empresa%'),
+                ProductMovement.motivo.ilike('%Retorno de mercadería%')
+            )
+        )
         
     # --- NUEVO: PAGINACIÓN (En vez del limit) ---
     query = query.order_by(ProductMovement.fecha.desc())

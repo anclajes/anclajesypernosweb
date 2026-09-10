@@ -63,6 +63,12 @@
                 <input type="date" name="fecha_fin" class="form-control form-control-sm" value="{{ request.args.get('fecha_fin', '') }}">
             </div>
 
+            <div class="form-check form-switch d-inline-block text-start mb-2 w-100 px-2 py-1 bg-white border rounded">
+                <input class="form-check-input ms-0 me-2" type="checkbox" name="solo_interempresa" id="checkInterempresa" 
+                    onchange="this.form.submit()" {% if request.args.get('solo_interempresa') == 'on' %}checked{% endif %}>
+                <label class="form-check-label small text-muted fw-bold" for="checkInterempresa" style="font-size: 0.7rem;">Solo Inter-Empresa</label>
+            </div>
+
             <div class="col-md-2 text-end">
                 <div class="form-check form-switch d-inline-block text-start mb-2 w-100 px-2 py-1 bg-white border rounded">
                     <input class="form-check-input ms-0 me-2" type="checkbox" name="ocultar_iniciales" id="checkIniciales" 
@@ -116,9 +122,15 @@
                         {% else %}
                             <span class="badge bg-danger-subtle text-danger border border-danger px-3">SALIDA</span>
                         {% endif %}
+                        {% if 'Inter-Empresa' in m.motivo or 'Retorno de mercadería' in m.motivo %}
+                            <br>
+                            <span class="badge mt-1" style="background-color:#6f42c1; color:white; font-size:0.6rem;" title="Movimiento por traslado/venta entre Anclajes e ImportBolts">
+                                <i class="bi bi-arrow-left-right"></i> INTER-EMPRESA
+                            </span>
+                        {% endif %}
                     </td>
                     
-                    <td class="fst-italic text-truncate" style="max-width: 200px;" title="{{ m.motivo }}">
+                    <td class="fst-italic" style="max-width: 280px; white-space: normal; word-break: break-word; font-size: 0.85rem;">
                         {{ m.motivo }}
                     </td>
                     
