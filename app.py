@@ -3873,6 +3873,7 @@ def nuevo_producto():
             stock_min = int(request.form.get('stock_minimo', 10))
             p_unidad = float(request.form['p_unidad']) if request.form['p_unidad'] else 0.0
             p_caja = float(request.form['p_caja']) if request.form['p_caja'] else 0.0
+            peso_kg = float(request.form.get('peso_kg', 0) or 0)
         except:
             return {'status': 'error', 'msg': 'Formato numérico inválido'}
 
@@ -3896,7 +3897,7 @@ def nuevo_producto():
         nuevo = Product(
             sku=sku_final, nombre=nombre, categoria=familia_nombre, calidad=calidad,
             ubicacion=ubicacion, stock_actual=stock, stock_minimo=stock_min, # Guardar
-            precio_unidad=p_unidad, precio_caja=p_caja, precio_docena=p_unidad * 0.9, costo_referencial=0.0
+            precio_unidad=p_unidad, precio_caja=p_caja, peso_kg=peso_kg, precio_docena=p_unidad * 0.9, costo_referencial=0.0
         )
         db.session.add(nuevo)
         db.session.flush()
@@ -5724,6 +5725,7 @@ def nuevo_producto_importbolts():
             stock_min = int(request.form.get('stock_minimo', 10))
             p_unidad = float(request.form['p_unidad']) if request.form['p_unidad'] else 0.0
             p_caja = float(request.form['p_caja']) if request.form['p_caja'] else 0.0
+            peso_kg = float(request.form.get('peso_kg', 0) or 0)
         except:
             return {'status': 'error', 'msg': 'Formato numérico inválido'}
 
@@ -5747,7 +5749,7 @@ def nuevo_producto_importbolts():
         nuevo = ProductImportBolts(
             sku=sku_final, nombre=nombre, categoria=familia_nombre, calidad=calidad,
             ubicacion=ubicacion, stock_actual=stock, stock_minimo=stock_min,
-            precio_unidad=p_unidad, precio_caja=p_caja, precio_docena=p_unidad * 0.9, costo_referencial=0.0
+            precio_unidad=p_unidad, precio_caja=p_caja, peso_kg=peso_kg, precio_docena=p_unidad * 0.9, costo_referencial=0.0
         )
         db.session.add(nuevo)
         db.session.flush()
@@ -6045,6 +6047,55 @@ def ver_kardex_importbolts():
                            categorias=categorias,
                            pagination=pagination)
 
+@app.route('/inventario_general')
+def inventario_general():
+    if session.get('user_id') is None: return redirect(url_for('login'))
+
+    busqueda = request.args.get('busqueda', '').strip()
+    origen_filtro = request.args.get('origen', 'todos')
+    page = request.args.get('page', 1, type=int)
+    per_page = 30
+
+    resultados = []
+
+    if origen_filtro in ['todos', 'ANCLAJES']:
+        q = Product.query.filter(Product.es_shadow_importbolts.isnot(True))
+        if busqueda:
+            q = q.filter(or_(Product.nombre.ilike(f"%{busqueda}%"), Product.sku.ilike(f"%{busqueda}%")))
+        for p in q.all():
+            resultados.append({
+                'sku': p.sku, 'nombre': p.nombre, 'categoria': p.categoria, 'calidad': p.calidad,
+                'ubicacion': p.ubicacion, 'stock': p.stock_actual, 'stock_min': p.stock_minimo,
+                'peso_kg': p.peso_kg or 0, 'origen': 'ANCLAJES'
+            })
+
+    if origen_filtro in ['todos', 'IMPORTBOLTS']:
+        q2 = ProductImportBolts.query
+        if busqueda:
+            q2 = q2.filter(or_(ProductImportBolts.nombre.ilike(f"%{busqueda}%"), ProductImportBolts.sku.ilike(f"%{busqueda}%")))
+        for p in q2.all():
+            resultados.append({
+                'sku': p.sku, 'nombre': p.nombre, 'categoria': p.categoria, 'calidad': p.calidad,
+                'ubicacion': p.ubicacion, 'stock': p.stock_actual, 'stock_min': p.stock_minimo,
+                'peso_kg': p.peso_kg or 0, 'origen': 'IMPORTBOLTS'
+            })
+
+    resultados.sort(key=lambda x: x['nombre'])
+
+    total = len(resultados)
+    inicio = (page - 1) * per_page
+    fin = inicio + per_page
+    pagina_actual = resultados[inicio:fin]
+    total_paginas = (total // per_page) + (1 if total % per_page else 0)
+
+    return render_template('inventario_general.html',
+                           productos=pagina_actual,
+                           busqueda=busqueda,
+                           origen_filtro=origen_filtro,
+                           page=page,
+                           total_paginas=total_paginas,
+                           total=total)
+
 @app.route('/traslados_intercompany')
 def traslados_intercompany():
     if session.get('role') not in ['admin', 'administracion']:
@@ -6208,6 +6259,64 @@ def metas_vendedores():
 
     return render_template('metas_vendedores.html', datos=datos, anio_actual=hoy.year, mes_actual=hoy.month)
 
+@app.route('/api/sugerir_codigos_relacionados', methods=['POST'])
+def sugerir_codigos_relacionados():
+    if session.get('user_id') is None: return {'status': 'error'}, 403
+    familia = request.form.get('familia', '').strip()
+    calidad = request.form.get('calidad', '').strip()
+    nombre = request.form.get('nombre', '').strip()
+
+    query = Product.query
+    filtros = []
+    if familia:
+        filtros.append(Product.categoria == familia)
+    if calidad:
+        filtros.append(Product.calidad.ilike(f"%{calidad}%"))
+    if nombre and len(nombre) >= 3:
+        # Busca coincidencia por palabras del nombre, no exacta
+        for palabra in nombre.split()[:3]:
+            if len(palabra) >= 3:
+                filtros.append(Product.nombre.ilike(f"%{palabra}%"))
+
+    if not filtros:
+        return {'status': 'success', 'productos': []}
+
+    productos = query.filter(or_(*filtros)).order_by(Product.sku.asc()).limit(15).all()
+    lista = [{
+        'sku': p.sku, 'nombre': p.nombre, 'categoria': p.categoria,
+        'calidad': p.calidad, 'stock': p.stock_actual
+    } for p in productos]
+    return {'status': 'success', 'productos': lista}
+
+
+@app.route('/api/sugerir_codigos_relacionados_importbolts', methods=['POST'])
+def sugerir_codigos_relacionados_importbolts():
+    if session.get('user_id') is None: return {'status': 'error'}, 403
+    familia = request.form.get('familia', '').strip()
+    calidad = request.form.get('calidad', '').strip()
+    nombre = request.form.get('nombre', '').strip()
+
+    query = ProductImportBolts.query
+    filtros = []
+    if familia:
+        filtros.append(ProductImportBolts.categoria == familia)
+    if calidad:
+        filtros.append(ProductImportBolts.calidad.ilike(f"%{calidad}%"))
+    if nombre and len(nombre) >= 3:
+        for palabra in nombre.split()[:3]:
+            if len(palabra) >= 3:
+                filtros.append(ProductImportBolts.nombre.ilike(f"%{palabra}%"))
+
+    if not filtros:
+        return {'status': 'success', 'productos': []}
+
+    productos = query.filter(or_(*filtros)).order_by(ProductImportBolts.sku.asc()).limit(15).all()
+    lista = [{
+        'sku': p.sku, 'nombre': p.nombre, 'categoria': p.categoria,
+        'calidad': p.calidad, 'stock': p.stock_actual
+    } for p in productos]
+    return {'status': 'success', 'productos': lista}
+
 
 @app.route('/api/establecer_meta_vendedor', methods=['POST'])
 def establecer_meta_vendedor():
@@ -6238,29 +6347,21 @@ def establecer_meta_vendedor():
 # --- RUTA SECRETA PARA INICIALIZAR LA BASE DE DATOS EN RENDER ---
 
 
-@app.route('/fix_shadow_product_columns')
-def fix_shadow_product_columns():
+@app.route('/fix_peso_kg_productos')
+def fix_peso_kg_productos():
     try:
         with db.engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
             try:
-                conn.execute(text("ALTER TABLE product ADD COLUMN es_shadow_importbolts BOOLEAN DEFAULT FALSE"))
+                conn.execute(text("ALTER TABLE product ADD COLUMN peso_kg FLOAT DEFAULT 0.0"))
             except Exception as e:
-                print(f"Aviso: {e}")
+                print(f"Aviso product: {e}")
             try:
-                conn.execute(text("ALTER TABLE product ADD COLUMN shadow_origen_sku VARCHAR(50)"))
+                conn.execute(text("ALTER TABLE product_importbolts ADD COLUMN peso_kg FLOAT DEFAULT 0.0"))
             except Exception as e:
-                print(f"Aviso: {e}")
-        return "<h2>✅ Columnas de producto sombra agregadas.</h2>"
+                print(f"Aviso product_importbolts: {e}")
+        return "<h2>✅ Columna peso_kg agregada a ambas tablas de productos.</h2>"
     except Exception as e:
         return f"<h2>Error: {str(e)}</h2>"
-
-@app.route('/fix_meta_vendedor')
-def fix_meta_vendedor():
-    try:
-        db.create_all()
-        return "<h2>✅ Tabla meta_vendedor creada correctamente.</h2>"
-    except Exception as e:
-        return f"<h2>❌ Error: {str(e)}</h2>"
     
 # --- ARRANQUE DE LA APLICACIÓN ---
 if __name__ == '__main__':

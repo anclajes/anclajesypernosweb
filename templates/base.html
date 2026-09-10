@@ -43,6 +43,11 @@
                 <div class="collapse {{ 'show' if request.endpoint in ['inventario', 'inventario_importbolts', 'crear_producto', 'editar_producto', 'ver_kardex', 'ver_kardex_importbolts'] else '' }}" id="collapseInventario">
                     <ul class="nav flex-column ms-2 mb-2" style="border-left: 1px solid rgba(255,255,255,0.1);">
                         <li>
+                            <a href="{{ url_for('inventario_general') }}" class="nav-link py-2 ps-3 {{ 'active' if request.endpoint == 'inventario_general' }}">
+                                <i class="bi bi-collection fs-6 me-2"></i> <span>Vista General</span>
+                            </a>
+                        </li>
+                        <li>
                             <a href="{{ url_for('inventario') }}" class="nav-link py-2 ps-3 {{ 'active' if request.endpoint == 'inventario' }}">
                                 <i class="bi bi-circle fs-6 me-2"></i> <span>Inv. Anclajes</span>
                             </a>

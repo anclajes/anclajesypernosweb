@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Inventario General{% endblock %}
+{% block subtitle %}Vista combinada: Anclajes + Import Bolts (solo consulta){% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="mb-0"><i class="bi bi-boxes text-primary"></i> Inventario General</h2>
+    <span class="badge bg-secondary fs-6">{{ total }} productos</span>
+</div>
+
+<div class="alert alert-light border small py-2 mb-3">
+    <i class="bi bi-info-circle-fill text-primary"></i>
+    Vista de solo consulta para búsqueda rápida. Para editar productos, ve al inventario específico de cada empresa.
+</div>
+
+<div class="card bg-light border-0 shadow-sm mb-3">
+    <div class="card-body py-3">
+        <form method="GET" class="row g-2 align-items-end">
+            <div class="col-12 col-md-6">
+                <label class="small fw-bold text-muted">Buscar (Código o Descripción)</label>
+                <input type="text" name="busqueda" class="form-control" placeholder="Ej: PERNO HEX, TORD006..." value="{{ busqueda }}">
+            </div>
+            <div class="col-8 col-md-3">
+                <label class="small fw-bold text-muted">Inventario</label>
+                <select name="origen" class="form-select">
+                    <option value="todos" {% if origen_filtro == 'todos' %}selected{% endif %}>Ambos</option>
+                    <option value="ANCLAJES" {% if origen_filtro == 'ANCLAJES' %}selected{% endif %}>Solo Anclajes</option>
+                    <option value="IMPORTBOLTS" {% if origen_filtro == 'IMPORTBOLTS' %}selected{% endif %}>Solo Import Bolts</option>
+                </select>
+            </div>
+            <div class="col-4 col-md-3">
+                <button type="submit" class="btn btn-primary w-100"><i class="bi bi-search"></i> Buscar</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0">
+    <div class="card-body p-0 table-responsive">
+        <table class="table table-hover align-middle mb-0 small text-nowrap">
+            <thead class="table-dark">
+                <tr>
+                    <th class="ps-3">Origen</th>
+                    <th>Código</th>
+                    <th>Descripción</th>
+                    <th>Familia</th>
+                    <th>Calidad</th>
+                    <th>Ubicación</th>
+                    <th class="text-center">Peso (Kg)</th>
+                    <th class="text-center">Stock</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in productos %}
+                <tr>
+                    <td class="ps-3">
+                        {% if p.origen == 'IMPORTBOLTS' %}
+                            <span class="badge" style="background-color:#8BC34A; color:#1B5E20;"><i class="bi bi-globe-americas"></i> IB</span>
+                        {% else %}
+                            <span class="badge text-white" style="background-color:#0B3D91;"><i class="bi bi-building"></i> ANC</span>
+                        {% endif %}
+                    </td>
+                    <td class="fw-bold text-primary">{{ p.sku }}</td>
+                    <td class="text-wrap" style="min-width:250px;">{{ p.nombre }}</td>
+                    <td><span class="badge bg-light text-dark border">{{ p.categoria }}</span></td>
+                    <td>{{ p.calidad or '-' }}</td>
+                    <td>{% if p.ubicacion %}<i class="bi bi-geo-alt-fill text-danger small"></i> {{ p.ubicacion }}{% else %}-{% endif %}</td>
+                    <td class="text-center">{{ "%.3f"|format(p.peso_kg) if p.peso_kg else '-' }}</td>
+                    <td class="text-center">
+                        {% if p.stock <= p.stock_min %}
+                            <span class="badge bg-danger-subtle text-danger border border-danger fw-bold">{{ p.stock }}</span>
+                        {% else %}
+                            <span class="badge bg-success-subtle text-success border border-success">{{ p.stock }}</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="8" class="text-center py-5 text-muted">No se encontraron productos.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% if total_paginas > 1 %}
+    <div class="card-footer bg-white py-3">
+        <ul class="pagination pagination-sm justify-content-center mb-0">
+            {% for p_num in range(1, total_paginas + 1) %}
+            <li class="page-item {% if p_num == page %}active{% endif %}">
+                <a class="page-link" href="{{ url_for('inventario_general', page=p_num, busqueda=busqueda, origen=origen_filtro) }}">{{ p_num }}</a>
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
