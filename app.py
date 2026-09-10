@@ -5949,6 +5949,15 @@ def ver_kardex_importbolts():
         start = datetime.strptime(fecha_inicio, '%Y-%m-%d')
         end = datetime.strptime(fecha_fin + " 23:59:59", '%Y-%m-%d %H:%M:%S')
         query = query.filter(ProductMovementImportBolts.fecha.between(start, end))
+
+    solo_interempresa = request.args.get('solo_interempresa')
+    if solo_interempresa == 'on':
+        query = query.filter(
+            or_(
+                ProductMovementImportBolts.motivo.ilike('%Inter-Empresa%'),
+                ProductMovementImportBolts.motivo.ilike('%Retorno de mercadería%')
+            )
+        )
         
     query = query.order_by(ProductMovementImportBolts.fecha.desc())
     

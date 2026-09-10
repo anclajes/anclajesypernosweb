@@ -21,62 +21,80 @@
 
 <div class="card mb-4 bg-light border-0 shadow-sm">
     <div class="card-body py-3">
-        <form class="row g-2 align-items-end" method="GET">
-            
-            <div class="col-md-2">
-                <label class="small fw-bold text-muted">Buscar</label>
-                <input type="text" name="busqueda" class="form-control form-control-sm" 
-                       placeholder="SKU / Motivo..." value="{{ request.args.get('busqueda', '') }}">
-            </div>
-
-            <div class="col-md-2">
-                <label class="small fw-bold text-muted">Categoría</label>
-                <select name="categoria" class="form-select form-select-sm">
-                    <option value="todas">Todas</option>
-                    {% for c in categorias %}
-                    <option value="{{ c.nombre }}" {% if request.args.get('categoria') == c.nombre %}selected{% endif %}>
-                        {{ c.nombre }}
-                    </option>
-                    {% endfor %}
-                </select>
-            </div>
-
-            <div class="col-md-2">
-                <label class="small fw-bold text-muted">Tipo Mov.</label>
-                <select name="tipo" class="form-select form-select-sm fw-bold text-primary">
-                    <option value="" class="text-dark">-- Todos --</option>
-                    <option value="ENTRADA" class="text-success" {% if request.args.get('tipo') == 'ENTRADA' %}selected{% endif %}>
-                        ➕ ENTRADAS
-                    </option>
-                    <option value="SALIDA" class="text-danger" {% if request.args.get('tipo') == 'SALIDA' %}selected{% endif %}>
-                        ➖ SALIDAS
-                    </option>
-                </select>
-            </div>
-
-            <div class="col-md-2">
-                <label class="small fw-bold text-muted">Desde</label>
-                <input type="date" name="fecha_inicio" class="form-control form-control-sm" value="{{ request.args.get('fecha_inicio', '') }}">
-            </div>
-            <div class="col-md-2">
-                <label class="small fw-bold text-muted">Hasta</label>
-                <input type="date" name="fecha_fin" class="form-control form-control-sm" value="{{ request.args.get('fecha_fin', '') }}">
-            </div>
-
-            <div class="col-md-2 text-end">
-                <div class="form-check form-switch d-inline-block text-start mb-2 w-100 px-2 py-1 bg-white border rounded">
-                    <input class="form-check-input ms-0 me-2" type="checkbox" name="ocultar_iniciales" id="checkIniciales" 
-                           onchange="this.form.submit()" {% if request.args.get('ocultar_iniciales') == 'on' %}checked{% endif %}>
-                    <label class="form-check-label small text-muted fw-bold" for="checkIniciales" style="font-size: 0.7rem;">Ocultar Inicial</label>
+        <form method="GET">
+            <!-- FILA 1: Búsqueda y filtros principales -->
+            <div class="row g-2 align-items-end mb-2">
+                <div class="col-12 col-md-3">
+                    <label class="small fw-bold text-muted">Buscar</label>
+                    <input type="text" name="busqueda" class="form-control form-control-sm" 
+                           placeholder="SKU / Motivo..." value="{{ request.args.get('busqueda', '') }}">
                 </div>
-                
-                <div class="d-flex gap-1">
-                    <button type="submit" class="btn btn-primary btn-sm w-100" title="Aplicar Filtros">
-                        <i class="bi bi-filter"></i> Filtrar
-                    </button>
-                    <a href="{{ url_for('ver_kardex_importbolts') }}" class="btn btn-outline-secondary btn-sm w-50" title="Limpiar Filtros">
-                        <i class="bi bi-x-lg"></i>
-                    </a>
+
+                <div class="col-6 col-md-3">
+                    <label class="small fw-bold text-muted">Categoría</label>
+                    <select name="categoria" class="form-select form-select-sm">
+                        <option value="todas">Todas</option>
+                        {% for c in categorias %}
+                        <option value="{{ c.nombre }}" {% if request.args.get('categoria') == c.nombre %}selected{% endif %}>
+                            {{ c.nombre }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="col-6 col-md-2">
+                    <label class="small fw-bold text-muted">Tipo Mov.</label>
+                    <select name="tipo" class="form-select form-select-sm fw-bold" style="color:#004b87;">
+                        <option value="" class="text-dark">-- Todos --</option>
+                        <option value="ENTRADA" class="text-success" {% if request.args.get('tipo') == 'ENTRADA' %}selected{% endif %}>
+                            ➕ ENTRADAS
+                        </option>
+                        <option value="SALIDA" class="text-danger" {% if request.args.get('tipo') == 'SALIDA' %}selected{% endif %}>
+                            ➖ SALIDAS
+                        </option>
+                    </select>
+                </div>
+
+                <div class="col-6 col-md-2">
+                    <label class="small fw-bold text-muted">Desde</label>
+                    <input type="date" name="fecha_inicio" class="form-control form-control-sm" value="{{ request.args.get('fecha_inicio', '') }}">
+                </div>
+                <div class="col-6 col-md-2">
+                    <label class="small fw-bold text-muted">Hasta</label>
+                    <input type="date" name="fecha_fin" class="form-control form-control-sm" value="{{ request.args.get('fecha_fin', '') }}">
+                </div>
+            </div>
+
+            <!-- FILA 2: Switches y acciones -->
+            <div class="row g-2 align-items-center pt-2 border-top">
+                <div class="col-12 col-md-auto">
+                    <div class="form-check form-switch d-inline-flex align-items-center bg-white border rounded px-3 py-2 shadow-sm">
+                        <input class="form-check-input ms-0 me-2" type="checkbox" name="ocultar_iniciales" id="checkIniciales" 
+                               onchange="this.form.submit()" {% if request.args.get('ocultar_iniciales') == 'on' %}checked{% endif %}>
+                        <label class="form-check-label small text-muted fw-bold mb-0" for="checkIniciales">Ocultar Saldo Inicial</label>
+                    </div>
+                </div>
+
+                <div class="col-12 col-md-auto">
+                    <div class="form-check form-switch d-inline-flex align-items-center bg-white border rounded px-3 py-2 shadow-sm" 
+                         style="border-color:#6f42c1 !important;">
+                        <input class="form-check-input ms-0 me-2" type="checkbox" name="solo_interempresa" id="checkInterempresa" 
+                               onchange="this.form.submit()" {% if request.args.get('solo_interempresa') == 'on' %}checked{% endif %}>
+                        <label class="form-check-label small fw-bold mb-0" for="checkInterempresa" style="color:#6f42c1;">
+                            <i class="bi bi-arrow-left-right"></i> Solo Inter-Empresa
+                        </label>
+                    </div>
+                </div>
+
+                <div class="col-12 col-md-auto ms-md-auto">
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-sm px-3 text-white" style="background-color:#004b87;" title="Aplicar Filtros">
+                            <i class="bi bi-filter"></i> Filtrar
+                        </button>
+                        <a href="{{ url_for('ver_kardex_importbolts') }}" class="btn btn-outline-secondary btn-sm px-3" title="Limpiar Filtros">
+                            <i class="bi bi-x-lg"></i> Limpiar
+                        </a>
+                    </div>
                 </div>
             </div>
         </form>
