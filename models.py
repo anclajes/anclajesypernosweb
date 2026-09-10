@@ -410,3 +410,20 @@ class ProductMovementImportBolts(db.Model):
 
     product = db.relationship('ProductImportBolts', backref='movements')
     user = db.relationship('User', backref='movements_importbolts')
+
+class MetaVendedor(db.Model):
+    """Meta de venta mensual por vendedor. Si no se define una meta para un mes específico,
+    el sistema usa automáticamente la última meta definida (queda 'guardada por defecto')."""
+    __tablename__ = 'meta_vendedor'
+    id = db.Column(db.Integer, primary_key=True)
+    vendedor_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    anio = db.Column(db.Integer, nullable=False)
+    mes = db.Column(db.Integer, nullable=False)
+    monto_meta = db.Column(db.Float, nullable=False, default=0.0)
+    actualizado_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    actualizado_en = db.Column(db.DateTime, default=hora_peru)
+
+    vendedor = db.relationship('User', foreign_keys=[vendedor_id])
+    actualizado_por = db.relationship('User', foreign_keys=[actualizado_por_id])
+
+    __table_args__ = (db.UniqueConstraint('vendedor_id', 'anio', 'mes', name='uq_meta_vendedor_periodo'),)

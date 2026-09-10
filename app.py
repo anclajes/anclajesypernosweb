@@ -1,5 +1,5 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, session
-from models import db, User, Product, Category, Client, Order, OrderDetail, ProductMovement, AuditLog, SystemConfig,OrderKitComponent, ClientContact, ClientContactLog, ClientRubroVendedor, IntercompanyTransfer
+from models import db, User, Product, Category, Client, Order, OrderDetail, ProductMovement, AuditLog, SystemConfig,OrderKitComponent, ClientContact, ClientContactLog, ClientRubroVendedor, IntercompanyTransfer, MetaVendedor
 from models import ProductImportBolts, CategoryImportBolts, ProductMovementImportBolts
 from models import ProductMovement
 from models import Payment
@@ -33,7 +33,32 @@ from botocore.exceptions import ClientError
 from werkzeug.security import generate_password_hash, check_password_hash
 from xhtml2pdf import pisa
 
+def restar_meses(fecha, n):
+    """Resta n meses a una fecha, devolviendo el primer día de ese mes."""
+    mes = fecha.month - n
+    anio = fecha.year
+    while mes <= 0:
+        mes += 12
+        anio -= 1
+    return date(anio, mes, 1)
 
+
+def obtener_meta_vendedor(vendedor_id, anio, mes):
+    """Devuelve la meta del período exacto. Si no existe, busca la meta definida
+    más reciente ANTES de ese período y la usa como valor por defecto."""
+    meta = MetaVendedor.query.filter_by(vendedor_id=vendedor_id, anio=anio, mes=mes).first()
+    if meta:
+        return meta.monto_meta
+
+    anterior = MetaVendedor.query.filter(
+        MetaVendedor.vendedor_id == vendedor_id,
+        or_(
+            MetaVendedor.anio < anio,
+            db.and_(MetaVendedor.anio == anio, MetaVendedor.mes < mes)
+        )
+    ).order_by(MetaVendedor.anio.desc(), MetaVendedor.mes.desc()).first()
+
+    return anterior.monto_meta if anterior else 0.0
 
 def obtener_o_crear_shadow_product(prod_ib):
     """Producto 'sombra' en el catálogo de Anclajes: NO es un producto de venta, es solo
@@ -571,6 +596,43 @@ def index():
                     dias_hasta_cancelacion.append(dias)
         promedio_dias_perdida = round(sum(dias_hasta_cancelacion) / len(dias_hasta_cancelacion), 1) if dias_hasta_cancelacion else 0
 
+        # --- META DEL MES ACTUAL (real, editable por admin) ---
+        meta_mes_actual = obtener_meta_vendedor(user_id, hoy.year, hoy.month)
+
+        # --- HISTORIAL DE CUMPLIMIENTO: últimos 6 meses ---
+        historial_metas = []
+        for i in range(5, -1, -1):
+            fecha_mes = restar_meses(hoy.replace(day=1), i)
+            anio_m, mes_m = fecha_mes.year, fecha_mes.month
+
+            venta_mes_hist = db.session.query(func.sum(Order.total)).filter(
+                Order.vendedor_id == user_id,
+                extract('year', Order.fecha) == anio_m,
+                extract('month', Order.fecha) == mes_m,
+                Order.estado == ESTADO_VENTA_REAL
+            ).scalar() or 0
+
+            meta_mes_hist = obtener_meta_vendedor(user_id, anio_m, mes_m)
+            pct_hist = round((venta_mes_hist / meta_mes_hist * 100), 1) if meta_mes_hist > 0 else None
+
+            historial_metas.append({
+                'label': f"{meses_nombres[mes_m]} {anio_m}",
+                'venta': round(venta_mes_hist, 2),
+                'meta': round(meta_mes_hist, 2),
+                'pct': pct_hist,
+                'cumplida': (venta_mes_hist >= meta_mes_hist) if meta_mes_hist > 0 else None
+            })
+
+        # --- WIDGET INFORMATIVO: uso de ImportBolts en el período (no afecta totales) ---
+        cotizaciones_importbolts = Order.query.filter(
+            Order.vendedor_id == user_id,
+            Order.fecha.between(f_ini, f_fin),
+            Order.origen_inventario == 'IMPORTBOLTS',
+            Order.estado == ESTADO_VENTA_REAL
+        ).all()
+        monto_importbolts_periodo = sum(o.total for o in cotizaciones_importbolts)
+        cantidad_importbolts_periodo = len(cotizaciones_importbolts)
+
         return render_template('dashboard_vendedor.html',
                                hoy=mis_ventas_hoy, mes=mis_ventas_mes,
                                total_ventas_periodo=total_ventas_periodo,
@@ -623,7 +685,11 @@ def index():
                                categoria_top=categoria_top,
                                 categoria_top_monto=categoria_top_monto,
                                 categoria_top_pct=categoria_top_pct,
-                                pct_categoria_perdida=pct_categoria_perdida)
+                                pct_categoria_perdida=pct_categoria_perdida,
+                                meta_mes_actual=meta_mes_actual,
+                               historial_metas=historial_metas,
+                               monto_importbolts_periodo=monto_importbolts_periodo,
+                               cantidad_importbolts_periodo=cantidad_importbolts_periodo)
 
     # ======================================================
     # VISTA 3: ALMACÉN (LOGÍSTICA OPERATIVA)
@@ -6121,8 +6187,56 @@ def marcar_traslado_facturado(traslado_id):
     db.session.commit()
     return {'status': 'success', 'msg': 'Traslado marcado como facturado correctamente.'}
 
+# --- METAS ---
+
+@app.route('/admin/metas_vendedores')
+def metas_vendedores():
+    if session.get('role') not in ['admin', 'administracion']:
+        return "Acceso denegado", 403
+
+    hoy = hora_peru().date()
+    vendedores = User.query.filter_by(role='vendedor').order_by(User.nombre_completo).all()
+
+    datos = []
+    for v in vendedores:
+        meta_actual = MetaVendedor.query.filter_by(vendedor_id=v.id, anio=hoy.year, mes=hoy.month).first()
+        datos.append({
+            'vendedor': v,
+            'meta_este_mes': meta_actual.monto_meta if meta_actual else obtener_meta_vendedor(v.id, hoy.year, hoy.month),
+            'es_personalizada_este_mes': meta_actual is not None
+        })
+
+    return render_template('metas_vendedores.html', datos=datos, anio_actual=hoy.year, mes_actual=hoy.month)
+
+
+@app.route('/api/establecer_meta_vendedor', methods=['POST'])
+def establecer_meta_vendedor():
+    if session.get('role') not in ['admin', 'administracion']:
+        return {'status': 'error', 'msg': 'No autorizado'}, 403
+
+    vendedor_id = request.form.get('vendedor_id')
+    anio = int(request.form.get('anio'))
+    mes = int(request.form.get('mes'))
+    try:
+        monto = float(request.form.get('monto_meta'))
+        if monto < 0: raise ValueError()
+    except:
+        return {'status': 'error', 'msg': 'Monto inválido'}
+
+    meta = MetaVendedor.query.filter_by(vendedor_id=vendedor_id, anio=anio, mes=mes).first()
+    if not meta:
+        meta = MetaVendedor(vendedor_id=vendedor_id, anio=anio, mes=mes)
+        db.session.add(meta)
+
+    meta.monto_meta = monto
+    meta.actualizado_por_id = session.get('user_id')
+    meta.actualizado_en = hora_peru()
+    db.session.commit()
+
+    return {'status': 'success', 'msg': 'Meta actualizada correctamente.'}
+
 # --- RUTA SECRETA PARA INICIALIZAR LA BASE DE DATOS EN RENDER ---
-# --- RUTA SECRETA PARA CREAR/RESETEAR LA BASE DE DATOS DESDE EL NAVEGADOR ---
+
 
 @app.route('/fix_shadow_product_columns')
 def fix_shadow_product_columns():
@@ -6140,14 +6254,13 @@ def fix_shadow_product_columns():
     except Exception as e:
         return f"<h2>Error: {str(e)}</h2>"
 
-@app.route('/fix_intercompany_transfer')
-def fix_intercompany_transfer():
+@app.route('/fix_meta_vendedor')
+def fix_meta_vendedor():
     try:
         db.create_all()
-        return "<h2>✅ Tabla intercompany_transfer creada correctamente.</h2>"
+        return "<h2>✅ Tabla meta_vendedor creada correctamente.</h2>"
     except Exception as e:
         return f"<h2>❌ Error: {str(e)}</h2>"
-
     
 # --- ARRANQUE DE LA APLICACIÓN ---
 if __name__ == '__main__':

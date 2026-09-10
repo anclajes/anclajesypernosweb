@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block content %}
+<h2 class="mb-3"><i class="bi bi-bullseye text-primary"></i> Metas de Venta Mensuales</h2>
+<div class="alert alert-light border small">
+    <i class="bi bi-info-circle-fill text-primary"></i>
+    Si no defines una meta nueva para el mes actual, se sigue usando automáticamente la última meta que le asignaste al vendedor.
+</div>
+
+<div class="card shadow-sm border-0">
+    <div class="card-body p-0 table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-dark">
+                <tr>
+                    <th class="ps-3">Vendedor</th>
+                    <th class="text-center">Meta {{ mes_actual }}/{{ anio_actual }}</th>
+                    <th class="text-center">Origen</th>
+                    <th class="text-center">Acción</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for d in datos %}
+                <tr>
+                    <td class="ps-3 fw-bold">{{ d.vendedor.nombre_completo }}</td>
+                    <td class="text-center fw-bold text-primary">$ {{ "{:,.2f}".format(d.meta_este_mes) }}</td>
+                    <td class="text-center">
+                        {% if d.es_personalizada_este_mes %}
+                            <span class="badge bg-success">Definida este mes</span>
+                        {% else %}
+                            <span class="badge bg-secondary">Por defecto (mes anterior)</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-center">
+                        <button class="btn btn-sm btn-outline-primary" onclick="editarMeta({{ d.vendedor.id }}, '{{ d.vendedor.nombre_completo }}', {{ d.meta_este_mes }})">
+                            <i class="bi bi-pencil"></i> Editar
+                        </button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="modal fade" id="modalMeta" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h6 class="modal-title fw-bold" id="tituloModalMeta">Editar Meta</h6>
+                <button class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="meta_vendedor_id">
+                <label class="small fw-bold text-muted mb-1">Meta mensual ($)</label>
+                <input type="number" id="meta_monto" class="form-control" min="0" step="100">
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button class="btn btn-success fw-bold" onclick="guardarMeta()">Guardar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function editarMeta(id, nombre, montoActual) {
+    document.getElementById('meta_vendedor_id').value = id;
+    document.getElementById('tituloModalMeta').innerText = `Meta de ${nombre}`;
+    document.getElementById('meta_monto').value = montoActual;
+    new bootstrap.Modal(document.getElementById('modalMeta')).show();
+}
+function guardarMeta() {
+    let fd = new FormData();
+    fd.append('vendedor_id', document.getElementById('meta_vendedor_id').value);
+    fd.append('anio', {{ anio_actual }});
+    fd.append('mes', {{ mes_actual }});
+    fd.append('monto_meta', document.getElementById('meta_monto').value);
+    fetch('/api/establecer_meta_vendedor', { method: 'POST', body: fd })
+        .then(r => r.json()).then(data => {
+            if (data.status === 'success') {
+                bootstrap.Modal.getInstance(document.getElementById('modalMeta')).hide();
+                Swal.fire('Listo', data.msg, 'success').then(() => location.reload());
+            } else Swal.fire('Error', data.msg, 'error');
+        });
+}
+</script>
+{% endblock %}
