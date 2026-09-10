@@ -82,18 +82,36 @@
 
 <input type="hidden" id="hidden_order_id" value="{{ orden.id if orden else '' }}">
 
-{% if info_importacion %}
-<div class="alert py-2 shadow-sm d-flex flex-column flex-sm-row align-items-center text-center text-sm-start mb-3 border-0" style="background-color: var(--theme-light); border-left: 4px solid var(--theme-primary) !important;">
-    <i class="bi bi-info-circle-fill fs-4 me-0 me-sm-3 mb-2 mb-sm-0" style="color: var(--theme-primary);"></i>
-    <div>
-        <h6 class="mb-0 fw-bold" style="color: var(--theme-primary);">Última actualización de inventario general</h6>
-        <small class="text-muted">
-            Sincronizado el <strong>{{ info_importacion.updated_at.strftime('%d/%m/%Y a las %H:%M') }}</strong> 
-            por <strong>{{ info_importacion.updated_by }}</strong>
-        </small>
+<div class="row g-2 mb-3">
+    {% if info_importacion %}
+    <div class="col-12 col-md-6">
+        <div class="alert py-2 shadow-sm d-flex align-items-center mb-0 border-0 h-100" style="background-color: var(--theme-light); border-left: 4px solid var(--theme-primary) !important;">
+            <i class="bi bi-building fs-4 me-3" style="color: var(--theme-primary);"></i>
+            <div>
+                <h6 class="mb-0 fw-bold small" style="color: var(--theme-primary);">Inventario Anclajes actualizado</h6>
+                <small class="text-muted">
+                    {{ info_importacion.updated_at.strftime('%d/%m/%Y a las %H:%M') }} 
+                    por <strong>{{ info_importacion.updated_by }}</strong>
+                </small>
+            </div>
+        </div>
     </div>
+    {% endif %}
+    {% if info_importacion_ib %}
+    <div class="col-12 col-md-6">
+        <div class="alert py-2 shadow-sm d-flex align-items-center mb-0 border-0 h-100" style="background-color: #f2f9ed; border-left: 4px solid #8BC34A !important;">
+            <i class="bi bi-globe-americas fs-4 me-3" style="color: #1B5E20;"></i>
+            <div>
+                <h6 class="mb-0 fw-bold small" style="color: #1B5E20;">Inventario Import Bolts actualizado</h6>
+                <small class="text-muted">
+                    {{ info_importacion_ib.updated_at.strftime('%d/%m/%Y a las %H:%M') }} 
+                    por <strong>{{ info_importacion_ib.updated_by }}</strong>
+                </small>
+            </div>
+        </div>
+    </div>
+    {% endif %}
 </div>
-{% endif %}
 
 <!-- BARRA DE MONEDA Y TIPO DE CAMBIO RESPONSIVE -->
 <div class="card mb-3 shadow-sm border-0" style="border-top: 3px solid var(--theme-primary) !important;">

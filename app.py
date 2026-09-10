@@ -2453,15 +2453,17 @@ def nueva_venta():
     tc_hoy = obtener_tipo_cambio(usuario_solicitante="Sistema Automático")
     config_tc = SystemConfig.query.get('tipo_cambio')
     info_importacion = SystemConfig.query.get('ultima_importacion')
+    info_importacion_ib = SystemConfig.query.get('ultima_importacion_importbolts')   # <-- NUEVO
     
     return render_template('nueva_venta.html', 
                            productos=productos, 
                            categorias=categorias, 
-                           categorias_importbolts=categorias_importbolts,   # <-- NUEVO
+                           categorias_importbolts=categorias_importbolts,
                            tc=tc_hoy,
                            updated_at=config_tc.updated_at.strftime('%d/%m %H:%M') if config_tc else None,
                            updated_by=config_tc.updated_by if config_tc else None,
-                           info_importacion=info_importacion)
+                           info_importacion=info_importacion,
+                           info_importacion_ib=info_importacion_ib)
 
 # --- EN APP.PY (Función DESCARGAR MAESTRA) ---
 from xhtml2pdf import pisa
@@ -4668,6 +4670,8 @@ def editar_venta(order_id):
     productos = Product.query.filter(Product.es_shadow_importbolts.isnot(True)).all()
     categorias = Category.query.filter(Category.nombre != 'TRASLADO IMPORTBOLTS').all()
     config_tc = SystemConfig.query.get('tipo_cambio')
+    info_importacion = SystemConfig.query.get('ultima_importacion')                  # <-- NUEVO
+    info_importacion_ib = SystemConfig.query.get('ultima_importacion_importbolts')   # <-- NUEVO
     
     return render_template('nueva_venta.html',
                            modo_edicion=True, 
@@ -4675,9 +4679,11 @@ def editar_venta(order_id):
                            items_json=items_js, 
                            productos=productos,
                            categorias=categorias,
-                           categorias_importbolts=CategoryImportBolts.query.all(),   # <-- NUEVO
+                           categorias_importbolts=CategoryImportBolts.query.all(),
                            tc=orden.tipo_cambio, 
-                           updated_at=config_tc.updated_at.strftime('%d/%m') if config_tc else None)
+                           updated_at=config_tc.updated_at.strftime('%d/%m') if config_tc else None,
+                           info_importacion=info_importacion,         # <-- NUEVO
+                           info_importacion_ib=info_importacion_ib)
 
 # --- AGREGAR O CORREGIR EN APP.PY ---
 
