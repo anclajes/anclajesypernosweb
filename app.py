@@ -3880,19 +3880,11 @@ def nuevo_producto():
         if not nombre: return {'status': 'error', 'msg': 'Falta la descripción'}
         if stock < 0 or p_unidad < 0 or stock_min < 0: return {'status': 'error', 'msg': 'No negativos'}
 
-        sku_final = ""
-        if sku_manual:
-            sku_final = sku_manual.upper()
-            if Product.query.filter_by(sku=sku_final).first():
-                return {'status': 'error', 'msg': f'El SKU "{sku_final}" ya existe.'}
-        else:
-            cat = Category.query.filter_by(nombre=familia_nombre).first()
-            if not cat:
-                base = "".join(c for c in familia_nombre[:3].upper() if c.isalnum()) or "GEN"
-                cat = Category(nombre=familia_nombre, prefijo=base, contador=0)
-                db.session.add(cat)
-            cat.contador += 1
-            sku_final = f"{cat.prefijo}-{str(cat.contador).zfill(4)}"
+        if not sku_manual:
+            return {'status': 'error', 'msg': 'El código SKU es obligatorio y debe ingresarse manualmente.'}
+        sku_final = sku_manual.upper()
+        if Product.query.filter_by(sku=sku_final).first():
+            return {'status': 'error', 'msg': f'El SKU "{sku_final}" ya existe.'}
 
         nuevo = Product(
             sku=sku_final, nombre=nombre, categoria=familia_nombre, calidad=calidad,
@@ -3955,6 +3947,7 @@ def editar_producto():
         prod.categoria = nueva_familia
         prod.calidad = nueva_calidad
         prod.estado = estado_val
+        prod.peso_kg = float(request.form.get('peso_kg', 0) or 0)
         
         registrar_log(f"Editó producto {prod.sku}", "bi-pencil-fill", "text-warning")
         
@@ -5732,19 +5725,11 @@ def nuevo_producto_importbolts():
         if not nombre: return {'status': 'error', 'msg': 'Falta la descripción'}
         if stock < 0 or p_unidad < 0 or stock_min < 0: return {'status': 'error', 'msg': 'No negativos'}
 
-        sku_final = ""
-        if sku_manual:
-            sku_final = sku_manual.upper()
-            if ProductImportBolts.query.filter_by(sku=sku_final).first():
-                return {'status': 'error', 'msg': f'El SKU "{sku_final}" ya existe en ImportBolts.'}
-        else:
-            cat = CategoryImportBolts.query.filter_by(nombre=familia_nombre).first()
-            if not cat:
-                base = "".join(c for c in familia_nombre[:3].upper() if c.isalnum()) or "GEN"
-                cat = CategoryImportBolts(nombre=familia_nombre, prefijo=base, contador=0)
-                db.session.add(cat)
-            cat.contador += 1
-            sku_final = f"{cat.prefijo}-{str(cat.contador).zfill(4)}"
+        if not sku_manual:
+            return {'status': 'error', 'msg': 'El código SKU es obligatorio y debe ingresarse manualmente.'}
+        sku_final = sku_manual.upper()
+        if ProductImportBolts.query.filter_by(sku=sku_final).first():
+            return {'status': 'error', 'msg': f'El SKU "{sku_final}" ya existe en ImportBolts.'}
 
         nuevo = ProductImportBolts(
             sku=sku_final, nombre=nombre, categoria=familia_nombre, calidad=calidad,
@@ -5801,6 +5786,7 @@ def editar_producto_importbolts():
         prod.categoria = nueva_familia
         prod.calidad = nueva_calidad
         prod.estado = estado_val
+        prod.peso_kg = float(request.form.get('peso_kg', 0) or 0)
         
         registrar_log(f"Editó producto ImportBolts {prod.sku}", "bi-pencil-fill", "text-warning")
         db.session.commit()
@@ -6266,26 +6252,42 @@ def sugerir_codigos_relacionados():
     calidad = request.form.get('calidad', '').strip()
     nombre = request.form.get('nombre', '').strip()
 
-    query = Product.query
-    filtros = []
-    if familia:
-        filtros.append(Product.categoria == familia)
-    if calidad:
-        filtros.append(Product.calidad.ilike(f"%{calidad}%"))
-    if nombre and len(nombre) >= 3:
-        # Busca coincidencia por palabras del nombre, no exacta
-        for palabra in nombre.split()[:3]:
-            if len(palabra) >= 3:
-                filtros.append(Product.nombre.ilike(f"%{palabra}%"))
-
-    if not filtros:
+    if not familia and not calidad and len(nombre) < 3:
         return {'status': 'success', 'productos': []}
 
-    productos = query.filter(or_(*filtros)).order_by(Product.sku.asc()).limit(15).all()
+    # Excluimos siempre los productos "sombra" de traslado inter-empresa
+    query = Product.query.filter(Product.es_shadow_importbolts.isnot(True))
+    if familia:
+        query = query.filter(Product.categoria == familia)
+
+    candidatos = query.limit(500).all()
+
+    palabras_nombre = [p for p in nombre.upper().split() if len(p) >= 3][:5]
+
+    puntuados = []
+    for p in candidatos:
+        score = 0
+        if calidad and p.calidad and calidad.upper() in p.calidad.upper():
+            score += 3
+        nombre_prod = (p.nombre or '').upper()
+        for palabra in palabras_nombre:
+            if palabra in nombre_prod:
+                score += 2
+        if score > 0:
+            puntuados.append((score, p))
+
+    # Si no hay nombre/calidad para puntuar pero sí hay familia, mostramos algo igual (ordenado por SKU)
+    if not puntuados and familia and not calidad and len(nombre) < 3:
+        puntuados = [(1, p) for p in candidatos[:15]]
+
+    puntuados.sort(key=lambda x: (-x[0], x[1].sku))
+    top = puntuados[:15]
+
     lista = [{
         'sku': p.sku, 'nombre': p.nombre, 'categoria': p.categoria,
         'calidad': p.calidad, 'stock': p.stock_actual
-    } for p in productos]
+    } for score, p in top]
+
     return {'status': 'success', 'productos': lista}
 
 
@@ -6296,26 +6298,55 @@ def sugerir_codigos_relacionados_importbolts():
     calidad = request.form.get('calidad', '').strip()
     nombre = request.form.get('nombre', '').strip()
 
-    query = ProductImportBolts.query
-    filtros = []
-    if familia:
-        filtros.append(ProductImportBolts.categoria == familia)
-    if calidad:
-        filtros.append(ProductImportBolts.calidad.ilike(f"%{calidad}%"))
-    if nombre and len(nombre) >= 3:
-        for palabra in nombre.split()[:3]:
-            if len(palabra) >= 3:
-                filtros.append(ProductImportBolts.nombre.ilike(f"%{palabra}%"))
-
-    if not filtros:
+    if not familia and not calidad and len(nombre) < 3:
         return {'status': 'success', 'productos': []}
 
-    productos = query.filter(or_(*filtros)).order_by(ProductImportBolts.sku.asc()).limit(15).all()
+    # No hace falta excluir shadows aquí: los shadow products solo existen en Anclajes
+    query = ProductImportBolts.query
+    if familia:
+        query = query.filter(ProductImportBolts.categoria == familia)
+
+    candidatos = query.limit(500).all()
+
+    palabras_nombre = [p for p in nombre.upper().split() if len(p) >= 3][:5]
+
+    puntuados = []
+    for p in candidatos:
+        score = 0
+        if calidad and p.calidad and calidad.upper() in p.calidad.upper():
+            score += 3
+        nombre_prod = (p.nombre or '').upper()
+        for palabra in palabras_nombre:
+            if palabra in nombre_prod:
+                score += 2
+        if score > 0:
+            puntuados.append((score, p))
+
+    if not puntuados and familia and not calidad and len(nombre) < 3:
+        puntuados = [(1, p) for p in candidatos[:15]]
+
+    puntuados.sort(key=lambda x: (-x[0], x[1].sku))
+    top = puntuados[:15]
+
     lista = [{
         'sku': p.sku, 'nombre': p.nombre, 'categoria': p.categoria,
         'calidad': p.calidad, 'stock': p.stock_actual
-    } for p in productos]
+    } for score, p in top]
+
     return {'status': 'success', 'productos': lista}
+
+@app.route('/api/verificar_sku_existe', methods=['POST'])
+def verificar_sku_existe():
+    if session.get('user_id') is None: return {'existe': False}, 403
+    sku = request.form.get('sku', '').strip().upper()
+    inventario = request.form.get('inventario', 'ANCLAJES')
+
+    Modelo = ProductImportBolts if inventario == 'IMPORTBOLTS' else Product
+    prod = Modelo.query.filter_by(sku=sku).first()
+
+    if prod:
+        return {'existe': True, 'nombre': prod.nombre}
+    return {'existe': False}
 
 
 @app.route('/api/establecer_meta_vendedor', methods=['POST'])

@@ -189,7 +189,7 @@
                         {% if session.get('role') == 'admin' %}
                             <div class="btn-group shadow-sm">
                                 <button class="btn btn-sm btn-outline-primary py-0" 
-                                        onclick="abrirEditar('{{p.id}}', '{{p.nombre|replace("'", "\\'")|replace('"', '&quot;')}}', '{{p.stock_actual}}', '{{p.precio_unidad}}', '{{p.precio_caja}}', '{{p.ubicacion|default('', true)}}', '{{p.categoria}}', '{{p.calidad|default('', true)}}', '{{p.stock_minimo}}', '{{p.estado|default('', true)}}')">
+                                        onclick="abrirEditar('{{p.id}}', '{{p.nombre|replace("'", "\\'")|replace('"', '&quot;')}}', '{{p.stock_actual}}', '{{p.precio_unidad}}', '{{p.precio_caja}}', '{{p.ubicacion|default('', true)}}', '{{p.categoria}}', '{{p.calidad|default('', true)}}', '{{p.stock_minimo}}', '{{p.estado|default('', true)}}', '{{p.peso_kg|default(0, true)}}')">
                                     <i class="bi bi-pencil-fill"></i>
                                 </button>
                                 <a href="{{ url_for('eliminar_producto_importbolts', prod_id=p.id) }}" 
@@ -309,7 +309,7 @@
                         <div class="col-12 mb-2">
                             <label class="form-label small fw-bold">Familia / Categoría *</label>
                             <div class="input-group">
-                                <select name="categoria_nombre" id="selectFamiliaNuevo" class="form-select" required onchange="buscarCodigosRelacionados()">
+                                <select name="categoria_nombre" id="selectFamiliaNuevo" class="form-select" required onchange="buscarCodigosRelacionadosIB()">
                                     <option value="" selected disabled>-- Seleccione --</option>
                                     {% for cat in lista_categorias %}
                                     <option value="{{ cat }}">{{ cat }}</option>
@@ -321,7 +321,7 @@
                         <div class="col-12 col-md-6">
                             <label class="form-label small fw-bold">Calidad</label>
                             <input type="text" name="calidad" id="inputCalidadNuevo" class="form-control form-control-sm text-uppercase" 
-                                list="listCalidades" placeholder="Ej: ZINCADO" oninput="this.value = this.value.toUpperCase(); buscarCodigosRelacionados();">
+                                list="listCalidades" placeholder="Ej: ZINCADO" oninput="this.value = this.value.toUpperCase(); buscarCodigosRelacionadosIB();">
                             <datalist id="listCalidades">{% for cal in lista_calidades %} <option value="{{ cal }}"> {% endfor %}</datalist>
                         </div>
                         <div class="col-12 col-md-6">
@@ -344,7 +344,7 @@
                         <div class="col-12">
                             <label class="form-label small">Descripción *</label>
                             <input name="nombre" id="inputNombreNuevo" class="form-control text-uppercase" required 
-                                oninput="this.value = this.value.toUpperCase(); buscarCodigosRelacionados();">
+                                oninput="this.value = this.value.toUpperCase(); buscarCodigosRelacionadosIB();">
                         </div>
 
                         <!-- NUEVO: PANEL DE PRODUCTOS RELACIONADOS -->
@@ -377,15 +377,13 @@
                         <div class="col-6 col-md-4"><label class="form-label small">P. Caja</label><input type="number" step="0.01" name="p_caja" id="new_p_caja" class="form-control form-control-sm" onchange="validarPrecios()"></div>
                         <div class="col-12"><div class="alert alert-warning py-1 px-2 mt-2 d-none" id="alertPrecio" style="font-size: 0.8rem;">Precio Caja > Unitario.</div></div>
 
-                        <!-- SKU AHORA AL FINAL -->
+                        <!-- SKU AL FINAL, MANUAL Y OBLIGATORIO -->
                         <div class="col-12 border-top pt-3 mt-2">
-                            <label class="form-label small fw-bold text-dark">CÓDIGO / SKU (Se define al final, cuando ya confirmaste que no existe)</label>
-                            <div class="input-group input-group-sm">
-                                <input type="text" name="sku" id="inputSKUNuevo" class="form-control fw-bold text-uppercase" 
-                                    placeholder="(Automático)" oninput="this.value = this.value.toUpperCase()">
-                                <button type="button" class="btn btn-outline-secondary" onclick="limpiarSku()"><i class="bi bi-magic"></i></button>
-                            </div>
-                            <div class="form-text text-primary small" id="skuHelpText">Se generará automático si lo deja vacío.</div>
+                            <label class="form-label small fw-bold text-danger">CÓDIGO / SKU * (Manual — siga la nomenclatura de la empresa)</label>
+                            <input type="text" name="sku" id="inputSKUNuevo" class="form-control fw-bold text-uppercase border-danger" 
+                                placeholder="Ej: PGR8Z1180004C" required
+                                oninput="this.value = this.value.toUpperCase(); validarSkuEnVivoIB();">
+                            <div id="skuValidacionMsg" class="form-text small mt-1"></div>
                         </div>
                     </div>
                 </form>
@@ -438,22 +436,25 @@
                         </div>
                     </div>
                     <div class="row g-2">
-                        <div class="col-12 col-sm-4">
+                        <div class="col-6 col-md-3">
                             <label class="form-label small fw-bold text-danger">Stock Actual</label>
                             <input id="edit_stock" type="number" name="stock" class="form-control fw-bold bg-light" readonly>
                             <div class="form-text" style="font-size: 0.6rem">No editable aquí.</div>
                         </div>
-                        <div class="col-12 col-sm-4">
+                        <div class="col-6 col-md-3">
                             <label class="form-label small fw-bold text-info">Stock Mínimo</label>
                             <input id="edit_stock_min" type="number" name="stock_minimo" class="form-control">
                         </div>
-                        <div class="col-12 col-sm-4">
-                            <label class="form-label small">P. Unidad</label>
-                            <input id="edit_punidad" type="number" step="0.01" name="p_unidad" class="form-control">
-                        </div>
-                        <div class="col-12 col-sm-4 ms-sm-auto mt-2 mt-sm-0">
-                            <label class="form-label small">P. Caja</label>
-                            <input id="edit_pcaja" type="number" step="0.01" name="p_caja" class="form-control">
+                        <div class="col-6 col-md-3"><label class="form-label small">P. Unidad</label><input id="edit_punidad" type="number" step="0.01" name="p_unidad" class="form-control"></div>
+                        <div class="col-6 col-md-3"><label class="form-label small">P. Caja</label><input id="edit_pcaja" type="number" step="0.01" name="p_caja" class="form-control"></div>
+                    </div>
+                    <div class="row g-2 mt-1">
+                        <div class="col-6">
+                            <label class="form-label small fw-bold text-muted">Peso Unitario (Kg)</label>
+                            <div class="input-group input-group-sm">
+                                <input id="edit_peso_kg" type="number" step="0.001" name="peso_kg" class="form-control" min="0">
+                                <span class="input-group-text">Kg</span>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -684,7 +685,7 @@
         return txt.value;
     }
 
-    function abrirEditar(id, nombre, stock, punidad, pcaja, ubicacion, categoria, calidad, stockMin, estado) {
+    function abrirEditar(id, nombre, stock, punidad, pcaja, ubicacion, categoria, calidad, stockMin, estado, pesoKg) {
         document.getElementById('edit_id').value = id;
         
         // AQUÍ ESTÁ LA MAGIA: decodificamos el nombre antes de asignarlo
@@ -694,6 +695,7 @@
         document.getElementById('edit_stock_min').value = stockMin; 
         document.getElementById('edit_punidad').value = punidad;
         document.getElementById('edit_pcaja').value = pcaja;
+        document.getElementById('edit_peso_kg').value = pesoKg || 0;   // <-- NUEVO
         document.getElementById('edit_ubicacion').value = (ubicacion && ubicacion !== 'None') ? ubicacion : '';
         document.getElementById('edit_estado').value = estado;
         document.getElementById('edit_categoria').value = categoria;
@@ -873,9 +875,86 @@
         new bootstrap.Modal(document.getElementById('modalStock')).show();
     }
 
-    function guardarProductoAjax() {
-        const form = document.getElementById('formNuevoProd');
-        if(!form.checkValidity()) { form.reportValidity(); return; }
+let skuValidoIB = false;
+
+function validarSkuEnVivoIB() {
+    const sku = document.getElementById('inputSKUNuevo').value.trim();
+    const msg = document.getElementById('skuValidacionMsg');
+    skuValidoIB = false;
+
+    if (!sku) {
+        msg.innerHTML = '';
+        return;
+    }
+    if (sku.length < 4) {
+        msg.innerHTML = '<span class="text-muted">Escriba el código completo...</span>';
+        return;
+    }
+
+    fetch('/api/verificar_sku_existe', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: `sku=${encodeURIComponent(sku)}&inventario=IMPORTBOLTS`
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.existe) {
+            msg.innerHTML = `<span class="text-danger fw-bold"><i class="bi bi-x-circle-fill"></i> Este código YA EXISTE: "${data.nombre}". Use uno diferente.</span>`;
+            skuValidoIB = false;
+        } else {
+            msg.innerHTML = `<span class="text-success fw-bold"><i class="bi bi-check-circle-fill"></i> Código disponible.</span>`;
+            skuValidoIB = true;
+        }
+    });
+}
+
+function guardarProductoAjax() {
+    const form = document.getElementById('formNuevoProd');
+    if(!form.checkValidity()) { form.reportValidity(); return; }
+
+    const sku = document.getElementById('inputSKUNuevo').value.trim();
+    if (!sku) {
+        return Swal.fire('Falta el Código', 'El código SKU es obligatorio y debe escribirse manualmente.', 'warning');
+    }
+    if (!skuValidoIB) {
+        return Swal.fire('Verifique el Código', 'Espere la validación del código o corríjalo — ya existe o no ha sido verificado.', 'warning');
+    }
+
+    // --- RESUMEN DE CONFIRMACIÓN ---
+    const familia = document.getElementById('selectFamiliaNuevo').selectedOptions[0]?.text || '-';
+    const calidad = document.getElementById('inputCalidadNuevo').value || '-';
+    const nombre = document.getElementById('inputNombreNuevo').value || '-';
+    const stock = form.querySelector('[name="stock"]').value || '0';
+    const stockMin = form.querySelector('[name="stock_minimo"]').value || '0';
+    const pUnidad = form.querySelector('[name="p_unidad"]').value || '0';
+    const pCaja = form.querySelector('[name="p_caja"]').value || '0';
+    const pesoKg = document.getElementById('new_peso_kg').value || '0';
+    const ubicacion = form.querySelector('[name="ubicacion"]').value || '-';
+
+    Swal.fire({
+        title: 'Confirmar Nuevo Producto (Import Bolts)',
+        html: `
+            <div class="text-start small">
+                <table class="table table-sm mb-0">
+                    <tr><td class="text-muted">Código:</td><td class="fw-bold text-primary">${sku}</td></tr>
+                    <tr><td class="text-muted">Descripción:</td><td class="fw-bold">${nombre}</td></tr>
+                    <tr><td class="text-muted">Familia:</td><td>${familia}</td></tr>
+                    <tr><td class="text-muted">Calidad:</td><td>${calidad}</td></tr>
+                    <tr><td class="text-muted">Ubicación:</td><td>${ubicacion}</td></tr>
+                    <tr><td class="text-muted">Peso Unitario:</td><td>${pesoKg} Kg</td></tr>
+                    <tr><td class="text-muted">Stock Inicial:</td><td>${stock} (mín. ${stockMin})</td></tr>
+                    <tr><td class="text-muted">P. Unidad / P. Caja:</td><td>$ ${pUnidad} / $ ${pCaja}</td></tr>
+                </table>
+            </div>
+        `,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Sí, crear producto',
+        cancelButtonText: 'Revisar datos',
+        confirmButtonColor: '#198754'
+    }).then((result) => {
+        if (!result.isConfirmed) return;
+
         const formData = new FormData(form);
         fetch('/producto_importbolts/nuevo', { method: 'POST', body: formData })
         .then(r => r.json())
@@ -887,7 +966,8 @@
                 Swal.fire({ icon: 'error', title: 'Error', text: data.msg });
             }
         });
-    }
+    });
+}
 
     function eliminarFamiliaAjax(nombreCategoria, idFilaHtml) {
         Swal.fire({ title: '¿Eliminar familia?', text: `Se intentará borrar "${nombreCategoria}".`, icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Sí, borrar' })
@@ -908,19 +988,7 @@
         });
     }
 
-    function limpiarSku() { document.getElementById('inputSKUNuevo').value = ""; actualizarPlaceholder(); }
-    
-    function actualizarPlaceholder() {
-        const fam = document.getElementById('selectFamiliaNuevo').value;
-        const inp = document.getElementById('inputSKUNuevo');
-        if (inp.value.trim() === "") inp.placeholder = fam ? `${fam.substring(0,3).toUpperCase()}-XXXX (Automático)` : "(Automático)";
-    }
 
-    document.getElementById('inputSKUNuevo').addEventListener('input', function() {
-        const h = document.getElementById('skuHelpText');
-        if(this.value.trim()!==""){ h.innerText="Código manual."; h.className="form-text text-warning small fw-bold"; }
-        else { h.innerText="Código automático."; h.className="form-text text-primary small"; actualizarPlaceholder(); }
-    });
 
     function validarPrecios() {
         const u=parseFloat(document.getElementById('new_p_uni').value)||0;
@@ -943,7 +1011,7 @@
         let formData = new FormData();
         formData.append('familia', familia);
 
-        fetch('/api/calidades_de_familia_importbolts', { method: 'POST', body: fd })
+        fetch('/api/calidades_de_familia_importbolts', { method: 'POST', body: formData })
         .then(r => r.json())
         .then(data => {
             selectCalidad.innerHTML = '';
@@ -1063,11 +1131,11 @@ function renombrarFamilia(nombreViejo) {
         });
     }
 
-    let timeoutBusquedaCodigo = null;
+let timeoutBusquedaCodigoIB = null;
 
-function buscarCodigosRelacionados() {
-    clearTimeout(timeoutBusquedaCodigo);
-    timeoutBusquedaCodigo = setTimeout(() => {
+function buscarCodigosRelacionadosIB() {
+    clearTimeout(timeoutBusquedaCodigoIB);
+    timeoutBusquedaCodigoIB = setTimeout(() => {
         const familia = document.getElementById('selectFamiliaNuevo').value;
         const calidad = document.getElementById('inputCalidadNuevo').value.trim();
         const nombre = document.getElementById('inputNombreNuevo').value.trim();
@@ -1104,7 +1172,7 @@ function buscarCodigosRelacionados() {
                     panel.classList.add('d-none');
                 }
             });
-    }, 400); // Espera 400ms tras dejar de escribir, para no saturar el servidor
+    }, 400);
 }
 </script>
 {% endblock %}
