@@ -95,6 +95,63 @@
     .foto-img-wrap img.cargada {
         opacity: 1;
     }
+
+        /* --- LIGHTBOX --- */
+    #lightboxOverlay {
+        position: fixed; inset: 0;
+        background: rgba(0,0,0,.9);
+        z-index: 2000;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+    }
+    #lightboxOverlay.activo { display: flex; }
+    #lightboxOverlay img {
+        max-width: 90vw;
+        max-height: 75vh;
+        object-fit: contain;
+        border-radius: 8px;
+        box-shadow: 0 10px 40px rgba(0,0,0,.5);
+    }
+    #lightboxOverlay .lightbox-close {
+        position: absolute; top: 18px; right: 24px;
+        color: #fff; font-size: 2rem; cursor: pointer;
+        opacity: .8; z-index: 2010;
+    }
+    #lightboxOverlay .lightbox-close:hover { opacity: 1; }
+    #lightboxOverlay .lightbox-nav {
+        position: absolute; top: 50%; transform: translateY(-50%);
+        background: rgba(255,255,255,.12);
+        border: none; color: #fff;
+        width: 48px; height: 48px;
+        border-radius: 50%;
+        font-size: 1.5rem;
+        display: flex; align-items: center; justify-content: center;
+        cursor: pointer;
+        transition: background .15s ease;
+    }
+    #lightboxOverlay .lightbox-nav:hover { background: rgba(255,255,255,.25); }
+    #lightboxOverlay .lightbox-nav:disabled { opacity: .25; cursor: default; }
+    #lightboxOverlay .lightbox-prev { left: 16px; }
+    #lightboxOverlay .lightbox-next { right: 16px; }
+    #lightboxOverlay .lightbox-caption {
+        color: #f1f3f5;
+        margin-top: 14px;
+        text-align: center;
+        font-size: .85rem;
+    }
+    #lightboxOverlay .lightbox-caption .badge-user {
+        background: rgba(255,255,255,.12);
+        padding: 4px 10px;
+        border-radius: 20px;
+        margin: 0 4px;
+    }
+    #lightboxOverlay .lightbox-counter {
+        color: #adb5bd;
+        font-size: .75rem;
+        margin-top: 6px;
+    }
 </style>
 
 <!-- BANNER IDENTIFICATIVO DE LA EMPRESA IMPORT BOLTS (RESPONSIVE) -->
@@ -448,12 +505,18 @@
                         <div class="col-12"><div class="alert alert-warning py-1 px-2 mt-2 d-none" id="alertPrecio" style="font-size: 0.8rem;">Precio Caja > Unitario.</div></div>
 
                         <!-- FOTOS OPCIONALES -->
+                        <!-- FOTOS OPCIONALES -->
                         <div class="col-12 border-top pt-3 mt-2">
                             <label class="form-label small fw-bold text-muted d-block">
                                 <i class="bi bi-camera"></i> Fotos del producto (opcional — se puede agregar después)
                             </label>
-                            <input type="file" id="new_fotos" accept="image/jpeg,image/png,image/webp" multiple class="form-control form-control-sm">
-                            <div class="form-text small">Máximo 5 fotos. Puede omitir este paso y subirlas luego desde el ícono de galería.</div>
+                            <div id="new_fotos_dropzone" class="p-3 text-center border rounded" style="border-style: dashed !important; background:#f8f9fa; cursor:pointer;" onclick="document.getElementById('new_fotos').click()">
+                                <i class="bi bi-images fs-3 text-muted d-block mb-1"></i>
+                                <span class="small text-muted">Click para elegir hasta 5 fotos (JPG, PNG o WEBP)</span>
+                            </div>
+                            <input type="file" id="new_fotos" accept="image/jpeg,image/png,image/webp" multiple class="d-none">
+                            <div id="new_fotos_preview" class="row g-2 mt-2"></div>
+                            <div class="form-text small">Este paso es opcional — puede omitirlo y subir fotos después desde el ícono de galería.</div>
                         </div>
 
                         <!-- SKU AL FINAL, MANUAL Y OBLIGATORIO -->
@@ -769,6 +832,17 @@
     </div>
 </div>
 
+<div id="lightboxOverlay">
+    <span class="lightbox-close" onclick="cerrarLightbox()">&times;</span>
+    <button class="lightbox-nav lightbox-prev" onclick="lightboxAnterior()"><i class="bi bi-chevron-left"></i></button>
+    <img id="lightboxImg" src="" alt="Foto ampliada">
+    <button class="lightbox-nav lightbox-next" onclick="lightboxSiguiente()"><i class="bi bi-chevron-right"></i></button>
+    <div class="lightbox-caption">
+        <span class="badge-user"><i class="bi bi-person-fill"></i> <span id="lightbox_usuario"></span></span>
+        <span class="badge-user"><i class="bi bi-clock-fill"></i> <span id="lightbox_fecha"></span></span>
+    </div>
+    <div class="lightbox-counter" id="lightbox_contador"></div>
+</div>
 <script>
 // --- INICIO DE CARGA (TODO LO QUE DEBE PASAR AL ABRIR LA PÁGINA) ---
     document.addEventListener('DOMContentLoaded', () => {
@@ -1079,14 +1153,18 @@ function guardarProductoAjax() {
                 return Swal.fire({ icon: 'error', title: 'Error', text: data.msg });
             }
 
-            const inputFotos = document.getElementById('new_fotos');
-            const archivosValidos = inputFotos
-                ? Array.from(inputFotos.files).filter(f => f.type && f.type.startsWith('image/')).slice(0, 5)
-                : [];
+            // Si el usuario seleccionó fotos, las sube ahora que ya existe el producto (con su ID)
+            const totalFotos = fotosNuevoProductoSeleccionadas.length;
 
-            if (archivosValidos.length > 0) {
-                Swal.fire({ title: 'Guardando fotos...', didOpen: () => Swal.showLoading(), allowOutsideClick: false });
-                for (const archivo of archivosValidos) {
+            if (totalFotos > 0) {
+                let subidas = 0;
+                for (const archivo of fotosNuevoProductoSeleccionadas) {
+                    subidas++;
+                    Swal.fire({
+                        title: `Subiendo foto ${subidas} de ${totalFotos}...`,
+                        didOpen: () => Swal.showLoading(),
+                        allowOutsideClick: false
+                    });
                     try {
                         const blob = await comprimirImagen(archivo);
                         let fd = new FormData();
@@ -1097,6 +1175,8 @@ function guardarProductoAjax() {
                         console.error('No se pudo subir una foto:', err);
                     }
                 }
+                fotosNuevoProductoSeleccionadas = [];
+                renderizarPreviewFotosNuevoProducto();
             }
 
             Swal.fire({ icon: 'success', title: '¡Creado!', text: `SKU: ${data.sku}`, timer: 1500, showConfirmButton: false })
@@ -1343,6 +1423,9 @@ function onFotoError(img) {
     img.onclick = null;
 }
 
+let fotosActuales = [];
+let indiceLightboxActual = 0;
+
 function cargarFotosGaleria() {
     const grid = document.getElementById('galeria_grid');
     const vacio = document.getElementById('galeria_vacio');
@@ -1352,6 +1435,7 @@ function cargarFotosGaleria() {
     fetch(`/api/producto/${productoGaleriaActual}/fotos?origen=${origenGaleriaActual}`)
         .then(r => r.json())
         .then(data => {
+            fotosActuales = data.fotos;
             grid.innerHTML = '';
 
             const contador = document.getElementById('galeria_contador');
@@ -1362,7 +1446,7 @@ function cargarFotosGaleria() {
                 return;
             }
 
-            data.fotos.forEach(f => {
+            data.fotos.forEach((f, idx) => {
                 const esAdminAlmacen = {{ 'true' if session.get('role') in ['admin', 'almacen'] else 'false' }};
                 grid.innerHTML += `
                     <div class="col-6 col-md-4">
@@ -1371,14 +1455,17 @@ function cargarFotosGaleria() {
                                 <img src="${f.url}" loading="lazy"
                                      onload="onFotoLista(this)"
                                      onerror="onFotoError(this)"
-                                     onclick="window.open('${f.url}', '_blank')">
+                                     onclick="abrirLightbox(${idx})">
                             </div>
-                            <div class="foto-info">
-                                <small class="text-muted">${f.fecha}</small>
-                                <div class="d-flex gap-1">
-                                    <a href="${f.url}&download=1" class="btn btn-sm btn-outline-secondary py-0" title="Descargar"><i class="bi bi-download"></i></a>
-                                    ${esAdminAlmacen ? `<button class="btn btn-sm btn-outline-danger py-0" onclick="eliminarFoto(${f.id})" title="Eliminar"><i class="bi bi-trash"></i></button>` : ''}
+                            <div class="foto-info flex-column align-items-start gap-1">
+                                <div class="d-flex justify-content-between w-100">
+                                    <small class="text-muted"><i class="bi bi-person"></i> ${f.subido_por}</small>
+                                    <div class="d-flex gap-1">
+                                        <a href="${f.url}?download=1" class="btn btn-sm btn-outline-secondary py-0" title="Descargar"><i class="bi bi-download"></i></a>
+                                        ${esAdminAlmacen ? `<button class="btn btn-sm btn-outline-danger py-0" onclick="eliminarFoto(${f.id})" title="Eliminar"><i class="bi bi-trash"></i></button>` : ''}
+                                    </div>
                                 </div>
+                                <small class="text-muted" style="font-size:.72rem;"><i class="bi bi-clock"></i> ${f.fecha_hora}</small>
                             </div>
                         </div>
                     </div>`;
@@ -1388,6 +1475,50 @@ function cargarFotosGaleria() {
             grid.innerHTML = '<div class="col-12 text-center text-danger py-3 small">No se pudieron cargar las fotos.</div>';
         });
 }
+
+function abrirLightbox(indice) {
+    indiceLightboxActual = indice;
+    mostrarFotoLightbox();
+    document.getElementById('lightboxOverlay').classList.add('activo');
+}
+
+function cerrarLightbox() {
+    document.getElementById('lightboxOverlay').classList.remove('activo');
+}
+
+function mostrarFotoLightbox() {
+    const f = fotosActuales[indiceLightboxActual];
+    if (!f) return;
+    document.getElementById('lightboxImg').src = f.url;
+    document.getElementById('lightbox_usuario').innerText = f.subido_por;
+    document.getElementById('lightbox_fecha').innerText = f.fecha_hora;
+    document.getElementById('lightbox_contador').innerText = `${indiceLightboxActual + 1} de ${fotosActuales.length}`;
+
+    document.querySelector('.lightbox-prev').disabled = (indiceLightboxActual === 0);
+    document.querySelector('.lightbox-next').disabled = (indiceLightboxActual === fotosActuales.length - 1);
+}
+
+function lightboxAnterior() {
+    if (indiceLightboxActual > 0) {
+        indiceLightboxActual--;
+        mostrarFotoLightbox();
+    }
+}
+
+function lightboxSiguiente() {
+    if (indiceLightboxActual < fotosActuales.length - 1) {
+        indiceLightboxActual++;
+        mostrarFotoLightbox();
+    }
+}
+
+// Navegación con teclado (flechas y Escape)
+document.addEventListener('keydown', function(e) {
+    if (!document.getElementById('lightboxOverlay').classList.contains('activo')) return;
+    if (e.key === 'ArrowLeft') lightboxAnterior();
+    if (e.key === 'ArrowRight') lightboxSiguiente();
+    if (e.key === 'Escape') cerrarLightbox();
+});
 
 function comprimirImagen(archivo, maxWidth = 1200, calidad = 0.8) {
     return new Promise((resolve) => {
@@ -1455,6 +1586,63 @@ function eliminarFoto(fotoId) {
                 else Swal.fire('Error', data.msg, 'error');
             });
     });
+}
+let fotosNuevoProductoSeleccionadas = [];
+
+document.addEventListener('DOMContentLoaded', () => {
+    const inputFotos = document.getElementById('new_fotos');
+    if (inputFotos) {
+        inputFotos.addEventListener('change', manejarSeleccionFotosNuevoProducto);
+    }
+});
+
+function manejarSeleccionFotosNuevoProducto(e) {
+    const archivosNuevos = Array.from(e.target.files);
+    e.target.value = ''; // permite volver a elegir el mismo archivo si lo quita y re-agrega
+
+    for (const archivo of archivosNuevos) {
+        // Validación estricta: solo imágenes reales, nada de video ni otros formatos
+        if (!archivo.type || !archivo.type.startsWith('image/')) {
+            Swal.fire({ icon: 'error', title: 'Archivo no permitido', text: `"${archivo.name}" no es una imagen. Solo se aceptan fotos (JPG, PNG, WEBP).`, timer: 2500, showConfirmButton: false });
+            continue;
+        }
+        if (fotosNuevoProductoSeleccionadas.length >= 5) {
+            Swal.fire({ icon: 'warning', title: 'Máximo alcanzado', text: 'Solo puede seleccionar hasta 5 fotos.', timer: 2000, showConfirmButton: false });
+            break;
+        }
+        fotosNuevoProductoSeleccionadas.push(archivo);
+    }
+    renderizarPreviewFotosNuevoProducto();
+}
+
+function quitarFotoNuevoProducto(idx) {
+    fotosNuevoProductoSeleccionadas.splice(idx, 1);
+    renderizarPreviewFotosNuevoProducto();
+}
+
+function renderizarPreviewFotosNuevoProducto() {
+    const cont = document.getElementById('new_fotos_preview');
+    cont.innerHTML = '';
+
+    fotosNuevoProductoSeleccionadas.forEach((archivo, idx) => {
+        const url = URL.createObjectURL(archivo);
+        cont.innerHTML += `
+            <div class="col-4 col-md-3">
+                <div class="position-relative border rounded overflow-hidden" style="aspect-ratio: 1/1;">
+                    <img src="${url}" style="width:100%; height:100%; object-fit:cover;">
+                    <button type="button" class="btn btn-sm btn-danger position-absolute top-0 end-0 m-1 py-0 px-1" 
+                            style="line-height:1;" onclick="quitarFotoNuevoProducto(${idx})" title="Quitar">
+                        <i class="bi bi-x"></i>
+                    </button>
+                </div>
+            </div>`;
+    });
+
+    const dropzone = document.getElementById('new_fotos_dropzone');
+    const restantes = 5 - fotosNuevoProductoSeleccionadas.length;
+    dropzone.querySelector('span').innerText = restantes > 0
+        ? `Click para elegir hasta ${restantes} foto(s) más`
+        : 'Máximo de 5 fotos alcanzado';
 }
 </script>
 {% endblock %}

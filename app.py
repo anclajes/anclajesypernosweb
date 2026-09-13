@@ -6371,7 +6371,8 @@ def listar_fotos_producto(product_id):
     return {'status': 'success', 'fotos': [{
         'id': f.id, 'url': url_for('ver_foto_producto', foto_id=f.id),
         'subido_por': f.subido_por.nombre_completo if f.subido_por else '-',
-        'fecha': f.fecha_subida.strftime('%d/%m/%Y')
+        'fecha': f.fecha_subida.strftime('%d/%m/%Y'),
+        'fecha_hora': f.fecha_subida.strftime('%d/%m/%Y %H:%M')
     } for f in fotos]}
 
 @app.route('/api/foto/<int:foto_id>/ver')
