@@ -13,6 +13,53 @@
     .btn-brand { background-color: var(--theme-primary); color: white; }
     .btn-brand:hover { background-color: #082d6d; color: white; }
     .table-brand-header { background-color: #1a2b4c !important; color: white !important; }
+
+        /* --- GALERÍA DE FOTOS: diseño mejorado --- */
+    #modalGaleria .modal-dialog { max-width: 800px; }
+    #galeria_grid .foto-card {
+        border-radius: 12px;
+        overflow: hidden;
+        border: 1px solid #e9ecef;
+        background: #fff;
+        transition: transform .15s ease, box-shadow .15s ease;
+    }
+    #galeria_grid .foto-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 8px 20px rgba(0,0,0,.12);
+    }
+    #galeria_grid .foto-img-wrap {
+        position: relative;
+        width: 100%;
+        padding-top: 78%;
+        background: #f1f3f5;
+        overflow: hidden;
+    }
+    #galeria_grid .foto-img-wrap img {
+        position: absolute;
+        top: 0; left: 0;
+        width: 100%; height: 100%;
+        object-fit: cover;
+        cursor: zoom-in;
+        transition: transform .2s ease;
+    }
+    #galeria_grid .foto-img-wrap img:hover { transform: scale(1.04); }
+    #galeria_grid .foto-info {
+        padding: .5rem .65rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-top: 1px solid #f1f3f5;
+    }
+    #galeria_dropzone {
+        border: 2px dashed #ced4da;
+        border-radius: 10px;
+        background: #f8f9fa;
+        transition: border-color .15s ease, background .15s ease;
+    }
+    #galeria_dropzone.dragover {
+        border-color: var(--theme-primary);
+        background: #eef4fb;
+    }
 </style>
 
 <div class="card shadow-sm border-0 mb-4" style="border-left: 6px solid var(--theme-primary) !important;">
@@ -338,7 +385,13 @@
                         <div class="col-12"><div class="alert alert-warning py-1 px-2 mt-2 d-none" id="alertPrecio" style="font-size: 0.8rem;">Precio Caja > Unitario.</div></div>
 
                         <!-- SKU AL FINAL, MANUAL Y OBLIGATORIO -->
-                        <div class="col-12 border-top pt-3 mt-2">
+                        div class="col-12 border-top pt-3 mt-2">
+                            <label class="form-label small fw-bold text-muted">
+                                <i class="bi bi-camera"></i> Fotos del producto (opcional — se puede agregar después)
+                            </label>
+                            <input type="file" id="new_fotos" accept="image/jpeg,image/png,image/webp" multiple class="form-control form-control-sm">
+                            <div class="form-text small">Máximo 5 fotos. Puede omitir este paso y subirlas luego desde el ícono de galería.</div>
+                        </div>
                             <label class="form-label small fw-bold text-danger">CÓDIGO / SKU * (Manual — siga la nomenclatura de la empresa)</label>
                             <input type="text" name="sku" id="inputSKUNuevo" class="form-control fw-bold text-uppercase border-danger" 
                                 placeholder="Ej: P490N1605840004P" required
@@ -622,15 +675,18 @@
 <div class="modal fade" id="modalGaleria" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="modal-content">
-            <div class="modal-header bg-info text-white">
-                <h6 class="modal-title fw-bold"><i class="bi bi-images"></i> Fotos: <span id="galeria_sku"></span></h6>
+            <div class="modal-header text-white" style="background-color: var(--theme-primary);">
+                <h6 class="modal-title fw-bold mb-0"><i class="bi bi-images"></i> Fotos: <span id="galeria_sku"></span></h6>
                 <button class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 {% if session.get('role') in ['admin', 'almacen'] %}
-                <div class="mb-3 p-3 bg-light rounded border">
-                    <label class="small fw-bold text-muted mb-2 d-block">Agregar foto (máx. 5 por producto)</label>
-                    <div class="d-flex gap-2 flex-wrap">
+                <div id="galeria_dropzone" class="p-3 mb-3 text-center">
+                    <i class="bi bi-cloud-arrow-up fs-3 text-muted d-block mb-2"></i>
+                    <label class="small fw-bold text-muted mb-2 d-block">
+                        Agregar foto (JPG, PNG o WEBP — máx. 5 por producto)
+                    </label>
+                    <div class="d-flex gap-2 justify-content-center flex-wrap">
                         <input type="file" id="inputFotoArchivo" accept="image/jpeg,image/png,image/webp" class="form-control form-control-sm" style="max-width:220px;">
                         <input type="file" id="inputFotoCamara" accept="image/*" capture="environment" class="d-none">
                         <button class="btn btn-sm btn-outline-primary" onclick="document.getElementById('inputFotoCamara').click()">
@@ -643,16 +699,15 @@
                     <div id="galeria_contador" class="small text-muted mt-2"></div>
                 </div>
                 {% endif %}
-                <div id="galeria_grid" class="row g-2"></div>
-                <div id="galeria_vacio" class="text-center text-muted py-4 d-none">
-                    <i class="bi bi-image display-4 opacity-25"></i>
-                    <p class="mt-2 small">Este producto aún no tiene fotos.</p>
+                <div id="galeria_grid" class="row g-3"></div>
+                <div id="galeria_vacio" class="text-center text-muted py-5 d-none">
+                    <i class="bi bi-image display-3 opacity-25"></i>
+                    <p class="mt-2 small mb-0">Este producto aún no tiene fotos.</p>
                 </div>
             </div>
         </div>
     </div>
 </div>
-
 <script>
 // --- INICIO DE CARGA (TODO LO QUE DEBE PASAR AL ABRIR LA PÁGINA) ---
     document.addEventListener('DOMContentLoaded', () => {
@@ -958,13 +1013,34 @@ function guardarProductoAjax() {
         const formData = new FormData(form);
         fetch('/producto/nuevo', { method: 'POST', body: formData })
         .then(r => r.json())
-        .then(data => {
-            if (data.status === 'success') {
-                Swal.fire({ icon: 'success', title: '¡Creado!', text: `SKU: ${data.sku}`, timer: 1500, showConfirmButton: false })
-                .then(() => { window.location.href = `/inventario?busqueda=${data.sku}`; });
-            } else {
-                Swal.fire({ icon: 'error', title: 'Error', text: data.msg });
+        .then(async data => {
+            if (data.status !== 'success') {
+                return Swal.fire({ icon: 'error', title: 'Error', text: data.msg });
             }
+
+            // Si el usuario seleccionó fotos, las sube ahora que ya existe el producto (con su ID)
+            const inputFotos = document.getElementById('new_fotos');
+            const archivosValidos = inputFotos
+                ? Array.from(inputFotos.files).filter(f => f.type && f.type.startsWith('image/')).slice(0, 5)
+                : [];
+
+            if (archivosValidos.length > 0) {
+                Swal.fire({ title: 'Guardando fotos...', didOpen: () => Swal.showLoading(), allowOutsideClick: false });
+                for (const archivo of archivosValidos) {
+                    try {
+                        const blob = await comprimirImagen(archivo);
+                        let fd = new FormData();
+                        fd.append('foto', blob, 'foto.jpg');
+                        fd.append('origen', 'ANCLAJES');
+                        await fetch(`/api/producto/${data.id}/subir_foto`, { method: 'POST', body: fd });
+                    } catch (err) {
+                        console.error('No se pudo subir una foto:', err);
+                    }
+                }
+            }
+
+            Swal.fire({ icon: 'success', title: '¡Creado!', text: `SKU: ${data.sku}`, timer: 1500, showConfirmButton: false })
+            .then(() => { window.location.href = `/inventario?busqueda=${data.sku}`; });
         });
     });
 }
@@ -1199,12 +1275,29 @@ function abrirGaleria(productId, sku, origen) {
     new bootstrap.Modal(document.getElementById('modalGaleria')).show();
 }
 
+const FOTO_PLACEHOLDER = "data:image/svg+xml;utf8," + encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="230">' +
+    '<rect width="100%" height="100%" fill="#f1f3f5"/>' +
+    '<text x="50%" y="50%" font-family="sans-serif" font-size="14" fill="#adb5bd" text-anchor="middle" dy=".3em">Imagen no disponible</text>' +
+    '</svg>'
+);
+
+function onFotoError(img) {
+    img.onerror = null;
+    img.src = FOTO_PLACEHOLDER;
+    img.style.cursor = 'default';
+    img.onclick = null;
+}
+
 function cargarFotosGaleria() {
+    const grid = document.getElementById('galeria_grid');
+    const vacio = document.getElementById('galeria_vacio');
+    grid.innerHTML = '<div class="col-12 text-center text-muted py-3"><div class="spinner-border spinner-border-sm"></div> Cargando fotos...</div>';
+    vacio.classList.add('d-none');
+
     fetch(`/api/producto/${productoGaleriaActual}/fotos?origen=${origenGaleriaActual}`)
         .then(r => r.json())
         .then(data => {
-            const grid = document.getElementById('galeria_grid');
-            const vacio = document.getElementById('galeria_vacio');
             grid.innerHTML = '';
 
             const contador = document.getElementById('galeria_contador');
@@ -1214,24 +1307,31 @@ function cargarFotosGaleria() {
                 vacio.classList.remove('d-none');
                 return;
             }
-            vacio.classList.add('d-none');
 
             data.fotos.forEach(f => {
                 const esAdminAlmacen = {{ 'true' if session.get('role') in ['admin', 'almacen'] else 'false' }};
+                const urlSegura = f.url || FOTO_PLACEHOLDER;
                 grid.innerHTML += `
                     <div class="col-6 col-md-4">
-                        <div class="card shadow-sm">
-                            <img src="${f.url}" class="card-img-top" style="height:150px; object-fit:cover; cursor:pointer;" onclick="window.open('${f.url}', '_blank')">
-                            <div class="card-body p-2 d-flex justify-content-between align-items-center">
+                        <div class="foto-card shadow-sm">
+                            <div class="foto-img-wrap">
+                                <img src="${urlSegura}" loading="lazy"
+                                     onerror="onFotoError(this)"
+                                     onclick="window.open('${urlSegura}', '_blank')">
+                            </div>
+                            <div class="foto-info">
                                 <small class="text-muted">${f.fecha}</small>
                                 <div class="d-flex gap-1">
-                                    <a href="${f.url}" download class="btn btn-sm btn-outline-secondary py-0"><i class="bi bi-download"></i></a>
-                                    ${esAdminAlmacen ? `<button class="btn btn-sm btn-outline-danger py-0" onclick="eliminarFoto(${f.id})"><i class="bi bi-trash"></i></button>` : ''}
+                                    <a href="${urlSegura}" target="_blank" class="btn btn-sm btn-outline-secondary py-0" title="Descargar"><i class="bi bi-download"></i></a>
+                                    ${esAdminAlmacen ? `<button class="btn btn-sm btn-outline-danger py-0" onclick="eliminarFoto(${f.id})" title="Eliminar"><i class="bi bi-trash"></i></button>` : ''}
                                 </div>
                             </div>
                         </div>
                     </div>`;
             });
+        })
+        .catch(() => {
+            grid.innerHTML = '<div class="col-12 text-center text-danger py-3 small">No se pudieron cargar las fotos.</div>';
         });
 }
 
@@ -1262,24 +1362,33 @@ async function subirFotoSeleccionada() {
 
     if (!archivo) return Swal.fire('Falta imagen', 'Seleccione o tome una foto primero.', 'warning');
 
+    // Corte inmediato: si no es imagen, ni siquiera lo intenta procesar (evita que se quede "pegado")
+    if (!archivo.type || !archivo.type.startsWith('image/')) {
+        return Swal.fire('Archivo no válido', 'Solo se permiten imágenes (JPG, PNG o WEBP). Ese archivo no es una imagen.', 'error');
+    }
+
     Swal.fire({ title: 'Subiendo...', didOpen: () => Swal.showLoading(), allowOutsideClick: false });
 
-    const blobComprimido = await comprimirImagen(archivo);
-    let fd = new FormData();
-    fd.append('foto', blobComprimido, 'foto.jpg');
-    fd.append('origen', origenGaleriaActual);
+    try {
+        const blobComprimido = await comprimirImagen(archivo);
+        let fd = new FormData();
+        fd.append('foto', blobComprimido, 'foto.jpg');
+        fd.append('origen', origenGaleriaActual);
 
-    fetch(`/api/producto/${productoGaleriaActual}/subir_foto`, { method: 'POST', body: fd })
-        .then(r => r.json())
-        .then(data => {
-            Swal.close();
-            if (data.status === 'success') {
-                inputArchivo.value = ''; inputCamara.value = '';
-                cargarFotosGaleria();
-            } else {
-                Swal.fire('No se pudo subir', data.msg, 'error');
-            }
-        });
+        const r = await fetch(`/api/producto/${productoGaleriaActual}/subir_foto`, { method: 'POST', body: fd });
+        const data = await r.json();
+        Swal.close();
+
+        if (data.status === 'success') {
+            inputArchivo.value = ''; inputCamara.value = '';
+            cargarFotosGaleria();
+        } else {
+            Swal.fire('No se pudo subir', data.msg, 'error');
+        }
+    } catch (err) {
+        Swal.close();
+        Swal.fire('Error', 'Ocurrió un problema al procesar la imagen. Intente con otro archivo.', 'error');
+    }
 }
 
 function eliminarFoto(fotoId) {

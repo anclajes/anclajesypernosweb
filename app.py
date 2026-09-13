@@ -246,6 +246,21 @@ s3_client = boto3.client(
     config=Config(signature_version='s3v4')
 )
 
+def generar_url_firmada(s3_key, expiracion=3600):
+    """Genera una URL temporal (1 hora) para ver/descargar un archivo privado de S3,
+    sin necesidad de hacer público el bucket."""
+    if not s3_key:
+        return None
+    try:
+        return s3_client.generate_presigned_url(
+            'get_object',
+            Params={'Bucket': S3_BUCKET_NAME, 'Key': s3_key},
+            ExpiresIn=expiracion
+        )
+    except Exception as e:
+        print(f"Error generando URL firmada: {e}")
+        return None
+
 # Carpeta EXCLUSIVA para Órdenes de Compra locales (Pre-AWS)
 app.config['UPLOAD_FOLDER_OC'] = os.path.join(os.getcwd(), 'uploads_oc')
 os.makedirs(app.config['UPLOAD_FOLDER_OC'], exist_ok=True)
@@ -4108,7 +4123,7 @@ def nuevo_producto():
         registrar_log(f"Creó producto {sku_final}", "bi-plus-circle-fill", "text-success")
         db.session.commit()
         
-        return {'status': 'success', 'msg': 'Creado', 'sku': sku_final}
+        return {'status': 'success', 'msg': 'Creado', 'sku': sku_final, 'id': nuevo.id}
         
     except Exception as e:
         db.session.rollback()
@@ -5730,7 +5745,7 @@ def nuevo_producto_importbolts():
         registrar_log(f"Creó producto ImportBolts {sku_final}", "bi-plus-circle-fill", "text-success")
         db.session.commit()
         
-        return {'status': 'success', 'msg': 'Creado', 'sku': sku_final}
+        return {'status': 'success', 'msg': 'Creado', 'sku': sku_final, 'id': nuevo.id}
         
     except Exception as e:
         db.session.rollback()
@@ -6369,7 +6384,7 @@ def listar_fotos_producto(product_id):
         fotos = ProductImage.query.filter_by(product_id=product_id, origen_inventario='ANCLAJES').all()
 
     return {'status': 'success', 'fotos': [{
-        'id': f.id, 'url': f.url_s3, 
+        'id': f.id, 'url': generar_url_firmada(f.s3_key), 
         'subido_por': f.subido_por.nombre_completo if f.subido_por else '-',
         'fecha': f.fecha_subida.strftime('%d/%m/%Y')
     } for f in fotos]}
@@ -6401,6 +6416,22 @@ def subir_foto_producto(product_id):
     if ext not in ['jpg', 'jpeg', 'png', 'webp']:
         return {'status': 'error', 'msg': 'Formato no permitido. Use JPG, PNG o WEBP.'}
 
+    # --- VALIDACIÓN REAL DEL CONTENIDO (no confiar solo en el nombre del archivo) ---
+    cabecera = archivo.stream.read(12)
+    archivo.stream.seek(0)
+
+    es_jpeg = cabecera.startswith(b'\xff\xd8\xff')
+    es_png  = cabecera.startswith(b'\x89PNG\r\n\x1a\n')
+    es_webp = cabecera[0:4] == b'RIFF' and cabecera[8:12] == b'WEBP'
+
+    if not (es_jpeg or es_png or es_webp):
+        return {'status': 'error', 'msg': 'El archivo no es una imagen válida. Se rechazó por seguridad.'}
+
+    if not archivo.content_type or not archivo.content_type.startswith('image/'):
+        return {'status': 'error', 'msg': 'El archivo no es una imagen válida.'}
+
+    # Validación de tamaño (5MB máx)
+
     # Validación de tamaño (5MB máx)
     archivo.seek(0, 2)
     tamano = archivo.tell()
@@ -6417,11 +6448,9 @@ def subir_foto_producto(product_id):
             archivo, S3_BUCKET_NAME, s3_key,
             ExtraArgs={'ContentType': archivo.content_type}
         )
-        url_publica = f"https://{S3_BUCKET_NAME}.s3.amazonaws.com/{s3_key}"
-
         nueva_foto = ProductImage(
             origen_inventario=origen,
-            url_s3=url_publica,
+            url_s3=f"s3://{S3_BUCKET_NAME}/{s3_key}",  # solo referencia interna, ya no se usa para mostrar
             s3_key=s3_key,
             subido_por_id=session.get('user_id')
         )
@@ -6433,7 +6462,8 @@ def subir_foto_producto(product_id):
         db.session.add(nueva_foto)
         db.session.commit()
 
-        return {'status': 'success', 'msg': 'Foto subida correctamente.', 'url': url_publica, 'id': nueva_foto.id}
+        url_temporal = generar_url_firmada(s3_key)
+        return {'status': 'success', 'msg': 'Foto subida correctamente.', 'url': url_temporal, 'id': nueva_foto.id}
 
     except Exception as e:
         db.session.rollback()
