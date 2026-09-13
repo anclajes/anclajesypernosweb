@@ -246,21 +246,6 @@ s3_client = boto3.client(
     config=Config(signature_version='s3v4')
 )
 
-def generar_url_firmada(s3_key, expiracion=3600):
-    """Genera una URL temporal (1 hora) para ver/descargar un archivo privado de S3,
-    sin necesidad de hacer público el bucket."""
-    if not s3_key:
-        return None
-    try:
-        return s3_client.generate_presigned_url(
-            'get_object',
-            Params={'Bucket': S3_BUCKET_NAME, 'Key': s3_key},
-            ExpiresIn=expiracion
-        )
-    except Exception as e:
-        print(f"Error generando URL firmada: {e}")
-        return None
-
 # Carpeta EXCLUSIVA para Órdenes de Compra locales (Pre-AWS)
 app.config['UPLOAD_FOLDER_OC'] = os.path.join(os.getcwd(), 'uploads_oc')
 os.makedirs(app.config['UPLOAD_FOLDER_OC'], exist_ok=True)
@@ -6384,11 +6369,36 @@ def listar_fotos_producto(product_id):
         fotos = ProductImage.query.filter_by(product_id=product_id, origen_inventario='ANCLAJES').all()
 
     return {'status': 'success', 'fotos': [{
-        'id': f.id, 'url': generar_url_firmada(f.s3_key), 
+        'id': f.id, 'url': url_for('ver_foto_producto', foto_id=f.id),
         'subido_por': f.subido_por.nombre_completo if f.subido_por else '-',
         'fecha': f.fecha_subida.strftime('%d/%m/%Y')
     } for f in fotos]}
 
+@app.route('/api/foto/<int:foto_id>/ver')
+def ver_foto_producto(foto_id):
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+
+    foto = ProductImage.query.get_or_404(foto_id)
+    forzar_descarga = request.args.get('download') == '1'
+
+    try:
+        archivo_s3 = s3_client.get_object(Bucket=S3_BUCKET_NAME, Key=foto.s3_key)
+
+        extension = foto.s3_key.rsplit('.', 1)[-1].lower()
+        tipo_mime = {
+            'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
+            'png': 'image/png', 'webp': 'image/webp'
+        }.get(extension, 'application/octet-stream')
+
+        return send_file(
+            io.BytesIO(archivo_s3['Body'].read()),
+            mimetype=tipo_mime,
+            as_attachment=forzar_descarga,
+            download_name=f"foto_{foto.id}.{extension}"
+        )
+    except Exception as e:
+        return f"<h3>No se pudo recuperar la imagen</h3><p>{str(e)}</p>", 404
 
 @app.route('/api/producto/<int:product_id>/subir_foto', methods=['POST'])
 def subir_foto_producto(product_id):
@@ -6462,8 +6472,11 @@ def subir_foto_producto(product_id):
         db.session.add(nueva_foto)
         db.session.commit()
 
-        url_temporal = generar_url_firmada(s3_key)
-        return {'status': 'success', 'msg': 'Foto subida correctamente.', 'url': url_temporal, 'id': nueva_foto.id}
+        return {
+            'status': 'success', 'msg': 'Foto subida correctamente.',
+            'url': url_for('ver_foto_producto', foto_id=nueva_foto.id),
+            'id': nueva_foto.id
+        }
 
     except Exception as e:
         db.session.rollback()

@@ -77,6 +77,24 @@
         border-color: var(--theme-primary);
         background: #eef4fb;
     }
+
+        /* --- Efecto de carga tipo "shimmer" mientras la imagen descarga --- */
+    .foto-img-wrap.cargando {
+        background: linear-gradient(100deg, #ececec 30%, #f7f7f7 50%, #ececec 70%);
+        background-size: 200% 100%;
+        animation: shimmerFoto 1.2s infinite;
+    }
+    @keyframes shimmerFoto {
+        0% { background-position: 200% 0; }
+        100% { background-position: -200% 0; }
+    }
+    .foto-img-wrap img {
+        opacity: 0;
+        transition: opacity .25s ease;
+    }
+    .foto-img-wrap img.cargada {
+        opacity: 1;
+    }
 </style>
 
 <!-- BANNER IDENTIFICATIVO DE LA EMPRESA IMPORT BOLTS (RESPONSIVE) -->
@@ -400,7 +418,6 @@
                                 oninput="this.value = this.value.toUpperCase(); buscarCodigosRelacionadosIB();">
                         </div>
 
-                        <!-- NUEVO: PANEL DE PRODUCTOS RELACIONADOS -->
                         <div class="col-12">
                             <div id="panelCodigosRelacionados" class="d-none">
                                 <div class="alert alert-warning py-2 px-3 mb-2 small">
@@ -430,14 +447,17 @@
                         <div class="col-6 col-md-4"><label class="form-label small">P. Caja</label><input type="number" step="0.01" name="p_caja" id="new_p_caja" class="form-control form-control-sm" onchange="validarPrecios()"></div>
                         <div class="col-12"><div class="alert alert-warning py-1 px-2 mt-2 d-none" id="alertPrecio" style="font-size: 0.8rem;">Precio Caja > Unitario.</div></div>
 
-                        <!-- SKU AL FINAL, MANUAL Y OBLIGATORIO -->
+                        <!-- FOTOS OPCIONALES -->
                         <div class="col-12 border-top pt-3 mt-2">
-                            <label class="form-label small fw-bold text-muted">
+                            <label class="form-label small fw-bold text-muted d-block">
                                 <i class="bi bi-camera"></i> Fotos del producto (opcional — se puede agregar después)
                             </label>
                             <input type="file" id="new_fotos" accept="image/jpeg,image/png,image/webp" multiple class="form-control form-control-sm">
                             <div class="form-text small">Máximo 5 fotos. Puede omitir este paso y subirlas luego desde el ícono de galería.</div>
                         </div>
+
+                        <!-- SKU AL FINAL, MANUAL Y OBLIGATORIO -->
+                        <div class="col-12 border-top pt-3 mt-2">
                             <label class="form-label small fw-bold text-danger">CÓDIGO / SKU * (Manual — siga la nomenclatura de la empresa)</label>
                             <input type="text" name="sku" id="inputSKUNuevo" class="form-control fw-bold text-uppercase border-danger" 
                                 placeholder="Ej: PGR8Z1180004C" required
@@ -1309,9 +1329,16 @@ const FOTO_PLACEHOLDER = "data:image/svg+xml;utf8," + encodeURIComponent(
     '</svg>'
 );
 
+function onFotoLista(img) {
+    img.classList.add('cargada');
+    img.parentElement.classList.remove('cargando');
+}
+
 function onFotoError(img) {
     img.onerror = null;
     img.src = FOTO_PLACEHOLDER;
+    img.classList.add('cargada');
+    img.parentElement.classList.remove('cargando');
     img.style.cursor = 'default';
     img.onclick = null;
 }
@@ -1337,19 +1364,19 @@ function cargarFotosGaleria() {
 
             data.fotos.forEach(f => {
                 const esAdminAlmacen = {{ 'true' if session.get('role') in ['admin', 'almacen'] else 'false' }};
-                const urlSegura = f.url || FOTO_PLACEHOLDER;
                 grid.innerHTML += `
                     <div class="col-6 col-md-4">
                         <div class="foto-card shadow-sm">
-                            <div class="foto-img-wrap">
-                                <img src="${urlSegura}" loading="lazy"
+                            <div class="foto-img-wrap cargando">
+                                <img src="${f.url}" loading="lazy"
+                                     onload="onFotoLista(this)"
                                      onerror="onFotoError(this)"
-                                     onclick="window.open('${urlSegura}', '_blank')">
+                                     onclick="window.open('${f.url}', '_blank')">
                             </div>
                             <div class="foto-info">
                                 <small class="text-muted">${f.fecha}</small>
                                 <div class="d-flex gap-1">
-                                    <a href="${urlSegura}" target="_blank" class="btn btn-sm btn-outline-secondary py-0" title="Descargar"><i class="bi bi-download"></i></a>
+                                    <a href="${f.url}&download=1" class="btn btn-sm btn-outline-secondary py-0" title="Descargar"><i class="bi bi-download"></i></a>
                                     ${esAdminAlmacen ? `<button class="btn btn-sm btn-outline-danger py-0" onclick="eliminarFoto(${f.id})" title="Eliminar"><i class="bi bi-trash"></i></button>` : ''}
                                 </div>
                             </div>
