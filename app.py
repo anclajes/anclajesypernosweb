@@ -1,5 +1,5 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, session
-from models import db, User, Product, Category, Client, Order, OrderDetail, ProductMovement, AuditLog, SystemConfig,OrderKitComponent, ClientContact, ClientContactLog, ClientRubroVendedor, IntercompanyTransfer, MetaVendedor
+from models import db, User, Product, Category, Client, Order, OrderDetail, ProductMovement, AuditLog, SystemConfig,OrderKitComponent, ClientContact, ClientContactLog, ClientRubroVendedor, IntercompanyTransfer, MetaVendedor, ProductImage
 from models import ProductImportBolts, CategoryImportBolts, ProductMovementImportBolts
 from models import ProductMovement
 from models import Payment
@@ -6375,22 +6375,111 @@ def establecer_meta_vendedor():
 
     return {'status': 'success', 'msg': 'Meta actualizada correctamente.'}
 
+# --- CARGAR IMAGENES EN EL INVENTARIO ---
+
+@app.route('/api/producto/<int:product_id>/fotos', methods=['GET'])
+def listar_fotos_producto(product_id):
+    origen = request.args.get('origen', 'ANCLAJES')
+    if origen == 'IMPORTBOLTS':
+        fotos = ProductImage.query.filter_by(product_importbolts_id=product_id, origen_inventario='IMPORTBOLTS').all()
+    else:
+        fotos = ProductImage.query.filter_by(product_id=product_id, origen_inventario='ANCLAJES').all()
+
+    return {'status': 'success', 'fotos': [{
+        'id': f.id, 'url': f.url_s3, 
+        'subido_por': f.subido_por.nombre_completo if f.subido_por else '-',
+        'fecha': f.fecha_subida.strftime('%d/%m/%Y')
+    } for f in fotos]}
+
+
+@app.route('/api/producto/<int:product_id>/subir_foto', methods=['POST'])
+def subir_foto_producto(product_id):
+    if session.get('role') not in ['admin', 'almacen']:
+        return {'status': 'error', 'msg': 'No autorizado'}, 403
+
+    origen = request.form.get('origen', 'ANCLAJES')
+    Modelo = ProductImportBolts if origen == 'IMPORTBOLTS' else Product
+    prod = Modelo.query.get_or_404(product_id)
+
+    # Límite de 5 fotos
+    filtro = {'product_importbolts_id': product_id} if origen == 'IMPORTBOLTS' else {'product_id': product_id}
+    cantidad_actual = ProductImage.query.filter_by(origen_inventario=origen, **filtro).count()
+    if cantidad_actual >= 5:
+        return {'status': 'error', 'msg': 'Este producto ya tiene el máximo de 5 fotos. Elimine una para subir otra.'}
+
+    if 'foto' not in request.files:
+        return {'status': 'error', 'msg': 'No se envió ninguna imagen.'}
+    
+    archivo = request.files['foto']
+    if archivo.filename == '':
+        return {'status': 'error', 'msg': 'Archivo vacío.'}
+
+    ext = archivo.filename.rsplit('.', 1)[-1].lower()
+    if ext not in ['jpg', 'jpeg', 'png', 'webp']:
+        return {'status': 'error', 'msg': 'Formato no permitido. Use JPG, PNG o WEBP.'}
+
+    # Validación de tamaño (5MB máx)
+    archivo.seek(0, 2)
+    tamano = archivo.tell()
+    archivo.seek(0)
+    if tamano > 5 * 1024 * 1024:
+        return {'status': 'error', 'msg': 'La imagen supera los 5MB permitidos.'}
+
+    try:
+        carpeta = 'productos/importbolts' if origen == 'IMPORTBOLTS' else 'productos/anclajes'
+        nombre_archivo = f"{uuid.uuid4().hex}.{ext}"
+        s3_key = f"{carpeta}/{prod.sku}/{nombre_archivo}"
+
+        s3_client.upload_fileobj(
+            archivo, S3_BUCKET_NAME, s3_key,
+            ExtraArgs={'ContentType': archivo.content_type}
+        )
+        url_publica = f"https://{S3_BUCKET_NAME}.s3.amazonaws.com/{s3_key}"
+
+        nueva_foto = ProductImage(
+            origen_inventario=origen,
+            url_s3=url_publica,
+            s3_key=s3_key,
+            subido_por_id=session.get('user_id')
+        )
+        if origen == 'IMPORTBOLTS':
+            nueva_foto.product_importbolts_id = product_id
+        else:
+            nueva_foto.product_id = product_id
+
+        db.session.add(nueva_foto)
+        db.session.commit()
+
+        return {'status': 'success', 'msg': 'Foto subida correctamente.', 'url': url_publica, 'id': nueva_foto.id}
+
+    except Exception as e:
+        db.session.rollback()
+        return {'status': 'error', 'msg': f'Error al subir: {str(e)}'}
+
+
+@app.route('/api/foto/<int:foto_id>/eliminar', methods=['POST'])
+def eliminar_foto_producto(foto_id):
+    if session.get('role') not in ['admin', 'almacen']:
+        return {'status': 'error', 'msg': 'No autorizado'}, 403
+
+    foto = ProductImage.query.get_or_404(foto_id)
+    try:
+        s3_client.delete_object(Bucket=S3_BUCKET_NAME, Key=foto.s3_key)
+    except Exception as e:
+        print(f"Aviso: no se pudo borrar de S3 ({e}), se elimina igual el registro.")
+
+    db.session.delete(foto)
+    db.session.commit()
+    return {'status': 'success', 'msg': 'Foto eliminada.'}
+
 # --- RUTA SECRETA PARA INICIALIZAR LA BASE DE DATOS EN RENDER ---
 
 
-@app.route('/fix_peso_kg_productos')
-def fix_peso_kg_productos():
+@app.route('/fix_product_image')
+def fix_product_image():
     try:
-        with db.engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
-            try:
-                conn.execute(text("ALTER TABLE product ADD COLUMN peso_kg FLOAT DEFAULT 0.0"))
-            except Exception as e:
-                print(f"Aviso product: {e}")
-            try:
-                conn.execute(text("ALTER TABLE product_importbolts ADD COLUMN peso_kg FLOAT DEFAULT 0.0"))
-            except Exception as e:
-                print(f"Aviso product_importbolts: {e}")
-        return "<h2>✅ Columna peso_kg agregada a ambas tablas de productos.</h2>"
+        db.create_all()
+        return "<h2>✅ Tabla product_image creada.</h2>"
     except Exception as e:
         return f"<h2>Error: {str(e)}</h2>"
     

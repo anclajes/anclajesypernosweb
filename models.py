@@ -429,3 +429,16 @@ class MetaVendedor(db.Model):
     actualizado_por = db.relationship('User', foreign_keys=[actualizado_por_id])
 
     __table_args__ = (db.UniqueConstraint('vendedor_id', 'anio', 'mes', name='uq_meta_vendedor_periodo'),)
+
+class ProductImage(db.Model):
+    __tablename__ = 'product_image'
+    id = db.Column(db.Integer, primary_key=True)
+    product_id = db.Column(db.Integer, db.ForeignKey('product.id'), nullable=True)
+    product_importbolts_id = db.Column(db.Integer, db.ForeignKey('product_importbolts.id'), nullable=True)
+    origen_inventario = db.Column(db.String(20), nullable=False, default='ANCLAJES')
+    url_s3 = db.Column(db.String(500), nullable=False)
+    s3_key = db.Column(db.String(500), nullable=False)  # para poder borrarla de S3 después
+    subido_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    fecha_subida = db.Column(db.DateTime, default=hora_peru)
+
+    subido_por = db.relationship('User')
