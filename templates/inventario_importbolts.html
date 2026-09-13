@@ -192,6 +192,10 @@
                                         onclick="abrirEditar('{{p.id}}', '{{p.nombre|replace("'", "\\'")|replace('"', '&quot;')}}', '{{p.stock_actual}}', '{{p.precio_unidad}}', '{{p.precio_caja}}', '{{p.ubicacion|default('', true)}}', '{{p.categoria}}', '{{p.calidad|default('', true)}}', '{{p.stock_minimo}}', '{{p.estado|default('', true)}}', '{{p.peso_kg|default(0, true)}}')">
                                     <i class="bi bi-pencil-fill"></i>
                                 </button>
+                                <button class="btn btn-sm btn-outline-info py-0" title="Ver Fotos" 
+                                        onclick="abrirGaleria({{ p.id }}, '{{ p.sku }}', 'IMPORTBOLTS')">
+                                    <i class="bi bi-images"></i>
+                                </button>
                                 <a href="{{ url_for('eliminar_producto_importbolts', prod_id=p.id) }}" 
                                    class="btn btn-sm btn-outline-danger py-0" 
                                    onclick="return confirm('⚠️ ¿Estás seguro?');">
@@ -647,6 +651,40 @@
                     <button type="button" class="btn btn-success fw-bold px-4 w-100 w-sm-auto shadow-sm" id="btnGuardarMasivoFinal" onclick="guardarMasivoFinal()">
                         <i class="bi bi-check-circle-fill"></i> Aplicar Cambios
                     </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalGaleria" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+                <h6 class="modal-title fw-bold"><i class="bi bi-images"></i> Fotos: <span id="galeria_sku"></span></h6>
+                <button class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                {% if session.get('role') in ['admin', 'almacen'] %}
+                <div class="mb-3 p-3 bg-light rounded border">
+                    <label class="small fw-bold text-muted mb-2 d-block">Agregar foto (máx. 5 por producto)</label>
+                    <div class="d-flex gap-2 flex-wrap">
+                        <input type="file" id="inputFotoArchivo" accept="image/jpeg,image/png,image/webp" class="form-control form-control-sm" style="max-width:220px;">
+                        <input type="file" id="inputFotoCamara" accept="image/*" capture="environment" class="d-none">
+                        <button class="btn btn-sm btn-outline-primary" onclick="document.getElementById('inputFotoCamara').click()">
+                            <i class="bi bi-camera-fill"></i> Tomar Foto
+                        </button>
+                        <button class="btn btn-sm btn-success" onclick="subirFotoSeleccionada()">
+                            <i class="bi bi-cloud-upload-fill"></i> Subir
+                        </button>
+                    </div>
+                    <div id="galeria_contador" class="small text-muted mt-2"></div>
+                </div>
+                {% endif %}
+                <div id="galeria_grid" class="row g-2"></div>
+                <div id="galeria_vacio" class="text-center text-muted py-4 d-none">
+                    <i class="bi bi-image display-4 opacity-25"></i>
+                    <p class="mt-2 small">Este producto aún no tiene fotos.</p>
                 </div>
             </div>
         </div>
@@ -1173,6 +1211,112 @@ function buscarCodigosRelacionadosIB() {
                 }
             });
     }, 400);
+}
+
+let productoGaleriaActual = null;
+let origenGaleriaActual = 'IMPORTBOLTS';
+
+function abrirGaleria(productId, sku, origen) {
+    productoGaleriaActual = productId;
+    origenGaleriaActual = origen;
+    document.getElementById('galeria_sku').innerText = sku;
+    cargarFotosGaleria();
+    new bootstrap.Modal(document.getElementById('modalGaleria')).show();
+}
+
+function cargarFotosGaleria() {
+    fetch(`/api/producto/${productoGaleriaActual}/fotos?origen=${origenGaleriaActual}`)
+        .then(r => r.json())
+        .then(data => {
+            const grid = document.getElementById('galeria_grid');
+            const vacio = document.getElementById('galeria_vacio');
+            grid.innerHTML = '';
+
+            const contador = document.getElementById('galeria_contador');
+            if (contador) contador.innerText = `${data.fotos.length} / 5 fotos`;
+
+            if (data.fotos.length === 0) {
+                vacio.classList.remove('d-none');
+                return;
+            }
+            vacio.classList.add('d-none');
+
+            data.fotos.forEach(f => {
+                const esAdminAlmacen = {{ 'true' if session.get('role') in ['admin', 'almacen'] else 'false' }};
+                grid.innerHTML += `
+                    <div class="col-6 col-md-4">
+                        <div class="card shadow-sm">
+                            <img src="${f.url}" class="card-img-top" style="height:150px; object-fit:cover; cursor:pointer;" onclick="window.open('${f.url}', '_blank')">
+                            <div class="card-body p-2 d-flex justify-content-between align-items-center">
+                                <small class="text-muted">${f.fecha}</small>
+                                <div class="d-flex gap-1">
+                                    <a href="${f.url}" download class="btn btn-sm btn-outline-secondary py-0"><i class="bi bi-download"></i></a>
+                                    ${esAdminAlmacen ? `<button class="btn btn-sm btn-outline-danger py-0" onclick="eliminarFoto(${f.id})"><i class="bi bi-trash"></i></button>` : ''}
+                                </div>
+                            </div>
+                        </div>
+                    </div>`;
+            });
+        });
+}
+
+function comprimirImagen(archivo, maxWidth = 1200, calidad = 0.8) {
+    return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                let w = img.width, h = img.height;
+                if (w > maxWidth) { h = h * (maxWidth / w); w = maxWidth; }
+                canvas.width = w; canvas.height = h;
+                canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                canvas.toBlob((blob) => resolve(blob), 'image/jpeg', calidad);
+            };
+            img.src = e.target.result;
+        };
+        reader.readAsDataURL(archivo);
+    });
+}
+
+async function subirFotoSeleccionada() {
+    const inputArchivo = document.getElementById('inputFotoArchivo');
+    const inputCamara = document.getElementById('inputFotoCamara');
+    const archivo = inputCamara.files[0] || inputArchivo.files[0];
+
+    if (!archivo) return Swal.fire('Falta imagen', 'Seleccione o tome una foto primero.', 'warning');
+
+    Swal.fire({ title: 'Subiendo...', didOpen: () => Swal.showLoading(), allowOutsideClick: false });
+
+    const blobComprimido = await comprimirImagen(archivo);
+    let fd = new FormData();
+    fd.append('foto', blobComprimido, 'foto.jpg');
+    fd.append('origen', origenGaleriaActual);
+
+    fetch(`/api/producto/${productoGaleriaActual}/subir_foto`, { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(data => {
+            Swal.close();
+            if (data.status === 'success') {
+                inputArchivo.value = ''; inputCamara.value = '';
+                cargarFotosGaleria();
+            } else {
+                Swal.fire('No se pudo subir', data.msg, 'error');
+            }
+        });
+}
+
+function eliminarFoto(fotoId) {
+    Swal.fire({ title: '¿Eliminar foto?', icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Sí, eliminar' })
+    .then((result) => {
+        if (!result.isConfirmed) return;
+        fetch(`/api/foto/${fotoId}/eliminar`, { method: 'POST' })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'success') cargarFotosGaleria();
+                else Swal.fire('Error', data.msg, 'error');
+            });
+    });
 }
 </script>
 {% endblock %}

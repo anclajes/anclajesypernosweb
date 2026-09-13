@@ -29,6 +29,7 @@ import requests
 import re
 import pytz
 import boto3
+import uuid
 from botocore.exceptions import ClientError
 from werkzeug.security import generate_password_hash, check_password_hash
 from xhtml2pdf import pisa
@@ -1578,7 +1579,8 @@ def descargar_plantilla():
         'CALIDAD',      # Calidad
         'UBICACION',    # Ubicación (Opcional)
         'CANT. ACT.',   # Stock Actual
-        'STOCK MÍNIMO'  # Stock Mínimo (Opcional, default 10)
+        'STOCK MÍNIMO',  # Stock Mínimo (Opcional, default 10)
+        'PESO_KG'
     ]
     
     # Crear un DataFrame vacío con esas columnas
@@ -3521,6 +3523,9 @@ def actualizar_minimos_masivos():
         db.session.rollback()
         return {'status': 'error', 'msg': str(e)}
 
+
+# --- IMPORTAR EXCEL ANCLAJES ---
+
 @app.route('/producto/importar', methods=['POST'])
 def importar_excel():
     import gc
@@ -3630,18 +3635,16 @@ def importar_excel():
             estado_v = clean_str(get_col(row_vals, 'ESTADO')).upper()
             if estado_v == 'OK': estado_v = ''
 
-                        # --- TRUNCADO DE SEGURIDAD (evita StringDataRightTruncation) ---
-            # Limpia caracteres raros/corruptos y limita longitud
+            # --- TRUNCADO DE SEGURIDAD (evita StringDataRightTruncation) ---
             import unicodedata
 
             def limpiar_campo(valor, max_len):
                 if not valor:
                     return ''
-                # Quitar caracteres de control y símbolos raros
                 limpio = ''.join(
                     c for c in str(valor)
-                    if unicodedata.category(c)[0] not in ('C',)  # Elimina caracteres de control
-                    and ord(c) < 65536  # Elimina emojis/símbolos raros
+                    if unicodedata.category(c)[0] not in ('C',)
+                    and ord(c) < 65536
                 ).strip()
                 return limpio[:max_len]
 
@@ -3654,7 +3657,6 @@ def importar_excel():
             stock_val = clean_int(get_col(row_vals, 'CANT. ACT.', 'STOCK', 'CANTIDAD', 'CANT.ACT.'))
             min_val   = clean_int(get_col(row_vals, 'STOCK MÍNIMO', 'STOCK MINIMO', 'MINIMO'), 10)
 
-            # --- LEER PRECIO UNITARIO (Si existe, si no queda en 0.0) ---
             def clean_float(val, default=0.0):
                 try:
                     v = str(val).replace(',', '').strip()
@@ -3663,6 +3665,7 @@ def importar_excel():
                     return default
 
             precio_unit = clean_float(get_col(row_vals, 'PRECIO UNI.','PRECIO UNIT', 'PRECIO UNIDAD', 'P. UNIT', 'PRECIO_UNIT', 'PRECIO UNITARIO'))
+            peso_val = clean_float(get_col(row_vals, 'PESO_KG', 'PESO KG', 'PESO (KG)', 'PESO'))
 
             # Crear categoría si no existe
             if familia not in cats_existentes:
@@ -3686,7 +3689,6 @@ def importar_excel():
                     'stock_actual': stock_val, 'stock_minimo': min_val,
                     'fecha_actualizacion': hora_actual, 'actualizado_por': usuario_actual
                 }
-                # Solo actualiza el precio si el Excel trae un valor mayor a 0
                 if precio_unit > 0:
                     upd['tiene_precio'] = True
                     upd['precio_unidad'] = precio_unit
@@ -3694,15 +3696,23 @@ def importar_excel():
                     upd['tiene_precio'] = False
                     upd['precio_unidad'] = 0.0
 
+                if peso_val > 0:
+                    upd['tiene_peso'] = True
+                    upd['peso_kg'] = peso_val
+                else:
+                    upd['tiene_peso'] = False
+                    upd['peso_kg'] = 0.0
+
                 batch_updates.append(upd)
                 actualizados += 1
             else:
                 nuevo_prod = Product(
                     sku=sku, nombre=nombre, categoria=familia, calidad=calidad,
                     ubicacion=ubicacion, stock_actual=stock_val, stock_minimo=min_val,
-                    precio_unidad=precio_unit,          # <-- Ahora toma el valor del Excel
+                    precio_unidad=precio_unit,
                     precio_caja=0.0,
-                    precio_docena=precio_unit,          # <-- Docena igual al unitario por defecto
+                    precio_docena=precio_unit,
+                    peso_kg=peso_val,
                     costo_referencial=0.0, estado=estado_v,
                     fecha_actualizacion=hora_actual, actualizado_por=usuario_actual
                 )
@@ -3712,32 +3722,21 @@ def importar_excel():
 
             # Cada BATCH_SIZE filas: commit y limpiar
             if (nuevos + actualizados) % BATCH_SIZE == 0:
-                # Ejecutar updates
                 for upd in batch_updates:
+                    set_clauses = [
+                        "nombre=:nombre", "categoria=:categoria", "calidad=:calidad",
+                        "ubicacion=:ubicacion", "estado=:estado",
+                        "stock_actual=:stock_actual", "stock_minimo=:stock_minimo",
+                        "fecha_actualizacion=:fecha_actualizacion", "actualizado_por=:actualizado_por"
+                    ]
                     if upd.get('tiene_precio'):
-                        db.session.execute(text("""
-                            UPDATE product SET
-                                nombre=:nombre, categoria=:categoria, calidad=:calidad,
-                                ubicacion=:ubicacion, estado=:estado,
-                                stock_actual=:stock_actual, stock_minimo=:stock_minimo,
-                                precio_unidad=:precio_unidad,
-                                precio_docena=:precio_unidad,
-                                fecha_actualizacion=:fecha_actualizacion,
-                                actualizado_por=:actualizado_por
-                            WHERE sku=:sku
-                        """), upd)
-                    else:
-                        db.session.execute(text("""
-                            UPDATE product SET
-                                nombre=:nombre, categoria=:categoria, calidad=:calidad,
-                                ubicacion=:ubicacion, estado=:estado,
-                                stock_actual=:stock_actual, stock_minimo=:stock_minimo,
-                                fecha_actualizacion=:fecha_actualizacion,
-                                actualizado_por=:actualizado_por
-                            WHERE sku=:sku
-                        """), upd)
+                        set_clauses += ["precio_unidad=:precio_unidad", "precio_docena=:precio_unidad"]
+                    if upd.get('tiene_peso'):
+                        set_clauses += ["peso_kg=:peso_kg"]
 
-                # Insertar nuevos
+                    query_upd = f"UPDATE product SET {', '.join(set_clauses)} WHERE sku=:sku"
+                    db.session.execute(text(query_upd), upd)
+
                 if batch_inserts:
                     db.session.add_all(batch_inserts)
                     db.session.flush()
@@ -3763,28 +3762,19 @@ def importar_excel():
 
         # Procesar el último batch (filas restantes)
         for upd in batch_updates:
+            set_clauses = [
+                "nombre=:nombre", "categoria=:categoria", "calidad=:calidad",
+                "ubicacion=:ubicacion", "estado=:estado",
+                "stock_actual=:stock_actual", "stock_minimo=:stock_minimo",
+                "fecha_actualizacion=:fecha_actualizacion", "actualizado_por=:actualizado_por"
+            ]
             if upd.get('tiene_precio'):
-                db.session.execute(text("""
-                    UPDATE product SET
-                        nombre=:nombre, categoria=:categoria, calidad=:calidad,
-                        ubicacion=:ubicacion, estado=:estado,
-                        stock_actual=:stock_actual, stock_minimo=:stock_minimo,
-                        precio_unidad=:precio_unidad,
-                        precio_docena=:precio_unidad,
-                        fecha_actualizacion=:fecha_actualizacion,
-                        actualizado_por=:actualizado_por
-                    WHERE sku=:sku
-                """), upd)
-            else:
-                db.session.execute(text("""
-                    UPDATE product SET
-                        nombre=:nombre, categoria=:categoria, calidad=:calidad,
-                        ubicacion=:ubicacion, estado=:estado,
-                        stock_actual=:stock_actual, stock_minimo=:stock_minimo,
-                        fecha_actualizacion=:fecha_actualizacion,
-                        actualizado_por=:actualizado_por
-                    WHERE sku=:sku
-                """), upd)
+                set_clauses += ["precio_unidad=:precio_unidad", "precio_docena=:precio_unidad"]
+            if upd.get('tiene_peso'):
+                set_clauses += ["peso_kg=:peso_kg"]
+
+            query_upd = f"UPDATE product SET {', '.join(set_clauses)} WHERE sku=:sku"
+            db.session.execute(text(query_upd), upd)
 
         if batch_inserts:
             db.session.add_all(batch_inserts)
@@ -3836,20 +3826,234 @@ def importar_excel():
 
     return redirect(url_for('inventario'))
 
+# --- IMPORTAR EXCEL IMPORBOLTS ---
 
-@app.route('/fix_columnas_secreto_2026')
-def fix_columnas():
+@app.route('/producto_importbolts/importar', methods=['POST'])
+def importar_excel_importbolts():
+    import gc
+    import traceback
+    from openpyxl import load_workbook
+
+    if session.get('role') not in ['admin', 'almacen']:
+        return "No autorizado", 403
+
+    if 'archivo_excel' not in request.files:
+        flash('No se seleccionó ningún archivo')
+        return redirect(url_for('inventario_importbolts'))
+
+    archivo = request.files['archivo_excel']
+    if not archivo or archivo.filename == '':
+        return redirect(url_for('inventario_importbolts'))
+
+    filename = secure_filename(archivo.filename)
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    archivo.save(filepath)
+
+    nuevos = 0
+    actualizados = 0
+
     try:
-        with db.engine.connect() as conn:
-            conn.execute(text("ALTER TABLE product ALTER COLUMN nombre TYPE VARCHAR(500)"))
-            conn.execute(text("ALTER TABLE product ALTER COLUMN categoria TYPE VARCHAR(200)"))
-            conn.execute(text("ALTER TABLE product ALTER COLUMN calidad TYPE VARCHAR(200)"))
-            conn.execute(text("ALTER TABLE product ALTER COLUMN ubicacion TYPE VARCHAR(200)"))
-            conn.execute(text("ALTER TABLE product ALTER COLUMN estado TYPE VARCHAR(200)"))
-            conn.commit()
-        return "<h2>✅ Columnas ampliadas correctamente. Ya puedes importar el Excel grande.</h2>"
+        wb = load_workbook(filename=filepath, read_only=True, data_only=True)
+        ws = wb['STOCK'] if 'STOCK' in wb.sheetnames else wb.active
+        
+        header_row = next(ws.iter_rows(min_row=1, max_row=1, values_only=True))
+        headers = [str(h).strip().upper() if h is not None else '' for h in header_row]
+
+        def get_col(row_vals, *posibles_nombres):
+            for nombre in posibles_nombres:
+                if nombre in headers:
+                    idx = headers.index(nombre)
+                    if idx < len(row_vals): return row_vals[idx]
+            return None
+
+        hora_actual = hora_peru()
+        usuario_actual = session.get('username', 'Sistema')
+        user_id_actual = session.get('user_id')
+
+        # Cache de la tabla nueva
+        skus_existentes = {p.sku: p.id for p in db.session.query(ProductImportBolts.id, ProductImportBolts.sku).all()}
+        cats_existentes = {c.nombre: c.prefijo for c in db.session.query(CategoryImportBolts.nombre, CategoryImportBolts.prefijo).all()}
+        db.session.expunge_all()
+        gc.collect()
+
+        batch_updates = []
+        batch_inserts = []
+        batch_kardex  = []
+        BATCH_SIZE = 100
+
+        for row_vals in ws.iter_rows(min_row=2, values_only=True):
+            sku_raw = get_col(row_vals, 'CÓDIGO', 'CODIGO', 'SKU', 'CÓDIGO ')
+            if sku_raw is None: continue
+            sku = str(sku_raw).strip()
+            if sku.endswith('.0'): sku = sku[:-2]
+            if not sku or sku.lower() in ('nan', 'none', ''): continue
+
+            def clean_str(val, default=''):
+                if val is None: return default
+                s = str(val).strip()
+                return default if s.lower() in ('nan', 'none', '') else s
+            def clean_int(val, default=0):
+                try:
+                    v = str(val).replace(',', '').strip()
+                    return int(float(v)) if v and v.lower() not in ('nan', 'none', '') else default
+                except: return default
+            def clean_float(val, default=0.0):
+                try:
+                    v = str(val).replace(',', '').strip()
+                    return float(v) if v and v.lower() not in ('nan', 'none', '') else default
+                except: return default
+
+            import unicodedata
+            def limpiar_campo(valor, max_len):
+                if not valor: return ''
+                limpio = ''.join(c for c in str(valor) if unicodedata.category(c)[0] not in ('C',) and ord(c) < 65536).strip()
+                return limpio[:max_len]
+
+            nombre    = limpiar_campo(clean_str(get_col(row_vals, 'DESCRIPCIÓN', 'DESCRIPCION', 'NOMBRE'), 'Sin Nombre'), 490)
+            familia   = limpiar_campo(clean_str(get_col(row_vals, 'FAMILIA', 'CATEGORIA'), 'GENERAL'), 190)
+            calidad   = limpiar_campo(clean_str(get_col(row_vals, 'CALIDAD'), '-'), 190)
+            ubicacion = limpiar_campo(clean_str(get_col(row_vals, 'UBICACION', 'UBICACIÓN')), 190)
+            estado_v  = limpiar_campo(clean_str(get_col(row_vals, 'ESTADO')).upper(), 90)
+            if estado_v == 'OK': estado_v = ''
+            
+            stock_val = clean_int(get_col(row_vals, 'CANT. ACT.', 'STOCK', 'CANTIDAD', 'CANT.ACT.'))
+            min_val   = clean_int(get_col(row_vals, 'STOCK MÍNIMO', 'STOCK MINIMO', 'MINIMO'), 10)
+            precio_unit = clean_float(get_col(row_vals, 'PRECIO UNI.','PRECIO UNIT', 'PRECIO UNIDAD', 'P. UNIT', 'PRECIO_UNIT', 'PRECIO UNITARIO'))
+            peso_val = clean_float(get_col(row_vals, 'PESO_KG', 'PESO KG', 'PESO (KG)', 'PESO'))
+
+            if familia not in cats_existentes:
+                base = "".join(c for c in familia[:3].upper() if c.isalnum()) or "GEN"
+                prefijo_final = base
+                n = 1
+                prefijos_usados = set(cats_existentes.values())
+                while prefijo_final in prefijos_usados:
+                    prefijo_final = f"{base[:2]}{n}"
+                    n += 1
+                nuevo_cat = CategoryImportBolts(nombre=familia, prefijo=prefijo_final, contador=0)
+                db.session.add(nuevo_cat)
+                db.session.flush()
+                cats_existentes[familia] = prefijo_final
+
+            if sku in skus_existentes:
+                upd = {
+                    'sku': sku, 'nombre': nombre, 'categoria': familia, 'calidad': calidad, 
+                    'ubicacion': ubicacion, 'estado': estado_v, 'stock_actual': stock_val, 
+                    'stock_minimo': min_val, 'fecha_actualizacion': hora_actual, 'actualizado_por': usuario_actual
+                }
+                if precio_unit > 0:
+                    upd['tiene_precio'] = True
+                    upd['precio_unidad'] = precio_unit
+                else:
+                    upd['tiene_precio'] = False
+                    upd['precio_unidad'] = 0.0
+
+                if peso_val > 0:
+                    upd['tiene_peso'] = True
+                    upd['peso_kg'] = peso_val
+                else:
+                    upd['tiene_peso'] = False
+                    upd['peso_kg'] = 0.0
+
+                batch_updates.append(upd)
+                actualizados += 1
+            else:
+                nuevo_prod = ProductImportBolts(
+                    sku=sku, nombre=nombre, categoria=familia, calidad=calidad, ubicacion=ubicacion, 
+                    stock_actual=stock_val, stock_minimo=min_val, precio_unidad=precio_unit, 
+                    precio_caja=0.0, precio_docena=precio_unit,
+                    peso_kg=peso_val,
+                    costo_referencial=0.0, estado=estado_v,
+                    fecha_actualizacion=hora_actual, actualizado_por=usuario_actual
+                )
+                batch_inserts.append(nuevo_prod)
+                skus_existentes[sku] = -1
+                nuevos += 1
+
+            if (nuevos + actualizados) % BATCH_SIZE == 0:
+                for upd in batch_updates:
+                    set_clauses = [
+                        "nombre=:nombre", "categoria=:categoria", "calidad=:calidad",
+                        "ubicacion=:ubicacion", "estado=:estado",
+                        "stock_actual=:stock_actual", "stock_minimo=:stock_minimo",
+                        "fecha_actualizacion=:fecha_actualizacion", "actualizado_por=:actualizado_por"
+                    ]
+                    if upd.get('tiene_precio'):
+                        set_clauses += ["precio_unidad=:precio_unidad", "precio_docena=:precio_unidad"]
+                    if upd.get('tiene_peso'):
+                        set_clauses += ["peso_kg=:peso_kg"]
+
+                    query_upd = f"UPDATE product_importbolts SET {', '.join(set_clauses)} WHERE sku=:sku"
+                    db.session.execute(text(query_upd), upd)
+                
+                if batch_inserts:
+                    db.session.add_all(batch_inserts)
+                    db.session.flush()
+                    for p in batch_inserts:
+                        if p.stock_actual > 0 and p.id:
+                            batch_kardex.append(ProductMovementImportBolts(
+                                product_id=p.id, user_id=user_id_actual, tipo='ENTRADA', cantidad=p.stock_actual,
+                                stock_anterior=0, stock_nuevo=p.stock_actual, motivo="Saldo Inicial (Importación)"
+                            ))
+                    if batch_kardex: db.session.add_all(batch_kardex)
+
+                db.session.commit()
+                batch_updates = []; batch_inserts = []; batch_kardex = []
+
+        # ÚLTIMO BATCH (Residuos)
+        for upd in batch_updates:
+            set_clauses = [
+                "nombre=:nombre", "categoria=:categoria", "calidad=:calidad",
+                "ubicacion=:ubicacion", "estado=:estado",
+                "stock_actual=:stock_actual", "stock_minimo=:stock_minimo",
+                "fecha_actualizacion=:fecha_actualizacion", "actualizado_por=:actualizado_por"
+            ]
+            if upd.get('tiene_precio'):
+                set_clauses += ["precio_unidad=:precio_unidad", "precio_docena=:precio_unidad"]
+            if upd.get('tiene_peso'):
+                set_clauses += ["peso_kg=:peso_kg"]
+
+            query_upd = f"UPDATE product_importbolts SET {', '.join(set_clauses)} WHERE sku=:sku"
+            db.session.execute(text(query_upd), upd)
+                
+        if batch_inserts:
+            db.session.add_all(batch_inserts)
+            db.session.flush()
+            for p in batch_inserts:
+                if p.stock_actual > 0 and p.id:
+                    batch_kardex.append(ProductMovementImportBolts(
+                        product_id=p.id, user_id=user_id_actual, tipo='ENTRADA', cantidad=p.stock_actual,
+                        stock_anterior=0, stock_nuevo=p.stock_actual, motivo="Saldo Inicial (Importación)"
+                    ))
+            if batch_kardex: db.session.add_all(batch_kardex)
+
+        db.session.commit()
+        
+        # Registro en SystemConfig separado
+        config_import = SystemConfig.query.get('ultima_importacion_importbolts')
+        hora_final = hora_peru()
+        if not config_import:
+            config_import = SystemConfig(key='ultima_importacion_importbolts', value='EXITOSO', updated_at=hora_final, updated_by=usuario_actual)
+            db.session.add(config_import)
+        else:
+            config_import.updated_at = hora_final
+            config_import.updated_by = usuario_actual
+        db.session.commit()
+
+        flash(f'✅ Importación completada en ImportBolts: {nuevos} nuevos, {actualizados} actualizados.')
+
     except Exception as e:
-        return f"<h2>Error: {str(e)}</h2>"
+        db.session.rollback()
+        print(f"ERROR IMPORTACIÓN IMPORTBOLTS:\n{traceback.format_exc()}")
+        flash(f'Error en la importación: {str(e)}')
+    finally:
+        try:
+            if os.path.exists(filepath): 
+                os.remove(filepath)
+        except Exception as err:
+            print(f"Aviso: Windows bloqueó la eliminación del temporal, se ignorará. Error: {err}")
+        gc.collect()
+
+    return redirect(url_for('inventario_importbolts'))
 
 # 2. ACTUALIZAR NUEVO PRODUCTO (Para responder JSON y no borrar datos)
 # --- FUNCIÓN NUEVO PRODUCTO (Actualizada) ---
@@ -5475,229 +5679,6 @@ def ajustar_stock_importbolts():
     
     return redirect(url_for('inventario_importbolts'))
 
-@app.route('/producto_importbolts/importar', methods=['POST'])
-def importar_excel_importbolts():
-    import gc
-    import traceback
-    from openpyxl import load_workbook
-
-    if session.get('role') not in ['admin', 'almacen']:
-        return "No autorizado", 403
-
-    if 'archivo_excel' not in request.files:
-        flash('No se seleccionó ningún archivo')
-        return redirect(url_for('inventario_importbolts'))
-
-    archivo = request.files['archivo_excel']
-    if not archivo or archivo.filename == '':
-        return redirect(url_for('inventario_importbolts'))
-
-    filename = secure_filename(archivo.filename)
-    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    archivo.save(filepath)
-
-    nuevos = 0
-    actualizados = 0
-
-    try:
-        wb = load_workbook(filename=filepath, read_only=True, data_only=True)
-        ws = wb['STOCK'] if 'STOCK' in wb.sheetnames else wb.active
-        
-        header_row = next(ws.iter_rows(min_row=1, max_row=1, values_only=True))
-        headers = [str(h).strip().upper() if h is not None else '' for h in header_row]
-
-        def get_col(row_vals, *posibles_nombres):
-            for nombre in posibles_nombres:
-                if nombre in headers:
-                    idx = headers.index(nombre)
-                    if idx < len(row_vals): return row_vals[idx]
-            return None
-
-        hora_actual = hora_peru()
-        usuario_actual = session.get('username', 'Sistema')
-        user_id_actual = session.get('user_id')
-
-        # Cache de la tabla nueva
-        skus_existentes = {p.sku: p.id for p in db.session.query(ProductImportBolts.id, ProductImportBolts.sku).all()}
-        cats_existentes = {c.nombre: c.prefijo for c in db.session.query(CategoryImportBolts.nombre, CategoryImportBolts.prefijo).all()}
-        db.session.expunge_all()
-        gc.collect()
-
-        batch_updates = []
-        batch_inserts = []
-        batch_kardex  = []
-        BATCH_SIZE = 100
-
-        for row_vals in ws.iter_rows(min_row=2, values_only=True):
-            sku_raw = get_col(row_vals, 'CÓDIGO', 'CODIGO', 'SKU', 'CÓDIGO ')
-            if sku_raw is None: continue
-            sku = str(sku_raw).strip()
-            if sku.endswith('.0'): sku = sku[:-2]
-            if not sku or sku.lower() in ('nan', 'none', ''): continue
-
-            # Usar tus mismas funciones de limpieza `clean_str` y `limpiar_campo` aquí (las copias de tu código original)
-            def clean_str(val, default=''):
-                if val is None: return default
-                s = str(val).strip()
-                return default if s.lower() in ('nan', 'none', '') else s
-            def clean_int(val, default=0):
-                try:
-                    v = str(val).replace(',', '').strip()
-                    return int(float(v)) if v and v.lower() not in ('nan', 'none', '') else default
-                except: return default
-            def clean_float(val, default=0.0):
-                try:
-                    v = str(val).replace(',', '').strip()
-                    return float(v) if v and v.lower() not in ('nan', 'none', '') else default
-                except: return default
-
-            import unicodedata
-            def limpiar_campo(valor, max_len):
-                if not valor: return ''
-                limpio = ''.join(c for c in str(valor) if unicodedata.category(c)[0] not in ('C',) and ord(c) < 65536).strip()
-                return limpio[:max_len]
-
-            nombre    = limpiar_campo(clean_str(get_col(row_vals, 'DESCRIPCIÓN', 'DESCRIPCION', 'NOMBRE'), 'Sin Nombre'), 490)
-            familia   = limpiar_campo(clean_str(get_col(row_vals, 'FAMILIA', 'CATEGORIA'), 'GENERAL'), 190)
-            calidad   = limpiar_campo(clean_str(get_col(row_vals, 'CALIDAD'), '-'), 190)
-            ubicacion = limpiar_campo(clean_str(get_col(row_vals, 'UBICACION', 'UBICACIÓN')), 190)
-            estado_v  = limpiar_campo(clean_str(get_col(row_vals, 'ESTADO')).upper(), 90)
-            if estado_v == 'OK': estado_v = ''
-            
-            stock_val = clean_int(get_col(row_vals, 'CANT. ACT.', 'STOCK', 'CANTIDAD', 'CANT.ACT.'))
-            min_val   = clean_int(get_col(row_vals, 'STOCK MÍNIMO', 'STOCK MINIMO', 'MINIMO'), 10)
-            precio_unit = clean_float(get_col(row_vals, 'PRECIO UNI.','PRECIO UNIT', 'PRECIO UNIDAD', 'P. UNIT', 'PRECIO_UNIT', 'PRECIO UNITARIO'))
-
-            if familia not in cats_existentes:
-                base = "".join(c for c in familia[:3].upper() if c.isalnum()) or "GEN"
-                prefijo_final = base
-                n = 1
-                prefijos_usados = set(cats_existentes.values())
-                while prefijo_final in prefijos_usados:
-                    prefijo_final = f"{base[:2]}{n}"
-                    n += 1
-                nuevo_cat = CategoryImportBolts(nombre=familia, prefijo=prefijo_final, contador=0)
-                db.session.add(nuevo_cat)
-                db.session.flush()
-                cats_existentes[familia] = prefijo_final
-
-            if sku in skus_existentes:
-                upd = {
-                    'sku': sku, 'nombre': nombre, 'categoria': familia, 'calidad': calidad, 
-                    'ubicacion': ubicacion, 'estado': estado_v, 'stock_actual': stock_val, 
-                    'stock_minimo': min_val, 'fecha_actualizacion': hora_actual, 'actualizado_por': usuario_actual
-                }
-                if precio_unit > 0:
-                    upd['tiene_precio'] = True
-                    upd['precio_unidad'] = precio_unit
-                else:
-                    upd['tiene_precio'] = False
-                    upd['precio_unidad'] = 0.0
-                batch_updates.append(upd)
-                actualizados += 1
-            else:
-                nuevo_prod = ProductImportBolts(
-                    sku=sku, nombre=nombre, categoria=familia, calidad=calidad, ubicacion=ubicacion, 
-                    stock_actual=stock_val, stock_minimo=min_val, precio_unidad=precio_unit, 
-                    precio_caja=0.0, precio_docena=precio_unit, costo_referencial=0.0, estado=estado_v,
-                    fecha_actualizacion=hora_actual, actualizado_por=usuario_actual
-                )
-                batch_inserts.append(nuevo_prod)
-                skus_existentes[sku] = -1
-                nuevos += 1
-
-            if (nuevos + actualizados) % BATCH_SIZE == 0:
-                for upd in batch_updates:
-                    if upd.get('tiene_precio'):
-                        db.session.execute(text("""
-                            UPDATE product_importbolts SET
-                                nombre=:nombre, categoria=:categoria, calidad=:calidad, ubicacion=:ubicacion, estado=:estado,
-                                stock_actual=:stock_actual, stock_minimo=:stock_minimo, precio_unidad=:precio_unidad,
-                                precio_docena=:precio_unidad, fecha_actualizacion=:fecha_actualizacion, actualizado_por=:actualizado_por
-                            WHERE sku=:sku
-                        """), upd)
-                    else:
-                        db.session.execute(text("""
-                            UPDATE product_importbolts SET
-                                nombre=:nombre, categoria=:categoria, calidad=:calidad, ubicacion=:ubicacion, estado=:estado,
-                                stock_actual=:stock_actual, stock_minimo=:stock_minimo, fecha_actualizacion=:fecha_actualizacion, actualizado_por=:actualizado_por
-                            WHERE sku=:sku
-                        """), upd)
-                
-                if batch_inserts:
-                    db.session.add_all(batch_inserts)
-                    db.session.flush()
-                    for p in batch_inserts:
-                        if p.stock_actual > 0 and p.id:
-                            batch_kardex.append(ProductMovementImportBolts(
-                                product_id=p.id, user_id=user_id_actual, tipo='ENTRADA', cantidad=p.stock_actual,
-                                stock_anterior=0, stock_nuevo=p.stock_actual, motivo="Saldo Inicial (Importación)"
-                            ))
-                    if batch_kardex: db.session.add_all(batch_kardex)
-
-                db.session.commit()
-                batch_updates = []; batch_inserts = []; batch_kardex = []
-
-        # ÚLTIMO BATCH (Residuos)
-        for upd in batch_updates:
-            if upd.get('tiene_precio'):
-                db.session.execute(text("""
-                    UPDATE product_importbolts SET
-                        nombre=:nombre, categoria=:categoria, calidad=:calidad, ubicacion=:ubicacion, estado=:estado,
-                        stock_actual=:stock_actual, stock_minimo=:stock_minimo, precio_unidad=:precio_unidad,
-                        precio_docena=:precio_unidad, fecha_actualizacion=:fecha_actualizacion, actualizado_por=:actualizado_por
-                    WHERE sku=:sku
-                """), upd)
-            else:
-                db.session.execute(text("""
-                    UPDATE product_importbolts SET
-                        nombre=:nombre, categoria=:categoria, calidad=:calidad, ubicacion=:ubicacion, estado=:estado,
-                        stock_actual=:stock_actual, stock_minimo=:stock_minimo, fecha_actualizacion=:fecha_actualizacion, actualizado_por=:actualizado_por
-                    WHERE sku=:sku
-                """), upd)
-                
-        if batch_inserts:
-            db.session.add_all(batch_inserts)
-            db.session.flush()
-            for p in batch_inserts:
-                if p.stock_actual > 0 and p.id:
-                    batch_kardex.append(ProductMovementImportBolts(
-                        product_id=p.id, user_id=user_id_actual, tipo='ENTRADA', cantidad=p.stock_actual,
-                        stock_anterior=0, stock_nuevo=p.stock_actual, motivo="Saldo Inicial (Importación)"
-                    ))
-            if batch_kardex: db.session.add_all(batch_kardex)
-
-        db.session.commit()
-        
-        # Registro en SystemConfig separado
-        config_import = SystemConfig.query.get('ultima_importacion_importbolts')
-        hora_final = hora_peru()
-        if not config_import:
-            config_import = SystemConfig(key='ultima_importacion_importbolts', value='EXITOSO', updated_at=hora_final, updated_by=usuario_actual)
-            db.session.add(config_import)
-        else:
-            config_import.updated_at = hora_final
-            config_import.updated_by = usuario_actual
-        db.session.commit()
-
-        flash(f'✅ Importación completada en ImportBolts: {nuevos} nuevos, {actualizados} actualizados.')
-
-    except Exception as e:
-        db.session.rollback()
-        print(f"ERROR IMPORTACIÓN IMPORTBOLTS:\n{traceback.format_exc()}")
-        flash(f'Error en la importación: {str(e)}')
-    finally:
-            try:
-                if os.path.exists(filepath): 
-                    os.remove(filepath)
-            except Exception as err:
-                print(f"Aviso: Windows bloqueó la eliminación del temporal, se ignorará. Error: {err}")
-            gc.collect()
-
-    return redirect(url_for('inventario_importbolts'))
-
-
-
 
 @app.route('/producto_importbolts/nuevo', methods=['POST'])
 def nuevo_producto_importbolts():
@@ -6050,6 +6031,7 @@ def inventario_general():
             q = q.filter(or_(Product.nombre.ilike(f"%{busqueda}%"), Product.sku.ilike(f"%{busqueda}%")))
         for p in q.all():
             resultados.append({
+                'id': p.id,                              # <-- NUEVO
                 'sku': p.sku, 'nombre': p.nombre, 'categoria': p.categoria, 'calidad': p.calidad,
                 'ubicacion': p.ubicacion, 'stock': p.stock_actual, 'stock_min': p.stock_minimo,
                 'peso_kg': p.peso_kg or 0, 'origen': 'ANCLAJES'
@@ -6061,6 +6043,7 @@ def inventario_general():
             q2 = q2.filter(or_(ProductImportBolts.nombre.ilike(f"%{busqueda}%"), ProductImportBolts.sku.ilike(f"%{busqueda}%")))
         for p in q2.all():
             resultados.append({
+                'id': p.id,                              # <-- NUEVO
                 'sku': p.sku, 'nombre': p.nombre, 'categoria': p.categoria, 'calidad': p.calidad,
                 'ubicacion': p.ubicacion, 'stock': p.stock_actual, 'stock_min': p.stock_minimo,
                 'peso_kg': p.peso_kg or 0, 'origen': 'IMPORTBOLTS'

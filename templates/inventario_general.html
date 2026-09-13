@@ -48,6 +48,7 @@
                     <th>Ubicación</th>
                     <th class="text-center">Peso (Kg)</th>
                     <th class="text-center">Stock</th>
+                    <th class="text-center">Fotos</th> 
                 </tr>
             </thead>
             <tbody>
@@ -73,9 +74,15 @@
                             <span class="badge bg-success-subtle text-success border border-success">{{ p.stock }}</span>
                         {% endif %}
                     </td>
+                    <td class="text-center">
+                        <button class="btn btn-sm btn-outline-info py-0" title="Ver Fotos" 
+                                onclick="abrirGaleria({{ p.id }}, '{{ p.sku }}', '{{ p.origen }}')">
+                            <i class="bi bi-images"></i>
+                        </button>
+                    </td>
                 </tr>
                 {% else %}
-                <tr><td colspan="8" class="text-center py-5 text-muted">No se encontraron productos.</td></tr>
+                <tr><td colspan="9  " class="text-center py-5 text-muted">No se encontraron productos.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -92,4 +99,112 @@
     </div>
     {% endif %}
 </div>
+
+<script>
+let productoGaleriaActual = null;
+let origenGaleriaActual = 'IMPORTBOLTS';
+
+function abrirGaleria(productId, sku, origen) {
+    productoGaleriaActual = productId;
+    origenGaleriaActual = origen;
+    document.getElementById('galeria_sku').innerText = sku;
+    cargarFotosGaleria();
+    new bootstrap.Modal(document.getElementById('modalGaleria')).show();
+}
+
+function cargarFotosGaleria() {
+    fetch(`/api/producto/${productoGaleriaActual}/fotos?origen=${origenGaleriaActual}`)
+        .then(r => r.json())
+        .then(data => {
+            const grid = document.getElementById('galeria_grid');
+            const vacio = document.getElementById('galeria_vacio');
+            grid.innerHTML = '';
+
+            const contador = document.getElementById('galeria_contador');
+            if (contador) contador.innerText = `${data.fotos.length} / 5 fotos`;
+
+            if (data.fotos.length === 0) {
+                vacio.classList.remove('d-none');
+                return;
+            }
+            vacio.classList.add('d-none');
+
+            data.fotos.forEach(f => {
+                const esAdminAlmacen = {{ 'true' if session.get('role') in ['admin', 'almacen'] else 'false' }};
+                grid.innerHTML += `
+                    <div class="col-6 col-md-4">
+                        <div class="card shadow-sm">
+                            <img src="${f.url}" class="card-img-top" style="height:150px; object-fit:cover; cursor:pointer;" onclick="window.open('${f.url}', '_blank')">
+                            <div class="card-body p-2 d-flex justify-content-between align-items-center">
+                                <small class="text-muted">${f.fecha}</small>
+                                <div class="d-flex gap-1">
+                                    <a href="${f.url}" download class="btn btn-sm btn-outline-secondary py-0"><i class="bi bi-download"></i></a>
+                                    ${esAdminAlmacen ? `<button class="btn btn-sm btn-outline-danger py-0" onclick="eliminarFoto(${f.id})"><i class="bi bi-trash"></i></button>` : ''}
+                                </div>
+                            </div>
+                        </div>
+                    </div>`;
+            });
+        });
+}
+
+function comprimirImagen(archivo, maxWidth = 1200, calidad = 0.8) {
+    return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                let w = img.width, h = img.height;
+                if (w > maxWidth) { h = h * (maxWidth / w); w = maxWidth; }
+                canvas.width = w; canvas.height = h;
+                canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                canvas.toBlob((blob) => resolve(blob), 'image/jpeg', calidad);
+            };
+            img.src = e.target.result;
+        };
+        reader.readAsDataURL(archivo);
+    });
+}
+
+async function subirFotoSeleccionada() {
+    const inputArchivo = document.getElementById('inputFotoArchivo');
+    const inputCamara = document.getElementById('inputFotoCamara');
+    const archivo = inputCamara.files[0] || inputArchivo.files[0];
+
+    if (!archivo) return Swal.fire('Falta imagen', 'Seleccione o tome una foto primero.', 'warning');
+
+    Swal.fire({ title: 'Subiendo...', didOpen: () => Swal.showLoading(), allowOutsideClick: false });
+
+    const blobComprimido = await comprimirImagen(archivo);
+    let fd = new FormData();
+    fd.append('foto', blobComprimido, 'foto.jpg');
+    fd.append('origen', origenGaleriaActual);
+
+    fetch(`/api/producto/${productoGaleriaActual}/subir_foto`, { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(data => {
+            Swal.close();
+            if (data.status === 'success') {
+                inputArchivo.value = ''; inputCamara.value = '';
+                cargarFotosGaleria();
+            } else {
+                Swal.fire('No se pudo subir', data.msg, 'error');
+            }
+        });
+}
+
+function eliminarFoto(fotoId) {
+    Swal.fire({ title: '¿Eliminar foto?', icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Sí, eliminar' })
+    .then((result) => {
+        if (!result.isConfirmed) return;
+        fetch(`/api/foto/${fotoId}/eliminar`, { method: 'POST' })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'success') cargarFotosGaleria();
+                else Swal.fire('Error', data.msg, 'error');
+            });
+    });
+}
+</script>
 {% endblock %}
