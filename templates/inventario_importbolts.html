@@ -310,23 +310,25 @@
                     <td class="text-end text-muted">{% if p.precio_caja > 0 %} $ {{ "%.2f"|format(p.precio_caja) }} {% else %} - {% endif %}</td>
                     
                     <td class="text-center pe-3">
-                        {% if session.get('role') == 'admin' %}
-                            <div class="btn-group shadow-sm">
-                                <button class="btn btn-sm btn-outline-primary py-0" 
-                                        onclick="abrirEditar('{{p.id}}', '{{p.nombre|replace("'", "\\'")|replace('"', '&quot;')}}', '{{p.stock_actual}}', '{{p.precio_unidad}}', '{{p.precio_caja}}', '{{p.ubicacion|default('', true)}}', '{{p.categoria}}', '{{p.calidad|default('', true)}}', '{{p.stock_minimo}}', '{{p.estado|default('', true)}}', '{{p.peso_kg|default(0, true)}}')">
-                                    <i class="bi bi-pencil-fill"></i>
-                                </button>
-                                <button class="btn btn-sm btn-outline-info py-0" title="Ver Fotos" 
-                                        onclick="abrirGaleria({{ p.id }}, '{{ p.sku }}', 'IMPORTBOLTS')">
-                                    <i class="bi bi-images"></i>
-                                </button>
-                                <a href="{{ url_for('eliminar_producto_importbolts', prod_id=p.id) }}" 
-                                   class="btn btn-sm btn-outline-danger py-0" 
-                                   onclick="return confirm('⚠️ ¿Estás seguro?');">
-                                    <i class="bi bi-trash-fill"></i>
-                                </a>
-                            </div>
-                        {% endif %}
+                        <div class="btn-group shadow-sm">
+                            {% if session.get('role') == 'admin' %}
+                            <button class="btn btn-sm btn-outline-primary py-0" 
+                                    onclick="abrirEditar('{{p.id}}', '{{p.nombre|replace("'", "\\'")|replace('"', '&quot;')}}', '{{p.stock_actual}}', '{{p.precio_unidad}}', '{{p.precio_caja}}', '{{p.ubicacion|default('', true)}}', '{{p.categoria}}', '{{p.calidad|default('', true)}}', '{{p.stock_minimo}}', '{{p.estado|default('', true)}}', '{{p.peso_kg|default(0, true)}}')">
+                                <i class="bi bi-pencil-fill"></i>
+                            </button>
+                            {% endif %}
+                            <button class="btn btn-sm btn-outline-info py-0" title="Ver Fotos" 
+                                    onclick="abrirGaleria({{ p.id }}, '{{ p.sku }}', 'IMPORTBOLTS')">
+                                <i class="bi bi-images"></i>
+                            </button>
+                            {% if session.get('role') == 'admin' %}
+                            <a href="{{ url_for('eliminar_producto_importbolts', prod_id=p.id) }}" 
+                               class="btn btn-sm btn-outline-danger py-0" 
+                               onclick="return confirm('⚠️ ¿Estás seguro?');">
+                                <i class="bi bi-trash-fill"></i>
+                            </a>
+                            {% endif %}
+                        </div>
                     </td>
                 </tr>
                 {% else %}

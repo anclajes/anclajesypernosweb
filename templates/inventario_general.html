@@ -3,6 +3,45 @@
 {% block subtitle %}Vista combinada: Anclajes + Import Bolts (solo consulta){% endblock %}
 
 {% block content %}
+<style>
+    #galeria_grid .foto-card {
+        border-radius: 12px; overflow: hidden; border: 1px solid #e9ecef;
+        background: #fff; transition: transform .15s ease, box-shadow .15s ease;
+    }
+    #galeria_grid .foto-card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,0,.12); }
+    #galeria_grid .foto-img-wrap { position: relative; width: 100%; padding-top: 78%; background: #f1f3f5; overflow: hidden; }
+    #galeria_grid .foto-img-wrap.cargando {
+        background: linear-gradient(100deg, #ececec 30%, #f7f7f7 50%, #ececec 70%);
+        background-size: 200% 100%; animation: shimmerFotoGen 1.2s infinite;
+    }
+    @keyframes shimmerFotoGen { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+    #galeria_grid .foto-img-wrap img {
+        position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+        object-fit: cover; cursor: zoom-in; opacity: 0; transition: opacity .25s ease;
+    }
+    #galeria_grid .foto-img-wrap img.cargada { opacity: 1; }
+    #galeria_grid .foto-info { padding: .5rem .65rem; border-top: 1px solid #f1f3f5; }
+
+    #lightboxOverlay {
+        position: fixed; inset: 0; background: rgba(0,0,0,.9); z-index: 2000;
+        display: none; align-items: center; justify-content: center; flex-direction: column;
+    }
+    #lightboxOverlay.activo { display: flex; }
+    #lightboxOverlay img { max-width: 90vw; max-height: 75vh; object-fit: contain; border-radius: 8px; box-shadow: 0 10px 40px rgba(0,0,0,.5); }
+    #lightboxOverlay .lightbox-close { position: absolute; top: 18px; right: 24px; color: #fff; font-size: 2rem; cursor: pointer; opacity: .8; }
+    #lightboxOverlay .lightbox-nav {
+        position: absolute; top: 50%; transform: translateY(-50%); background: rgba(255,255,255,.12);
+        border: none; color: #fff; width: 48px; height: 48px; border-radius: 50%; font-size: 1.5rem;
+        display: flex; align-items: center; justify-content: center; cursor: pointer;
+    }
+    #lightboxOverlay .lightbox-nav:disabled { opacity: .25; cursor: default; }
+    #lightboxOverlay .lightbox-prev { left: 16px; }
+    #lightboxOverlay .lightbox-next { right: 16px; }
+    #lightboxOverlay .lightbox-caption { color: #f1f3f5; margin-top: 14px; text-align: center; font-size: .85rem; }
+    #lightboxOverlay .badge-user { background: rgba(255,255,255,.12); padding: 4px 10px; border-radius: 20px; margin: 0 4px; }
+    #lightboxOverlay .lightbox-counter { color: #adb5bd; font-size: .75rem; margin-top: 6px; }
+</style>
+
 <div class="d-flex justify-content-between align-items-center mb-3">
     <h2 class="mb-0"><i class="bi bi-boxes text-primary"></i> Inventario General</h2>
     <span class="badge bg-secondary fs-6">{{ total }} productos</span>
@@ -15,20 +54,54 @@
 
 <div class="card bg-light border-0 shadow-sm mb-3">
     <div class="card-body py-3">
-        <form method="GET" class="row g-2 align-items-end">
-            <div class="col-12 col-md-6">
-                <label class="small fw-bold text-muted">Buscar (Código o Descripción)</label>
-                <input type="text" name="busqueda" class="form-control" placeholder="Ej: PERNO HEX, TORD006..." value="{{ busqueda }}">
+        <form method="GET" id="formFiltrosGeneral" class="row g-2 align-items-end">
+            <div class="col-12 col-md-3">
+                <label class="small fw-bold text-muted">Buscar</label>
+                <input type="text" name="busqueda" class="form-control" placeholder="Código o Descripción..." value="{{ busqueda }}">
             </div>
-            <div class="col-8 col-md-3">
+            <div class="col-6 col-md-2">
                 <label class="small fw-bold text-muted">Inventario</label>
-                <select name="origen" class="form-select">
+                <select name="origen" class="form-select" onchange="document.getElementById('formFiltrosGeneral').submit()">
                     <option value="todos" {% if origen_filtro == 'todos' %}selected{% endif %}>Ambos</option>
                     <option value="ANCLAJES" {% if origen_filtro == 'ANCLAJES' %}selected{% endif %}>Solo Anclajes</option>
                     <option value="IMPORTBOLTS" {% if origen_filtro == 'IMPORTBOLTS' %}selected{% endif %}>Solo Import Bolts</option>
                 </select>
             </div>
-            <div class="col-4 col-md-3">
+            <div class="col-6 col-md-2">
+                <label class="small fw-bold text-muted">Familia</label>
+                <select name="categoria" class="form-select" onchange="document.getElementById('formFiltrosGeneral').submit()">
+                    <option value="todos">-- Todas --</option>
+                    {% for cat in lista_categorias %}
+                    <option value="{{ cat }}" {% if categoria_filtro == cat %}selected{% endif %}>{{ cat }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-6 col-md-2">
+                <label class="small fw-bold text-muted">Ordenar por</label>
+                <select name="orden" class="form-select" onchange="document.getElementById('formFiltrosGeneral').submit()">
+                    <option value="nombre" {% if orden == 'nombre' %}selected{% endif %}>Descripción (A-Z)</option>
+                    <option value="sku" {% if orden == 'sku' %}selected{% endif %}>Código</option>
+                    <option value="stock_asc" {% if orden == 'stock_asc' %}selected{% endif %}>Stock (menor a mayor)</option>
+                    <option value="stock_desc" {% if orden == 'stock_desc' %}selected{% endif %}>Stock (mayor a menor)</option>
+                </select>
+            </div>
+            <div class="col-6 col-md-1">
+                <label class="small fw-bold text-muted">Filas</label>
+                <select name="per_page" class="form-select" onchange="document.getElementById('formFiltrosGeneral').submit()">
+                    <option value="30" {% if per_page == 30 %}selected{% endif %}>30</option>
+                    <option value="50" {% if per_page == 50 %}selected{% endif %}>50</option>
+                    <option value="100" {% if per_page == 100 %}selected{% endif %}>100</option>
+                </select>
+            </div>
+            <div class="col-6 col-md-2 d-flex align-items-center gap-2">
+                <div class="form-check form-switch border rounded py-2 px-2 bg-white w-100 text-center m-0">
+                    <input class="form-check-input float-none ms-0 me-1" type="checkbox" name="stock_bajo" id="checkStockBajoGen"
+                        onchange="document.getElementById('formFiltrosGeneral').submit()"
+                        {% if stock_bajo == 'on' %}checked{% endif %}>
+                    <label class="form-check-label fw-bold text-danger small" for="checkStockBajoGen">Stock Bajo</label>
+                </div>
+            </div>
+            <div class="col-6 col-md-12 col-lg-auto ms-auto">
                 <button type="submit" class="btn btn-primary w-100"><i class="bi bi-search"></i> Buscar</button>
             </div>
         </form>
@@ -48,7 +121,7 @@
                     <th>Ubicación</th>
                     <th class="text-center">Peso (Kg)</th>
                     <th class="text-center">Stock</th>
-                    <th class="text-center">Fotos</th> 
+                    <th class="text-center">Fotos</th>
                 </tr>
             </thead>
             <tbody>
@@ -75,34 +148,105 @@
                         {% endif %}
                     </td>
                     <td class="text-center">
-                        <button class="btn btn-sm btn-outline-info py-0" title="Ver Fotos" 
+                        <button class="btn btn-sm btn-outline-info py-0" title="Ver Fotos"
                                 onclick="abrirGaleria({{ p.id }}, '{{ p.sku }}', '{{ p.origen }}')">
                             <i class="bi bi-images"></i>
                         </button>
                     </td>
                 </tr>
                 {% else %}
-                <tr><td colspan="9  " class="text-center py-5 text-muted">No se encontraron productos.</td></tr>
+                <tr><td colspan="9" class="text-center py-5 text-muted">No se encontraron productos.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
-    {% if total_paginas > 1 %}
-    <div class="card-footer bg-white py-3">
-        <ul class="pagination pagination-sm justify-content-center mb-0">
-            {% for p_num in range(1, total_paginas + 1) %}
-            <li class="page-item {% if p_num == page %}active{% endif %}">
-                <a class="page-link" href="{{ url_for('inventario_general', page=p_num, busqueda=busqueda, origen=origen_filtro) }}">{{ p_num }}</a>
+
+    <div class="card-footer bg-white py-3 d-flex flex-column flex-md-row justify-content-between align-items-center gap-2">
+        <div class="text-muted small text-center text-md-start">
+            {% if total > 0 %}
+                Mostrando <b>{{ inicio_rango }}-{{ fin_rango }}</b> de <b>{{ total }}</b> productos
+                <span class="mx-1">|</span> Página <b>{{ page }}</b> de <b>{{ total_paginas }}</b>
+            {% else %}
+                Sin resultados
+            {% endif %}
+        </div>
+        {% if total_paginas > 1 %}
+        <ul class="pagination pagination-sm mb-0 flex-wrap justify-content-center">
+            <li class="page-item {% if page <= 1 %}disabled{% endif %}">
+                <a class="page-link" href="{{ url_for('inventario_general', page=page-1, busqueda=busqueda, origen=origen_filtro, categoria=categoria_filtro, stock_bajo=stock_bajo, orden=orden, per_page=per_page) }}">Ant</a>
             </li>
+            {% set ventana = 2 %}
+            {% for p_num in range(1, total_paginas + 1) %}
+                {% if p_num == 1 or p_num == total_paginas or (p_num >= page - ventana and p_num <= page + ventana) %}
+                    <li class="page-item {% if p_num == page %}active{% endif %}">
+                        <a class="page-link" href="{{ url_for('inventario_general', page=p_num, busqueda=busqueda, origen=origen_filtro, categoria=categoria_filtro, stock_bajo=stock_bajo, orden=orden, per_page=per_page) }}">{{ p_num }}</a>
+                    </li>
+                {% elif p_num == page - ventana - 1 or p_num == page + ventana + 1 %}
+                    <li class="page-item disabled"><span class="page-link">...</span></li>
+                {% endif %}
             {% endfor %}
+            <li class="page-item {% if page >= total_paginas %}disabled{% endif %}">
+                <a class="page-link" href="{{ url_for('inventario_general', page=page+1, busqueda=busqueda, origen=origen_filtro, categoria=categoria_filtro, stock_bajo=stock_bajo, orden=orden, per_page=per_page) }}">Sig</a>
+            </li>
         </ul>
+        {% endif %}
     </div>
-    {% endif %}
+</div>
+
+<!-- MODAL GALERÍA -->
+<div class="modal fade" id="modalGaleria" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+                <h6 class="modal-title fw-bold mb-0"><i class="bi bi-images"></i> Fotos: <span id="galeria_sku"></span></h6>
+                <button class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                {% if session.get('role') in ['admin', 'almacen'] %}
+                <div id="galeria_dropzone" class="p-3 mb-3 text-center border rounded" style="border-style:dashed !important; background:#f8f9fa;">
+                    <i class="bi bi-cloud-arrow-up fs-3 text-muted d-block mb-2"></i>
+                    <label class="small fw-bold text-muted mb-2 d-block">Agregar foto (JPG, PNG o WEBP — máx. 5 por producto)</label>
+                    <div class="d-flex gap-2 justify-content-center flex-wrap">
+                        <input type="file" id="inputFotoArchivo" accept="image/jpeg,image/png,image/webp" class="form-control form-control-sm" style="max-width:220px;">
+                        <input type="file" id="inputFotoCamara" accept="image/*" capture="environment" class="d-none">
+                        <button class="btn btn-sm btn-outline-primary" onclick="document.getElementById('inputFotoCamara').click()">
+                            <i class="bi bi-camera-fill"></i> Tomar Foto
+                        </button>
+                        <button class="btn btn-sm btn-success" onclick="subirFotoSeleccionada()">
+                            <i class="bi bi-cloud-upload-fill"></i> Subir
+                        </button>
+                    </div>
+                    <div id="galeria_contador" class="small text-muted mt-2"></div>
+                </div>
+                {% endif %}
+                <div id="galeria_grid" class="row g-3"></div>
+                <div id="galeria_vacio" class="text-center text-muted py-5 d-none">
+                    <i class="bi bi-image display-3 opacity-25"></i>
+                    <p class="mt-2 small mb-0">Este producto aún no tiene fotos.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- LIGHTBOX -->
+<div id="lightboxOverlay">
+    <span class="lightbox-close" onclick="cerrarLightbox()">&times;</span>
+    <button class="lightbox-nav lightbox-prev" onclick="lightboxAnterior()"><i class="bi bi-chevron-left"></i></button>
+    <img id="lightboxImg" src="" alt="Foto ampliada">
+    <button class="lightbox-nav lightbox-next" onclick="lightboxSiguiente()"><i class="bi bi-chevron-right"></i></button>
+    <div class="lightbox-caption">
+        <span class="badge-user"><i class="bi bi-person-fill"></i> <span id="lightbox_usuario"></span></span>
+        <span class="badge-user"><i class="bi bi-clock-fill"></i> <span id="lightbox_fecha"></span></span>
+    </div>
+    <div class="lightbox-counter" id="lightbox_contador"></div>
 </div>
 
 <script>
 let productoGaleriaActual = null;
-let origenGaleriaActual = 'IMPORTBOLTS';
+let origenGaleriaActual = 'ANCLAJES';
+let fotosActuales = [];
+let indiceLightboxActual = 0;
 
 function abrirGaleria(productId, sku, origen) {
     productoGaleriaActual = productId;
@@ -113,13 +257,16 @@ function abrirGaleria(productId, sku, origen) {
 }
 
 function cargarFotosGaleria() {
+    const grid = document.getElementById('galeria_grid');
+    const vacio = document.getElementById('galeria_vacio');
+    grid.innerHTML = '<div class="col-12 text-center text-muted py-3"><div class="spinner-border spinner-border-sm"></div> Cargando fotos...</div>';
+    vacio.classList.add('d-none');
+
     fetch(`/api/producto/${productoGaleriaActual}/fotos?origen=${origenGaleriaActual}`)
         .then(r => r.json())
         .then(data => {
-            const grid = document.getElementById('galeria_grid');
-            const vacio = document.getElementById('galeria_vacio');
+            fotosActuales = data.fotos;
             grid.innerHTML = '';
-
             const contador = document.getElementById('galeria_contador');
             if (contador) contador.innerText = `${data.fotos.length} / 5 fotos`;
 
@@ -127,71 +274,113 @@ function cargarFotosGaleria() {
                 vacio.classList.remove('d-none');
                 return;
             }
-            vacio.classList.add('d-none');
 
-            data.fotos.forEach(f => {
+            data.fotos.forEach((f, idx) => {
                 const esAdminAlmacen = {{ 'true' if session.get('role') in ['admin', 'almacen'] else 'false' }};
                 grid.innerHTML += `
                     <div class="col-6 col-md-4">
-                        <div class="card shadow-sm">
-                            <img src="${f.url}" class="card-img-top" style="height:150px; object-fit:cover; cursor:pointer;" onclick="window.open('${f.url}', '_blank')">
-                            <div class="card-body p-2 d-flex justify-content-between align-items-center">
-                                <small class="text-muted">${f.fecha}</small>
-                                <div class="d-flex gap-1">
-                                    <a href="${f.url}" download class="btn btn-sm btn-outline-secondary py-0"><i class="bi bi-download"></i></a>
-                                    ${esAdminAlmacen ? `<button class="btn btn-sm btn-outline-danger py-0" onclick="eliminarFoto(${f.id})"><i class="bi bi-trash"></i></button>` : ''}
+                        <div class="foto-card shadow-sm">
+                            <div class="foto-img-wrap cargando">
+                                <img src="${f.url}" loading="lazy" onload="onFotoLista(this)" onerror="onFotoError(this)" onclick="abrirLightbox(${idx})">
+                            </div>
+                            <div class="foto-info d-flex flex-column gap-1">
+                                <div class="d-flex justify-content-between w-100">
+                                    <small class="text-muted"><i class="bi bi-person"></i> ${f.subido_por}</small>
+                                    <div class="d-flex gap-1">
+                                        <a href="${f.url}?download=1" class="btn btn-sm btn-outline-secondary py-0" title="Descargar"><i class="bi bi-download"></i></a>
+                                        ${esAdminAlmacen ? `<button class="btn btn-sm btn-outline-danger py-0" onclick="eliminarFoto(${f.id})" title="Eliminar"><i class="bi bi-trash"></i></button>` : ''}
+                                    </div>
                                 </div>
+                                <small class="text-muted" style="font-size:.72rem;"><i class="bi bi-clock"></i> ${f.fecha_hora}</small>
                             </div>
                         </div>
                     </div>`;
             });
-        });
+        })
+        .catch(() => { grid.innerHTML = '<div class="col-12 text-center text-danger py-3 small">No se pudieron cargar las fotos.</div>'; });
 }
 
-function comprimirImagen(archivo, maxWidth = 1200, calidad = 0.8) {
-    return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            const img = new Image();
-            img.onload = () => {
-                const canvas = document.createElement('canvas');
-                let w = img.width, h = img.height;
-                if (w > maxWidth) { h = h * (maxWidth / w); w = maxWidth; }
-                canvas.width = w; canvas.height = h;
-                canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-                canvas.toBlob((blob) => resolve(blob), 'image/jpeg', calidad);
+function onFotoLista(img) { img.classList.add('cargada'); img.parentElement.classList.remove('cargando'); }
+function onFotoError(img) {
+    img.onerror = null;
+    img.src = "data:image/svg+xml;utf8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="300" height="230"><rect width="100%" height="100%" fill="#f1f3f5"/><text x="50%" y="50%" font-family="sans-serif" font-size="14" fill="#adb5bd" text-anchor="middle" dy=".3em">Imagen no disponible</text></svg>');
+    img.classList.add('cargada'); img.parentElement.classList.remove('cargando');
+    img.style.cursor = 'default'; img.onclick = null;
+}
+
+function abrirLightbox(indice) { indiceLightboxActual = indice; mostrarFotoLightbox(); document.getElementById('lightboxOverlay').classList.add('activo'); }
+function cerrarLightbox() { document.getElementById('lightboxOverlay').classList.remove('activo'); }
+function mostrarFotoLightbox() {
+    const f = fotosActuales[indiceLightboxActual];
+    if (!f) return;
+    document.getElementById('lightboxImg').src = f.url;
+    document.getElementById('lightbox_usuario').innerText = f.subido_por;
+    document.getElementById('lightbox_fecha').innerText = f.fecha_hora;
+    document.getElementById('lightbox_contador').innerText = `${indiceLightboxActual + 1} de ${fotosActuales.length}`;
+    document.querySelector('.lightbox-prev').disabled = (indiceLightboxActual === 0);
+    document.querySelector('.lightbox-next').disabled = (indiceLightboxActual === fotosActuales.length - 1);
+}
+function lightboxAnterior() { if (indiceLightboxActual > 0) { indiceLightboxActual--; mostrarFotoLightbox(); } }
+function lightboxSiguiente() { if (indiceLightboxActual < fotosActuales.length - 1) { indiceLightboxActual++; mostrarFotoLightbox(); } }
+document.addEventListener('keydown', function(e) {
+    if (!document.getElementById('lightboxOverlay').classList.contains('activo')) return;
+    if (e.key === 'ArrowLeft') lightboxAnterior();
+    if (e.key === 'ArrowRight') lightboxSiguiente();
+    if (e.key === 'Escape') cerrarLightbox();
+});
+
+async function comprimirImagen(archivo, maxWidth = 1200, calidad = 0.8) {
+    try {
+        const bitmap = await createImageBitmap(archivo, { imageOrientation: 'from-image' });
+        const canvas = document.createElement('canvas');
+        let w = bitmap.width, h = bitmap.height;
+        if (w > maxWidth) { h = h * (maxWidth / w); w = maxWidth; }
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h);
+        return new Promise((resolve) => canvas.toBlob((blob) => resolve(blob), 'image/jpeg', calidad));
+    } catch (err) {
+        return new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    let w = img.width, h = img.height;
+                    if (w > maxWidth) { h = h * (maxWidth / w); w = maxWidth; }
+                    canvas.width = w; canvas.height = h;
+                    canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                    canvas.toBlob((blob) => resolve(blob), 'image/jpeg', calidad);
+                };
+                img.src = e.target.result;
             };
-            img.src = e.target.result;
-        };
-        reader.readAsDataURL(archivo);
-    });
+            reader.readAsDataURL(archivo);
+        });
+    }
 }
 
 async function subirFotoSeleccionada() {
     const inputArchivo = document.getElementById('inputFotoArchivo');
     const inputCamara = document.getElementById('inputFotoCamara');
     const archivo = inputCamara.files[0] || inputArchivo.files[0];
-
     if (!archivo) return Swal.fire('Falta imagen', 'Seleccione o tome una foto primero.', 'warning');
-
+    if (!archivo.type || !archivo.type.startsWith('image/')) {
+        return Swal.fire('Archivo no válido', 'Solo se permiten imágenes (JPG, PNG o WEBP).', 'error');
+    }
     Swal.fire({ title: 'Subiendo...', didOpen: () => Swal.showLoading(), allowOutsideClick: false });
-
-    const blobComprimido = await comprimirImagen(archivo);
-    let fd = new FormData();
-    fd.append('foto', blobComprimido, 'foto.jpg');
-    fd.append('origen', origenGaleriaActual);
-
-    fetch(`/api/producto/${productoGaleriaActual}/subir_foto`, { method: 'POST', body: fd })
-        .then(r => r.json())
-        .then(data => {
-            Swal.close();
-            if (data.status === 'success') {
-                inputArchivo.value = ''; inputCamara.value = '';
-                cargarFotosGaleria();
-            } else {
-                Swal.fire('No se pudo subir', data.msg, 'error');
-            }
-        });
+    try {
+        const blobComprimido = await comprimirImagen(archivo);
+        let fd = new FormData();
+        fd.append('foto', blobComprimido, 'foto.jpg');
+        fd.append('origen', origenGaleriaActual);
+        const r = await fetch(`/api/producto/${productoGaleriaActual}/subir_foto`, { method: 'POST', body: fd });
+        const data = await r.json();
+        Swal.close();
+        if (data.status === 'success') { inputArchivo.value = ''; inputCamara.value = ''; cargarFotosGaleria(); }
+        else Swal.fire('No se pudo subir', data.msg, 'error');
+    } catch (err) {
+        Swal.close();
+        Swal.fire('Error', 'Ocurrió un problema al procesar la imagen.', 'error');
+    }
 }
 
 function eliminarFoto(fotoId) {
@@ -200,10 +389,7 @@ function eliminarFoto(fotoId) {
         if (!result.isConfirmed) return;
         fetch(`/api/foto/${fotoId}/eliminar`, { method: 'POST' })
             .then(r => r.json())
-            .then(data => {
-                if (data.status === 'success') cargarFotosGaleria();
-                else Swal.fire('Error', data.msg, 'error');
-            });
+            .then(data => { if (data.status === 'success') cargarFotosGaleria(); else Swal.fire('Error', data.msg, 'error'); });
     });
 }
 </script>

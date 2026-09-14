@@ -4191,8 +4191,16 @@ def eliminar_producto(prod_id):
             return redirect(request.referrer or url_for('inventario'))
 
         # 3. LIMPIEZA DE KARDEX (Solo si no hay ventas)
-        # Borramos sus movimientos de stock (Ingreso inicial, ajustes, etc.)
         ProductMovement.query.filter_by(product_id=prod_id).delete()
+
+        # 3.5 LIMPIEZA DE FOTOS (DB + S3) — evita huérfanos y errores de integridad
+        fotos = ProductImage.query.filter_by(product_id=prod_id, origen_inventario='ANCLAJES').all()
+        for foto in fotos:
+            try:
+                s3_client.delete_object(Bucket=S3_BUCKET_NAME, Key=foto.s3_key)
+            except Exception as e:
+                print(f"Aviso: no se pudo borrar foto de S3 ({foto.s3_key}): {e}")
+            db.session.delete(foto)
 
         # 4. ELIMINAR EL PRODUCTO FINALMENTE
         db.session.delete(prod)
@@ -5793,6 +5801,16 @@ def eliminar_producto_importbolts(prod_id):
 
         # Limpiar Kardex de ImportBolts
         ProductMovementImportBolts.query.filter_by(product_id=prod_id).delete()
+
+        # Limpieza de fotos (DB + S3)
+        fotos = ProductImage.query.filter_by(product_importbolts_id=prod_id, origen_inventario='IMPORTBOLTS').all()
+        for foto in fotos:
+            try:
+                s3_client.delete_object(Bucket=S3_BUCKET_NAME, Key=foto.s3_key)
+            except Exception as e:
+                print(f"Aviso: no se pudo borrar foto de S3 ({foto.s3_key}): {e}")
+            db.session.delete(foto)
+
         db.session.delete(prod)
         db.session.commit()
         
@@ -6020,8 +6038,11 @@ def inventario_general():
 
     busqueda = request.args.get('busqueda', '').strip()
     origen_filtro = request.args.get('origen', 'todos')
+    categoria_filtro = request.args.get('categoria', 'todos')
+    stock_bajo = request.args.get('stock_bajo')
+    orden = request.args.get('orden', 'nombre')
     page = request.args.get('page', 1, type=int)
-    per_page = 30
+    per_page = request.args.get('per_page', 30, type=int)
 
     resultados = []
 
@@ -6031,8 +6052,7 @@ def inventario_general():
             q = q.filter(or_(Product.nombre.ilike(f"%{busqueda}%"), Product.sku.ilike(f"%{busqueda}%")))
         for p in q.all():
             resultados.append({
-                'id': p.id,                              # <-- NUEVO
-                'sku': p.sku, 'nombre': p.nombre, 'categoria': p.categoria, 'calidad': p.calidad,
+                'id': p.id, 'sku': p.sku, 'nombre': p.nombre, 'categoria': p.categoria, 'calidad': p.calidad,
                 'ubicacion': p.ubicacion, 'stock': p.stock_actual, 'stock_min': p.stock_minimo,
                 'peso_kg': p.peso_kg or 0, 'origen': 'ANCLAJES'
             })
@@ -6043,27 +6063,56 @@ def inventario_general():
             q2 = q2.filter(or_(ProductImportBolts.nombre.ilike(f"%{busqueda}%"), ProductImportBolts.sku.ilike(f"%{busqueda}%")))
         for p in q2.all():
             resultados.append({
-                'id': p.id,                              # <-- NUEVO
-                'sku': p.sku, 'nombre': p.nombre, 'categoria': p.categoria, 'calidad': p.calidad,
+                'id': p.id, 'sku': p.sku, 'nombre': p.nombre, 'categoria': p.categoria, 'calidad': p.calidad,
                 'ubicacion': p.ubicacion, 'stock': p.stock_actual, 'stock_min': p.stock_minimo,
                 'peso_kg': p.peso_kg or 0, 'origen': 'IMPORTBOLTS'
             })
 
-    resultados.sort(key=lambda x: x['nombre'])
+    # Filtro por categoría (se aplica después de combinar, porque las categorías viven en tablas distintas)
+    if categoria_filtro != 'todos':
+        resultados = [r for r in resultados if r['categoria'] == categoria_filtro]
+
+    # Filtro de stock bajo
+    if stock_bajo == 'on':
+        resultados = [r for r in resultados if r['stock'] <= r['stock_min']]
+
+    # Ordenamiento
+    if orden == 'sku':
+        resultados.sort(key=lambda x: x['sku'])
+    elif orden == 'stock_asc':
+        resultados.sort(key=lambda x: x['stock'])
+    elif orden == 'stock_desc':
+        resultados.sort(key=lambda x: x['stock'], reverse=True)
+    else:
+        resultados.sort(key=lambda x: x['nombre'])
 
     total = len(resultados)
     inicio = (page - 1) * per_page
     fin = inicio + per_page
     pagina_actual = resultados[inicio:fin]
     total_paginas = (total // per_page) + (1 if total % per_page else 0)
+    if total_paginas == 0:
+        total_paginas = 1
+
+    # Lista combinada de categorías (para el filtro), tomada de ambas empresas
+    cats_anclajes = [c.nombre for c in Category.query.filter(Category.nombre != 'TRASLADO IMPORTBOLTS').order_by(Category.nombre).all()]
+    cats_importbolts = [c.nombre for c in CategoryImportBolts.query.order_by(CategoryImportBolts.nombre).all()]
+    lista_categorias = sorted(set(cats_anclajes + cats_importbolts))
 
     return render_template('inventario_general.html',
                            productos=pagina_actual,
                            busqueda=busqueda,
                            origen_filtro=origen_filtro,
+                           categoria_filtro=categoria_filtro,
+                           stock_bajo=stock_bajo,
+                           orden=orden,
+                           per_page=per_page,
+                           lista_categorias=lista_categorias,
                            page=page,
                            total_paginas=total_paginas,
-                           total=total)
+                           total=total,
+                           inicio_rango=(inicio + 1 if total > 0 else 0),
+                           fin_rango=min(fin, total))
 
 @app.route('/traslados_intercompany')
 def traslados_intercompany():
