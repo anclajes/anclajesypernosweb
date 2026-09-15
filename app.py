@@ -176,6 +176,20 @@ def registrar_traslado_devolucion(detalle, orden, prod_ib, motivo_dev):
         traslado.estado_facturacion = 'ANULADO_DEVOLUCION'
         traslado.notas = (traslado.notas or '') + f" | Devuelto: {motivo_dev}"
 
+def parse_activo_excel(val):
+    """Interpreta la columna ACTIVO del Excel. Devuelve True, False, o None si viene vacía
+    (None significa 'no tocar el valor actual', igual que con precio y peso)."""
+    if val is None:
+        return None
+    s = str(val).strip().upper()
+    if s in ('', 'NAN', 'NONE'):
+        return None
+    if s in ('SI', 'SÍ', 'S', 'ACTIVO', 'TRUE', '1', 'X'):
+        return True
+    if s in ('NO', 'N', 'INACTIVO', 'FALSE', '0'):
+        return False
+    return None
+
 def get_producto_detalle(detalle):
     return detalle.product_importbolts if detalle.origen_inventario == 'IMPORTBOLTS' else detalle.product
 
@@ -1348,8 +1362,9 @@ def exportar_excel():
     productos = db.session.query(
         Product.sku, Product.nombre, Product.categoria, Product.calidad, 
         Product.ubicacion, Product.stock_actual, Product.stock_minimo, 
-        Product.precio_unidad, Product.precio_caja
-    ).all()
+        Product.precio_unidad, Product.precio_caja, Product.peso_kg,
+        Product.estado, Product.activo
+    ).filter(Product.es_shadow_importbolts.isnot(True)).all()
     
     # Creamos lista de diccionarios
     data = []
@@ -1360,10 +1375,13 @@ def exportar_excel():
             'FAMILIA': p.categoria,
             'CALIDAD': p.calidad,
             'UBICACION': p.ubicacion,
-            'STOCK ACTUAL': p.stock_actual,
+            'ESTADO': p.estado or '',
+            'CANT. ACT.': p.stock_actual,
             'STOCK MÍNIMO': p.stock_minimo,
+            'PESO_KG': p.peso_kg or 0,
             'PRECIO UNIT': p.precio_unidad,
-            'PRECIO CAJA': p.precio_caja
+            'PRECIO CAJA': p.precio_caja,
+            'ACTIVO': 'SI' if p.activo else 'NO'
         })
     
     # Liberamos la memoria RAM de SQLAlchemy antes de procesar el Excel
@@ -1394,7 +1412,7 @@ def exportar_excel():
         output,
         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         as_attachment=True,
-        download_name=f'Inventario_ImportBolts_{hora_peru().strftime("%Y%m%d")}.xlsx'
+        download_name=f'Inventario_Anclajes_{hora_peru().strftime("%Y%m%d")}.xlsx'
     )
 
 @app.route('/exportar_directorio_clientes')
@@ -1578,9 +1596,11 @@ def descargar_plantilla():
         'FAMILIA',      # Categoría
         'CALIDAD',      # Calidad
         'UBICACION',    # Ubicación (Opcional)
+        'ESTADO',       # Opcional. Vacío = OK. Si escribe algo, queda como observación (Ej: OXIDADO)
         'CANT. ACT.',   # Stock Actual
         'STOCK MÍNIMO',  # Stock Mínimo (Opcional, default 10)
-        'PESO_KG'
+        'PESO_KG',
+        'ACTIVO'        # Opcional. SI o NO. Si se deja vacío, no cambia el estado actual
     ]
     
     # Crear un DataFrame vacío con esas columnas
@@ -3678,7 +3698,7 @@ def importar_excel():
             ubicacion = limpiar_campo(ubicacion, 190)
             estado_v  = limpiar_campo(estado_v, 90)
 
-            stock_val = clean_int(get_col(row_vals, 'CANT. ACT.', 'STOCK', 'CANTIDAD', 'CANT.ACT.'))
+            stock_val = clean_int(get_col(row_vals, 'CANT. ACT.', 'STOCK', 'CANTIDAD', 'CANT.ACT.', 'STOCK ACTUAL'))
             min_val   = clean_int(get_col(row_vals, 'STOCK MÍNIMO', 'STOCK MINIMO', 'MINIMO'), 10)
 
             def clean_float(val, default=0.0):
@@ -3690,6 +3710,7 @@ def importar_excel():
 
             precio_unit = clean_float(get_col(row_vals, 'PRECIO UNI.','PRECIO UNIT', 'PRECIO UNIDAD', 'P. UNIT', 'PRECIO_UNIT', 'PRECIO UNITARIO'))
             peso_val = clean_float(get_col(row_vals, 'PESO_KG', 'PESO KG', 'PESO (KG)', 'PESO'))
+            activo_val = parse_activo_excel(get_col(row_vals, 'ACTIVO', 'ESTADO ACTIVO'))
 
             # Crear categoría si no existe
             if familia not in cats_existentes:
@@ -3727,6 +3748,13 @@ def importar_excel():
                     upd['tiene_peso'] = False
                     upd['peso_kg'] = 0.0
 
+                if activo_val is not None:
+                    upd['tiene_activo'] = True
+                    upd['activo'] = activo_val
+                else:
+                    upd['tiene_activo'] = False
+                    upd['activo'] = True
+
                 batch_updates.append(upd)
                 actualizados += 1
             else:
@@ -3737,6 +3765,7 @@ def importar_excel():
                     precio_caja=0.0,
                     precio_docena=precio_unit,
                     peso_kg=peso_val,
+                    activo=(activo_val if activo_val is not None else True),
                     costo_referencial=0.0, estado=estado_v,
                     fecha_actualizacion=hora_actual, actualizado_por=usuario_actual
                 )
@@ -3757,6 +3786,8 @@ def importar_excel():
                         set_clauses += ["precio_unidad=:precio_unidad", "precio_docena=:precio_unidad"]
                     if upd.get('tiene_peso'):
                         set_clauses += ["peso_kg=:peso_kg"]
+                    if upd.get('tiene_activo'):
+                        set_clauses += ["activo=:activo"]
 
                     query_upd = f"UPDATE product SET {', '.join(set_clauses)} WHERE sku=:sku"
                     db.session.execute(text(query_upd), upd)
@@ -3940,10 +3971,11 @@ def importar_excel_importbolts():
             estado_v  = limpiar_campo(clean_str(get_col(row_vals, 'ESTADO')).upper(), 90)
             if estado_v == 'OK': estado_v = ''
             
-            stock_val = clean_int(get_col(row_vals, 'CANT. ACT.', 'STOCK', 'CANTIDAD', 'CANT.ACT.'))
+            stock_val = clean_int(get_col(row_vals, 'CANT. ACT.', 'STOCK', 'CANTIDAD', 'CANT.ACT.', 'STOCK ACTUAL'))
             min_val   = clean_int(get_col(row_vals, 'STOCK MÍNIMO', 'STOCK MINIMO', 'MINIMO'), 10)
             precio_unit = clean_float(get_col(row_vals, 'PRECIO UNI.','PRECIO UNIT', 'PRECIO UNIDAD', 'P. UNIT', 'PRECIO_UNIT', 'PRECIO UNITARIO'))
             peso_val = clean_float(get_col(row_vals, 'PESO_KG', 'PESO KG', 'PESO (KG)', 'PESO'))
+            activo_val = parse_activo_excel(get_col(row_vals, 'ACTIVO', 'ESTADO ACTIVO'))
 
             if familia not in cats_existentes:
                 base = "".join(c for c in familia[:3].upper() if c.isalnum()) or "GEN"
@@ -3978,6 +4010,13 @@ def importar_excel_importbolts():
                     upd['tiene_peso'] = False
                     upd['peso_kg'] = 0.0
 
+                if activo_val is not None:
+                    upd['tiene_activo'] = True
+                    upd['activo'] = activo_val
+                else:
+                    upd['tiene_activo'] = False
+                    upd['activo'] = True
+
                 batch_updates.append(upd)
                 actualizados += 1
             else:
@@ -3986,6 +4025,7 @@ def importar_excel_importbolts():
                     stock_actual=stock_val, stock_minimo=min_val, precio_unidad=precio_unit, 
                     precio_caja=0.0, precio_docena=precio_unit,
                     peso_kg=peso_val,
+                    activo=(activo_val if activo_val is not None else True),
                     costo_referencial=0.0, estado=estado_v,
                     fecha_actualizacion=hora_actual, actualizado_por=usuario_actual
                 )
@@ -4005,6 +4045,8 @@ def importar_excel_importbolts():
                         set_clauses += ["precio_unidad=:precio_unidad", "precio_docena=:precio_unidad"]
                     if upd.get('tiene_peso'):
                         set_clauses += ["peso_kg=:peso_kg"]
+                    if upd.get('tiene_activo'):
+                        set_clauses += ["activo=:activo"]
 
                     query_upd = f"UPDATE product_importbolts SET {', '.join(set_clauses)} WHERE sku=:sku"
                     db.session.execute(text(query_upd), upd)
@@ -5921,17 +5963,21 @@ def exportar_excel_importbolts():
     if session.get('role') not in ['admin', 'almacen', 'administracion']: return "No autorizado", 403
     
     productos = db.session.query(
-        Product.sku, Product.nombre, Product.categoria, Product.calidad, 
-        Product.ubicacion, Product.stock_actual, Product.stock_minimo, 
-        Product.precio_unidad, Product.precio_caja
-    ).filter(Product.es_shadow_importbolts.isnot(True)).all()
+        ProductImportBolts.sku, ProductImportBolts.nombre, ProductImportBolts.categoria, ProductImportBolts.calidad, 
+        ProductImportBolts.ubicacion, ProductImportBolts.stock_actual, ProductImportBolts.stock_minimo, 
+        ProductImportBolts.precio_unidad, ProductImportBolts.precio_caja, ProductImportBolts.peso_kg,
+        ProductImportBolts.estado, ProductImportBolts.activo
+    ).all()
     
     data = []
     for p in productos:
         data.append({
             'CÓDIGO': p.sku, 'DESCRIPCIÓN': p.nombre, 'FAMILIA': p.categoria, 'CALIDAD': p.calidad,
-            'UBICACION': p.ubicacion, 'STOCK ACTUAL': p.stock_actual, 'STOCK MÍNIMO': p.stock_minimo,
-            'PRECIO UNIT': p.precio_unidad, 'PRECIO CAJA': p.precio_caja
+            'UBICACION': p.ubicacion, 'ESTADO': p.estado or '',
+            'CANT. ACT.': p.stock_actual, 'STOCK MÍNIMO': p.stock_minimo,
+            'PESO_KG': p.peso_kg or 0,
+            'PRECIO UNIT': p.precio_unidad, 'PRECIO CAJA': p.precio_caja,
+            'ACTIVO': 'SI' if p.activo else 'NO'
         })
     
     del productos
@@ -5952,7 +5998,7 @@ def exportar_excel_importbolts():
     
     return send_file(
         output, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        as_attachment=True, download_name=f'Inventario_ImportBolts_Data_{hora_peru().strftime("%Y%m%d")}.xlsx'
+        as_attachment=True, download_name=f'Inventario_ImportBolts_{hora_peru().strftime("%Y%m%d")}.xlsx'
     )
 
 @app.route('/categoria_importbolts/nueva', methods=['POST'])
