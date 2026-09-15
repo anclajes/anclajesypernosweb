@@ -557,7 +557,8 @@
                         <div class="col-12">
                             <label class="form-label small">Descripción *</label>
                             <input name="nombre" id="inputNombreNuevo" class="form-control text-uppercase" required 
-                                oninput="this.value = this.value.toUpperCase(); buscarCodigosRelacionadosIB();">
+                                oninput="this.value = this.value.toUpperCase(); buscarCodigosRelacionadosIB(); validarNombreEnVivoIB();">
+                            <div id="nombreValidacionMsg" class="form-text small mt-1"></div>
                         </div>
 
                         <div class="col-12">
@@ -585,7 +586,7 @@
                             <label class="form-label small fw-bold text-info">Stock Mínimo</label>
                             <input type="number" name="stock_minimo" class="form-control form-control-sm" value="10" min="1">
                         </div>
-                        <div class="col-6 col-md-4"><label class="form-label small">P. Unidad</label><input type="number" step="0.01" name="p_unidad" id="new_p_uni" class="form-control form-control-sm"></div>
+                        <div class="col-6 col-md-4"><label class="form-label small">P. Unidad ($)</label><input type="number" step="0.01" name="p_unidad" id="new_p_uni" class="form-control form-control-sm"></div>
                         <div class="col-6 col-md-4"><label class="form-label small">P. Caja</label><input type="number" step="0.01" name="p_caja" id="new_p_caja" class="form-control form-control-sm" onchange="validarPrecios()"></div>
                         <div class="col-12"><div class="alert alert-warning py-1 px-2 mt-2 d-none" id="alertPrecio" style="font-size: 0.8rem;">Precio Caja > Unitario.</div></div>
 
@@ -672,7 +673,7 @@
                             <label class="form-label small fw-bold text-info">Stock Mínimo</label>
                             <input id="edit_stock_min" type="number" name="stock_minimo" class="form-control">
                         </div>
-                        <div class="col-6 col-md-3"><label class="form-label small">P. Unidad</label><input id="edit_punidad" type="number" step="0.01" name="p_unidad" class="form-control"></div>
+                        <div class="col-6 col-md-3"><label class="form-label small">P. Unidad ($)</label><input id="edit_punidad" type="number" step="0.01" name="p_unidad" class="form-control"></div>
                         <div class="col-6 col-md-3"><label class="form-label small">P. Caja</label><input id="edit_pcaja" type="number" step="0.01" name="p_caja" class="form-control"></div>
                     </div>
                     <div class="row g-2 mt-1">
@@ -713,21 +714,17 @@
                     <h6 class="modal-title fw-bold text-primary">Gestionar Familias</h6>
                     <button type="button" class="btn-close small" data-bs-dismiss="modal"></button>
                 </div>
-                <div class="modal-body pb-0">
+                <div class="modal-body pb-0 mt-2">
                     <div class="row g-2 align-items-end">
-                        <div class="col-12 col-sm-6">
-                            <label class="small fw-bold">Nombre</label>
+                        <div class="col-12 col-md-9">
+                            <label class="small fw-bold text-muted">Nombre de Familia</label>
                             <input name="cat_nombre" class="form-control form-control-sm text-uppercase" placeholder="Ej: SENSORES" required oninput="this.value = this.value.toUpperCase()">
                         </div>
-                        <div class="col-6 col-sm-3">
-                            <label class="small fw-bold">Prefijo</label>
-                            <input name="cat_prefijo" class="form-control form-control-sm text-uppercase" placeholder="AAA" maxlength="3" required oninput="this.value = this.value.toUpperCase()">
-                        </div>
-                        <div class="col-6 col-sm-3">
-                            <button type="submit" class="btn btn-primary btn-sm w-100">Crear</button>
+                        <div class="col-12 col-md-3">
+                            <button type="submit" class="btn btn-sm w-100 fw-bold" style="background-color: var(--theme-primary); color: white;">Crear</button>
                         </div>
                     </div>
-                    <hr class="my-3">
+                    <hr class="my-3 opacity-25">
                 </div>
             </form>
             <div class="modal-body pt-0" style="max-height: 300px; overflow-y: auto;">
@@ -878,8 +875,11 @@
 
                     <!-- PRECIO (solo visible en Ingreso) -->
                     <div class="mb-3" id="bloquePrecio">
-                        <label class="small text-muted fw-bold mb-1">Precio Unitario (S/. o $)</label>
-                        <input type="number" step="0.01" name="precio_unitario" class="form-control form-control-sm shadow-sm" min="0">
+                        <label class="small text-muted fw-bold mb-1">Precio Unitario ($)</label>
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text">$</span>
+                            <input type="number" step="0.01" name="precio_unitario" class="form-control shadow-sm" min="0">
+                        </div>
                     </div>
 
                     <!-- PRESENTACIÓN -->
@@ -1385,7 +1385,7 @@ function guardarProductoAjax() {
                     <tr><td class="text-muted">Ubicación:</td><td>${ubicacion}</td></tr>
                     <tr><td class="text-muted">Peso Unitario:</td><td>${pesoKg} Kg</td></tr>
                     <tr><td class="text-muted">Stock Inicial:</td><td>${stock} (mín. ${stockMin})</td></tr>
-                    <tr><td class="text-muted">P. Unidad / P. Caja:</td><td>$ ${pUnidad} / $ ${pCaja}</td></tr>
+                    <tr><td class="text-muted">P. Unidad ($) / P. Caja:</td><td>$ ${pUnidad} / $ ${pCaja}</td></tr>
                 </table>
             </div>
         `,
@@ -2424,6 +2424,35 @@ function usarProveedorDeLista(p) {
         : `<i class="bi bi-info-circle"></i> Agregado por ${p.creado_por}`;
 
     bootstrap.Modal.getInstance(document.getElementById('modalListaProveedores')).hide();
+}
+
+let timeoutValidacionNombreIB = null;
+
+function validarNombreEnVivoIB() {
+    clearTimeout(timeoutValidacionNombreIB);
+    const nombre = document.getElementById('inputNombreNuevo').value.trim();
+    const msg = document.getElementById('nombreValidacionMsg');
+
+    if (nombre.length < 3) {
+        msg.innerHTML = '';
+        return;
+    }
+
+    timeoutValidacionNombreIB = setTimeout(() => {
+        fetch('/api/verificar_nombre_existe', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: `nombre=${encodeURIComponent(nombre)}&inventario=IMPORTBOLTS`
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.existe) {
+                msg.innerHTML = `<span class="text-warning fw-bold"><i class="bi bi-exclamation-triangle-fill"></i> Ya existe un producto con esta descripción exacta: código ${data.sku}. Verifique si es el mismo producto.</span>`;
+            } else {
+                msg.innerHTML = '';
+            }
+        });
+    }, 400);
 }
 </script>
 {% endblock %}

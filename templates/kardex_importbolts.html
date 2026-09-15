@@ -42,7 +42,14 @@
                         {% endfor %}
                     </select>
 
-                    <select name="calidad" class="form-select form-select-sm" onchange="this.form.submit()">
+                    <select name="categoria" id="filtro_familia_kardex" class="form-select form-select-sm" onchange="document.getElementById('formFiltroKardex').submit()">
+                        <option value="todas">-- Todas las Familias --</option>
+                        {% for cat in categorias %}
+                        <option value="{{ cat.nombre }}" {% if request.args.get('categoria') == cat.nombre %}selected{% endif %}>{{ cat.nombre }}</option>
+                        {% endfor %}
+                    </select>
+
+                    <select name="calidad" id="filtro_calidad_kardex" class="form-select form-select-sm" onchange="document.getElementById('formFiltroKardex').submit()">
                         <option value="todas">-- Todas las Calidades --</option>
                         {% for cal in lista_calidades_kardex %}
                         <option value="{{ cal }}" {% if request.args.get('calidad') == cal %}selected{% endif %}>{{ cal }}</option>

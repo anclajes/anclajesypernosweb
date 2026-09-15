@@ -3218,23 +3218,27 @@ def nueva_categoria():
     if session.get('role') not in ['admin', 'almacen']: return "No autorizado", 403
     
     nombre = request.form.get('cat_nombre', '').strip().upper()
-    prefijo = request.form.get('cat_prefijo', '').strip().upper()
     
-    if not nombre or not prefijo:
-        flash('Error: Nombre y Prefijo son obligatorios')
+    if not nombre:
+        flash('Error: El nombre de la familia es obligatorio')
         return redirect(url_for('inventario'))
         
     # Validar duplicados
     if Category.query.filter_by(nombre=nombre).first():
         flash('Error: Esa familia ya existe.')
         return redirect(url_for('inventario'))
-        
-    if Category.query.filter_by(prefijo=prefijo).first():
-        flash(f'Error: El prefijo {prefijo} ya está en uso.')
-        return redirect(url_for('inventario'))
     
     try:
-        nueva = Category(nombre=nombre, prefijo=prefijo, contador=0)
+        # El prefijo ya no lo pide el usuario (SKU es manual), pero se genera uno interno
+        # único solo porque la columna lo exige a nivel de base de datos.
+        base = "".join(c for c in nombre[:3] if c.isalnum()) or "GEN"
+        prefijo_final = base
+        n = 1
+        while Category.query.filter_by(prefijo=prefijo_final).first():
+            prefijo_final = f"{base[:2]}{n}"
+            n += 1
+
+        nueva = Category(nombre=nombre, prefijo=prefijo_final, contador=0)
         db.session.add(nueva)
         db.session.commit()
         flash(f'✅ Familia "{nombre}" creada. Ahora puede seleccionarla en Nuevo Producto.')
@@ -3242,7 +3246,6 @@ def nueva_categoria():
         db.session.rollback()
         flash(f'Error: {str(e)}')
         
-    # Volvemos al inventario
     return redirect(url_for('inventario'))
 
 # --- ACTUALIZAR ESTA FUNCIÓN EN APP.PY ---
@@ -4556,9 +4559,12 @@ def ver_kardex():
         ProductMovement.ruc_proveedor, ProductMovement.razon_social_proveedor
     ).filter(ProductMovement.ruc_proveedor.isnot(None)).distinct().order_by(ProductMovement.razon_social_proveedor).all()
 
-    lista_calidades_kardex = [c[0] for c in db.session.query(Product.calidad).distinct().filter(
+    query_calidades_kardex = db.session.query(Product.calidad).filter(
         Product.calidad.isnot(None), Product.calidad != ''
-    ).order_by(Product.calidad).all()]
+    )
+    if cat_nombre and cat_nombre != 'todas':
+        query_calidades_kardex = query_calidades_kardex.filter(Product.categoria == cat_nombre)
+    lista_calidades_kardex = [c[0] for c in query_calidades_kardex.distinct().order_by(Product.calidad).all()]
 
     return render_template('kardex.html',
                            movimientos=movimientos,
@@ -6218,10 +6224,9 @@ def nueva_categoria_importbolts():
     if session.get('role') not in ['admin', 'almacen']: return "No autorizado", 403
     
     nombre = request.form.get('cat_nombre', '').strip().upper()
-    prefijo = request.form.get('cat_prefijo', '').strip().upper()
     
-    if not nombre or not prefijo:
-        flash('Error: Nombre y Prefijo son obligatorios')
+    if not nombre:
+        flash('Error: El nombre de la familia es obligatorio')
         return redirect(url_for('inventario_importbolts'))
         
     if CategoryImportBolts.query.filter_by(nombre=nombre).first():
@@ -6229,7 +6234,14 @@ def nueva_categoria_importbolts():
         return redirect(url_for('inventario_importbolts'))
         
     try:
-        nueva = CategoryImportBolts(nombre=nombre, prefijo=prefijo, contador=0)
+        base = "".join(c for c in nombre[:3] if c.isalnum()) or "GEN"
+        prefijo_final = base
+        n = 1
+        while CategoryImportBolts.query.filter_by(prefijo=prefijo_final).first():
+            prefijo_final = f"{base[:2]}{n}"
+            n += 1
+
+        nueva = CategoryImportBolts(nombre=nombre, prefijo=prefijo_final, contador=0)
         db.session.add(nueva)
         db.session.commit()
         flash(f'✅ Familia "{nombre}" creada en ImportBolts.')
@@ -6390,9 +6402,12 @@ def ver_kardex_importbolts():
         ProductMovementImportBolts.ruc_proveedor, ProductMovementImportBolts.razon_social_proveedor
     ).filter(ProductMovementImportBolts.ruc_proveedor.isnot(None)).distinct().order_by(ProductMovementImportBolts.razon_social_proveedor).all()
 
-    lista_calidades_kardex = [c[0] for c in db.session.query(ProductImportBolts.calidad).distinct().filter(
+    query_calidades_kardex = db.session.query(ProductImportBolts.calidad).filter(
         ProductImportBolts.calidad.isnot(None), ProductImportBolts.calidad != ''
-    ).order_by(ProductImportBolts.calidad).all()]
+    )
+    if cat_nombre and cat_nombre != 'todas':
+        query_calidades_kardex = query_calidades_kardex.filter(ProductImportBolts.categoria == cat_nombre)
+    lista_calidades_kardex = [c[0] for c in query_calidades_kardex.distinct().order_by(ProductImportBolts.calidad).all()]
 
     return render_template('kardex_importbolts.html',
                            movimientos=movimientos,
@@ -7303,6 +7318,22 @@ def reporte_precios_proveedores():
 
     return render_template('reporte_precios_proveedores.html',
                            resultado=resultado, origen=origen, busqueda=busqueda)
+
+@app.route('/api/verificar_nombre_existe', methods=['POST'])
+def verificar_nombre_existe():
+    if session.get('user_id') is None: return {'existe': False}, 403
+    nombre = request.form.get('nombre', '').strip().upper()
+    inventario = request.form.get('inventario', 'ANCLAJES')
+
+    if not nombre:
+        return {'existe': False}
+
+    Modelo = ProductImportBolts if inventario == 'IMPORTBOLTS' else Product
+    prod = Modelo.query.filter(func.upper(Modelo.nombre) == nombre).first()
+
+    if prod:
+        return {'existe': True, 'sku': prod.sku}
+    return {'existe': False}
 
 # --- RUTA SECRETA PARA INICIALIZAR LA BASE DE DATOS EN RENDER ---
 
