@@ -4383,13 +4383,15 @@ def ajustar_stock():
     tipo_proveedor_final = None
 
     if tipo_proveedor == 'INTERNACIONAL':
-        # Único caso libre: no requiere haber sido validado contra ninguna API
         if not razon_social_proveedor_form:
             flash('⛔ Debe ingresar la Razón Social del proveedor internacional.')
             return redirect(url_origen or url_for('inventario'))
 
+        proveedor_id_internacional = request.form.get('proveedor_internacional_id', '').strip()
         proveedor_db = None
-        if id_fiscal_proveedor_form:
+        if proveedor_id_internacional:
+            proveedor_db = Proveedor.query.get(proveedor_id_internacional)
+        elif id_fiscal_proveedor_form:
             proveedor_db = Proveedor.query.filter_by(documento=id_fiscal_proveedor_form).first()
 
         if not proveedor_db:
@@ -4397,15 +4399,19 @@ def ajustar_stock():
                 documento=id_fiscal_proveedor_form or None, tipo_proveedor='INTERNACIONAL',
                 razon_social=razon_social_proveedor_form, direccion=direccion_proveedor_form,
                 pais=pais_proveedor_form, identificador_fiscal=id_fiscal_proveedor_form,
-                last_updated=hora_peru(), updated_by=session.get('username', 'Sistema')
+                last_updated=hora_peru(), updated_by=session.get('username', 'Sistema'),
+                creado_por_id=session.get('user_id')
             )
             db.session.add(proveedor_db)
             db.session.flush()
         else:
+            # Internacional: SÍ es editable, se audita quién lo modificó
             proveedor_db.razon_social = razon_social_proveedor_form
             proveedor_db.direccion = direccion_proveedor_form
             proveedor_db.pais = pais_proveedor_form
             proveedor_db.last_updated = hora_peru()
+            proveedor_db.editado_por_id = session.get('user_id')
+            proveedor_db.editado_en = hora_peru()   
 
         proveedor_final_id = proveedor_db.id
         ruc_proveedor_final = id_fiscal_proveedor_form or None
@@ -5927,10 +5933,13 @@ def ajustar_stock_importbolts():
     if tipo_proveedor == 'INTERNACIONAL':
         if not razon_social_proveedor_form:
             flash('⛔ Debe ingresar la Razón Social del proveedor internacional.')
-            return redirect(url_origen or url_for('inventario_importbolts'))
+            return redirect(url_origen or url_for('inventario'))
 
+        proveedor_id_internacional = request.form.get('proveedor_internacional_id', '').strip()
         proveedor_db = None
-        if id_fiscal_proveedor_form:
+        if proveedor_id_internacional:
+            proveedor_db = Proveedor.query.get(proveedor_id_internacional)
+        elif id_fiscal_proveedor_form:
             proveedor_db = Proveedor.query.filter_by(documento=id_fiscal_proveedor_form).first()
 
         if not proveedor_db:
@@ -5938,15 +5947,19 @@ def ajustar_stock_importbolts():
                 documento=id_fiscal_proveedor_form or None, tipo_proveedor='INTERNACIONAL',
                 razon_social=razon_social_proveedor_form, direccion=direccion_proveedor_form,
                 pais=pais_proveedor_form, identificador_fiscal=id_fiscal_proveedor_form,
-                last_updated=hora_peru(), updated_by=session.get('username', 'Sistema')
+                last_updated=hora_peru(), updated_by=session.get('username', 'Sistema'),
+                creado_por_id=session.get('user_id')
             )
             db.session.add(proveedor_db)
             db.session.flush()
         else:
+            # Internacional: SÍ es editable, se audita quién lo modificó
             proveedor_db.razon_social = razon_social_proveedor_form
             proveedor_db.direccion = direccion_proveedor_form
             proveedor_db.pais = pais_proveedor_form
             proveedor_db.last_updated = hora_peru()
+            proveedor_db.editado_por_id = session.get('user_id')
+            proveedor_db.editado_en = hora_peru()
 
         proveedor_final_id = proveedor_db.id
         ruc_proveedor_final = id_fiscal_proveedor_form or None
@@ -7038,10 +7051,12 @@ def consultar_proveedor():
                 razon_social=razon, direccion=direccion,
                 estado=estado, condicion=condicion,
                 ubigeo=ubigeo, distrito=distrito, provincia=provincia, departamento=departamento,
-                last_updated=hora_peru(), updated_by=usuario_actual
+                last_updated=hora_peru(), updated_by=usuario_actual,
+                creado_por_id=session.get('user_id')
             )
             db.session.add(proveedor_db)
         else:
+            # Nacional: SIEMPRE se refresca con lo que dice SUNAT/RENIEC, nunca editable a mano
             proveedor_db.razon_social = razon
             proveedor_db.direccion = direccion
             proveedor_db.estado = estado
@@ -7178,6 +7193,36 @@ def buscar_proveedores_db():
         'text': f"{p.documento or 'S/N'} - {p.razon_social}"
     } for p in proveedores]}
 
+@app.route('/api/listar_proveedores_guardados')
+def listar_proveedores_guardados():
+    if session.get('user_id') is None:
+        return {'status': 'error'}, 403
+
+    tipo = request.args.get('tipo', 'NACIONAL')  # NACIONAL o INTERNACIONAL
+    busqueda = request.args.get('busqueda', '').strip()
+
+    query = Proveedor.query.filter_by(tipo_proveedor=tipo)
+    if busqueda:
+        query = query.filter(or_(
+            Proveedor.documento.ilike(f"%{busqueda}%"),
+            Proveedor.razon_social.ilike(f"%{busqueda}%")
+        ))
+
+    proveedores = query.order_by(Proveedor.razon_social).limit(200).all()
+
+    return {'status': 'success', 'proveedores': [{
+        'id': p.id,
+        'documento': p.documento or '',
+        'razon_social': p.razon_social,
+        'direccion': p.direccion or '',
+        'pais': p.pais or '',
+        'identificador_fiscal': p.identificador_fiscal or '',
+        'creado_por': p.creado_por.nombre_completo if p.creado_por else '-',
+        'editado_por': p.editado_por.nombre_completo if p.editado_por else None,
+        'editado_en': p.editado_en.strftime('%d/%m/%Y %H:%M') if p.editado_en else None,
+        'last_updated': p.last_updated.strftime('%d/%m/%Y %H:%M') if p.last_updated else ''
+    } for p in proveedores]}
+
 # --- REPORTE PROVEEDORES ---
 
 @app.route('/reporte_precios_proveedores')
@@ -7252,28 +7297,16 @@ def reporte_precios_proveedores():
 # --- RUTA SECRETA PARA INICIALIZAR LA BASE DE DATOS EN RENDER ---
 
 
-@app.route('/fix_presentaciones_2026')
-def fix_presentaciones():
+@app.route('/fix_proveedor_auditoria_2026')
+def fix_proveedor_auditoria():
     try:
         with db.engine.connect() as conn:
-            conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS presentacion (
-                    id SERIAL PRIMARY KEY,
-                    nombre VARCHAR(50) UNIQUE NOT NULL,
-                    activo BOOLEAN DEFAULT TRUE,
-                    es_predeterminado BOOLEAN DEFAULT FALSE
-                )
-            """))
+            conn.execute(text("ALTER TABLE proveedor ADD COLUMN IF NOT EXISTS creado_por_id INTEGER REFERENCES \"user\"(id)"))
+            conn.execute(text("ALTER TABLE proveedor ADD COLUMN IF NOT EXISTS editado_por_id INTEGER REFERENCES \"user\"(id)"))
+            conn.execute(text("ALTER TABLE proveedor ADD COLUMN IF NOT EXISTS editado_en TIMESTAMP"))
             conn.commit()
-
-        predeterminadas = ['UNIDADES', 'METROS', 'KILOGRAMOS', 'CAJAS']
-        for nombre in predeterminadas:
-            if not Presentacion.query.filter_by(nombre=nombre).first():
-                db.session.add(Presentacion(nombre=nombre, es_predeterminado=True))
-        db.session.commit()
-        return "<h2>✅ Tabla de presentaciones creada y sembrada.</h2>"
+        return "<h2>✅ Auditoría agregada a la tabla proveedor.</h2>"
     except Exception as e:
-        db.session.rollback()
         return f"<h2>Error: {str(e)}</h2>"
     
 # --- ARRANQUE DE LA APLICACIÓN ---

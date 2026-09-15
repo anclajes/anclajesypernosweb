@@ -506,6 +506,13 @@ class Proveedor(db.Model):
     last_updated = db.Column(db.DateTime, default=hora_peru)
     updated_by = db.Column(db.String(50), default='Sistema')
 
+    creado_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    editado_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    editado_en = db.Column(db.DateTime, nullable=True)
+
+    creado_por = db.relationship('User', foreign_keys=[creado_por_id])
+    editado_por = db.relationship('User', foreign_keys=[editado_por_id])
+
 class Presentacion(db.Model):
     __tablename__ = 'presentacion'
     id = db.Column(db.Integer, primary_key=True)

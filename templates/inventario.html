@@ -786,10 +786,31 @@
                     </div>
 
                     <!-- CAMPOS COMUNES DE PROVEEDOR (autocompletados o manuales) -->
-                    <input type="text" id="input_razon_social_proveedor" name="razon_social_proveedor" class="form-control form-control-sm mb-2" placeholder="Razón Social *" required>
-                    <input type="text" id="input_direccion_proveedor" class="form-control form-control-sm mb-2" placeholder="Dirección">
+                    <!-- CAMPOS COMUNES DE PROVEEDOR (autocompletados o manuales) -->
+                    <div class="mb-2">
+                        <input type="text" id="input_razon_social_proveedor" name="razon_social_proveedor" 
+                               class="form-control form-control-sm" placeholder="Razón Social *" required>
+                        <div class="form-text small" id="ayuda_razon_social" style="display:none;">
+                            <i class="bi bi-lock-fill"></i> Bloqueado — proviene de SUNAT/RENIEC, no editable.
+                        </div>
+                    </div>
+                    <div class="mb-2">
+                        <input type="text" id="input_direccion_proveedor" class="form-control form-control-sm" placeholder="Dirección">
+                    </div>
+
+                    <div class="d-flex gap-2 mb-2">
+                        <button type="button" class="btn btn-sm btn-outline-secondary flex-fill" onclick="abrirListaProveedores()">
+                            <i class="bi bi-list-ul"></i> Ver lista de proveedores guardados
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-success d-none" id="btnGuardarInternacional" onclick="guardarProveedorInternacional()">
+                            <i class="bi bi-save"></i> Guardar
+                        </button>
+                    </div>
+
+                    <div id="auditoria_proveedor" class="small text-muted mb-2"></div>
 
                     <input type="hidden" name="tipo_proveedor" id="hidden_tipo_proveedor" value="NACIONAL">
+                    <input type="hidden" name="proveedor_internacional_id" id="hidden_proveedor_internacional_id">
 
                     <hr class="my-3">
 
@@ -819,6 +840,34 @@
                     <button type="button" class="btn w-100 btn-sm btn-secondary" data-bs-dismiss="modal">Cancelar</button>
                 </div>
             </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalListaProveedores" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header text-white" style="background-color: var(--theme-primary);">
+                <h6 class="modal-title fw-bold mb-0"><i class="bi bi-people-fill"></i> Proveedores Guardados</h6>
+                <button class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <ul class="nav nav-pills nav-fill mb-3" id="tabsListaProveedores">
+                    <li class="nav-item">
+                        <button class="nav-link active" onclick="cambiarTabListaProveedores('NACIONAL', this)">🇵🇪 Nacionales</button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link" onclick="cambiarTabListaProveedores('INTERNACIONAL', this)">🌎 Internacionales</button>
+                    </li>
+                </ul>
+                <input type="text" id="buscadorListaProveedores" class="form-control form-control-sm mb-3" 
+                       placeholder="Buscar por RUC o razón social..." oninput="filtrarListaProveedores(this.value)">
+                <div id="listaProveedoresContenido" style="max-height: 400px; overflow-y: auto;">
+                    <div class="text-center text-muted py-4">
+                        <div class="spinner-border spinner-border-sm"></div> Cargando...
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 </div>
@@ -1958,11 +2007,29 @@ function cambioTipoProveedor() {
 
     // Cambiar de tipo siempre invalida la selección previa
     document.getElementById('stock_proveedor_id').value = '';
+    document.getElementById('hidden_proveedor_internacional_id').value = '';
     document.getElementById('input_razon_social_proveedor').value = '';
     document.getElementById('input_direccion_proveedor').value = '';
     document.getElementById('proveedor_msg').innerHTML = '';
+    document.getElementById('auditoria_proveedor').innerHTML = '';
 
-    if (!esNacional) {
+    const razonInput = document.getElementById('input_razon_social_proveedor');
+    const dirInput = document.getElementById('input_direccion_proveedor');
+    const ayuda = document.getElementById('ayuda_razon_social');
+    const btnGuardar = document.getElementById('btnGuardarInternacional');
+
+    if (esNacional) {
+        // Bloqueado: solo se llena buscando o seleccionando de la lista
+        razonInput.setAttribute('readonly', 'readonly');
+        dirInput.setAttribute('readonly', 'readonly');
+        ayuda.style.display = 'block';
+        btnGuardar.classList.add('d-none');
+    } else {
+        // Internacional: editable, con botón de guardar
+        razonInput.removeAttribute('readonly');
+        dirInput.removeAttribute('readonly');
+        ayuda.style.display = 'none';
+        btnGuardar.classList.remove('d-none');
         actualizarCamposInternacional();
     }
 }
@@ -2152,6 +2219,34 @@ function seleccionarProveedorSugerido(p) {
         `<span class="text-success"><i class="bi bi-check-circle-fill"></i> Proveedor validado previamente, seleccionado de la lista.</span>`;
 }
 
+function guardarProveedorInternacional() {
+    const razonSocial = document.getElementById('input_razon_social_proveedor').value.trim();
+    const direccion = document.getElementById('input_direccion_proveedor').value.trim();
+    const pais = document.getElementById('input_pais_proveedor').value.trim();
+    const idFiscal = document.getElementById('input_id_fiscal_proveedor').value.trim();
+
+    if (!razonSocial) {
+        return Swal.fire('Falta información', 'Ingrese al menos la Razón Social.', 'warning');
+    }
+
+    let fd = new FormData();
+    fd.append('razon_social', razonSocial);
+    fd.append('direccion', direccion);
+    fd.append('pais', pais);
+    fd.append('identificador', idFiscal);
+
+    fetch('/api/guardar_proveedor_internacional', { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(data => {
+            if (data.status === 'success') {
+                document.getElementById('hidden_proveedor_internacional_id').value = data.proveedor_id;
+                Swal.fire({ icon: 'success', title: 'Proveedor guardado', text: 'Podrá reutilizarlo desde "Ver lista" la próxima vez.', timer: 1800, showConfirmButton: false });
+            } else {
+                Swal.fire('Error', data.msg, 'error');
+            }
+        });
+}
+
 // Cierra las sugerencias si el usuario hace clic fuera
 document.addEventListener('click', function(e) {
     const cont = document.getElementById('sugerenciasProveedor');
@@ -2159,5 +2254,116 @@ document.addEventListener('click', function(e) {
         cont.style.display = 'none';
     }
 });
+
+let tabActualListaProveedores = 'NACIONAL';
+let proveedoresListaCache = [];
+
+function abrirListaProveedores() {
+    const tipoPreseleccionado = document.getElementById('radioNacional').checked ? 'NACIONAL' : 'INTERNACIONAL';
+    tabActualListaProveedores = tipoPreseleccionado;
+
+    // Sincroniza las pestañas visualmente
+    document.querySelectorAll('#tabsListaProveedores .nav-link').forEach(btn => btn.classList.remove('active'));
+    const idx = tipoPreseleccionado === 'NACIONAL' ? 0 : 1;
+    document.querySelectorAll('#tabsListaProveedores .nav-link')[idx].classList.add('active');
+
+    document.getElementById('buscadorListaProveedores').value = '';
+    cargarListaProveedores();
+    new bootstrap.Modal(document.getElementById('modalListaProveedores')).show();
+}
+
+function cambiarTabListaProveedores(tipo, btn) {
+    tabActualListaProveedores = tipo;
+    document.querySelectorAll('#tabsListaProveedores .nav-link').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('buscadorListaProveedores').value = '';
+    cargarListaProveedores();
+}
+
+function cargarListaProveedores() {
+    const cont = document.getElementById('listaProveedoresContenido');
+    cont.innerHTML = '<div class="text-center text-muted py-4"><div class="spinner-border spinner-border-sm"></div> Cargando...</div>';
+
+    fetch(`/api/listar_proveedores_guardados?tipo=${tabActualListaProveedores}`)
+        .then(r => r.json())
+        .then(data => {
+            proveedoresListaCache = data.proveedores || [];
+            renderizarListaProveedores(proveedoresListaCache);
+        });
+}
+
+function filtrarListaProveedores(texto) {
+    const t = texto.toLowerCase();
+    const filtrados = proveedoresListaCache.filter(p =>
+        (p.documento && p.documento.toLowerCase().includes(t)) ||
+        p.razon_social.toLowerCase().includes(t)
+    );
+    renderizarListaProveedores(filtrados);
+}
+
+function renderizarListaProveedores(lista) {
+    const cont = document.getElementById('listaProveedoresContenido');
+
+    if (lista.length === 0) {
+        cont.innerHTML = '<div class="text-center text-muted py-4"><i class="bi bi-inbox display-4 opacity-25"></i><p class="mt-2 small">No hay proveedores guardados de este tipo aún.</p></div>';
+        return;
+    }
+
+    cont.innerHTML = '';
+    lista.forEach(p => {
+        const auditoriaTxt = p.editado_por
+            ? `Agregado por ${p.creado_por} · Editado por ${p.editado_por} (${p.editado_en})`
+            : `Agregado por ${p.creado_por}`;
+
+        const doc = tabActualListaProveedores === 'NACIONAL' ? p.documento : (p.identificador_fiscal || 'S/N');
+
+        cont.innerHTML += `
+            <div class="card mb-2 border shadow-sm">
+                <div class="card-body py-2 px-3">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <b>${p.razon_social}</b><br>
+                            <span class="text-muted small">${doc}${p.pais ? ' — ' + p.pais : ''}</span><br>
+                            <span class="text-muted small">${p.direccion || 'Sin dirección registrada'}</span><br>
+                            <span class="text-muted" style="font-size:.7rem;"><i class="bi bi-clock-history"></i> ${auditoriaTxt}</span>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-success flex-shrink-0" onclick='usarProveedorDeLista(${JSON.stringify(p)})'>
+                            <i class="bi bi-check2"></i> Usar
+                        </button>
+                    </div>
+                </div>
+            </div>`;
+    });
+}
+
+function usarProveedorDeLista(p) {
+    if (tabActualListaProveedores === 'NACIONAL') {
+        document.getElementById('radioNacional').checked = true;
+        cambioTipoProveedor();
+        document.getElementById('input_ruc_proveedor').value = p.documento;
+        document.getElementById('input_razon_social_proveedor').value = p.razon_social;
+        document.getElementById('input_direccion_proveedor').value = p.direccion;
+        document.getElementById('stock_proveedor_id').value = p.id;
+        document.getElementById('proveedor_msg').innerHTML =
+            `<span class="text-success"><i class="bi bi-check-circle-fill"></i> Proveedor seleccionado de la lista guardada (sin costo).</span>`;
+    } else {
+        document.getElementById('radioInternacional').checked = true;
+        cambioTipoProveedor();
+        document.getElementById('input_razon_social_proveedor').value = p.razon_social;
+        document.getElementById('input_direccion_proveedor').value = p.direccion;
+        document.getElementById('input_pais_proveedor').value = p.pais;
+        document.getElementById('input_id_fiscal_proveedor').value = p.identificador_fiscal;
+        document.getElementById('hidden_proveedor_internacional_id').value = p.id;
+        actualizarCamposInternacional();
+        document.getElementById('proveedor_msg').innerHTML =
+            `<span class="text-success"><i class="bi bi-check-circle-fill"></i> Proveedor internacional seleccionado de la lista guardada.</span>`;
+    }
+
+    document.getElementById('auditoria_proveedor').innerHTML = p.editado_por
+        ? `<i class="bi bi-info-circle"></i> Agregado por ${p.creado_por} · Editado por ${p.editado_por}`
+        : `<i class="bi bi-info-circle"></i> Agregado por ${p.creado_por}`;
+
+    bootstrap.Modal.getInstance(document.getElementById('modalListaProveedores')).hide();
+}
 </script>
 {% endblock %}
