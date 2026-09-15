@@ -505,3 +505,10 @@ class Proveedor(db.Model):
 
     last_updated = db.Column(db.DateTime, default=hora_peru)
     updated_by = db.Column(db.String(50), default='Sistema')
+
+class Presentacion(db.Model):
+    __tablename__ = 'presentacion'
+    id = db.Column(db.Integer, primary_key=True)
+    nombre = db.Column(db.String(50), unique=True, nullable=False)
+    activo = db.Column(db.Boolean, default=True)
+    es_predeterminado = db.Column(db.Boolean, default=False)

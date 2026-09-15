@@ -751,6 +751,10 @@
                 <input type="hidden" name="url_origen" id="stock_url_origen">
                 <input type="hidden" name="motivo_id" id="stock_motivo_id">
                 <input type="hidden" name="motivo_texto" id="stock_motivo_texto">
+                <input type="hidden" name="proveedor_id" id="stock_proveedor_id">
+                <input type="hidden" name="direccion_proveedor" id="hidden_direccion_proveedor">
+                <input type="hidden" name="pais_proveedor" id="hidden_pais_proveedor">
+                <input type="hidden" name="id_fiscal_proveedor" id="hidden_id_fiscal_proveedor">
 
                 <div class="modal-header text-white" style="background-color: var(--theme-primary);">
                     <h5 class="modal-title fs-6 fw-bold"><i class="bi bi-arrow-left-right me-2"></i> Movimiento de Kardex</h5>
@@ -807,11 +811,16 @@
 
                     <!-- BLOQUE NACIONAL -->
                     <div id="bloqueProveedorNacional">
-                        <div class="input-group input-group-sm mb-2">
-                            <input type="text" id="input_ruc_proveedor" name="ruc_proveedor" class="form-control" placeholder="RUC (11) o DNI (8)" maxlength="11">
-                            <button type="button" class="btn btn-outline-primary" onclick="buscarProveedor()">
-                                <i class="bi bi-search"></i> Buscar
-                            </button>
+                        <div class="position-relative mb-2">
+                            <div class="input-group input-group-sm">
+                                <input type="text" id="input_ruc_proveedor" name="ruc_proveedor" class="form-control" 
+                                       placeholder="RUC (11) o DNI (8), o escriba el nombre del proveedor" 
+                                       autocomplete="off" oninput="sugerirProveedores(this.value)">
+                                <button type="button" class="btn btn-outline-primary" onclick="buscarProveedor()">
+                                    <i class="bi bi-search"></i> Buscar
+                                </button>
+                            </div>
+                            <div id="sugerenciasProveedor" class="list-group position-absolute w-100 shadow-sm" style="z-index:1060; max-height:200px; overflow-y:auto; display:none;"></div>
                         </div>
                         <div id="proveedor_msg" class="small mb-2"></div>
                     </div>
@@ -839,13 +848,16 @@
                     <!-- PRESENTACIÓN -->
                     <div class="mb-1">
                         <label class="small text-muted fw-bold mb-1">Presentación</label>
-                        <select name="presentacion" class="form-select form-select-sm shadow-sm">
-                            <option value="UNIDADES">Unidades</option>
-                            <option value="METROS">Metros</option>
-                            <option value="KILOGRAMOS">Kilogramos (Kg)</option>
-                            <option value="CAJAS">Cajas</option>
-                            <option value="OTRO">Otro</option>
-                        </select>
+                        <div class="d-flex gap-2">
+                            <select name="presentacion" id="stock_select_presentacion" class="form-select form-select-sm shadow-sm">
+                                <option value="" selected disabled>-- Seleccione --</option>
+                            </select>
+                            {% if session.get('role') == 'admin' %}
+                            <button type="button" class="btn btn-sm btn-outline-secondary" title="Agregar presentación" onclick="abrirNuevaPresentacion()">
+                                <i class="bi bi-plus-lg"></i>
+                            </button>
+                            {% endif %}
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer p-2 bg-light flex-column">
@@ -1230,10 +1242,12 @@
         document.getElementById('formAjusteStock').reset();
         document.getElementById('stock_motivo_id').value = '';
         document.getElementById('stock_motivo_texto').value = '';
+        document.getElementById('stock_proveedor_id').value = '';
         document.getElementById('proveedor_msg').innerHTML = '';
         document.getElementById('radioNacional').checked = true;
         cambioTipoProveedor();
         cambioTipoMovimiento();
+        cargarPresentaciones();
 
         new bootstrap.Modal(document.getElementById('modalStock')).show();
     }
@@ -1766,6 +1780,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 
+document.addEventListener('DOMContentLoaded', () => {
+    const paisInput = document.getElementById('input_pais_proveedor');
+    const idFiscalInput = document.getElementById('input_id_fiscal_proveedor');
+    const dirInput = document.getElementById('input_direccion_proveedor');
+    if (paisInput) paisInput.addEventListener('input', actualizarCamposInternacional);
+    if (idFiscalInput) idFiscalInput.addEventListener('input', actualizarCamposInternacional);
+});
+
 function manejarSeleccionFotosNuevoProducto(e) {
     const archivosNuevos = Array.from(e.target.files);
     e.target.value = ''; // permite volver a elegir el mismo archivo si lo quita y re-agrega
@@ -1962,11 +1984,28 @@ function cambioTipoProveedor() {
     document.getElementById('bloqueProveedorInternacional').classList.toggle('d-none', esNacional);
     document.getElementById('hidden_tipo_proveedor').value = esNacional ? 'NACIONAL' : 'INTERNACIONAL';
 
+    // Cambiar de tipo siempre invalida la selección previa
+    document.getElementById('stock_proveedor_id').value = '';
+    document.getElementById('input_razon_social_proveedor').value = '';
+    document.getElementById('input_direccion_proveedor').value = '';
+    document.getElementById('proveedor_msg').innerHTML = '';
+
     if (!esNacional) {
-        document.getElementById('input_razon_social_proveedor').value = '';
-        document.getElementById('input_direccion_proveedor').value = '';
-        document.getElementById('proveedor_msg').innerHTML = '';
+        actualizarCamposInternacional();
     }
+}
+
+function actualizarCamposInternacional() {
+    document.getElementById('hidden_pais_proveedor').value = document.getElementById('input_pais_proveedor').value;
+    document.getElementById('hidden_id_fiscal_proveedor').value = document.getElementById('input_id_fiscal_proveedor').value;
+    document.getElementById('hidden_direccion_proveedor').value = document.getElementById('input_direccion_proveedor').value;
+}
+
+// Si el usuario edita el RUC a mano DESPUÉS de haber validado, se invalida la selección
+function invalidarProveedorValidado() {
+    document.getElementById('stock_proveedor_id').value = '';
+    document.getElementById('proveedor_msg').innerHTML =
+        '<span class="text-warning"><i class="bi bi-exclamation-triangle-fill"></i> RUC modificado — vuelva a buscar para validar.</span>';
 }
 
 function buscarProveedor(forzar = false) {
@@ -1978,7 +2017,8 @@ function buscarProveedor(forzar = false) {
         return;
     }
 
-    msg.innerHTML = '<span class="text-muted"><span class="spinner-border spinner-border-sm"></span> Buscando...</span>';
+    msg.innerHTML = '<span class="text-muted"><span class="spinner-border spinner-border-sm"></span> Validando contra SUNAT/RENIEC...</span>';
+    document.getElementById('stock_proveedor_id').value = '';
 
     fetch('/api/consultar_proveedor', {
         method: 'POST',
@@ -1990,11 +2030,17 @@ function buscarProveedor(forzar = false) {
         if (data.status === 'success') {
             document.getElementById('input_razon_social_proveedor').value = data.razon_social;
             document.getElementById('input_direccion_proveedor').value = data.direccion;
-            const origenTxt = data.origen === 'BD' ? 'Datos guardados en caché (sin costo)' : 'Consultado a SUNAT/RENIEC ahora';
-            msg.innerHTML = `<span class="text-success"><i class="bi bi-check-circle-fill"></i> ${origenTxt} — actualizado ${data.last_updated}</span>`;
+            document.getElementById('stock_proveedor_id').value = data.proveedor_id;
+            const origenTxt = data.origen === 'BD' ? 'Ya validado anteriormente (sin costo)' : 'Validado ahora contra SUNAT/RENIEC';
+            msg.innerHTML = `<span class="text-success"><i class="bi bi-check-circle-fill"></i> ${origenTxt} — ${data.last_updated}</span>`;
         } else {
-            msg.innerHTML = `<span class="text-danger">${data.msg}</span>`;
+            document.getElementById('input_razon_social_proveedor').value = '';
+            document.getElementById('input_direccion_proveedor').value = '';
+            msg.innerHTML = `<span class="text-danger"><i class="bi bi-x-circle-fill"></i> ${data.msg} — no se puede registrar con este RUC.</span>`;
         }
+    })
+    .catch(() => {
+        msg.innerHTML = '<span class="text-danger">Error de conexión. Intente de nuevo.</span>';
     });
 }
 
@@ -2029,7 +2075,117 @@ function abrirNuevoMotivo() {
 document.getElementById('formAjusteStock').addEventListener('submit', function(e) {
     if (!document.getElementById('stock_motivo_id').value) {
         e.preventDefault();
-        Swal.fire('Falta el motivo', 'Debe seleccionar un motivo del movimiento.', 'warning');
+        return Swal.fire('Falta el motivo', 'Debe seleccionar un motivo del movimiento.', 'warning');
+    }
+
+    const esNacional = document.getElementById('radioNacional').checked;
+
+    if (esNacional) {
+        if (!document.getElementById('stock_proveedor_id').value) {
+            e.preventDefault();
+            return Swal.fire({
+                icon: 'warning',
+                title: 'Proveedor no validado',
+                text: 'Debe buscar el RUC/DNI (botón Buscar) o seleccionarlo de la lista de sugerencias antes de registrar. No se permite escribir un RUC sin validar.'
+            });
+        }
+    } else {
+        actualizarCamposInternacional();
+        if (!document.getElementById('input_razon_social_proveedor').value.trim()) {
+            e.preventDefault();
+            return Swal.fire('Falta información', 'Ingrese la Razón Social del proveedor internacional.', 'warning');
+        }
+    }
+});
+
+function cargarPresentaciones() {
+    const select = document.getElementById('stock_select_presentacion');
+    fetch('/api/presentaciones')
+        .then(r => r.json())
+        .then(data => {
+            select.innerHTML = '';
+            (data.presentaciones || []).forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = p.nombre;
+                opt.text = p.nombre.charAt(0) + p.nombre.slice(1).toLowerCase();
+                select.appendChild(opt);
+            });
+        });
+}
+
+function abrirNuevaPresentacion() {
+    Swal.fire({
+        title: 'Nueva presentación',
+        input: 'text',
+        inputPlaceholder: 'Ej: LITROS, ROLLOS, PAQUETES...',
+        showCancelButton: true,
+        confirmButtonText: 'Crear',
+        inputValidator: (value) => { if (!value) return 'Escriba un nombre'; }
+    }).then((result) => {
+        if (!result.isConfirmed) return;
+        let fd = new FormData();
+        fd.append('nombre', result.value);
+        fetch('/api/presentaciones/nueva', { method: 'POST', body: fd })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    cargarPresentaciones();
+                    Swal.fire({ icon: 'success', title: 'Creada', timer: 1200, showConfirmButton: false });
+                } else {
+                    Swal.fire('Error', data.msg, 'error');
+                }
+            });
+    });
+}
+
+let timeoutSugerenciaProveedor = null;
+
+function sugerirProveedores(texto) {
+    clearTimeout(timeoutSugerenciaProveedor);
+    invalidarProveedorValidado();
+    const cont = document.getElementById('sugerenciasProveedor');
+
+    if (!texto || texto.length < 2) {
+        cont.style.display = 'none';
+        return;
+    }
+
+    timeoutSugerenciaProveedor = setTimeout(() => {
+        fetch(`/api/buscar_proveedores_db?q=${encodeURIComponent(texto)}`)
+            .then(r => r.json())
+            .then(data => {
+                cont.innerHTML = '';
+                if (!data.results || data.results.length === 0) {
+                    cont.style.display = 'none';
+                    return;
+                }
+                data.results.forEach(p => {
+                    const item = document.createElement('button');
+                    item.type = 'button';
+                    item.className = 'list-group-item list-group-item-action py-1 px-2 small';
+                    item.innerHTML = `<b>${p.documento || 'S/N'}</b> — ${p.razon_social} ${p.tipo_proveedor === 'INTERNACIONAL' ? '🌎' : ''}`;
+                    item.onclick = () => seleccionarProveedorSugerido(p);
+                    cont.appendChild(item);
+                });
+                cont.style.display = 'block';
+            });
+    }, 300);
+}
+
+function seleccionarProveedorSugerido(p) {
+    document.getElementById('input_ruc_proveedor').value = p.documento;
+    document.getElementById('input_razon_social_proveedor').value = p.razon_social;
+    document.getElementById('input_direccion_proveedor').value = p.direccion;
+    document.getElementById('stock_proveedor_id').value = p.id;
+    document.getElementById('sugerenciasProveedor').style.display = 'none';
+    document.getElementById('proveedor_msg').innerHTML =
+        `<span class="text-success"><i class="bi bi-check-circle-fill"></i> Proveedor validado previamente, seleccionado de la lista.</span>`;
+}
+// Cierra las sugerencias si el usuario hace clic fuera
+document.addEventListener('click', function(e) {
+    const cont = document.getElementById('sugerenciasProveedor');
+    if (cont && !e.target.closest('#input_ruc_proveedor') && !e.target.closest('#sugerenciasProveedor')) {
+        cont.style.display = 'none';
     }
 });
 </script>

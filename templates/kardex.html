@@ -27,7 +27,8 @@
                 <div class="col-12 col-md-3">
                     <label class="small fw-bold text-muted">Buscar</label>
                     <input type="text" name="busqueda" class="form-control form-control-sm" 
-                           placeholder="SKU / Motivo..." value="{{ request.args.get('busqueda', '') }}">
+                        placeholder="Buscar por código, descripción, motivo o RUC del proveedor..." 
+                        value="{{ request.args.get('busqueda', '') }}">
                 </div>
 
                 <div class="col-6 col-md-3">
@@ -38,6 +39,20 @@
                         <option value="{{ c.nombre }}" {% if request.args.get('categoria') == c.nombre %}selected{% endif %}>
                             {{ c.nombre }}
                         </option>
+                        {% endfor %}
+                    </select>
+
+                    <select name="calidad" class="form-select form-select-sm" onchange="this.form.submit()">
+                        <option value="todas">-- Todas las Calidades --</option>
+                        {% for cal in lista_calidades_kardex %}
+                        <option value="{{ cal }}" {% if request.args.get('calidad') == cal %}selected{% endif %}>{{ cal }}</option>
+                        {% endfor %}
+                    </select>
+
+                    <select name="proveedor" class="form-select form-select-sm" onchange="this.form.submit()">
+                        <option value="todos">-- Todos los Proveedores --</option>
+                        {% for ruc, razon in proveedores_con_movimientos %}
+                        <option value="{{ ruc }}" {% if request.args.get('proveedor') == ruc %}selected{% endif %}>{{ razon }} ({{ ruc }})</option>
                         {% endfor %}
                     </select>
                 </div>
@@ -109,6 +124,7 @@
                     <th class="ps-3">Fecha / Hora</th>
                     <th>Producto</th>
                     <th>Categoría</th>
+                    <th>Calidad</th>
                     <th class="text-center">Tipo</th>
                     <th>Motivo / Referencia</th>
                     <th>Proveedor / RUC</th>
@@ -130,6 +146,7 @@
                     </td>
                     
                     <td><span class="badge bg-light text-dark border">{{ m.product.categoria }}</span></td>
+                    <td><span class="badge bg-light text-dark border">{{ m.product.calidad or '-' }}</span></td>
                     
                     <td class="text-center">
                         {% if m.tipo == 'ENTRADA' %}
@@ -173,7 +190,7 @@
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="8" class="text-center py-5 text-muted">
+                    <td colspan="12" class="text-center py-5 text-muted">
                         <i class="bi bi-search display-4 opacity-25"></i>
                         <p class="mt-2">No se encontraron movimientos con estos filtros.</p>
                     </td>
@@ -187,7 +204,7 @@
         <nav aria-label="Navegación">
             <ul class="pagination justify-content-center mb-0 pagination-sm">
                 <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
-                    <a class="page-link" href="{{ url_for('ver_kardex', page=pagination.prev_num, busqueda=request.args.get('busqueda',''), categoria=request.args.get('categoria','todas'), tipo=request.args.get('tipo',''), fecha_inicio=request.args.get('fecha_inicio',''), fecha_fin=request.args.get('fecha_fin','')) }}">Anterior</a>
+                    <a class="page-link" href="{{ url_for('ver_kardex', page=pagination.prev_num, busqueda=request.args.get('busqueda',''), categoria=request.args.get('categoria','todas'), calidad=request.args.get('calidad','todas'), proveedor=request.args.get('proveedor','todos'), tipo=request.args.get('tipo',''), fecha_inicio=request.args.get('fecha_inicio',''), fecha_fin=request.args.get('fecha_fin',''), ocultar_iniciales=request.args.get('ocultar_iniciales',''), solo_interempresa=request.args.get('solo_interempresa','')) }}">Anterior</a>
                 </li>
                 
                 <li class="page-item disabled">
@@ -198,7 +215,7 @@
                 </li>
                 
                 <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
-                    <a class="page-link" href="{{ url_for('ver_kardex', page=pagination.next_num, busqueda=request.args.get('busqueda',''), categoria=request.args.get('categoria','todas'), tipo=request.args.get('tipo',''), fecha_inicio=request.args.get('fecha_inicio',''), fecha_fin=request.args.get('fecha_fin','')) }}">Siguiente</a>
+                    <a class="page-link" href="{{ url_for('ver_kardex', page=pagination.next_num, busqueda=request.args.get('busqueda',''), categoria=request.args.get('categoria','todas'), calidad=request.args.get('calidad','todas'), proveedor=request.args.get('proveedor','todos'), tipo=request.args.get('tipo',''), fecha_inicio=request.args.get('fecha_inicio',''), fecha_fin=request.args.get('fecha_fin',''), ocultar_iniciales=request.args.get('ocultar_iniciales',''), solo_interempresa=request.args.get('solo_interempresa','')) }}">Siguiente</a>
                 </li>
             </ul>
         </nav>

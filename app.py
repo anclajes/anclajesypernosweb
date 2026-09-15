@@ -1,5 +1,5 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, session
-from models import db, User, Product, Category, Client, Order, OrderDetail, ProductMovement, AuditLog, SystemConfig,OrderKitComponent, ClientContact, ClientContactLog, ClientRubroVendedor, IntercompanyTransfer, MetaVendedor, ProductImage, MotivoMovimiento, Proveedor
+from models import db, User, Product, Category, Client, Order, OrderDetail, ProductMovement, AuditLog, SystemConfig,OrderKitComponent, ClientContact, ClientContactLog, ClientRubroVendedor, IntercompanyTransfer, MetaVendedor, ProductImage, MotivoMovimiento, Proveedor, Presentacion
 from models import ProductImportBolts, CategoryImportBolts, ProductMovementImportBolts
 from models import ProductMovement
 from models import Payment
@@ -4357,12 +4357,16 @@ def ajustar_stock():
     tipo_ajuste = request.form['tipo']
     cantidad = int(request.form['cantidad'])
     motivo_id = request.form.get('motivo_id')
-    motivo_texto = request.form.get('motivo_texto', '').strip()  # nombre del motivo seleccionado
+    motivo_texto = request.form.get('motivo_texto', '').strip()
     url_origen = request.form.get('url_origen')
 
-    tipo_proveedor = request.form.get('tipo_proveedor', '')  # NACIONAL / INTERNACIONAL / '' (si no aplica)
-    ruc_proveedor = request.form.get('ruc_proveedor', '').strip()
-    razon_social_proveedor = request.form.get('razon_social_proveedor', '').strip()
+    tipo_proveedor = request.form.get('tipo_proveedor', 'NACIONAL')
+    ruc_proveedor_form = request.form.get('ruc_proveedor', '').strip()
+    proveedor_id_form = request.form.get('proveedor_id', '').strip()
+    razon_social_proveedor_form = request.form.get('razon_social_proveedor', '').strip()
+    direccion_proveedor_form = request.form.get('direccion_proveedor', '').strip()
+    pais_proveedor_form = request.form.get('pais_proveedor', '').strip()
+    id_fiscal_proveedor_form = request.form.get('id_fiscal_proveedor', '').strip()
     precio_unitario = request.form.get('precio_unitario', '').strip()
     presentacion = request.form.get('presentacion', '').strip()
 
@@ -4370,9 +4374,71 @@ def ajustar_stock():
         flash('⛔ Debe seleccionar un motivo.')
         return redirect(url_origen or url_for('inventario'))
 
+    # ================================================================
+    # 🔒 VALIDACIÓN DE PROVEEDOR — el punto crítico
+    # ================================================================
+    proveedor_final_id = None
+    ruc_proveedor_final = None
+    razon_social_final = None
+    tipo_proveedor_final = None
+
+    if tipo_proveedor == 'INTERNACIONAL':
+        # Único caso libre: no requiere haber sido validado contra ninguna API
+        if not razon_social_proveedor_form:
+            flash('⛔ Debe ingresar la Razón Social del proveedor internacional.')
+            return redirect(url_origen or url_for('inventario'))
+
+        proveedor_db = None
+        if id_fiscal_proveedor_form:
+            proveedor_db = Proveedor.query.filter_by(documento=id_fiscal_proveedor_form).first()
+
+        if not proveedor_db:
+            proveedor_db = Proveedor(
+                documento=id_fiscal_proveedor_form or None, tipo_proveedor='INTERNACIONAL',
+                razon_social=razon_social_proveedor_form, direccion=direccion_proveedor_form,
+                pais=pais_proveedor_form, identificador_fiscal=id_fiscal_proveedor_form,
+                last_updated=hora_peru(), updated_by=session.get('username', 'Sistema')
+            )
+            db.session.add(proveedor_db)
+            db.session.flush()
+        else:
+            proveedor_db.razon_social = razon_social_proveedor_form
+            proveedor_db.direccion = direccion_proveedor_form
+            proveedor_db.pais = pais_proveedor_form
+            proveedor_db.last_updated = hora_peru()
+
+        proveedor_final_id = proveedor_db.id
+        ruc_proveedor_final = id_fiscal_proveedor_form or None
+        razon_social_final = proveedor_db.razon_social
+        tipo_proveedor_final = 'INTERNACIONAL'
+
+    else:
+        # NACIONAL: OBLIGATORIO que venga de una búsqueda validada (tiene proveedor_id)
+        # Nunca se confía en el texto que el usuario escribió a mano en el input
+        if not proveedor_id_form:
+            flash('⛔ El RUC/DNI del proveedor no ha sido validado. Use el botón "Buscar" o seleccione uno de la lista sugerida antes de registrar.')
+            return redirect(url_origen or url_for('inventario'))
+
+        proveedor_db = Proveedor.query.get(proveedor_id_form)
+        if not proveedor_db or proveedor_db.tipo_proveedor != 'NACIONAL':
+            flash('⛔ El proveedor seleccionado no es válido. Vuelva a buscarlo.')
+            return redirect(url_origen or url_for('inventario'))
+
+        # Doble seguro: el RUC que el usuario ve en pantalla debe coincidir con el que quedó validado
+        if ruc_proveedor_form and ruc_proveedor_form != proveedor_db.documento:
+            flash('⛔ El RUC ingresado no coincide con el proveedor validado. Vuelva a buscarlo.')
+            return redirect(url_origen or url_for('inventario'))
+
+        proveedor_final_id = proveedor_db.id
+        ruc_proveedor_final = proveedor_db.documento
+        razon_social_final = proveedor_db.razon_social
+        tipo_proveedor_final = 'NACIONAL'
+
+    # ================================================================
+    # REGISTRO DEL MOVIMIENTO
+    # ================================================================
     prod = Product.query.get(prod_id)
     stock_antes = prod.stock_actual
-
     tipo_kardex = ""
 
     if tipo_ajuste == 'ingreso':
@@ -4393,9 +4459,10 @@ def ajustar_stock():
         stock_nuevo=prod.stock_actual,
         motivo=motivo_texto,
         motivo_id=int(motivo_id) if motivo_id else None,
-        tipo_proveedor=tipo_proveedor or None,
-        ruc_proveedor=ruc_proveedor or None,
-        razon_social_proveedor=razon_social_proveedor or None,
+        proveedor_id=proveedor_final_id,
+        tipo_proveedor=tipo_proveedor_final,
+        ruc_proveedor=ruc_proveedor_final,
+        razon_social_proveedor=razon_social_final,
         precio_unitario=float(precio_unitario) if precio_unitario else None,
         presentacion=presentacion or None
     )
@@ -4410,10 +4477,10 @@ def ajustar_stock():
 @app.route('/kardex')
 def ver_kardex():
     if session.get('user_id') is None: return redirect(url_for('login'))
-    
-    # Unimos con Product para poder filtrar por nombre/categoría
+
     query = ProductMovement.query.join(Product)
-    
+
+    # 1. Filtro por Texto (Nombre, SKU, Motivo, RUC o Razón Social del proveedor)
     busqueda = request.args.get('busqueda')
     if busqueda:
         query = query.filter(
@@ -4425,28 +4492,35 @@ def ver_kardex():
                 ProductMovement.razon_social_proveedor.ilike(f"%{busqueda}%")
             )
         )
-    
+
     # 2. Filtro por Categoría
     cat_nombre = request.args.get('categoria')
     if cat_nombre and cat_nombre != 'todas':
         query = query.filter(Product.categoria == cat_nombre)
 
+    # 2.5 Filtro por Calidad
+    calidad_nombre = request.args.get('calidad')
+    if calidad_nombre and calidad_nombre != 'todas':
+        query = query.filter(Product.calidad == calidad_nombre)
+
+    # 2.6 Filtro por Proveedor específico (dropdown, por RUC exacto)
+    proveedor_filtro = request.args.get('proveedor')
+    if proveedor_filtro and proveedor_filtro != 'todos':
+        query = query.filter(ProductMovement.ruc_proveedor == proveedor_filtro)
+
     # 3. Filtro por Tipo (Entrada/Salida)
     tipo_mov = request.args.get('tipo')
     if tipo_mov and tipo_mov in ['ENTRADA', 'SALIDA']:
         query = query.filter(ProductMovement.tipo == tipo_mov)
-        
 
-    # ---> NUEVO: FILTRO PARA OCULTAR SALDOS INICIALES <---
+    # 4. Ocultar saldos iniciales
     ocultar_iniciales = request.args.get('ocultar_iniciales')
     if ocultar_iniciales == 'on':
-        # Filtramos excluyendo (~) los motivos que contengan la palabra "Inicial"
         query = query.filter(~ProductMovement.motivo.ilike('%Inicial%'))
 
-    # 4. Filtro por Rango de Fechas
+    # 5. Filtro por Rango de Fechas
     fecha_inicio = request.args.get('fecha_inicio')
     fecha_fin = request.args.get('fecha_fin')
-    
     if fecha_inicio and fecha_fin:
         start = datetime.strptime(fecha_inicio, '%Y-%m-%d')
         end = datetime.strptime(fecha_fin + " 23:59:59", '%Y-%m-%d %H:%M:%S')
@@ -4460,21 +4534,32 @@ def ver_kardex():
                 ProductMovement.motivo.ilike('%Retorno de mercadería%')
             )
         )
-        
-    # --- NUEVO: PAGINACIÓN (En vez del limit) ---
+
+    # --- PAGINACIÓN ---
     query = query.order_by(ProductMovement.fecha.desc())
-    
+
     page = request.args.get('page', 1, type=int)
-    per_page = 25 # Muestra 25 movimientos por página
+    per_page = 25
     pagination = query.paginate(page=page, per_page=per_page, error_out=False)
-    
+
     movimientos = pagination.items
     categorias = Category.query.all()
-    
-    return render_template('kardex.html', 
-                           movimientos=movimientos, 
+
+    # Listas para los nuevos filtros
+    proveedores_con_movimientos = db.session.query(
+        ProductMovement.ruc_proveedor, ProductMovement.razon_social_proveedor
+    ).filter(ProductMovement.ruc_proveedor.isnot(None)).distinct().order_by(ProductMovement.razon_social_proveedor).all()
+
+    lista_calidades_kardex = [c[0] for c in db.session.query(Product.calidad).distinct().filter(
+        Product.calidad.isnot(None), Product.calidad != ''
+    ).order_by(Product.calidad).all()]
+
+    return render_template('kardex.html',
+                           movimientos=movimientos,
                            categorias=categorias,
-                           pagination=pagination) # Pasamos la info de las páginas al HTML
+                           pagination=pagination,
+                           proveedores_con_movimientos=proveedores_con_movimientos,
+                           lista_calidades_kardex=lista_calidades_kardex)
 
 
 
@@ -5814,12 +5899,16 @@ def ajustar_stock_importbolts():
     tipo_ajuste = request.form['tipo']
     cantidad = int(request.form['cantidad'])
     motivo_id = request.form.get('motivo_id')
-    motivo_texto = request.form.get('motivo_texto', '').strip()  # nombre del motivo seleccionado
+    motivo_texto = request.form.get('motivo_texto', '').strip()
     url_origen = request.form.get('url_origen')
 
-    tipo_proveedor = request.form.get('tipo_proveedor', '')  # NACIONAL / INTERNACIONAL / '' (si no aplica)
-    ruc_proveedor = request.form.get('ruc_proveedor', '').strip()
-    razon_social_proveedor = request.form.get('razon_social_proveedor', '').strip()
+    tipo_proveedor = request.form.get('tipo_proveedor', 'NACIONAL')
+    ruc_proveedor_form = request.form.get('ruc_proveedor', '').strip()
+    proveedor_id_form = request.form.get('proveedor_id', '').strip()
+    razon_social_proveedor_form = request.form.get('razon_social_proveedor', '').strip()
+    direccion_proveedor_form = request.form.get('direccion_proveedor', '').strip()
+    pais_proveedor_form = request.form.get('pais_proveedor', '').strip()
+    id_fiscal_proveedor_form = request.form.get('id_fiscal_proveedor', '').strip()
     precio_unitario = request.form.get('precio_unitario', '').strip()
     presentacion = request.form.get('presentacion', '').strip()
 
@@ -5827,9 +5916,67 @@ def ajustar_stock_importbolts():
         flash('⛔ Debe seleccionar un motivo.')
         return redirect(url_origen or url_for('inventario_importbolts'))
 
+    # ================================================================
+    # 🔒 VALIDACIÓN DE PROVEEDOR — el punto crítico
+    # ================================================================
+    proveedor_final_id = None
+    ruc_proveedor_final = None
+    razon_social_final = None
+    tipo_proveedor_final = None
+
+    if tipo_proveedor == 'INTERNACIONAL':
+        if not razon_social_proveedor_form:
+            flash('⛔ Debe ingresar la Razón Social del proveedor internacional.')
+            return redirect(url_origen or url_for('inventario_importbolts'))
+
+        proveedor_db = None
+        if id_fiscal_proveedor_form:
+            proveedor_db = Proveedor.query.filter_by(documento=id_fiscal_proveedor_form).first()
+
+        if not proveedor_db:
+            proveedor_db = Proveedor(
+                documento=id_fiscal_proveedor_form or None, tipo_proveedor='INTERNACIONAL',
+                razon_social=razon_social_proveedor_form, direccion=direccion_proveedor_form,
+                pais=pais_proveedor_form, identificador_fiscal=id_fiscal_proveedor_form,
+                last_updated=hora_peru(), updated_by=session.get('username', 'Sistema')
+            )
+            db.session.add(proveedor_db)
+            db.session.flush()
+        else:
+            proveedor_db.razon_social = razon_social_proveedor_form
+            proveedor_db.direccion = direccion_proveedor_form
+            proveedor_db.pais = pais_proveedor_form
+            proveedor_db.last_updated = hora_peru()
+
+        proveedor_final_id = proveedor_db.id
+        ruc_proveedor_final = id_fiscal_proveedor_form or None
+        razon_social_final = proveedor_db.razon_social
+        tipo_proveedor_final = 'INTERNACIONAL'
+
+    else:
+        if not proveedor_id_form:
+            flash('⛔ El RUC/DNI del proveedor no ha sido validado. Use el botón "Buscar" o seleccione uno de la lista sugerida antes de registrar.')
+            return redirect(url_origen or url_for('inventario_importbolts'))
+
+        proveedor_db = Proveedor.query.get(proveedor_id_form)
+        if not proveedor_db or proveedor_db.tipo_proveedor != 'NACIONAL':
+            flash('⛔ El proveedor seleccionado no es válido. Vuelva a buscarlo.')
+            return redirect(url_origen or url_for('inventario_importbolts'))
+
+        if ruc_proveedor_form and ruc_proveedor_form != proveedor_db.documento:
+            flash('⛔ El RUC ingresado no coincide con el proveedor validado. Vuelva a buscarlo.')
+            return redirect(url_origen or url_for('inventario_importbolts'))
+
+        proveedor_final_id = proveedor_db.id
+        ruc_proveedor_final = proveedor_db.documento
+        razon_social_final = proveedor_db.razon_social
+        tipo_proveedor_final = 'NACIONAL'
+
+    # ================================================================
+    # REGISTRO DEL MOVIMIENTO
+    # ================================================================
     prod = ProductImportBolts.query.get(prod_id)
     stock_antes = prod.stock_actual
-
     tipo_kardex = ""
 
     if tipo_ajuste == 'ingreso':
@@ -5850,9 +5997,10 @@ def ajustar_stock_importbolts():
         stock_nuevo=prod.stock_actual,
         motivo=motivo_texto,
         motivo_id=int(motivo_id) if motivo_id else None,
-        tipo_proveedor=tipo_proveedor or None,
-        ruc_proveedor=ruc_proveedor or None,
-        razon_social_proveedor=razon_social_proveedor or None,
+        proveedor_id=proveedor_final_id,
+        tipo_proveedor=tipo_proveedor_final,
+        ruc_proveedor=ruc_proveedor_final,
+        razon_social_proveedor=razon_social_final,
         precio_unitario=float(precio_unitario) if precio_unitario else None,
         presentacion=presentacion or None
     )
@@ -6165,9 +6313,9 @@ def actualizar_minimos_masivos_importbolts():
 @app.route('/kardex_importbolts')
 def ver_kardex_importbolts():
     if session.get('user_id') is None: return redirect(url_for('login'))
-    
+
     query = ProductMovementImportBolts.query.join(ProductImportBolts)
-    
+
     busqueda = request.args.get('busqueda')
     if busqueda:
         query = query.filter(
@@ -6179,10 +6327,18 @@ def ver_kardex_importbolts():
                 ProductMovementImportBolts.razon_social_proveedor.ilike(f"%{busqueda}%")
             )
         )
-    
+
     cat_nombre = request.args.get('categoria')
     if cat_nombre and cat_nombre != 'todas':
         query = query.filter(ProductImportBolts.categoria == cat_nombre)
+
+    calidad_nombre = request.args.get('calidad')
+    if calidad_nombre and calidad_nombre != 'todas':
+        query = query.filter(ProductImportBolts.calidad == calidad_nombre)
+
+    proveedor_filtro = request.args.get('proveedor')
+    if proveedor_filtro and proveedor_filtro != 'todos':
+        query = query.filter(ProductMovementImportBolts.ruc_proveedor == proveedor_filtro)
 
     tipo_mov = request.args.get('tipo')
     if tipo_mov and tipo_mov in ['ENTRADA', 'SALIDA']:
@@ -6207,20 +6363,30 @@ def ver_kardex_importbolts():
                 ProductMovementImportBolts.motivo.ilike('%Retorno de mercadería%')
             )
         )
-        
+
     query = query.order_by(ProductMovementImportBolts.fecha.desc())
-    
+
     page = request.args.get('page', 1, type=int)
     per_page = 25
     pagination = query.paginate(page=page, per_page=per_page, error_out=False)
-    
+
     movimientos = pagination.items
     categorias = CategoryImportBolts.query.all()
-    
-    return render_template('kardex_importbolts.html', 
-                           movimientos=movimientos, 
+
+    proveedores_con_movimientos = db.session.query(
+        ProductMovementImportBolts.ruc_proveedor, ProductMovementImportBolts.razon_social_proveedor
+    ).filter(ProductMovementImportBolts.ruc_proveedor.isnot(None)).distinct().order_by(ProductMovementImportBolts.razon_social_proveedor).all()
+
+    lista_calidades_kardex = [c[0] for c in db.session.query(ProductImportBolts.calidad).distinct().filter(
+        ProductImportBolts.calidad.isnot(None), ProductImportBolts.calidad != ''
+    ).order_by(ProductImportBolts.calidad).all()]
+
+    return render_template('kardex_importbolts.html',
+                           movimientos=movimientos,
                            categorias=categorias,
-                           pagination=pagination)
+                           pagination=pagination,
+                           proveedores_con_movimientos=proveedores_con_movimientos,
+                           lista_calidades_kardex=lista_calidades_kardex)
 
 @app.route('/inventario_general')
 def inventario_general():
@@ -6812,6 +6978,7 @@ def consultar_proveedor():
     if proveedor_db and not force:
         return {
             'status': 'success', 'origen': 'BD',
+            'proveedor_id': proveedor_db.id,
             'razon_social': proveedor_db.razon_social,
             'direccion': proveedor_db.direccion or '',
             'telefono': proveedor_db.telefono or '',
@@ -6890,6 +7057,7 @@ def consultar_proveedor():
 
         return {
             'status': 'success', 'origen': 'API',
+            'proveedor_id': proveedor_db.id,
             'razon_social': razon, 'direccion': direccion,
             'estado': estado, 'condicion': condicion,
             'ubigeo': ubigeo, 'distrito': distrito, 'provincia': provincia, 'departamento': departamento,
@@ -6965,74 +7133,145 @@ def crear_motivo_movimiento():
     db.session.commit()
     return {'status': 'success', 'id': nuevo.id, 'nombre': nuevo.nombre}
 
+@app.route('/api/presentaciones')
+def listar_presentaciones():
+    if session.get('user_id') is None: return {'presentaciones': []}, 403
+    presentaciones = Presentacion.query.filter_by(activo=True).order_by(Presentacion.nombre).all()
+    return {'presentaciones': [{'id': p.id, 'nombre': p.nombre} for p in presentaciones]}
+
+
+@app.route('/api/presentaciones/nueva', methods=['POST'])
+def crear_presentacion():
+    if session.get('role') != 'admin':
+        return {'status': 'error', 'msg': 'Solo el administrador puede agregar presentaciones'}, 403
+
+    nombre = request.form.get('nombre', '').strip().upper()
+    if not nombre:
+        return {'status': 'error', 'msg': 'Nombre vacío'}
+    if Presentacion.query.filter_by(nombre=nombre).first():
+        return {'status': 'error', 'msg': f'"{nombre}" ya existe.'}
+
+    nueva = Presentacion(nombre=nombre, es_predeterminado=False)
+    db.session.add(nueva)
+    db.session.commit()
+    return {'status': 'success', 'id': nueva.id, 'nombre': nueva.nombre}
+
+@app.route('/api/buscar_proveedores_db')
+def buscar_proveedores_db():
+    if session.get('user_id') is None: return {'results': []}
+    q = request.args.get('q', '').strip()
+    if not q: return {'results': []}
+
+    proveedores = Proveedor.query.filter(
+        or_(
+            Proveedor.documento.ilike(f"%{q}%"),
+            Proveedor.razon_social.ilike(f"%{q}%")
+        )
+    ).limit(10).all()
+
+    return {'results': [{
+        'id': p.id,
+        'documento': p.documento or '',
+        'razon_social': p.razon_social,
+        'direccion': p.direccion or '',
+        'tipo_proveedor': p.tipo_proveedor,
+        'text': f"{p.documento or 'S/N'} - {p.razon_social}"
+    } for p in proveedores]}
+
+# --- REPORTE PROVEEDORES ---
+
+@app.route('/reporte_precios_proveedores')
+def reporte_precios_proveedores():
+    if session.get('role') not in ['admin', 'administracion', 'almacen']:
+        return "Acceso denegado", 403
+
+    origen = request.args.get('origen', 'ANCLAJES')
+    busqueda = request.args.get('busqueda', '').strip()
+
+    ModeloMov = ProductMovementImportBolts if origen == 'IMPORTBOLTS' else ProductMovement
+    ModeloProd = ProductImportBolts if origen == 'IMPORTBOLTS' else Product
+
+    # Todos los ingresos con precio y proveedor registrado
+    query = db.session.query(
+        ModeloMov.product_id, ModeloProd.sku, ModeloProd.nombre,
+        ModeloMov.ruc_proveedor, ModeloMov.razon_social_proveedor,
+        ModeloMov.precio_unitario, ModeloMov.fecha, ModeloMov.tipo_proveedor
+    ).join(ModeloProd, ModeloProd.id == ModeloMov.product_id).filter(
+        ModeloMov.tipo == 'ENTRADA',
+        ModeloMov.precio_unitario.isnot(None),
+        ModeloMov.precio_unitario > 0,
+        ModeloMov.ruc_proveedor.isnot(None)
+    )
+
+    if busqueda:
+        query = query.filter(or_(
+            ModeloProd.nombre.ilike(f"%{busqueda}%"),
+            ModeloProd.sku.ilike(f"%{busqueda}%")
+        ))
+
+    filas = query.order_by(ModeloProd.nombre, ModeloMov.precio_unitario.asc()).all()
+
+    # Agrupar por producto -> lista de (proveedor, precio, fecha), marcando el mejor precio
+    productos_map = {}
+    for f in filas:
+        key = f.product_id
+        if key not in productos_map:
+            productos_map[key] = {
+                'sku': f.sku, 'nombre': f.nombre, 'compras': []
+            }
+        productos_map[key]['compras'].append({
+            'ruc': f.ruc_proveedor,
+            'razon_social': f.razon_social_proveedor,
+            'precio': f.precio_unitario,
+            'fecha': f.fecha.strftime('%d/%m/%Y'),
+            'tipo_proveedor': f.tipo_proveedor
+        })
+
+    resultado = []
+    for pid, info in productos_map.items():
+        compras_ordenadas = sorted(info['compras'], key=lambda x: x['precio'])
+        mejor = compras_ordenadas[0]
+        peor = compras_ordenadas[-1]
+        ahorro_pct = round(((peor['precio'] - mejor['precio']) / peor['precio']) * 100, 1) if peor['precio'] > 0 else 0
+
+        resultado.append({
+            'sku': info['sku'], 'nombre': info['nombre'],
+            'compras': compras_ordenadas,
+            'mejor_proveedor': mejor,
+            'peor_proveedor': peor,
+            'ahorro_potencial_pct': ahorro_pct,
+            'cantidad_proveedores': len(set(c['ruc'] for c in info['compras']))
+        })
+
+    # Los que tienen más de 1 proveedor distinto (donde SÍ vale la pena comparar) primero
+    resultado.sort(key=lambda x: (-x['cantidad_proveedores'], -x['ahorro_potencial_pct']))
+
+    return render_template('reporte_precios_proveedores.html',
+                           resultado=resultado, origen=origen, busqueda=busqueda)
+
 # --- RUTA SECRETA PARA INICIALIZAR LA BASE DE DATOS EN RENDER ---
 
 
-@app.route('/fix_proveedores_kardex_2026')
-def fix_proveedores_kardex():
+@app.route('/fix_presentaciones_2026')
+def fix_presentaciones():
     try:
         with db.engine.connect() as conn:
             conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS motivo_movimiento (
+                CREATE TABLE IF NOT EXISTS presentacion (
                     id SERIAL PRIMARY KEY,
-                    nombre VARCHAR(100) NOT NULL,
-                    tipo VARCHAR(10) NOT NULL,
+                    nombre VARCHAR(50) UNIQUE NOT NULL,
                     activo BOOLEAN DEFAULT TRUE,
-                    es_predeterminado BOOLEAN DEFAULT FALSE,
-                    creado_en TIMESTAMP,
-                    CONSTRAINT uq_motivo_nombre_tipo UNIQUE (nombre, tipo)
+                    es_predeterminado BOOLEAN DEFAULT FALSE
                 )
             """))
-            conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS proveedor (
-                    id SERIAL PRIMARY KEY,
-                    tipo_proveedor VARCHAR(15) DEFAULT 'NACIONAL',
-                    documento VARCHAR(20) UNIQUE,
-                    razon_social VARCHAR(200) NOT NULL,
-                    direccion VARCHAR(200),
-                    telefono VARCHAR(30),
-                    estado VARCHAR(50),
-                    condicion VARCHAR(50),
-                    ubigeo VARCHAR(10),
-                    distrito VARCHAR(100),
-                    provincia VARCHAR(100),
-                    departamento VARCHAR(100),
-                    pais VARCHAR(100),
-                    identificador_fiscal VARCHAR(50),
-                    last_updated TIMESTAMP,
-                    updated_by VARCHAR(50)
-                )
-            """))
-            conn.execute(text("ALTER TABLE product_movement ADD COLUMN IF NOT EXISTS proveedor_id INTEGER REFERENCES proveedor(id)"))
-            conn.execute(text("ALTER TABLE product_movement ADD COLUMN IF NOT EXISTS ruc_proveedor VARCHAR(20)"))
-            conn.execute(text("ALTER TABLE product_movement ADD COLUMN IF NOT EXISTS razon_social_proveedor VARCHAR(200)"))
-            conn.execute(text("ALTER TABLE product_movement ADD COLUMN IF NOT EXISTS tipo_proveedor VARCHAR(15)"))
-            conn.execute(text("ALTER TABLE product_movement ADD COLUMN IF NOT EXISTS precio_unitario FLOAT"))
-            conn.execute(text("ALTER TABLE product_movement ADD COLUMN IF NOT EXISTS presentacion VARCHAR(50)"))
-            conn.execute(text("ALTER TABLE product_movement ADD COLUMN IF NOT EXISTS motivo_id INTEGER REFERENCES motivo_movimiento(id)"))
-
-            conn.execute(text("ALTER TABLE product_movement_importbolts ADD COLUMN IF NOT EXISTS proveedor_id INTEGER REFERENCES proveedor(id)"))
-            conn.execute(text("ALTER TABLE product_movement_importbolts ADD COLUMN IF NOT EXISTS ruc_proveedor VARCHAR(20)"))
-            conn.execute(text("ALTER TABLE product_movement_importbolts ADD COLUMN IF NOT EXISTS razon_social_proveedor VARCHAR(200)"))
-            conn.execute(text("ALTER TABLE product_movement_importbolts ADD COLUMN IF NOT EXISTS tipo_proveedor VARCHAR(15)"))
-            conn.execute(text("ALTER TABLE product_movement_importbolts ADD COLUMN IF NOT EXISTS precio_unitario FLOAT"))
-            conn.execute(text("ALTER TABLE product_movement_importbolts ADD COLUMN IF NOT EXISTS presentacion VARCHAR(50)"))
-            conn.execute(text("ALTER TABLE product_movement_importbolts ADD COLUMN IF NOT EXISTS motivo_id INTEGER REFERENCES motivo_movimiento(id)"))
             conn.commit()
 
-        # --- Seed de motivos predeterminados (tu hoja escrita a mano) ---
-        motivos_entrada = ['COMPRA', 'DEVOLUCIÓN', 'INTERCOMPAÑÍAS', 'PRODUCTO TERMINADO']
-        motivos_salida = ['LABORATORIO', 'TRANSFORMACIÓN', 'VENTA', 'DONACIÓN', 'MUESTRA', 'PRÉSTAMO']
-
-        for nombre in motivos_entrada:
-            if not MotivoMovimiento.query.filter_by(nombre=nombre, tipo='ENTRADA').first():
-                db.session.add(MotivoMovimiento(nombre=nombre, tipo='ENTRADA', es_predeterminado=True))
-        for nombre in motivos_salida:
-            if not MotivoMovimiento.query.filter_by(nombre=nombre, tipo='SALIDA').first():
-                db.session.add(MotivoMovimiento(nombre=nombre, tipo='SALIDA', es_predeterminado=True))
+        predeterminadas = ['UNIDADES', 'METROS', 'KILOGRAMOS', 'CAJAS']
+        for nombre in predeterminadas:
+            if not Presentacion.query.filter_by(nombre=nombre).first():
+                db.session.add(Presentacion(nombre=nombre, es_predeterminado=True))
         db.session.commit()
-
-        return "<h2>✅ Tablas de proveedores, motivos y columnas de Kardex creadas + motivos predeterminados sembrados.</h2>"
+        return "<h2>✅ Tabla de presentaciones creada y sembrada.</h2>"
     except Exception as e:
         db.session.rollback()
         return f"<h2>Error: {str(e)}</h2>"

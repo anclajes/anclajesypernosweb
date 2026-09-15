@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Mejores Precios por Proveedor{% endblock %}
+{% block subtitle %}Comparativo de compras para identificar ahorro potencial{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="mb-0"><i class="bi bi-graph-up-arrow text-success"></i> Mejores Precios por Proveedor</h2>
+</div>
+
+<div class="alert alert-light border small py-2 mb-3">
+    <i class="bi bi-info-circle-fill text-primary"></i>
+    Solo se muestran productos con al menos un Ingreso registrado con precio y proveedor. 
+    A más registros de Kardex con esta información, más preciso será este reporte.
+</div>
+
+<div class="card bg-light border-0 shadow-sm mb-3">
+    <div class="card-body py-3">
+        <form method="GET" class="row g-2 align-items-end">
+            <div class="col-12 col-md-4">
+                <label class="small fw-bold text-muted">Buscar producto</label>
+                <input type="text" name="busqueda" class="form-control" placeholder="Código o descripción..." value="{{ busqueda }}">
+            </div>
+            <div class="col-6 col-md-3">
+                <label class="small fw-bold text-muted">Inventario</label>
+                <select name="origen" class="form-select" onchange="this.form.submit()">
+                    <option value="ANCLAJES" {% if origen == 'ANCLAJES' %}selected{% endif %}>Anclajes</option>
+                    <option value="IMPORTBOLTS" {% if origen == 'IMPORTBOLTS' %}selected{% endif %}>Import Bolts</option>
+                </select>
+            </div>
+            <div class="col-6 col-md-3">
+                <button type="submit" class="btn btn-primary w-100"><i class="bi bi-search"></i> Buscar</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% for p in resultado %}
+<div class="card shadow-sm mb-3 border-0">
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2">
+            <div>
+                <span class="fw-bold text-primary">{{ p.sku }}</span> — {{ p.nombre }}
+                {% if p.cantidad_proveedores > 1 %}
+                    <span class="badge bg-success ms-2"><i class="bi bi-lightbulb-fill"></i> {{ p.ahorro_potencial_pct }}% de ahorro posible</span>
+                {% else %}
+                    <span class="badge bg-secondary ms-2">Solo 1 proveedor registrado</span>
+                {% endif %}
+            </div>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0 small">
+                <thead class="table-light">
+                    <tr>
+                        <th>Proveedor</th>
+                        <th>RUC</th>
+                        <th class="text-end">Precio</th>
+                        <th>Última compra</th>
+                        <th class="text-center">Etiqueta</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for c in p.compras %}
+                    <tr class="{% if c.precio == p.mejor_proveedor.precio %}table-success{% elif c.precio == p.peor_proveedor.precio and p.cantidad_proveedores > 1 %}table-danger-subtle{% endif %}">
+                        <td>{{ c.razon_social }} {% if c.tipo_proveedor == 'INTERNACIONAL' %}🌎{% endif %}</td>
+                        <td>{{ c.ruc }}</td>
+                        <td class="text-end fw-bold">{{ "%.2f"|format(c.precio) }}</td>
+                        <td>{{ c.fecha }}</td>
+                        <td class="text-center">
+                            {% if c.precio == p.mejor_proveedor.precio %}<span class="badge bg-success">Mejor precio</span>{% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="text-center text-muted py-5">
+    <i class="bi bi-inbox display-4 opacity-25"></i>
+    <p class="mt-2">Aún no hay suficientes registros de Ingreso con proveedor y precio para generar este reporte.</p>
+</div>
+{% endfor %}
+{% endblock %}
