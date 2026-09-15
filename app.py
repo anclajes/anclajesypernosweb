@@ -3841,6 +3841,8 @@ def importar_excel():
                 set_clauses += ["precio_unidad=:precio_unidad", "precio_docena=:precio_unidad"]
             if upd.get('tiene_peso'):
                 set_clauses += ["peso_kg=:peso_kg"]
+            if upd.get('tiene_activo'):
+                set_clauses += ["activo=:activo"]
 
             query_upd = f"UPDATE product SET {', '.join(set_clauses)} WHERE sku=:sku"
             db.session.execute(text(query_upd), upd)
