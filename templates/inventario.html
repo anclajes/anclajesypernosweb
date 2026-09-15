@@ -14,14 +14,21 @@
     .btn-brand:hover { background-color: #082d6d; color: white; }
     .table-brand-header { background-color: #1a2b4c !important; color: white !important; }
 
-        /* --- GALERÍA DE FOTOS: diseño mejorado --- */
+    /* --- GALERÍA DE FOTOS: diseño responsive --- */
     #modalGaleria .modal-dialog { max-width: 800px; }
+    #galeria_dropzone { padding: 1rem; }
+    #galeria_dropzone .d-flex { row-gap: 8px; }
+    #galeria_dropzone input[type="file"] { min-width: 160px; max-width: 100%; flex: 1 1 160px; }
+
     #galeria_grid .foto-card {
         border-radius: 12px;
         overflow: hidden;
         border: 1px solid #e9ecef;
         background: #fff;
         transition: transform .15s ease, box-shadow .15s ease;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
     }
     #galeria_grid .foto-card:hover {
         transform: translateY(-3px);
@@ -33,106 +40,72 @@
         padding-top: 78%;
         background: #f1f3f5;
         overflow: hidden;
+        flex-shrink: 0;
     }
-    #galeria_grid .foto-img-wrap img {
-        position: absolute;
-        top: 0; left: 0;
-        width: 100%; height: 100%;
-        object-fit: cover;
-        cursor: zoom-in;
-        transition: transform .2s ease;
-    }
-    #galeria_grid .foto-img-wrap img:hover { transform: scale(1.04); }
-    #galeria_grid .foto-info {
-        padding: .5rem .65rem;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        border-top: 1px solid #f1f3f5;
-    }
-    #galeria_dropzone {
-        border: 2px dashed #ced4da;
-        border-radius: 10px;
-        background: #f8f9fa;
-        transition: border-color .15s ease, background .15s ease;
-    }
-    #galeria_dropzone.dragover {
-        border-color: var(--theme-primary);
-        background: #eef4fb;
-    }
-        /* --- Efecto de carga tipo "shimmer" mientras la imagen descarga --- */
-    .foto-img-wrap.cargando {
+    #galeria_grid .foto-img-wrap.cargando {
         background: linear-gradient(100deg, #ececec 30%, #f7f7f7 50%, #ececec 70%);
         background-size: 200% 100%;
         animation: shimmerFoto 1.2s infinite;
     }
-    @keyframes shimmerFoto {
-        0% { background-position: 200% 0; }
-        100% { background-position: -200% 0; }
-    }
-    .foto-img-wrap img {
+    @keyframes shimmerFoto { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+    #galeria_grid .foto-img-wrap img {
+        position: absolute; top: 0; left: 0;
+        width: 100%; height: 100%;
+        object-fit: cover;
+        cursor: zoom-in;
         opacity: 0;
-        transition: opacity .25s ease;
+        transition: opacity .25s ease, transform .2s ease;
     }
-    .foto-img-wrap img.cargada {
-        opacity: 1;
+    #galeria_grid .foto-img-wrap img.cargada { opacity: 1; }
+    #galeria_grid .foto-img-wrap img.cargada:hover { transform: scale(1.04); }
+
+    /* Info del pie de la tarjeta: SIEMPRE en columna, nunca se corta */
+    #galeria_grid .foto-info {
+        padding: .5rem .6rem;
+        border-top: 1px solid #f1f3f5;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        flex-grow: 1;
+    }
+    #galeria_grid .foto-info .foto-meta {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        min-width: 0; /* permite que el texto trunque en vez de empujar */
+    }
+    #galeria_grid .foto-info .foto-meta small {
+        font-size: .72rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    #galeria_grid .foto-info .foto-acciones {
+        display: flex;
+        gap: 6px;
+        justify-content: flex-end;
+    }
+    #galeria_grid .foto-info .foto-acciones .btn {
+        flex-shrink: 0;
+        min-width: 32px;
     }
 
-        /* --- LIGHTBOX --- */
-    #lightboxOverlay {
-        position: fixed; inset: 0;
-        background: rgba(0,0,0,.9);
-        z-index: 2000;
-        display: none;
-        align-items: center;
-        justify-content: center;
-        flex-direction: column;
+    /* En pantallas muy angostas: 1 columna en vez de 2, más aire para botones */
+    @media (max-width: 400px) {
+        #galeria_grid .col-6 { flex: 0 0 100%; max-width: 100%; }
+        #galeria_grid .foto-img-wrap { padding-top: 55%; }
     }
-    #lightboxOverlay.activo { display: flex; }
-    #lightboxOverlay img {
-        max-width: 90vw;
-        max-height: 75vh;
-        object-fit: contain;
-        border-radius: 8px;
-        box-shadow: 0 10px 40px rgba(0,0,0,.5);
-    }
-    #lightboxOverlay .lightbox-close {
-        position: absolute; top: 18px; right: 24px;
-        color: #fff; font-size: 2rem; cursor: pointer;
-        opacity: .8; z-index: 2010;
-    }
-    #lightboxOverlay .lightbox-close:hover { opacity: 1; }
-    #lightboxOverlay .lightbox-nav {
-        position: absolute; top: 50%; transform: translateY(-50%);
-        background: rgba(255,255,255,.12);
-        border: none; color: #fff;
-        width: 48px; height: 48px;
-        border-radius: 50%;
-        font-size: 1.5rem;
-        display: flex; align-items: center; justify-content: center;
-        cursor: pointer;
-        transition: background .15s ease;
-    }
-    #lightboxOverlay .lightbox-nav:hover { background: rgba(255,255,255,.25); }
-    #lightboxOverlay .lightbox-nav:disabled { opacity: .25; cursor: default; }
-    #lightboxOverlay .lightbox-prev { left: 16px; }
-    #lightboxOverlay .lightbox-next { right: 16px; }
-    #lightboxOverlay .lightbox-caption {
-        color: #f1f3f5;
-        margin-top: 14px;
-        text-align: center;
-        font-size: .85rem;
-    }
-    #lightboxOverlay .lightbox-caption .badge-user {
-        background: rgba(255,255,255,.12);
-        padding: 4px 10px;
-        border-radius: 20px;
-        margin: 0 4px;
-    }
-    #lightboxOverlay .lightbox-counter {
-        color: #adb5bd;
-        font-size: .75rem;
-        margin-top: 6px;
+
+    /* --- LIGHTBOX responsive --- */
+    #lightboxOverlay { padding: 10px; box-sizing: border-box; }
+    #lightboxOverlay img { max-width: 92vw; max-height: 68vh; }
+    #lightboxOverlay .lightbox-nav { width: 40px; height: 40px; font-size: 1.2rem; }
+    #lightboxOverlay .lightbox-close { top: 10px; right: 16px; font-size: 1.6rem; }
+    #lightboxOverlay .lightbox-caption { padding: 0 10px; font-size: .78rem; }
+    @media (max-width: 480px) {
+        #lightboxOverlay .lightbox-prev { left: 4px; }
+        #lightboxOverlay .lightbox-next { right: 4px; }
+        #lightboxOverlay .lightbox-nav { width: 36px; height: 36px; }
     }
 </style>
 
@@ -1428,20 +1401,17 @@ function cargarFotosGaleria() {
                     <div class="col-6 col-md-4">
                         <div class="foto-card shadow-sm">
                             <div class="foto-img-wrap cargando">
-                                <img src="${f.url}" loading="lazy"
-                                     onload="onFotoLista(this)"
-                                     onerror="onFotoError(this)"
-                                     onclick="abrirLightbox(${idx})">
+                                <img src="${f.url}" loading="lazy" onload="onFotoLista(this)" onerror="onFotoError(this)" onclick="abrirLightbox(${idx})">
                             </div>
-                            <div class="foto-info flex-column align-items-start gap-1">
-                                <div class="d-flex justify-content-between w-100">
-                                    <small class="text-muted"><i class="bi bi-person"></i> ${f.subido_por}</small>
-                                    <div class="d-flex gap-1">
-                                        <a href="${f.url}?download=1" class="btn btn-sm btn-outline-secondary py-0" title="Descargar"><i class="bi bi-download"></i></a>
-                                        ${esAdminAlmacen ? `<button class="btn btn-sm btn-outline-danger py-0" onclick="eliminarFoto(${f.id})" title="Eliminar"><i class="bi bi-trash"></i></button>` : ''}
-                                    </div>
+                            <div class="foto-info">
+                                <div class="foto-meta">
+                                    <small class="text-muted" title="${f.subido_por}"><i class="bi bi-person-fill"></i> ${f.subido_por}</small>
+                                    <small class="text-muted"><i class="bi bi-clock-fill"></i> ${f.fecha_hora}</small>
                                 </div>
-                                <small class="text-muted" style="font-size:.72rem;"><i class="bi bi-clock"></i> ${f.fecha_hora}</small>
+                                <div class="foto-acciones">
+                                    <a href="${f.url}?download=1" class="btn btn-sm btn-outline-secondary" title="Descargar"><i class="bi bi-download"></i></a>
+                                    ${esAdminAlmacen ? `<button class="btn btn-sm btn-outline-danger" onclick="eliminarFoto(${f.id})" title="Eliminar"><i class="bi bi-trash"></i></button>` : ''}
+                                </div>
                             </div>
                         </div>
                     </div>`;

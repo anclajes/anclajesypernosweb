@@ -5799,6 +5799,12 @@ def eliminar_producto_importbolts(prod_id):
         prod = ProductImportBolts.query.get_or_404(prod_id)
         sku_eliminado = prod.sku
 
+        # 🔒 VALIDACIÓN DE SEGURIDAD: no borrar si ya tiene ventas registradas
+        ventas = OrderDetail.query.filter_by(product_id_importbolts=prod_id).first()
+        if ventas:
+            flash(f'⛔ No se puede eliminar {sku_eliminado}: Ya tiene ventas registradas. Ajuste el stock a 0 en su lugar.')
+            return redirect(request.referrer or url_for('inventario_importbolts'))
+
         # Limpiar Kardex de ImportBolts
         ProductMovementImportBolts.query.filter_by(product_id=prod_id).delete()
 
@@ -6039,6 +6045,7 @@ def inventario_general():
     busqueda = request.args.get('busqueda', '').strip()
     origen_filtro = request.args.get('origen', 'todos')
     categoria_filtro = request.args.get('categoria', 'todos')
+    calidad_filtro = request.args.get('calidad', 'todos')
     stock_bajo = request.args.get('stock_bajo')
     orden = request.args.get('orden', 'nombre')
     page = request.args.get('page', 1, type=int)
@@ -6068,11 +6075,11 @@ def inventario_general():
                 'peso_kg': p.peso_kg or 0, 'origen': 'IMPORTBOLTS'
             })
 
-    # Filtro por categoría (se aplica después de combinar, porque las categorías viven en tablas distintas)
+    # Filtro por categoría y calidad (ya combinados, aplicado sobre la lista en memoria)
     if categoria_filtro != 'todos':
         resultados = [r for r in resultados if r['categoria'] == categoria_filtro]
-
-    # Filtro de stock bajo
+    if calidad_filtro != 'todos':
+        resultados = [r for r in resultados if r['calidad'] == calidad_filtro]
     if stock_bajo == 'on':
         resultados = [r for r in resultados if r['stock'] <= r['stock_min']]
 
@@ -6094,20 +6101,53 @@ def inventario_general():
     if total_paginas == 0:
         total_paginas = 1
 
-    # Lista combinada de categorías (para el filtro), tomada de ambas empresas
-    cats_anclajes = [c.nombre for c in Category.query.filter(Category.nombre != 'TRASLADO IMPORTBOLTS').order_by(Category.nombre).all()]
-    cats_importbolts = [c.nombre for c in CategoryImportBolts.query.order_by(CategoryImportBolts.nombre).all()]
-    lista_categorias = sorted(set(cats_anclajes + cats_importbolts))
+    # --- LISTAS DE FILTROS DEPENDIENTES DEL ORIGEN SELECCIONADO ---
+    if origen_filtro == 'ANCLAJES':
+        lista_categorias = [c.nombre for c in Category.query
+                             .filter(Category.nombre != 'TRASLADO IMPORTBOLTS')
+                             .order_by(Category.nombre).all()]
+        calidades_q = db.session.query(Product.calidad).filter(
+            Product.es_shadow_importbolts.isnot(True), Product.calidad.isnot(None), Product.calidad != ''
+        ).distinct().order_by(Product.calidad).all()
+        lista_calidades = [c[0] for c in calidades_q]
+
+    elif origen_filtro == 'IMPORTBOLTS':
+        lista_categorias = [c.nombre for c in CategoryImportBolts.query.order_by(CategoryImportBolts.nombre).all()]
+        calidades_q = db.session.query(ProductImportBolts.calidad).filter(
+            ProductImportBolts.calidad.isnot(None), ProductImportBolts.calidad != ''
+        ).distinct().order_by(ProductImportBolts.calidad).all()
+        lista_calidades = [c[0] for c in calidades_q]
+
+    else:  # 'todos' -> combinado de ambos inventarios
+        cats_anc = [c.nombre for c in Category.query.filter(Category.nombre != 'TRASLADO IMPORTBOLTS').all()]
+        cats_ib = [c.nombre for c in CategoryImportBolts.query.all()]
+        lista_categorias = sorted(set(cats_anc + cats_ib))
+
+        cal_anc = [c[0] for c in db.session.query(Product.calidad).filter(
+            Product.es_shadow_importbolts.isnot(True), Product.calidad.isnot(None), Product.calidad != ''
+        ).distinct().all()]
+        cal_ib = [c[0] for c in db.session.query(ProductImportBolts.calidad).filter(
+            ProductImportBolts.calidad.isnot(None), ProductImportBolts.calidad != ''
+        ).distinct().all()]
+        lista_calidades = sorted(set(cal_anc + cal_ib))
+
+    # Si la categoría/calidad seleccionada ya no existe en la nueva lista (cambio de origen), resetear
+    if categoria_filtro not in lista_categorias and categoria_filtro != 'todos':
+        categoria_filtro = 'todos'
+    if calidad_filtro not in lista_calidades and calidad_filtro != 'todos':
+        calidad_filtro = 'todos'
 
     return render_template('inventario_general.html',
                            productos=pagina_actual,
                            busqueda=busqueda,
                            origen_filtro=origen_filtro,
                            categoria_filtro=categoria_filtro,
+                           calidad_filtro=calidad_filtro,
                            stock_bajo=stock_bajo,
                            orden=orden,
                            per_page=per_page,
                            lista_categorias=lista_categorias,
+                           lista_calidades=lista_calidades,
                            page=page,
                            total_paginas=total_paginas,
                            total=total,
