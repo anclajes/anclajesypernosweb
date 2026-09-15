@@ -233,6 +233,12 @@
                     <td class="fw-bold ps-3" style="color: var(--theme-primary);">{{ p.sku }}</td>
                     <td class="text-wrap" style="min-width: 250px;">
                         {{ p.nombre }}
+                        {% if not p.activo %}
+                            <br>
+                            <span class="badge bg-secondary mt-1 text-white shadow-sm" style="font-size: 0.7rem;">
+                                <i class="bi bi-eye-slash-fill"></i> INACTIVO
+                            </span>
+                        {% endif %}
                         {% if p.estado %}
                             <br>
                             <span class="badge bg-danger mt-1 text-white shadow-sm" style="font-size: 0.7rem;">
@@ -267,7 +273,7 @@
                         <div class="btn-group shadow-sm">
                             {% if session.get('role') == 'admin' %}
                             <button class="btn btn-sm btn-outline-primary py-0" 
-                                    onclick="abrirEditar('{{p.id}}', '{{p.nombre|replace("'", "\\'")|replace('"', '&quot;')}}', '{{p.stock_actual}}', '{{p.precio_unidad}}', '{{p.precio_caja}}', '{{p.ubicacion|default('', true)}}', '{{p.categoria}}', '{{p.calidad|default('', true)}}', '{{p.stock_minimo}}', '{{p.estado|default('', true)}}', '{{p.peso_kg|default(0, true)}}')">
+                                    onclick="abrirEditar('{{p.id}}', '{{p.nombre|replace("'", "\\'")|replace('"', '&quot;')}}', '{{p.stock_actual}}', '{{p.precio_unidad}}', '{{p.precio_caja}}', '{{p.ubicacion|default('', true)}}', '{{p.categoria}}', '{{p.calidad|default('', true)}}', '{{p.stock_minimo}}', '{{p.estado|default('', true)}}', '{{p.peso_kg|default(0, true)}}', '{{p.activo|lower}}')">
                                 <i class="bi bi-pencil-fill"></i>
                             </button>
                             {% endif %}
@@ -276,11 +282,15 @@
                                 <i class="bi bi-images"></i>
                             </button>
                             {% if session.get('role') == 'admin' %}
-                            <a href="{{ url_for('eliminar_producto', prod_id=p.id) }}" 
-                               class="btn btn-sm btn-outline-danger py-0" 
-                               onclick="return confirm('⚠️ ¿Estás seguro?');">
+                            <button type="button" class="btn btn-sm btn-outline-danger py-0" 
+                                    onclick="confirmarEliminarProducto({{ p.id }}, '{{ p.sku }}', 'ANCLAJES')">
                                 <i class="bi bi-trash-fill"></i>
-                            </a>
+                            </button>
+                            <button type="button" class="btn btn-sm py-0 {{ 'btn-outline-success' if not p.activo else 'btn-outline-secondary' }}" 
+                                    title="{{ 'Activar producto' if not p.activo else 'Desactivar producto' }}"
+                                    onclick="toggleActivoProducto({{ p.id }}, 'ANCLAJES')">
+                                <i class="bi {{ 'bi-toggle-on' if p.activo else 'bi-toggle-off' }}"></i>
+                            </button>                            
                             {% endif %}
                         </div>
                     </td>
@@ -523,6 +533,12 @@
                             <div class="input-group input-group-sm">
                                 <input id="edit_peso_kg" type="number" step="0.001" name="peso_kg" class="form-control" min="0">
                                 <span class="input-group-text">Kg</span>
+                            </div>
+                        </div>
+                        <div class="col-6 d-flex align-items-end">
+                            <div class="form-check form-switch border rounded py-2 px-3 bg-light w-100 m-0">
+                                <input class="form-check-input" type="checkbox" id="edit_activo" name="activo" value="1" checked>
+                                <label class="form-check-label small fw-bold" for="edit_activo">Producto activo (visible para vendedores)</label>
                             </div>
                         </div>
                     </div>
@@ -810,7 +826,7 @@
         return txt.value;
     }
 
-    function abrirEditar(id, nombre, stock, punidad, pcaja, ubicacion, categoria, calidad, stockMin, estado, pesoKg) {
+    function abrirEditar(id, nombre, stock, punidad, pcaja, ubicacion, categoria, calidad, stockMin, estado, pesoKg, activo) {
         document.getElementById('edit_id').value = id;
         
         // AQUÍ ESTÁ LA MAGIA: decodificamos el nombre antes de asignarlo
@@ -821,6 +837,7 @@
         document.getElementById('edit_punidad').value = punidad;
         document.getElementById('edit_pcaja').value = pcaja;
         document.getElementById('edit_peso_kg').value = pesoKg || 0;   // <-- NUEVO 
+        document.getElementById('edit_activo').checked = (activo === true || activo === 'true' || activo === 1 || activo === '1');
         document.getElementById('edit_ubicacion').value = (ubicacion && ubicacion !== 'None') ? ubicacion : '';
         document.getElementById('edit_estado').value = estado;
         document.getElementById('edit_categoria').value = categoria;
@@ -1591,6 +1608,96 @@ function renderizarPreviewFotosNuevoProducto() {
     dropzone.querySelector('span').innerText = restantes > 0
         ? `Click para elegir hasta ${restantes} foto(s) más`
         : 'Máximo de 5 fotos alcanzado';
+}
+
+function confirmarEliminarProducto(prodId, sku, origen) {
+    Swal.fire({ title: 'Verificando...', didOpen: () => Swal.showLoading(), allowOutsideClick: false });
+
+    fetch(`/api/producto/${prodId}/verificar_eliminacion?origen=${origen}`)
+        .then(r => r.json())
+        .then(data => {
+            Swal.close();
+
+            if (data.status !== 'success') {
+                return Swal.fire('Error', 'No se pudo verificar el producto.', 'error');
+            }
+
+            const urlEliminar = origen === 'IMPORTBOLTS'
+                ? `/producto_importbolts/eliminar/${prodId}`
+                : `/producto/eliminar/${prodId}`;
+
+            if (data.tiene_ventas) {
+                // CASO 1: Tiene ventas -> NO se puede eliminar, solo ofrecer Desactivar
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'No se puede eliminar este producto',
+                    html: `
+                        <div class="text-start small">
+                            <p>El código <b>${sku}</b> ya tiene <b>${data.cantidad_ventas}</b> venta(s) o cotización(es) registradas en el sistema.</p>
+                            <p class="mb-1">Eliminarlo dañaría el historial de esas ventas, por eso el sistema lo bloquea.</p>
+                            <hr class="my-2">
+                            <p class="mb-0"><i class="bi bi-lightbulb-fill text-warning"></i> <b>Recomendación:</b> use "Desactivar" — el producto dejará de mostrarse a los vendedores y no se podrá vender más, pero conserva todo su historial y stock intactos. Puede reactivarlo cuando quiera.</p>
+                        </div>
+                    `,
+                    showCancelButton: true,
+                    confirmButtonText: '<i class="bi bi-toggle-off"></i> Desactivar producto',
+                    cancelButtonText: 'Cancelar',
+                    confirmButtonColor: '#6c757d'
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        toggleActivoProducto(prodId, origen);
+                    }
+                });
+            } else {
+                // CASO 2: Sin ventas -> se puede eliminar, pero se ofrece la alternativa también
+                Swal.fire({
+                    icon: 'error',
+                    title: '¿Eliminar producto permanentemente?',
+                    html: `
+                        <div class="text-start small">
+                            <p>El código <b>${sku}</b> no tiene ventas registradas, así que <b>sí se puede eliminar</b>.</p>
+                            <p class="mb-1 text-danger fw-bold">⚠️ Esta acción es irreversible: se borrará el producto, su historial de Kardex y sus fotos.</p>
+                            <hr class="my-2">
+                            <p class="mb-0"><i class="bi bi-lightbulb-fill text-warning"></i> Si solo quiere ocultarlo temporalmente sin perder nada, use mejor "Desactivar".</p>
+                        </div>
+                    `,
+                    showCancelButton: true,
+                    showDenyButton: true,
+                    confirmButtonText: 'Sí, eliminar definitivamente',
+                    denyButtonText: 'Mejor desactivar',
+                    cancelButtonText: 'Cancelar',
+                    confirmButtonColor: '#dc3545',
+                    denyButtonColor: '#6c757d'
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        window.location.href = urlEliminar;
+                    } else if (result.isDenied) {
+                        toggleActivoProducto(prodId, origen);
+                    }
+                });
+            }
+        })
+        .catch(() => {
+            Swal.close();
+            Swal.fire('Error', 'No se pudo conectar con el servidor.', 'error');
+        });
+}
+
+function toggleActivoProducto(prodId, origen) {
+    const url = origen === 'IMPORTBOLTS'
+        ? `/producto_importbolts/toggle_activo/${prodId}`
+        : `/producto/toggle_activo/${prodId}`;
+
+    fetch(url, { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            if (data.status === 'success') {
+                Swal.fire({ icon: 'success', title: data.msg, timer: 1500, showConfirmButton: false })
+                    .then(() => location.reload());
+            } else {
+                Swal.fire('Error', data.msg, 'error');
+            }
+        });
 }
 </script>
 {% endblock %}

@@ -201,7 +201,12 @@
                         {% endif %}
                     </td>
                     <td class="fw-bold text-primary">{{ p.sku }}</td>
-                    <td class="text-wrap" style="min-width:250px;">{{ p.nombre }}</td>
+                    <td class="text-wrap" style="min-width:250px;">
+                        {{ p.nombre }}
+                        {% if not p.activo %}
+                            <span class="badge bg-secondary ms-1" style="font-size:.65rem;"><i class="bi bi-eye-slash-fill"></i> INACTIVO</span>
+                        {% endif %}
+                    </td>
                     <td><span class="badge bg-light text-dark border">{{ p.categoria }}</span></td>
                     <td>{{ p.calidad or '-' }}</td>
                     <td>{% if p.ubicacion %}<i class="bi bi-geo-alt-fill text-danger small"></i> {{ p.ubicacion }}{% else %}-{% endif %}</td>

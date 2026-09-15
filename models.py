@@ -52,6 +52,7 @@ class Product(db.Model):
     es_shadow_importbolts = db.Column(db.Boolean, default=False)
     shadow_origen_sku = db.Column(db.String(50), nullable=True)
     peso_kg = db.Column(db.Float, default=0.0)  # Peso unitario en Kilogramos
+    activo = db.Column(db.Boolean, default=True, nullable=False)  # Desactivar en vez de eliminar
 
 # --- 4. KARDEX ---
 class ProductMovement(db.Model):
@@ -397,6 +398,7 @@ class ProductImportBolts(db.Model):
     fecha_actualizacion = db.Column(db.DateTime, nullable=True) 
     actualizado_por = db.Column(db.String(100), nullable=True) 
     peso_kg = db.Column(db.Float, default=0.0)  # Peso unitario en Kilogramos
+    activo = db.Column(db.Boolean, default=True, nullable=False)  # Desactivar en vez de eliminar
 
 class ProductMovementImportBolts(db.Model):
     __tablename__ = 'product_movement_importbolts'

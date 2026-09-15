@@ -1929,7 +1929,11 @@ def inventario():
     stock_bajo = request.args.get('stock_bajo') # Recibe 'on' o None
 
     # 2. Query Base
+    # 2. Query Base
     query = Product.query
+
+    if session.get('role') not in ['admin', 'almacen']:
+        query = query.filter(Product.activo.is_(True))
 
     if search:
         query = query.filter(or_(Product.nombre.ilike(f"%{search}%"), Product.sku.ilike(f"%{search}%")))
@@ -2014,12 +2018,16 @@ def buscar_cliente(documento):
 def get_productos_por_categoria(category_id):
     try:
         if category_id == 0:
-            productos = Product.query.filter(Product.es_shadow_importbolts.isnot(True)).limit(500).all()
+            productos = Product.query.filter(
+                Product.es_shadow_importbolts.isnot(True),
+                Product.activo.is_(True)
+            ).limit(500).all()
         else:
             cat = Category.query.get_or_404(category_id)
             productos = Product.query.filter(
                 Product.categoria == cat.nombre,
-                Product.es_shadow_importbolts.isnot(True)
+                Product.es_shadow_importbolts.isnot(True),
+                Product.activo.is_(True)
             ).all()
         
         lista = []
@@ -2044,10 +2052,13 @@ def get_productos_por_categoria(category_id):
 def get_productos_por_categoria_importbolts(category_id):
     try:
         if category_id == 0:
-            productos = ProductImportBolts.query.limit(500).all()
+            productos = ProductImportBolts.query.filter(ProductImportBolts.activo.is_(True)).limit(500).all()
         else:
             cat = CategoryImportBolts.query.get_or_404(category_id)
-            productos = ProductImportBolts.query.filter(ProductImportBolts.categoria == cat.nombre).all()
+            productos = ProductImportBolts.query.filter(
+                ProductImportBolts.categoria == cat.nombre,
+                ProductImportBolts.activo.is_(True)
+            ).all()
 
         lista = []
         for p in productos:
@@ -2514,7 +2525,10 @@ def nueva_venta():
 
     # --- MÉTODO GET (MOSTRAR PANTALLA) ---
 # --- MÉTODO GET (MOSTRAR PANTALLA DE NUEVA VENTA) ---
-    productos = Product.query.filter(Product.es_shadow_importbolts.isnot(True)).all()
+    productos = Product.query.filter(
+        Product.es_shadow_importbolts.isnot(True),
+        Product.activo.is_(True)
+    ).all()
     categorias = Category.query.filter(Category.nombre != 'TRASLADO IMPORTBOLTS').all()
     categorias_importbolts = CategoryImportBolts.query.all()   # <-- NUEVO
     
@@ -4152,6 +4166,7 @@ def editar_producto():
         prod.calidad = nueva_calidad
         prod.estado = estado_val
         prod.peso_kg = float(request.form.get('peso_kg', 0) or 0)
+        prod.activo = request.form.get('activo') == '1'
         
         registrar_log(f"Editó producto {prod.sku}", "bi-pencil-fill", "text-warning")
         
@@ -4215,6 +4230,53 @@ def eliminar_producto(prod_id):
     # 5. RETORNO INTELIGENTE
     # request.referrer te devuelve a la URL exacta donde estabas (página 2, búsqueda "SEN", etc.)
     return redirect(request.referrer or url_for('inventario'))
+
+# --- ACTIVAR Y DESACTIVAR PRODUCTO ---
+@app.route('/producto/toggle_activo/<int:prod_id>', methods=['POST'])
+def toggle_activo_producto(prod_id):
+    if session.get('role') not in ['admin', 'almacen']:
+        return {'status': 'error', 'msg': 'No autorizado'}, 403
+
+    prod = Product.query.get_or_404(prod_id)
+    prod.activo = not prod.activo
+    accion = 'activó' if prod.activo else 'desactivó'
+    registrar_log(f"Se {accion} el producto {prod.sku}",
+                  "bi-toggle-on" if prod.activo else "bi-toggle-off",
+                  "text-success" if prod.activo else "text-secondary")
+    db.session.commit()
+
+    return {'status': 'success', 'activo': prod.activo,
+            'msg': f'Producto {"activado" if prod.activo else "desactivado"} correctamente.'}
+
+
+@app.route('/producto_importbolts/toggle_activo/<int:prod_id>', methods=['POST'])
+def toggle_activo_producto_importbolts(prod_id):
+    if session.get('role') not in ['admin', 'almacen']:
+        return {'status': 'error', 'msg': 'No autorizado'}, 403
+
+    prod = ProductImportBolts.query.get_or_404(prod_id)
+    prod.activo = not prod.activo
+    accion = 'activó' if prod.activo else 'desactivó'
+    registrar_log(f"Se {accion} el producto ImportBolts {prod.sku}",
+                  "bi-toggle-on" if prod.activo else "bi-toggle-off",
+                  "text-success" if prod.activo else "text-secondary")
+    db.session.commit()
+
+    return {'status': 'success', 'activo': prod.activo,
+            'msg': f'Producto {"activado" if prod.activo else "desactivado"} correctamente.'}
+
+@app.route('/api/producto/<int:prod_id>/verificar_eliminacion')
+def verificar_eliminacion_producto(prod_id):
+    if session.get('role') != 'admin':
+        return {'status': 'error', 'msg': 'No autorizado'}, 403
+
+    origen = request.args.get('origen', 'ANCLAJES')
+    if origen == 'IMPORTBOLTS':
+        cantidad = OrderDetail.query.filter_by(product_id_importbolts=prod_id).count()
+    else:
+        cantidad = OrderDetail.query.filter_by(product_id=prod_id).count()
+
+    return {'status': 'success', 'tiene_ventas': cantidad > 0, 'cantidad_ventas': cantidad}
 
 @app.route('/producto/ajustar_stock', methods=['POST'])
 def ajustar_stock():
@@ -5604,7 +5666,11 @@ def inventario_importbolts():
     stock_bajo = request.args.get('stock_bajo')
 
     # Apuntamos a la nueva tabla
+    # Apuntamos a la nueva tabla
     query = ProductImportBolts.query
+
+    if session.get('role') not in ['admin', 'almacen']:
+        query = query.filter(ProductImportBolts.activo.is_(True))
 
     if search:
         query = query.filter(or_(ProductImportBolts.nombre.ilike(f"%{search}%"), ProductImportBolts.sku.ilike(f"%{search}%")))
@@ -5776,6 +5842,7 @@ def editar_producto_importbolts():
         prod.calidad = nueva_calidad
         prod.estado = estado_val
         prod.peso_kg = float(request.form.get('peso_kg', 0) or 0)
+        prod.activo = request.form.get('activo') == '1'
         
         registrar_log(f"Editó producto ImportBolts {prod.sku}", "bi-pencil-fill", "text-warning")
         db.session.commit()
@@ -5799,10 +5866,10 @@ def eliminar_producto_importbolts(prod_id):
         prod = ProductImportBolts.query.get_or_404(prod_id)
         sku_eliminado = prod.sku
 
-        # 🔒 VALIDACIÓN DE SEGURIDAD: no borrar si ya tiene ventas registradas
+        # 🔒 VALIDACIÓN: no borrar si ya tiene ventas registradas
         ventas = OrderDetail.query.filter_by(product_id_importbolts=prod_id).first()
         if ventas:
-            flash(f'⛔ No se puede eliminar {sku_eliminado}: Ya tiene ventas registradas. Ajuste el stock a 0 en su lugar.')
+            flash(f'⛔ No se puede eliminar {sku_eliminado}: Ya tiene ventas registradas. Use "Desactivar" en su lugar.')
             return redirect(request.referrer or url_for('inventario_importbolts'))
 
         # Limpiar Kardex de ImportBolts
@@ -6053,26 +6120,32 @@ def inventario_general():
 
     resultados = []
 
+    puede_ver_inactivos = session.get('role') in ['admin', 'almacen']
+
     if origen_filtro in ['todos', 'ANCLAJES']:
         q = Product.query.filter(Product.es_shadow_importbolts.isnot(True))
+        if not puede_ver_inactivos:
+            q = q.filter(Product.activo.is_(True))
         if busqueda:
             q = q.filter(or_(Product.nombre.ilike(f"%{busqueda}%"), Product.sku.ilike(f"%{busqueda}%")))
         for p in q.all():
             resultados.append({
                 'id': p.id, 'sku': p.sku, 'nombre': p.nombre, 'categoria': p.categoria, 'calidad': p.calidad,
                 'ubicacion': p.ubicacion, 'stock': p.stock_actual, 'stock_min': p.stock_minimo,
-                'peso_kg': p.peso_kg or 0, 'origen': 'ANCLAJES'
+                'peso_kg': p.peso_kg or 0, 'origen': 'ANCLAJES', 'activo': p.activo
             })
 
     if origen_filtro in ['todos', 'IMPORTBOLTS']:
         q2 = ProductImportBolts.query
+        if not puede_ver_inactivos:
+            q2 = q2.filter(ProductImportBolts.activo.is_(True))
         if busqueda:
             q2 = q2.filter(or_(ProductImportBolts.nombre.ilike(f"%{busqueda}%"), ProductImportBolts.sku.ilike(f"%{busqueda}%")))
         for p in q2.all():
             resultados.append({
                 'id': p.id, 'sku': p.sku, 'nombre': p.nombre, 'categoria': p.categoria, 'calidad': p.calidad,
                 'ubicacion': p.ubicacion, 'stock': p.stock_actual, 'stock_min': p.stock_minimo,
-                'peso_kg': p.peso_kg or 0, 'origen': 'IMPORTBOLTS'
+                'peso_kg': p.peso_kg or 0, 'origen': 'IMPORTBOLTS', 'activo': p.activo
             })
 
     # Filtro por categoría y calidad (ya combinados, aplicado sobre la lista en memoria)
@@ -6591,11 +6664,14 @@ def eliminar_foto_producto(foto_id):
 # --- RUTA SECRETA PARA INICIALIZAR LA BASE DE DATOS EN RENDER ---
 
 
-@app.route('/fix_product_image')
-def fix_product_image():
+@app.route('/fix_activo_secreto_2026')
+def fix_activo():
     try:
-        db.create_all()
-        return "<h2>✅ Tabla product_image creada.</h2>"
+        with db.engine.connect() as conn:
+            conn.execute(text("ALTER TABLE product ADD COLUMN IF NOT EXISTS activo BOOLEAN NOT NULL DEFAULT TRUE"))
+            conn.execute(text("ALTER TABLE product_importbolts ADD COLUMN IF NOT EXISTS activo BOOLEAN NOT NULL DEFAULT TRUE"))
+            conn.commit()
+        return "<h2>✅ Campo 'activo' agregado correctamente a ambas tablas.</h2>"
     except Exception as e:
         return f"<h2>Error: {str(e)}</h2>"
     
