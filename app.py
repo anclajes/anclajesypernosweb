@@ -181,6 +181,17 @@ def parse_activo_excel(val):
     (None significa 'no tocar el valor actual', igual que con precio y peso)."""
     if val is None:
         return None
+
+    # Excel puede guardar SI/NO como número (1/0) en vez de texto — hay que revisar el tipo primero
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, (int, float)):
+        if val == 1:
+            return True
+        if val == 0:
+            return False
+        return None
+
     s = str(val).strip().upper()
     if s in ('', 'NAN', 'NONE'):
         return None
@@ -3710,7 +3721,10 @@ def importar_excel():
 
             precio_unit = clean_float(get_col(row_vals, 'PRECIO UNI.','PRECIO UNIT', 'PRECIO UNIDAD', 'P. UNIT', 'PRECIO_UNIT', 'PRECIO UNITARIO'))
             peso_val = clean_float(get_col(row_vals, 'PESO_KG', 'PESO KG', 'PESO (KG)', 'PESO'))
-            activo_val = parse_activo_excel(get_col(row_vals, 'ACTIVO', 'ESTADO ACTIVO'))
+            activo_raw = get_col(row_vals, 'ACTIVO', 'ESTADO ACTIVO')
+            activo_val = parse_activo_excel(activo_raw)
+            if activo_raw not in (None, '') and activo_val is None:
+                print(f">>> [AVISO] Columna ACTIVO no reconocida para SKU {sku}: valor='{activo_raw}' (tipo {type(activo_raw).__name__}) — se dejó sin cambios")
 
             # Crear categoría si no existe
             if familia not in cats_existentes:
@@ -3975,7 +3989,10 @@ def importar_excel_importbolts():
             min_val   = clean_int(get_col(row_vals, 'STOCK MÍNIMO', 'STOCK MINIMO', 'MINIMO'), 10)
             precio_unit = clean_float(get_col(row_vals, 'PRECIO UNI.','PRECIO UNIT', 'PRECIO UNIDAD', 'P. UNIT', 'PRECIO_UNIT', 'PRECIO UNITARIO'))
             peso_val = clean_float(get_col(row_vals, 'PESO_KG', 'PESO KG', 'PESO (KG)', 'PESO'))
-            activo_val = parse_activo_excel(get_col(row_vals, 'ACTIVO', 'ESTADO ACTIVO'))
+            activo_raw = get_col(row_vals, 'ACTIVO', 'ESTADO ACTIVO')
+            activo_val = parse_activo_excel(activo_raw)
+            if activo_raw not in (None, '') and activo_val is None:
+                print(f">>> [AVISO] Columna ACTIVO no reconocida para SKU {sku}: valor='{activo_raw}' (tipo {type(activo_raw).__name__}) — se dejó sin cambios")
 
             if familia not in cats_existentes:
                 base = "".join(c for c in familia[:3].upper() if c.isalnum()) or "GEN"
