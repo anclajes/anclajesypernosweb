@@ -89,6 +89,12 @@
                 </a>
                 {% endif %}
 
+                {% if session.get('role') in ['admin', 'almacen', 'administracion'] %}
+                <a href="{{ url_for('reporte_precios_proveedores') }}" class="nav-link {{ 'active' if request.endpoint == 'reporte_precios_proveedores' }}">
+                    <i class="bi bi-graph-up-arrow me-2"></i> <span>Mejores Precios</span>
+                </a>
+                {% endif %}
+
                 {% if session.get('role') in ['admin', 'administracion'] %}
                 <a href="{{ url_for('traslados_intercompany') }}" class="nav-link {{ 'active' if request.endpoint == 'traslados_intercompany' }}">
                     <i class="bi bi-arrow-left-right me-2"></i> <span>Traslados Inter-Empresa</span>
