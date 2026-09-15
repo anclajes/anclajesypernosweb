@@ -111,6 +111,9 @@
                     <th>Categoría</th>
                     <th class="text-center">Tipo</th>
                     <th>Motivo / Referencia</th>
+                    <th>Proveedor / RUC</th>
+                    <th class="text-end">Precio</th>
+                    <th>Presentación</th>
                     <th>Usuario</th>
                     <th class="text-center">Cant.</th>
                     <th class="text-center pe-3">Saldo Final</th>
@@ -145,6 +148,16 @@
                     <td class="fst-italic" style="max-width: 280px; white-space: normal; word-break: break-word; font-size: 0.85rem;">
                         {{ m.motivo }}
                     </td>
+
+                    <td class="small">
+                        {% if m.razon_social_proveedor %}
+                            <span class="fw-bold">{{ m.razon_social_proveedor }}</span><br>
+                            <span class="text-muted">{{ m.ruc_proveedor or 'S/N' }}</span>
+                            {% if m.tipo_proveedor == 'INTERNACIONAL' %}<span class="badge bg-info ms-1">INT'L</span>{% endif %}
+                        {% else %}-{% endif %}
+                    </td>
+                    <td class="text-end small">{% if m.precio_unitario %}{{ "%.2f"|format(m.precio_unitario) }}{% else %}-{% endif %}</td>
+                    <td class="small">{{ m.presentacion or '-' }}</td>
                     
                     <td>
                         <i class="bi bi-person-fill text-secondary"></i> {{ m.user.username }}

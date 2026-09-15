@@ -1,5 +1,5 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, session
-from models import db, User, Product, Category, Client, Order, OrderDetail, ProductMovement, AuditLog, SystemConfig,OrderKitComponent, ClientContact, ClientContactLog, ClientRubroVendedor, IntercompanyTransfer, MetaVendedor, ProductImage
+from models import db, User, Product, Category, Client, Order, OrderDetail, ProductMovement, AuditLog, SystemConfig,OrderKitComponent, ClientContact, ClientContactLog, ClientRubroVendedor, IntercompanyTransfer, MetaVendedor, ProductImage, MotivoMovimiento, Proveedor
 from models import ProductImportBolts, CategoryImportBolts, ProductMovementImportBolts
 from models import ProductMovement
 from models import Payment
@@ -4352,20 +4352,29 @@ def verificar_eliminacion_producto(prod_id):
 @app.route('/producto/ajustar_stock', methods=['POST'])
 def ajustar_stock():
     if session.get('role') not in ['admin', 'almacen']: return "No autorizado", 403
-    
+
     prod_id = request.form['prod_id']
     tipo_ajuste = request.form['tipo']
     cantidad = int(request.form['cantidad'])
-    motivo_texto = request.form['motivo']
-    
-    # CAPTURAR LA URL DE RETORNO (Aquí está la magia)
+    motivo_id = request.form.get('motivo_id')
+    motivo_texto = request.form.get('motivo_texto', '').strip()  # nombre del motivo seleccionado
     url_origen = request.form.get('url_origen')
+
+    tipo_proveedor = request.form.get('tipo_proveedor', '')  # NACIONAL / INTERNACIONAL / '' (si no aplica)
+    ruc_proveedor = request.form.get('ruc_proveedor', '').strip()
+    razon_social_proveedor = request.form.get('razon_social_proveedor', '').strip()
+    precio_unitario = request.form.get('precio_unitario', '').strip()
+    presentacion = request.form.get('presentacion', '').strip()
+
+    if not motivo_texto:
+        flash('⛔ Debe seleccionar un motivo.')
+        return redirect(url_origen or url_for('inventario'))
 
     prod = Product.query.get(prod_id)
     stock_antes = prod.stock_actual
-    
+
     tipo_kardex = ""
-    
+
     if tipo_ajuste == 'ingreso':
         prod.stock_actual += cantidad
         tipo_kardex = "ENTRADA"
@@ -4374,7 +4383,7 @@ def ajustar_stock():
         prod.stock_actual -= cantidad
         tipo_kardex = "SALIDA"
         flash(f'Salida registrada: -{cantidad} en {prod.sku}')
-        
+
     kardex = ProductMovement(
         product_id=prod.id,
         user_id=session['user_id'],
@@ -4382,15 +4391,20 @@ def ajustar_stock():
         cantidad=cantidad,
         stock_anterior=stock_antes,
         stock_nuevo=prod.stock_actual,
-        motivo=motivo_texto
+        motivo=motivo_texto,
+        motivo_id=int(motivo_id) if motivo_id else None,
+        tipo_proveedor=tipo_proveedor or None,
+        ruc_proveedor=ruc_proveedor or None,
+        razon_social_proveedor=razon_social_proveedor or None,
+        precio_unitario=float(precio_unitario) if precio_unitario else None,
+        presentacion=presentacion or None
     )
     db.session.add(kardex)
     db.session.commit()
-    
-    # SI TENEMOS URL DE ORIGEN, VOLVEMOS AHÍ. SI NO, AL INICIO.
+
     if url_origen:
         return redirect(url_origen)
-    
+
     return redirect(url_for('inventario'))
 
 @app.route('/kardex')
@@ -4400,14 +4414,15 @@ def ver_kardex():
     # Unimos con Product para poder filtrar por nombre/categoría
     query = ProductMovement.query.join(Product)
     
-    # 1. Filtro por Texto (Nombre, SKU o Motivo)
     busqueda = request.args.get('busqueda')
     if busqueda:
         query = query.filter(
             or_(
                 Product.nombre.ilike(f"%{busqueda}%"),
                 Product.sku.ilike(f"%{busqueda}%"),
-                ProductMovement.motivo.ilike(f"%{busqueda}%")
+                ProductMovement.motivo.ilike(f"%{busqueda}%"),
+                ProductMovement.ruc_proveedor.ilike(f"%{busqueda}%"),
+                ProductMovement.razon_social_proveedor.ilike(f"%{busqueda}%")
             )
         )
     
@@ -5791,21 +5806,32 @@ def inventario_importbolts():
                            estado_activo=estado_activo)
     
 
-@app.route('/producto_importbolts/ajustar_stock', methods=['POST'])
-def ajustar_stock_importbolts():
+@app.route('/producto/ajustar_stock', methods=['POST'])
+def ajustar_stock():
     if session.get('role') not in ['admin', 'almacen']: return "No autorizado", 403
-    
+
     prod_id = request.form['prod_id']
     tipo_ajuste = request.form['tipo']
     cantidad = int(request.form['cantidad'])
-    motivo_texto = request.form['motivo']
+    motivo_id = request.form.get('motivo_id')
+    motivo_texto = request.form.get('motivo_texto', '').strip()  # nombre del motivo seleccionado
     url_origen = request.form.get('url_origen')
+
+    tipo_proveedor = request.form.get('tipo_proveedor', '')  # NACIONAL / INTERNACIONAL / '' (si no aplica)
+    ruc_proveedor = request.form.get('ruc_proveedor', '').strip()
+    razon_social_proveedor = request.form.get('razon_social_proveedor', '').strip()
+    precio_unitario = request.form.get('precio_unitario', '').strip()
+    presentacion = request.form.get('presentacion', '').strip()
+
+    if not motivo_texto:
+        flash('⛔ Debe seleccionar un motivo.')
+        return redirect(url_origen or url_for('inventario'))
 
     prod = ProductImportBolts.query.get(prod_id)
     stock_antes = prod.stock_actual
-    
+
     tipo_kardex = ""
-    
+
     if tipo_ajuste == 'ingreso':
         prod.stock_actual += cantidad
         tipo_kardex = "ENTRADA"
@@ -5814,7 +5840,7 @@ def ajustar_stock_importbolts():
         prod.stock_actual -= cantidad
         tipo_kardex = "SALIDA"
         flash(f'Salida registrada: -{cantidad} en {prod.sku}')
-        
+
     kardex = ProductMovementImportBolts(
         product_id=prod.id,
         user_id=session['user_id'],
@@ -5822,14 +5848,20 @@ def ajustar_stock_importbolts():
         cantidad=cantidad,
         stock_anterior=stock_antes,
         stock_nuevo=prod.stock_actual,
-        motivo=motivo_texto
+        motivo=motivo_texto,
+        motivo_id=int(motivo_id) if motivo_id else None,
+        tipo_proveedor=tipo_proveedor or None,
+        ruc_proveedor=ruc_proveedor or None,
+        razon_social_proveedor=razon_social_proveedor or None,
+        precio_unitario=float(precio_unitario) if precio_unitario else None,
+        presentacion=presentacion or None
     )
     db.session.add(kardex)
     db.session.commit()
-    
+
     if url_origen:
         return redirect(url_origen)
-    
+
     return redirect(url_for('inventario_importbolts'))
 
 
@@ -6142,7 +6174,9 @@ def ver_kardex_importbolts():
             or_(
                 ProductImportBolts.nombre.ilike(f"%{busqueda}%"),
                 ProductImportBolts.sku.ilike(f"%{busqueda}%"),
-                ProductMovementImportBolts.motivo.ilike(f"%{busqueda}%")
+                ProductMovementImportBolts.motivo.ilike(f"%{busqueda}%"),
+                ProductMovementImportBolts.ruc_proveedor.ilike(f"%{busqueda}%"),
+                ProductMovementImportBolts.razon_social_proveedor.ilike(f"%{busqueda}%")
             )
         )
     
@@ -6758,18 +6792,249 @@ def eliminar_foto_producto(foto_id):
     db.session.commit()
     return {'status': 'success', 'msg': 'Foto eliminada.'}
 
+# --- PROVEEDOR ---
+
+@app.route('/api/consultar_proveedor', methods=['POST'])
+def consultar_proveedor():
+    if session.get('user_id') is None:
+        return {'status': 'error', 'msg': 'No autorizado'}, 403
+
+    numero = request.form.get('numero', '').strip()
+    force = request.form.get('force') == 'true'
+    usuario_actual = session.get('username', 'Sistema')
+
+    if not numero:
+        return {'status': 'error', 'msg': 'Ingrese un RUC o DNI'}
+
+    proveedor_db = Proveedor.query.filter_by(documento=numero).first()
+
+    # CASO A: ya está en caché y no se está forzando -> gratis, sin gastar API
+    if proveedor_db and not force:
+        return {
+            'status': 'success', 'origen': 'BD',
+            'razon_social': proveedor_db.razon_social,
+            'direccion': proveedor_db.direccion or '',
+            'telefono': proveedor_db.telefono or '',
+            'estado': proveedor_db.estado or '',
+            'condicion': proveedor_db.condicion or '',
+            'ubigeo': proveedor_db.ubigeo or '',
+            'distrito': proveedor_db.distrito or '',
+            'provincia': proveedor_db.provincia or '',
+            'departamento': proveedor_db.departamento or '',
+            'last_updated': proveedor_db.last_updated.strftime('%d/%m %H:%M') if proveedor_db.last_updated else '',
+            'updated_by': proveedor_db.updated_by or ''
+        }
+
+    # CASO B: consultar API externa (mismo patrón que consulta_documento)
+    TOKEN = "sk_12670.mczJWCBkAFXbV3pYZdD6EoxkwZ7SZSME"
+    URL_RUC = "https://api.decolecta.com/v1/sunat/ruc"
+    URL_DNI = "https://api.decolecta.com/v1/reniec/dni"
+
+    try:
+        if len(numero) == 8:
+            url = f"{URL_DNI}?numero={numero}"
+        elif len(numero) == 11:
+            url = f"{URL_RUC}?numero={numero}"
+        else:
+            return {'status': 'error', 'msg': 'Longitud de documento incorrecta'}
+
+        response = requests.get(url, headers={'Authorization': f'Bearer {TOKEN}'}, timeout=5)
+        data = response.json()
+
+        if response.status_code != 200:
+            return {'status': 'error', 'msg': data.get('message', 'No encontrado en SUNAT')}
+
+        razon = ""
+        direccion = ""
+        estado = "ACTIVO"
+        condicion = "HABIDO"
+        ubigeo = data.get('ubigeo', '')
+        distrito = data.get('distrito', '')
+        provincia = data.get('provincia', '')
+        departamento = data.get('departamento', '')
+
+        if len(numero) == 8:  # DNI
+            if 'nombres' in data:
+                raw_name = f"{data.get('nombres')} {data.get('apellidoPaterno')} {data.get('apellidoMaterno')}"
+                razon = html.unescape(raw_name)
+                direccion = "-"
+        else:  # RUC
+            raw_razon = data.get('razon_social') or data.get('razonSocial') or data.get('nombre') or ''
+            razon = html.unescape(raw_razon)
+            direccion = html.unescape(data.get('direccion', ''))
+            estado = data.get('estado', 'ACTIVO')
+            condicion = data.get('condicion', 'HABIDO')
+
+        if not proveedor_db:
+            proveedor_db = Proveedor(
+                documento=numero, tipo_proveedor='NACIONAL',
+                razon_social=razon, direccion=direccion,
+                estado=estado, condicion=condicion,
+                ubigeo=ubigeo, distrito=distrito, provincia=provincia, departamento=departamento,
+                last_updated=hora_peru(), updated_by=usuario_actual
+            )
+            db.session.add(proveedor_db)
+        else:
+            proveedor_db.razon_social = razon
+            proveedor_db.direccion = direccion
+            proveedor_db.estado = estado
+            proveedor_db.condicion = condicion
+            proveedor_db.ubigeo = ubigeo
+            proveedor_db.distrito = distrito
+            proveedor_db.provincia = provincia
+            proveedor_db.departamento = departamento
+            proveedor_db.last_updated = hora_peru()
+            proveedor_db.updated_by = usuario_actual
+
+        db.session.commit()
+
+        return {
+            'status': 'success', 'origen': 'API',
+            'razon_social': razon, 'direccion': direccion,
+            'estado': estado, 'condicion': condicion,
+            'ubigeo': ubigeo, 'distrito': distrito, 'provincia': provincia, 'departamento': departamento,
+            'last_updated': hora_peru().strftime('%d/%m %H:%M'), 'updated_by': usuario_actual
+        }
+
+    except Exception as e:
+        print("ERROR API PROVEEDOR:", str(e))
+        return {'status': 'error', 'msg': 'Error de conexión externa'}
+
+
+@app.route('/api/guardar_proveedor_internacional', methods=['POST'])
+def guardar_proveedor_internacional():
+    """Para proveedores fuera de Perú: no hay API de validación, se guarda manual."""
+    if session.get('user_id') is None:
+        return {'status': 'error', 'msg': 'No autorizado'}, 403
+
+    identificador = request.form.get('identificador', '').strip()
+    razon_social = request.form.get('razon_social', '').strip()
+    pais = request.form.get('pais', '').strip()
+    direccion = request.form.get('direccion', '').strip()
+
+    if not razon_social:
+        return {'status': 'error', 'msg': 'La razón social es obligatoria'}
+
+    proveedor_db = None
+    if identificador:
+        proveedor_db = Proveedor.query.filter_by(documento=identificador).first()
+
+    if not proveedor_db:
+        proveedor_db = Proveedor(
+            documento=identificador or None, tipo_proveedor='INTERNACIONAL',
+            razon_social=razon_social, direccion=direccion, pais=pais,
+            identificador_fiscal=identificador,
+            last_updated=hora_peru(), updated_by=session.get('username', 'Sistema')
+        )
+        db.session.add(proveedor_db)
+    else:
+        proveedor_db.razon_social = razon_social
+        proveedor_db.direccion = direccion
+        proveedor_db.pais = pais
+        proveedor_db.last_updated = hora_peru()
+
+    db.session.commit()
+    return {'status': 'success', 'proveedor_id': proveedor_db.id}
+
+
+@app.route('/api/motivos_movimiento/<tipo>')
+def listar_motivos_movimiento(tipo):
+    """tipo = 'ENTRADA' o 'SALIDA'"""
+    if session.get('user_id') is None:
+        return {'motivos': []}, 403
+    motivos = MotivoMovimiento.query.filter_by(tipo=tipo.upper(), activo=True).order_by(MotivoMovimiento.nombre).all()
+    return {'motivos': [{'id': m.id, 'nombre': m.nombre} for m in motivos]}
+
+
+@app.route('/api/motivos_movimiento/nuevo', methods=['POST'])
+def crear_motivo_movimiento():
+    if session.get('role') != 'admin':
+        return {'status': 'error', 'msg': 'Solo el administrador puede agregar motivos'}, 403
+
+    nombre = request.form.get('nombre', '').strip().upper()
+    tipo = request.form.get('tipo', '').strip().upper()
+
+    if not nombre or tipo not in ('ENTRADA', 'SALIDA'):
+        return {'status': 'error', 'msg': 'Datos incompletos'}
+
+    if MotivoMovimiento.query.filter_by(nombre=nombre, tipo=tipo).first():
+        return {'status': 'error', 'msg': f'El motivo "{nombre}" ya existe para {tipo.lower()}s.'}
+
+    nuevo = MotivoMovimiento(nombre=nombre, tipo=tipo, es_predeterminado=False)
+    db.session.add(nuevo)
+    db.session.commit()
+    return {'status': 'success', 'id': nuevo.id, 'nombre': nuevo.nombre}
+
 # --- RUTA SECRETA PARA INICIALIZAR LA BASE DE DATOS EN RENDER ---
 
 
-@app.route('/fix_activo_secreto_2026')
-def fix_activo():
+@app.route('/fix_proveedores_kardex_2026')
+def fix_proveedores_kardex():
     try:
         with db.engine.connect() as conn:
-            conn.execute(text("ALTER TABLE product ADD COLUMN IF NOT EXISTS activo BOOLEAN NOT NULL DEFAULT TRUE"))
-            conn.execute(text("ALTER TABLE product_importbolts ADD COLUMN IF NOT EXISTS activo BOOLEAN NOT NULL DEFAULT TRUE"))
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS motivo_movimiento (
+                    id SERIAL PRIMARY KEY,
+                    nombre VARCHAR(100) NOT NULL,
+                    tipo VARCHAR(10) NOT NULL,
+                    activo BOOLEAN DEFAULT TRUE,
+                    es_predeterminado BOOLEAN DEFAULT FALSE,
+                    creado_en TIMESTAMP,
+                    CONSTRAINT uq_motivo_nombre_tipo UNIQUE (nombre, tipo)
+                )
+            """))
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS proveedor (
+                    id SERIAL PRIMARY KEY,
+                    tipo_proveedor VARCHAR(15) DEFAULT 'NACIONAL',
+                    documento VARCHAR(20) UNIQUE,
+                    razon_social VARCHAR(200) NOT NULL,
+                    direccion VARCHAR(200),
+                    telefono VARCHAR(30),
+                    estado VARCHAR(50),
+                    condicion VARCHAR(50),
+                    ubigeo VARCHAR(10),
+                    distrito VARCHAR(100),
+                    provincia VARCHAR(100),
+                    departamento VARCHAR(100),
+                    pais VARCHAR(100),
+                    identificador_fiscal VARCHAR(50),
+                    last_updated TIMESTAMP,
+                    updated_by VARCHAR(50)
+                )
+            """))
+            conn.execute(text("ALTER TABLE product_movement ADD COLUMN IF NOT EXISTS proveedor_id INTEGER REFERENCES proveedor(id)"))
+            conn.execute(text("ALTER TABLE product_movement ADD COLUMN IF NOT EXISTS ruc_proveedor VARCHAR(20)"))
+            conn.execute(text("ALTER TABLE product_movement ADD COLUMN IF NOT EXISTS razon_social_proveedor VARCHAR(200)"))
+            conn.execute(text("ALTER TABLE product_movement ADD COLUMN IF NOT EXISTS tipo_proveedor VARCHAR(15)"))
+            conn.execute(text("ALTER TABLE product_movement ADD COLUMN IF NOT EXISTS precio_unitario FLOAT"))
+            conn.execute(text("ALTER TABLE product_movement ADD COLUMN IF NOT EXISTS presentacion VARCHAR(50)"))
+            conn.execute(text("ALTER TABLE product_movement ADD COLUMN IF NOT EXISTS motivo_id INTEGER REFERENCES motivo_movimiento(id)"))
+
+            conn.execute(text("ALTER TABLE product_movement_importbolts ADD COLUMN IF NOT EXISTS proveedor_id INTEGER REFERENCES proveedor(id)"))
+            conn.execute(text("ALTER TABLE product_movement_importbolts ADD COLUMN IF NOT EXISTS ruc_proveedor VARCHAR(20)"))
+            conn.execute(text("ALTER TABLE product_movement_importbolts ADD COLUMN IF NOT EXISTS razon_social_proveedor VARCHAR(200)"))
+            conn.execute(text("ALTER TABLE product_movement_importbolts ADD COLUMN IF NOT EXISTS tipo_proveedor VARCHAR(15)"))
+            conn.execute(text("ALTER TABLE product_movement_importbolts ADD COLUMN IF NOT EXISTS precio_unitario FLOAT"))
+            conn.execute(text("ALTER TABLE product_movement_importbolts ADD COLUMN IF NOT EXISTS presentacion VARCHAR(50)"))
+            conn.execute(text("ALTER TABLE product_movement_importbolts ADD COLUMN IF NOT EXISTS motivo_id INTEGER REFERENCES motivo_movimiento(id)"))
             conn.commit()
-        return "<h2>✅ Campo 'activo' agregado correctamente a ambas tablas.</h2>"
+
+        # --- Seed de motivos predeterminados (tu hoja escrita a mano) ---
+        motivos_entrada = ['COMPRA', 'DEVOLUCIÓN', 'INTERCOMPAÑÍAS', 'PRODUCTO TERMINADO']
+        motivos_salida = ['LABORATORIO', 'TRANSFORMACIÓN', 'VENTA', 'DONACIÓN', 'MUESTRA', 'PRÉSTAMO']
+
+        for nombre in motivos_entrada:
+            if not MotivoMovimiento.query.filter_by(nombre=nombre, tipo='ENTRADA').first():
+                db.session.add(MotivoMovimiento(nombre=nombre, tipo='ENTRADA', es_predeterminado=True))
+        for nombre in motivos_salida:
+            if not MotivoMovimiento.query.filter_by(nombre=nombre, tipo='SALIDA').first():
+                db.session.add(MotivoMovimiento(nombre=nombre, tipo='SALIDA', es_predeterminado=True))
+        db.session.commit()
+
+        return "<h2>✅ Tablas de proveedores, motivos y columnas de Kardex creadas + motivos predeterminados sembrados.</h2>"
     except Exception as e:
+        db.session.rollback()
         return f"<h2>Error: {str(e)}</h2>"
     
 # --- ARRANQUE DE LA APLICACIÓN ---

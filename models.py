@@ -66,6 +66,17 @@ class ProductMovement(db.Model):
     stock_nuevo = db.Column(db.Integer)
     motivo = db.Column(db.String(200))
 
+        # --- NUEVO: datos del proveedor/destino, guardados como snapshot histórico ---
+    proveedor_id = db.Column(db.Integer, db.ForeignKey('proveedor.id'), nullable=True)
+    ruc_proveedor = db.Column(db.String(20), nullable=True)
+    razon_social_proveedor = db.Column(db.String(200), nullable=True)
+    tipo_proveedor = db.Column(db.String(15), nullable=True)  # NACIONAL / INTERNACIONAL
+    precio_unitario = db.Column(db.Float, nullable=True)  # solo Ingresos
+    presentacion = db.Column(db.String(50), nullable=True)  # Metros, Kg, Unidades...
+    motivo_id = db.Column(db.Integer, db.ForeignKey('motivo_movimiento.id'), nullable=True)
+
+    proveedor = db.relationship('Proveedor')
+
     product = db.relationship('Product', backref='movements')
     user = db.relationship('User', backref='movements')
 
@@ -412,6 +423,17 @@ class ProductMovementImportBolts(db.Model):
     stock_nuevo = db.Column(db.Integer)
     motivo = db.Column(db.String(200))
 
+        # --- NUEVO: datos del proveedor/destino, guardados como snapshot histórico ---
+    proveedor_id = db.Column(db.Integer, db.ForeignKey('proveedor.id'), nullable=True)
+    ruc_proveedor = db.Column(db.String(20), nullable=True)
+    razon_social_proveedor = db.Column(db.String(200), nullable=True)
+    tipo_proveedor = db.Column(db.String(15), nullable=True)  # NACIONAL / INTERNACIONAL
+    precio_unitario = db.Column(db.Float, nullable=True)  # solo Ingresos
+    presentacion = db.Column(db.String(50), nullable=True)  # Metros, Kg, Unidades...
+    motivo_id = db.Column(db.Integer, db.ForeignKey('motivo_movimiento.id'), nullable=True)
+
+    proveedor = db.relationship('Proveedor')
+
     product = db.relationship('ProductImportBolts', backref='movements')
     user = db.relationship('User', backref='movements_importbolts')
 
@@ -444,3 +466,42 @@ class ProductImage(db.Model):
     fecha_subida = db.Column(db.DateTime, default=hora_peru)
 
     subido_por = db.relationship('User')
+
+# --- MOTIVOS DE MOVIMIENTO (predeterminados + agregados por admin) ---
+class MotivoMovimiento(db.Model):
+    __tablename__ = 'motivo_movimiento'
+    id = db.Column(db.Integer, primary_key=True)
+    nombre = db.Column(db.String(100), nullable=False)
+    tipo = db.Column(db.String(10), nullable=False)  # 'ENTRADA' o 'SALIDA'
+    activo = db.Column(db.Boolean, default=True)
+    es_predeterminado = db.Column(db.Boolean, default=False)  # protege los de fábrica de borrado accidental
+    creado_en = db.Column(db.DateTime, default=hora_peru)
+
+    __table_args__ = (db.UniqueConstraint('nombre', 'tipo', name='uq_motivo_nombre_tipo'),)
+
+
+# --- PROVEEDORES (caché de RUC/datos, independiente de Client) ---
+class Proveedor(db.Model):
+    __tablename__ = 'proveedor'
+    id = db.Column(db.Integer, primary_key=True)
+    tipo_proveedor = db.Column(db.String(15), default='NACIONAL')  # NACIONAL o INTERNACIONAL
+
+    documento = db.Column(db.String(20), unique=True, nullable=True)  # RUC/DNI (solo nacional)
+    razon_social = db.Column(db.String(200), nullable=False)
+    direccion = db.Column(db.String(200), nullable=True)
+    telefono = db.Column(db.String(30), nullable=True)
+
+    # Solo aplican a proveedores nacionales (vienen de SUNAT)
+    estado = db.Column(db.String(50), nullable=True)
+    condicion = db.Column(db.String(50), nullable=True)
+    ubigeo = db.Column(db.String(10), nullable=True)
+    distrito = db.Column(db.String(100), nullable=True)
+    provincia = db.Column(db.String(100), nullable=True)
+    departamento = db.Column(db.String(100), nullable=True)
+
+    # Solo aplica a proveedores internacionales
+    pais = db.Column(db.String(100), nullable=True)
+    identificador_fiscal = db.Column(db.String(50), nullable=True)  # Tax ID / VAT / etc.
+
+    last_updated = db.Column(db.DateTime, default=hora_peru)
+    updated_by = db.Column(db.String(50), default='Sistema')

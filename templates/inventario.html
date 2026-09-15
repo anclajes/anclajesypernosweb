@@ -675,13 +675,16 @@
 </div>
 
 <div class="modal fade" id="modalStock" tabindex="-1">
-    <div class="modal-dialog modal-sm modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content border-0 shadow-lg">
-            <form action="{{ url_for('ajustar_stock') }}" method="POST">
+            <form action="{{ url_for('ajustar_stock') }}" method="POST" id="formAjusteStock">
                 <input type="hidden" name="prod_id" id="stock_id">
                 <input type="hidden" name="url_origen" id="stock_url_origen">
+                <input type="hidden" name="motivo_id" id="stock_motivo_id">
+                <input type="hidden" name="motivo_texto" id="stock_motivo_texto">
+
                 <div class="modal-header text-white" style="background-color: var(--theme-primary);">
-                    <h5 class="modal-title fs-6 fw-bold"><i class="bi bi-arrow-left-right me-2"></i> Movimiento Kardex</h5>
+                    <h5 class="modal-title fs-6 fw-bold"><i class="bi bi-arrow-left-right me-2"></i> Movimiento de Kardex</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
@@ -689,20 +692,91 @@
                     <div class="alert py-2 text-center small mb-3 fw-medium" style="background-color: #e6f0fa; border: 1px solid #b8d4f2; color: var(--theme-primary);">
                         Stock Actual: <strong id="stock_display_actual" class="fs-5">0</strong>
                     </div>
+
+                    <!-- TIPO DE MOVIMIENTO -->
                     <div class="mb-3">
                         <label class="small text-muted fw-bold mb-1">Tipo de Movimiento</label>
-                        <select name="tipo" class="form-select form-select-sm shadow-sm" required>
+                        <select name="tipo" id="stock_tipo_movimiento" class="form-select form-select-sm shadow-sm" required onchange="cambioTipoMovimiento()">
                             <option value="ingreso">➕ Ingreso (Compra/Devolución)</option>
                             <option value="salida">➖ Salida (Venta/Merma)</option>
                         </select>
                     </div>
+
+                    <!-- CANTIDAD -->
                     <div class="mb-3">
                         <label class="small text-muted fw-bold mb-1">Cantidad</label>
                         <input type="number" name="cantidad" class="form-control form-control-sm shadow-sm" min="1" required>
                     </div>
-                    <div class="mb-1">
+
+                    <!-- MOTIVO (dinámico según tipo) -->
+                    <div class="mb-3">
                         <label class="small text-muted fw-bold mb-1">Motivo *</label>
-                        <input type="text" name="motivo" class="form-control form-control-sm shadow-sm" placeholder="Ej: Venta #123, Ajuste..." required>
+                        <div class="d-flex gap-2">
+                            <select id="stock_select_motivo" class="form-select form-select-sm shadow-sm" required onchange="seleccionarMotivo()">
+                                <option value="" selected disabled>-- Seleccione un motivo --</option>
+                            </select>
+                            {% if session.get('role') == 'admin' %}
+                            <button type="button" class="btn btn-sm btn-outline-secondary" title="Agregar nuevo motivo" onclick="abrirNuevoMotivo()">
+                                <i class="bi bi-plus-lg"></i>
+                            </button>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <hr class="my-3">
+
+                    <!-- PROVEEDOR / DESTINO -->
+                    <div class="mb-2">
+                        <label class="small text-muted fw-bold mb-1" id="label_proveedor_seccion">Proveedor</label>
+                        <div class="btn-group btn-group-sm w-100 mb-2" role="group">
+                            <input type="radio" class="btn-check" name="tipo_proveedor_radio" id="radioNacional" value="NACIONAL" checked onchange="cambioTipoProveedor()">
+                            <label class="btn btn-outline-primary" for="radioNacional">🇵🇪 Nacional (RUC/DNI)</label>
+                            <input type="radio" class="btn-check" name="tipo_proveedor_radio" id="radioInternacional" value="INTERNACIONAL" onchange="cambioTipoProveedor()">
+                            <label class="btn btn-outline-primary" for="radioInternacional">🌎 Internacional</label>
+                        </div>
+                    </div>
+
+                    <!-- BLOQUE NACIONAL -->
+                    <div id="bloqueProveedorNacional">
+                        <div class="input-group input-group-sm mb-2">
+                            <input type="text" id="input_ruc_proveedor" name="ruc_proveedor" class="form-control" placeholder="RUC (11) o DNI (8)" maxlength="11">
+                            <button type="button" class="btn btn-outline-primary" onclick="buscarProveedor()">
+                                <i class="bi bi-search"></i> Buscar
+                            </button>
+                        </div>
+                        <div id="proveedor_msg" class="small mb-2"></div>
+                    </div>
+
+                    <!-- BLOQUE INTERNACIONAL -->
+                    <div id="bloqueProveedorInternacional" class="d-none">
+                        <input type="text" id="input_pais_proveedor" class="form-control form-control-sm mb-2" placeholder="País">
+                        <input type="text" id="input_id_fiscal_proveedor" class="form-control form-control-sm mb-2" placeholder="Tax ID / Identificador fiscal (opcional)">
+                    </div>
+
+                    <!-- CAMPOS COMUNES DE PROVEEDOR (autocompletados o manuales) -->
+                    <input type="text" id="input_razon_social_proveedor" name="razon_social_proveedor" class="form-control form-control-sm mb-2" placeholder="Razón Social *" required>
+                    <input type="text" id="input_direccion_proveedor" class="form-control form-control-sm mb-2" placeholder="Dirección">
+
+                    <input type="hidden" name="tipo_proveedor" id="hidden_tipo_proveedor" value="NACIONAL">
+
+                    <hr class="my-3">
+
+                    <!-- PRECIO (solo visible en Ingreso) -->
+                    <div class="mb-3" id="bloquePrecio">
+                        <label class="small text-muted fw-bold mb-1">Precio Unitario (S/. o $)</label>
+                        <input type="number" step="0.01" name="precio_unitario" class="form-control form-control-sm shadow-sm" min="0">
+                    </div>
+
+                    <!-- PRESENTACIÓN -->
+                    <div class="mb-1">
+                        <label class="small text-muted fw-bold mb-1">Presentación</label>
+                        <select name="presentacion" class="form-select form-select-sm shadow-sm">
+                            <option value="UNIDADES">Unidades</option>
+                            <option value="METROS">Metros</option>
+                            <option value="KILOGRAMOS">Kilogramos (Kg)</option>
+                            <option value="CAJAS">Cajas</option>
+                            <option value="OTRO">Otro</option>
+                        </select>
                     </div>
                 </div>
                 <div class="modal-footer p-2 bg-light flex-column">
@@ -1083,6 +1157,15 @@
         document.getElementById('stock_nombre').innerText = nombre;
         document.getElementById('stock_display_actual').innerText = stockActual;
         document.getElementById('stock_url_origen').value = window.location.href;
+
+        document.getElementById('formAjusteStock').reset();
+        document.getElementById('stock_motivo_id').value = '';
+        document.getElementById('stock_motivo_texto').value = '';
+        document.getElementById('proveedor_msg').innerHTML = '';
+        document.getElementById('radioNacional').checked = true;
+        cambioTipoProveedor();
+        cambioTipoMovimiento();
+
         new bootstrap.Modal(document.getElementById('modalStock')).show();
     }
 
@@ -1786,5 +1869,115 @@ function actualizarEstiloActivo() {
         desc.innerHTML = '<i class="bi bi-eye-slash-fill"></i> Oculto para vendedores. No se puede vender, pero conserva su historial y stock.';
     }
 }
+
+function cambioTipoMovimiento() {
+    const tipo = document.getElementById('stock_tipo_movimiento').value;
+    document.getElementById('bloquePrecio').style.display = (tipo === 'ingreso') ? 'block' : 'none';
+    document.getElementById('label_proveedor_seccion').innerText = (tipo === 'ingreso') ? 'Proveedor' : 'Destino / Cliente';
+    cargarMotivos(tipo);
+}
+
+function cargarMotivos(tipoMovimiento) {
+    const tipoAPI = (tipoMovimiento === 'ingreso') ? 'ENTRADA' : 'SALIDA';
+    const select = document.getElementById('stock_select_motivo');
+    select.innerHTML = '<option value="" selected disabled>Cargando...</option>';
+
+    fetch(`/api/motivos_movimiento/${tipoAPI}`)
+        .then(r => r.json())
+        .then(data => {
+            select.innerHTML = '<option value="" selected disabled>-- Seleccione un motivo --</option>';
+            (data.motivos || []).forEach(m => {
+                const opt = document.createElement('option');
+                opt.value = m.id;
+                opt.text = m.nombre;
+                opt.dataset.nombre = m.nombre;
+                select.appendChild(opt);
+            });
+        });
+}
+
+function seleccionarMotivo() {
+    const select = document.getElementById('stock_select_motivo');
+    const selected = select.options[select.selectedIndex];
+    document.getElementById('stock_motivo_id').value = select.value;
+    document.getElementById('stock_motivo_texto').value = selected ? selected.dataset.nombre : '';
+}
+
+function cambioTipoProveedor() {
+    const esNacional = document.getElementById('radioNacional').checked;
+    document.getElementById('bloqueProveedorNacional').classList.toggle('d-none', !esNacional);
+    document.getElementById('bloqueProveedorInternacional').classList.toggle('d-none', esNacional);
+    document.getElementById('hidden_tipo_proveedor').value = esNacional ? 'NACIONAL' : 'INTERNACIONAL';
+
+    if (!esNacional) {
+        document.getElementById('input_razon_social_proveedor').value = '';
+        document.getElementById('input_direccion_proveedor').value = '';
+        document.getElementById('proveedor_msg').innerHTML = '';
+    }
+}
+
+function buscarProveedor(forzar = false) {
+    const ruc = document.getElementById('input_ruc_proveedor').value.trim();
+    const msg = document.getElementById('proveedor_msg');
+
+    if (!ruc || (ruc.length !== 8 && ruc.length !== 11)) {
+        msg.innerHTML = '<span class="text-danger">Ingrese un RUC (11 dígitos) o DNI (8 dígitos) válido.</span>';
+        return;
+    }
+
+    msg.innerHTML = '<span class="text-muted"><span class="spinner-border spinner-border-sm"></span> Buscando...</span>';
+
+    fetch('/api/consultar_proveedor', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `numero=${encodeURIComponent(ruc)}&force=${forzar}`
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.status === 'success') {
+            document.getElementById('input_razon_social_proveedor').value = data.razon_social;
+            document.getElementById('input_direccion_proveedor').value = data.direccion;
+            const origenTxt = data.origen === 'BD' ? 'Datos guardados en caché (sin costo)' : 'Consultado a SUNAT/RENIEC ahora';
+            msg.innerHTML = `<span class="text-success"><i class="bi bi-check-circle-fill"></i> ${origenTxt} — actualizado ${data.last_updated}</span>`;
+        } else {
+            msg.innerHTML = `<span class="text-danger">${data.msg}</span>`;
+        }
+    });
+}
+
+function abrirNuevoMotivo() {
+    const tipoActual = document.getElementById('stock_tipo_movimiento').value === 'ingreso' ? 'ENTRADA' : 'SALIDA';
+    Swal.fire({
+        title: `Nuevo motivo de ${tipoActual === 'ENTRADA' ? 'Ingreso' : 'Salida'}`,
+        input: 'text',
+        inputPlaceholder: 'Ej: GARANTÍA, AJUSTE DE INVENTARIO...',
+        showCancelButton: true,
+        confirmButtonText: 'Crear',
+        inputValidator: (value) => { if (!value) return 'Escriba un nombre'; }
+    }).then((result) => {
+        if (!result.isConfirmed) return;
+        let fd = new FormData();
+        fd.append('nombre', result.value);
+        fd.append('tipo', tipoActual);
+        fetch('/api/motivos_movimiento/nuevo', { method: 'POST', body: fd })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    cargarMotivos(document.getElementById('stock_tipo_movimiento').value);
+                    Swal.fire({ icon: 'success', title: 'Motivo creado', timer: 1200, showConfirmButton: false });
+                } else {
+                    Swal.fire('Error', data.msg, 'error');
+                }
+            });
+    });
+}
+
+// Validación final antes de enviar: asegura que se eligió un motivo real
+document.getElementById('formAjusteStock').addEventListener('submit', function(e) {
+    if (!document.getElementById('stock_motivo_id').value) {
+        e.preventDefault();
+        Swal.fire('Falta el motivo', 'Debe seleccionar un motivo del movimiento.', 'warning');
+    }
+});
 </script>
 {% endblock %}
