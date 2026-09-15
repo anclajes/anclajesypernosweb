@@ -183,6 +183,22 @@
     #modalStock .modal-footer {
         flex-shrink: 0;
     }
+
+        /* --- FIX: pestañas del modal "Proveedores Guardados" heredaban color blanco del sidebar --- */
+    #tabsListaProveedores .nav-link {
+        color: #495057 !important;
+        background-color: #f1f3f5;
+        border: 1px solid #dee2e6;
+        font-weight: 500;
+    }
+    #tabsListaProveedores .nav-link.active {
+        color: #fff !important;
+        background-color: var(--theme-primary);
+        border-color: var(--theme-primary);
+    }
+    #tabsListaProveedores .nav-link:hover:not(.active) {
+        background-color: #e9ecef;
+    }
 </style>
 
 <div class="card shadow-sm border-0 mb-4" style="border-left: 6px solid var(--theme-primary) !important;">
@@ -2301,8 +2317,11 @@ function filtrarListaProveedores(texto) {
     renderizarListaProveedores(filtrados);
 }
 
+let listaProveedoresRenderizadaActual = [];
+
 function renderizarListaProveedores(lista) {
     const cont = document.getElementById('listaProveedoresContenido');
+    listaProveedoresRenderizadaActual = lista;
 
     if (lista.length === 0) {
         cont.innerHTML = '<div class="text-center text-muted py-4"><i class="bi bi-inbox display-4 opacity-25"></i><p class="mt-2 small">No hay proveedores guardados de este tipo aún.</p></div>';
@@ -2310,10 +2329,10 @@ function renderizarListaProveedores(lista) {
     }
 
     cont.innerHTML = '';
-    lista.forEach(p => {
+    lista.forEach((p, idx) => {
         const auditoriaTxt = p.editado_por
-            ? `Agregado por ${p.creado_por} · Editado por ${p.editado_por} (${p.editado_en})`
-            : `Agregado por ${p.creado_por}`;
+            ? `Agregado por ${escaparHtml(p.creado_por)} · Editado por ${escaparHtml(p.editado_por)} (${p.editado_en})`
+            : `Agregado por ${escaparHtml(p.creado_por)}`;
 
         const doc = tabActualListaProveedores === 'NACIONAL' ? p.documento : (p.identificador_fiscal || 'S/N');
 
@@ -2322,18 +2341,30 @@ function renderizarListaProveedores(lista) {
                 <div class="card-body py-2 px-3">
                     <div class="d-flex justify-content-between align-items-start">
                         <div>
-                            <b>${p.razon_social}</b><br>
-                            <span class="text-muted small">${doc}${p.pais ? ' — ' + p.pais : ''}</span><br>
-                            <span class="text-muted small">${p.direccion || 'Sin dirección registrada'}</span><br>
+                            <b>${escaparHtml(p.razon_social)}</b><br>
+                            <span class="text-muted small">${escaparHtml(doc)}${p.pais ? ' — ' + escaparHtml(p.pais) : ''}</span><br>
+                            <span class="text-muted small">${escaparHtml(p.direccion) || 'Sin dirección registrada'}</span><br>
                             <span class="text-muted" style="font-size:.7rem;"><i class="bi bi-clock-history"></i> ${auditoriaTxt}</span>
                         </div>
-                        <button type="button" class="btn btn-sm btn-success flex-shrink-0" onclick='usarProveedorDeLista(${JSON.stringify(p)})'>
+                        <button type="button" class="btn btn-sm btn-success flex-shrink-0" onclick="usarProveedorDeListaIndex(${idx})">
                             <i class="bi bi-check2"></i> Usar
                         </button>
                     </div>
                 </div>
             </div>`;
     });
+}
+
+function escaparHtml(texto) {
+    if (!texto) return '';
+    const div = document.createElement('div');
+    div.textContent = texto;
+    return div.innerHTML;
+}
+
+function usarProveedorDeListaIndex(idx) {
+    const p = listaProveedoresRenderizadaActual[idx];
+    if (p) usarProveedorDeLista(p);
 }
 
 function usarProveedorDeLista(p) {

@@ -6985,7 +6985,11 @@ def consultar_proveedor():
     if not numero:
         return {'status': 'error', 'msg': 'Ingrese un RUC o DNI'}
 
-    proveedor_db = Proveedor.query.filter_by(documento=numero).first()
+    try:
+        proveedor_db = Proveedor.query.filter_by(documento=numero).first()
+    except Exception as e:
+        print(f"ERROR CONSULTAR_PROVEEDOR (consulta BD): {e}")
+        return {'status': 'error', 'msg': 'Error interno al consultar la base de datos. Verifique que las tablas de Proveedor estén creadas.'}, 500
 
     # CASO A: ya está en caché y no se está forzando -> gratis, sin gastar API
     if proveedor_db and not force:
@@ -7045,6 +7049,9 @@ def consultar_proveedor():
             estado = data.get('estado', 'ACTIVO')
             condicion = data.get('condicion', 'HABIDO')
 
+        if not razon:
+            return {'status': 'error', 'msg': 'No se encontró información para ese documento.'}
+
         if not proveedor_db:
             proveedor_db = Proveedor(
                 documento=numero, tipo_proveedor='NACIONAL',
@@ -7056,7 +7063,6 @@ def consultar_proveedor():
             )
             db.session.add(proveedor_db)
         else:
-            # Nacional: SIEMPRE se refresca con lo que dice SUNAT/RENIEC, nunca editable a mano
             proveedor_db.razon_social = razon
             proveedor_db.direccion = direccion
             proveedor_db.estado = estado
@@ -7080,8 +7086,9 @@ def consultar_proveedor():
         }
 
     except Exception as e:
-        print("ERROR API PROVEEDOR:", str(e))
-        return {'status': 'error', 'msg': 'Error de conexión externa'}
+        db.session.rollback()
+        print(f"ERROR CONSULTAR_PROVEEDOR (API/BD): {e}")
+        return {'status': 'error', 'msg': f'Error de conexión externa o interno: {str(e)}'}
 
 
 @app.route('/api/guardar_proveedor_internacional', methods=['POST'])
@@ -7107,7 +7114,8 @@ def guardar_proveedor_internacional():
             documento=identificador or None, tipo_proveedor='INTERNACIONAL',
             razon_social=razon_social, direccion=direccion, pais=pais,
             identificador_fiscal=identificador,
-            last_updated=hora_peru(), updated_by=session.get('username', 'Sistema')
+            last_updated=hora_peru(), updated_by=session.get('username', 'Sistema'),
+            creado_por_id=session.get('user_id')
         )
         db.session.add(proveedor_db)
     else:
@@ -7115,6 +7123,8 @@ def guardar_proveedor_internacional():
         proveedor_db.direccion = direccion
         proveedor_db.pais = pais
         proveedor_db.last_updated = hora_peru()
+        proveedor_db.editado_por_id = session.get('user_id')
+        proveedor_db.editado_en = hora_peru()
 
     db.session.commit()
     return {'status': 'success', 'proveedor_id': proveedor_db.id}
