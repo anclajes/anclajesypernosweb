@@ -113,12 +113,65 @@
         #galeria_grid .foto-img-wrap { padding-top: 55%; }
     }
 
-    /* --- LIGHTBOX responsive --- */
-    #lightboxOverlay { padding: 10px; box-sizing: border-box; }
-    #lightboxOverlay img { max-width: 92vw; max-height: 68vh; }
-    #lightboxOverlay .lightbox-nav { width: 40px; height: 40px; font-size: 1.2rem; }
-    #lightboxOverlay .lightbox-close { top: 10px; right: 16px; font-size: 1.6rem; }
-    #lightboxOverlay .lightbox-caption { padding: 0 10px; font-size: .78rem; }
+    /* --- LIGHTBOX (base + responsive) --- */
+    #lightboxOverlay {
+        position: fixed; inset: 0;
+        background: rgba(0,0,0,.9);
+        z-index: 2000;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        padding: 10px;
+        box-sizing: border-box;
+    }
+    #lightboxOverlay.activo { display: flex; }
+    #lightboxOverlay img {
+        max-width: 92vw;
+        max-height: 68vh;
+        object-fit: contain;
+        border-radius: 8px;
+        box-shadow: 0 10px 40px rgba(0,0,0,.5);
+    }
+    #lightboxOverlay .lightbox-close {
+        position: absolute; top: 10px; right: 16px;
+        color: #fff; font-size: 1.6rem; cursor: pointer;
+        opacity: .8; z-index: 2010;
+    }
+    #lightboxOverlay .lightbox-close:hover { opacity: 1; }
+    #lightboxOverlay .lightbox-nav {
+        position: absolute; top: 50%; transform: translateY(-50%);
+        background: rgba(255,255,255,.12);
+        border: none; color: #fff;
+        width: 40px; height: 40px;
+        border-radius: 50%;
+        font-size: 1.2rem;
+        display: flex; align-items: center; justify-content: center;
+        cursor: pointer;
+        transition: background .15s ease;
+    }
+    #lightboxOverlay .lightbox-nav:hover { background: rgba(255,255,255,.25); }
+    #lightboxOverlay .lightbox-nav:disabled { opacity: .25; cursor: default; }
+    #lightboxOverlay .lightbox-prev { left: 16px; }
+    #lightboxOverlay .lightbox-next { right: 16px; }
+    #lightboxOverlay .lightbox-caption {
+        color: #f1f3f5;
+        margin-top: 14px;
+        text-align: center;
+        padding: 0 10px;
+        font-size: .78rem;
+    }
+    #lightboxOverlay .badge-user {
+        background: rgba(255,255,255,.12);
+        padding: 4px 10px;
+        border-radius: 20px;
+        margin: 0 4px;
+    }
+    #lightboxOverlay .lightbox-counter {
+        color: #adb5bd;
+        font-size: .75rem;
+        margin-top: 6px;
+    }
     @media (max-width: 480px) {
         #lightboxOverlay .lightbox-prev { left: 4px; }
         #lightboxOverlay .lightbox-next { right: 4px; }
@@ -212,6 +265,16 @@
                         <option value="100" {% if limit == 100 %}selected{% endif %}>100 filas</option>
                     </select>
                 </div>
+
+                {% if session.get('role') in ['admin', 'almacen'] %}
+                <div class="col-6 col-md-2">
+                    <select name="estado_activo" class="form-select" onchange="document.getElementById('formFiltros').submit()">
+                        <option value="activos" {% if estado_activo == 'activos' %}selected{% endif %}>Solo Activos</option>
+                        <option value="inactivos" {% if estado_activo == 'inactivos' %}selected{% endif %}>Solo Inactivos</option>
+                        <option value="todos" {% if estado_activo == 'todos' %}selected{% endif %}>Todos (Activos + Inactivos)</option>
+                    </select>
+                </div>
+                {% endif %}
                 
                 <div class="col-6 col-md-6 col-lg-2 text-end">
                     <div class="form-check form-switch d-inline-block border rounded py-2 px-2 bg-light w-100 text-center">
@@ -332,20 +395,20 @@
     {% if pagination.pages > 1 %}
     <ul class="pagination pagination-sm mb-0 shadow-sm flex-wrap justify-content-center">
         <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
-            <a class="page-link" href="{{ url_for('inventario_importbolts', page=pagination.prev_num, busqueda=search, categoria=cat_filtro, calidad=calidad_filtro, stock_bajo=stock_bajo, per_page=limit) }}">Anterior</a>
+            <a class="page-link" href="{{ url_for('inventario_importbolts', page=pagination.prev_num, busqueda=search, categoria=cat_filtro, calidad=calidad_filtro, stock_bajo=stock_bajo, per_page=limit, estado_activo=estado_activo) }}">Anterior</a>
         </li>
         <li class="page-item disabled d-sm-none"><span class="page-link">{{ pagination.page }}</span></li>
         {% for page_num in pagination.iter_pages(left_edge=1, right_edge=1, left_current=1, right_current=1) %}
             {% if page_num %}
                 <li class="page-item d-none d-sm-block {% if page_num == pagination.page %}active{% endif %}">
-                    <a class="page-link" {% if page_num == pagination.page %}style="background-color: var(--theme-primary); border-color: var(--theme-primary); color: white;"{% endif %} href="{{ url_for('inventario_importbolts', page=page_num, busqueda=search, categoria=cat_filtro, calidad=calidad_filtro, stock_bajo=stock_bajo, per_page=limit) }}">{{ page_num }}</a>
+                    <a class="page-link" {% if page_num == pagination.page %}style="background-color: var(--theme-primary); border-color: var(--theme-primary); color: white;"{% endif %} href="{{ url_for('inventario_importbolts', page=page_num, busqueda=search, categoria=cat_filtro, calidad=calidad_filtro, stock_bajo=stock_bajo, per_page=limit, estado_activo=estado_activo) }}">{{ page_num }}</a>
                 </li>
             {% else %}
                 <li class="page-item disabled d-none d-sm-block"><span class="page-link">...</span></li>
             {% endif %}
         {% endfor %}
         <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
-            <a class="page-link" href="{{ url_for('inventario_importbolts', page=pagination.next_num, busqueda=search, categoria=cat_filtro, calidad=calidad_filtro, stock_bajo=stock_bajo, per_page=limit) }}">Siguiente</a>
+            <a class="page-link" href="{{ url_for('inventario_importbolts', page=pagination.next_num, busqueda=search, categoria=cat_filtro, calidad=calidad_filtro, stock_bajo=stock_bajo, per_page=limit, estado_activo=estado_activo) }}">Siguiente</a>
         </li>
     </ul>
     {% endif %}
@@ -574,18 +637,23 @@
                         <div class="col-6 col-md-3"><label class="form-label small">P. Caja</label><input id="edit_pcaja" type="number" step="0.01" name="p_caja" class="form-control"></div>
                     </div>
                     <div class="row g-2 mt-1">
-                        <div class="col-6">
+                        <div class="col-12 col-sm-6">
                             <label class="form-label small fw-bold text-muted">Peso Unitario (Kg)</label>
                             <div class="input-group input-group-sm">
                                 <input id="edit_peso_kg" type="number" step="0.001" name="peso_kg" class="form-control" min="0">
                                 <span class="input-group-text">Kg</span>
                             </div>
                         </div>
-                        <div class="col-6 d-flex align-items-end">
-                            <div class="form-check form-switch border rounded py-2 px-3 bg-light w-100 m-0">
-                                <input class="form-check-input" type="checkbox" id="edit_activo" name="activo" value="1" checked>
-                                <label class="form-check-label small fw-bold" for="edit_activo">Producto activo (visible para vendedores)</label>
-                            </div>
+                    </div>
+
+                    <div class="mt-3 p-3 rounded border" id="edit_activo_box" style="background:#f8f9fa;">
+                        <div class="form-check form-switch m-0">
+                            <input class="form-check-input" type="checkbox" id="edit_activo" name="activo" value="1" checked
+                                   style="width:2.5em; height:1.3em;" onchange="actualizarEstiloActivo()">
+                            <label class="form-check-label fw-bold ms-2" for="edit_activo" id="edit_activo_label">Producto Activo</label>
+                        </div>
+                        <div class="small text-muted mt-1" id="edit_activo_desc">
+                            Visible y disponible para venta por todos los vendedores.
                         </div>
                     </div>
                 </div>
@@ -892,7 +960,7 @@
             stock_min: stockMin
         };
         originalData.estado = estado;
-
+        actualizarEstiloActivo();
         new bootstrap.Modal(document.getElementById('modalEditar')).show();
     }
 
@@ -1720,6 +1788,24 @@ function toggleActivoProducto(prodId, origen) {
                 Swal.fire('Error', data.msg, 'error');
             }
         });
+}
+function actualizarEstiloActivo() {
+    const check = document.getElementById('edit_activo');
+    const box = document.getElementById('edit_activo_box');
+    const label = document.getElementById('edit_activo_label');
+    const desc = document.getElementById('edit_activo_desc');
+
+    if (check.checked) {
+        box.style.background = '#e8f5e9';
+        box.style.borderColor = '#a5d6a7';
+        label.innerText = 'Producto Activo';
+        desc.innerHTML = 'Visible y disponible para venta por todos los vendedores.';
+    } else {
+        box.style.background = '#f5f5f5';
+        box.style.borderColor = '#bdbdbd';
+        label.innerText = 'Producto Inactivo';
+        desc.innerHTML = '<i class="bi bi-eye-slash-fill"></i> Oculto para vendedores. No se puede vender, pero conserva su historial y stock.';
+    }
 }
 </script>
 {% endblock %}

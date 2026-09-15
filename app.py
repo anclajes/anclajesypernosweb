@@ -1927,13 +1927,22 @@ def inventario():
     cat_filtro = request.args.get('categoria', 'todos')
     calidad_filtro = request.args.get('calidad', 'todos')
     stock_bajo = request.args.get('stock_bajo') # Recibe 'on' o None
+    estado_activo = request.args.get('estado_activo', 'activos')  # activos | inactivos | todos
 
-    # 2. Query Base
     # 2. Query Base
     query = Product.query
 
-    if session.get('role') not in ['admin', 'almacen']:
+    puede_ver_inactivos = session.get('role') in ['admin', 'almacen']
+
+    if not puede_ver_inactivos:
         query = query.filter(Product.activo.is_(True))
+        estado_activo = 'activos'  # el vendedor nunca puede pedir otra cosa
+    else:
+        if estado_activo == 'activos':
+            query = query.filter(Product.activo.is_(True))
+        elif estado_activo == 'inactivos':
+            query = query.filter(Product.activo.is_(False))
+        # si es 'todos', no se filtra por activo
 
     if search:
         query = query.filter(or_(Product.nombre.ilike(f"%{search}%"), Product.sku.ilike(f"%{search}%")))
@@ -1981,7 +1990,8 @@ def inventario():
                            stock_bajo=stock_bajo, 
                            limit=per_page,
                            lista_estados=lista_estados,
-                           info_importacion=info_importacion) # <-- Pasado al HTML
+                           info_importacion=info_importacion,
+                           estado_activo=estado_activo)
                            
 
 # --- API: OBTENER SIGUIENTE SKU (Magia Automática) ---
@@ -5664,13 +5674,20 @@ def inventario_importbolts():
     cat_filtro = request.args.get('categoria', 'todos')
     calidad_filtro = request.args.get('calidad', 'todos')
     stock_bajo = request.args.get('stock_bajo')
+    estado_activo = request.args.get('estado_activo', 'activos')
 
-    # Apuntamos a la nueva tabla
-    # Apuntamos a la nueva tabla
     query = ProductImportBolts.query
 
-    if session.get('role') not in ['admin', 'almacen']:
+    puede_ver_inactivos = session.get('role') in ['admin', 'almacen']
+
+    if not puede_ver_inactivos:
         query = query.filter(ProductImportBolts.activo.is_(True))
+        estado_activo = 'activos'
+    else:
+        if estado_activo == 'activos':
+            query = query.filter(ProductImportBolts.activo.is_(True))
+        elif estado_activo == 'inactivos':
+            query = query.filter(ProductImportBolts.activo.is_(False))
 
     if search:
         query = query.filter(or_(ProductImportBolts.nombre.ilike(f"%{search}%"), ProductImportBolts.sku.ilike(f"%{search}%")))
@@ -5709,7 +5726,8 @@ def inventario_importbolts():
                            stock_bajo=stock_bajo, 
                            limit=per_page,
                            lista_estados=lista_estados,
-                           info_importacion=info_importacion)
+                           info_importacion=info_importacion,
+                           estado_activo=estado_activo)
     
 
 @app.route('/producto_importbolts/ajustar_stock', methods=['POST'])
@@ -6117,14 +6135,22 @@ def inventario_general():
     orden = request.args.get('orden', 'nombre')
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 30, type=int)
+    estado_activo = request.args.get('estado_activo', 'activos')
 
     resultados = []
 
     puede_ver_inactivos = session.get('role') in ['admin', 'almacen']
+    if not puede_ver_inactivos:
+        estado_activo = 'activos'
 
     if origen_filtro in ['todos', 'ANCLAJES']:
         q = Product.query.filter(Product.es_shadow_importbolts.isnot(True))
-        if not puede_ver_inactivos:
+        if puede_ver_inactivos:
+            if estado_activo == 'activos':
+                q = q.filter(Product.activo.is_(True))
+            elif estado_activo == 'inactivos':
+                q = q.filter(Product.activo.is_(False))
+        else:
             q = q.filter(Product.activo.is_(True))
         if busqueda:
             q = q.filter(or_(Product.nombre.ilike(f"%{busqueda}%"), Product.sku.ilike(f"%{busqueda}%")))
@@ -6137,7 +6163,12 @@ def inventario_general():
 
     if origen_filtro in ['todos', 'IMPORTBOLTS']:
         q2 = ProductImportBolts.query
-        if not puede_ver_inactivos:
+        if puede_ver_inactivos:
+            if estado_activo == 'activos':
+                q2 = q2.filter(ProductImportBolts.activo.is_(True))
+            elif estado_activo == 'inactivos':
+                q2 = q2.filter(ProductImportBolts.activo.is_(False))
+        else:
             q2 = q2.filter(ProductImportBolts.activo.is_(True))
         if busqueda:
             q2 = q2.filter(or_(ProductImportBolts.nombre.ilike(f"%{busqueda}%"), ProductImportBolts.sku.ilike(f"%{busqueda}%")))
@@ -6225,7 +6256,8 @@ def inventario_general():
                            total_paginas=total_paginas,
                            total=total,
                            inicio_rango=(inicio + 1 if total > 0 else 0),
-                           fin_rango=min(fin, total))
+                           fin_rango=min(fin, total),
+                           estado_activo=estado_activo)
 
 @app.route('/traslados_intercompany')
 def traslados_intercompany():

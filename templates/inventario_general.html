@@ -86,12 +86,65 @@
         #galeria_grid .foto-img-wrap { padding-top: 55%; }
     }
 
-    /* --- LIGHTBOX responsive --- */
-    #lightboxOverlay { padding: 10px; box-sizing: border-box; }
-    #lightboxOverlay img { max-width: 92vw; max-height: 68vh; }
-    #lightboxOverlay .lightbox-nav { width: 40px; height: 40px; font-size: 1.2rem; }
-    #lightboxOverlay .lightbox-close { top: 10px; right: 16px; font-size: 1.6rem; }
-    #lightboxOverlay .lightbox-caption { padding: 0 10px; font-size: .78rem; }
+    /* --- LIGHTBOX (base + responsive) --- */
+    #lightboxOverlay {
+        position: fixed; inset: 0;
+        background: rgba(0,0,0,.9);
+        z-index: 2000;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        padding: 10px;
+        box-sizing: border-box;
+    }
+    #lightboxOverlay.activo { display: flex; }
+    #lightboxOverlay img {
+        max-width: 92vw;
+        max-height: 68vh;
+        object-fit: contain;
+        border-radius: 8px;
+        box-shadow: 0 10px 40px rgba(0,0,0,.5);
+    }
+    #lightboxOverlay .lightbox-close {
+        position: absolute; top: 10px; right: 16px;
+        color: #fff; font-size: 1.6rem; cursor: pointer;
+        opacity: .8; z-index: 2010;
+    }
+    #lightboxOverlay .lightbox-close:hover { opacity: 1; }
+    #lightboxOverlay .lightbox-nav {
+        position: absolute; top: 50%; transform: translateY(-50%);
+        background: rgba(255,255,255,.12);
+        border: none; color: #fff;
+        width: 40px; height: 40px;
+        border-radius: 50%;
+        font-size: 1.2rem;
+        display: flex; align-items: center; justify-content: center;
+        cursor: pointer;
+        transition: background .15s ease;
+    }
+    #lightboxOverlay .lightbox-nav:hover { background: rgba(255,255,255,.25); }
+    #lightboxOverlay .lightbox-nav:disabled { opacity: .25; cursor: default; }
+    #lightboxOverlay .lightbox-prev { left: 16px; }
+    #lightboxOverlay .lightbox-next { right: 16px; }
+    #lightboxOverlay .lightbox-caption {
+        color: #f1f3f5;
+        margin-top: 14px;
+        text-align: center;
+        padding: 0 10px;
+        font-size: .78rem;
+    }
+    #lightboxOverlay .badge-user {
+        background: rgba(255,255,255,.12);
+        padding: 4px 10px;
+        border-radius: 20px;
+        margin: 0 4px;
+    }
+    #lightboxOverlay .lightbox-counter {
+        color: #adb5bd;
+        font-size: .75rem;
+        margin-top: 6px;
+    }
     @media (max-width: 480px) {
         #lightboxOverlay .lightbox-prev { left: 4px; }
         #lightboxOverlay .lightbox-next { right: 4px; }
@@ -159,6 +212,18 @@
                     <option value="100" {% if per_page == 100 %}selected{% endif %}>100</option>
                 </select>
             </div>
+
+            {% if session.get('role') in ['admin', 'almacen'] %}
+            <div class="col-6 col-md-2">
+                <label class="small fw-bold text-muted">Estado</label>
+                <select name="estado_activo" class="form-select" onchange="document.getElementById('formFiltrosGeneral').submit()">
+                    <option value="activos" {% if estado_activo == 'activos' %}selected{% endif %}>Solo Activos</option>
+                    <option value="inactivos" {% if estado_activo == 'inactivos' %}selected{% endif %}>Solo Inactivos</option>
+                    <option value="todos" {% if estado_activo == 'todos' %}selected{% endif %}>Todos</option>
+                </select>
+            </div>
+            {% endif %}
+
             <div class="col-6 col-md-2 d-flex align-items-center gap-2">
                 <div class="form-check form-switch border rounded py-2 px-2 bg-white w-100 text-center m-0">
                     <input class="form-check-input float-none ms-0 me-1" type="checkbox" name="stock_bajo" id="checkStockBajoGen"
@@ -244,27 +309,26 @@
         {% if total_paginas > 1 %}
         <ul class="pagination pagination-sm mb-0 flex-wrap justify-content-center">
             <li class="page-item {% if page <= 1 %}disabled{% endif %}">
-                <a class="page-link" href="{{ url_for('inventario_general', page=page-1, busqueda=busqueda, origen=origen_filtro, categoria=categoria_filtro, stock_bajo=stock_bajo, orden=orden, per_page=per_page) }}">Ant</a>
+                <a class="page-link" href="{{ url_for('inventario_general', page=page-1, busqueda=busqueda, origen=origen_filtro, categoria=categoria_filtro, calidad=calidad_filtro, stock_bajo=stock_bajo, orden=orden, per_page=per_page, estado_activo=estado_activo) }}">Ant</a>
             </li>
             {% set ventana = 2 %}
             {% for p_num in range(1, total_paginas + 1) %}
                 {% if p_num == 1 or p_num == total_paginas or (p_num >= page - ventana and p_num <= page + ventana) %}
                     <li class="page-item {% if p_num == page %}active{% endif %}">
-                        <a class="page-link" href="{{ url_for('inventario_general', page=p_num, busqueda=busqueda, origen=origen_filtro, categoria=categoria_filtro, stock_bajo=stock_bajo, orden=orden, per_page=per_page) }}">{{ p_num }}</a>
+                        <a class="page-link" href="{{ url_for('inventario_general', page=p_num, busqueda=busqueda, origen=origen_filtro, categoria=categoria_filtro, calidad=calidad_filtro, stock_bajo=stock_bajo, orden=orden, per_page=per_page, estado_activo=estado_activo) }}">{{ p_num }}</a>
                     </li>
                 {% elif p_num == page - ventana - 1 or p_num == page + ventana + 1 %}
                     <li class="page-item disabled"><span class="page-link">...</span></li>
                 {% endif %}
             {% endfor %}
             <li class="page-item {% if page >= total_paginas %}disabled{% endif %}">
-                <a class="page-link" href="{{ url_for('inventario_general', page=page+1, busqueda=busqueda, origen=origen_filtro, categoria=categoria_filtro, stock_bajo=stock_bajo, orden=orden, per_page=per_page) }}">Sig</a>
+                <a class="page-link" href="{{ url_for('inventario_general', page=page+1, busqueda=busqueda, origen=origen_filtro, categoria=categoria_filtro, calidad=calidad_filtro, stock_bajo=stock_bajo, orden=orden, per_page=per_page, estado_activo=estado_activo) }}">Sig</a>
             </li>
         </ul>
         {% endif %}
     </div>
 </div>
 
-<!-- MODAL GALERÍA -->
 <div class="modal fade" id="modalGaleria" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="modal-content">
@@ -273,23 +337,10 @@
                 <button class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                {% if session.get('role') in ['admin', 'almacen'] %}
-                <div id="galeria_dropzone" class="p-3 mb-3 text-center border rounded" style="border-style:dashed !important; background:#f8f9fa;">
-                    <i class="bi bi-cloud-arrow-up fs-3 text-muted d-block mb-2"></i>
-                    <label class="small fw-bold text-muted mb-2 d-block">Agregar foto (JPG, PNG o WEBP — máx. 5 por producto)</label>
-                    <div class="d-flex gap-2 justify-content-center flex-wrap">
-                        <input type="file" id="inputFotoArchivo" accept="image/jpeg,image/png,image/webp" class="form-control form-control-sm" style="max-width:220px;">
-                        <input type="file" id="inputFotoCamara" accept="image/*" capture="environment" class="d-none">
-                        <button class="btn btn-sm btn-outline-primary" onclick="document.getElementById('inputFotoCamara').click()">
-                            <i class="bi bi-camera-fill"></i> Tomar Foto
-                        </button>
-                        <button class="btn btn-sm btn-success" onclick="subirFotoSeleccionada()">
-                            <i class="bi bi-cloud-upload-fill"></i> Subir
-                        </button>
-                    </div>
-                    <div id="galeria_contador" class="small text-muted mt-2"></div>
+                <div class="alert alert-light border small py-2 mb-3">
+                    <i class="bi bi-info-circle-fill text-primary"></i>
+                    Vista de solo consulta. Para agregar o eliminar fotos, ve al inventario específico (Anclajes o Import Bolts).
                 </div>
-                {% endif %}
                 <div id="galeria_grid" class="row g-3"></div>
                 <div id="galeria_vacio" class="text-center text-muted py-5 d-none">
                     <i class="bi bi-image display-3 opacity-25"></i>
@@ -347,7 +398,6 @@ function cargarFotosGaleria() {
             }
 
             data.fotos.forEach((f, idx) => {
-                const esAdminAlmacen = {{ 'true' if session.get('role') in ['admin', 'almacen'] else 'false' }};
                 grid.innerHTML += `
                     <div class="col-6 col-md-4">
                         <div class="foto-card shadow-sm">
@@ -361,7 +411,6 @@ function cargarFotosGaleria() {
                                 </div>
                                 <div class="foto-acciones">
                                     <a href="${f.url}?download=1" class="btn btn-sm btn-outline-secondary" title="Descargar"><i class="bi bi-download"></i></a>
-                                    ${esAdminAlmacen ? `<button class="btn btn-sm btn-outline-danger" onclick="eliminarFoto(${f.id})" title="Eliminar"><i class="bi bi-trash"></i></button>` : ''}
                                 </div>
                             </div>
                         </div>
@@ -399,71 +448,6 @@ document.addEventListener('keydown', function(e) {
     if (e.key === 'ArrowRight') lightboxSiguiente();
     if (e.key === 'Escape') cerrarLightbox();
 });
-
-async function comprimirImagen(archivo, maxWidth = 1200, calidad = 0.8) {
-    try {
-        const bitmap = await createImageBitmap(archivo, { imageOrientation: 'from-image' });
-        const canvas = document.createElement('canvas');
-        let w = bitmap.width, h = bitmap.height;
-        if (w > maxWidth) { h = h * (maxWidth / w); w = maxWidth; }
-        canvas.width = w; canvas.height = h;
-        canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h);
-        return new Promise((resolve) => canvas.toBlob((blob) => resolve(blob), 'image/jpeg', calidad));
-    } catch (err) {
-        return new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                const img = new Image();
-                img.onload = () => {
-                    const canvas = document.createElement('canvas');
-                    let w = img.width, h = img.height;
-                    if (w > maxWidth) { h = h * (maxWidth / w); w = maxWidth; }
-                    canvas.width = w; canvas.height = h;
-                    canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-                    canvas.toBlob((blob) => resolve(blob), 'image/jpeg', calidad);
-                };
-                img.src = e.target.result;
-            };
-            reader.readAsDataURL(archivo);
-        });
-    }
-}
-
-async function subirFotoSeleccionada() {
-    const inputArchivo = document.getElementById('inputFotoArchivo');
-    const inputCamara = document.getElementById('inputFotoCamara');
-    const archivo = inputCamara.files[0] || inputArchivo.files[0];
-    if (!archivo) return Swal.fire('Falta imagen', 'Seleccione o tome una foto primero.', 'warning');
-    if (!archivo.type || !archivo.type.startsWith('image/')) {
-        return Swal.fire('Archivo no válido', 'Solo se permiten imágenes (JPG, PNG o WEBP).', 'error');
-    }
-    Swal.fire({ title: 'Subiendo...', didOpen: () => Swal.showLoading(), allowOutsideClick: false });
-    try {
-        const blobComprimido = await comprimirImagen(archivo);
-        let fd = new FormData();
-        fd.append('foto', blobComprimido, 'foto.jpg');
-        fd.append('origen', origenGaleriaActual);
-        const r = await fetch(`/api/producto/${productoGaleriaActual}/subir_foto`, { method: 'POST', body: fd });
-        const data = await r.json();
-        Swal.close();
-        if (data.status === 'success') { inputArchivo.value = ''; inputCamara.value = ''; cargarFotosGaleria(); }
-        else Swal.fire('No se pudo subir', data.msg, 'error');
-    } catch (err) {
-        Swal.close();
-        Swal.fire('Error', 'Ocurrió un problema al procesar la imagen.', 'error');
-    }
-}
-
-function eliminarFoto(fotoId) {
-    Swal.fire({ title: '¿Eliminar foto?', icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Sí, eliminar' })
-    .then((result) => {
-        if (!result.isConfirmed) return;
-        fetch(`/api/foto/${fotoId}/eliminar`, { method: 'POST' })
-            .then(r => r.json())
-            .then(data => { if (data.status === 'success') cargarFotosGaleria(); else Swal.fire('Error', data.msg, 'error'); });
-    });
-}
-
     function cambioOrigenGeneral(select) {
         const form = document.getElementById('formFiltrosGeneral');
         form.querySelector('[name="categoria"]').value = 'todos';
