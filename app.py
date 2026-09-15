@@ -5806,8 +5806,8 @@ def inventario_importbolts():
                            estado_activo=estado_activo)
     
 
-@app.route('/producto/ajustar_stock', methods=['POST'])
-def ajustar_stock():
+@app.route('/producto_importbolts/ajustar_stock', methods=['POST'])
+def ajustar_stock_importbolts():
     if session.get('role') not in ['admin', 'almacen']: return "No autorizado", 403
 
     prod_id = request.form['prod_id']
@@ -5825,7 +5825,7 @@ def ajustar_stock():
 
     if not motivo_texto:
         flash('⛔ Debe seleccionar un motivo.')
-        return redirect(url_origen or url_for('inventario'))
+        return redirect(url_origen or url_for('inventario_importbolts'))
 
     prod = ProductImportBolts.query.get(prod_id)
     stock_antes = prod.stock_actual
