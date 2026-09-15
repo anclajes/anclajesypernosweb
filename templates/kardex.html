@@ -1,6 +1,37 @@
 {% extends "base.html" %}
 
 {% block content %}
+<style>
+    .kardex-filtros-card { border-radius: 14px; }
+    .kardex-filtros-card .form-label {
+        font-size: .72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .03em;
+        color: #6c757d;
+        margin-bottom: 4px;
+    }
+    .kardex-filtros-card .form-select,
+    .kardex-filtros-card .form-control {
+        font-size: .85rem;
+    }
+    .kardex-filtros-grupo {
+        background: #f8f9fa;
+        border-radius: 10px;
+        padding: 10px 12px;
+        height: 100%;
+    }
+    .kardex-filtros-switches .form-check {
+        background: #fff;
+        border: 1px solid #e9ecef;
+        border-radius: 8px;
+        padding: 6px 10px 6px 34px;
+        margin-bottom: 6px;
+    }
+    .kardex-filtros-switches .form-check:last-child { margin-bottom: 0; }
+    .kardex-filtros-acciones .btn { white-space: nowrap; }
+</style>
+
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h2>📊 Kardex Anclajes y Pernos (Auditoría de Inventario)</h2>
     <div class="d-flex gap-2">
@@ -19,106 +50,121 @@
     </div>
 </div>
 
-<div class="card mb-4 bg-light border-0 shadow-sm">
-    <div class="card-body py-3">
-        <form method="GET">
-            <!-- FILA 1: Búsqueda y filtros principales -->
-            <div class="row g-2 align-items-end mb-2">
-                <div class="col-12 col-md-3">
-                    <label class="small fw-bold text-muted">Buscar</label>
-                    <input type="text" name="busqueda" class="form-control form-control-sm" 
-                        placeholder="Buscar por código, descripción, motivo o RUC del proveedor..." 
-                        value="{{ request.args.get('busqueda', '') }}">
+<div class="card shadow-sm border-0 kardex-filtros-card mb-3">
+    <div class="card-body">
+        <form method="GET" id="formFiltroKardex" class="row g-3">
+
+            <!-- BÚSQUEDA LIBRE -->
+            <div class="col-12 col-lg-4">
+                <div class="kardex-filtros-grupo">
+                    <label class="form-label"><i class="bi bi-search"></i> Búsqueda</label>
+                    <input type="text" name="busqueda" class="form-control form-control-sm"
+                           placeholder="Código, descripción, motivo o RUC..."
+                           value="{{ request.args.get('busqueda', '') }}">
                 </div>
+            </div>
 
-                <div class="col-6 col-md-3">
-                    <label class="small fw-bold text-muted">Categoría</label>
-                    <select name="categoria" class="form-select form-select-sm">
+            <!-- FAMILIA -> CALIDAD (cascada) -->
+            <div class="col-6 col-lg-2">
+                <div class="kardex-filtros-grupo">
+                    <label class="form-label"><i class="bi bi-tags"></i> Familia</label>
+                    <select name="categoria" id="filtro_familia_kardex" class="form-select form-select-sm"
+                            onchange="document.getElementById('formFiltroKardex').submit()">
                         <option value="todas">Todas</option>
-                        {% for c in categorias %}
-                        <option value="{{ c.nombre }}" {% if request.args.get('categoria') == c.nombre %}selected{% endif %}>
-                            {{ c.nombre }}
-                        </option>
-                        {% endfor %}
-                    </select>
-
-                    <select name="categoria" id="filtro_familia_kardex" class="form-select form-select-sm" onchange="document.getElementById('formFiltroKardex').submit()">
-                        <option value="todas">-- Todas las Familias --</option>
                         {% for cat in categorias %}
-                        <option value="{{ cat.nombre }}" {% if request.args.get('categoria') == cat.nombre %}selected{% endif %}>{{ cat.nombre }}</option>
+                        <option value="{{ cat.nombre }}" {% if cat_filtro == cat.nombre %}selected{% endif %}>{{ cat.nombre }}</option>
                         {% endfor %}
                     </select>
+                </div>
+            </div>
 
-                    <select name="calidad" id="filtro_calidad_kardex" class="form-select form-select-sm" onchange="document.getElementById('formFiltroKardex').submit()">
-                        <option value="todas">-- Todas las Calidades --</option>
+            <div class="col-6 col-lg-2">
+                <div class="kardex-filtros-grupo">
+                    <label class="form-label"><i class="bi bi-gem"></i> Calidad</label>
+                    <select name="calidad" id="filtro_calidad_kardex" class="form-select form-select-sm"
+                            onchange="document.getElementById('formFiltroKardex').submit()">
+                        <option value="todas">Todas</option>
                         {% for cal in lista_calidades_kardex %}
-                        <option value="{{ cal }}" {% if request.args.get('calidad') == cal %}selected{% endif %}>{{ cal }}</option>
+                        <option value="{{ cal }}" {% if calidad_filtro == cal %}selected{% endif %}>{{ cal }}</option>
                         {% endfor %}
                     </select>
+                    {% if cat_filtro != 'todas' %}
+                    <div class="form-text small mt-1 mb-0" style="font-size:.68rem;">
+                        <i class="bi bi-info-circle"></i> Solo calidades de "{{ cat_filtro }}"
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
 
-                    <select name="proveedor" class="form-select form-select-sm" onchange="this.form.submit()">
-                        <option value="todos">-- Todos los Proveedores --</option>
+            <!-- PROVEEDOR -->
+            <div class="col-12 col-lg-4">
+                <div class="kardex-filtros-grupo">
+                    <label class="form-label"><i class="bi bi-truck"></i> Proveedor</label>
+                    <select name="proveedor" class="form-select form-select-sm" onchange="document.getElementById('formFiltroKardex').submit()">
+                        <option value="todos">Todos</option>
                         {% for ruc, razon in proveedores_con_movimientos %}
                         <option value="{{ ruc }}" {% if request.args.get('proveedor') == ruc %}selected{% endif %}>{{ razon }} ({{ ruc }})</option>
                         {% endfor %}
                     </select>
                 </div>
+            </div>
 
-                <div class="col-6 col-md-2">
-                    <label class="small fw-bold text-muted">Tipo Mov.</label>
-                    <select name="tipo" class="form-select form-select-sm fw-bold text-primary">
-                        <option value="" class="text-dark">-- Todos --</option>
-                        <option value="ENTRADA" class="text-success" {% if request.args.get('tipo') == 'ENTRADA' %}selected{% endif %}>
-                            ➕ ENTRADAS
-                        </option>
-                        <option value="SALIDA" class="text-danger" {% if request.args.get('tipo') == 'SALIDA' %}selected{% endif %}>
-                            ➖ SALIDAS
-                        </option>
+            <!-- TIPO DE MOVIMIENTO -->
+            <div class="col-6 col-lg-2">
+                <div class="kardex-filtros-grupo">
+                    <label class="form-label"><i class="bi bi-arrow-left-right"></i> Tipo</label>
+                    <select name="tipo" class="form-select form-select-sm" onchange="document.getElementById('formFiltroKardex').submit()">
+                        <option value="" {% if not request.args.get('tipo') %}selected{% endif %}>Todos</option>
+                        <option value="ENTRADA" {% if request.args.get('tipo') == 'ENTRADA' %}selected{% endif %}>➕ Ingresos</option>
+                        <option value="SALIDA" {% if request.args.get('tipo') == 'SALIDA' %}selected{% endif %}>➖ Salidas</option>
                     </select>
                 </div>
+            </div>
 
-                <div class="col-6 col-md-2">
-                    <label class="small fw-bold text-muted">Desde</label>
+            <!-- FECHAS -->
+            <div class="col-6 col-lg-2">
+                <div class="kardex-filtros-grupo">
+                    <label class="form-label"><i class="bi bi-calendar-event"></i> Desde</label>
                     <input type="date" name="fecha_inicio" class="form-control form-control-sm" value="{{ request.args.get('fecha_inicio', '') }}">
                 </div>
-                <div class="col-6 col-md-2">
-                    <label class="small fw-bold text-muted">Hasta</label>
+            </div>
+            <div class="col-6 col-lg-2">
+                <div class="kardex-filtros-grupo">
+                    <label class="form-label"><i class="bi bi-calendar-check"></i> Hasta</label>
                     <input type="date" name="fecha_fin" class="form-control form-control-sm" value="{{ request.args.get('fecha_fin', '') }}">
                 </div>
             </div>
 
-            <!-- FILA 2: Switches y acciones, ahora con espacio propio -->
-            <div class="row g-2 align-items-center pt-2 border-top">
-                <div class="col-12 col-md-auto">
-                    <div class="form-check form-switch d-inline-flex align-items-center bg-white border rounded px-3 py-2 shadow-sm">
-                        <input class="form-check-input ms-0 me-2" type="checkbox" name="ocultar_iniciales" id="checkIniciales" 
-                               onchange="this.form.submit()" {% if request.args.get('ocultar_iniciales') == 'on' %}checked{% endif %}>
-                        <label class="form-check-label small text-muted fw-bold mb-0" for="checkIniciales">Ocultar Saldo Inicial</label>
+            <!-- SWITCHES -->
+            <div class="col-12 col-lg-4">
+                <div class="kardex-filtros-grupo kardex-filtros-switches">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" role="switch" id="ocultarIniciales"
+                               name="ocultar_iniciales" {% if request.args.get('ocultar_iniciales') == 'on' %}checked{% endif %}
+                               onchange="document.getElementById('formFiltroKardex').submit()">
+                        <label class="form-check-label small" for="ocultarIniciales">Ocultar saldos iniciales</label>
                     </div>
-                </div>
-
-                <div class="col-12 col-md-auto">
-                    <div class="form-check form-switch d-inline-flex align-items-center bg-white border rounded px-3 py-2 shadow-sm" 
-                         style="border-color:#6f42c1 !important;">
-                        <input class="form-check-input ms-0 me-2" type="checkbox" name="solo_interempresa" id="checkInterempresa" 
-                               onchange="this.form.submit()" {% if request.args.get('solo_interempresa') == 'on' %}checked{% endif %}>
-                        <label class="form-check-label small fw-bold mb-0" for="checkInterempresa" style="color:#6f42c1;">
-                            <i class="bi bi-arrow-left-right"></i> Solo Inter-Empresa
-                        </label>
-                    </div>
-                </div>
-
-                <div class="col-12 col-md-auto ms-md-auto">
-                    <div class="d-flex gap-2">
-                        <button type="submit" class="btn btn-primary btn-sm px-3" title="Aplicar Filtros">
-                            <i class="bi bi-filter"></i> Filtrar
-                        </button>
-                        <a href="{{ url_for('ver_kardex') }}" class="btn btn-outline-secondary btn-sm px-3" title="Limpiar Filtros">
-                            <i class="bi bi-x-lg"></i> Limpiar
-                        </a>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" role="switch" id="soloInterempresa"
+                               name="solo_interempresa" {% if request.args.get('solo_interempresa') == 'on' %}checked{% endif %}
+                               onchange="document.getElementById('formFiltroKardex').submit()">
+                        <label class="form-check-label small" for="soloInterempresa">Solo movimientos Inter-Empresa</label>
                     </div>
                 </div>
             </div>
+
+            <!-- ACCIONES -->
+            <div class="col-12 col-lg-2 d-flex align-items-end kardex-filtros-acciones">
+                <div class="d-flex gap-2 w-100">
+                    <button type="submit" class="btn btn-sm fw-bold flex-fill text-white" style="background-color: var(--theme-primary);">
+                        <i class="bi bi-funnel-fill"></i> Filtrar
+                    </button>
+                    <a href="{{ url_for(request.endpoint) }}" class="btn btn-sm btn-outline-secondary flex-fill">
+                        <i class="bi bi-x-circle"></i> Limpiar
+                    </a>
+                </div>
+            </div>
+
         </form>
     </div>
 </div>
@@ -211,18 +257,16 @@
         <nav aria-label="Navegación">
             <ul class="pagination justify-content-center mb-0 pagination-sm">
                 <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
-                    <a class="page-link" href="{{ url_for('ver_kardex', page=pagination.prev_num, busqueda=request.args.get('busqueda',''), categoria=request.args.get('categoria','todas'), calidad=request.args.get('calidad','todas'), proveedor=request.args.get('proveedor','todos'), tipo=request.args.get('tipo',''), fecha_inicio=request.args.get('fecha_inicio',''), fecha_fin=request.args.get('fecha_fin',''), ocultar_iniciales=request.args.get('ocultar_iniciales',''), solo_interempresa=request.args.get('solo_interempresa','')) }}">Anterior</a>
+                    <a class="page-link" href="{{ url_for('ver_kardex', page=pagination.prev_num, busqueda=request.args.get('busqueda',''), categoria=cat_filtro, calidad=calidad_filtro, proveedor=request.args.get('proveedor','todos'), tipo=request.args.get('tipo',''), fecha_inicio=request.args.get('fecha_inicio',''), fecha_fin=request.args.get('fecha_fin',''), ocultar_iniciales=request.args.get('ocultar_iniciales',''), solo_interempresa=request.args.get('solo_interempresa','')) }}">Anterior</a>
                 </li>
-                
                 <li class="page-item disabled">
                     <span class="page-link text-muted">
-                        Pág. <strong>{{ pagination.page }}</strong> de {{ pagination.pages }} 
+                        Pág. <strong>{{ pagination.page }}</strong> de {{ pagination.pages }}
                         <span class="mx-1">|</span> Total: {{ pagination.total }} movs.
                     </span>
                 </li>
-                
                 <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
-                    <a class="page-link" href="{{ url_for('ver_kardex', page=pagination.next_num, busqueda=request.args.get('busqueda',''), categoria=request.args.get('categoria','todas'), calidad=request.args.get('calidad','todas'), proveedor=request.args.get('proveedor','todos'), tipo=request.args.get('tipo',''), fecha_inicio=request.args.get('fecha_inicio',''), fecha_fin=request.args.get('fecha_fin',''), ocultar_iniciales=request.args.get('ocultar_iniciales',''), solo_interempresa=request.args.get('solo_interempresa','')) }}">Siguiente</a>
+                    <a class="page-link" href="{{ url_for('ver_kardex', page=pagination.next_num, busqueda=request.args.get('busqueda',''), categoria=cat_filtro, calidad=calidad_filtro, proveedor=request.args.get('proveedor','todos'), tipo=request.args.get('tipo',''), fecha_inicio=request.args.get('fecha_inicio',''), fecha_fin=request.args.get('fecha_fin',''), ocultar_iniciales=request.args.get('ocultar_iniciales',''), solo_interempresa=request.args.get('solo_interempresa','')) }}">Siguiente</a>
                 </li>
             </ul>
         </nav>

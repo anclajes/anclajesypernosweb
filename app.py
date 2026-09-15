@@ -4502,32 +4502,32 @@ def ver_kardex():
             )
         )
 
-    # 2. Filtro por Categoría
-    cat_nombre = request.args.get('categoria')
+    # 2. Filtro por Familia/Categoría
+    cat_nombre = request.args.get('categoria', 'todas')
     if cat_nombre and cat_nombre != 'todas':
         query = query.filter(Product.categoria == cat_nombre)
 
-    # 2.5 Filtro por Calidad
-    calidad_nombre = request.args.get('calidad')
+    # 3. Filtro por Calidad (dependiente de la Familia elegida)
+    calidad_nombre = request.args.get('calidad', 'todas')
     if calidad_nombre and calidad_nombre != 'todas':
         query = query.filter(Product.calidad == calidad_nombre)
 
-    # 2.6 Filtro por Proveedor específico (dropdown, por RUC exacto)
-    proveedor_filtro = request.args.get('proveedor')
+    # 4. Filtro por Proveedor
+    proveedor_filtro = request.args.get('proveedor', 'todos')
     if proveedor_filtro and proveedor_filtro != 'todos':
         query = query.filter(ProductMovement.ruc_proveedor == proveedor_filtro)
 
-    # 3. Filtro por Tipo (Entrada/Salida)
-    tipo_mov = request.args.get('tipo')
+    # 5. Filtro por Tipo (Entrada/Salida)
+    tipo_mov = request.args.get('tipo', '')
     if tipo_mov and tipo_mov in ['ENTRADA', 'SALIDA']:
         query = query.filter(ProductMovement.tipo == tipo_mov)
 
-    # 4. Ocultar saldos iniciales
+    # 6. Ocultar saldos iniciales
     ocultar_iniciales = request.args.get('ocultar_iniciales')
     if ocultar_iniciales == 'on':
         query = query.filter(~ProductMovement.motivo.ilike('%Inicial%'))
 
-    # 5. Filtro por Rango de Fechas
+    # 7. Filtro por Rango de Fechas
     fecha_inicio = request.args.get('fecha_inicio')
     fecha_fin = request.args.get('fecha_fin')
     if fecha_inicio and fecha_fin:
@@ -4535,6 +4535,7 @@ def ver_kardex():
         end = datetime.strptime(fecha_fin + " 23:59:59", '%Y-%m-%d %H:%M:%S')
         query = query.filter(ProductMovement.fecha.between(start, end))
 
+    # 8. Solo movimientos Inter-Empresa
     solo_interempresa = request.args.get('solo_interempresa')
     if solo_interempresa == 'on':
         query = query.filter(
@@ -4544,34 +4545,35 @@ def ver_kardex():
             )
         )
 
-    # --- PAGINACIÓN ---
     query = query.order_by(ProductMovement.fecha.desc())
 
     page = request.args.get('page', 1, type=int)
     per_page = 25
     pagination = query.paginate(page=page, per_page=per_page, error_out=False)
-
     movimientos = pagination.items
-    categorias = Category.query.all()
 
-    # Listas para los nuevos filtros
-    proveedores_con_movimientos = db.session.query(
-        ProductMovement.ruc_proveedor, ProductMovement.razon_social_proveedor
-    ).filter(ProductMovement.ruc_proveedor.isnot(None)).distinct().order_by(ProductMovement.razon_social_proveedor).all()
+    categorias = Category.query.order_by(Category.nombre).all()
 
-    query_calidades_kardex = db.session.query(Product.calidad).filter(
+    # --- Calidades dependientes de la Familia seleccionada ---
+    query_calidades = db.session.query(Product.calidad).filter(
         Product.calidad.isnot(None), Product.calidad != ''
     )
     if cat_nombre and cat_nombre != 'todas':
-        query_calidades_kardex = query_calidades_kardex.filter(Product.categoria == cat_nombre)
-    lista_calidades_kardex = [c[0] for c in query_calidades_kardex.distinct().order_by(Product.calidad).all()]
+        query_calidades = query_calidades.filter(Product.categoria == cat_nombre)
+    lista_calidades_kardex = [c[0] for c in query_calidades.distinct().order_by(Product.calidad).all()]
+
+    proveedores_con_movimientos = db.session.query(
+        ProductMovement.ruc_proveedor, ProductMovement.razon_social_proveedor
+    ).filter(ProductMovement.ruc_proveedor.isnot(None)).distinct().order_by(ProductMovement.razon_social_proveedor).all()
 
     return render_template('kardex.html',
                            movimientos=movimientos,
                            categorias=categorias,
                            pagination=pagination,
                            proveedores_con_movimientos=proveedores_con_movimientos,
-                           lista_calidades_kardex=lista_calidades_kardex)
+                           lista_calidades_kardex=lista_calidades_kardex,
+                           cat_filtro=cat_nombre,
+                           calidad_filtro=calidad_nombre)   
 
 
 
@@ -6353,19 +6355,19 @@ def ver_kardex_importbolts():
             )
         )
 
-    cat_nombre = request.args.get('categoria')
+    cat_nombre = request.args.get('categoria', 'todas')
     if cat_nombre and cat_nombre != 'todas':
         query = query.filter(ProductImportBolts.categoria == cat_nombre)
 
-    calidad_nombre = request.args.get('calidad')
+    calidad_nombre = request.args.get('calidad', 'todas')
     if calidad_nombre and calidad_nombre != 'todas':
         query = query.filter(ProductImportBolts.calidad == calidad_nombre)
 
-    proveedor_filtro = request.args.get('proveedor')
+    proveedor_filtro = request.args.get('proveedor', 'todos')
     if proveedor_filtro and proveedor_filtro != 'todos':
         query = query.filter(ProductMovementImportBolts.ruc_proveedor == proveedor_filtro)
 
-    tipo_mov = request.args.get('tipo')
+    tipo_mov = request.args.get('tipo', '')
     if tipo_mov and tipo_mov in ['ENTRADA', 'SALIDA']:
         query = query.filter(ProductMovementImportBolts.tipo == tipo_mov)
 
@@ -6394,27 +6396,29 @@ def ver_kardex_importbolts():
     page = request.args.get('page', 1, type=int)
     per_page = 25
     pagination = query.paginate(page=page, per_page=per_page, error_out=False)
-
     movimientos = pagination.items
-    categorias = CategoryImportBolts.query.all()
+
+    categorias = CategoryImportBolts.query.order_by(CategoryImportBolts.nombre).all()
+
+    query_calidades = db.session.query(ProductImportBolts.calidad).filter(
+        ProductImportBolts.calidad.isnot(None), ProductImportBolts.calidad != ''
+    )
+    if cat_nombre and cat_nombre != 'todas':
+        query_calidades = query_calidades.filter(ProductImportBolts.categoria == cat_nombre)
+    lista_calidades_kardex = [c[0] for c in query_calidades.distinct().order_by(ProductImportBolts.calidad).all()]
 
     proveedores_con_movimientos = db.session.query(
         ProductMovementImportBolts.ruc_proveedor, ProductMovementImportBolts.razon_social_proveedor
     ).filter(ProductMovementImportBolts.ruc_proveedor.isnot(None)).distinct().order_by(ProductMovementImportBolts.razon_social_proveedor).all()
-
-    query_calidades_kardex = db.session.query(ProductImportBolts.calidad).filter(
-        ProductImportBolts.calidad.isnot(None), ProductImportBolts.calidad != ''
-    )
-    if cat_nombre and cat_nombre != 'todas':
-        query_calidades_kardex = query_calidades_kardex.filter(ProductImportBolts.categoria == cat_nombre)
-    lista_calidades_kardex = [c[0] for c in query_calidades_kardex.distinct().order_by(ProductImportBolts.calidad).all()]
 
     return render_template('kardex_importbolts.html',
                            movimientos=movimientos,
                            categorias=categorias,
                            pagination=pagination,
                            proveedores_con_movimientos=proveedores_con_movimientos,
-                           lista_calidades_kardex=lista_calidades_kardex)
+                           lista_calidades_kardex=lista_calidades_kardex,
+                           cat_filtro=cat_nombre,
+                           calidad_filtro=calidad_nombre)
 
 @app.route('/inventario_general')
 def inventario_general():
