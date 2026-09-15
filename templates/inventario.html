@@ -160,6 +160,29 @@
         #lightboxOverlay .lightbox-next { right: 4px; }
         #lightboxOverlay .lightbox-nav { width: 36px; height: 36px; }
     }
+
+        /* --- FIX: modal de Kardex con <form> envolviendo header+body+footer --- */
+    #modalStock .modal-content {
+        display: flex;
+        flex-direction: column;
+        max-height: 90vh;
+        overflow: hidden;
+    }
+    #modalStock .modal-content form {
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        min-height: 0; /* imprescindible para que el hijo flex pueda encogerse y activar el scroll interno */
+    }
+    #modalStock .modal-body {
+        overflow-y: auto;
+        flex: 1 1 auto;
+        min-height: 0;
+    }
+    #modalStock .modal-header,
+    #modalStock .modal-footer {
+        flex-shrink: 0;
+    }
 </style>
 
 <div class="card shadow-sm border-0 mb-4" style="border-left: 6px solid var(--theme-primary) !important;">
