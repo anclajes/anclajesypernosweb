@@ -7561,49 +7561,6 @@ def admin_auditorias_detalle(reg_id):
     return render_template('admin_auditorias_detalle.html', registro=registro, prod_actual=prod_actual)
 
 
-@app.route('/admin/auditorias/<int:reg_id>/desbloquear', methods=['POST'])
-def admin_auditoria_desbloquear(reg_id):
-    if session.get('role') not in ['admin', 'administracion']: return {'status': 'error'}, 403
-    registro = RegistroAuditoria.query.get_or_404(reg_id)
-    if registro.estado_registro == 'APLICADO':
-        return {'status': 'error', 'msg': 'No se puede desbloquear un registro ya aplicado al inventario.'}
-    registro.bloqueado = False
-    registrar_log_auditoria(registro, 'DESBLOQUEADO', f"Desbloqueado por {session.get('nombre')} para edición.")
-    db.session.commit()
-    return {'status': 'success', 'msg': 'Registro desbloqueado. Ya puede editarlo.'}
-
-
-@app.route('/admin/auditorias/<int:reg_id>/editar', methods=['POST'])
-def admin_auditoria_editar(reg_id):
-    if session.get('role') not in ['admin', 'administracion']: return {'status': 'error'}, 403
-    registro = RegistroAuditoria.query.get_or_404(reg_id)
-
-    if registro.bloqueado:
-        return {'status': 'error', 'msg': 'Debe desbloquear el registro antes de editarlo.'}
-
-    campos = ['anaquel', 'nicho', 'num_cajas', 'peso_promedio_20u',
-              'num_bolsas', 'cantidad_total', 'unidad_medida', 'estado_fisico', 'observaciones']
-    antes = {c: getattr(registro, c) for c in campos}
-
-    registro.anaquel = request.form.get('anaquel', '').strip() or None
-    registro.nicho = request.form.get('nicho', '').strip() or None
-    registro.num_cajas = int(request.form.get('num_cajas') or 0)
-    registro.peso_promedio_20u = float(request.form.get('peso_promedio_20u') or 0)
-    registro.num_bolsas = int(request.form.get('num_bolsas') or 0)
-    registro.cantidad_total = int(request.form.get('cantidad_total'))
-    registro.unidad_medida = request.form.get('unidad_medida')
-    registro.estado_fisico = request.form.get('estado_fisico')
-    registro.observaciones = request.form.get('observaciones', '').strip()
-
-    despues = {c: getattr(registro, c) for c in campos}
-    detalle = comparar_cambios(antes, despues)
-
-    registro.bloqueado = True
-    registrar_log_auditoria(registro, 'EDITADO', f"{session.get('nombre')} editó: {detalle}")
-    db.session.commit()
-    return {'status': 'success', 'msg': 'Registro actualizado y bloqueado nuevamente.'}
-
-
 @app.route('/admin/auditorias/<int:reg_id>/rechazar', methods=['POST'])
 def admin_auditoria_rechazar(reg_id):
     if session.get('role') not in ['admin', 'administracion']: return {'status': 'error'}, 403

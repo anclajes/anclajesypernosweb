@@ -347,6 +347,14 @@
                                 <i class="bi bi-exclamation-triangle-fill"></i> {{ p.estado }}
                             </span>
                         {% endif %}
+                        {% if p.ultimo_ajuste_auditoria_fecha %}
+                            <br>
+                            <span class="badge bg-purple text-white mt-1 shadow-sm" style="font-size: 0.65rem; background-color:#6f42c1;"
+                                  title="Contado por {{ p.ultimo_ajuste_auditoria_conteo_por }}, aplicado por {{ p.ultimo_ajuste_auditoria_por }}">
+                                <i class="bi bi-clipboard2-check-fill"></i> Auditado: {{ p.ultimo_ajuste_auditoria_fecha.strftime('%d/%m/%Y %H:%M') }}
+                            </span>
+                        {% endif %}
+                    </td>
                     </td>
                     <td><span class="badge bg-light text-dark border">{{ p.categoria }}</span></td>
                     <td class="text-nowrap text-muted">{% if p.ubicacion %}<i class="bi bi-geo-alt-fill text-danger small"></i> {{ p.ubicacion }}{% else %}-{% endif %}</td>
