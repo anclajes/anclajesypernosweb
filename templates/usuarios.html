@@ -58,6 +58,8 @@
                             <span class="badge bg-dark mb-1"><i class="bi bi-shield-lock-fill"></i> Gerencia</span>
                         {% elif u.role == 'administracion' %}
                             <span class="badge bg-warning text-dark mb-1"><i class="bi bi-graph-up"></i> Admin</span>
+                        {% elif u.role == 'auditor_stock' %}
+                            <span class="badge bg-purple text-white mb-1" style="background-color:#6f42c1;"><i class="bi bi-clipboard2-check-fill"></i> Auditor Stock</span>
                         {% elif u.role == 'vendedor' %}
                             <span class="badge bg-success mb-1"><i class="bi bi-shop"></i> Ventas</span>
                         {% elif u.role == 'almacen' %}
@@ -173,6 +175,7 @@
                             <option value="almacen">Jefe de Almacén</option>
                             <option value="chofer">Chofer / Transportista</option>
                             <option value="administracion">Administración</option>
+                            <option value="auditor_stock">Auditor de Stock (Conteo Físico)</option>
                             <option value="admin">Gerencia Total (Admin)</option>
                         </select>
                         <div id="adminWarning" class="form-text text-warning d-none">

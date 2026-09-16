@@ -53,6 +53,8 @@ class Product(db.Model):
     shadow_origen_sku = db.Column(db.String(50), nullable=True)
     peso_kg = db.Column(db.Float, default=0.0)  # Peso unitario en Kilogramos
     activo = db.Column(db.Boolean, default=True, nullable=False)  # Desactivar en vez de eliminar
+    ultimo_ajuste_auditoria_fecha = db.Column(db.DateTime, nullable=True)
+    ultimo_ajuste_auditoria_por = db.Column(db.String(100), nullable=True)
 
 # --- 4. KARDEX ---
 class ProductMovement(db.Model):
@@ -410,6 +412,8 @@ class ProductImportBolts(db.Model):
     actualizado_por = db.Column(db.String(100), nullable=True) 
     peso_kg = db.Column(db.Float, default=0.0)  # Peso unitario en Kilogramos
     activo = db.Column(db.Boolean, default=True, nullable=False)  # Desactivar en vez de eliminar
+    ultimo_ajuste_auditoria_fecha = db.Column(db.DateTime, nullable=True)
+    ultimo_ajuste_auditoria_por = db.Column(db.String(100), nullable=True)
 
 class ProductMovementImportBolts(db.Model):
     __tablename__ = 'product_movement_importbolts'
@@ -519,3 +523,84 @@ class Presentacion(db.Model):
     nombre = db.Column(db.String(50), unique=True, nullable=False)
     activo = db.Column(db.Boolean, default=True)
     es_predeterminado = db.Column(db.Boolean, default=False)
+
+# --- MÓDULO DE AUDITORÍA / CONTEO FÍSICO ---
+
+class CondicionFisica(db.Model):
+    """Catálogo editable de estados físicos (Oxidado, Rosca Sucia, Habilitado/Blanco...).
+    El admin puede agregar más desde el panel."""
+    __tablename__ = 'condicion_fisica'
+    id = db.Column(db.Integer, primary_key=True)
+    nombre = db.Column(db.String(100), unique=True, nullable=False)
+    activo = db.Column(db.Boolean, default=True)
+    creado_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    creado_en = db.Column(db.DateTime, default=hora_peru)
+
+    creado_por = db.relationship('User')
+
+
+class RegistroAuditoria(db.Model):
+    """Un conteo físico enviado por un trabajador para un producto específico."""
+    __tablename__ = 'registro_auditoria'
+    id = db.Column(db.Integer, primary_key=True)
+
+    origen_inventario = db.Column(db.String(20), nullable=False)  # ANCLAJES / IMPORTBOLTS
+    trabajador_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    fecha_registro = db.Column(db.DateTime, default=hora_peru)
+
+    product_id = db.Column(db.Integer, db.ForeignKey('product.id'), nullable=True)
+    product_importbolts_id = db.Column(db.Integer, db.ForeignKey('product_importbolts.id'), nullable=True)
+
+    # Snapshot descriptivo (por si el producto se edita/renombra después)
+    sku_snapshot = db.Column(db.String(50))
+    nombre_snapshot = db.Column(db.String(500))
+    familia = db.Column(db.String(200))
+    calidad = db.Column(db.String(200))
+
+    ubicacion_tipo = db.Column(db.String(20))    # ANAQUEL / NICHO
+    ubicacion_valor = db.Column(db.String(20))   # "23" / "A5" / "H3"
+
+    num_cajas = db.Column(db.Integer, default=0)
+    peso_promedio_20u = db.Column(db.Float, default=0.0)
+    num_bolsas = db.Column(db.Integer, default=0)
+    cantidad_total = db.Column(db.Integer, nullable=False)
+    unidad_medida = db.Column(db.String(20), default='UN')
+    estado_fisico = db.Column(db.String(100))
+    observaciones = db.Column(db.Text)
+
+    # Conteo CIEGO: el trabajador nunca lo ve. Se guarda solo para que el admin compare.
+    stock_sistema_snapshot = db.Column(db.Integer)
+
+    estado_registro = db.Column(db.String(20), default='PENDIENTE')  # PENDIENTE, APROBADO, RECHAZADO, APLICADO
+    bloqueado = db.Column(db.Boolean, default=True)
+    motivo_rechazo = db.Column(db.Text)
+
+    revisado_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    fecha_revision = db.Column(db.DateTime, nullable=True)
+
+    aplicado_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    fecha_aplicacion = db.Column(db.DateTime, nullable=True)
+
+    trabajador = db.relationship('User', foreign_keys=[trabajador_id])
+    revisado_por = db.relationship('User', foreign_keys=[revisado_por_id])
+    aplicado_por = db.relationship('User', foreign_keys=[aplicado_por_id])
+    product = db.relationship('Product')
+    product_importbolts = db.relationship('ProductImportBolts')
+
+    @property
+    def producto(self):
+        return self.product_importbolts if self.origen_inventario == 'IMPORTBOLTS' else self.product
+
+
+class RegistroAuditoriaLog(db.Model):
+    """Bitácora de todo lo que pasa con un registro: creado, editado, aprobado, rechazado, aplicado."""
+    __tablename__ = 'registro_auditoria_log'
+    id = db.Column(db.Integer, primary_key=True)
+    registro_id = db.Column(db.Integer, db.ForeignKey('registro_auditoria.id'), nullable=False)
+    accion = db.Column(db.String(30), nullable=False)  # CREADO, EDITADO, DESBLOQUEADO, APROBADO, RECHAZADO, APLICADO
+    detalle = db.Column(db.Text)  # texto legible: "cantidad_total: 120 -> 115"
+    realizado_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    fecha = db.Column(db.DateTime, default=hora_peru)
+
+    realizado_por = db.relationship('User')
+    registro = db.relationship('RegistroAuditoria', backref=db.backref('logs', order_by='RegistroAuditoriaLog.fecha.desc()'))

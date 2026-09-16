@@ -1,0 +1,227 @@
+{% extends "base.html" %}
+{% block title %}Nuevo Conteo{% endblock %}
+{% block subtitle %}{{ origen }}{% endblock %}
+
+{% block content %}
+<div class="card border-0 shadow-sm mx-auto" style="max-width: 750px;">
+    <div class="card-header text-white fw-bold" style="background-color: {{ '#004b87' if origen == 'IMPORTBOLTS' else '#0B3D91' }};">
+        <i class="bi bi-clipboard2-check-fill"></i> Registro de Conteo Físico — {{ origen }}
+    </div>
+    <div class="card-body p-4">
+        <div class="alert alert-light border small mb-4">
+            <b>Fecha:</b> {{ now_str }} &nbsp;|&nbsp; <b>Responsable:</b> {{ session.get('nombre') }}
+        </div>
+
+        <form id="formAuditoria">
+            <!-- UBICACIÓN -->
+            <div class="row g-2 mb-3">
+                <div class="col-6">
+                    <label class="form-label small fw-bold">Tipo de Ubicación</label>
+                    <select id="ubicacion_tipo" class="form-select" onchange="cargarValoresUbicacion()">
+                        <option value="ANAQUEL">Anaquel</option>
+                        <option value="NICHO">Nicho</option>
+                    </select>
+                </div>
+                <div class="col-6">
+                    <label class="form-label small fw-bold">N°</label>
+                    <select id="ubicacion_valor" class="form-select"></select>
+                </div>
+            </div>
+
+            <hr>
+
+            <!-- CASCADA FAMILIA -> CALIDAD -> CODIGO -->
+            <div class="mb-3">
+                <label class="form-label small fw-bold">Familia *</label>
+                <select id="familia" class="form-select" required onchange="cargarCalidades()">
+                    <option value="" selected disabled>-- Seleccione --</option>
+                    {% for cat in lista_categorias %}<option value="{{ cat }}">{{ cat }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="mb-3">
+                <label class="form-label small fw-bold">Calidad *</label>
+                <select id="calidad" class="form-select" required disabled onchange="cargarCodigos()">
+                    <option value="" selected disabled>-- Primero seleccione familia --</option>
+                </select>
+            </div>
+            <div class="mb-3">
+                <label class="form-label small fw-bold">Código (SKU) *</label>
+                <select id="producto_id" class="form-select" required disabled onchange="mostrarDescripcion()">
+                    <option value="" selected disabled>-- Primero seleccione calidad --</option>
+                </select>
+            </div>
+            <div class="mb-3">
+                <label class="form-label small fw-bold text-muted">Descripción</label>
+                <input type="text" id="descripcion_mostrar" class="form-control bg-light" readonly>
+            </div>
+
+            <hr>
+
+            <div class="row g-2 mb-3">
+                <div class="col-4">
+                    <label class="form-label small fw-bold"># Cajas</label>
+                    <input type="number" id="num_cajas" class="form-control" min="0" value="0">
+                </div>
+                <div class="col-4">
+                    <label class="form-label small fw-bold">Peso prom. 20 UND (Kg)</label>
+                    <input type="number" step="0.001" id="peso_promedio_20u" class="form-control" min="0" value="0">
+                </div>
+                <div class="col-4">
+                    <label class="form-label small fw-bold"># Bolsas</label>
+                    <input type="number" id="num_bolsas" class="form-control" min="0" value="0">
+                </div>
+            </div>
+
+            <div class="row g-2 mb-3">
+                <div class="col-6">
+                    <label class="form-label small fw-bold text-danger">Cantidad Total Contada *</label>
+                    <input type="number" id="cantidad_total" class="form-control fw-bold border-danger" min="0" required>
+                </div>
+                <div class="col-6">
+                    <label class="form-label small fw-bold">Unidad</label>
+                    <select id="unidad_medida" class="form-select">
+                        <option value="UN">UN</option>
+                        <option value="M">M</option>
+                        <option value="MM">MM</option>
+                        <option value="KG">KG</option>
+                        <option value="JUEGO">JUEGO</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label small fw-bold">Estado Físico</label>
+                <div class="d-flex gap-2">
+                    <select id="estado_fisico" class="form-select">
+                        <option value="">-- Ninguno / OK --</option>
+                        {% for c in condiciones %}<option value="{{ c.nombre }}">{{ c.nombre }}</option>{% endfor %}
+                    </select>
+                    <button type="button" class="btn btn-outline-secondary" onclick="agregarCondicion()"><i class="bi bi-plus-lg"></i></button>
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label small fw-bold">Observaciones</label>
+                <textarea id="observaciones" class="form-control" rows="2"></textarea>
+            </div>
+
+            <button type="button" class="btn btn-success w-100 fw-bold py-2" onclick="enviarConteo()">
+                <i class="bi bi-send-fill"></i> Enviar Registro
+            </button>
+        </form>
+    </div>
+</div>
+
+<script>
+const ORIGEN = "{{ origen }}";
+let productosCache = [];
+
+function cargarValoresUbicacion() {
+    const tipo = document.getElementById('ubicacion_tipo').value;
+    const sel = document.getElementById('ubicacion_valor');
+    sel.innerHTML = '';
+    if (tipo === 'ANAQUEL') {
+        for (let i = 1; i <= 50; i++) sel.innerHTML += `<option value="${i}">Anaquel ${i}</option>`;
+    } else {
+        const letras = ['A','B','C','D','E','F','G','H'];
+        letras.forEach(l => { for (let i = 1; i <= 8; i++) sel.innerHTML += `<option value="${l}${i}">Nicho ${l}${i}</option>`; });
+    }
+}
+cargarValoresUbicacion();
+
+function cargarCalidades() {
+    const familia = document.getElementById('familia').value;
+    const selCal = document.getElementById('calidad');
+    const selCod = document.getElementById('producto_id');
+    selCal.innerHTML = '<option value="" selected disabled>Cargando...</option>';
+    selCal.disabled = true;
+    selCod.innerHTML = '<option value="" selected disabled>-- Primero seleccione calidad --</option>';
+    selCod.disabled = true;
+    document.getElementById('descripcion_mostrar').value = '';
+
+    fetch(`/api/auditoria/calidades/${ORIGEN}`, {
+        method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: `familia=${encodeURIComponent(familia)}`
+    }).then(r => r.json()).then(data => {
+        selCal.innerHTML = '<option value="" selected disabled>-- Seleccione --</option>';
+        (data.calidades || []).forEach(c => selCal.innerHTML += `<option value="${c}">${c}</option>`);
+        selCal.disabled = false;
+    });
+}
+
+function cargarCodigos() {
+    const familia = document.getElementById('familia').value;
+    const calidad = document.getElementById('calidad').value;
+    const selCod = document.getElementById('producto_id');
+    selCod.innerHTML = '<option value="" selected disabled>Cargando...</option>';
+    selCod.disabled = true;
+    document.getElementById('descripcion_mostrar').value = '';
+
+    fetch(`/api/auditoria/codigos/${ORIGEN}`, {
+        method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: `familia=${encodeURIComponent(familia)}&calidad=${encodeURIComponent(calidad)}`
+    }).then(r => r.json()).then(data => {
+        productosCache = data.productos || [];
+        selCod.innerHTML = '<option value="" selected disabled>-- Seleccione --</option>';
+        productosCache.forEach(p => selCod.innerHTML += `<option value="${p.id}">${p.sku}</option>`);
+        selCod.disabled = false;
+    });
+}
+
+function mostrarDescripcion() {
+    const id = document.getElementById('producto_id').value;
+    const p = productosCache.find(x => x.id == id);
+    document.getElementById('descripcion_mostrar').value = p ? p.nombre : '';
+}
+
+function agregarCondicion() {
+    Swal.fire({
+        title: 'Nuevo estado físico', input: 'text',
+        inputPlaceholder: 'Ej: TORNILLO DOBLADO', showCancelButton: true, confirmButtonText: 'Crear'
+    }).then(result => {
+        if (!result.isConfirmed || !result.value) return;
+        let fd = new FormData(); fd.append('nombre', result.value);
+        fetch('/admin/condiciones_fisicas/nueva', { method: 'POST', body: fd })
+            .then(r => r.json()).then(data => {
+                if (data.status === 'success') {
+                    const sel = document.getElementById('estado_fisico');
+                    sel.innerHTML += `<option value="${data.nombre}" selected>${data.nombre}</option>`;
+                } else { Swal.fire('Error', data.msg, 'error'); }
+            });
+    });
+}
+
+function enviarConteo() {
+    const productoId = document.getElementById('producto_id').value;
+    const cantidad = document.getElementById('cantidad_total').value;
+    if (!productoId) return Swal.fire('Falta código', 'Seleccione el código del producto.', 'warning');
+    if (cantidad === '' || cantidad === null) return Swal.fire('Falta cantidad', 'Ingrese la cantidad total contada.', 'warning');
+
+    Swal.fire({
+        title: '¿Confirmar envío?', text: 'Una vez enviado, no podrás editar este registro.',
+        icon: 'question', showCancelButton: true, confirmButtonText: 'Sí, enviar'
+    }).then(result => {
+        if (!result.isConfirmed) return;
+
+        const fd = new FormData();
+        fd.append('producto_id', productoId);
+        fd.append('ubicacion_tipo', document.getElementById('ubicacion_tipo').value);
+        fd.append('ubicacion_valor', document.getElementById('ubicacion_valor').value);
+        fd.append('num_cajas', document.getElementById('num_cajas').value);
+        fd.append('peso_promedio_20u', document.getElementById('peso_promedio_20u').value);
+        fd.append('num_bolsas', document.getElementById('num_bolsas').value);
+        fd.append('cantidad_total', cantidad);
+        fd.append('unidad_medida', document.getElementById('unidad_medida').value);
+        fd.append('estado_fisico', document.getElementById('estado_fisico').value);
+        fd.append('observaciones', document.getElementById('observaciones').value);
+
+        fetch(`/auditoria/${ORIGEN}/guardar`, { method: 'POST', body: fd })
+            .then(r => r.json()).then(data => {
+                if (data.status === 'success') {
+                    Swal.fire('Enviado', data.msg, 'success').then(() => location.reload());
+                } else { Swal.fire('Error', data.msg, 'error'); }
+            });
+    });
+}
+</script>
+{% endblock %}

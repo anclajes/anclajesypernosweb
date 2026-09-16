@@ -30,6 +30,23 @@
 
         <div class="overflow-auto flex-grow-1 px-2">
             <div class="nav flex-column py-3">
+
+            {% if session.get('role') == 'auditor_stock' %}
+                <!-- ================================== -->
+                <!-- MENÚ EXCLUSIVO: AUDITOR DE STOCK    -->
+                <!-- ================================== -->
+                <div class="nav-title">Conteo Físico</div>
+                <a href="{{ url_for('auditoria_inicio') }}" class="nav-link {{ 'active' if request.endpoint in ['auditoria_inicio', 'auditoria_form'] }}">
+                    <i class="bi bi-clipboard2-check-fill me-2"></i> <span>Nuevo Conteo</span>
+                </a>
+                <a href="{{ url_for('auditoria_mis_registros') }}" class="nav-link {{ 'active' if request.endpoint == 'auditoria_mis_registros' }}">
+                    <i class="bi bi-clock-history me-2"></i> <span>Mis Registros</span>
+                </a>
+
+            {% else %}
+                <!-- ================================== -->
+                <!-- MENÚ NORMAL (resto de roles)        -->
+                <!-- ================================== -->
                 <div class="nav-title">Principal</div>
                 <a href="{{ url_for('index') }}" class="nav-link {{ 'active' if request.endpoint == 'index' }}">
                     <i class="bi bi-grid-1x2 me-2"></i> <span>Dashboard</span>
@@ -39,7 +56,7 @@
                     <i class="bi bi-boxes me-2"></i> <span>Gestión de Inventarios</span>
                     <i class="bi bi-chevron-down ms-auto" style="font-size: 0.8rem;"></i>
                 </a>
-                
+
                 <div class="collapse {{ 'show' if request.endpoint in ['inventario', 'inventario_importbolts', 'crear_producto', 'editar_producto', 'ver_kardex', 'ver_kardex_importbolts'] else '' }}" id="collapseInventario">
                     <ul class="nav flex-column ms-2 mb-2" style="border-left: 1px solid rgba(255,255,255,0.1);">
                         <li>
@@ -112,9 +129,18 @@
                     <i class="bi bi-bullseye me-2"></i> <span>Metas de Venta</span>
                 </a>
                 {% endif %}
+
+                {% if session.get('role') in ['admin', 'administracion'] %}
+                <div class="nav-title">Auditoría</div>
+                <a href="{{ url_for('admin_auditorias_lista') }}" class="nav-link {{ 'active' if request.endpoint in ['admin_auditorias_lista', 'admin_auditorias_detalle'] }}">
+                    <i class="bi bi-clipboard2-data-fill me-2"></i> <span>Revisión de Conteos</span>
+                </a>
+                {% endif %}
+
+            {% endif %}
             </div>
         </div>
-
+        
         <div class="border-top border-secondary border-opacity-25 p-3">
             <div class="dropup">
                 <a href="#" class="d-flex align-items-center text-decoration-none dropdown-toggle text-white w-100" id="dropdownUser1" data-bs-toggle="dropdown" aria-expanded="false">

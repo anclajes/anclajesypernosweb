@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Mis Registros{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="fw-bold mb-0">Mis Registros Enviados</h4>
+    <a href="{{ url_for('auditoria_inicio') }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Volver</a>
+</div>
+<div class="card shadow-sm border-0">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0 small">
+            <thead class="table-dark">
+                <tr><th class="ps-3">Fecha</th><th>Origen</th><th>SKU</th><th>Descripción</th><th class="text-center">Cant.</th><th class="text-center">Estado</th></tr>
+            </thead>
+            <tbody>
+                {% for r in registros %}
+                <tr>
+                    <td class="ps-3">{{ r.fecha_registro.strftime('%d/%m/%Y %H:%M') }}</td>
+                    <td>{{ r.origen_inventario }}</td>
+                    <td class="fw-bold">{{ r.sku_snapshot }}</td>
+                    <td>{{ r.nombre_snapshot }}</td>
+                    <td class="text-center">{{ r.cantidad_total }} {{ r.unidad_medida }}</td>
+                    <td class="text-center">
+                        {% if r.estado_registro == 'PENDIENTE' %}<span class="badge bg-warning text-dark">Pendiente</span>
+                        {% elif r.estado_registro == 'APLICADO' %}<span class="badge bg-success">Aplicado</span>
+                        {% elif r.estado_registro == 'RECHAZADO' %}<span class="badge bg-danger">Rechazado</span>
+                        {% else %}<span class="badge bg-secondary">{{ r.estado_registro }}</span>{% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="6" class="text-center py-4 text-muted">Sin registros enviados aún.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

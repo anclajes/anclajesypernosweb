@@ -1,0 +1,213 @@
+{% extends "base.html" %}
+{% block title %}Detalle Conteo #{{ registro.id }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="fw-bold mb-0">Conteo #{{ registro.id }} — {{ registro.sku_snapshot }}</h4>
+    <a href="{{ url_for('admin_auditorias_lista') }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Volver</a>
+</div>
+
+<div class="row g-3 mb-3">
+    <!-- DATO ENVIADO POR EL AUDITOR -->
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-primary text-white fw-bold"><i class="bi bi-clipboard2-check"></i> Dato Enviado (Conteo Físico)</div>
+            <div class="card-body small">
+                <table class="table table-sm mb-0">
+                    <tr><td class="text-muted">Auditor</td><td class="fw-bold">{{ registro.trabajador.nombre_completo }}</td></tr>
+                    <tr><td class="text-muted">Fecha/Hora</td><td>{{ registro.fecha_registro.strftime('%d/%m/%Y %H:%M') }}</td></tr>
+                    <tr><td class="text-muted">Ubicación</td><td>{{ registro.ubicacion_tipo }} {{ registro.ubicacion_valor }}</td></tr>
+                    <tr><td class="text-muted"># Cajas</td><td>{{ registro.num_cajas }}</td></tr>
+                    <tr><td class="text-muted">Peso prom. 20u</td><td>{{ registro.peso_promedio_20u }} Kg</td></tr>
+                    <tr><td class="text-muted"># Bolsas</td><td>{{ registro.num_bolsas }}</td></tr>
+                    <tr class="table-warning"><td class="fw-bold">Cantidad Total</td><td class="fw-bold fs-6">{{ registro.cantidad_total }} {{ registro.unidad_medida }}</td></tr>
+                    <tr><td class="text-muted">Estado Físico</td><td>{{ registro.estado_fisico or '-' }}</td></tr>
+                    <tr><td class="text-muted">Observaciones</td><td>{{ registro.observaciones or '-' }}</td></tr>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- DATO ACTUAL EN VIVO DEL SISTEMA -->
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-dark text-white fw-bold"><i class="bi bi-database-fill"></i> Dato Actual en el Sistema</div>
+            <div class="card-body small">
+                {% if prod_actual %}
+                <table class="table table-sm mb-0">
+                    <tr><td class="text-muted">SKU</td><td class="fw-bold">{{ prod_actual.sku }}</td></tr>
+                    <tr><td class="text-muted">Descripción</td><td>{{ prod_actual.nombre }}</td></tr>
+                    <tr><td class="text-muted">Ubicación</td><td>{{ prod_actual.ubicacion or '-' }}</td></tr>
+                    <tr class="{% if prod_actual.stock_actual != registro.cantidad_total %}table-danger{% else %}table-success{% endif %}">
+                        <td class="fw-bold">Stock Actual</td>
+                        <td class="fw-bold fs-6">{{ prod_actual.stock_actual }}
+                            {% if prod_actual.stock_actual != registro.cantidad_total %}
+                                <span class="badge bg-danger ms-1">Diferencia: {{ registro.cantidad_total - prod_actual.stock_actual }}</span>
+                            {% else %}
+                                <span class="badge bg-success ms-1">Coincide</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr><td class="text-muted">Estado</td><td>{{ prod_actual.estado or '-' }}</td></tr>
+                    <tr><td class="text-muted">Última auditoría aplicada</td>
+                        <td>{% if prod_actual.ultimo_ajuste_auditoria_fecha %}
+                                {{ prod_actual.ultimo_ajuste_auditoria_fecha.strftime('%d/%m/%Y %H:%M') }} por {{ prod_actual.ultimo_ajuste_auditoria_por }}
+                            {% else %} Nunca {% endif %}
+                        </td>
+                    </tr>
+                </table>
+                {% else %}
+                <p class="text-danger">⚠️ El producto ya no existe en el sistema.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ACCIONES -->
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-body d-flex flex-wrap gap-2">
+        {% if registro.estado_registro != 'APLICADO' %}
+            {% if registro.bloqueado %}
+            <button class="btn btn-outline-warning" onclick="desbloquear()"><i class="bi bi-unlock-fill"></i> Desbloquear para Editar</button>
+            {% else %}
+            <button class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#modalEditar"><i class="bi bi-pencil-fill"></i> Editar Registro</button>
+            {% endif %}
+
+            <button class="btn btn-danger" onclick="rechazar()"><i class="bi bi-x-circle-fill"></i> Rechazar</button>
+            <button class="btn btn-success ms-auto" data-bs-toggle="modal" data-bs-target="#modalAplicar"><i class="bi bi-check-circle-fill"></i> Aplicar al Inventario</button>
+        {% else %}
+            <span class="badge bg-success fs-6 p-2"><i class="bi bi-check-circle-fill"></i> Ya fue aplicado al inventario el {{ registro.fecha_aplicacion.strftime('%d/%m/%Y %H:%M') }} por {{ registro.aplicado_por.nombre_completo }}</span>
+        {% endif %}
+    </div>
+</div>
+
+<!-- LÍNEA DE TIEMPO / AUDITORÍA DEL PROCESO -->
+<div class="card border-0 shadow-sm">
+    <div class="card-header fw-bold"><i class="bi bi-clock-history"></i> Historial de Auditoría de este Registro</div>
+    <div class="card-body p-0">
+        <table class="table table-sm mb-0 small">
+            <thead class="table-light"><tr><th class="ps-3">Fecha/Hora</th><th>Usuario</th><th>Acción</th><th>Detalle</th></tr></thead>
+            <tbody>
+                {% for log in registro.logs %}
+                <tr>
+                    <td class="ps-3">{{ log.fecha.strftime('%d/%m/%Y %H:%M') }}</td>
+                    <td>{{ log.realizado_por.nombre_completo if log.realizado_por else 'Sistema' }}</td>
+                    <td><span class="badge bg-secondary">{{ log.accion }}</span></td>
+                    <td>{{ log.detalle }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- MODAL EDITAR -->
+<div class="modal fade" id="modalEditar" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-warning"><h6 class="modal-title fw-bold">Editar Registro (Desbloqueado)</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <div class="row g-2">
+                    <div class="col-6"><label class="small fw-bold">Ubicación Tipo</label>
+                        <select id="e_ubicacion_tipo" class="form-select form-select-sm">
+                            <option value="ANAQUEL" {% if registro.ubicacion_tipo=='ANAQUEL' %}selected{% endif %}>Anaquel</option>
+                            <option value="NICHO" {% if registro.ubicacion_tipo=='NICHO' %}selected{% endif %}>Nicho</option>
+                        </select>
+                    </div>
+                    <div class="col-6"><label class="small fw-bold">Valor</label>
+                        <input type="text" id="e_ubicacion_valor" class="form-control form-control-sm" value="{{ registro.ubicacion_valor }}">
+                    </div>
+                    <div class="col-4"><label class="small fw-bold"># Cajas</label><input type="number" id="e_num_cajas" class="form-control form-control-sm" value="{{ registro.num_cajas }}"></div>
+                    <div class="col-4"><label class="small fw-bold">Peso 20u</label><input type="number" step="0.001" id="e_peso_promedio_20u" class="form-control form-control-sm" value="{{ registro.peso_promedio_20u }}"></div>
+                    <div class="col-4"><label class="small fw-bold"># Bolsas</label><input type="number" id="e_num_bolsas" class="form-control form-control-sm" value="{{ registro.num_bolsas }}"></div>
+                    <div class="col-6"><label class="small fw-bold text-danger">Cantidad Total</label><input type="number" id="e_cantidad_total" class="form-control form-control-sm fw-bold" value="{{ registro.cantidad_total }}"></div>
+                    <div class="col-6"><label class="small fw-bold">Unidad</label>
+                        <select id="e_unidad_medida" class="form-select form-select-sm">
+                            {% for u in ['UN','M','MM','KG','JUEGO'] %}<option value="{{u}}" {% if registro.unidad_medida==u %}selected{% endif %}>{{u}}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-12"><label class="small fw-bold">Estado Físico</label>
+                        <select id="e_estado_fisico" class="form-select form-select-sm">
+                            <option value="">-- Ninguno --</option>
+                            {% for c in condiciones %}<option value="{{ c.nombre }}" {% if registro.estado_fisico==c.nombre %}selected{% endif %}>{{ c.nombre }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-12"><label class="small fw-bold">Observaciones</label><textarea id="e_observaciones" class="form-control form-control-sm">{{ registro.observaciones or '' }}</textarea></div>
+                </div>
+            </div>
+            <div class="modal-footer"><button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-warning btn-sm" onclick="guardarEdicion()">Guardar Cambios</button></div>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL APLICAR -->
+<div class="modal fade" id="modalAplicar" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white"><h6 class="modal-title fw-bold">Aplicar al Inventario</h6><button class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body small">
+                <p>Esto actualizará el <b>stock</b> de {{ registro.sku_snapshot }} a <b>{{ registro.cantidad_total }} {{ registro.unidad_medida }}</b> y generará un movimiento de Kardex.</p>
+                <div class="form-check mb-2">
+                    <input class="form-check-input" type="checkbox" id="chk_ubicacion" {% if registro.ubicacion_valor %}checked{% endif %}>
+                    <label class="form-check-label">También actualizar la ubicación a "{{ registro.ubicacion_tipo }} {{ registro.ubicacion_valor }}"</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="chk_estado" {% if registro.estado_fisico %}checked{% endif %}>
+                    <label class="form-check-label">También actualizar el estado físico a "{{ registro.estado_fisico or '-' }}"</label>
+                </div>
+            </div>
+            <div class="modal-footer"><button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-success btn-sm fw-bold" onclick="aplicarInventario()">Sí, Aplicar Ahora</button></div>
+        </div>
+    </div>
+</div>
+
+<script>
+const REG_ID = {{ registro.id }};
+
+function desbloquear() {
+    fetch(`/admin/auditorias/${REG_ID}/desbloquear`, {method:'POST'}).then(r=>r.json()).then(d=>{
+        if (d.status === 'success') { Swal.fire('OK', d.msg, 'success').then(()=>location.reload()); }
+        else Swal.fire('Error', d.msg, 'error');
+    });
+}
+
+function guardarEdicion() {
+    const fd = new FormData();
+    fd.append('ubicacion_tipo', document.getElementById('e_ubicacion_tipo').value);
+    fd.append('ubicacion_valor', document.getElementById('e_ubicacion_valor').value);
+    fd.append('num_cajas', document.getElementById('e_num_cajas').value);
+    fd.append('peso_promedio_20u', document.getElementById('e_peso_promedio_20u').value);
+    fd.append('num_bolsas', document.getElementById('e_num_bolsas').value);
+    fd.append('cantidad_total', document.getElementById('e_cantidad_total').value);
+    fd.append('unidad_medida', document.getElementById('e_unidad_medida').value);
+    fd.append('estado_fisico', document.getElementById('e_estado_fisico').value);
+    fd.append('observaciones', document.getElementById('e_observaciones').value);
+
+    fetch(`/admin/auditorias/${REG_ID}/editar`, {method:'POST', body: fd}).then(r=>r.json()).then(d=>{
+        if (d.status === 'success') { Swal.fire('OK', d.msg, 'success').then(()=>location.reload()); }
+        else Swal.fire('Error', d.msg, 'error');
+    });
+}
+
+function rechazar() {
+    Swal.fire({title:'Motivo de rechazo', input:'text', showCancelButton:true, confirmButtonText:'Rechazar'}).then(result=>{
+        if (!result.isConfirmed || !result.value) return;
+        const fd = new FormData(); fd.append('motivo', result.value);
+        fetch(`/admin/auditorias/${REG_ID}/rechazar`, {method:'POST', body: fd}).then(r=>r.json()).then(d=>{
+            if (d.status === 'success') { Swal.fire('Rechazado', d.msg, 'success').then(()=>location.reload()); }
+            else Swal.fire('Error', d.msg, 'error');
+        });
+    });
+}
+
+function aplicarInventario() {
+    const fd = new FormData();
+    fd.append('actualizar_ubicacion', document.getElementById('chk_ubicacion').checked ? '1':'0');
+    fd.append('actualizar_estado', document.getElementById('chk_estado').checked ? '1':'0');
+    fetch(`/admin/auditorias/${REG_ID}/aplicar`, {method:'POST', body: fd}).then(r=>r.json()).then(d=>{
+        if (d.status === 'success') { Swal.fire('Aplicado', d.msg, 'success').then(()=>location.reload()); }
+        else Swal.fire('Error', d.msg, 'error');
+    });
+}
+</script>
+{% endblock %}

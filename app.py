@@ -1,5 +1,5 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, session
-from models import db, User, Product, Category, Client, Order, OrderDetail, ProductMovement, AuditLog, SystemConfig,OrderKitComponent, ClientContact, ClientContactLog, ClientRubroVendedor, IntercompanyTransfer, MetaVendedor, ProductImage, MotivoMovimiento, Proveedor, Presentacion
+from models import db, User, Product, Category, Client, Order, OrderDetail, ProductMovement, AuditLog, SystemConfig,OrderKitComponent, ClientContact, ClientContactLog, ClientRubroVendedor, IntercompanyTransfer, MetaVendedor, ProductImage, MotivoMovimiento, Proveedor, Presentacion, RegistroAuditoria, RegistroAuditoriaLog, CondicionFisica
 from models import ProductImportBolts, CategoryImportBolts, ProductMovementImportBolts
 from models import ProductMovement
 from models import Payment
@@ -33,6 +33,16 @@ import uuid
 from botocore.exceptions import ClientError
 from werkzeug.security import generate_password_hash, check_password_hash
 from xhtml2pdf import pisa
+
+
+ROLE_LABELS = {
+    'admin': 'Gerencia',
+    'administracion': 'Administración',
+    'vendedor': 'Vendedor',
+    'almacen': 'Almacén',
+    'chofer': 'Chofer',
+    'auditor_stock': 'Auditor de Stock'
+}
 
 def restar_meses(fecha, n):
     """Resta n meses a una fecha, devolviendo el primer día de ese mes."""
@@ -226,6 +236,27 @@ def hora_peru():
     # Obtiene la hora exacta de Lima, pero le quita la 'etiqueta' de zona horaria (.replace)
     # para que sea 100% compatible con la base de datos (offset-naive)
     return datetime.now(pytz.timezone('America/Lima')).replace(tzinfo=None)
+
+def registrar_log_auditoria(registro, accion, detalle=''):
+    log = RegistroAuditoriaLog(
+        registro_id=registro.id,
+        accion=accion,
+        detalle=detalle,
+        realizado_por_id=session.get('user_id'),
+        fecha=hora_peru()
+    )
+    db.session.add(log)
+
+
+def comparar_cambios(dict_antes, dict_despues):
+    """Devuelve texto legible tipo 'cantidad_total: 120 -> 115; estado_fisico: OXIDADO -> HABILITADO'"""
+    cambios = []
+    for k in dict_despues:
+        v_antes = dict_antes.get(k)
+        v_despues = dict_despues.get(k)
+        if str(v_antes) != str(v_despues):
+            cambios.append(f"{k}: '{v_antes}' → '{v_despues}'")
+    return '; '.join(cambios) if cambios else 'Sin cambios'
 # --- FUNCIÓN AUXILIAR PARA GUARDAR HISTORIAL ---
 def registrar_log(accion, icono='bi-info-circle', color='text-primary'):
     if 'user_id' in session:
@@ -298,6 +329,8 @@ def index():
 # ======================================================
     # VISTA 1: ADMIN Y ADMINISTRACIÓN (DASHBOARD BI GLOBAL)
     # ======================================================
+    if rol == 'auditor_stock':
+        return redirect(url_for('auditoria_inicio'))
     if rol in ['admin', 'administracion']:
         # A. KPIs Financieros
         ventas_hoy = db.session.query(func.sum(Order.total)).filter(func.date(Order.fecha) == hoy).scalar() or 0
@@ -7339,21 +7372,336 @@ def verificar_nombre_existe():
         return {'existe': True, 'sku': prod.sku}
     return {'existe': False}
 
+# ============================================
+# MÓDULO AUDITORÍA - VISTA AUDITOR DE STOCK
+# ============================================
+
+@app.route('/auditoria')
+def auditoria_inicio():
+    if session.get('role') != 'auditor_stock': return "Acceso denegado", 403
+    return render_template('auditoria_inicio.html')
+
+
+@app.route('/auditoria/<origen>/nuevo', methods=['GET'])
+def auditoria_form(origen):
+    if session.get('role') != 'auditor_stock': return "Acceso denegado", 403
+    if origen not in ['ANCLAJES', 'IMPORTBOLTS']: return redirect(url_for('auditoria_inicio'))
+
+    CatModelo = CategoryImportBolts if origen == 'IMPORTBOLTS' else Category
+    lista_categorias = [c.nombre for c in CatModelo.query.order_by(CatModelo.nombre).all()]
+    condiciones = CondicionFisica.query.filter_by(activo=True).order_by(CondicionFisica.nombre).all()
+
+    return render_template('auditoria_form.html',
+                           origen=origen,
+                           lista_categorias=lista_categorias,
+                           condiciones=condiciones,
+                           now_str=hora_peru().strftime('%d/%m/%Y %H:%M'))
+
+
+@app.route('/api/auditoria/calidades/<origen>', methods=['POST'])
+def auditoria_api_calidades(origen):
+    if session.get('role') != 'auditor_stock': return {'status': 'error'}, 403
+    familia = request.form.get('familia')
+    Modelo = ProductImportBolts if origen == 'IMPORTBOLTS' else Product
+    q = db.session.query(Modelo.calidad).filter_by(categoria=familia, activo=True).distinct()
+    if origen == 'ANCLAJES':
+        q = q.filter(Modelo.es_shadow_importbolts.isnot(True))
+    calidades = [c[0] for c in q.order_by(Modelo.calidad).all() if c[0]]
+    return {'status': 'success', 'calidades': calidades}
+
+
+@app.route('/api/auditoria/codigos/<origen>', methods=['POST'])
+def auditoria_api_codigos(origen):
+    """CONTEO CIEGO: solo devuelve id, sku, nombre. NUNCA el stock."""
+    if session.get('role') != 'auditor_stock': return {'status': 'error'}, 403
+    familia = request.form.get('familia')
+    calidad = request.form.get('calidad')
+
+    Modelo = ProductImportBolts if origen == 'IMPORTBOLTS' else Product
+    q = Modelo.query.filter_by(categoria=familia, calidad=calidad, activo=True)
+    if origen == 'ANCLAJES':
+        q = q.filter(Modelo.es_shadow_importbolts.isnot(True))
+
+    productos = q.order_by(Modelo.sku).all()
+    return {'status': 'success', 'productos': [
+        {'id': p.id, 'sku': p.sku, 'nombre': p.nombre} for p in productos
+    ]}
+
+
+@app.route('/auditoria/<origen>/guardar', methods=['POST'])
+def auditoria_guardar(origen):
+    if session.get('role') != 'auditor_stock': return {'status': 'error', 'msg': 'No autorizado'}, 403
+    if origen not in ['ANCLAJES', 'IMPORTBOLTS']: return {'status': 'error', 'msg': 'Origen inválido'}
+
+    try:
+        prod_id = int(request.form['producto_id'])
+        Modelo = ProductImportBolts if origen == 'IMPORTBOLTS' else Product
+        prod = Modelo.query.get_or_404(prod_id)
+
+        registro = RegistroAuditoria(
+            origen_inventario=origen,
+            trabajador_id=session['user_id'],
+            sku_snapshot=prod.sku,
+            nombre_snapshot=prod.nombre,
+            familia=prod.categoria,
+            calidad=prod.calidad,
+            ubicacion_tipo=request.form.get('ubicacion_tipo'),
+            ubicacion_valor=request.form.get('ubicacion_valor'),
+            num_cajas=int(request.form.get('num_cajas') or 0),
+            peso_promedio_20u=float(request.form.get('peso_promedio_20u') or 0),
+            num_bolsas=int(request.form.get('num_bolsas') or 0),
+            cantidad_total=int(request.form['cantidad_total']),
+            unidad_medida=request.form.get('unidad_medida', 'UN'),
+            estado_fisico=request.form.get('estado_fisico', ''),
+            observaciones=request.form.get('observaciones', '').strip(),
+            stock_sistema_snapshot=prod.stock_actual,  # oculto, solo para el admin
+            estado_registro='PENDIENTE',
+            bloqueado=True
+        )
+
+        if origen == 'IMPORTBOLTS':
+            registro.product_importbolts_id = prod.id
+        else:
+            registro.product_id = prod.id
+
+        db.session.add(registro)
+        db.session.flush()
+
+        registrar_log_auditoria(registro, 'CREADO',
+            f"Conteo enviado por {session.get('nombre')}: {registro.cantidad_total} {registro.unidad_medida}")
+
+        db.session.commit()
+        return {'status': 'success', 'msg': f'Registro enviado para {prod.sku}. Quedará pendiente de revisión.'}
+
+    except Exception as e:
+        db.session.rollback()
+        return {'status': 'error', 'msg': str(e)}
+
+
+@app.route('/auditoria/mis_registros')
+def auditoria_mis_registros():
+    if session.get('role') != 'auditor_stock': return "Acceso denegado", 403
+    registros = RegistroAuditoria.query.filter_by(trabajador_id=session['user_id'])\
+        .order_by(RegistroAuditoria.fecha_registro.desc()).limit(100).all()
+    return render_template('auditoria_mis_registros.html', registros=registros)
+
+# ============================================
+# MÓDULO AUDITORÍA - VISTA ADMIN
+# ============================================
+
+@app.route('/admin/auditorias')
+def admin_auditorias_lista():
+    if session.get('role') not in ['admin', 'administracion']: return "Acceso denegado", 403
+
+    estado_filtro = request.args.get('estado', 'PENDIENTE')
+    origen_filtro = request.args.get('origen', 'todos')
+    trabajador_filtro = request.args.get('trabajador', 'todos')
+
+    query = RegistroAuditoria.query
+    if estado_filtro != 'todos':
+        query = query.filter_by(estado_registro=estado_filtro)
+    if origen_filtro != 'todos':
+        query = query.filter_by(origen_inventario=origen_filtro)
+    if trabajador_filtro != 'todos':
+        query = query.filter_by(trabajador_id=trabajador_filtro)
+
+    registros = query.order_by(RegistroAuditoria.fecha_registro.desc()).all()
+    trabajadores = User.query.filter_by(role='auditor_stock').all()
+
+    return render_template('admin_auditorias_lista.html',
+                           registros=registros, trabajadores=trabajadores,
+                           estado_filtro=estado_filtro, origen_filtro=origen_filtro,
+                           trabajador_filtro=trabajador_filtro)
+
+
+@app.route('/admin/auditorias/<int:reg_id>')
+def admin_auditorias_detalle(reg_id):
+    if session.get('role') not in ['admin', 'administracion']: return "Acceso denegado", 403
+    registro = RegistroAuditoria.query.get_or_404(reg_id)
+    prod_actual = registro.producto  # datos EN VIVO del sistema, para comparar
+    condiciones = CondicionFisica.query.filter_by(activo=True).order_by(CondicionFisica.nombre).all()
+    return render_template('admin_auditorias_detalle.html',
+                           registro=registro, prod_actual=prod_actual, condiciones=condiciones)
+
+
+@app.route('/admin/auditorias/<int:reg_id>/desbloquear', methods=['POST'])
+def admin_auditoria_desbloquear(reg_id):
+    if session.get('role') not in ['admin', 'administracion']: return {'status': 'error'}, 403
+    registro = RegistroAuditoria.query.get_or_404(reg_id)
+
+    if registro.estado_registro == 'APLICADO':
+        return {'status': 'error', 'msg': 'No se puede desbloquear un registro ya aplicado al inventario.'}
+
+    registro.bloqueado = False
+    registrar_log_auditoria(registro, 'DESBLOQUEADO', f"Desbloqueado por {session.get('nombre')} para edición.")
+    db.session.commit()
+    return {'status': 'success', 'msg': 'Registro desbloqueado. Ya puede editarlo.'}
+
+
+@app.route('/admin/auditorias/<int:reg_id>/editar', methods=['POST'])
+def admin_auditoria_editar(reg_id):
+    if session.get('role') not in ['admin', 'administracion']: return {'status': 'error'}, 403
+    registro = RegistroAuditoria.query.get_or_404(reg_id)
+
+    if registro.bloqueado:
+        return {'status': 'error', 'msg': 'Debe desbloquear el registro antes de editarlo.'}
+
+    campos = ['ubicacion_tipo', 'ubicacion_valor', 'num_cajas', 'peso_promedio_20u',
+              'num_bolsas', 'cantidad_total', 'unidad_medida', 'estado_fisico', 'observaciones']
+
+    antes = {c: getattr(registro, c) for c in campos}
+
+    registro.ubicacion_tipo = request.form.get('ubicacion_tipo')
+    registro.ubicacion_valor = request.form.get('ubicacion_valor')
+    registro.num_cajas = int(request.form.get('num_cajas') or 0)
+    registro.peso_promedio_20u = float(request.form.get('peso_promedio_20u') or 0)
+    registro.num_bolsas = int(request.form.get('num_bolsas') or 0)
+    registro.cantidad_total = int(request.form.get('cantidad_total'))
+    registro.unidad_medida = request.form.get('unidad_medida')
+    registro.estado_fisico = request.form.get('estado_fisico')
+    registro.observaciones = request.form.get('observaciones', '').strip()
+
+    despues = {c: getattr(registro, c) for c in campos}
+    detalle = comparar_cambios(antes, despues)
+
+    registro.bloqueado = True  # vuelve a bloquear tras editar
+    registrar_log_auditoria(registro, 'EDITADO', f"{session.get('nombre')} editó: {detalle}")
+
+    db.session.commit()
+    return {'status': 'success', 'msg': 'Registro actualizado y bloqueado nuevamente.'}
+
+
+@app.route('/admin/auditorias/<int:reg_id>/rechazar', methods=['POST'])
+def admin_auditoria_rechazar(reg_id):
+    if session.get('role') not in ['admin', 'administracion']: return {'status': 'error'}, 403
+    registro = RegistroAuditoria.query.get_or_404(reg_id)
+    motivo = request.form.get('motivo', '').strip()
+
+    if not motivo:
+        return {'status': 'error', 'msg': 'Debe indicar el motivo de rechazo.'}
+
+    registro.estado_registro = 'RECHAZADO'
+    registro.motivo_rechazo = motivo
+    registro.revisado_por_id = session['user_id']
+    registro.fecha_revision = hora_peru()
+
+    registrar_log_auditoria(registro, 'RECHAZADO', f"{session.get('nombre')} rechazó: {motivo}")
+    db.session.commit()
+    return {'status': 'success', 'msg': 'Registro rechazado.'}
+
+
+@app.route('/admin/auditorias/<int:reg_id>/aplicar', methods=['POST'])
+def admin_auditoria_aplicar(reg_id):
+    """AQUÍ es donde el conteo del auditor se refleja en el inventario real,
+    generando un movimiento de Kardex con fecha/hora/usuario (auditoría del ítem)."""
+    if session.get('role') not in ['admin', 'administracion']: return {'status': 'error'}, 403
+    registro = RegistroAuditoria.query.get_or_404(reg_id)
+
+    if registro.estado_registro == 'APLICADO':
+        return {'status': 'error', 'msg': 'Este registro ya fue aplicado anteriormente.'}
+
+    actualizar_ubicacion = request.form.get('actualizar_ubicacion') == '1'
+    actualizar_estado = request.form.get('actualizar_estado') == '1'
+
+    try:
+        origen = registro.origen_inventario
+        ModeloMov = ProductMovementImportBolts if origen == 'IMPORTBOLTS' else ProductMovement
+
+        prod = registro.producto
+        if not prod:
+            return {'status': 'error', 'msg': 'El producto de este registro ya no existe.'}
+
+        stock_antes = prod.stock_actual
+        diferencia = registro.cantidad_total - stock_antes
+        tipo_mov = 'ENTRADA' if diferencia >= 0 else 'SALIDA'
+
+        prod.stock_actual = registro.cantidad_total
+        prod.fecha_actualizacion = hora_peru()
+        prod.actualizado_por = session.get('nombre')
+        prod.ultimo_ajuste_auditoria_fecha = hora_peru()
+        prod.ultimo_ajuste_auditoria_por = session.get('nombre')
+
+        if actualizar_ubicacion and registro.ubicacion_valor:
+            prod.ubicacion = f"{registro.ubicacion_tipo} {registro.ubicacion_valor}"
+        if actualizar_estado and registro.estado_fisico:
+            prod.estado = registro.estado_fisico
+
+        # --- ESTO GENERA EL "fecha hora nombre" EN EL ITEM, vía tu Kardex existente ---
+        movimiento = ModeloMov(
+            product_id=prod.id,
+            user_id=session['user_id'],
+            tipo=tipo_mov,
+            cantidad=abs(diferencia) if diferencia != 0 else 0,
+            stock_anterior=stock_antes,
+            stock_nuevo=prod.stock_actual,
+            motivo=f"Ajuste por Conteo Físico #{registro.id} (Auditor: {registro.trabajador.nombre_completo})"
+        )
+        db.session.add(movimiento)
+
+        registro.estado_registro = 'APLICADO'
+        registro.aplicado_por_id = session['user_id']
+        registro.fecha_aplicacion = hora_peru()
+        registro.revisado_por_id = registro.revisado_por_id or session['user_id']
+        registro.fecha_revision = registro.fecha_revision or hora_peru()
+        registro.bloqueado = True
+
+        detalle = (f"Stock {stock_antes} → {registro.cantidad_total} "
+                   f"(diferencia {diferencia:+d}). Ubicación actualizada: {actualizar_ubicacion}. "
+                   f"Estado actualizado: {actualizar_estado}.")
+        registrar_log_auditoria(registro, 'APLICADO', f"{session.get('nombre')} aplicó: {detalle}")
+
+        db.session.commit()
+        return {'status': 'success', 'msg': f'Inventario actualizado. {detalle}'}
+
+    except Exception as e:
+        db.session.rollback()
+        return {'status': 'error', 'msg': str(e)}
+
+# ============================================
+# CATÁLOGO DE "ESTADO FÍSICO" (administrable)
+# ============================================
+
+@app.route('/admin/condiciones_fisicas/nueva', methods=['POST'])
+def crear_condicion_fisica():
+    if session.get('role') != 'admin': return {'status': 'error', 'msg': 'No autorizado'}, 403
+    nombre = request.form.get('nombre', '').strip().upper()
+    if not nombre: return {'status': 'error', 'msg': 'Nombre vacío'}
+    if CondicionFisica.query.filter_by(nombre=nombre).first():
+        return {'status': 'error', 'msg': f'"{nombre}" ya existe.'}
+
+    nueva = CondicionFisica(nombre=nombre, creado_por_id=session['user_id'])
+    db.session.add(nueva)
+
+    # Reutilizamos tu AuditLog general del sistema (ya existente)
+    registrar_log(f"Agregó estado físico '{nombre}' al catálogo de auditoría", "bi-tag-fill", "text-info")
+
+    db.session.commit()
+    return {'status': 'success', 'id': nueva.id, 'nombre': nueva.nombre}
+
+
+@app.route('/api/condiciones_fisicas')
+def listar_condiciones_fisicas():
+    condiciones = CondicionFisica.query.filter_by(activo=True).order_by(CondicionFisica.nombre).all()
+    return {'condiciones': [{'id': c.id, 'nombre': c.nombre} for c in condiciones]}
+
 # --- RUTA SECRETA PARA INICIALIZAR LA BASE DE DATOS EN RENDER ---
 
 
-@app.route('/fix_proveedor_auditoria_2026')
-def fix_proveedor_auditoria():
+@app.route('/fix_auditoria_2026')
+def fix_auditoria_module():
+    if session.get('role') != 'admin':
+        return "Acceso denegado", 403
     try:
+        db.create_all()
         with db.engine.connect() as conn:
-            conn.execute(text("ALTER TABLE proveedor ADD COLUMN IF NOT EXISTS creado_por_id INTEGER REFERENCES \"user\"(id)"))
-            conn.execute(text("ALTER TABLE proveedor ADD COLUMN IF NOT EXISTS editado_por_id INTEGER REFERENCES \"user\"(id)"))
-            conn.execute(text("ALTER TABLE proveedor ADD COLUMN IF NOT EXISTS editado_en TIMESTAMP"))
+            conn.execute(text("ALTER TABLE product ADD COLUMN IF NOT EXISTS ultimo_ajuste_auditoria_fecha TIMESTAMP"))
+            conn.execute(text("ALTER TABLE product ADD COLUMN IF NOT EXISTS ultimo_ajuste_auditoria_por VARCHAR(100)"))
+            conn.execute(text("ALTER TABLE product_importbolts ADD COLUMN IF NOT EXISTS ultimo_ajuste_auditoria_fecha TIMESTAMP"))
+            conn.execute(text("ALTER TABLE product_importbolts ADD COLUMN IF NOT EXISTS ultimo_ajuste_auditoria_por VARCHAR(100)"))
             conn.commit()
-        return "<h2>✅ Auditoría agregada a la tabla proveedor.</h2>"
+        return "<h2>✅ Módulo de Auditoría/Conteo Físico instalado correctamente.</h2>"
     except Exception as e:
         return f"<h2>Error: {str(e)}</h2>"
-    
 # --- ARRANQUE DE LA APLICACIÓN ---
 if __name__ == '__main__':
     # host='0.0.0.0' permite que otras PCs/celulares en la red te vean
