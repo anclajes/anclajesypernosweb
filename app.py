@@ -44,6 +44,14 @@ ROLE_LABELS = {
     'auditor_stock': 'Auditor de Stock'
 }
 
+def orden_natural_ubicacion(valor):
+    """Ordena 'C8' antes que 'C20', y letras alfabéticamente. Para números puros (Anaquel), funciona igual."""
+    match = re.match(r'^([A-Za-z]*)(\d*)$', valor.strip())
+    if match:
+        letras, numeros = match.groups()
+        return (letras.upper(), int(numeros) if numeros else 0)
+    return (valor.upper(), 0)
+
 def restar_meses(fecha, n):
     """Resta n meses a una fecha, devolviendo el primer día de ese mes."""
     mes = fecha.month - n
@@ -7422,17 +7430,13 @@ def auditoria_api_codigos(origen):
         {'id': p.id, 'sku': p.sku, 'nombre': p.nombre} for p in productos
     ]}
 
-
 @app.route('/api/catalogo/<tipo>')
 def api_catalogo_valores(tipo):
     if session.get('role') not in ['auditor_stock', 'admin', 'administracion']: return {'valores': []}, 403
     tipo = tipo.upper()
     valores_q = CatalogoValor.query.filter_by(tipo=tipo, activo=True).all()
-    if tipo == 'ANAQUEL':
-        valores = sorted(valores_q, key=lambda v: int(v.valor) if v.valor.isdigit() else 9999)
-    else:
-        valores = sorted(valores_q, key=lambda v: v.valor)
-    return {'valores': [v.valor for v in valores]}  
+    valores = sorted(valores_q, key=lambda v: orden_natural_ubicacion(v.valor))
+    return {'valores': [v.valor for v in valores]}
 
 @app.route('/api/campos_personalizados')
 def api_campos_personalizados():
@@ -7614,14 +7618,13 @@ def admin_auditoria_rechazar(reg_id):
 
 @app.route('/admin/auditorias/<int:reg_id>/aplicar', methods=['POST'])
 def admin_auditoria_aplicar(reg_id):
+    """Actualiza la ficha completa del producto en el sistema, basándose en lo que el admin
+    confirme en el panel editable (prellenado con el conteo + datos actuales)."""
     if session.get('role') not in ['admin', 'administracion']: return {'status': 'error'}, 403
     registro = RegistroAuditoria.query.get_or_404(reg_id)
 
     if registro.estado_registro == 'APLICADO':
         return {'status': 'error', 'msg': 'Este registro ya fue aplicado anteriormente.'}
-
-    actualizar_ubicacion = request.form.get('actualizar_ubicacion') == '1'
-    actualizar_estado = request.form.get('actualizar_estado') == '1'
 
     try:
         origen = registro.origen_inventario
@@ -7631,33 +7634,39 @@ def admin_auditoria_aplicar(reg_id):
         if not prod:
             return {'status': 'error', 'msg': 'El producto de este registro ya no existe.'}
 
+        nuevo_stock = int(request.form.get('stock_actual'))
+        nueva_ubicacion = request.form.get('ubicacion', '').strip()
+        nuevo_stock_minimo = int(request.form.get('stock_minimo') or prod.stock_minimo)
+        nuevo_peso = float(request.form.get('peso_kg') or 0)
+        nuevo_precio_unidad = float(request.form.get('precio_unidad') or 0)
+        nuevo_precio_caja = float(request.form.get('precio_caja') or 0)
+        nuevo_estado = request.form.get('estado', '').strip()
+        nuevo_activo = request.form.get('activo') == '1'
+
         stock_antes = prod.stock_actual
-        diferencia = registro.cantidad_total - stock_antes
+        diferencia = nuevo_stock - stock_antes
         tipo_mov = 'ENTRADA' if diferencia >= 0 else 'SALIDA'
 
-        prod.stock_actual = registro.cantidad_total
+        prod.stock_actual = nuevo_stock
+        prod.stock_minimo = nuevo_stock_minimo
+        prod.ubicacion = nueva_ubicacion
+        prod.peso_kg = nuevo_peso
+        prod.precio_unidad = nuevo_precio_unidad
+        prod.precio_caja = nuevo_precio_caja
+        prod.estado = nuevo_estado
+        prod.activo = nuevo_activo
         prod.fecha_actualizacion = hora_peru()
         prod.actualizado_por = session.get('nombre')
         prod.ultimo_ajuste_auditoria_fecha = hora_peru()
         prod.ultimo_ajuste_auditoria_por = session.get('nombre')
 
-        if actualizar_ubicacion:
-            partes = []
-            if registro.anaquel: partes.append(f"ANAQUEL {registro.anaquel}")
-            if registro.nicho: partes.append(f"NICHO {registro.nicho}")
-            if partes:
-                prod.ubicacion = " / ".join(partes)
-
-        if actualizar_estado and registro.estado_fisico:
-            prod.estado = registro.estado_fisico
-
-        movimiento = ModeloMov(
-            product_id=prod.id, user_id=session['user_id'], tipo=tipo_mov,
-            cantidad=abs(diferencia) if diferencia != 0 else 0,
-            stock_anterior=stock_antes, stock_nuevo=prod.stock_actual,
-            motivo=f"Ajuste por Conteo Físico #{registro.id} (Auditor: {registro.trabajador.nombre_completo})"
-        )
-        db.session.add(movimiento)
+        if diferencia != 0:
+            movimiento = ModeloMov(
+                product_id=prod.id, user_id=session['user_id'], tipo=tipo_mov,
+                cantidad=abs(diferencia), stock_anterior=stock_antes, stock_nuevo=nuevo_stock,
+                motivo=f"Ajuste por Conteo Físico #{registro.id} (Auditor: {registro.trabajador.nombre_completo})"
+            )
+            db.session.add(movimiento)
 
         registro.estado_registro = 'APLICADO'
         registro.aplicado_por_id = session['user_id']
@@ -7666,12 +7675,14 @@ def admin_auditoria_aplicar(reg_id):
         registro.fecha_revision = registro.fecha_revision or hora_peru()
         registro.bloqueado = True
 
-        detalle = (f"Stock {stock_antes} → {registro.cantidad_total} (diferencia {diferencia:+d}). "
-                   f"Ubicación actualizada: {actualizar_ubicacion}. Estado actualizado: {actualizar_estado}.")
+        detalle = (f"Stock {stock_antes} → {nuevo_stock} (dif {diferencia:+d}). "
+                   f"Ubicación: '{nueva_ubicacion}'. Peso: {nuevo_peso}Kg. "
+                   f"P.Unit: ${nuevo_precio_unidad}. P.Caja: ${nuevo_precio_caja}. "
+                   f"Estado: '{nuevo_estado}'. Activo: {nuevo_activo}.")
         registrar_log_auditoria(registro, 'APLICADO', f"{session.get('nombre')} aplicó: {detalle}")
 
         db.session.commit()
-        return {'status': 'success', 'msg': f'Inventario actualizado. {detalle}'}
+        return {'status': 'success', 'msg': f'Ficha de {prod.sku} actualizada correctamente. {detalle}'}
 
     except Exception as e:
         db.session.rollback()
@@ -7687,8 +7698,8 @@ def admin_catalogos():
     catalogos = {}
     for t in tipos:
         valores = CatalogoValor.query.filter_by(tipo=t).all()
-        if t == 'ANAQUEL':
-            valores.sort(key=lambda v: int(v.valor) if v.valor.isdigit() else 9999)
+        if t in ['ANAQUEL', 'NICHO']:
+            valores.sort(key=lambda v: orden_natural_ubicacion(v.valor))
         else:
             valores.sort(key=lambda v: v.valor)
         catalogos[t] = valores
