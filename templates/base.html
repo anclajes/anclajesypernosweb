@@ -42,7 +42,6 @@
                 <a href="{{ url_for('auditoria_mis_registros') }}" class="nav-link {{ 'active' if request.endpoint == 'auditoria_mis_registros' }}">
                     <i class="bi bi-clock-history me-2"></i> <span>Mis Registros</span>
                 </a>
-
             {% else %}
                 <!-- ================================== -->
                 <!-- MENÚ NORMAL (resto de roles)        -->
@@ -139,6 +138,7 @@
                 <a href="{{ url_for('admin_catalogos') }}" class="nav-link {{ 'active' if request.endpoint == 'admin_catalogos' }}">
                     <i class="bi bi-sliders me-2"></i> <span>Catálogos Auditoría</span>
                 </a>
+                {% endif %}
                 {% endif %}
 
             {% endif %}
