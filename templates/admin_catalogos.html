@@ -106,24 +106,38 @@
             <div class="card-header fw-bold">Campos Existentes</div>
             <div class="table-responsive">
                 <table class="table table-sm table-hover mb-0" id="tabla_campos">
-                    <thead><tr><th>Etiqueta</th><th>Tipo</th><th>Alternativas</th><th class="text-center">Estado</th><th class="text-end">Acción</th></tr></thead>
+                    <thead><tr><th>Etiqueta</th><th>Tipo</th><th>Alternativas</th><th class="text-center">Estado</th><th class="text-end">Acciones</th></tr></thead>
                     <tbody>
                         {% for c in campos %}
                         <tr id="fila-campo-{{ c.id }}">
-                            <td>{{ c.etiqueta }}</td>
+                            <td id="etiqueta-campo-{{ c.id }}">{{ c.etiqueta }}</td>
                             <td><span class="badge bg-light text-dark border">{{ 'Lista' if c.tipo_campo == 'SELECT' else 'Texto libre' }}</span></td>
-                            <td class="small text-muted" id="opciones-campo-{{ c.id }}">
+                            <td class="small" id="opciones-campo-{{ c.id }}">
                                 {% if c.tipo_campo == 'SELECT' %}
-                                    <span id="lista-opciones-{{ c.id }}">{{ c.opciones|map(attribute='valor')|join(', ') }}</span>
-                                    <button class="btn btn-sm btn-link p-0 ms-1" onclick="agregarOpcionCampo({{ c.id }})" title="Agregar alternativa"><i class="bi bi-plus-circle"></i></button>
+                                    <div class="d-flex flex-wrap gap-1 align-items-center" id="lista-opciones-{{ c.id }}">
+                                        {% for op in c.opciones %}
+                                        <span class="badge bg-light text-dark border d-flex align-items-center gap-1" id="opcion-badge-{{ op.id }}">
+                                            <span id="opcion-texto-{{ op.id }}">{{ op.valor }}</span>
+                                            <i class="bi bi-pencil-fill text-primary" style="cursor:pointer; font-size:.7rem;" onclick="editarOpcion({{ op.id }})" title="Editar"></i>
+                                            <i class="bi bi-x-circle-fill text-danger" style="cursor:pointer; font-size:.7rem;" onclick="eliminarOpcion({{ op.id }})" title="Quitar"></i>
+                                        </span>
+                                        {% endfor %}
+                                    </div>
+                                    <button class="btn btn-sm btn-link p-0 mt-1" onclick="agregarOpcionCampo({{ c.id }})"><i class="bi bi-plus-circle"></i> agregar</button>
                                 {% else %}-{% endif %}
                             </td>
                             <td class="text-center" id="estado-campo-{{ c.id }}">
                                 {% if c.activo %}<span class="badge bg-success">Activo</span>{% else %}<span class="badge bg-secondary">Inactivo</span>{% endif %}
                             </td>
-                            <td class="text-end">
-                                <button class="btn btn-sm btn-outline-secondary" onclick="toggleCampo({{ c.id }})">
+                            <td class="text-end text-nowrap">
+                                <button class="btn btn-sm btn-outline-primary" onclick="editarEtiquetaCampo({{ c.id }})" title="Renombrar">
+                                    <i class="bi bi-pencil-fill"></i>
+                                </button>
+                                <button class="btn btn-sm btn-outline-secondary" onclick="toggleCampo({{ c.id }})" title="Activar/Desactivar">
                                     <i class="bi {{ 'bi-toggle-on' if c.activo else 'bi-toggle-off' }}" id="icono-campo-{{ c.id }}"></i>
+                                </button>
+                                <button class="btn btn-sm btn-outline-danger" onclick="eliminarCampo({{ c.id }})" title="Eliminar">
+                                    <i class="bi bi-trash"></i>
                                 </button>
                             </td>
                         </tr>
@@ -166,15 +180,14 @@ function agregarValor(tipo) {
             const fila = document.createElement('tr');
             fila.id = `fila-valor-${data.id}`;
             fila.innerHTML = `
-                <td>${data.valor}</td>
-                <td class="text-center" id="estado-valor-${data.id}"><span class="badge bg-success">Activo</span></td>
-                <td class="text-end">
-                    <button class="btn btn-sm btn-outline-secondary" onclick="toggleValor(${data.id})" title="Activar/Desactivar">
-                        <i class="bi bi-toggle-on" id="icono-valor-${data.id}"></i>
-                    </button>
-                    <button class="btn btn-sm btn-outline-danger" onclick="eliminarValor(${data.id})" title="Eliminar">
-                        <i class="bi bi-trash"></i>
-                    </button>
+                <td>${data.etiqueta}</td>
+                <td><span class="badge bg-light text-dark border">${data.tipo_campo === 'SELECT' ? 'Lista' : 'Texto libre'}</span></td>
+                <td class="small text-muted" id="opciones-campo-${data.id}">${colOpciones}</td>
+                <td class="text-center" id="estado-campo-${data.id}"><span class="badge bg-success">Activo</span></td>
+                <td class="text-end text-nowrap">
+                    <button class="btn btn-sm btn-outline-primary" onclick="editarEtiquetaCampo(${data.id})" title="Renombrar"><i class="bi bi-pencil-fill"></i></button>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="toggleCampo(${data.id})" title="Activar/Desactivar"><i class="bi bi-toggle-on" id="icono-campo-${data.id}"></i></button>
+                    <button class="btn btn-sm btn-outline-danger" onclick="eliminarCampo(${data.id})" title="Eliminar"><i class="bi bi-trash"></i></button>
                 </td>`;
             tbody.appendChild(fila);
             input.value = '';
@@ -242,8 +255,14 @@ function crearCampo() {
 
             let colOpciones = '-';
             if (data.tipo_campo === 'SELECT') {
-                colOpciones = `<span id="lista-opciones-${data.id}">${data.opciones.join(', ')}</span>
-                    <button class="btn btn-sm btn-link p-0 ms-1" onclick="agregarOpcionCampo(${data.id})" title="Agregar alternativa"><i class="bi bi-plus-circle"></i></button>`;
+                let badges = data.opciones_con_id.map(o => `
+                    <span class="badge bg-light text-dark border d-flex align-items-center gap-1" id="opcion-badge-${o.id}">
+                        <span id="opcion-texto-${o.id}">${o.valor}</span>
+                        <i class="bi bi-pencil-fill text-primary" style="cursor:pointer; font-size:.7rem;" onclick="editarOpcion(${o.id})" title="Editar"></i>
+                        <i class="bi bi-x-circle-fill text-danger" style="cursor:pointer; font-size:.7rem;" onclick="eliminarOpcion(${o.id})" title="Quitar"></i>
+                    </span>`).join('');
+                colOpciones = `<div class="d-flex flex-wrap gap-1 align-items-center" id="lista-opciones-${data.id}">${badges}</div>
+                    <button class="btn btn-sm btn-link p-0 mt-1" onclick="agregarOpcionCampo(${data.id})"><i class="bi bi-plus-circle"></i> agregar</button>`;
             }
 
             fila.innerHTML = `
@@ -255,6 +274,11 @@ function crearCampo() {
                     <button class="btn btn-sm btn-outline-secondary" onclick="toggleCampo(${data.id})">
                         <i class="bi bi-toggle-on" id="icono-campo-${data.id}"></i>
                     </button>
+                </td>
+                <td class="text-end text-nowrap">
+                    <button class="btn btn-sm btn-outline-primary" onclick="editarEtiquetaCampo(${data.id})" title="Renombrar"><i class="bi bi-pencil-fill"></i></button>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="toggleCampo(${data.id})" title="Activar/Desactivar"><i class="bi bi-toggle-on" id="icono-campo-${data.id}"></i></button>
+                    <button class="btn btn-sm btn-outline-danger" onclick="eliminarCampo(${data.id})" title="Eliminar"><i class="bi bi-trash"></i></button>
                 </td>`;
             tbody.appendChild(fila);
 
@@ -279,8 +303,15 @@ function agregarOpcionCampo(campoId) {
             .then(r => r.json())
             .then(data => {
                 if (data.status !== 'success') return Swal.fire('Error', data.msg, 'error');
-                const span = document.getElementById(`lista-opciones-${campoId}`);
-                span.textContent = span.textContent ? `${span.textContent}, ${data.valor}` : data.valor;
+                const cont = document.getElementById(`lista-opciones-${campoId}`);
+                const span = document.createElement('span');
+                span.className = 'badge bg-light text-dark border d-flex align-items-center gap-1';
+                span.id = `opcion-badge-${data.id}`;
+                span.innerHTML = `
+                    <span id="opcion-texto-${data.id}">${data.valor}</span>
+                    <i class="bi bi-pencil-fill text-primary" style="cursor:pointer; font-size:.7rem;" onclick="editarOpcion(${data.id})" title="Editar"></i>
+                    <i class="bi bi-x-circle-fill text-danger" style="cursor:pointer; font-size:.7rem;" onclick="eliminarOpcion(${data.id})" title="Quitar"></i>`;
+                cont.appendChild(span);
                 Swal.fire({ icon: 'success', title: 'Alternativa agregada', timer: 1000, showConfirmButton: false });
             });
     });
@@ -296,6 +327,77 @@ function toggleCampo(id) {
             badge.innerHTML = data.activo ? '<span class="badge bg-success">Activo</span>' : '<span class="badge bg-secondary">Inactivo</span>';
             icono.className = data.activo ? 'bi bi-toggle-on' : 'bi bi-toggle-off';
         });
+}
+
+function editarEtiquetaCampo(id) {
+    const actual = document.getElementById(`etiqueta-campo-${id}`).textContent.trim();
+    Swal.fire({
+        title: 'Renombrar campo', input: 'text', inputValue: actual,
+        showCancelButton: true, confirmButtonText: 'Guardar',
+        inputValidator: (value) => { if (!value || !value.trim()) return 'Escriba un nombre'; }
+    }).then(result => {
+        if (!result.isConfirmed) return;
+        const fd = new FormData(); fd.append('etiqueta', result.value.trim());
+        fetch(`/admin/catalogos/campo/${id}/editar`, { method: 'POST', body: fd })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status !== 'success') return Swal.fire('Error', data.msg, 'error');
+                document.getElementById(`etiqueta-campo-${id}`).textContent = data.etiqueta;
+                Swal.fire({ icon: 'success', title: 'Renombrado', timer: 1000, showConfirmButton: false });
+            });
+    });
+}
+
+function eliminarCampo(id) {
+    Swal.fire({
+        title: '¿Eliminar este campo?', text: 'Esta acción no se puede deshacer.',
+        icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Sí, eliminar'
+    }).then(result => {
+        if (!result.isConfirmed) return;
+        fetch(`/admin/catalogos/campo/${id}/eliminar`, { method: 'POST' })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status !== 'success') return Swal.fire('No se pudo eliminar', data.msg, 'error');
+                const fila = document.getElementById(`fila-campo-${id}`);
+                if (fila) fila.remove();
+                Swal.fire({ icon: 'success', title: 'Eliminado', timer: 1000, showConfirmButton: false });
+            });
+    });
+}
+
+function editarOpcion(opcionId) {
+    const actual = document.getElementById(`opcion-texto-${opcionId}`).textContent.trim();
+    Swal.fire({
+        title: 'Editar alternativa', input: 'text', inputValue: actual,
+        showCancelButton: true, confirmButtonText: 'Guardar',
+        inputValidator: (value) => { if (!value || !value.trim()) return 'Escriba un valor'; }
+    }).then(result => {
+        if (!result.isConfirmed) return;
+        const fd = new FormData(); fd.append('valor', result.value.trim());
+        fetch(`/admin/catalogos/opcion/${opcionId}/editar`, { method: 'POST', body: fd })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status !== 'success') return Swal.fire('Error', data.msg, 'error');
+                document.getElementById(`opcion-texto-${opcionId}`).textContent = data.valor;
+                Swal.fire({ icon: 'success', title: 'Actualizado', timer: 1000, showConfirmButton: false });
+            });
+    });
+}
+
+function eliminarOpcion(opcionId) {
+    Swal.fire({
+        title: '¿Quitar esta alternativa?', icon: 'warning',
+        showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Sí, quitar'
+    }).then(result => {
+        if (!result.isConfirmed) return;
+        fetch(`/admin/catalogos/opcion/${opcionId}/eliminar`, { method: 'POST' })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status !== 'success') return Swal.fire('Error', 'No se pudo quitar.', 'error');
+                const badge = document.getElementById(`opcion-badge-${opcionId}`);
+                if (badge) badge.remove();
+            });
+    });
 }
 </script>
 {% endblock %}

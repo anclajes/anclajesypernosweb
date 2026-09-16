@@ -7769,8 +7769,10 @@ def admin_campo_personalizado_nuevo():
 
     registrar_log(f"Creó campo personalizado '{etiqueta}' ({tipo_campo}) para Auditoría", "bi-input-cursor-text", "text-info")
     db.session.commit()
+
+    opciones_con_id = [{'id': o.id, 'valor': o.valor} for o in nuevo.opciones]
     return {'status': 'success', 'id': nuevo.id, 'etiqueta': nuevo.etiqueta,
-            'tipo_campo': nuevo.tipo_campo, 'opciones': opciones_lista}
+            'tipo_campo': nuevo.tipo_campo, 'opciones': opciones_lista, 'opciones_con_id': opciones_con_id}
 
 
 @app.route('/admin/catalogos/campo/<int:campo_id>/opcion/nueva', methods=['POST'])
@@ -7784,9 +7786,10 @@ def admin_campo_opcion_nueva(campo_id):
     if CampoPersonalizadoOpcion.query.filter_by(campo_id=campo.id, valor=valor).first():
         return {'status': 'error', 'msg': f'"{valor}" ya existe en este campo.'}
 
-    db.session.add(CampoPersonalizadoOpcion(campo_id=campo.id, valor=valor))
+    nueva_opcion = CampoPersonalizadoOpcion(campo_id=campo.id, valor=valor)
+    db.session.add(nueva_opcion)
     db.session.commit()
-    return {'status': 'success', 'valor': valor}
+    return {'status': 'success', 'id': nueva_opcion.id, 'valor': valor}
 
 
 @app.route('/admin/catalogos/campo/<int:campo_id>/toggle', methods=['POST'])
@@ -7798,42 +7801,112 @@ def admin_campo_toggle(campo_id):
     db.session.commit()
     return {'status': 'success', 'activo': campo.activo}
 
+# ============================================
+# Edición y borrado de Campos Personalizados
+# ============================================
+
+@app.route('/admin/catalogos/campo/<int:campo_id>/editar', methods=['POST'])
+def admin_campo_editar(campo_id):
+    if session.get('role') != 'admin': return {'status': 'error', 'msg': 'No autorizado'}, 403
+    campo = CampoPersonalizado.query.get_or_404(campo_id)
+    nueva_etiqueta = request.form.get('etiqueta', '').strip()
+
+    if not nueva_etiqueta:
+        return {'status': 'error', 'msg': 'La etiqueta no puede quedar vacía.'}
+
+    existe = CampoPersonalizado.query.filter(
+        CampoPersonalizado.etiqueta == nueva_etiqueta, CampoPersonalizado.id != campo.id
+    ).first()
+    if existe:
+        return {'status': 'error', 'msg': f'Ya existe otro campo llamado "{nueva_etiqueta}".'}
+
+    anterior = campo.etiqueta
+    campo.etiqueta = nueva_etiqueta
+    registrar_log(f"Renombró campo personalizado '{anterior}' → '{nueva_etiqueta}'", "bi-pencil-fill", "text-warning")
+    db.session.commit()
+    return {'status': 'success', 'etiqueta': nueva_etiqueta}
+
+
+@app.route('/admin/catalogos/campo/<int:campo_id>/eliminar', methods=['POST'])
+def admin_campo_eliminar(campo_id):
+    if session.get('role') != 'admin': return {'status': 'error', 'msg': 'No autorizado'}, 403
+    campo = CampoPersonalizado.query.get_or_404(campo_id)
+
+    en_uso = RegistroAuditoriaValorExtra.query.filter_by(campo_id=campo.id).count()
+    if en_uso > 0:
+        return {'status': 'error', 'msg': f'Este campo ya tiene {en_uso} registro(s) de auditoría que lo usan. No se puede eliminar, pero puede desactivarlo.'}
+
+    registrar_log(f"Eliminó campo personalizado '{campo.etiqueta}'", "bi-trash-fill", "text-danger")
+    db.session.delete(campo)
+    db.session.commit()
+    return {'status': 'success'}
+
+
+@app.route('/admin/catalogos/opcion/<int:opcion_id>/editar', methods=['POST'])
+def admin_opcion_editar(opcion_id):
+    if session.get('role') != 'admin': return {'status': 'error', 'msg': 'No autorizado'}, 403
+    opcion = CampoPersonalizadoOpcion.query.get_or_404(opcion_id)
+    nuevo_valor = request.form.get('valor', '').strip()
+
+    if not nuevo_valor:
+        return {'status': 'error', 'msg': 'El valor no puede quedar vacío.'}
+
+    duplicado = CampoPersonalizadoOpcion.query.filter(
+        CampoPersonalizadoOpcion.campo_id == opcion.campo_id,
+        CampoPersonalizadoOpcion.valor == nuevo_valor,
+        CampoPersonalizadoOpcion.id != opcion.id
+    ).first()
+    if duplicado:
+        return {'status': 'error', 'msg': f'"{nuevo_valor}" ya existe en este campo.'}
+
+    opcion.valor = nuevo_valor
+    db.session.commit()
+    return {'status': 'success', 'valor': nuevo_valor}
+
+
+@app.route('/admin/catalogos/opcion/<int:opcion_id>/eliminar', methods=['POST'])
+def admin_opcion_eliminar(opcion_id):
+    if session.get('role') != 'admin': return {'status': 'error', 'msg': 'No autorizado'}, 403
+    opcion = CampoPersonalizadoOpcion.query.get_or_404(opcion_id)
+    db.session.delete(opcion)
+    db.session.commit()
+    return {'status': 'success'}
+
+
+@app.route('/admin/catalogos/campos_listado')
+def admin_campos_listado_parcial():
+    """Devuelve el HTML actualizado de la tabla de campos (para refrescar sin recargar la página)."""
+    if session.get('role') != 'admin': return {'status': 'error'}, 403
+    campo = CampoPersonalizado.query.get_or_404(request.args.get('id'))
+    return {'status': 'success', 'opciones': [{'id': o.id, 'valor': o.valor} for o in campo.opciones]}
+
 # --- RUTA SECRETA PARA INICIALIZAR LA BASE DE DATOS EN RENDER ---
 
 
-@app.route('/fix_auditoria_2026')
-def fix_auditoria_module():
+@app.route('/fix_auditoria_columnas_2026')
+def fix_auditoria_columnas():
     if session.get('role') != 'admin':
         return "Acceso denegado", 403
     try:
-        db.create_all()
-
         with db.engine.connect() as conn:
-            conn.execute(text("ALTER TABLE product ADD COLUMN IF NOT EXISTS ultimo_ajuste_auditoria_fecha TIMESTAMP"))
-            conn.execute(text("ALTER TABLE product ADD COLUMN IF NOT EXISTS ultimo_ajuste_auditoria_por VARCHAR(100)"))
-            conn.execute(text("ALTER TABLE product_importbolts ADD COLUMN IF NOT EXISTS ultimo_ajuste_auditoria_fecha TIMESTAMP"))
-            conn.execute(text("ALTER TABLE product_importbolts ADD COLUMN IF NOT EXISTS ultimo_ajuste_auditoria_por VARCHAR(100)"))
-            conn.execute(text("ALTER TABLE catalogo_valor ADD COLUMN IF NOT EXISTS es_predeterminado BOOLEAN DEFAULT FALSE"))
+            # Agrega las columnas nuevas que faltan en la tabla ya existente
+            conn.execute(text("ALTER TABLE registro_auditoria ADD COLUMN IF NOT EXISTS anaquel VARCHAR(20)"))
+            conn.execute(text("ALTER TABLE registro_auditoria ADD COLUMN IF NOT EXISTS nicho VARCHAR(20)"))
+            # Si existían las columnas viejas, las migramos y las eliminamos
+            conn.execute(text("""
+                DO $$
+                BEGIN
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='registro_auditoria' AND column_name='ubicacion_valor') THEN
+                        UPDATE registro_auditoria SET anaquel = ubicacion_valor WHERE ubicacion_tipo = 'ANAQUEL' AND anaquel IS NULL;
+                        UPDATE registro_auditoria SET nicho = ubicacion_valor WHERE ubicacion_tipo = 'NICHO' AND nicho IS NULL;
+                        ALTER TABLE registro_auditoria DROP COLUMN IF EXISTS ubicacion_tipo;
+                        ALTER TABLE registro_auditoria DROP COLUMN IF EXISTS ubicacion_valor;
+                    END IF;
+                END $$;
+            """))
             conn.commit()
-
-        if CatalogoValor.query.filter_by(tipo='ANAQUEL').count() == 0:
-            for i in range(1, 51):
-                db.session.add(CatalogoValor(tipo='ANAQUEL', valor=str(i), es_predeterminado=True))
-        if CatalogoValor.query.filter_by(tipo='NICHO').count() == 0:
-            for letra in ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']:
-                for i in range(1, 9):
-                    db.session.add(CatalogoValor(tipo='NICHO', valor=f"{letra}{i}", es_predeterminado=True))
-        if CatalogoValor.query.filter_by(tipo='UNIDAD_MEDIDA').count() == 0:
-            for u in ['UN', 'M', 'MM', 'KG', 'JUEGO']:
-                db.session.add(CatalogoValor(tipo='UNIDAD_MEDIDA', valor=u, es_predeterminado=True))
-        if CatalogoValor.query.filter_by(tipo='ESTADO_FISICO').count() == 0:
-            for e in ['OXIDADO', 'ROSCA SUCIA', 'HABILITADO/BLANCO']:
-                db.session.add(CatalogoValor(tipo='ESTADO_FISICO', valor=e, es_predeterminado=True))
-
-        db.session.commit()
-        return "<h2>✅ Módulo de Auditoría/Conteo Físico instalado y catálogos base cargados.</h2>"
+        return "<h2>✅ Columnas 'anaquel' y 'nicho' agregadas/migradas correctamente en registro_auditoria.</h2>"
     except Exception as e:
-        db.session.rollback()
         return f"<h2>Error: {str(e)}</h2>"
     
 # --- ARRANQUE DE LA APLICACIÓN ---
