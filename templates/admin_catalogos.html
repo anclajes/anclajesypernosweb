@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}Catálogos de Auditoría{% endblock %}
+{% block subtitle %}Opciones para el módulo de Conteo Físico{% endblock %}
+
+{% block content %}
+<h4 class="fw-bold mb-3"><i class="bi bi-sliders"></i> Catálogos y Campos del Conteo Físico</h4>
+
+<ul class="nav nav-tabs mb-3 flex-wrap">
+    <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-ESTADO_FISICO">Estado Físico</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-UNIDAD_MEDIDA">Unidades</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-ANAQUEL">Anaqueles</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-NICHO">Nichos</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-campos">Campos Personalizados</button></li>
+</ul>
+
+<div class="tab-content">
+    {% for tipo, titulo in [('ESTADO_FISICO','Estado Físico'), ('UNIDAD_MEDIDA','Unidad de Medida'), ('ANAQUEL','Anaquel'), ('NICHO','Nicho')] %}
+    <div class="tab-pane fade {{ 'show active' if tipo == 'ESTADO_FISICO' }}" id="tab-{{ tipo }}">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="d-flex flex-column flex-sm-row gap-2 mb-3">
+                    <input type="text" class="form-control form-control-sm" id="nuevo_{{ tipo }}" placeholder="Nuevo valor para {{ titulo }}...">
+                    <button class="btn btn-sm btn-primary flex-shrink-0" onclick="agregarValor('{{ tipo }}')"><i class="bi bi-plus-lg"></i> Agregar</button>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead><tr><th>Valor</th><th class="text-center">Estado</th><th class="text-end">Acción</th></tr></thead>
+                        <tbody>
+                            {% for v in catalogos[tipo] %}
+                            <tr>
+                                <td>{{ v.valor }}</td>
+                                <td class="text-center">{% if v.activo %}<span class="badge bg-success">Activo</span>{% else %}<span class="badge bg-secondary">Inactivo</span>{% endif %}</td>
+                                <td class="text-end"><button class="btn btn-sm btn-outline-secondary" onclick="toggleValor({{ v.id }})"><i class="bi {{ 'bi-toggle-on' if v.activo else 'bi-toggle-off' }}"></i></button></td>
+                            </tr>
+                            {% else %}
+                            <tr><td colspan="3" class="text-center text-muted py-3">Sin valores aún.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+
+    <div class="tab-pane fade" id="tab-campos">
+        <div class="card border-0 shadow-sm mb-3">
+            <div class="card-header fw-bold"><i class="bi bi-plus-square-dotted"></i> Crear Campo Nuevo</div>
+            <div class="card-body">
+                <div class="row g-2 align-items-end">
+                    <div class="col-12 col-md-4">
+                        <label class="small fw-bold">Etiqueta / Nombre del campo</label>
+                        <input type="text" id="nuevo_campo_etiqueta" class="form-control form-control-sm" placeholder="Ej: N° de Lote">
+                    </div>
+                    <div class="col-12 col-md-3">
+                        <label class="small fw-bold">Tipo</label>
+                        <select id="nuevo_campo_tipo" class="form-select form-select-sm" onchange="toggleOpcionesCampo()">
+                            <option value="TEXTO">Texto libre</option>
+                            <option value="SELECT">Lista de alternativas</option>
+                        </select>
+                    </div>
+                    <div class="col-12 col-md-5" id="wrap_opciones_campo" style="display:none;">
+                        <label class="small fw-bold">Alternativas (separadas por coma)</label>
+                        <input type="text" id="nuevo_campo_opciones" class="form-control form-control-sm" placeholder="Ej: Opción A, Opción B">
+                    </div>
+                    <div class="col-12">
+                        <button class="btn btn-sm btn-primary" onclick="crearCampo()"><i class="bi bi-plus-lg"></i> Crear Campo</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card border-0 shadow-sm">
+            <div class="card-header fw-bold">Campos Existentes</div>
+            <div class="table-responsive">
+                <table class="table table-sm table-hover mb-0">
+                    <thead><tr><th>Etiqueta</th><th>Tipo</th><th>Alternativas</th><th class="text-center">Estado</th><th class="text-end">Acción</th></tr></thead>
+                    <tbody>
+                        {% for c in campos %}
+                        <tr>
+                            <td>{{ c.etiqueta }}</td>
+                            <td><span class="badge bg-light text-dark border">{{ 'Lista' if c.tipo_campo == 'SELECT' else 'Texto libre' }}</span></td>
+                            <td class="small text-muted">
+                                {% if c.tipo_campo == 'SELECT' %}
+                                    {{ c.opciones|map(attribute='valor')|join(', ') }}
+                                    <button class="btn btn-sm btn-link p-0 ms-1" onclick="agregarOpcionCampo({{ c.id }})"><i class="bi bi-plus-circle"></i></button>
+                                {% else %}-{% endif %}
+                            </td>
+                            <td class="text-center">{% if c.activo %}<span class="badge bg-success">Activo</span>{% else %}<span class="badge bg-secondary">Inactivo</span>{% endif %}</td>
+                            <td class="text-end"><button class="btn btn-sm btn-outline-secondary" onclick="toggleCampo({{ c.id }})"><i class="bi {{ 'bi-toggle-on' if c.activo else 'bi-toggle-off' }}"></i></button></td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="5" class="text-center text-muted py-3">No hay campos personalizados aún.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function agregarValor(tipo) {
+    const input = document.getElementById(`nuevo_${tipo}`);
+    const valor = input.value.trim();
+    if (!valor) return;
+    const fd = new FormData(); fd.append('tipo', tipo); fd.append('valor', valor);
+    fetch('/admin/catalogos/valor/nuevo', { method: 'POST', body: fd })
+        .then(r => r.json()).then(data => { if (data.status === 'success') location.reload(); else Swal.fire('Error', data.msg, 'error'); });
+}
+function toggleValor(id) {
+    fetch(`/admin/catalogos/valor/${id}/toggle`, { method: 'POST' }).then(r => r.json()).then(() => location.reload());
+}
+function toggleOpcionesCampo() {
+    document.getElementById('wrap_opciones_campo').style.display = document.getElementById('nuevo_campo_tipo').value === 'SELECT' ? 'block' : 'none';
+}
+function crearCampo() {
+    const etiqueta = document.getElementById('nuevo_campo_etiqueta').value.trim();
+    const tipo = document.getElementById('nuevo_campo_tipo').value;
+    if (!etiqueta) return Swal.fire('Falta la etiqueta', '', 'warning');
+    const fd = new FormData(); fd.append('etiqueta', etiqueta); fd.append('tipo_campo', tipo);
+    if (tipo === 'SELECT') fd.append('opciones', document.getElementById('nuevo_campo_opciones').value);
+    fetch('/admin/catalogos/campo/nuevo', { method: 'POST', body: fd })
+        .then(r => r.json()).then(data => { if (data.status === 'success') location.reload(); else Swal.fire('Error', data.msg, 'error'); });
+}
+function agregarOpcionCampo(campoId) {
+    Swal.fire({ title: 'Nueva alternativa', input: 'text', showCancelButton: true, confirmButtonText: 'Agregar' }).then(result => {
+        if (!result.isConfirmed || !result.value) return;
+        const fd = new FormData(); fd.append('valor', result.value);
+        fetch(`/admin/catalogos/campo/${campoId}/opcion/nueva`, { method: 'POST', body: fd }).then(r => r.json()).then(() => location.reload());
+    });
+}
+function toggleCampo(id) {
+    fetch(`/admin/catalogos/campo/${id}/toggle`, { method: 'POST' }).then(r => r.json()).then(() => location.reload());
+}
+</script>
+{% endblock %}

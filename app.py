@@ -1,5 +1,5 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, session
-from models import db, User, Product, Category, Client, Order, OrderDetail, ProductMovement, AuditLog, SystemConfig,OrderKitComponent, ClientContact, ClientContactLog, ClientRubroVendedor, IntercompanyTransfer, MetaVendedor, ProductImage, MotivoMovimiento, Proveedor, Presentacion, RegistroAuditoria, RegistroAuditoriaLog, CondicionFisica
+from models import db, User, Product, Category, Client, Order, OrderDetail, ProductMovement, AuditLog, SystemConfig,OrderKitComponent, ClientContact, ClientContactLog, ClientRubroVendedor, IntercompanyTransfer, MetaVendedor, ProductImage, MotivoMovimiento, Proveedor, Presentacion, RegistroAuditoria, RegistroAuditoriaLog, RegistroAuditoriaValorExtra, CatalogoValor, CampoPersonalizado, CampoPersonalizadoOpcion
 from models import ProductImportBolts, CategoryImportBolts, ProductMovementImportBolts
 from models import ProductMovement
 from models import Payment
@@ -239,17 +239,13 @@ def hora_peru():
 
 def registrar_log_auditoria(registro, accion, detalle=''):
     log = RegistroAuditoriaLog(
-        registro_id=registro.id,
-        accion=accion,
-        detalle=detalle,
-        realizado_por_id=session.get('user_id'),
-        fecha=hora_peru()
+        registro_id=registro.id, accion=accion, detalle=detalle,
+        realizado_por_id=session.get('user_id'), fecha=hora_peru()
     )
     db.session.add(log)
 
 
 def comparar_cambios(dict_antes, dict_despues):
-    """Devuelve texto legible tipo 'cantidad_total: 120 -> 115; estado_fisico: OXIDADO -> HABILITADO'"""
     cambios = []
     for k in dict_despues:
         v_antes = dict_antes.get(k)
@@ -257,6 +253,7 @@ def comparar_cambios(dict_antes, dict_despues):
         if str(v_antes) != str(v_despues):
             cambios.append(f"{k}: '{v_antes}' → '{v_despues}'")
     return '; '.join(cambios) if cambios else 'Sin cambios'
+
 # --- FUNCIÓN AUXILIAR PARA GUARDAR HISTORIAL ---
 def registrar_log(accion, icono='bi-info-circle', color='text-primary'):
     if 'user_id' in session:
@@ -7389,12 +7386,10 @@ def auditoria_form(origen):
 
     CatModelo = CategoryImportBolts if origen == 'IMPORTBOLTS' else Category
     lista_categorias = [c.nombre for c in CatModelo.query.order_by(CatModelo.nombre).all()]
-    condiciones = CondicionFisica.query.filter_by(activo=True).order_by(CondicionFisica.nombre).all()
 
     return render_template('auditoria_form.html',
                            origen=origen,
                            lista_categorias=lista_categorias,
-                           condiciones=condiciones,
                            now_str=hora_peru().strftime('%d/%m/%Y %H:%M'))
 
 
@@ -7428,6 +7423,30 @@ def auditoria_api_codigos(origen):
     ]}
 
 
+@app.route('/api/catalogo/<tipo>')
+def api_catalogo_valores(tipo):
+    if session.get('role') not in ['auditor_stock', 'admin', 'administracion']: return {'valores': []}, 403
+    tipo = tipo.upper()
+    valores_q = CatalogoValor.query.filter_by(tipo=tipo, activo=True).all()
+    if tipo == 'ANAQUEL':
+        valores = sorted(valores_q, key=lambda v: int(v.valor) if v.valor.isdigit() else 9999)
+    else:
+        valores = sorted(valores_q, key=lambda v: v.valor)
+    return {'valores': [v.valor for v in valores]}  
+
+@app.route('/api/campos_personalizados')
+def api_campos_personalizados():
+    if session.get('role') not in ['auditor_stock', 'admin', 'administracion']: return {'campos': []}, 403
+    campos = CampoPersonalizado.query.filter_by(activo=True).order_by(CampoPersonalizado.orden, CampoPersonalizado.id).all()
+    data = []
+    for c in campos:
+        item = {'id': c.id, 'etiqueta': c.etiqueta, 'tipo_campo': c.tipo_campo}
+        if c.tipo_campo == 'SELECT':
+            item['opciones'] = [o.valor for o in c.opciones if o.activo]
+        data.append(item)
+    return {'campos': data}
+
+
 @app.route('/auditoria/<origen>/guardar', methods=['POST'])
 def auditoria_guardar(origen):
     if session.get('role') != 'auditor_stock': return {'status': 'error', 'msg': 'No autorizado'}, 403
@@ -7445,8 +7464,8 @@ def auditoria_guardar(origen):
             nombre_snapshot=prod.nombre,
             familia=prod.categoria,
             calidad=prod.calidad,
-            ubicacion_tipo=request.form.get('ubicacion_tipo'),
-            ubicacion_valor=request.form.get('ubicacion_valor'),
+            anaquel=request.form.get('anaquel', '').strip() or None,
+            nicho=request.form.get('nicho', '').strip() or None,
             num_cajas=int(request.form.get('num_cajas') or 0),
             peso_promedio_20u=float(request.form.get('peso_promedio_20u') or 0),
             num_bolsas=int(request.form.get('num_bolsas') or 0),
@@ -7454,7 +7473,7 @@ def auditoria_guardar(origen):
             unidad_medida=request.form.get('unidad_medida', 'UN'),
             estado_fisico=request.form.get('estado_fisico', ''),
             observaciones=request.form.get('observaciones', '').strip(),
-            stock_sistema_snapshot=prod.stock_actual,  # oculto, solo para el admin
+            stock_sistema_snapshot=prod.stock_actual,
             estado_registro='PENDIENTE',
             bloqueado=True
         )
@@ -7466,6 +7485,16 @@ def auditoria_guardar(origen):
 
         db.session.add(registro)
         db.session.flush()
+
+        # Guardar valores de campos personalizados (llegan como campo_<id>)
+        campos_activos = CampoPersonalizado.query.filter_by(activo=True).all()
+        for campo in campos_activos:
+            valor_enviado = request.form.get(f'campo_{campo.id}', '').strip()
+            if valor_enviado:
+                db.session.add(RegistroAuditoriaValorExtra(
+                    registro_id=registro.id, campo_id=campo.id,
+                    etiqueta_snapshot=campo.etiqueta, valor=valor_enviado
+                ))
 
         registrar_log_auditoria(registro, 'CREADO',
             f"Conteo enviado por {session.get('nombre')}: {registro.cantidad_total} {registro.unidad_medida}")
@@ -7518,20 +7547,16 @@ def admin_auditorias_lista():
 def admin_auditorias_detalle(reg_id):
     if session.get('role') not in ['admin', 'administracion']: return "Acceso denegado", 403
     registro = RegistroAuditoria.query.get_or_404(reg_id)
-    prod_actual = registro.producto  # datos EN VIVO del sistema, para comparar
-    condiciones = CondicionFisica.query.filter_by(activo=True).order_by(CondicionFisica.nombre).all()
-    return render_template('admin_auditorias_detalle.html',
-                           registro=registro, prod_actual=prod_actual, condiciones=condiciones)
+    prod_actual = registro.producto
+    return render_template('admin_auditorias_detalle.html', registro=registro, prod_actual=prod_actual)
 
 
 @app.route('/admin/auditorias/<int:reg_id>/desbloquear', methods=['POST'])
 def admin_auditoria_desbloquear(reg_id):
     if session.get('role') not in ['admin', 'administracion']: return {'status': 'error'}, 403
     registro = RegistroAuditoria.query.get_or_404(reg_id)
-
     if registro.estado_registro == 'APLICADO':
         return {'status': 'error', 'msg': 'No se puede desbloquear un registro ya aplicado al inventario.'}
-
     registro.bloqueado = False
     registrar_log_auditoria(registro, 'DESBLOQUEADO', f"Desbloqueado por {session.get('nombre')} para edición.")
     db.session.commit()
@@ -7546,13 +7571,12 @@ def admin_auditoria_editar(reg_id):
     if registro.bloqueado:
         return {'status': 'error', 'msg': 'Debe desbloquear el registro antes de editarlo.'}
 
-    campos = ['ubicacion_tipo', 'ubicacion_valor', 'num_cajas', 'peso_promedio_20u',
+    campos = ['anaquel', 'nicho', 'num_cajas', 'peso_promedio_20u',
               'num_bolsas', 'cantidad_total', 'unidad_medida', 'estado_fisico', 'observaciones']
-
     antes = {c: getattr(registro, c) for c in campos}
 
-    registro.ubicacion_tipo = request.form.get('ubicacion_tipo')
-    registro.ubicacion_valor = request.form.get('ubicacion_valor')
+    registro.anaquel = request.form.get('anaquel', '').strip() or None
+    registro.nicho = request.form.get('nicho', '').strip() or None
     registro.num_cajas = int(request.form.get('num_cajas') or 0)
     registro.peso_promedio_20u = float(request.form.get('peso_promedio_20u') or 0)
     registro.num_bolsas = int(request.form.get('num_bolsas') or 0)
@@ -7564,9 +7588,8 @@ def admin_auditoria_editar(reg_id):
     despues = {c: getattr(registro, c) for c in campos}
     detalle = comparar_cambios(antes, despues)
 
-    registro.bloqueado = True  # vuelve a bloquear tras editar
+    registro.bloqueado = True
     registrar_log_auditoria(registro, 'EDITADO', f"{session.get('nombre')} editó: {detalle}")
-
     db.session.commit()
     return {'status': 'success', 'msg': 'Registro actualizado y bloqueado nuevamente.'}
 
@@ -7576,7 +7599,6 @@ def admin_auditoria_rechazar(reg_id):
     if session.get('role') not in ['admin', 'administracion']: return {'status': 'error'}, 403
     registro = RegistroAuditoria.query.get_or_404(reg_id)
     motivo = request.form.get('motivo', '').strip()
-
     if not motivo:
         return {'status': 'error', 'msg': 'Debe indicar el motivo de rechazo.'}
 
@@ -7592,8 +7614,6 @@ def admin_auditoria_rechazar(reg_id):
 
 @app.route('/admin/auditorias/<int:reg_id>/aplicar', methods=['POST'])
 def admin_auditoria_aplicar(reg_id):
-    """AQUÍ es donde el conteo del auditor se refleja en el inventario real,
-    generando un movimiento de Kardex con fecha/hora/usuario (auditoría del ítem)."""
     if session.get('role') not in ['admin', 'administracion']: return {'status': 'error'}, 403
     registro = RegistroAuditoria.query.get_or_404(reg_id)
 
@@ -7621,19 +7641,20 @@ def admin_auditoria_aplicar(reg_id):
         prod.ultimo_ajuste_auditoria_fecha = hora_peru()
         prod.ultimo_ajuste_auditoria_por = session.get('nombre')
 
-        if actualizar_ubicacion and registro.ubicacion_valor:
-            prod.ubicacion = f"{registro.ubicacion_tipo} {registro.ubicacion_valor}"
+        if actualizar_ubicacion:
+            partes = []
+            if registro.anaquel: partes.append(f"ANAQUEL {registro.anaquel}")
+            if registro.nicho: partes.append(f"NICHO {registro.nicho}")
+            if partes:
+                prod.ubicacion = " / ".join(partes)
+
         if actualizar_estado and registro.estado_fisico:
             prod.estado = registro.estado_fisico
 
-        # --- ESTO GENERA EL "fecha hora nombre" EN EL ITEM, vía tu Kardex existente ---
         movimiento = ModeloMov(
-            product_id=prod.id,
-            user_id=session['user_id'],
-            tipo=tipo_mov,
+            product_id=prod.id, user_id=session['user_id'], tipo=tipo_mov,
             cantidad=abs(diferencia) if diferencia != 0 else 0,
-            stock_anterior=stock_antes,
-            stock_nuevo=prod.stock_actual,
+            stock_anterior=stock_antes, stock_nuevo=prod.stock_actual,
             motivo=f"Ajuste por Conteo Físico #{registro.id} (Auditor: {registro.trabajador.nombre_completo})"
         )
         db.session.add(movimiento)
@@ -7645,9 +7666,8 @@ def admin_auditoria_aplicar(reg_id):
         registro.fecha_revision = registro.fecha_revision or hora_peru()
         registro.bloqueado = True
 
-        detalle = (f"Stock {stock_antes} → {registro.cantidad_total} "
-                   f"(diferencia {diferencia:+d}). Ubicación actualizada: {actualizar_ubicacion}. "
-                   f"Estado actualizado: {actualizar_estado}.")
+        detalle = (f"Stock {stock_antes} → {registro.cantidad_total} (diferencia {diferencia:+d}). "
+                   f"Ubicación actualizada: {actualizar_ubicacion}. Estado actualizado: {actualizar_estado}.")
         registrar_log_auditoria(registro, 'APLICADO', f"{session.get('nombre')} aplicó: {detalle}")
 
         db.session.commit()
@@ -7658,31 +7678,89 @@ def admin_auditoria_aplicar(reg_id):
         return {'status': 'error', 'msg': str(e)}
 
 # ============================================
-# CATÁLOGO DE "ESTADO FÍSICO" (administrable)
+# Panel de catálogos (SOLO ADMIN)
 # ============================================
+@app.route('/admin/catalogos')
+def admin_catalogos():
+    if session.get('role') != 'admin': return "Acceso denegado", 403
+    tipos = ['ESTADO_FISICO', 'UNIDAD_MEDIDA', 'ANAQUEL', 'NICHO']
+    catalogos = {t: CatalogoValor.query.filter_by(tipo=t).order_by(CatalogoValor.valor).all() for t in tipos}
+    campos = CampoPersonalizado.query.order_by(CampoPersonalizado.orden, CampoPersonalizado.id).all()
+    return render_template('admin_catalogos.html', catalogos=catalogos, campos=campos)
 
-@app.route('/admin/condiciones_fisicas/nueva', methods=['POST'])
-def crear_condicion_fisica():
+
+@app.route('/admin/catalogos/valor/nuevo', methods=['POST'])
+def admin_catalogo_valor_nuevo():
     if session.get('role') != 'admin': return {'status': 'error', 'msg': 'No autorizado'}, 403
-    nombre = request.form.get('nombre', '').strip().upper()
-    if not nombre: return {'status': 'error', 'msg': 'Nombre vacío'}
-    if CondicionFisica.query.filter_by(nombre=nombre).first():
-        return {'status': 'error', 'msg': f'"{nombre}" ya existe.'}
+    tipo = request.form.get('tipo', '').strip().upper()
+    valor = request.form.get('valor', '').strip().upper()
+    if tipo not in ['ESTADO_FISICO', 'UNIDAD_MEDIDA', 'ANAQUEL', 'NICHO']:
+        return {'status': 'error', 'msg': 'Tipo de catálogo inválido'}
+    if not valor:
+        return {'status': 'error', 'msg': 'El valor no puede estar vacío'}
+    if CatalogoValor.query.filter_by(tipo=tipo, valor=valor).first():
+        return {'status': 'error', 'msg': f'"{valor}" ya existe en este catálogo'}
 
-    nueva = CondicionFisica(nombre=nombre, creado_por_id=session['user_id'])
-    db.session.add(nueva)
-
-    # Reutilizamos tu AuditLog general del sistema (ya existente)
-    registrar_log(f"Agregó estado físico '{nombre}' al catálogo de auditoría", "bi-tag-fill", "text-info")
-
+    nuevo = CatalogoValor(tipo=tipo, valor=valor, creado_por_id=session['user_id'])
+    db.session.add(nuevo)
+    registrar_log(f"Agregó '{valor}' al catálogo {tipo} (Auditoría)", "bi-tag-fill", "text-info")
     db.session.commit()
-    return {'status': 'success', 'id': nueva.id, 'nombre': nueva.nombre}
+    return {'status': 'success', 'id': nuevo.id, 'valor': nuevo.valor}
 
 
-@app.route('/api/condiciones_fisicas')
-def listar_condiciones_fisicas():
-    condiciones = CondicionFisica.query.filter_by(activo=True).order_by(CondicionFisica.nombre).all()
-    return {'condiciones': [{'id': c.id, 'nombre': c.nombre} for c in condiciones]}
+@app.route('/admin/catalogos/valor/<int:val_id>/toggle', methods=['POST'])
+def admin_catalogo_valor_toggle(val_id):
+    if session.get('role') != 'admin': return {'status': 'error'}, 403
+    v = CatalogoValor.query.get_or_404(val_id)
+    v.activo = not v.activo
+    registrar_log(f"{'Activó' if v.activo else 'Desactivó'} '{v.valor}' del catálogo {v.tipo}", "bi-tag-fill", "text-info")
+    db.session.commit()
+    return {'status': 'success', 'activo': v.activo}
+
+
+@app.route('/admin/catalogos/campo/nuevo', methods=['POST'])
+def admin_campo_personalizado_nuevo():
+    if session.get('role') != 'admin': return {'status': 'error', 'msg': 'No autorizado'}, 403
+    etiqueta = request.form.get('etiqueta', '').strip()
+    tipo_campo = request.form.get('tipo_campo', 'TEXTO').strip().upper()
+    if not etiqueta:
+        return {'status': 'error', 'msg': 'La etiqueta es obligatoria'}
+    if tipo_campo not in ['SELECT', 'TEXTO']:
+        tipo_campo = 'TEXTO'
+
+    nuevo = CampoPersonalizado(etiqueta=etiqueta, tipo_campo=tipo_campo, creado_por_id=session['user_id'])
+    db.session.add(nuevo)
+    db.session.flush()
+
+    if tipo_campo == 'SELECT':
+        opciones_raw = request.form.get('opciones', '')
+        for op in [o.strip() for o in opciones_raw.split(',') if o.strip()]:
+            db.session.add(CampoPersonalizadoOpcion(campo_id=nuevo.id, valor=op))
+
+    registrar_log(f"Creó campo personalizado '{etiqueta}' ({tipo_campo}) para Auditoría", "bi-input-cursor-text", "text-info")
+    db.session.commit()
+    return {'status': 'success', 'id': nuevo.id}
+
+
+@app.route('/admin/catalogos/campo/<int:campo_id>/opcion/nueva', methods=['POST'])
+def admin_campo_opcion_nueva(campo_id):
+    if session.get('role') != 'admin': return {'status': 'error'}, 403
+    campo = CampoPersonalizado.query.get_or_404(campo_id)
+    valor = request.form.get('valor', '').strip()
+    if not valor: return {'status': 'error', 'msg': 'Valor vacío'}
+    db.session.add(CampoPersonalizadoOpcion(campo_id=campo.id, valor=valor))
+    db.session.commit()
+    return {'status': 'success'}
+
+
+@app.route('/admin/catalogos/campo/<int:campo_id>/toggle', methods=['POST'])
+def admin_campo_toggle(campo_id):
+    if session.get('role') != 'admin': return {'status': 'error'}, 403
+    campo = CampoPersonalizado.query.get_or_404(campo_id)
+    campo.activo = not campo.activo
+    registrar_log(f"{'Activó' if campo.activo else 'Desactivó'} campo personalizado '{campo.etiqueta}'", "bi-input-cursor-text", "text-info")
+    db.session.commit()
+    return {'status': 'success', 'activo': campo.activo}
 
 # --- RUTA SECRETA PARA INICIALIZAR LA BASE DE DATOS EN RENDER ---
 
@@ -7693,15 +7771,35 @@ def fix_auditoria_module():
         return "Acceso denegado", 403
     try:
         db.create_all()
+
         with db.engine.connect() as conn:
             conn.execute(text("ALTER TABLE product ADD COLUMN IF NOT EXISTS ultimo_ajuste_auditoria_fecha TIMESTAMP"))
             conn.execute(text("ALTER TABLE product ADD COLUMN IF NOT EXISTS ultimo_ajuste_auditoria_por VARCHAR(100)"))
             conn.execute(text("ALTER TABLE product_importbolts ADD COLUMN IF NOT EXISTS ultimo_ajuste_auditoria_fecha TIMESTAMP"))
             conn.execute(text("ALTER TABLE product_importbolts ADD COLUMN IF NOT EXISTS ultimo_ajuste_auditoria_por VARCHAR(100)"))
             conn.commit()
-        return "<h2>✅ Módulo de Auditoría/Conteo Físico instalado correctamente.</h2>"
+
+        # Semillas iniciales (solo si el catálogo respectivo está vacío)
+        if CatalogoValor.query.filter_by(tipo='ANAQUEL').count() == 0:
+            for i in range(1, 51):
+                db.session.add(CatalogoValor(tipo='ANAQUEL', valor=str(i)))
+        if CatalogoValor.query.filter_by(tipo='NICHO').count() == 0:
+            for letra in ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']:
+                for i in range(1, 9):
+                    db.session.add(CatalogoValor(tipo='NICHO', valor=f"{letra}{i}"))
+        if CatalogoValor.query.filter_by(tipo='UNIDAD_MEDIDA').count() == 0:
+            for u in ['UN', 'M', 'MM', 'KG', 'JUEGO']:
+                db.session.add(CatalogoValor(tipo='UNIDAD_MEDIDA', valor=u))
+        if CatalogoValor.query.filter_by(tipo='ESTADO_FISICO').count() == 0:
+            for e in ['OXIDADO', 'ROSCA SUCIA', 'HABILITADO/BLANCO']:
+                db.session.add(CatalogoValor(tipo='ESTADO_FISICO', valor=e))
+
+        db.session.commit()
+        return "<h2>✅ Módulo de Auditoría/Conteo Físico instalado y catálogos base cargados.</h2>"
     except Exception as e:
+        db.session.rollback()
         return f"<h2>Error: {str(e)}</h2>"
+    
 # --- ARRANQUE DE LA APLICACIÓN ---
 if __name__ == '__main__':
     # host='0.0.0.0' permite que otras PCs/celulares en la red te vean

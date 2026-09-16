@@ -526,21 +526,50 @@ class Presentacion(db.Model):
 
 # --- MÓDULO DE AUDITORÍA / CONTEO FÍSICO ---
 
-class CondicionFisica(db.Model):
-    """Catálogo editable de estados físicos (Oxidado, Rosca Sucia, Habilitado/Blanco...).
-    El admin puede agregar más desde el panel."""
-    __tablename__ = 'condicion_fisica'
+class CatalogoValor(db.Model):
+    """Catálogo genérico y administrable: ESTADO_FISICO, UNIDAD_MEDIDA, ANAQUEL, NICHO.
+    Solo el admin puede agregar/desactivar valores."""
+    __tablename__ = 'catalogo_valor'
     id = db.Column(db.Integer, primary_key=True)
-    nombre = db.Column(db.String(100), unique=True, nullable=False)
+    tipo = db.Column(db.String(30), nullable=False)   # ESTADO_FISICO / UNIDAD_MEDIDA / ANAQUEL / NICHO
+    valor = db.Column(db.String(100), nullable=False)
     activo = db.Column(db.Boolean, default=True)
     creado_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     creado_en = db.Column(db.DateTime, default=hora_peru)
 
     creado_por = db.relationship('User')
 
+    __table_args__ = (db.UniqueConstraint('tipo', 'valor', name='uq_catalogo_tipo_valor'),)
+
+
+class CampoPersonalizado(db.Model):
+    """Campos extra que el admin puede crear para el formulario de conteo:
+    tipo_campo = 'SELECT' (lista de alternativas) o 'TEXTO' (texto libre)."""
+    __tablename__ = 'campo_personalizado'
+    id = db.Column(db.Integer, primary_key=True)
+    etiqueta = db.Column(db.String(150), nullable=False)
+    tipo_campo = db.Column(db.String(10), nullable=False, default='TEXTO')
+    activo = db.Column(db.Boolean, default=True)
+    orden = db.Column(db.Integer, default=0)
+    creado_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    creado_en = db.Column(db.DateTime, default=hora_peru)
+
+    creado_por = db.relationship('User')
+    opciones = db.relationship('CampoPersonalizadoOpcion', backref='campo', cascade="all, delete-orphan")
+
+
+class CampoPersonalizadoOpcion(db.Model):
+    __tablename__ = 'campo_personalizado_opcion'
+    id = db.Column(db.Integer, primary_key=True)
+    campo_id = db.Column(db.Integer, db.ForeignKey('campo_personalizado.id'), nullable=False)
+    valor = db.Column(db.String(150), nullable=False)
+    activo = db.Column(db.Boolean, default=True)
+
+
+
 
 class RegistroAuditoria(db.Model):
-    """Un conteo físico enviado por un trabajador para un producto específico."""
+    """Un conteo físico enviado por un auditor para un producto específico."""
     __tablename__ = 'registro_auditoria'
     id = db.Column(db.Integer, primary_key=True)
 
@@ -551,14 +580,14 @@ class RegistroAuditoria(db.Model):
     product_id = db.Column(db.Integer, db.ForeignKey('product.id'), nullable=True)
     product_importbolts_id = db.Column(db.Integer, db.ForeignKey('product_importbolts.id'), nullable=True)
 
-    # Snapshot descriptivo (por si el producto se edita/renombra después)
     sku_snapshot = db.Column(db.String(50))
     nombre_snapshot = db.Column(db.String(500))
     familia = db.Column(db.String(200))
     calidad = db.Column(db.String(200))
 
-    ubicacion_tipo = db.Column(db.String(20))    # ANAQUEL / NICHO
-    ubicacion_valor = db.Column(db.String(20))   # "23" / "A5" / "H3"
+    # Anaquel y Nicho son INDEPENDIENTES: se puede llenar uno, ambos o ninguno
+    anaquel = db.Column(db.String(20), nullable=True)
+    nicho = db.Column(db.String(20), nullable=True)
 
     num_cajas = db.Column(db.Integer, default=0)
     peso_promedio_20u = db.Column(db.Float, default=0.0)
@@ -568,8 +597,7 @@ class RegistroAuditoria(db.Model):
     estado_fisico = db.Column(db.String(100))
     observaciones = db.Column(db.Text)
 
-    # Conteo CIEGO: el trabajador nunca lo ve. Se guarda solo para que el admin compare.
-    stock_sistema_snapshot = db.Column(db.Integer)
+    stock_sistema_snapshot = db.Column(db.Integer)  # oculto al auditor (conteo ciego)
 
     estado_registro = db.Column(db.String(20), default='PENDIENTE')  # PENDIENTE, APROBADO, RECHAZADO, APLICADO
     bloqueado = db.Column(db.Boolean, default=True)
@@ -592,13 +620,26 @@ class RegistroAuditoria(db.Model):
         return self.product_importbolts if self.origen_inventario == 'IMPORTBOLTS' else self.product
 
 
+class RegistroAuditoriaValorExtra(db.Model):
+    """Valores capturados para los campos personalizados que el admin haya creado."""
+    __tablename__ = 'registro_auditoria_valor_extra'
+    id = db.Column(db.Integer, primary_key=True)
+    registro_id = db.Column(db.Integer, db.ForeignKey('registro_auditoria.id'), nullable=False)
+    campo_id = db.Column(db.Integer, db.ForeignKey('campo_personalizado.id'), nullable=True)
+    etiqueta_snapshot = db.Column(db.String(150))
+    valor = db.Column(db.String(300))
+
+    registro = db.relationship('RegistroAuditoria', backref=db.backref('valores_extra', cascade="all, delete-orphan"))
+    campo = db.relationship('CampoPersonalizado')
+
+
 class RegistroAuditoriaLog(db.Model):
     """Bitácora de todo lo que pasa con un registro: creado, editado, aprobado, rechazado, aplicado."""
     __tablename__ = 'registro_auditoria_log'
     id = db.Column(db.Integer, primary_key=True)
     registro_id = db.Column(db.Integer, db.ForeignKey('registro_auditoria.id'), nullable=False)
-    accion = db.Column(db.String(30), nullable=False)  # CREADO, EDITADO, DESBLOQUEADO, APROBADO, RECHAZADO, APLICADO
-    detalle = db.Column(db.Text)  # texto legible: "cantidad_total: 120 -> 115"
+    accion = db.Column(db.String(30), nullable=False)
+    detalle = db.Column(db.Text)
     realizado_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     fecha = db.Column(db.DateTime, default=hora_peru)
 

@@ -1,26 +1,30 @@
 {% extends "base.html" %}
 {% block title %}Detalle Conteo #{{ registro.id }}{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
     <h4 class="fw-bold mb-0">Conteo #{{ registro.id }} — {{ registro.sku_snapshot }}</h4>
     <a href="{{ url_for('admin_auditorias_lista') }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Volver</a>
 </div>
 
 <div class="row g-3 mb-3">
     <!-- DATO ENVIADO POR EL AUDITOR -->
-    <div class="col-md-6">
+    <div class="col-12 col-md-6">
         <div class="card border-0 shadow-sm h-100">
             <div class="card-header bg-primary text-white fw-bold"><i class="bi bi-clipboard2-check"></i> Dato Enviado (Conteo Físico)</div>
             <div class="card-body small">
                 <table class="table table-sm mb-0">
                     <tr><td class="text-muted">Auditor</td><td class="fw-bold">{{ registro.trabajador.nombre_completo }}</td></tr>
                     <tr><td class="text-muted">Fecha/Hora</td><td>{{ registro.fecha_registro.strftime('%d/%m/%Y %H:%M') }}</td></tr>
-                    <tr><td class="text-muted">Ubicación</td><td>{{ registro.ubicacion_tipo }} {{ registro.ubicacion_valor }}</td></tr>
+                    <tr><td class="text-muted">Anaquel</td><td>{{ registro.anaquel or '-' }}</td></tr>
+                    <tr><td class="text-muted">Nicho</td><td>{{ registro.nicho or '-' }}</td></tr>
                     <tr><td class="text-muted"># Cajas</td><td>{{ registro.num_cajas }}</td></tr>
                     <tr><td class="text-muted">Peso prom. 20u</td><td>{{ registro.peso_promedio_20u }} Kg</td></tr>
                     <tr><td class="text-muted"># Bolsas</td><td>{{ registro.num_bolsas }}</td></tr>
                     <tr class="table-warning"><td class="fw-bold">Cantidad Total</td><td class="fw-bold fs-6">{{ registro.cantidad_total }} {{ registro.unidad_medida }}</td></tr>
                     <tr><td class="text-muted">Estado Físico</td><td>{{ registro.estado_fisico or '-' }}</td></tr>
+                    {% for ve in registro.valores_extra %}
+                    <tr><td class="text-muted">{{ ve.etiqueta_snapshot }}</td><td>{{ ve.valor }}</td></tr>
+                    {% endfor %}
                     <tr><td class="text-muted">Observaciones</td><td>{{ registro.observaciones or '-' }}</td></tr>
                 </table>
             </div>
@@ -28,7 +32,7 @@
     </div>
 
     <!-- DATO ACTUAL EN VIVO DEL SISTEMA -->
-    <div class="col-md-6">
+    <div class="col-12 col-md-6">
         <div class="card border-0 shadow-sm h-100">
             <div class="card-header bg-dark text-white fw-bold"><i class="bi bi-database-fill"></i> Dato Actual en el Sistema</div>
             <div class="card-body small">
@@ -85,38 +89,33 @@
 <div class="card border-0 shadow-sm">
     <div class="card-header fw-bold"><i class="bi bi-clock-history"></i> Historial de Auditoría de este Registro</div>
     <div class="card-body p-0">
-        <table class="table table-sm mb-0 small">
-            <thead class="table-light"><tr><th class="ps-3">Fecha/Hora</th><th>Usuario</th><th>Acción</th><th>Detalle</th></tr></thead>
-            <tbody>
-                {% for log in registro.logs %}
-                <tr>
-                    <td class="ps-3">{{ log.fecha.strftime('%d/%m/%Y %H:%M') }}</td>
-                    <td>{{ log.realizado_por.nombre_completo if log.realizado_por else 'Sistema' }}</td>
-                    <td><span class="badge bg-secondary">{{ log.accion }}</span></td>
-                    <td>{{ log.detalle }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+        <div class="table-responsive">
+            <table class="table table-sm mb-0 small">
+                <thead class="table-light"><tr><th class="ps-3">Fecha/Hora</th><th>Usuario</th><th>Acción</th><th>Detalle</th></tr></thead>
+                <tbody>
+                    {% for log in registro.logs %}
+                    <tr>
+                        <td class="ps-3">{{ log.fecha.strftime('%d/%m/%Y %H:%M') }}</td>
+                        <td>{{ log.realizado_por.nombre_completo if log.realizado_por else 'Sistema' }}</td>
+                        <td><span class="badge bg-secondary">{{ log.accion }}</span></td>
+                        <td>{{ log.detalle }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
 </div>
 
 <!-- MODAL EDITAR -->
 <div class="modal fade" id="modalEditar" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header bg-warning"><h6 class="modal-title fw-bold">Editar Registro (Desbloqueado)</h6><button class="btn-close" data-bs-dismiss="modal"></button></div>
             <div class="modal-body">
                 <div class="row g-2">
-                    <div class="col-6"><label class="small fw-bold">Ubicación Tipo</label>
-                        <select id="e_ubicacion_tipo" class="form-select form-select-sm">
-                            <option value="ANAQUEL" {% if registro.ubicacion_tipo=='ANAQUEL' %}selected{% endif %}>Anaquel</option>
-                            <option value="NICHO" {% if registro.ubicacion_tipo=='NICHO' %}selected{% endif %}>Nicho</option>
-                        </select>
-                    </div>
-                    <div class="col-6"><label class="small fw-bold">Valor</label>
-                        <input type="text" id="e_ubicacion_valor" class="form-control form-control-sm" value="{{ registro.ubicacion_valor }}">
-                    </div>
+                    <div class="col-6"><label class="small fw-bold">Anaquel</label><input type="text" id="e_anaquel" class="form-control form-control-sm" value="{{ registro.anaquel or '' }}"></div>
+                    <div class="col-6"><label class="small fw-bold">Nicho</label><input type="text" id="e_nicho" class="form-control form-control-sm" value="{{ registro.nicho or '' }}"></div>
                     <div class="col-4"><label class="small fw-bold"># Cajas</label><input type="number" id="e_num_cajas" class="form-control form-control-sm" value="{{ registro.num_cajas }}"></div>
                     <div class="col-4"><label class="small fw-bold">Peso 20u</label><input type="number" step="0.001" id="e_peso_promedio_20u" class="form-control form-control-sm" value="{{ registro.peso_promedio_20u }}"></div>
                     <div class="col-4"><label class="small fw-bold"># Bolsas</label><input type="number" id="e_num_bolsas" class="form-control form-control-sm" value="{{ registro.num_bolsas }}"></div>
@@ -127,10 +126,7 @@
                         </select>
                     </div>
                     <div class="col-12"><label class="small fw-bold">Estado Físico</label>
-                        <select id="e_estado_fisico" class="form-select form-select-sm">
-                            <option value="">-- Ninguno --</option>
-                            {% for c in condiciones %}<option value="{{ c.nombre }}" {% if registro.estado_fisico==c.nombre %}selected{% endif %}>{{ c.nombre }}</option>{% endfor %}
-                        </select>
+                        <input type="text" id="e_estado_fisico" class="form-control form-control-sm" value="{{ registro.estado_fisico or '' }}">
                     </div>
                     <div class="col-12"><label class="small fw-bold">Observaciones</label><textarea id="e_observaciones" class="form-control form-control-sm">{{ registro.observaciones or '' }}</textarea></div>
                 </div>
@@ -148,8 +144,11 @@
             <div class="modal-body small">
                 <p>Esto actualizará el <b>stock</b> de {{ registro.sku_snapshot }} a <b>{{ registro.cantidad_total }} {{ registro.unidad_medida }}</b> y generará un movimiento de Kardex.</p>
                 <div class="form-check mb-2">
-                    <input class="form-check-input" type="checkbox" id="chk_ubicacion" {% if registro.ubicacion_valor %}checked{% endif %}>
-                    <label class="form-check-label">También actualizar la ubicación a "{{ registro.ubicacion_tipo }} {{ registro.ubicacion_valor }}"</label>
+                    <input class="form-check-input" type="checkbox" id="chk_ubicacion" {% if registro.anaquel or registro.nicho %}checked{% endif %}>
+                    <label class="form-check-label">
+                        También actualizar la ubicación a
+                        "{{ registro.anaquel and 'ANAQUEL ' ~ registro.anaquel or '' }} {{ registro.nicho and 'NICHO ' ~ registro.nicho or '' }}"
+                    </label>
                 </div>
                 <div class="form-check">
                     <input class="form-check-input" type="checkbox" id="chk_estado" {% if registro.estado_fisico %}checked{% endif %}>
@@ -173,8 +172,8 @@ function desbloquear() {
 
 function guardarEdicion() {
     const fd = new FormData();
-    fd.append('ubicacion_tipo', document.getElementById('e_ubicacion_tipo').value);
-    fd.append('ubicacion_valor', document.getElementById('e_ubicacion_valor').value);
+    fd.append('anaquel', document.getElementById('e_anaquel').value);
+    fd.append('nicho', document.getElementById('e_nicho').value);
     fd.append('num_cajas', document.getElementById('e_num_cajas').value);
     fd.append('peso_promedio_20u', document.getElementById('e_peso_promedio_20u').value);
     fd.append('num_bolsas', document.getElementById('e_num_bolsas').value);
