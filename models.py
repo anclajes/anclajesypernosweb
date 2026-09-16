@@ -55,6 +55,8 @@ class Product(db.Model):
     activo = db.Column(db.Boolean, default=True, nullable=False)  # Desactivar en vez de eliminar
     ultimo_ajuste_auditoria_fecha = db.Column(db.DateTime, nullable=True)
     ultimo_ajuste_auditoria_por = db.Column(db.String(100), nullable=True)
+    ultimo_ajuste_auditoria_conteo_por = db.Column(db.String(100), nullable=True)  # quién hizo el CONTEO físico
+
 
 # --- 4. KARDEX ---
 class ProductMovement(db.Model):
@@ -414,6 +416,7 @@ class ProductImportBolts(db.Model):
     activo = db.Column(db.Boolean, default=True, nullable=False)  # Desactivar en vez de eliminar
     ultimo_ajuste_auditoria_fecha = db.Column(db.DateTime, nullable=True)
     ultimo_ajuste_auditoria_por = db.Column(db.String(100), nullable=True)
+    ultimo_ajuste_auditoria_conteo_por = db.Column(db.String(100), nullable=True)  # quién hizo el CONTEO físico
 
 class ProductMovementImportBolts(db.Model):
     __tablename__ = 'product_movement_importbolts'

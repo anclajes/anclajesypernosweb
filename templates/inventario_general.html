@@ -271,6 +271,13 @@
                         {% if not p.activo %}
                             <span class="badge bg-secondary ms-1" style="font-size:.65rem;"><i class="bi bi-eye-slash-fill"></i> INACTIVO</span>
                         {% endif %}
+                        {% if p.ultimo_ajuste_fecha %}
+                            <br>
+                            <span class="badge text-white mt-1" style="font-size:.65rem; background-color:#6f42c1;"
+                                  title="Contado por {{ p.ultimo_ajuste_conteo_por }}, aplicado por {{ p.ultimo_ajuste_por }}">
+                                <i class="bi bi-clipboard2-check-fill"></i> Auditado: {{ p.ultimo_ajuste_fecha.strftime('%d/%m/%Y %H:%M') }}
+                            </span>
+                        {% endif %}
                     </td>
                     <td><span class="badge bg-light text-dark border">{{ p.categoria }}</span></td>
                     <td>{{ p.calidad or '-' }}</td>

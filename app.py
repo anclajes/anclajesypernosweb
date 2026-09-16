@@ -6493,7 +6493,10 @@ def inventario_general():
             resultados.append({
                 'id': p.id, 'sku': p.sku, 'nombre': p.nombre, 'categoria': p.categoria, 'calidad': p.calidad,
                 'ubicacion': p.ubicacion, 'stock': p.stock_actual, 'stock_min': p.stock_minimo,
-                'peso_kg': p.peso_kg or 0, 'origen': 'ANCLAJES', 'activo': p.activo
+                'peso_kg': p.peso_kg or 0, 'origen': 'ANCLAJES', 'activo': p.activo,
+                'ultimo_ajuste_fecha': p.ultimo_ajuste_auditoria_fecha,
+                'ultimo_ajuste_por': p.ultimo_ajuste_auditoria_por,
+                'ultimo_ajuste_conteo_por': p.ultimo_ajuste_auditoria_conteo_por
             })
 
     if origen_filtro in ['todos', 'IMPORTBOLTS']:
@@ -6511,7 +6514,10 @@ def inventario_general():
             resultados.append({
                 'id': p.id, 'sku': p.sku, 'nombre': p.nombre, 'categoria': p.categoria, 'calidad': p.calidad,
                 'ubicacion': p.ubicacion, 'stock': p.stock_actual, 'stock_min': p.stock_minimo,
-                'peso_kg': p.peso_kg or 0, 'origen': 'IMPORTBOLTS', 'activo': p.activo
+                'peso_kg': p.peso_kg or 0, 'origen': 'IMPORTBOLTS', 'activo': p.activo,
+                'ultimo_ajuste_fecha': p.ultimo_ajuste_auditoria_fecha,
+                'ultimo_ajuste_por': p.ultimo_ajuste_auditoria_por,
+                'ultimo_ajuste_conteo_por': p.ultimo_ajuste_auditoria_conteo_por
             })
 
     # Filtro por categoría y calidad (ya combinados, aplicado sobre la lista en memoria)
@@ -7659,6 +7665,7 @@ def admin_auditoria_aplicar(reg_id):
         prod.actualizado_por = session.get('nombre')
         prod.ultimo_ajuste_auditoria_fecha = hora_peru()
         prod.ultimo_ajuste_auditoria_por = session.get('nombre')
+        prod.ultimo_ajuste_auditoria_conteo_por = registro.trabajador.nombre_completo
 
         if diferencia != 0:
             movimiento = ModeloMov(
@@ -7891,6 +7898,46 @@ def admin_campos_listado_parcial():
     campo = CampoPersonalizado.query.get_or_404(request.args.get('id'))
     return {'status': 'success', 'opciones': [{'id': o.id, 'valor': o.valor} for o in campo.opciones]}
 
+@app.route('/admin/auditorias/historial')
+def admin_auditorias_historial():
+    if session.get('role') not in ['admin', 'administracion']: return "Acceso denegado", 403
+
+    accion_filtro = request.args.get('accion', 'todas')
+    origen_filtro = request.args.get('origen', 'todos')
+    usuario_filtro = request.args.get('usuario', 'todos')
+    busqueda = request.args.get('busqueda', '').strip()
+
+    query = RegistroAuditoriaLog.query.join(RegistroAuditoria)
+
+    if accion_filtro != 'todas':
+        query = query.filter(RegistroAuditoriaLog.accion == accion_filtro)
+    if origen_filtro != 'todos':
+        query = query.filter(RegistroAuditoria.origen_inventario == origen_filtro)
+    if usuario_filtro != 'todos':
+        query = query.filter(RegistroAuditoriaLog.realizado_por_id == usuario_filtro)
+    if busqueda:
+        query = query.filter(or_(
+            RegistroAuditoria.sku_snapshot.ilike(f"%{busqueda}%"),
+            RegistroAuditoria.nombre_snapshot.ilike(f"%{busqueda}%"),
+            RegistroAuditoriaLog.detalle.ilike(f"%{busqueda}%")
+        ))
+
+    query = query.order_by(RegistroAuditoriaLog.fecha.desc())
+
+    page = request.args.get('page', 1, type=int)
+    pagination = query.paginate(page=page, per_page=30, error_out=False)
+    logs = pagination.items
+
+    usuarios_con_logs = db.session.query(User).join(
+        RegistroAuditoriaLog, RegistroAuditoriaLog.realizado_por_id == User.id
+    ).distinct().all()
+
+    return render_template('admin_auditorias_historial.html',
+                           logs=logs, pagination=pagination,
+                           accion_filtro=accion_filtro, origen_filtro=origen_filtro,
+                           usuario_filtro=usuario_filtro, busqueda=busqueda,
+                           usuarios_con_logs=usuarios_con_logs)
+
 # --- RUTA SECRETA PARA INICIALIZAR LA BASE DE DATOS EN RENDER ---
 
 
@@ -7900,10 +7947,9 @@ def fix_auditoria_columnas():
         return "Acceso denegado", 403
     try:
         with db.engine.connect() as conn:
-            # Agrega las columnas nuevas que faltan en la tabla ya existente
+            # Columnas nuevas en registro_auditoria (anaquel/nicho reemplazan ubicacion_tipo/valor)
             conn.execute(text("ALTER TABLE registro_auditoria ADD COLUMN IF NOT EXISTS anaquel VARCHAR(20)"))
             conn.execute(text("ALTER TABLE registro_auditoria ADD COLUMN IF NOT EXISTS nicho VARCHAR(20)"))
-            # Si existían las columnas viejas, las migramos y las eliminamos
             conn.execute(text("""
                 DO $$
                 BEGIN
@@ -7915,8 +7961,21 @@ def fix_auditoria_columnas():
                     END IF;
                 END $$;
             """))
+
+            # Columnas nuevas en Product / ProductImportBolts para la etiqueta de auditoría
+            conn.execute(text("ALTER TABLE product ADD COLUMN IF NOT EXISTS ultimo_ajuste_auditoria_fecha TIMESTAMP"))
+            conn.execute(text("ALTER TABLE product ADD COLUMN IF NOT EXISTS ultimo_ajuste_auditoria_por VARCHAR(100)"))
+            conn.execute(text("ALTER TABLE product ADD COLUMN IF NOT EXISTS ultimo_ajuste_auditoria_conteo_por VARCHAR(100)"))
+
+            conn.execute(text("ALTER TABLE product_importbolts ADD COLUMN IF NOT EXISTS ultimo_ajuste_auditoria_fecha TIMESTAMP"))
+            conn.execute(text("ALTER TABLE product_importbolts ADD COLUMN IF NOT EXISTS ultimo_ajuste_auditoria_por VARCHAR(100)"))
+            conn.execute(text("ALTER TABLE product_importbolts ADD COLUMN IF NOT EXISTS ultimo_ajuste_auditoria_conteo_por VARCHAR(100)"))
+
+            # Catálogo: es_predeterminado (por si aún no lo aplicaste)
+            conn.execute(text("ALTER TABLE catalogo_valor ADD COLUMN IF NOT EXISTS es_predeterminado BOOLEAN DEFAULT FALSE"))
+
             conn.commit()
-        return "<h2>✅ Columnas 'anaquel' y 'nicho' agregadas/migradas correctamente en registro_auditoria.</h2>"
+        return "<h2>✅ Columnas de auditoría agregadas/migradas correctamente.</h2>"
     except Exception as e:
         return f"<h2>Error: {str(e)}</h2>"
     

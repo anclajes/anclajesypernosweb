@@ -134,6 +134,9 @@
                 <a href="{{ url_for('admin_auditorias_lista') }}" class="nav-link {{ 'active' if request.endpoint in ['admin_auditorias_lista', 'admin_auditorias_detalle'] }}">
                     <i class="bi bi-clipboard2-data-fill me-2"></i> <span>Revisión de Conteos</span>
                 </a>
+                <a href="{{ url_for('admin_auditorias_historial') }}" class="nav-link {{ 'active' if request.endpoint == 'admin_auditorias_historial' }}">
+                    <i class="bi bi-journal-text me-2"></i> <span>Kardex de Auditorías</span>
+                </a>
                 {% if session.get('role') == 'admin' %}
                 <a href="{{ url_for('admin_catalogos') }}" class="nav-link {{ 'active' if request.endpoint == 'admin_catalogos' }}">
                     <i class="bi bi-sliders me-2"></i> <span>Catálogos Auditoría</span>

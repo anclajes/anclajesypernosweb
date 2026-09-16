@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}Kardex de Auditorías{% endblock %}
+{% block subtitle %}Historial completo de todos los conteos físicos{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <h4 class="fw-bold mb-0"><i class="bi bi-clock-history"></i> Kardex de Auditorías</h4>
+    <a href="{{ url_for('admin_auditorias_lista') }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Volver a Revisión</a>
+</div>
+
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-body">
+        <form method="GET" class="row g-2 align-items-end">
+            <div class="col-12 col-md-3">
+                <label class="small fw-bold text-muted">Buscar (SKU, descripción, detalle)</label>
+                <input type="text" name="busqueda" class="form-control form-control-sm" value="{{ busqueda }}">
+            </div>
+            <div class="col-6 col-md-2">
+                <label class="small fw-bold text-muted">Acción</label>
+                <select name="accion" class="form-select form-select-sm" onchange="this.form.submit()">
+                    <option value="todas" {% if accion_filtro == 'todas' %}selected{% endif %}>Todas</option>
+                    <option value="CREADO" {% if accion_filtro == 'CREADO' %}selected{% endif %}>Creado</option>
+                    <option value="EDITADO" {% if accion_filtro == 'EDITADO' %}selected{% endif %}>Editado</option>
+                    <option value="DESBLOQUEADO" {% if accion_filtro == 'DESBLOQUEADO' %}selected{% endif %}>Desbloqueado</option>
+                    <option value="APLICADO" {% if accion_filtro == 'APLICADO' %}selected{% endif %}>Aplicado</option>
+                    <option value="RECHAZADO" {% if accion_filtro == 'RECHAZADO' %}selected{% endif %}>Rechazado</option>
+                </select>
+            </div>
+            <div class="col-6 col-md-2">
+                <label class="small fw-bold text-muted">Origen</label>
+                <select name="origen" class="form-select form-select-sm" onchange="this.form.submit()">
+                    <option value="todos" {% if origen_filtro == 'todos' %}selected{% endif %}>Ambos</option>
+                    <option value="ANCLAJES" {% if origen_filtro == 'ANCLAJES' %}selected{% endif %}>Anclajes</option>
+                    <option value="IMPORTBOLTS" {% if origen_filtro == 'IMPORTBOLTS' %}selected{% endif %}>Import Bolts</option>
+                </select>
+            </div>
+            <div class="col-6 col-md-3">
+                <label class="small fw-bold text-muted">Usuario</label>
+                <select name="usuario" class="form-select form-select-sm" onchange="this.form.submit()">
+                    <option value="todos">Todos</option>
+                    {% for u in usuarios_con_logs %}
+                    <option value="{{ u.id }}" {% if usuario_filtro == u.id|string %}selected{% endif %}>{{ u.nombre_completo }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-6 col-md-2">
+                <button type="submit" class="btn btn-sm btn-primary w-100"><i class="bi bi-funnel-fill"></i> Filtrar</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0 small">
+            <thead class="table-dark">
+                <tr>
+                    <th class="ps-3">Fecha/Hora</th>
+                    <th>Usuario</th>
+                    <th>Acción</th>
+                    <th>Inventario</th>
+                    <th>Producto</th>
+                    <th>Detalle</th>
+                    <th class="text-center pe-3">Conteo</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for log in logs %}
+                <tr>
+                    <td class="ps-3 text-nowrap">{{ log.fecha.strftime('%d/%m/%y %H:%M') }}</td>
+                    <td>{{ log.realizado_por.nombre_completo if log.realizado_por else 'Sistema' }}</td>
+                    <td>
+                        {% if log.accion == 'CREADO' %}<span class="badge bg-primary">Creado</span>
+                        {% elif log.accion == 'EDITADO' %}<span class="badge bg-warning text-dark">Editado</span>
+                        {% elif log.accion == 'DESBLOQUEADO' %}<span class="badge bg-secondary">Desbloqueado</span>
+                        {% elif log.accion == 'APLICADO' %}<span class="badge bg-success">Aplicado</span>
+                        {% elif log.accion == 'RECHAZADO' %}<span class="badge bg-danger">Rechazado</span>
+                        {% else %}<span class="badge bg-light text-dark border">{{ log.accion }}</span>{% endif %}
+                    </td>
+                    <td><span class="badge bg-light text-dark border">{{ log.registro.origen_inventario }}</span></td>
+                    <td class="fw-bold text-primary">{{ log.registro.sku_snapshot }}<br><span class="fw-normal text-muted" style="font-size:.75rem;">{{ log.registro.nombre_snapshot[:40] }}</span></td>
+                    <td style="max-width: 300px; white-space: normal;">{{ log.detalle }}</td>
+                    <td class="text-center pe-3">
+                        <a href="{{ url_for('admin_auditorias_detalle', reg_id=log.registro_id) }}" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye-fill"></i> #{{ log.registro_id }}</a>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="7" class="text-center py-5 text-muted">No hay movimientos con estos filtros.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="card-footer bg-white py-3">
+        <nav>
+            <ul class="pagination justify-content-center mb-0 pagination-sm">
+                <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
+                    <a class="page-link" href="{{ url_for('admin_auditorias_historial', page=pagination.prev_num, busqueda=busqueda, accion=accion_filtro, origen=origen_filtro, usuario=usuario_filtro) }}">Anterior</a>
+                </li>
+                <li class="page-item disabled"><span class="page-link">Pág. {{ pagination.page }} de {{ pagination.pages or 1 }}</span></li>
+                <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
+                    <a class="page-link" href="{{ url_for('admin_auditorias_historial', page=pagination.next_num, busqueda=busqueda, accion=accion_filtro, origen=origen_filtro, usuario=usuario_filtro) }}">Siguiente</a>
+                </li>
+            </ul>
+        </nav>
+    </div>
+</div>
+{% endblock %}
