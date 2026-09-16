@@ -156,7 +156,9 @@ function toggleOpcionesCampo() {
     document.getElementById('wrap_opciones_campo').style.display = document.getElementById('nuevo_campo_tipo').value === 'SELECT' ? 'block' : 'none';
 }
 
-// --- VALORES DE CATÁLOGO (Estado Físico, Unidades, Anaquel, Nicho) ---
+// ============================================
+// VALORES DE CATÁLOGO (Estado Físico, Unidades, Anaquel, Nicho)
+// ============================================
 
 function agregarValor(tipo) {
     const input = document.getElementById(`nuevo_${tipo}`);
@@ -165,33 +167,50 @@ function agregarValor(tipo) {
         return Swal.fire({ icon: 'warning', title: 'Falta el valor', text: 'Escriba un valor antes de presionar Agregar.', timer: 2200, showConfirmButton: false });
     }
 
-    const fd = new FormData(); fd.append('tipo', tipo); fd.append('valor', valor);
+    const fd = new FormData();
+    fd.append('tipo', tipo);
+    fd.append('valor', valor);
+
     fetch('/admin/catalogos/valor/nuevo', { method: 'POST', body: fd })
         .then(r => r.json())
         .then(data => {
             if (data.status !== 'success') {
-                return Swal.fire({ icon: 'error', title: 'No se pudo agregar', text: data.msg });
+                Swal.fire({ icon: 'error', title: 'No se pudo agregar', text: data.msg });
+                return;
             }
-            // Quitar fila "Sin valores aún." si existe
+
             const filaVacia = document.getElementById(`fila-vacia-${tipo}`);
             if (filaVacia) filaVacia.remove();
 
             const tbody = document.querySelector(`#tabla_${tipo} tbody`);
+            if (!tbody) {
+                console.error('No se encontró la tabla para tipo:', tipo);
+                Swal.fire({ icon: 'success', title: 'Agregado', text: 'Se guardó correctamente. Actualice la página para verlo en la lista.', timer: 2500 });
+                input.value = '';
+                return;
+            }
+
             const fila = document.createElement('tr');
             fila.id = `fila-valor-${data.id}`;
             fila.innerHTML = `
-                <td>${data.etiqueta}</td>
-                <td><span class="badge bg-light text-dark border">${data.tipo_campo === 'SELECT' ? 'Lista' : 'Texto libre'}</span></td>
-                <td class="small text-muted" id="opciones-campo-${data.id}">${colOpciones}</td>
-                <td class="text-center" id="estado-campo-${data.id}"><span class="badge bg-success">Activo</span></td>
-                <td class="text-end text-nowrap">
-                    <button class="btn btn-sm btn-outline-primary" onclick="editarEtiquetaCampo(${data.id})" title="Renombrar"><i class="bi bi-pencil-fill"></i></button>
-                    <button class="btn btn-sm btn-outline-secondary" onclick="toggleCampo(${data.id})" title="Activar/Desactivar"><i class="bi bi-toggle-on" id="icono-campo-${data.id}"></i></button>
-                    <button class="btn btn-sm btn-outline-danger" onclick="eliminarCampo(${data.id})" title="Eliminar"><i class="bi bi-trash"></i></button>
+                <td>${data.valor}</td>
+                <td class="text-center" id="estado-valor-${data.id}"><span class="badge bg-success">Activo</span></td>
+                <td class="text-end">
+                    <button class="btn btn-sm btn-outline-secondary" onclick="toggleValor(${data.id})" title="Activar/Desactivar">
+                        <i class="bi bi-toggle-on" id="icono-valor-${data.id}"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger" onclick="eliminarValor(${data.id})" title="Eliminar">
+                        <i class="bi bi-trash"></i>
+                    </button>
                 </td>`;
             tbody.appendChild(fila);
             input.value = '';
+
             Swal.fire({ icon: 'success', title: 'Agregado', timer: 1200, showConfirmButton: false });
+        })
+        .catch(err => {
+            console.error('Error en agregarValor:', err);
+            Swal.fire({ icon: 'error', title: 'Error de conexión', text: 'No se pudo comunicar con el servidor. Intente de nuevo.' });
         });
 }
 
@@ -199,11 +218,18 @@ function toggleValor(id) {
     fetch(`/admin/catalogos/valor/${id}/toggle`, { method: 'POST' })
         .then(r => r.json())
         .then(data => {
-            if (data.status !== 'success') return Swal.fire('Error', 'No se pudo cambiar el estado.', 'error');
+            if (data.status !== 'success') {
+                Swal.fire('Error', 'No se pudo cambiar el estado.', 'error');
+                return;
+            }
             const badge = document.getElementById(`estado-valor-${id}`);
             const icono = document.getElementById(`icono-valor-${id}`);
-            badge.innerHTML = data.activo ? '<span class="badge bg-success">Activo</span>' : '<span class="badge bg-secondary">Inactivo</span>';
-            icono.className = data.activo ? 'bi bi-toggle-on' : 'bi bi-toggle-off';
+            if (badge) badge.innerHTML = data.activo ? '<span class="badge bg-success">Activo</span>' : '<span class="badge bg-secondary">Inactivo</span>';
+            if (icono) icono.className = data.activo ? 'bi bi-toggle-on' : 'bi bi-toggle-off';
+        })
+        .catch(err => {
+            console.error('Error en toggleValor:', err);
+            Swal.fire('Error', 'No se pudo comunicar con el servidor.', 'error');
         });
 }
 
@@ -216,15 +242,24 @@ function eliminarValor(id) {
         fetch(`/admin/catalogos/valor/${id}/eliminar`, { method: 'POST' })
             .then(r => r.json())
             .then(data => {
-                if (data.status !== 'success') return Swal.fire('No se pudo eliminar', data.msg, 'error');
+                if (data.status !== 'success') {
+                    Swal.fire('No se pudo eliminar', data.msg, 'error');
+                    return;
+                }
                 const fila = document.getElementById(`fila-valor-${id}`);
                 if (fila) fila.remove();
                 Swal.fire({ icon: 'success', title: 'Eliminado', timer: 1000, showConfirmButton: false });
+            })
+            .catch(err => {
+                console.error('Error en eliminarValor:', err);
+                Swal.fire('Error', 'No se pudo comunicar con el servidor.', 'error');
             });
     });
 }
 
-// --- CAMPOS PERSONALIZADOS ---
+// ============================================
+// CAMPOS PERSONALIZADOS
+// ============================================
 
 function crearCampo() {
     const etiqueta = document.getElementById('nuevo_campo_etiqueta').value.trim();
@@ -238,13 +273,18 @@ function crearCampo() {
         return Swal.fire({ icon: 'warning', title: 'Faltan alternativas', text: 'Un campo tipo "Lista" necesita al menos una alternativa.' });
     }
 
-    const fd = new FormData(); fd.append('etiqueta', etiqueta); fd.append('tipo_campo', tipo);
+    const fd = new FormData();
+    fd.append('etiqueta', etiqueta);
+    fd.append('tipo_campo', tipo);
     if (tipo === 'SELECT') fd.append('opciones', opcionesRaw);
 
     fetch('/admin/catalogos/campo/nuevo', { method: 'POST', body: fd })
         .then(r => r.json())
         .then(data => {
-            if (data.status !== 'success') return Swal.fire('No se pudo crear', data.msg, 'error');
+            if (data.status !== 'success') {
+                Swal.fire('No se pudo crear', data.msg, 'error');
+                return;
+            }
 
             const filaVacia = document.getElementById('fila-vacia-campos');
             if (filaVacia) filaVacia.remove();
@@ -255,7 +295,7 @@ function crearCampo() {
 
             let colOpciones = '-';
             if (data.tipo_campo === 'SELECT') {
-                let badges = data.opciones_con_id.map(o => `
+                let badges = (data.opciones_con_id || []).map(o => `
                     <span class="badge bg-light text-dark border d-flex align-items-center gap-1" id="opcion-badge-${o.id}">
                         <span id="opcion-texto-${o.id}">${o.valor}</span>
                         <i class="bi bi-pencil-fill text-primary" style="cursor:pointer; font-size:.7rem;" onclick="editarOpcion(${o.id})" title="Editar"></i>
@@ -265,16 +305,12 @@ function crearCampo() {
                     <button class="btn btn-sm btn-link p-0 mt-1" onclick="agregarOpcionCampo(${data.id})"><i class="bi bi-plus-circle"></i> agregar</button>`;
             }
 
+            // OJO: exactamente 5 <td>, uno por cada columna del <thead> (Etiqueta, Tipo, Alternativas, Estado, Acciones)
             fila.innerHTML = `
-                <td>${data.etiqueta}</td>
+                <td id="etiqueta-campo-${data.id}">${data.etiqueta}</td>
                 <td><span class="badge bg-light text-dark border">${data.tipo_campo === 'SELECT' ? 'Lista' : 'Texto libre'}</span></td>
                 <td class="small text-muted" id="opciones-campo-${data.id}">${colOpciones}</td>
                 <td class="text-center" id="estado-campo-${data.id}"><span class="badge bg-success">Activo</span></td>
-                <td class="text-end">
-                    <button class="btn btn-sm btn-outline-secondary" onclick="toggleCampo(${data.id})">
-                        <i class="bi bi-toggle-on" id="icono-campo-${data.id}"></i>
-                    </button>
-                </td>
                 <td class="text-end text-nowrap">
                     <button class="btn btn-sm btn-outline-primary" onclick="editarEtiquetaCampo(${data.id})" title="Renombrar"><i class="bi bi-pencil-fill"></i></button>
                     <button class="btn btn-sm btn-outline-secondary" onclick="toggleCampo(${data.id})" title="Activar/Desactivar"><i class="bi bi-toggle-on" id="icono-campo-${data.id}"></i></button>
@@ -288,44 +324,10 @@ function crearCampo() {
             toggleOpcionesCampo();
 
             Swal.fire({ icon: 'success', title: 'Campo creado', timer: 1200, showConfirmButton: false });
-        });
-}
-
-function agregarOpcionCampo(campoId) {
-    Swal.fire({
-        title: 'Nueva alternativa', input: 'text', inputPlaceholder: 'Ej: Opción nueva',
-        showCancelButton: true, confirmButtonText: 'Agregar',
-        inputValidator: (value) => { if (!value || !value.trim()) return 'Escriba un valor'; }
-    }).then(result => {
-        if (!result.isConfirmed) return;
-        const fd = new FormData(); fd.append('valor', result.value.trim());
-        fetch(`/admin/catalogos/campo/${campoId}/opcion/nueva`, { method: 'POST', body: fd })
-            .then(r => r.json())
-            .then(data => {
-                if (data.status !== 'success') return Swal.fire('Error', data.msg, 'error');
-                const cont = document.getElementById(`lista-opciones-${campoId}`);
-                const span = document.createElement('span');
-                span.className = 'badge bg-light text-dark border d-flex align-items-center gap-1';
-                span.id = `opcion-badge-${data.id}`;
-                span.innerHTML = `
-                    <span id="opcion-texto-${data.id}">${data.valor}</span>
-                    <i class="bi bi-pencil-fill text-primary" style="cursor:pointer; font-size:.7rem;" onclick="editarOpcion(${data.id})" title="Editar"></i>
-                    <i class="bi bi-x-circle-fill text-danger" style="cursor:pointer; font-size:.7rem;" onclick="eliminarOpcion(${data.id})" title="Quitar"></i>`;
-                cont.appendChild(span);
-                Swal.fire({ icon: 'success', title: 'Alternativa agregada', timer: 1000, showConfirmButton: false });
-            });
-    });
-}
-
-function toggleCampo(id) {
-    fetch(`/admin/catalogos/campo/${id}/toggle`, { method: 'POST' })
-        .then(r => r.json())
-        .then(data => {
-            if (data.status !== 'success') return Swal.fire('Error', 'No se pudo cambiar el estado.', 'error');
-            const badge = document.getElementById(`estado-campo-${id}`);
-            const icono = document.getElementById(`icono-campo-${id}`);
-            badge.innerHTML = data.activo ? '<span class="badge bg-success">Activo</span>' : '<span class="badge bg-secondary">Inactivo</span>';
-            icono.className = data.activo ? 'bi bi-toggle-on' : 'bi bi-toggle-off';
+        })
+        .catch(err => {
+            console.error('Error en crearCampo:', err);
+            Swal.fire('Error de conexión', 'No se pudo comunicar con el servidor.', 'error');
         });
 }
 
@@ -337,13 +339,21 @@ function editarEtiquetaCampo(id) {
         inputValidator: (value) => { if (!value || !value.trim()) return 'Escriba un nombre'; }
     }).then(result => {
         if (!result.isConfirmed) return;
-        const fd = new FormData(); fd.append('etiqueta', result.value.trim());
+        const fd = new FormData();
+        fd.append('etiqueta', result.value.trim());
         fetch(`/admin/catalogos/campo/${id}/editar`, { method: 'POST', body: fd })
             .then(r => r.json())
             .then(data => {
-                if (data.status !== 'success') return Swal.fire('Error', data.msg, 'error');
+                if (data.status !== 'success') {
+                    Swal.fire('Error', data.msg, 'error');
+                    return;
+                }
                 document.getElementById(`etiqueta-campo-${id}`).textContent = data.etiqueta;
                 Swal.fire({ icon: 'success', title: 'Renombrado', timer: 1000, showConfirmButton: false });
+            })
+            .catch(err => {
+                console.error('Error en editarEtiquetaCampo:', err);
+                Swal.fire('Error', 'No se pudo comunicar con el servidor.', 'error');
             });
     });
 }
@@ -357,10 +367,51 @@ function eliminarCampo(id) {
         fetch(`/admin/catalogos/campo/${id}/eliminar`, { method: 'POST' })
             .then(r => r.json())
             .then(data => {
-                if (data.status !== 'success') return Swal.fire('No se pudo eliminar', data.msg, 'error');
+                if (data.status !== 'success') {
+                    Swal.fire('No se pudo eliminar', data.msg, 'error');
+                    return;
+                }
                 const fila = document.getElementById(`fila-campo-${id}`);
                 if (fila) fila.remove();
                 Swal.fire({ icon: 'success', title: 'Eliminado', timer: 1000, showConfirmButton: false });
+            })
+            .catch(err => {
+                console.error('Error en eliminarCampo:', err);
+                Swal.fire('Error', 'No se pudo comunicar con el servidor.', 'error');
+            });
+    });
+}
+
+function agregarOpcionCampo(campoId) {
+    Swal.fire({
+        title: 'Nueva alternativa', input: 'text', inputPlaceholder: 'Ej: Opción nueva',
+        showCancelButton: true, confirmButtonText: 'Agregar',
+        inputValidator: (value) => { if (!value || !value.trim()) return 'Escriba un valor'; }
+    }).then(result => {
+        if (!result.isConfirmed) return;
+        const fd = new FormData();
+        fd.append('valor', result.value.trim());
+        fetch(`/admin/catalogos/campo/${campoId}/opcion/nueva`, { method: 'POST', body: fd })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status !== 'success') {
+                    Swal.fire('Error', data.msg, 'error');
+                    return;
+                }
+                const cont = document.getElementById(`lista-opciones-${campoId}`);
+                const span = document.createElement('span');
+                span.className = 'badge bg-light text-dark border d-flex align-items-center gap-1';
+                span.id = `opcion-badge-${data.id}`;
+                span.innerHTML = `
+                    <span id="opcion-texto-${data.id}">${data.valor}</span>
+                    <i class="bi bi-pencil-fill text-primary" style="cursor:pointer; font-size:.7rem;" onclick="editarOpcion(${data.id})" title="Editar"></i>
+                    <i class="bi bi-x-circle-fill text-danger" style="cursor:pointer; font-size:.7rem;" onclick="eliminarOpcion(${data.id})" title="Quitar"></i>`;
+                if (cont) cont.appendChild(span);
+                Swal.fire({ icon: 'success', title: 'Alternativa agregada', timer: 1000, showConfirmButton: false });
+            })
+            .catch(err => {
+                console.error('Error en agregarOpcionCampo:', err);
+                Swal.fire('Error', 'No se pudo comunicar con el servidor.', 'error');
             });
     });
 }
@@ -373,13 +424,21 @@ function editarOpcion(opcionId) {
         inputValidator: (value) => { if (!value || !value.trim()) return 'Escriba un valor'; }
     }).then(result => {
         if (!result.isConfirmed) return;
-        const fd = new FormData(); fd.append('valor', result.value.trim());
+        const fd = new FormData();
+        fd.append('valor', result.value.trim());
         fetch(`/admin/catalogos/opcion/${opcionId}/editar`, { method: 'POST', body: fd })
             .then(r => r.json())
             .then(data => {
-                if (data.status !== 'success') return Swal.fire('Error', data.msg, 'error');
+                if (data.status !== 'success') {
+                    Swal.fire('Error', data.msg, 'error');
+                    return;
+                }
                 document.getElementById(`opcion-texto-${opcionId}`).textContent = data.valor;
                 Swal.fire({ icon: 'success', title: 'Actualizado', timer: 1000, showConfirmButton: false });
+            })
+            .catch(err => {
+                console.error('Error en editarOpcion:', err);
+                Swal.fire('Error', 'No se pudo comunicar con el servidor.', 'error');
             });
     });
 }
@@ -393,11 +452,37 @@ function eliminarOpcion(opcionId) {
         fetch(`/admin/catalogos/opcion/${opcionId}/eliminar`, { method: 'POST' })
             .then(r => r.json())
             .then(data => {
-                if (data.status !== 'success') return Swal.fire('Error', 'No se pudo quitar.', 'error');
+                if (data.status !== 'success') {
+                    Swal.fire('Error', 'No se pudo quitar.', 'error');
+                    return;
+                }
                 const badge = document.getElementById(`opcion-badge-${opcionId}`);
                 if (badge) badge.remove();
+            })
+            .catch(err => {
+                console.error('Error en eliminarOpcion:', err);
+                Swal.fire('Error', 'No se pudo comunicar con el servidor.', 'error');
             });
     });
+}
+
+function toggleCampo(id) {
+    fetch(`/admin/catalogos/campo/${id}/toggle`, { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            if (data.status !== 'success') {
+                Swal.fire('Error', 'No se pudo cambiar el estado.', 'error');
+                return;
+            }
+            const badge = document.getElementById(`estado-campo-${id}`);
+            const icono = document.getElementById(`icono-campo-${id}`);
+            if (badge) badge.innerHTML = data.activo ? '<span class="badge bg-success">Activo</span>' : '<span class="badge bg-secondary">Inactivo</span>';
+            if (icono) icono.className = data.activo ? 'bi bi-toggle-on' : 'bi bi-toggle-off';
+        })
+        .catch(err => {
+            console.error('Error en toggleCampo:', err);
+            Swal.fire('Error', 'No se pudo comunicar con el servidor.', 'error');
+        });
 }
 </script>
 {% endblock %}
