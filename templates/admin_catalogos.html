@@ -3,9 +3,28 @@
 {% block subtitle %}Opciones para el módulo de Conteo Físico{% endblock %}
 
 {% block content %}
+<style>
+    /* --- FIX: las pestañas heredaban color blanco del sidebar (.nav-link) --- */
+    .cat-tabs .nav-link {
+        color: #495057 !important;
+        background-color: #f1f3f5;
+        border: 1px solid #dee2e6;
+        font-weight: 500;
+        margin-right: 4px;
+    }
+    .cat-tabs .nav-link.active {
+        color: #fff !important;
+        background-color: var(--theme-primary, #0d6efd);
+        border-color: var(--theme-primary, #0d6efd);
+    }
+    .cat-tabs .nav-link:hover:not(.active) {
+        background-color: #e9ecef;
+    }
+</style>
+
 <h4 class="fw-bold mb-3"><i class="bi bi-sliders"></i> Catálogos y Campos del Conteo Físico</h4>
 
-<ul class="nav nav-tabs mb-3 flex-wrap">
+<ul class="nav nav-tabs cat-tabs mb-3 flex-wrap" id="tabsCatalogos">
     <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-ESTADO_FISICO">Estado Físico</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-UNIDAD_MEDIDA">Unidades</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-ANAQUEL">Anaqueles</button></li>
@@ -19,21 +38,34 @@
         <div class="card border-0 shadow-sm">
             <div class="card-body">
                 <div class="d-flex flex-column flex-sm-row gap-2 mb-3">
-                    <input type="text" class="form-control form-control-sm" id="nuevo_{{ tipo }}" placeholder="Nuevo valor para {{ titulo }}...">
+                    <input type="text" class="form-control form-control-sm text-uppercase" id="nuevo_{{ tipo }}"
+                           placeholder="Nuevo valor para {{ titulo }}..."
+                           onkeydown="if(event.key==='Enter'){event.preventDefault(); agregarValor('{{ tipo }}');}">
                     <button class="btn btn-sm btn-primary flex-shrink-0" onclick="agregarValor('{{ tipo }}')"><i class="bi bi-plus-lg"></i> Agregar</button>
                 </div>
                 <div class="table-responsive">
-                    <table class="table table-sm table-hover mb-0">
-                        <thead><tr><th>Valor</th><th class="text-center">Estado</th><th class="text-end">Acción</th></tr></thead>
+                    <table class="table table-sm table-hover mb-0" id="tabla_{{ tipo }}">
+                        <thead><tr><th>Valor</th><th class="text-center">Estado</th><th class="text-end">Acciones</th></tr></thead>
                         <tbody>
                             {% for v in catalogos[tipo] %}
-                            <tr>
-                                <td>{{ v.valor }}</td>
-                                <td class="text-center">{% if v.activo %}<span class="badge bg-success">Activo</span>{% else %}<span class="badge bg-secondary">Inactivo</span>{% endif %}</td>
-                                <td class="text-end"><button class="btn btn-sm btn-outline-secondary" onclick="toggleValor({{ v.id }})"><i class="bi {{ 'bi-toggle-on' if v.activo else 'bi-toggle-off' }}"></i></button></td>
+                            <tr id="fila-valor-{{ v.id }}">
+                                <td>{{ v.valor }} {% if v.es_predeterminado %}<span class="badge bg-light text-muted border ms-1" style="font-size:.65rem;">predeterminado</span>{% endif %}</td>
+                                <td class="text-center" id="estado-valor-{{ v.id }}">
+                                    {% if v.activo %}<span class="badge bg-success">Activo</span>{% else %}<span class="badge bg-secondary">Inactivo</span>{% endif %}
+                                </td>
+                                <td class="text-end">
+                                    <button class="btn btn-sm btn-outline-secondary" onclick="toggleValor({{ v.id }})" title="Activar/Desactivar">
+                                        <i class="bi {{ 'bi-toggle-on' if v.activo else 'bi-toggle-off' }}" id="icono-valor-{{ v.id }}"></i>
+                                    </button>
+                                    {% if not v.es_predeterminado %}
+                                    <button class="btn btn-sm btn-outline-danger" onclick="eliminarValor({{ v.id }})" title="Eliminar">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                    {% endif %}
+                                </td>
                             </tr>
                             {% else %}
-                            <tr><td colspan="3" class="text-center text-muted py-3">Sin valores aún.</td></tr>
+                            <tr id="fila-vacia-{{ tipo }}"><td colspan="3" class="text-center text-muted py-3">Sin valores aún.</td></tr>
                             {% endfor %}
                         </tbody>
                     </table>
@@ -73,24 +105,30 @@
         <div class="card border-0 shadow-sm">
             <div class="card-header fw-bold">Campos Existentes</div>
             <div class="table-responsive">
-                <table class="table table-sm table-hover mb-0">
+                <table class="table table-sm table-hover mb-0" id="tabla_campos">
                     <thead><tr><th>Etiqueta</th><th>Tipo</th><th>Alternativas</th><th class="text-center">Estado</th><th class="text-end">Acción</th></tr></thead>
                     <tbody>
                         {% for c in campos %}
-                        <tr>
+                        <tr id="fila-campo-{{ c.id }}">
                             <td>{{ c.etiqueta }}</td>
                             <td><span class="badge bg-light text-dark border">{{ 'Lista' if c.tipo_campo == 'SELECT' else 'Texto libre' }}</span></td>
-                            <td class="small text-muted">
+                            <td class="small text-muted" id="opciones-campo-{{ c.id }}">
                                 {% if c.tipo_campo == 'SELECT' %}
-                                    {{ c.opciones|map(attribute='valor')|join(', ') }}
-                                    <button class="btn btn-sm btn-link p-0 ms-1" onclick="agregarOpcionCampo({{ c.id }})"><i class="bi bi-plus-circle"></i></button>
+                                    <span id="lista-opciones-{{ c.id }}">{{ c.opciones|map(attribute='valor')|join(', ') }}</span>
+                                    <button class="btn btn-sm btn-link p-0 ms-1" onclick="agregarOpcionCampo({{ c.id }})" title="Agregar alternativa"><i class="bi bi-plus-circle"></i></button>
                                 {% else %}-{% endif %}
                             </td>
-                            <td class="text-center">{% if c.activo %}<span class="badge bg-success">Activo</span>{% else %}<span class="badge bg-secondary">Inactivo</span>{% endif %}</td>
-                            <td class="text-end"><button class="btn btn-sm btn-outline-secondary" onclick="toggleCampo({{ c.id }})"><i class="bi {{ 'bi-toggle-on' if c.activo else 'bi-toggle-off' }}"></i></button></td>
+                            <td class="text-center" id="estado-campo-{{ c.id }}">
+                                {% if c.activo %}<span class="badge bg-success">Activo</span>{% else %}<span class="badge bg-secondary">Inactivo</span>{% endif %}
+                            </td>
+                            <td class="text-end">
+                                <button class="btn btn-sm btn-outline-secondary" onclick="toggleCampo({{ c.id }})">
+                                    <i class="bi {{ 'bi-toggle-on' if c.activo else 'bi-toggle-off' }}" id="icono-campo-{{ c.id }}"></i>
+                                </button>
+                            </td>
                         </tr>
                         {% else %}
-                        <tr><td colspan="5" class="text-center text-muted py-3">No hay campos personalizados aún.</td></tr>
+                        <tr id="fila-vacia-campos"><td colspan="5" class="text-center text-muted py-3">No hay campos personalizados aún.</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>
@@ -100,38 +138,164 @@
 </div>
 
 <script>
-function agregarValor(tipo) {
-    const input = document.getElementById(`nuevo_${tipo}`);
-    const valor = input.value.trim();
-    if (!valor) return;
-    const fd = new FormData(); fd.append('tipo', tipo); fd.append('valor', valor);
-    fetch('/admin/catalogos/valor/nuevo', { method: 'POST', body: fd })
-        .then(r => r.json()).then(data => { if (data.status === 'success') location.reload(); else Swal.fire('Error', data.msg, 'error'); });
-}
-function toggleValor(id) {
-    fetch(`/admin/catalogos/valor/${id}/toggle`, { method: 'POST' }).then(r => r.json()).then(() => location.reload());
-}
 function toggleOpcionesCampo() {
     document.getElementById('wrap_opciones_campo').style.display = document.getElementById('nuevo_campo_tipo').value === 'SELECT' ? 'block' : 'none';
 }
+
+// --- VALORES DE CATÁLOGO (Estado Físico, Unidades, Anaquel, Nicho) ---
+
+function agregarValor(tipo) {
+    const input = document.getElementById(`nuevo_${tipo}`);
+    const valor = input.value.trim();
+    if (!valor) {
+        return Swal.fire({ icon: 'warning', title: 'Falta el valor', text: 'Escriba un valor antes de presionar Agregar.', timer: 2200, showConfirmButton: false });
+    }
+
+    const fd = new FormData(); fd.append('tipo', tipo); fd.append('valor', valor);
+    fetch('/admin/catalogos/valor/nuevo', { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(data => {
+            if (data.status !== 'success') {
+                return Swal.fire({ icon: 'error', title: 'No se pudo agregar', text: data.msg });
+            }
+            // Quitar fila "Sin valores aún." si existe
+            const filaVacia = document.getElementById(`fila-vacia-${tipo}`);
+            if (filaVacia) filaVacia.remove();
+
+            const tbody = document.querySelector(`#tabla_${tipo} tbody`);
+            const fila = document.createElement('tr');
+            fila.id = `fila-valor-${data.id}`;
+            fila.innerHTML = `
+                <td>${data.valor}</td>
+                <td class="text-center" id="estado-valor-${data.id}"><span class="badge bg-success">Activo</span></td>
+                <td class="text-end">
+                    <button class="btn btn-sm btn-outline-secondary" onclick="toggleValor(${data.id})" title="Activar/Desactivar">
+                        <i class="bi bi-toggle-on" id="icono-valor-${data.id}"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger" onclick="eliminarValor(${data.id})" title="Eliminar">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </td>`;
+            tbody.appendChild(fila);
+            input.value = '';
+            Swal.fire({ icon: 'success', title: 'Agregado', timer: 1200, showConfirmButton: false });
+        });
+}
+
+function toggleValor(id) {
+    fetch(`/admin/catalogos/valor/${id}/toggle`, { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            if (data.status !== 'success') return Swal.fire('Error', 'No se pudo cambiar el estado.', 'error');
+            const badge = document.getElementById(`estado-valor-${id}`);
+            const icono = document.getElementById(`icono-valor-${id}`);
+            badge.innerHTML = data.activo ? '<span class="badge bg-success">Activo</span>' : '<span class="badge bg-secondary">Inactivo</span>';
+            icono.className = data.activo ? 'bi bi-toggle-on' : 'bi bi-toggle-off';
+        });
+}
+
+function eliminarValor(id) {
+    Swal.fire({
+        title: '¿Eliminar este valor?', text: 'Esta acción no se puede deshacer.',
+        icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Sí, eliminar'
+    }).then(result => {
+        if (!result.isConfirmed) return;
+        fetch(`/admin/catalogos/valor/${id}/eliminar`, { method: 'POST' })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status !== 'success') return Swal.fire('No se pudo eliminar', data.msg, 'error');
+                const fila = document.getElementById(`fila-valor-${id}`);
+                if (fila) fila.remove();
+                Swal.fire({ icon: 'success', title: 'Eliminado', timer: 1000, showConfirmButton: false });
+            });
+    });
+}
+
+// --- CAMPOS PERSONALIZADOS ---
+
 function crearCampo() {
     const etiqueta = document.getElementById('nuevo_campo_etiqueta').value.trim();
     const tipo = document.getElementById('nuevo_campo_tipo').value;
-    if (!etiqueta) return Swal.fire('Falta la etiqueta', '', 'warning');
+    const opcionesRaw = document.getElementById('nuevo_campo_opciones').value.trim();
+
+    if (!etiqueta) {
+        return Swal.fire({ icon: 'warning', title: 'Falta el nombre', text: 'Escriba el nombre del campo antes de crearlo.' });
+    }
+    if (tipo === 'SELECT' && !opcionesRaw) {
+        return Swal.fire({ icon: 'warning', title: 'Faltan alternativas', text: 'Un campo tipo "Lista" necesita al menos una alternativa.' });
+    }
+
     const fd = new FormData(); fd.append('etiqueta', etiqueta); fd.append('tipo_campo', tipo);
-    if (tipo === 'SELECT') fd.append('opciones', document.getElementById('nuevo_campo_opciones').value);
+    if (tipo === 'SELECT') fd.append('opciones', opcionesRaw);
+
     fetch('/admin/catalogos/campo/nuevo', { method: 'POST', body: fd })
-        .then(r => r.json()).then(data => { if (data.status === 'success') location.reload(); else Swal.fire('Error', data.msg, 'error'); });
+        .then(r => r.json())
+        .then(data => {
+            if (data.status !== 'success') return Swal.fire('No se pudo crear', data.msg, 'error');
+
+            const filaVacia = document.getElementById('fila-vacia-campos');
+            if (filaVacia) filaVacia.remove();
+
+            const tbody = document.querySelector('#tabla_campos tbody');
+            const fila = document.createElement('tr');
+            fila.id = `fila-campo-${data.id}`;
+
+            let colOpciones = '-';
+            if (data.tipo_campo === 'SELECT') {
+                colOpciones = `<span id="lista-opciones-${data.id}">${data.opciones.join(', ')}</span>
+                    <button class="btn btn-sm btn-link p-0 ms-1" onclick="agregarOpcionCampo(${data.id})" title="Agregar alternativa"><i class="bi bi-plus-circle"></i></button>`;
+            }
+
+            fila.innerHTML = `
+                <td>${data.etiqueta}</td>
+                <td><span class="badge bg-light text-dark border">${data.tipo_campo === 'SELECT' ? 'Lista' : 'Texto libre'}</span></td>
+                <td class="small text-muted" id="opciones-campo-${data.id}">${colOpciones}</td>
+                <td class="text-center" id="estado-campo-${data.id}"><span class="badge bg-success">Activo</span></td>
+                <td class="text-end">
+                    <button class="btn btn-sm btn-outline-secondary" onclick="toggleCampo(${data.id})">
+                        <i class="bi bi-toggle-on" id="icono-campo-${data.id}"></i>
+                    </button>
+                </td>`;
+            tbody.appendChild(fila);
+
+            document.getElementById('nuevo_campo_etiqueta').value = '';
+            document.getElementById('nuevo_campo_opciones').value = '';
+            document.getElementById('nuevo_campo_tipo').value = 'TEXTO';
+            toggleOpcionesCampo();
+
+            Swal.fire({ icon: 'success', title: 'Campo creado', timer: 1200, showConfirmButton: false });
+        });
 }
+
 function agregarOpcionCampo(campoId) {
-    Swal.fire({ title: 'Nueva alternativa', input: 'text', showCancelButton: true, confirmButtonText: 'Agregar' }).then(result => {
-        if (!result.isConfirmed || !result.value) return;
-        const fd = new FormData(); fd.append('valor', result.value);
-        fetch(`/admin/catalogos/campo/${campoId}/opcion/nueva`, { method: 'POST', body: fd }).then(r => r.json()).then(() => location.reload());
+    Swal.fire({
+        title: 'Nueva alternativa', input: 'text', inputPlaceholder: 'Ej: Opción nueva',
+        showCancelButton: true, confirmButtonText: 'Agregar',
+        inputValidator: (value) => { if (!value || !value.trim()) return 'Escriba un valor'; }
+    }).then(result => {
+        if (!result.isConfirmed) return;
+        const fd = new FormData(); fd.append('valor', result.value.trim());
+        fetch(`/admin/catalogos/campo/${campoId}/opcion/nueva`, { method: 'POST', body: fd })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status !== 'success') return Swal.fire('Error', data.msg, 'error');
+                const span = document.getElementById(`lista-opciones-${campoId}`);
+                span.textContent = span.textContent ? `${span.textContent}, ${data.valor}` : data.valor;
+                Swal.fire({ icon: 'success', title: 'Alternativa agregada', timer: 1000, showConfirmButton: false });
+            });
     });
 }
+
 function toggleCampo(id) {
-    fetch(`/admin/catalogos/campo/${id}/toggle`, { method: 'POST' }).then(r => r.json()).then(() => location.reload());
+    fetch(`/admin/catalogos/campo/${id}/toggle`, { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            if (data.status !== 'success') return Swal.fire('Error', 'No se pudo cambiar el estado.', 'error');
+            const badge = document.getElementById(`estado-campo-${id}`);
+            const icono = document.getElementById(`icono-campo-${id}`);
+            badge.innerHTML = data.activo ? '<span class="badge bg-success">Activo</span>' : '<span class="badge bg-secondary">Inactivo</span>';
+            icono.className = data.activo ? 'bi bi-toggle-on' : 'bi bi-toggle-off';
+        });
 }
 </script>
 {% endblock %}

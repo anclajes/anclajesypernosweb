@@ -7684,7 +7684,14 @@ def admin_auditoria_aplicar(reg_id):
 def admin_catalogos():
     if session.get('role') != 'admin': return "Acceso denegado", 403
     tipos = ['ESTADO_FISICO', 'UNIDAD_MEDIDA', 'ANAQUEL', 'NICHO']
-    catalogos = {t: CatalogoValor.query.filter_by(tipo=t).order_by(CatalogoValor.valor).all() for t in tipos}
+    catalogos = {}
+    for t in tipos:
+        valores = CatalogoValor.query.filter_by(tipo=t).all()
+        if t == 'ANAQUEL':
+            valores.sort(key=lambda v: int(v.valor) if v.valor.isdigit() else 9999)
+        else:
+            valores.sort(key=lambda v: v.valor)
+        catalogos[t] = valores
     campos = CampoPersonalizado.query.order_by(CampoPersonalizado.orden, CampoPersonalizado.id).all()
     return render_template('admin_catalogos.html', catalogos=catalogos, campos=campos)
 
@@ -7694,18 +7701,19 @@ def admin_catalogo_valor_nuevo():
     if session.get('role') != 'admin': return {'status': 'error', 'msg': 'No autorizado'}, 403
     tipo = request.form.get('tipo', '').strip().upper()
     valor = request.form.get('valor', '').strip().upper()
+
     if tipo not in ['ESTADO_FISICO', 'UNIDAD_MEDIDA', 'ANAQUEL', 'NICHO']:
         return {'status': 'error', 'msg': 'Tipo de catálogo inválido'}
     if not valor:
-        return {'status': 'error', 'msg': 'El valor no puede estar vacío'}
+        return {'status': 'error', 'msg': 'Debe escribir un valor antes de agregar.'}
     if CatalogoValor.query.filter_by(tipo=tipo, valor=valor).first():
-        return {'status': 'error', 'msg': f'"{valor}" ya existe en este catálogo'}
+        return {'status': 'error', 'msg': f'"{valor}" ya existe en este catálogo.'}
 
-    nuevo = CatalogoValor(tipo=tipo, valor=valor, creado_por_id=session['user_id'])
+    nuevo = CatalogoValor(tipo=tipo, valor=valor, creado_por_id=session['user_id'], es_predeterminado=False)
     db.session.add(nuevo)
     registrar_log(f"Agregó '{valor}' al catálogo {tipo} (Auditoría)", "bi-tag-fill", "text-info")
     db.session.commit()
-    return {'status': 'success', 'id': nuevo.id, 'valor': nuevo.valor}
+    return {'status': 'success', 'id': nuevo.id, 'valor': nuevo.valor, 'tipo': nuevo.tipo}
 
 
 @app.route('/admin/catalogos/valor/<int:val_id>/toggle', methods=['POST'])
@@ -7718,39 +7726,67 @@ def admin_catalogo_valor_toggle(val_id):
     return {'status': 'success', 'activo': v.activo}
 
 
+@app.route('/admin/catalogos/valor/<int:val_id>/eliminar', methods=['POST'])
+def admin_catalogo_valor_eliminar(val_id):
+    if session.get('role') != 'admin': return {'status': 'error', 'msg': 'No autorizado'}, 403
+    v = CatalogoValor.query.get_or_404(val_id)
+
+    if v.es_predeterminado:
+        return {'status': 'error', 'msg': 'Este valor es predeterminado del sistema y no se puede eliminar. Puede desactivarlo en su lugar.'}
+
+    registrar_log(f"Eliminó '{v.valor}' del catálogo {v.tipo}", "bi-trash-fill", "text-danger")
+    db.session.delete(v)
+    db.session.commit()
+    return {'status': 'success'}
+
+
 @app.route('/admin/catalogos/campo/nuevo', methods=['POST'])
 def admin_campo_personalizado_nuevo():
     if session.get('role') != 'admin': return {'status': 'error', 'msg': 'No autorizado'}, 403
     etiqueta = request.form.get('etiqueta', '').strip()
     tipo_campo = request.form.get('tipo_campo', 'TEXTO').strip().upper()
+
     if not etiqueta:
-        return {'status': 'error', 'msg': 'La etiqueta es obligatoria'}
+        return {'status': 'error', 'msg': 'Debe escribir el nombre del campo antes de crearlo.'}
     if tipo_campo not in ['SELECT', 'TEXTO']:
         tipo_campo = 'TEXTO'
+    if CampoPersonalizado.query.filter_by(etiqueta=etiqueta).first():
+        return {'status': 'error', 'msg': f'Ya existe un campo llamado "{etiqueta}".'}
+
+    opciones_lista = []
+    if tipo_campo == 'SELECT':
+        opciones_raw = request.form.get('opciones', '')
+        opciones_lista = [o.strip() for o in opciones_raw.split(',') if o.strip()]
+        if not opciones_lista:
+            return {'status': 'error', 'msg': 'Un campo tipo "Lista de alternativas" necesita al menos una opción.'}
 
     nuevo = CampoPersonalizado(etiqueta=etiqueta, tipo_campo=tipo_campo, creado_por_id=session['user_id'])
     db.session.add(nuevo)
     db.session.flush()
 
-    if tipo_campo == 'SELECT':
-        opciones_raw = request.form.get('opciones', '')
-        for op in [o.strip() for o in opciones_raw.split(',') if o.strip()]:
-            db.session.add(CampoPersonalizadoOpcion(campo_id=nuevo.id, valor=op))
+    for op in opciones_lista:
+        db.session.add(CampoPersonalizadoOpcion(campo_id=nuevo.id, valor=op))
 
     registrar_log(f"Creó campo personalizado '{etiqueta}' ({tipo_campo}) para Auditoría", "bi-input-cursor-text", "text-info")
     db.session.commit()
-    return {'status': 'success', 'id': nuevo.id}
+    return {'status': 'success', 'id': nuevo.id, 'etiqueta': nuevo.etiqueta,
+            'tipo_campo': nuevo.tipo_campo, 'opciones': opciones_lista}
 
 
 @app.route('/admin/catalogos/campo/<int:campo_id>/opcion/nueva', methods=['POST'])
 def admin_campo_opcion_nueva(campo_id):
-    if session.get('role') != 'admin': return {'status': 'error'}, 403
+    if session.get('role') != 'admin': return {'status': 'error', 'msg': 'No autorizado'}, 403
     campo = CampoPersonalizado.query.get_or_404(campo_id)
     valor = request.form.get('valor', '').strip()
-    if not valor: return {'status': 'error', 'msg': 'Valor vacío'}
+
+    if not valor:
+        return {'status': 'error', 'msg': 'Debe escribir un valor antes de agregar la alternativa.'}
+    if CampoPersonalizadoOpcion.query.filter_by(campo_id=campo.id, valor=valor).first():
+        return {'status': 'error', 'msg': f'"{valor}" ya existe en este campo.'}
+
     db.session.add(CampoPersonalizadoOpcion(campo_id=campo.id, valor=valor))
     db.session.commit()
-    return {'status': 'success'}
+    return {'status': 'success', 'valor': valor}
 
 
 @app.route('/admin/catalogos/campo/<int:campo_id>/toggle', methods=['POST'])
@@ -7777,22 +7813,22 @@ def fix_auditoria_module():
             conn.execute(text("ALTER TABLE product ADD COLUMN IF NOT EXISTS ultimo_ajuste_auditoria_por VARCHAR(100)"))
             conn.execute(text("ALTER TABLE product_importbolts ADD COLUMN IF NOT EXISTS ultimo_ajuste_auditoria_fecha TIMESTAMP"))
             conn.execute(text("ALTER TABLE product_importbolts ADD COLUMN IF NOT EXISTS ultimo_ajuste_auditoria_por VARCHAR(100)"))
+            conn.execute(text("ALTER TABLE catalogo_valor ADD COLUMN IF NOT EXISTS es_predeterminado BOOLEAN DEFAULT FALSE"))
             conn.commit()
 
-        # Semillas iniciales (solo si el catálogo respectivo está vacío)
         if CatalogoValor.query.filter_by(tipo='ANAQUEL').count() == 0:
             for i in range(1, 51):
-                db.session.add(CatalogoValor(tipo='ANAQUEL', valor=str(i)))
+                db.session.add(CatalogoValor(tipo='ANAQUEL', valor=str(i), es_predeterminado=True))
         if CatalogoValor.query.filter_by(tipo='NICHO').count() == 0:
             for letra in ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']:
                 for i in range(1, 9):
-                    db.session.add(CatalogoValor(tipo='NICHO', valor=f"{letra}{i}"))
+                    db.session.add(CatalogoValor(tipo='NICHO', valor=f"{letra}{i}", es_predeterminado=True))
         if CatalogoValor.query.filter_by(tipo='UNIDAD_MEDIDA').count() == 0:
             for u in ['UN', 'M', 'MM', 'KG', 'JUEGO']:
-                db.session.add(CatalogoValor(tipo='UNIDAD_MEDIDA', valor=u))
+                db.session.add(CatalogoValor(tipo='UNIDAD_MEDIDA', valor=u, es_predeterminado=True))
         if CatalogoValor.query.filter_by(tipo='ESTADO_FISICO').count() == 0:
             for e in ['OXIDADO', 'ROSCA SUCIA', 'HABILITADO/BLANCO']:
-                db.session.add(CatalogoValor(tipo='ESTADO_FISICO', valor=e))
+                db.session.add(CatalogoValor(tipo='ESTADO_FISICO', valor=e, es_predeterminado=True))
 
         db.session.commit()
         return "<h2>✅ Módulo de Auditoría/Conteo Físico instalado y catálogos base cargados.</h2>"

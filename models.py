@@ -534,6 +534,7 @@ class CatalogoValor(db.Model):
     tipo = db.Column(db.String(30), nullable=False)   # ESTADO_FISICO / UNIDAD_MEDIDA / ANAQUEL / NICHO
     valor = db.Column(db.String(100), nullable=False)
     activo = db.Column(db.Boolean, default=True)
+    es_predeterminado = db.Column(db.Boolean, default=False)  # protege los valores sembrados de borrado accidental
     creado_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     creado_en = db.Column(db.DateTime, default=hora_peru)
 
