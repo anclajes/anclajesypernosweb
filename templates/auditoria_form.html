@@ -104,15 +104,15 @@
             <div class="card-body">
                 <div class="row g-3">
                     <div class="col-12 col-md-6">
-                        <label class="form-label small fw-bold">Anaquel</label>
+                        <label class="form-label small fw-bold">Anaquel <span class="text-danger">*</span></label>
                         <select id="anaquel" class="form-select" style="width:100%;"></select>
                     </div>
                     <div class="col-12 col-md-6">
-                        <label class="form-label small fw-bold">Nicho</label>
+                        <label class="form-label small fw-bold">Nicho <span class="text-danger">*</span></label>
                         <select id="nicho" class="form-select" style="width:100%;"></select>
                     </div>
                 </div>
-                <div class="form-text mt-1">Puede llenar uno, ambos, o dejarlos vacíos si no aplica.</div>
+                <div class="form-text mt-1">Ambos campos son obligatorios. <span class="text-danger fw-bold">*</span></div>
             </div>
         </div>
 
@@ -138,8 +138,8 @@
                         <input type="number" id="cantidad_total" class="form-control fw-bold border-danger" min="0" required>
                     </div>
                     <div class="col-4">
-                        <label class="form-label small fw-bold">Unidad</label>
-                        <select id="unidad_medida" class="form-select"></select>
+                        <label class="form-label small fw-bold">Unidad <span class="text-danger">*</span></label>
+                        <select id="unidad_medida" class="form-select" required></select>
                     </div>
                 </div>
             </div>
@@ -151,9 +151,9 @@
             <div class="card-body">
                 <div class="row g-3">
                     <div class="col-12 col-md-6">
-                        <label class="form-label small fw-bold">Estado Físico</label>
-                        <select id="estado_fisico" class="form-select">
-                            <option value="">BUEN ESTADO (OK)</option>
+                        <label class="form-label small fw-bold">Estado Físico <span class="text-danger">*</span></label>
+                        <select id="estado_fisico" class="form-select" required>
+                            <option value="" selected disabled>-- Seleccione --</option>
                         </select>
                     </div>
                     <div class="col-12">
@@ -198,7 +198,7 @@ function cargarCatalogo(tipo, selectId, esSelect2) {
             sel.trigger('change');
         } else {
             const sel = document.getElementById(selectId);
-            let html = selectId === 'estado_fisico' ? '<option value="">BUEN ESTADO (OK)</option>' : '';
+            let html = '<option value="" selected disabled>-- Seleccione --</option>';
             (data.valores || []).forEach(v => html += `<option value="${v}">${v}</option>`);
             sel.innerHTML = html;
         }
@@ -275,8 +275,17 @@ $(document).on('change', '#producto_id', function() {
 function enviarConteo() {
     const productoId = $('#producto_id').val();
     const cantidad = document.getElementById('cantidad_total').value;
+    const anaquelVal = $('#anaquel').val();
+    const nichoVal = $('#nicho').val();
+    const estadoFisico = document.getElementById('estado_fisico').value;
+    const unidad = document.getElementById('unidad_medida').value;
+
     if (!productoId) return Swal.fire('Falta producto', 'Busque y seleccione el producto.', 'warning');
     if (cantidad === '' || cantidad === null) return Swal.fire('Falta cantidad', 'Ingrese la cantidad total contada.', 'warning');
+    if (!anaquelVal) return Swal.fire('Falta Anaquel', 'Debe seleccionar el Anaquel.', 'warning');
+    if (!nichoVal) return Swal.fire('Falta Nicho', 'Debe seleccionar el Nicho.', 'warning');
+    if (!estadoFisico) return Swal.fire('Falta Estado Físico', 'Debe seleccionar el Estado Físico.', 'warning');
+    if (!unidad) return Swal.fire('Falta Unidad', 'Debe seleccionar la Unidad de Medida.', 'warning');
 
     Swal.fire({
         title: '¿Confirmar envío?', text: 'Una vez enviado, no podrás editar este registro.',
@@ -286,14 +295,14 @@ function enviarConteo() {
 
         const fd = new FormData();
         fd.append('producto_id', productoId);
-        fd.append('anaquel', $('#anaquel').val() || '');
-        fd.append('nicho', $('#nicho').val() || '');
+        fd.append('anaquel', anaquelVal || '');
+        fd.append('nicho', nichoVal || '');
         fd.append('num_cajas', document.getElementById('num_cajas').value);
         fd.append('peso_promedio_20u', document.getElementById('peso_promedio_20u').value);
         fd.append('num_bolsas', document.getElementById('num_bolsas').value);
         fd.append('cantidad_total', cantidad);
-        fd.append('unidad_medida', document.getElementById('unidad_medida').value);
-        fd.append('estado_fisico', document.getElementById('estado_fisico').value);
+        fd.append('unidad_medida', unidad);
+        fd.append('estado_fisico', estadoFisico);
         fd.append('observaciones', document.getElementById('observaciones').value);
         document.querySelectorAll('#campos_dinamicos [name^="campo_"]').forEach(el => fd.append(el.name, el.value));
 
@@ -302,33 +311,14 @@ function enviarConteo() {
             .then(data => {
                 if (data.status === 'success') {
                     Swal.fire({ icon: 'success', title: 'Enviado', text: data.msg, timer: 1800, showConfirmButton: false })
-                        .then(() => resetearFormulario());
+                        .then(() => { window.location.href = "{{ url_for('auditoria_inicio') }}"; });
                 } else {
                     Swal.fire('Error', data.msg, 'error');
                 }
             })
-            .catch(err => Swal.fire('Error', 'No se pudo comunicar con el servidor.', 'error'));
+            .catch(() => Swal.fire('Error', 'No se pudo comunicar con el servidor.', 'error'));
     });
 }
 
-function resetearFormulario() {
-    // Reinicia SOLO los campos del producto contado, sin recargar la página ni cambiar de pestaña
-    document.getElementById('familia').selectedIndex = 0;
-    $('#calidad').html('<option value="" selected disabled>-- Primero seleccione familia --</option>').prop('disabled', true);
-    $('#producto_id').empty().append('<option value=""></option>').prop('disabled', true).trigger('change');
-    document.getElementById('descripcion_mostrar').value = '';
-    $('#anaquel').val(null).trigger('change');
-    $('#nicho').val(null).trigger('change');
-    document.getElementById('num_cajas').value = 0;
-    document.getElementById('peso_promedio_20u').value = 0;
-    document.getElementById('num_bolsas').value = 0;
-    document.getElementById('cantidad_total').value = '';
-    document.getElementById('unidad_medida').selectedIndex = 0;
-    document.getElementById('estado_fisico').selectedIndex = 0;
-    document.getElementById('observaciones').value = '';
-    document.querySelectorAll('#campos_dinamicos [name^="campo_"]').forEach(el => el.value = '');
-    productosCache = [];
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-}
 </script>
 {% endblock %}

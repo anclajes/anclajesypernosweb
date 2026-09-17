@@ -9,7 +9,16 @@
     <div class="table-responsive">
         <table class="table table-hover align-middle mb-0 small">
             <thead class="table-dark">
-                <tr><th class="ps-3">Fecha</th><th>Origen</th><th>SKU</th><th>Descripción</th><th class="text-center">Cant.</th><th class="text-center">Estado</th></tr>
+                <tr>
+                    <th class="ps-3">Fecha</th>
+                    <th>Origen</th>
+                    <th>SKU</th>
+                    <th>Descripción</th>
+                    <th>Ubicación</th>
+                    <th class="text-center">Cant.</th>
+                    <th class="text-center">Estado</th>
+                    <th class="text-center pe-3">Acción</th>
+                </tr>
             </thead>
             <tbody>
                 {% for r in registros %}
@@ -18,6 +27,11 @@
                     <td>{{ r.origen_inventario }}</td>
                     <td class="fw-bold">{{ r.sku_snapshot }}</td>
                     <td>{{ r.nombre_snapshot }}</td>
+                    <td>
+                        {% if r.anaquel %}<span class="badge bg-light text-dark border">Anaquel {{ r.anaquel }}</span>{% endif %}
+                        {% if r.nicho %}<span class="badge bg-light text-dark border">Nicho {{ r.nicho }}</span>{% endif %}
+                        {% if not r.anaquel and not r.nicho %}-{% endif %}
+                    </td>
                     <td class="text-center">{{ r.cantidad_total }} {{ r.unidad_medida }}</td>
                     <td class="text-center">
                         {% if r.estado_registro == 'PENDIENTE' %}<span class="badge bg-warning text-dark">Pendiente</span>
@@ -25,9 +39,14 @@
                         {% elif r.estado_registro == 'RECHAZADO' %}<span class="badge bg-danger">Rechazado</span>
                         {% else %}<span class="badge bg-secondary">{{ r.estado_registro }}</span>{% endif %}
                     </td>
+                    <td class="text-center pe-3">
+                        {% if r.estado_registro == 'PENDIENTE' %}
+                        <a href="{{ url_for('auditoria_editar_form', reg_id=r.id) }}" class="btn btn-sm btn-outline-warning"><i class="bi bi-pencil-fill"></i> Editar</a>
+                        {% else %}-{% endif %}
+                    </td>
                 </tr>
                 {% else %}
-                <tr><td colspan="6" class="text-center py-4 text-muted">Sin registros enviados aún.</td></tr>
+                <tr><td colspan="8" class="text-center py-4 text-muted">Sin registros enviados aún.</td></tr>
                 {% endfor %}
             </tbody>
         </table>

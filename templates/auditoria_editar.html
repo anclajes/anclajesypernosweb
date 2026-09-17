@@ -1,0 +1,221 @@
+{% extends "base.html" %}
+{% block title %}Corregir Conteo{% endblock %}
+{% block subtitle %}{{ registro.origen_inventario }}{% endblock %}
+
+{% block content %}
+<style>
+    :root {
+        --auditoria-primary: {{ '#004b87' if registro.origen_inventario == 'IMPORTBOLTS' else '#0B3D91' }};
+    }
+    .auditoria-banner {
+        background: {{ 'linear-gradient(90deg, #004b87 0%, #80c342 100%)' if registro.origen_inventario == 'IMPORTBOLTS' else 'var(--auditoria-primary)' }};
+        color: #fff; padding: .6rem 1rem; text-align: center; font-weight: 700;
+        letter-spacing: .05em; font-size: .9rem; text-transform: uppercase; border-radius: 8px 8px 0 0;
+    }
+    .card-auditoria-section .card-header { background-color: var(--auditoria-primary) !important; }
+</style>
+
+<div class="mx-auto" style="max-width: 800px;">
+    <div class="card border-0 shadow-sm mb-3 overflow-hidden">
+        <div class="auditoria-banner"><i class="bi bi-pencil-fill"></i> Corregir Conteo #{{ registro.id }}</div>
+        <div class="card-body">
+            <div class="alert alert-warning small mb-0">
+                <i class="bi bi-exclamation-triangle-fill"></i> Solo puede corregir este registro mientras esté <b>Pendiente de revisión</b>. Una vez que el administrador lo revise, quedará bloqueado.
+            </div>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-header text-white fw-bold" style="background-color: var(--auditoria-primary);">
+            <i class="bi bi-upc-scan"></i> Producto (no editable)
+        </div>
+        <div class="card-body">
+            <table class="table table-sm mb-0">
+                <tr><td class="text-muted">SKU</td><td class="fw-bold">{{ registro.sku_snapshot }}</td></tr>
+                <tr><td class="text-muted">Descripción</td><td>{{ registro.nombre_snapshot }}</td></tr>
+                <tr><td class="text-muted">Familia / Calidad</td><td>{{ registro.familia }} / {{ registro.calidad }}</td></tr>
+            </table>
+        </div>
+    </div>
+
+    <form id="formEditarConteo">
+        <div class="card card-auditoria-section border-0 shadow-sm mb-3">
+            <div class="card-header text-white fw-bold"><i class="bi bi-geo-alt-fill"></i> Ubicación Física</div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-12 col-md-6">
+                        <label class="form-label small fw-bold">Anaquel <span class="text-danger">*</span></label>
+                        <select id="anaquel" class="form-select" style="width:100%;"></select>
+                    </div>
+                    <div class="col-12 col-md-6">
+                        <label class="form-label small fw-bold">Nicho <span class="text-danger">*</span></label>
+                        <select id="nicho" class="form-select" style="width:100%;"></select>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card border-0 shadow-sm mb-3">
+            <div class="card-header bg-secondary text-white fw-bold"><i class="bi bi-calculator-fill"></i> Cantidades Contadas</div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-6 col-md-4">
+                        <label class="form-label small fw-bold"># Cajas</label>
+                        <input type="number" id="num_cajas" class="form-control" min="0" value="{{ registro.num_cajas }}">
+                    </div>
+                    <div class="col-6 col-md-4">
+                        <label class="form-label small fw-bold">Peso prom. 20 UND (Kg)</label>
+                        <input type="number" step="0.001" id="peso_promedio_20u" class="form-control" min="0" value="{{ registro.peso_promedio_20u }}">
+                    </div>
+                    <div class="col-12 col-md-4">
+                        <label class="form-label small fw-bold"># Bolsas</label>
+                        <input type="number" id="num_bolsas" class="form-control" min="0" value="{{ registro.num_bolsas }}">
+                    </div>
+                    <div class="col-8">
+                        <label class="form-label small fw-bold text-danger">Cantidad Total Contada *</label>
+                        <input type="number" id="cantidad_total" class="form-control fw-bold border-danger" min="0" value="{{ registro.cantidad_total }}" required>
+                    </div>
+                    <div class="col-4">
+                        <label class="form-label small fw-bold">Unidad <span class="text-danger">*</span></label>
+                        <select id="unidad_medida" class="form-select" required></select>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card border-0 shadow-sm mb-3">
+            <div class="card-header bg-secondary text-white fw-bold"><i class="bi bi-clipboard2-pulse-fill"></i> Estado y Detalles</div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-12 col-md-6">
+                        <label class="form-label small fw-bold">Estado Físico <span class="text-danger">*</span></label>
+                        <select id="estado_fisico" class="form-select" required></select>
+                    </div>
+                    <div class="col-12">
+                        <div id="campos_dinamicos" class="row g-3"></div>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label small fw-bold">Observaciones</label>
+                        <textarea id="observaciones" class="form-control" rows="2">{{ registro.observaciones or '' }}</textarea>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="d-flex gap-2 mb-4">
+            <a href="{{ url_for('auditoria_mis_registros') }}" class="btn btn-outline-secondary flex-fill">Cancelar</a>
+            <button type="button" class="btn btn-warning fw-bold flex-fill" onclick="guardarCorreccion()">
+                <i class="bi bi-check-lg"></i> Guardar Corrección
+            </button>
+        </div>
+    </form>
+</div>
+
+<script>
+const REG_ID = {{ registro.id }};
+const VALOR_ANAQUEL_ACTUAL = "{{ registro.anaquel or '' }}";
+const VALOR_NICHO_ACTUAL = "{{ registro.nicho or '' }}";
+const VALOR_UNIDAD_ACTUAL = "{{ registro.unidad_medida or '' }}";
+const VALOR_ESTADO_ACTUAL = "{{ registro.estado_fisico or '' }}";
+const VALORES_EXTRA_ACTUALES = {{ valores_extra | tojson }};
+
+document.addEventListener('DOMContentLoaded', () => {
+    $('#anaquel').select2({ width: '100%' });
+    $('#nicho').select2({ width: '100%' });
+
+    cargarCatalogoConSeleccion('ANAQUEL', 'anaquel', VALOR_ANAQUEL_ACTUAL, true);
+    cargarCatalogoConSeleccion('NICHO', 'nicho', VALOR_NICHO_ACTUAL, true);
+    cargarCatalogoConSeleccion('UNIDAD_MEDIDA', 'unidad_medida', VALOR_UNIDAD_ACTUAL, false);
+    cargarCatalogoConSeleccion('ESTADO_FISICO', 'estado_fisico', VALOR_ESTADO_ACTUAL, false);
+    cargarCamposPersonalizadosConValores();
+});
+
+function cargarCatalogoConSeleccion(tipo, selectId, valorActual, esSelect2) {
+    fetch(`/api/catalogo/${tipo}`).then(r => r.json()).then(data => {
+        if (esSelect2) {
+            const sel = $(`#${selectId}`);
+            sel.empty().append('<option value=""></option>');
+            (data.valores || []).forEach(v => sel.append(new Option(v, v, false, v === valorActual)));
+            sel.val(valorActual).trigger('change');
+        } else {
+            const sel = document.getElementById(selectId);
+            let html = '<option value="" disabled>-- Seleccione --</option>';
+            (data.valores || []).forEach(v => html += `<option value="${v}" ${v === valorActual ? 'selected' : ''}>${v}</option>`);
+            sel.innerHTML = html;
+        }
+    });
+}
+
+function cargarCamposPersonalizadosConValores() {
+    fetch('/api/campos_personalizados').then(r => r.json()).then(data => {
+        const cont = document.getElementById('campos_dinamicos');
+        cont.innerHTML = '';
+        (data.campos || []).forEach(c => {
+            const valorGuardado = VALORES_EXTRA_ACTUALES[c.id] || '';
+            const marca = c.obligatorio ? ' <span class="text-danger">*</span>' : ' <span class="text-muted fw-normal">(opcional)</span>';
+            const req = c.obligatorio ? 'required' : '';
+            let campoHtml;
+            if (c.tipo_campo === 'SELECT') {
+                let opts = '<option value="">-- Seleccione --</option>';
+                (c.opciones || []).forEach(o => opts += `<option value="${o}" ${o === valorGuardado ? 'selected' : ''}>${o}</option>`);
+                campoHtml = `<div class="col-12 col-md-6">
+                    <label class="form-label small fw-bold">${c.etiqueta}${marca}</label>
+                    <select class="form-select" name="campo_${c.id}" ${req}>${opts}</select>
+                </div>`;
+            } else {
+                campoHtml = `<div class="col-12 col-md-6">
+                    <label class="form-label small fw-bold">${c.etiqueta}${marca}</label>
+                    <input type="text" class="form-control" name="campo_${c.id}" value="${valorGuardado}" ${req}>
+                </div>`;
+            }
+            cont.insertAdjacentHTML('beforeend', campoHtml);
+        });
+    });
+}
+
+function guardarCorreccion() {
+    const anaquelVal = $('#anaquel').val();
+    const nichoVal = $('#nicho').val();
+    const cantidad = document.getElementById('cantidad_total').value;
+    const unidad = document.getElementById('unidad_medida').value;
+    const estado = document.getElementById('estado_fisico').value;
+
+    if (!anaquelVal) return Swal.fire('Falta Anaquel', 'Debe seleccionar el Anaquel.', 'warning');
+    if (!nichoVal) return Swal.fire('Falta Nicho', 'Debe seleccionar el Nicho.', 'warning');
+    if (cantidad === '' || cantidad === null) return Swal.fire('Falta cantidad', 'Ingrese la cantidad total contada.', 'warning');
+    if (!unidad) return Swal.fire('Falta Unidad', 'Debe seleccionar la Unidad de Medida.', 'warning');
+    if (!estado) return Swal.fire('Falta Estado Físico', 'Debe seleccionar el Estado Físico.', 'warning');
+
+    Swal.fire({
+        title: '¿Guardar corrección?', text: 'Se actualizará este registro de conteo.',
+        icon: 'question', showCancelButton: true, confirmButtonText: 'Sí, guardar'
+    }).then(result => {
+        if (!result.isConfirmed) return;
+
+        const fd = new FormData();
+        fd.append('anaquel', anaquelVal);
+        fd.append('nicho', nichoVal);
+        fd.append('num_cajas', document.getElementById('num_cajas').value);
+        fd.append('peso_promedio_20u', document.getElementById('peso_promedio_20u').value);
+        fd.append('num_bolsas', document.getElementById('num_bolsas').value);
+        fd.append('cantidad_total', cantidad);
+        fd.append('unidad_medida', unidad);
+        fd.append('estado_fisico', estado);
+        fd.append('observaciones', document.getElementById('observaciones').value);
+        document.querySelectorAll('#campos_dinamicos [name^="campo_"]').forEach(el => fd.append(el.name, el.value));
+
+        fetch(`/auditoria/registro/${REG_ID}/actualizar`, { method: 'POST', body: fd })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    Swal.fire({ icon: 'success', title: 'Actualizado', text: data.msg, timer: 1800, showConfirmButton: false })
+                        .then(() => { window.location.href = "{{ url_for('auditoria_mis_registros') }}"; });
+                } else {
+                    Swal.fire('Error', data.msg, 'error');
+                }
+            })
+            .catch(() => Swal.fire('Error', 'No se pudo comunicar con el servidor.', 'error'));
+    });
+}
+</script>
+{% endblock %}

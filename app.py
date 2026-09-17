@@ -7445,7 +7445,7 @@ def api_catalogo_valores(tipo):
     return {'valores': [v.valor for v in valores]}
 
 @app.route('/api/campos_personalizados')
-def api_campos_personalizados():
+def api_campos_personalizados():    
     if session.get('role') not in ['auditor_stock', 'admin', 'administracion']: return {'campos': []}, 403
     campos = CampoPersonalizado.query.filter_by(activo=True).order_by(CampoPersonalizado.orden, CampoPersonalizado.id).all()
     data = []
@@ -7467,6 +7467,24 @@ def auditoria_guardar(origen):
         Modelo = ProductImportBolts if origen == 'IMPORTBOLTS' else Product
         prod = Modelo.query.get_or_404(prod_id)
 
+        anaquel_val = request.form.get('anaquel', '').strip()
+        nicho_val = request.form.get('nicho', '').strip()
+        estado_fisico_val = request.form.get('estado_fisico', '').strip()
+        unidad_val = request.form.get('unidad_medida', '').strip()
+
+        errores = []
+        if not anaquel_val:
+            errores.append('Debe indicar el Anaquel.')
+        if not nicho_val:
+            errores.append('Debe indicar el Nicho.')
+        if not estado_fisico_val:
+            errores.append('Debe seleccionar el Estado Físico.')
+        if not unidad_val:
+            errores.append('Debe seleccionar la Unidad de Medida.')
+
+        if errores:
+            return {'status': 'error', 'msg': ' '.join(errores)}
+
         registro = RegistroAuditoria(
             origen_inventario=origen,
             trabajador_id=session['user_id'],
@@ -7474,16 +7492,16 @@ def auditoria_guardar(origen):
             nombre_snapshot=prod.nombre,
             familia=prod.categoria,
             calidad=prod.calidad,
-            anaquel=request.form.get('anaquel', '').strip() or None,
-            nicho=request.form.get('nicho', '').strip() or None,
+            anaquel=anaquel_val or None,
+            nicho=nicho_val or None,
             num_cajas=int(request.form.get('num_cajas') or 0),
             peso_promedio_20u=float(request.form.get('peso_promedio_20u') or 0),
             num_bolsas=int(request.form.get('num_bolsas') or 0),
             cantidad_total=int(request.form['cantidad_total']),
-            unidad_medida=request.form.get('unidad_medida', 'UN'),
-            estado_fisico=request.form.get('estado_fisico', ''),
+            unidad_medida=unidad_val,
+            estado_fisico=estado_fisico_val,
             observaciones=request.form.get('observaciones', '').strip(),
-            stock_sistema_snapshot=prod.stock_actual,
+            stock_sistema_snapshot=prod.stock_actual,  # oculto, solo para el admin
             estado_registro='PENDIENTE',
             bloqueado=True
         )
@@ -7907,6 +7925,87 @@ def admin_auditorias_historial():
                            usuario_filtro=usuario_filtro, busqueda=busqueda,
                            usuarios_con_logs=usuarios_con_logs)
 
+# --- mientras esté PENDIENTE ---
+
+@app.route('/auditoria/registro/<int:reg_id>/editar')
+def auditoria_editar_form(reg_id):
+    if session.get('role') != 'auditor_stock': return "Acceso denegado", 403
+    registro = RegistroAuditoria.query.get_or_404(reg_id)
+    if registro.trabajador_id != session['user_id']:
+        return "No autorizado", 403
+    if registro.estado_registro != 'PENDIENTE':
+        flash('Este registro ya fue revisado y no se puede editar.')
+        return redirect(url_for('auditoria_mis_registros'))
+
+    valores_extra = {ve.campo_id: ve.valor for ve in registro.valores_extra}
+    return render_template('auditoria_editar.html', registro=registro, valores_extra=valores_extra)
+
+
+@app.route('/auditoria/registro/<int:reg_id>/actualizar', methods=['POST'])
+def auditoria_actualizar(reg_id):
+    if session.get('role') != 'auditor_stock': return {'status': 'error', 'msg': 'No autorizado'}, 403
+    registro = RegistroAuditoria.query.get_or_404(reg_id)
+    if registro.trabajador_id != session['user_id']:
+        return {'status': 'error', 'msg': 'No autorizado'}, 403
+    if registro.estado_registro != 'PENDIENTE':
+        return {'status': 'error', 'msg': 'Este registro ya fue revisado y no se puede editar.'}
+
+    try:
+        anaquel_val = request.form.get('anaquel', '').strip()
+        nicho_val = request.form.get('nicho', '').strip()
+        estado_fisico_val = request.form.get('estado_fisico', '').strip()
+        unidad_val = request.form.get('unidad_medida', '').strip()
+
+        errores = []
+        if not anaquel_val: errores.append('Debe indicar el Anaquel.')
+        if not nicho_val: errores.append('Debe indicar el Nicho.')
+        if not estado_fisico_val: errores.append('Debe seleccionar el Estado Físico.')
+        if not unidad_val: errores.append('Debe seleccionar la Unidad de Medida.')
+        if errores:
+            return {'status': 'error', 'msg': ' '.join(errores)}
+
+        prod = registro.producto
+
+        registro.anaquel = anaquel_val
+        registro.nicho = nicho_val
+        registro.num_cajas = int(request.form.get('num_cajas') or 0)
+        registro.peso_promedio_20u = float(request.form.get('peso_promedio_20u') or 0)
+        registro.num_bolsas = int(request.form.get('num_bolsas') or 0)
+        registro.cantidad_total = int(request.form['cantidad_total'])
+        registro.unidad_medida = unidad_val
+        registro.estado_fisico = estado_fisico_val
+        registro.observaciones = request.form.get('observaciones', '').strip()
+        if prod:
+            registro.stock_sistema_snapshot = prod.stock_actual  # refrescar la foto del stock al momento de editar
+
+        RegistroAuditoriaValorExtra.query.filter_by(registro_id=registro.id).delete()
+        campos_activos = CampoPersonalizado.query.filter_by(activo=True).all()
+        faltantes = []
+        for campo in campos_activos:
+            valor_enviado = request.form.get(f'campo_{campo.id}', '').strip()
+            if campo.obligatorio and not valor_enviado:
+                faltantes.append(campo.etiqueta)
+        if faltantes:
+            db.session.rollback()
+            return {'status': 'error', 'msg': f'Faltan campos obligatorios: {", ".join(faltantes)}.'}
+        for campo in campos_activos:
+            valor_enviado = request.form.get(f'campo_{campo.id}', '').strip()
+            if valor_enviado:
+                db.session.add(RegistroAuditoriaValorExtra(
+                    registro_id=registro.id, campo_id=campo.id,
+                    etiqueta_snapshot=campo.etiqueta, valor=valor_enviado
+                ))
+
+        registrar_log_auditoria(registro, 'EDITADO_POR_AUDITOR',
+            f"{session.get('nombre')} corrigió su propio conteo antes de la revisión del admin.")
+
+        db.session.commit()
+        return {'status': 'success', 'msg': 'Registro actualizado correctamente.'}
+
+    except Exception as e:
+        db.session.rollback()
+        return {'status': 'error', 'msg': str(e)}
+
 # --- RUTA SECRETA PARA INICIALIZAR LA BASE DE DATOS EN RENDER ---
 
 
@@ -7947,7 +8046,13 @@ def fix_auditoria_columnas():
             conn.execute(text("ALTER TABLE campo_personalizado ADD COLUMN IF NOT EXISTS obligatorio BOOLEAN DEFAULT FALSE"))
 
             conn.commit()
-        return "<h2>✅ Columnas de auditoría agregadas/migradas correctamente (incluye 'obligatorio' en Campos Personalizados).</h2>"
+
+        # Asegurar que "BUEN ESTADO (OK)" exista como opción real y seleccionable
+        if not CatalogoValor.query.filter_by(tipo='ESTADO_FISICO', valor='BUEN ESTADO (OK)').first():
+            db.session.add(CatalogoValor(tipo='ESTADO_FISICO', valor='BUEN ESTADO (OK)', es_predeterminado=True))
+            db.session.commit()
+
+        return "<h2>✅ Columnas de auditoría agregadas/migradas correctamente (incluye 'obligatorio' y 'BUEN ESTADO (OK)').</h2>"
     except Exception as e:
         db.session.rollback()
         return f"<h2>Error: {str(e)}</h2>"
