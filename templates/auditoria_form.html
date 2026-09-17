@@ -6,24 +6,30 @@
 <style>
     :root {
         --auditoria-primary: {{ '#004b87' if origen == 'IMPORTBOLTS' else '#0B3D91' }};
-        --auditoria-secondary: {{ '#80c342' if origen == 'IMPORTBOLTS' else '#ffc107' }};
+        --auditoria-accent: {{ '#80c342' if origen == 'IMPORTBOLTS' else '#ffc107' }};
     }
-    .auditoria-header {
-        background: {{ 'linear-gradient(90deg, #004b87 75%, #80c342 100%)' if origen == 'IMPORTBOLTS' else '#0B3D91' }};
-        color: #fff;
-        border-radius: 12px 12px 0 0;
-        padding: 1.2rem 1.5rem;
-        display: flex;
-        align-items: center;
-        gap: 1rem;
-        flex-wrap: wrap;
-    }
-    .auditoria-header img {
-        height: 48px;
+    .auditoria-card-header {
         background: #fff;
-        border-radius: 8px;
-        padding: 4px 8px;
+        border-radius: 12px 12px 0 0;
+        padding: 1.5rem 1.5rem 0;
+        text-align: center;
+        border-top: 6px solid var(--auditoria-primary);
+    }
+    .auditoria-card-header img {
+        max-height: 110px;
+        max-width: 85%;
         object-fit: contain;
+        margin-bottom: -4px;
+    }
+    .auditoria-banner {
+        background: {{ 'linear-gradient(90deg, #004b87 0%, #80c342 100%)' if origen == 'IMPORTBOLTS' else 'var(--auditoria-primary)' }};
+        color: #fff;
+        padding: .6rem 1rem;
+        text-align: center;
+        font-weight: 700;
+        letter-spacing: .05em;
+        font-size: .95rem;
+        text-transform: uppercase;
     }
     .btn-auditoria-primary {
         background-color: var(--auditoria-primary);
@@ -34,18 +40,22 @@
     .card-auditoria-section .card-header {
         background-color: var(--auditoria-primary) !important;
     }
+    @media (max-width: 480px) {
+        .auditoria-card-header img { max-height: 80px; }
+        .auditoria-banner { font-size: .8rem; }
+    }
 </style>
 
 <div class="mx-auto" style="max-width: 800px;">
     <div class="card border-0 shadow-sm mb-3 overflow-hidden">
-        <div class="auditoria-header">
-            <img src="{{ url_for('static', filename='img/logo_import.png' if origen == 'IMPORTBOLTS' else 'logo.png') }}" alt="Logo">
-            <div>
-                <h5 class="mb-0 fw-bold"><i class="bi bi-clipboard2-check-fill"></i> Registro de Conteo Físico</h5>
-                <small>{{ 'IMPORT BOLTS & ESTRUCTURE S.A.C.' if origen == 'IMPORTBOLTS' else 'ANCLAJES Y PERNOS' }}</small>
-            </div>
+        <div class="auditoria-card-header">
+            <img src="{{ url_for('static', filename='img/logo_import.png' if origen == 'IMPORTBOLTS' else 'img/logo.png') }}" alt="Logo">
         </div>
-        <div class="card-body py-2">    
+        <div class="auditoria-banner">
+            <i class="bi bi-clipboard2-check-fill"></i>
+            {{ 'IMPORT BOLTS & ESTRUCTURE S.A.C.' if origen == 'IMPORTBOLTS' else 'ANCLAJES Y PERNOS' }} — Conteo Físico
+        </div>
+        <div class="card-body py-2">
             <div class="alert alert-light border small mb-0">
                 <b>Fecha:</b> {{ now_str }} &nbsp;|&nbsp; <b>Responsable:</b> {{ session.get('nombre') }}
             </div>
