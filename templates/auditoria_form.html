@@ -45,14 +45,11 @@
                 <small>{{ 'IMPORT BOLTS & ESTRUCTURE S.A.C.' if origen == 'IMPORTBOLTS' else 'ANCLAJES Y PERNOS' }}</small>
             </div>
         </div>
-        <div class="card-body py-2">
+        <div class="card-body py-2">    
             <div class="alert alert-light border small mb-0">
                 <b>Fecha:</b> {{ now_str }} &nbsp;|&nbsp; <b>Responsable:</b> {{ session.get('nombre') }}
             </div>
         </div>
-    </div>
-        <span><b>Fecha:</b> {{ now_str }}</span>
-        <span><b>Responsable:</b> {{ session.get('nombre') }}</span>
     </div>
 
     <form id="formAuditoria">
