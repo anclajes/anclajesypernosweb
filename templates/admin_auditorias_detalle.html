@@ -26,7 +26,7 @@
                     <tr><td class="text-muted">Peso prom. 20u</td><td>{{ registro.peso_promedio_20u }} Kg</td></tr>
                     <tr><td class="text-muted"># Bolsas</td><td>{{ registro.num_bolsas }}</td></tr>
                     <tr class="table-warning"><td class="fw-bold">Cantidad Total</td><td class="fw-bold fs-6">{{ registro.cantidad_total }} {{ registro.unidad_medida }}</td></tr>
-                    <tr><td class="text-muted">Estado Físico</td><td>{{ registro.estado_fisico or '-' }}</td></tr>
+                    <tr><td class="text-muted">Estado Físico</td><td>{{ registro.estado_fisico or 'BUEN ESTADO (OK)' }}</td></tr>
                     {% for ve in registro.valores_extra %}
                     <tr><td class="text-muted">{{ ve.etiqueta_snapshot }}</td><td>{{ ve.valor }}</td></tr>
                     {% endfor %}
@@ -129,7 +129,7 @@
                 </div>
                 <div class="col-12 col-md-6">
                     <label class="form-label small fw-bold">Estado Físico</label>
-                    <input type="text" id="f_estado" class="form-control text-uppercase" value="{{ registro.estado_fisico or prod_actual.estado or '' }}" placeholder="Vacío = OK">
+                    <input type="text" id="f_estado" class="form-control text-uppercase" value="{{ registro.estado_fisico or prod_actual.estado or '' }}" placeholder="Vacío = BUEN ESTADO (OK)">
                 </div>
                 <div class="col-12 col-md-6 d-flex align-items-end">
                     <div class="form-check form-switch">

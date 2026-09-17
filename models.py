@@ -557,6 +557,7 @@ class CampoPersonalizado(db.Model):
     orden = db.Column(db.Integer, default=0)
     creado_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     creado_en = db.Column(db.DateTime, default=hora_peru)
+    obligatorio = db.Column(db.Boolean, default=False)
 
     creado_por = db.relationship('User')
     opciones = db.relationship('CampoPersonalizadoOpcion', backref='campo', cascade="all, delete-orphan")

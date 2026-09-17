@@ -7450,7 +7450,7 @@ def api_campos_personalizados():
     campos = CampoPersonalizado.query.filter_by(activo=True).order_by(CampoPersonalizado.orden, CampoPersonalizado.id).all()
     data = []
     for c in campos:
-        item = {'id': c.id, 'etiqueta': c.etiqueta, 'tipo_campo': c.tipo_campo}
+        item = {'id': c.id, 'etiqueta': c.etiqueta, 'tipo_campo': c.tipo_campo, 'obligatorio': c.obligatorio}
         if c.tipo_campo == 'SELECT':
             item['opciones'] = [o.valor for o in c.opciones if o.activo]
         data.append(item)
@@ -7496,8 +7496,18 @@ def auditoria_guardar(origen):
         db.session.add(registro)
         db.session.flush()
 
-        # Guardar valores de campos personalizados (llegan como campo_<id>)
+        # Validar campos personalizados obligatorios ANTES de guardar nada
         campos_activos = CampoPersonalizado.query.filter_by(activo=True).all()
+        faltantes = []
+        for campo in campos_activos:
+            valor_enviado = request.form.get(f'campo_{campo.id}', '').strip()
+            if campo.obligatorio and not valor_enviado:
+                faltantes.append(campo.etiqueta)
+
+        if faltantes:
+            db.session.rollback()
+            return {'status': 'error', 'msg': f'Faltan campos obligatorios: {", ".join(faltantes)}.'}
+
         for campo in campos_activos:
             valor_enviado = request.form.get(f'campo_{campo.id}', '').strip()
             if valor_enviado:
@@ -7735,7 +7745,8 @@ def admin_campo_personalizado_nuevo():
         if not opciones_lista:
             return {'status': 'error', 'msg': 'Un campo tipo "Lista de alternativas" necesita al menos una opción.'}
 
-    nuevo = CampoPersonalizado(etiqueta=etiqueta, tipo_campo=tipo_campo, creado_por_id=session['user_id'])
+    obligatorio = request.form.get('obligatorio') == '1'
+    nuevo = CampoPersonalizado(etiqueta=etiqueta, tipo_campo=tipo_campo, obligatorio=obligatorio, creado_por_id=session['user_id'])
     db.session.add(nuevo)
     db.session.flush()
 
@@ -7747,7 +7758,8 @@ def admin_campo_personalizado_nuevo():
 
     opciones_con_id = [{'id': o.id, 'valor': o.valor} for o in nuevo.opciones]
     return {'status': 'success', 'id': nuevo.id, 'etiqueta': nuevo.etiqueta,
-            'tipo_campo': nuevo.tipo_campo, 'opciones': opciones_lista, 'opciones_con_id': opciones_con_id}
+            'tipo_campo': nuevo.tipo_campo, 'obligatorio': obligatorio,
+            'opciones': opciones_lista, 'opciones_con_id': opciones_con_id}
 
 
 @app.route('/admin/catalogos/campo/<int:campo_id>/opcion/nueva', methods=['POST'])
@@ -7931,9 +7943,13 @@ def fix_auditoria_columnas():
             # Catálogo: es_predeterminado (por si aún no lo aplicaste)
             conn.execute(text("ALTER TABLE catalogo_valor ADD COLUMN IF NOT EXISTS es_predeterminado BOOLEAN DEFAULT FALSE"))
 
+            # NUEVO: campo obligatorio en Campos Personalizados
+            conn.execute(text("ALTER TABLE campo_personalizado ADD COLUMN IF NOT EXISTS obligatorio BOOLEAN DEFAULT FALSE"))
+
             conn.commit()
-        return "<h2>✅ Columnas de auditoría agregadas/migradas correctamente.</h2>"
+        return "<h2>✅ Columnas de auditoría agregadas/migradas correctamente (incluye 'obligatorio' en Campos Personalizados).</h2>"
     except Exception as e:
+        db.session.rollback()
         return f"<h2>Error: {str(e)}</h2>"
     
 # --- ARRANQUE DE LA APLICACIÓN ---

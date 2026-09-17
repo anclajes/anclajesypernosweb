@@ -3,27 +3,46 @@
 {% block subtitle %}Auditoría de Inventario{% endblock %}
 
 {% block content %}
+<style>
+    .card-empresa {
+        border: none;
+        border-radius: 16px;
+        overflow: hidden;
+        text-decoration: none;
+        transition: transform .2s ease, box-shadow .2s ease;
+        box-shadow: 0 4px 16px rgba(0,0,0,.08);
+        height: 100%;
+    }
+    .card-empresa:hover { transform: translateY(-6px); box-shadow: 0 12px 28px rgba(0,0,0,.15); }
+    .card-empresa-header { padding: 2rem 1.5rem 1rem; text-align: center; background: #fff; }
+    .card-empresa-header img { max-height: 90px; object-fit: contain; }
+    .card-empresa-footer {
+        padding: .9rem; text-align: center; color: #fff; font-weight: 700;
+        letter-spacing: .04em; font-size: .95rem;
+    }
+    .card-empresa-anclajes .card-empresa-footer { background: #0B3D91; }
+    .card-empresa-importbolts .card-empresa-footer { background: linear-gradient(90deg, #004b87 60%, #80c342 100%); }
+</style>
+
 <div class="d-flex flex-column align-items-center justify-content-center" style="min-height: 60vh;">
     <h3 class="fw-bold mb-1">Hola, {{ session.get('nombre') }} 👋</h3>
     <p class="text-muted mb-4">Selecciona el almacén que vas a auditar</p>
 
-    <div class="row g-4 w-100" style="max-width: 700px;">
+    <div class="row g-4 w-100" style="max-width: 760px;">
         <div class="col-12 col-md-6">
-            <a href="{{ url_for('auditoria_form', origen='ANCLAJES') }}" class="text-decoration-none">
-                <div class="card border-0 shadow-sm h-100 text-center p-4" style="border-left: 6px solid #0B3D91 !important;">
-                    <i class="bi bi-building fs-1 mb-2" style="color:#0B3D91;"></i>
-                    <h5 class="fw-bold text-dark">ANCLAJES</h5>
-                    <p class="text-muted small mb-0">Almacén Principal</p>
+            <a href="{{ url_for('auditoria_form', origen='ANCLAJES') }}" class="card-empresa card-empresa-anclajes d-block">
+                <div class="card-empresa-header">
+                    <img src="{{ url_for('static', filename='img/logo.png') }}" alt="Anclajes y Pernos">
                 </div>
+                <div class="card-empresa-footer">ANCLAJES Y PERNOS</div>
             </a>
         </div>
         <div class="col-12 col-md-6">
-            <a href="{{ url_for('auditoria_form', origen='IMPORTBOLTS') }}" class="text-decoration-none">
-                <div class="card border-0 shadow-sm h-100 text-center p-4" style="border-left: 6px solid #004b87 !important;">
-                    <i class="bi bi-globe-americas fs-1 mb-2" style="color:#004b87;"></i>
-                    <h5 class="fw-bold text-dark">IMPORT BOLTS</h5>
-                    <p class="text-muted small mb-0">Import Bolts & Estructure S.A.C.</p>
+            <a href="{{ url_for('auditoria_form', origen='IMPORTBOLTS') }}" class="card-empresa card-empresa-importbolts d-block">
+                <div class="card-empresa-header">
+                    <img src="{{ url_for('static', filename='img/logo_import.png') }}" alt="Import Bolts & Estructure">
                 </div>
+                <div class="card-empresa-footer">IMPORT BOLTS & ESTRUCTURE</div>
             </a>
         </div>
     </div>

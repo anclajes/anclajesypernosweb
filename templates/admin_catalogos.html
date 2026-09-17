@@ -96,6 +96,14 @@
                         <input type="text" id="nuevo_campo_opciones" class="form-control form-control-sm" placeholder="Ej: Opción A, Opción B">
                     </div>
                     <div class="col-12">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="nuevo_campo_obligatorio">
+                            <label class="form-check-label small fw-bold" for="nuevo_campo_obligatorio">
+                                Campo obligatorio (el auditor no podrá enviar el conteo sin llenarlo)
+                            </label>
+                        </div>
+                    </div>
+                    <div class="col-12">
                         <button class="btn btn-sm btn-primary" onclick="crearCampo()"><i class="bi bi-plus-lg"></i> Crear Campo</button>
                     </div>
                 </div>
@@ -106,7 +114,7 @@
             <div class="card-header fw-bold">Campos Existentes</div>
             <div class="table-responsive">
                 <table class="table table-sm table-hover mb-0" id="tabla_campos">
-                    <thead><tr><th>Etiqueta</th><th>Tipo</th><th>Alternativas</th><th class="text-center">Estado</th><th class="text-end">Acciones</th></tr></thead>
+                    <thead><tr><th>Etiqueta</th><th>Tipo</th><th class="text-center">Obligatorio</th><th>Alternativas</th><th class="text-center">Estado</th><th class="text-end">Acciones</th></tr></thead>
                     <tbody>
                         {% for c in campos %}
                         <tr id="fila-campo-{{ c.id }}">
@@ -125,6 +133,9 @@
                                     </div>
                                     <button class="btn btn-sm btn-link p-0 mt-1" onclick="agregarOpcionCampo({{ c.id }})"><i class="bi bi-plus-circle"></i> agregar</button>
                                 {% else %}-{% endif %}
+                            </td>
+                            <td class="text-center">
+                                {% if c.obligatorio %}<span class="badge bg-danger">Obligatorio</span>{% else %}<span class="badge bg-light text-dark border">Opcional</span>{% endif %}
                             </td>
                             <td class="text-center" id="estado-campo-{{ c.id }}">
                                 {% if c.activo %}<span class="badge bg-success">Activo</span>{% else %}<span class="badge bg-secondary">Inactivo</span>{% endif %}
@@ -265,6 +276,7 @@ function crearCampo() {
     const etiqueta = document.getElementById('nuevo_campo_etiqueta').value.trim();
     const tipo = document.getElementById('nuevo_campo_tipo').value;
     const opcionesRaw = document.getElementById('nuevo_campo_opciones').value.trim();
+    const obligatorio = document.getElementById('nuevo_campo_obligatorio').checked;
 
     if (!etiqueta) {
         return Swal.fire({ icon: 'warning', title: 'Falta el nombre', text: 'Escriba el nombre del campo antes de crearlo.' });
@@ -276,6 +288,7 @@ function crearCampo() {
     const fd = new FormData();
     fd.append('etiqueta', etiqueta);
     fd.append('tipo_campo', tipo);
+    fd.append('obligatorio', obligatorio ? '1' : '0');
     if (tipo === 'SELECT') fd.append('opciones', opcionesRaw);
 
     fetch('/admin/catalogos/campo/nuevo', { method: 'POST', body: fd })
@@ -309,6 +322,7 @@ function crearCampo() {
             fila.innerHTML = `
                 <td id="etiqueta-campo-${data.id}">${data.etiqueta}</td>
                 <td><span class="badge bg-light text-dark border">${data.tipo_campo === 'SELECT' ? 'Lista' : 'Texto libre'}</span></td>
+                <td class="text-center">${data.obligatorio ? '<span class="badge bg-danger">Obligatorio</span>' : '<span class="badge bg-light text-dark border">Opcional</span>'}</td>
                 <td class="small text-muted" id="opciones-campo-${data.id}">${colOpciones}</td>
                 <td class="text-center" id="estado-campo-${data.id}"><span class="badge bg-success">Activo</span></td>
                 <td class="text-end text-nowrap">
@@ -321,6 +335,7 @@ function crearCampo() {
             document.getElementById('nuevo_campo_etiqueta').value = '';
             document.getElementById('nuevo_campo_opciones').value = '';
             document.getElementById('nuevo_campo_tipo').value = 'TEXTO';
+            document.getElementById('nuevo_campo_obligatorio').checked = false;
             toggleOpcionesCampo();
 
             Swal.fire({ icon: 'success', title: 'Campo creado', timer: 1200, showConfirmButton: false });

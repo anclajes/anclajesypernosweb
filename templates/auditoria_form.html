@@ -3,8 +3,54 @@
 {% block subtitle %}{{ origen }}{% endblock %}
 
 {% block content %}
+<style>
+    :root {
+        --auditoria-primary: {{ '#004b87' if origen == 'IMPORTBOLTS' else '#0B3D91' }};
+        --auditoria-secondary: {{ '#80c342' if origen == 'IMPORTBOLTS' else '#ffc107' }};
+    }
+    .auditoria-header {
+        background: {{ 'linear-gradient(90deg, #004b87 75%, #80c342 100%)' if origen == 'IMPORTBOLTS' else '#0B3D91' }};
+        color: #fff;
+        border-radius: 12px 12px 0 0;
+        padding: 1.2rem 1.5rem;
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        flex-wrap: wrap;
+    }
+    .auditoria-header img {
+        height: 48px;
+        background: #fff;
+        border-radius: 8px;
+        padding: 4px 8px;
+        object-fit: contain;
+    }
+    .btn-auditoria-primary {
+        background-color: var(--auditoria-primary);
+        border-color: var(--auditoria-primary);
+        color: #fff;
+    }
+    .btn-auditoria-primary:hover { filter: brightness(0.9); color: #fff; }
+    .card-auditoria-section .card-header {
+        background-color: var(--auditoria-primary) !important;
+    }
+</style>
+
 <div class="mx-auto" style="max-width: 800px;">
-    <div class="alert alert-light border small mb-3 d-flex justify-content-between flex-wrap gap-2">
+    <div class="card border-0 shadow-sm mb-3 overflow-hidden">
+        <div class="auditoria-header">
+            <img src="{{ url_for('static', filename='img/logo_import.png' if origen == 'IMPORTBOLTS' else 'logo.png') }}" alt="Logo">
+            <div>
+                <h5 class="mb-0 fw-bold"><i class="bi bi-clipboard2-check-fill"></i> Registro de Conteo Físico</h5>
+                <small>{{ 'IMPORT BOLTS & ESTRUCTURE S.A.C.' if origen == 'IMPORTBOLTS' else 'ANCLAJES Y PERNOS' }}</small>
+            </div>
+        </div>
+        <div class="card-body py-2">
+            <div class="alert alert-light border small mb-0">
+                <b>Fecha:</b> {{ now_str }} &nbsp;|&nbsp; <b>Responsable:</b> {{ session.get('nombre') }}
+            </div>
+        </div>
+    </div>
         <span><b>Fecha:</b> {{ now_str }}</span>
         <span><b>Responsable:</b> {{ session.get('nombre') }}</span>
     </div>
@@ -12,7 +58,7 @@
     <form id="formAuditoria">
         <!-- IDENTIFICACIÓN DEL PRODUCTO -->
         <div class="card border-0 shadow-sm mb-3">
-            <div class="card-header text-white fw-bold" style="background-color: {{ '#004b87' if origen == 'IMPORTBOLTS' else '#0B3D91' }};">
+            <div class="card-header text-white fw-bold" style="background-color: var(--auditoria-primary);">
                 <i class="bi bi-upc-scan"></i> Identificación del Producto
             </div>
             <div class="card-body">
@@ -46,8 +92,8 @@
         </div>
 
         <!-- UBICACIÓN: ANAQUEL Y NICHO INDEPENDIENTES -->
-        <div class="card border-0 shadow-sm mb-3">
-            <div class="card-header bg-secondary text-white fw-bold"><i class="bi bi-geo-alt-fill"></i> Ubicación Física</div>
+    <div class="card card-auditoria-section border-0 shadow-sm mb-3">
+        <div class="card-header text-white fw-bold"><i class="bi bi-geo-alt-fill"></i> Ubicación Física</div>
             <div class="card-body">
                 <div class="row g-3">
                     <div class="col-12 col-md-6">
@@ -100,7 +146,7 @@
                     <div class="col-12 col-md-6">
                         <label class="form-label small fw-bold">Estado Físico</label>
                         <select id="estado_fisico" class="form-select">
-                            <option value="">-- Ninguno / OK --</option>
+                            <option value="">BUEN ESTADO (OK)</option>
                         </select>
                     </div>
                     <div class="col-12">
@@ -145,7 +191,7 @@ function cargarCatalogo(tipo, selectId, esSelect2) {
             sel.trigger('change');
         } else {
             const sel = document.getElementById(selectId);
-            let html = selectId === 'estado_fisico' ? '<option value="">-- Ninguno / OK --</option>' : '';
+            let html = selectId === 'estado_fisico' ? '<option value="">BUEN ESTADO (OK)</option>' : '';
             (data.valores || []).forEach(v => html += `<option value="${v}">${v}</option>`);
             sel.innerHTML = html;
         }
@@ -158,17 +204,19 @@ function cargarCamposPersonalizados() {
         cont.innerHTML = '';
         (data.campos || []).forEach(c => {
             let campoHtml;
+            const marcaObligatorio = c.obligatorio ? ' <span class="text-danger">*</span>' : ' <span class="text-muted fw-normal">(opcional)</span>';
+            const reqAttr = c.obligatorio ? 'required' : '';
             if (c.tipo_campo === 'SELECT') {
                 let opts = '<option value="">-- Seleccione --</option>';
                 (c.opciones || []).forEach(o => opts += `<option value="${o}">${o}</option>`);
                 campoHtml = `<div class="col-12 col-md-6">
-                    <label class="form-label small fw-bold">${c.etiqueta}</label>
-                    <select class="form-select" name="campo_${c.id}">${opts}</select>
+                    <label class="form-label small fw-bold">${c.etiqueta}${marcaObligatorio}</label>
+                    <select class="form-select" name="campo_${c.id}" ${reqAttr}>${opts}</select>
                 </div>`;
             } else {
                 campoHtml = `<div class="col-12 col-md-6">
-                    <label class="form-label small fw-bold">${c.etiqueta}</label>
-                    <input type="text" class="form-control" name="campo_${c.id}">
+                    <label class="form-label small fw-bold">${c.etiqueta}${marcaObligatorio}</label>
+                    <input type="text" class="form-control" name="campo_${c.id}" ${reqAttr}>
                 </div>`;
             }
             cont.insertAdjacentHTML('beforeend', campoHtml);
