@@ -14,7 +14,6 @@
                 <label class="small fw-bold text-muted">Estado</label>
                 <select name="estado" class="form-select form-select-sm" onchange="this.form.submit()">
                     <option value="PENDIENTE" {% if estado_filtro == 'PENDIENTE' %}selected{% endif %}>Pendientes</option>
-                    <option value="APROBADO" {% if estado_filtro == 'APROBADO' %}selected{% endif %}>Aprobados</option>
                     <option value="APLICADO" {% if estado_filtro == 'APLICADO' %}selected{% endif %}>Aplicados</option>
                     <option value="RECHAZADO" {% if estado_filtro == 'RECHAZADO' %}selected{% endif %}>Rechazados</option>
                     <option value="todos" {% if estado_filtro == 'todos' %}selected{% endif %}>Todos</option>
@@ -45,12 +44,30 @@
     <div class="table-responsive">
         <table class="table table-hover align-middle mb-0 small">
             <thead class="table-dark">
-                <tr><th class="ps-3">Fecha</th><th>Auditor</th><th>Origen</th><th>SKU</th><th>Descripción</th><th class="text-center">Cant.</th><th class="text-center">Estado</th><th class="text-center pe-3">Acción</th></tr>
+                <tr>
+                    <th class="ps-3">Enviado</th>
+                    <th>Última Edición</th>
+                    <th>Auditor</th>
+                    <th>Origen</th>
+                    <th>SKU</th>
+                    <th>Descripción</th>
+                    <th class="text-center">Cant.</th>
+                    <th class="text-center">Estado</th>
+                    <th class="text-center pe-3">Acción</th>
+                </tr>
             </thead>
             <tbody>
                 {% for r in registros %}
                 <tr>
                     <td class="ps-3">{{ r.fecha_registro.strftime('%d/%m/%y %H:%M') }}</td>
+                    <td>
+                        {% if r.id in ultimas_ediciones %}
+                            {{ ultimas_ediciones[r.id].strftime('%d/%m/%y %H:%M') }}
+                            <br><span class="badge bg-warning text-dark" style="font-size:.65rem;"><i class="bi bi-pencil-fill"></i> Editado</span>
+                        {% else %}
+                            <span class="text-muted">-</span>
+                        {% endif %}
+                    </td>
                     <td>{{ r.trabajador.nombre_completo }}</td>
                     <td><span class="badge bg-light text-dark border">{{ r.origen_inventario }}</span></td>
                     <td class="fw-bold text-primary">{{ r.sku_snapshot }}</td>
@@ -67,7 +84,7 @@
                     </td>
                 </tr>
                 {% else %}
-                <tr><td colspan="8" class="text-center py-4 text-muted">No hay registros con este filtro.</td></tr>
+                <tr><td colspan="9" class="text-center py-4 text-muted">No hay registros con este filtro.</td></tr>
                 {% endfor %}
             </tbody>
         </table>

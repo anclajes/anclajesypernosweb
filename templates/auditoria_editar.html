@@ -17,6 +17,10 @@
 
 <div class="mx-auto" style="max-width: 800px;">
     <div class="card border-0 shadow-sm mb-3 overflow-hidden">
+        <div class="text-center pt-3 pb-1 bg-white" style="border-top: 6px solid var(--auditoria-primary); border-radius: 12px 12px 0 0;">
+            <img src="{{ url_for('static', filename='img/logo_import.png' if registro.origen_inventario == 'IMPORTBOLTS' else 'img/logo.png') }}"
+                 alt="Logo" style="max-height: 90px; max-width: 80%; object-fit: contain;">
+        </div>
         <div class="auditoria-banner"><i class="bi bi-pencil-fill"></i> Corregir Conteo #{{ registro.id }}</div>
         <div class="card-body">
             <div class="alert alert-warning small mb-0">

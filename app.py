@@ -7575,10 +7575,23 @@ def admin_auditorias_lista():
     registros = query.order_by(RegistroAuditoria.fecha_registro.desc()).all()
     trabajadores = User.query.filter_by(role='auditor_stock').all()
 
+    # Para cada registro, buscamos si tiene una edición del auditor y cuándo fue la última
+    ids_registros = [r.id for r in registros]
+    ultimas_ediciones = {}
+    if ids_registros:
+        logs_edicion = RegistroAuditoriaLog.query.filter(
+            RegistroAuditoriaLog.registro_id.in_(ids_registros),
+            RegistroAuditoriaLog.accion == 'EDITADO_POR_AUDITOR'
+        ).order_by(RegistroAuditoriaLog.fecha.desc()).all()
+        for log in logs_edicion:
+            if log.registro_id not in ultimas_ediciones:
+                ultimas_ediciones[log.registro_id] = log.fecha
+
     return render_template('admin_auditorias_lista.html',
                            registros=registros, trabajadores=trabajadores,
                            estado_filtro=estado_filtro, origen_filtro=origen_filtro,
-                           trabajador_filtro=trabajador_filtro)
+                           trabajador_filtro=trabajador_filtro,
+                           ultimas_ediciones=ultimas_ediciones)
 
 
 @app.route('/admin/auditorias/<int:reg_id>')

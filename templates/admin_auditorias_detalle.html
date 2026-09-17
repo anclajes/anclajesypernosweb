@@ -19,7 +19,14 @@
             <div class="card-body small">
                 <table class="table table-sm mb-0">
                     <tr><td class="text-muted">Auditor</td><td class="fw-bold">{{ registro.trabajador.nombre_completo }}</td></tr>
-                    <tr><td class="text-muted">Fecha/Hora</td><td>{{ registro.fecha_registro.strftime('%d/%m/%Y %H:%M') }}</td></tr>
+                    <tr><td class="text-muted">Fecha/Hora de Envío</td><td>{{ registro.fecha_registro.strftime('%d/%m/%Y %H:%M') }}</td></tr>
+                    {% set logs_edicion = registro.logs | selectattr('accion', 'equalto', 'EDITADO_POR_AUDITOR') | list %}
+                    {% if logs_edicion %}
+                    <tr class="table-warning">
+                        <td class="text-muted fw-bold">Última Edición del Auditor</td>
+                        <td class="fw-bold">{{ logs_edicion[0].fecha.strftime('%d/%m/%Y %H:%M') }} <span class="badge bg-warning text-dark ms-1">Editado {{ logs_edicion|length }} vez(es)</span></td>
+                    </tr>
+                    {% endif %}
                     <tr><td class="text-muted">Anaquel</td><td>{{ registro.anaquel or '-' }}</td></tr>
                     <tr><td class="text-muted">Nicho</td><td>{{ registro.nicho or '-' }}</td></tr>
                     <tr><td class="text-muted"># Cajas</td><td>{{ registro.num_cajas }}</td></tr>
