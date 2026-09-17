@@ -43,44 +43,80 @@
         </div>
     </div>
 
-    <!-- DATO ACTUAL EN VIVO DEL SISTEMA -->
     <div class="col-12 col-md-6">
         <div class="card border-0 shadow-sm h-100">
-            <div class="card-header bg-dark text-white fw-bold"><i class="bi bi-database-fill"></i> Dato Actual en el Sistema</div>
-            <div class="card-body small">
-                {% if prod_actual %}
-                <table class="table table-sm mb-0">
-                    <tr><td class="text-muted">SKU</td><td class="fw-bold">{{ prod_actual.sku }}</td></tr>
-                    <tr><td class="text-muted">Descripción</td><td>{{ prod_actual.nombre }}</td></tr>
-                    <tr><td class="text-muted">Familia / Calidad</td><td>{{ prod_actual.categoria }} / {{ prod_actual.calidad or '-' }}</td></tr>
-                    <tr><td class="text-muted">Ubicación</td><td>{{ prod_actual.ubicacion or '-' }}</td></tr>
-                    <tr class="{% if prod_actual.stock_actual != registro.cantidad_total %}table-danger{% else %}table-success{% endif %}">
-                        <td class="fw-bold">Stock Actual</td>
-                        <td class="fw-bold fs-6">{{ prod_actual.stock_actual }}
-                            {% if prod_actual.stock_actual != registro.cantidad_total %}
-                                <span class="badge bg-danger ms-1">Diferencia: {{ registro.cantidad_total - prod_actual.stock_actual }}</span>
-                            {% else %}
-                                <span class="badge bg-success ms-1">Coincide</span>
-                            {% endif %}
-                        </td>
-                    </tr>
-                    <tr><td class="text-muted">Stock Mínimo</td><td>{{ prod_actual.stock_minimo }}</td></tr>
-                    <tr><td class="text-muted">Peso Nominal (Kg)</td><td>{{ "%.3f"|format(prod_actual.peso_kg) if prod_actual.peso_kg else '-' }}</td></tr>
-                    <tr><td class="text-muted">Precio Unitario ($)</td><td>{{ "%.2f"|format(prod_actual.precio_unidad) if prod_actual.precio_unidad else '-' }}</td></tr>
-                    <tr><td class="text-muted">Precio Caja ($)</td><td>{{ "%.2f"|format(prod_actual.precio_caja) if prod_actual.precio_caja else '-' }}</td></tr>
-                    <tr><td class="text-muted">Estado Físico</td><td>{{ prod_actual.estado or '-' }}</td></tr>
-                    <tr><td class="text-muted">Estado del Producto</td>
-                        <td>{% if prod_actual.activo %}<span class="badge bg-success">Activo</span>{% else %}<span class="badge bg-secondary">Inactivo</span>{% endif %}</td>
-                    </tr>
-                    <tr><td class="text-muted">Última auditoría aplicada</td>
-                        <td>{% if prod_actual.ultimo_ajuste_auditoria_fecha %}
-                                {{ prod_actual.ultimo_ajuste_auditoria_fecha.strftime('%d/%m/%Y %H:%M') }} por {{ prod_actual.ultimo_ajuste_auditoria_por }}
-                            {% else %} Nunca {% endif %}
-                        </td>
-                    </tr>
-                </table>
+            <div class="card-header bg-dark text-white fw-bold">
+                <i class="bi bi-database-fill"></i>
+                {% if registro.estado_registro == 'APLICADO' %}
+                    Dato del Sistema ANTES de Aplicar (Congelado)
                 {% else %}
-                <p class="text-danger">⚠️ El producto ya no existe en el sistema.</p>
+                    Dato Actual en el Sistema (en vivo)
+                {% endif %}
+            </div>
+            <div class="card-body small">
+                {% if registro.estado_registro == 'APLICADO' and registro.snapshot_antes_fecha %}
+                    <div class="alert alert-secondary py-1 px-2 small mb-2">
+                        <i class="bi bi-camera-fill"></i> Foto tomada el {{ registro.snapshot_antes_fecha.strftime('%d/%m/%Y %H:%M') }}, justo antes de aplicar este conteo.
+                    </div>
+                    <table class="table table-sm mb-0">
+                        <tr><td class="text-muted">SKU</td><td class="fw-bold">{{ registro.sku_snapshot }}</td></tr>
+                        <tr><td class="text-muted">Ubicación</td><td>{{ registro.snapshot_antes_ubicacion or '-' }}</td></tr>
+                        <tr class="{% if registro.snapshot_antes_stock != registro.cantidad_total %}table-danger{% else %}table-success{% endif %}">
+                            <td class="fw-bold">Stock (antes de aplicar)</td>
+                            <td class="fw-bold fs-6">{{ registro.snapshot_antes_stock }}
+                                {% if registro.snapshot_antes_stock != registro.cantidad_total %}
+                                    <span class="badge bg-danger ms-1">Diferencia: {{ registro.cantidad_total - registro.snapshot_antes_stock }}</span>
+                                {% else %}
+                                    <span class="badge bg-success ms-1">Coincidía</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr><td class="text-muted">Stock Mínimo</td><td>{{ registro.snapshot_antes_stock_minimo }}</td></tr>
+                        <tr><td class="text-muted">Peso Nominal (Kg)</td><td>{{ "%.3f"|format(registro.snapshot_antes_peso_kg) if registro.snapshot_antes_peso_kg else '-' }}</td></tr>
+                        <tr><td class="text-muted">Precio Unitario ($)</td><td>{{ "%.2f"|format(registro.snapshot_antes_precio_unidad) if registro.snapshot_antes_precio_unidad else '-' }}</td></tr>
+                        <tr><td class="text-muted">Precio Caja ($)</td><td>{{ "%.2f"|format(registro.snapshot_antes_precio_caja) if registro.snapshot_antes_precio_caja else '-' }}</td></tr>
+                        <tr><td class="text-muted">Estado Físico</td><td>{{ registro.snapshot_antes_estado or 'BUEN ESTADO (OK)' }}</td></tr>
+                        <tr><td class="text-muted">Estado del Producto</td>
+                            <td>{% if registro.snapshot_antes_activo %}<span class="badge bg-success">Activo</span>{% else %}<span class="badge bg-secondary">Inactivo</span>{% endif %}</td>
+                        </tr>
+                    </table>
+                    <div class="alert alert-light border small mt-2 mb-0">
+                        <i class="bi bi-arrow-right-circle"></i> Para ver el estado <b>actual</b> (después de aplicar), consulte la ficha del producto en el inventario.
+                        <a href="{{ url_for('inventario_importbolts' if registro.origen_inventario == 'IMPORTBOLTS' else 'inventario', busqueda=registro.sku_snapshot) }}" class="ms-1">Ver producto →</a>
+                    </div>
+                {% elif prod_actual %}
+                    <table class="table table-sm mb-0">
+                        <tr><td class="text-muted">SKU</td><td class="fw-bold">{{ prod_actual.sku }}</td></tr>
+                        <tr><td class="text-muted">Descripción</td><td>{{ prod_actual.nombre }}</td></tr>
+                        <tr><td class="text-muted">Familia / Calidad</td><td>{{ prod_actual.categoria }} / {{ prod_actual.calidad or '-' }}</td></tr>
+                        <tr><td class="text-muted">Ubicación</td><td>{{ prod_actual.ubicacion or '-' }}</td></tr>
+                        <tr class="{% if prod_actual.stock_actual != registro.cantidad_total %}table-danger{% else %}table-success{% endif %}">
+                            <td class="fw-bold">Stock Actual</td>
+                            <td class="fw-bold fs-6">{{ prod_actual.stock_actual }}
+                                {% if prod_actual.stock_actual != registro.cantidad_total %}
+                                    <span class="badge bg-danger ms-1">Diferencia: {{ registro.cantidad_total - prod_actual.stock_actual }}</span>
+                                {% else %}
+                                    <span class="badge bg-success ms-1">Coincide</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr><td class="text-muted">Stock Mínimo</td><td>{{ prod_actual.stock_minimo }}</td></tr>
+                        <tr><td class="text-muted">Peso Nominal (Kg)</td><td>{{ "%.3f"|format(prod_actual.peso_kg) if prod_actual.peso_kg else '-' }}</td></tr>
+                        <tr><td class="text-muted">Precio Unitario ($)</td><td>{{ "%.2f"|format(prod_actual.precio_unidad) if prod_actual.precio_unidad else '-' }}</td></tr>
+                        <tr><td class="text-muted">Precio Caja ($)</td><td>{{ "%.2f"|format(prod_actual.precio_caja) if prod_actual.precio_caja else '-' }}</td></tr>
+                        <tr><td class="text-muted">Estado Físico</td><td>{{ prod_actual.estado or 'BUEN ESTADO (OK)' }}</td></tr>
+                        <tr><td class="text-muted">Estado del Producto</td>
+                            <td>{% if prod_actual.activo %}<span class="badge bg-success">Activo</span>{% else %}<span class="badge bg-secondary">Inactivo</span>{% endif %}</td>
+                        </tr>
+                        <tr><td class="text-muted">Última auditoría aplicada</td>
+                            <td>{% if prod_actual.ultimo_ajuste_auditoria_fecha %}
+                                    {{ prod_actual.ultimo_ajuste_auditoria_fecha.strftime('%d/%m/%Y %H:%M') }} por {{ prod_actual.ultimo_ajuste_auditoria_por }}
+                                {% else %} Nunca {% endif %}
+                            </td>
+                        </tr>
+                    </table>
+                {% else %}
+                    <p class="text-danger">⚠️ El producto ya no existe en el sistema.</p>
                 {% endif %}
             </div>
         </div>

@@ -7645,11 +7645,24 @@ def admin_auditoria_aplicar(reg_id):
         nuevo_precio_unidad = float(request.form.get('precio_unidad') or 0)
         nuevo_precio_caja = float(request.form.get('precio_caja') or 0)
         nuevo_estado = request.form.get('estado', '').strip()
+        if nuevo_estado.upper() == 'BUEN ESTADO (OK)':
+            nuevo_estado = ''
         nuevo_activo = request.form.get('activo') == '1'
 
         stock_antes = prod.stock_actual
         diferencia = nuevo_stock - stock_antes
         tipo_mov = 'ENTRADA' if diferencia >= 0 else 'SALIDA'
+
+        # Guardamos la FOTO del producto justo antes de modificarlo (queda congelada para siempre)
+        registro.snapshot_antes_ubicacion = prod.ubicacion
+        registro.snapshot_antes_stock = prod.stock_actual
+        registro.snapshot_antes_stock_minimo = prod.stock_minimo
+        registro.snapshot_antes_peso_kg = prod.peso_kg
+        registro.snapshot_antes_precio_unidad = prod.precio_unidad
+        registro.snapshot_antes_precio_caja = prod.precio_caja
+        registro.snapshot_antes_estado = prod.estado
+        registro.snapshot_antes_activo = prod.activo
+        registro.snapshot_antes_fecha = hora_peru()
 
         prod.stock_actual = nuevo_stock
         prod.stock_minimo = nuevo_stock_minimo
@@ -8028,7 +8041,7 @@ def fix_auditoria_columnas():
         return "Acceso denegado", 403
     try:
         with db.engine.connect() as conn:
-            # Columnas nuevas en registro_auditoria (anaquel/nicho reemplazan ubicacion_tipo/valor)
+            # --- Anaquel/Nicho (reemplazan ubicacion_tipo/valor de una versión anterior) ---
             conn.execute(text("ALTER TABLE registro_auditoria ADD COLUMN IF NOT EXISTS anaquel VARCHAR(20)"))
             conn.execute(text("ALTER TABLE registro_auditoria ADD COLUMN IF NOT EXISTS nicho VARCHAR(20)"))
             conn.execute(text("""
@@ -8043,7 +8056,7 @@ def fix_auditoria_columnas():
                 END $$;
             """))
 
-            # Columnas nuevas en Product / ProductImportBolts para la etiqueta de auditoría
+            # --- Columnas de "última auditoría aplicada" en Product / ProductImportBolts ---
             conn.execute(text("ALTER TABLE product ADD COLUMN IF NOT EXISTS ultimo_ajuste_auditoria_fecha TIMESTAMP"))
             conn.execute(text("ALTER TABLE product ADD COLUMN IF NOT EXISTS ultimo_ajuste_auditoria_por VARCHAR(100)"))
             conn.execute(text("ALTER TABLE product ADD COLUMN IF NOT EXISTS ultimo_ajuste_auditoria_conteo_por VARCHAR(100)"))
@@ -8052,11 +8065,22 @@ def fix_auditoria_columnas():
             conn.execute(text("ALTER TABLE product_importbolts ADD COLUMN IF NOT EXISTS ultimo_ajuste_auditoria_por VARCHAR(100)"))
             conn.execute(text("ALTER TABLE product_importbolts ADD COLUMN IF NOT EXISTS ultimo_ajuste_auditoria_conteo_por VARCHAR(100)"))
 
-            # Catálogo: es_predeterminado (por si aún no lo aplicaste)
+            # --- Catálogo: es_predeterminado ---
             conn.execute(text("ALTER TABLE catalogo_valor ADD COLUMN IF NOT EXISTS es_predeterminado BOOLEAN DEFAULT FALSE"))
 
-            # NUEVO: campo obligatorio en Campos Personalizados
+            # --- Campos Personalizados: obligatorio ---
             conn.execute(text("ALTER TABLE campo_personalizado ADD COLUMN IF NOT EXISTS obligatorio BOOLEAN DEFAULT FALSE"))
+
+            # --- NUEVO: Snapshot congelado del producto justo ANTES de aplicar el conteo ---
+            conn.execute(text("ALTER TABLE registro_auditoria ADD COLUMN IF NOT EXISTS snapshot_antes_ubicacion VARCHAR(200)"))
+            conn.execute(text("ALTER TABLE registro_auditoria ADD COLUMN IF NOT EXISTS snapshot_antes_stock INTEGER"))
+            conn.execute(text("ALTER TABLE registro_auditoria ADD COLUMN IF NOT EXISTS snapshot_antes_stock_minimo INTEGER"))
+            conn.execute(text("ALTER TABLE registro_auditoria ADD COLUMN IF NOT EXISTS snapshot_antes_peso_kg FLOAT"))
+            conn.execute(text("ALTER TABLE registro_auditoria ADD COLUMN IF NOT EXISTS snapshot_antes_precio_unidad FLOAT"))
+            conn.execute(text("ALTER TABLE registro_auditoria ADD COLUMN IF NOT EXISTS snapshot_antes_precio_caja FLOAT"))
+            conn.execute(text("ALTER TABLE registro_auditoria ADD COLUMN IF NOT EXISTS snapshot_antes_estado VARCHAR(100)"))
+            conn.execute(text("ALTER TABLE registro_auditoria ADD COLUMN IF NOT EXISTS snapshot_antes_activo BOOLEAN"))
+            conn.execute(text("ALTER TABLE registro_auditoria ADD COLUMN IF NOT EXISTS snapshot_antes_fecha TIMESTAMP"))
 
             conn.commit()
 
@@ -8065,7 +8089,7 @@ def fix_auditoria_columnas():
             db.session.add(CatalogoValor(tipo='ESTADO_FISICO', valor='BUEN ESTADO (OK)', es_predeterminado=True))
             db.session.commit()
 
-        return "<h2>✅ Columnas de auditoría agregadas/migradas correctamente (incluye 'obligatorio' y 'BUEN ESTADO (OK)').</h2>"
+        return "<h2>✅ Módulo de Auditoría actualizado: columnas de snapshot 'antes de aplicar' agregadas correctamente.</h2>"
     except Exception as e:
         db.session.rollback()
         return f"<h2>Error: {str(e)}</h2>"

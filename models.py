@@ -614,6 +614,17 @@ class RegistroAuditoria(db.Model):
     aplicado_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     fecha_aplicacion = db.Column(db.DateTime, nullable=True)
 
+    # Snapshot del producto justo ANTES de aplicar los cambios (para historial inmutable)
+    snapshot_antes_ubicacion = db.Column(db.String(200), nullable=True)
+    snapshot_antes_stock = db.Column(db.Integer, nullable=True)
+    snapshot_antes_stock_minimo = db.Column(db.Integer, nullable=True)
+    snapshot_antes_peso_kg = db.Column(db.Float, nullable=True)
+    snapshot_antes_precio_unidad = db.Column(db.Float, nullable=True)
+    snapshot_antes_precio_caja = db.Column(db.Float, nullable=True)
+    snapshot_antes_estado = db.Column(db.String(100), nullable=True)
+    snapshot_antes_activo = db.Column(db.Boolean, nullable=True)
+    snapshot_antes_fecha = db.Column(db.DateTime, nullable=True)  # cuándo se tomó esta foto
+
     trabajador = db.relationship('User', foreign_keys=[trabajador_id])
     revisado_por = db.relationship('User', foreign_keys=[revisado_por_id])
     aplicado_por = db.relationship('User', foreign_keys=[aplicado_por_id])

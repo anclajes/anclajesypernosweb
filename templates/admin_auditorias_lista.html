@@ -53,6 +53,7 @@
                     <th>Descripción</th>
                     <th class="text-center">Cant.</th>
                     <th class="text-center">Estado</th>
+                    <th>Aplicado</th>
                     <th class="text-center pe-3">Acción</th>
                 </tr>
             </thead>
@@ -78,6 +79,14 @@
                         {% elif r.estado_registro == 'APLICADO' %}<span class="badge bg-success">Aplicado</span>
                         {% elif r.estado_registro == 'RECHAZADO' %}<span class="badge bg-danger">Rechazado</span>
                         {% else %}<span class="badge bg-secondary">{{ r.estado_registro }}</span>{% endif %}
+                    </td>
+                    <td class="small">
+                        {% if r.estado_registro == 'APLICADO' and r.fecha_aplicacion %}
+                            {{ r.fecha_aplicacion.strftime('%d/%m/%y %H:%M') }}<br>
+                            <span class="text-muted">{{ r.aplicado_por.nombre_completo if r.aplicado_por else '-' }}</span>
+                        {% else %}
+                            <span class="text-muted">-</span>
+                        {% endif %}
                     </td>
                     <td class="text-center pe-3">
                         <a href="{{ url_for('admin_auditorias_detalle', reg_id=r.id) }}" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye-fill"></i> Ver</a>
