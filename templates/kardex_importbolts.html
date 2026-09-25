@@ -114,7 +114,7 @@
             <div class="col-6 col-lg-2">
                 <div class="kardex-filtros-grupo">
                     <label class="form-label"><i class="bi bi-arrow-left-right"></i> Tipo</label>
-                    <select name="tipo" class="form-select form-select-sm" onchange="document.getElementById('formFiltroKardex').submit()">
+                    <select name="tipo" class="form-select form-select-sm" onchange="document.getElementById('filtro_motivo_id_kardex').value=''; document.getElementById('formFiltroKardex').submit()">
                         <option value="" {% if not request.args.get('tipo') %}selected{% endif %}>Todos</option>
                         <option value="ENTRADA" {% if request.args.get('tipo') == 'ENTRADA' %}selected{% endif %}>➕ Ingresos</option>
                         <option value="SALIDA" {% if request.args.get('tipo') == 'SALIDA' %}selected{% endif %}>➖ Salidas</option>
@@ -122,16 +122,23 @@
                 </div>
             </div>
 
-            <!-- MOTIVO -->
+            <!-- MOTIVO (cascada: depende del Tipo elegido, igual que Familia -> Calidad) -->
             <div class="col-6 col-lg-2">
                 <div class="kardex-filtros-grupo">
                     <label class="form-label"><i class="bi bi-clipboard-check"></i> Motivo</label>
-                    <select name="motivo" class="form-select form-select-sm" onchange="document.getElementById('formFiltroKardex').submit()">
-                        <option value="" {% if not request.args.get('motivo') %}selected{% endif %}>Todos</option>
-                        {% for mot in motivos_con_movimientos %}
-                        <option value="{{ mot }}" {% if request.args.get('motivo') == mot %}selected{% endif %}>{{ mot }}</option>
+                    <select name="motivo_id" id="filtro_motivo_id_kardex" class="form-select form-select-sm" onchange="document.getElementById('formFiltroKardex').submit()">
+                        <option value="" {% if not request.args.get('motivo_id') %}selected{% endif %}>Todos</option>
+                        {% for mot in catalogo_motivos %}
+                        <option value="{{ mot.id }}" {% if request.args.get('motivo_id')|string == mot.id|string %}selected{% endif %}>
+                            {{ mot.nombre }}{% if not request.args.get('tipo') %} ({{ 'Ingreso' if mot.tipo == 'ENTRADA' else 'Salida' }}){% endif %}
+                        </option>
                         {% endfor %}
                     </select>
+                    {% if not request.args.get('tipo') %}
+                    <div class="form-text small mt-1 mb-0" style="font-size:.68rem;">
+                        <i class="bi bi-info-circle"></i> Elige un Tipo para ver solo sus motivos
+                    </div>
+                    {% endif %}
                 </div>
             </div>
 
@@ -288,7 +295,7 @@
         <nav aria-label="Navegación">
             <ul class="pagination justify-content-center mb-0 pagination-sm">
                 <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
-                    <a class="page-link" href="{{ url_for('ver_kardex_importbolts', page=pagination.prev_num, busqueda=request.args.get('busqueda',''), categoria=cat_filtro, calidad=calidad_filtro, proveedor=request.args.get('proveedor','todos'), tipo=request.args.get('tipo',''), fecha_inicio=request.args.get('fecha_inicio',''), fecha_fin=request.args.get('fecha_fin',''), ocultar_iniciales=request.args.get('ocultar_iniciales',''), solo_interempresa=request.args.get('solo_interempresa',''), motivo=request.args.get('motivo',''), manual=request.args.get('manual','')) }}">Anterior</a>
+                    <a class="page-link" href="{{ url_for('ver_kardex_importbolts', page=pagination.prev_num, busqueda=request.args.get('busqueda',''), categoria=cat_filtro, calidad=calidad_filtro, proveedor=request.args.get('proveedor','todos'), tipo=request.args.get('tipo',''), fecha_inicio=request.args.get('fecha_inicio',''), fecha_fin=request.args.get('fecha_fin',''), ocultar_iniciales=request.args.get('ocultar_iniciales',''), solo_interempresa=request.args.get('solo_interempresa',''), motivo=request.args.get('motivo',''), motivo_id=request.args.get('motivo_id',''), manual=request.args.get('manual','')) }}">Anterior</a>
                 </li>
                 <li class="page-item disabled">
                     <span class="page-link text-muted">
@@ -297,7 +304,7 @@
                     </span>
                 </li>
                 <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
-                    <a class="page-link" href="{{ url_for('ver_kardex_importbolts', page=pagination.next_num, busqueda=request.args.get('busqueda',''), categoria=cat_filtro, calidad=calidad_filtro, proveedor=request.args.get('proveedor','todos'), tipo=request.args.get('tipo',''), fecha_inicio=request.args.get('fecha_inicio',''), fecha_fin=request.args.get('fecha_fin',''), ocultar_iniciales=request.args.get('ocultar_iniciales',''), solo_interempresa=request.args.get('solo_interempresa',''), motivo=request.args.get('motivo',''), manual=request.args.get('manual','')) }}">Siguiente</a>
+                    <a class="page-link" href="{{ url_for('ver_kardex_importbolts', page=pagination.next_num, busqueda=request.args.get('busqueda',''), categoria=cat_filtro, calidad=calidad_filtro, proveedor=request.args.get('proveedor','todos'), tipo=request.args.get('tipo',''), fecha_inicio=request.args.get('fecha_inicio',''), fecha_fin=request.args.get('fecha_fin',''), ocultar_iniciales=request.args.get('ocultar_iniciales',''), solo_interempresa=request.args.get('solo_interempresa',''), motivo=request.args.get('motivo',''), motivo_id=request.args.get('motivo_id',''), manual=request.args.get('manual','')) }}">Siguiente</a>
                 </li>
             </ul>
         </nav>

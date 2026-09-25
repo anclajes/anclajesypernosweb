@@ -4687,11 +4687,21 @@ def ver_kardex():
             )
         )
 
-    # 9. Filtro por Motivo exacto (usado por los links desde los Dashboards de Ventas,
-    #    separado de "busqueda" para no mezclar coincidencias con nombre/cliente/proveedor)
+    # 9. Filtro por Motivo — texto libre (usado por los links "Salida por Venta" desde
+    #    los Dashboards, que buscan cualquier motivo que contenga la palabra, ej. "venta")
     motivo_filtro = request.args.get('motivo', '').strip()
     if motivo_filtro:
         query = query.filter(ProductMovement.motivo.ilike(f"%{motivo_filtro}%"))
+
+    # 9b. Filtro por Motivo exacto del catálogo (selector Tipo -> Motivo de la UI).
+    #     Coincidencia exacta por motivo_id: no se mezcla con otros motivos que
+    #     empiecen igual (ej. "Venta" no mezcla con "Venta Directa").
+    motivo_id_filtro = request.args.get('motivo_id', '').strip()
+    if motivo_id_filtro:
+        try:
+            query = query.filter(ProductMovement.motivo_id == int(motivo_id_filtro))
+        except ValueError:
+            pass
 
     # 10. Solo movimientos registrados manualmente desde "Movimiento de Stock"
     #     (motivo_id viene del catálogo). Excluye los automáticos de Cotización/
@@ -4721,13 +4731,13 @@ def ver_kardex():
         ProductMovement.ruc_proveedor, ProductMovement.razon_social_proveedor
     ).filter(ProductMovement.ruc_proveedor.isnot(None)).distinct().order_by(ProductMovement.razon_social_proveedor).all()
 
-    # Motivos registrados manualmente desde "Movimiento de Stock" (motivo_id no nulo),
-    # para el filtro por Motivo del Kardex (p.ej. llegar directo a "Venta" desde el Dashboard)
-    motivos_con_movimientos = [
-        m[0] for m in db.session.query(ProductMovement.motivo)
-        .filter(ProductMovement.motivo_id.isnot(None))
-        .distinct().order_by(ProductMovement.motivo).all()
-    ]
+    # --- Motivos dependientes del Tipo seleccionado (cascada, igual que Familia -> Calidad) ---
+    # Viene del catálogo completo de MotivoMovimiento (no solo los ya usados), así que un
+    # motivo recién creado desde "+ Nuevo Motivo" en Movimiento de Stock aparece aquí también.
+    motivos_query_cat = MotivoMovimiento.query.filter_by(activo=True)
+    if tipo_mov in ['ENTRADA', 'SALIDA']:
+        motivos_query_cat = motivos_query_cat.filter_by(tipo=tipo_mov)
+    catalogo_motivos = motivos_query_cat.order_by(MotivoMovimiento.tipo, MotivoMovimiento.nombre).all()
 
     return render_template('kardex.html',
                            movimientos=movimientos,
@@ -4735,7 +4745,7 @@ def ver_kardex():
                            pagination=pagination,
                            proveedores_con_movimientos=proveedores_con_movimientos,
                            lista_calidades_kardex=lista_calidades_kardex,
-                           motivos_con_movimientos=motivos_con_movimientos,
+                           catalogo_motivos=catalogo_motivos,
                            cat_filtro=cat_nombre,
                            calidad_filtro=calidad_nombre)
 
@@ -6557,11 +6567,21 @@ def ver_kardex_importbolts():
             )
         )
 
-    # Filtro por Motivo exacto (usado por los links desde los Dashboards de Ventas,
-    # separado de "busqueda" para no mezclar coincidencias con nombre/cliente/proveedor)
+    # Filtro por Motivo — texto libre (usado por los links "Salida por Venta" desde
+    # los Dashboards, que buscan cualquier motivo que contenga la palabra, ej. "venta")
     motivo_filtro = request.args.get('motivo', '').strip()
     if motivo_filtro:
         query = query.filter(ProductMovementImportBolts.motivo.ilike(f"%{motivo_filtro}%"))
+
+    # Filtro por Motivo exacto del catálogo (selector Tipo -> Motivo de la UI).
+    # Coincidencia exacta por motivo_id: no se mezcla con otros motivos que
+    # empiecen igual (ej. "Venta" no mezcla con "Venta Directa").
+    motivo_id_filtro = request.args.get('motivo_id', '').strip()
+    if motivo_id_filtro:
+        try:
+            query = query.filter(ProductMovementImportBolts.motivo_id == int(motivo_id_filtro))
+        except ValueError:
+            pass
 
     # Solo movimientos registrados manualmente desde "Movimiento de Stock"
     # (motivo_id viene del catálogo). Excluye los automáticos de Cotización/
@@ -6590,13 +6610,13 @@ def ver_kardex_importbolts():
         ProductMovementImportBolts.ruc_proveedor, ProductMovementImportBolts.razon_social_proveedor
     ).filter(ProductMovementImportBolts.ruc_proveedor.isnot(None)).distinct().order_by(ProductMovementImportBolts.razon_social_proveedor).all()
 
-    # Motivos registrados manualmente desde "Movimiento de Stock" (motivo_id no nulo),
-    # para el filtro por Motivo del Kardex (p.ej. llegar directo a "Venta" desde el Dashboard)
-    motivos_con_movimientos = [
-        m[0] for m in db.session.query(ProductMovementImportBolts.motivo)
-        .filter(ProductMovementImportBolts.motivo_id.isnot(None))
-        .distinct().order_by(ProductMovementImportBolts.motivo).all()
-    ]
+    # --- Motivos dependientes del Tipo seleccionado (cascada, igual que Familia -> Calidad) ---
+    # Catálogo compartido con Anclajes: un motivo recién creado desde "+ Nuevo Motivo" en
+    # Movimiento de Stock (de cualquiera de las dos empresas) aparece aquí también.
+    motivos_query_cat = MotivoMovimiento.query.filter_by(activo=True)
+    if tipo_mov in ['ENTRADA', 'SALIDA']:
+        motivos_query_cat = motivos_query_cat.filter_by(tipo=tipo_mov)
+    catalogo_motivos = motivos_query_cat.order_by(MotivoMovimiento.tipo, MotivoMovimiento.nombre).all()
 
     return render_template('kardex_importbolts.html',
                            movimientos=movimientos,
@@ -6604,7 +6624,7 @@ def ver_kardex_importbolts():
                            pagination=pagination,
                            proveedores_con_movimientos=proveedores_con_movimientos,
                            lista_calidades_kardex=lista_calidades_kardex,
-                           motivos_con_movimientos=motivos_con_movimientos,
+                           catalogo_motivos=catalogo_motivos,
                            cat_filtro=cat_nombre,
                            calidad_filtro=calidad_nombre)
 
