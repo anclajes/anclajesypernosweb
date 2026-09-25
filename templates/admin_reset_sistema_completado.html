@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-7">
+        <div class="card shadow border-success">
+            <div class="card-header bg-success text-white">
+                <h4 class="mb-0"><i class="bi bi-check-circle-fill"></i> Sistema limpiado correctamente</h4>
+            </div>
+            <div class="card-body">
+                <p>Se borraron los datos de prueba (inventario, kardex, ventas/cotizaciones, clientes, proveedores y categorías).</p>
+                <p>Tu cuenta (<strong>{{ session.get('username') }}</strong>) sigue activa, con tu rol de Admin intacto.</p>
+
+                {% if archivo %}
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle"></i> Se guardó un respaldo de todo lo borrado en el servidor.
+                </div>
+                <a href="{{ url_for('admin_reset_sistema_descargar', nombre_archivo=archivo) }}" class="btn btn-outline-primary">
+                    <i class="bi bi-download"></i> Descargar el respaldo de lo que se borró
+                </a>
+                {% endif %}
+
+                <div class="mt-4">
+                    <a href="{{ url_for('inventario') }}" class="btn btn-secondary">
+                        <i class="bi bi-box-seam"></i> Ir al Inventario para empezar a importar
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

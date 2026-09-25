@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card shadow border-danger">
+            <div class="card-header bg-danger text-white">
+                <h4 class="mb-0"><i class="bi bi-exclamation-triangle-fill"></i> Limpiar Datos de Prueba (Zona de Peligro)</h4>
+            </div>
+            <div class="card-body">
+                <p>
+                    Esto va a <strong>borrar permanentemente</strong> todo el inventario, kardex, ventas/cotizaciones,
+                    clientes, proveedores y categorías que hay hoy en el sistema, para que puedas volver a importar
+                    los inventarios reales desde cero y con mejor orden.
+                </p>
+
+                <div class="alert alert-warning">
+                    <ul class="mb-0">
+                        <li>Tu cuenta (<strong>{{ session.get('username') }}</strong>) se conserva, con tu contraseña y tu rol de Admin intactos.</li>
+                        <li>Las demás cuentas de usuario (vendedores, almacén, chofer, etc.) se van a eliminar. Tendrás que volver a crearlas después.</li>
+                        <li>Los catálogos de configuración (Motivos de Movimiento, Presentaciones, valores de Auditoría, campos personalizados) <strong>no se tocan</strong>: no son datos de prueba, son configuración del sistema y los vas a seguir necesitando.</li>
+                        <li>Esta acción <strong>no se puede deshacer</strong> desde la aplicación. Por eso se genera un respaldo automáticamente, pero de todas formas descárgalo tú también antes de continuar.</li>
+                    </ul>
+                </div>
+
+                <h5 class="mt-4">Esto es lo que se va a borrar ahora mismo:</h5>
+                <div class="table-responsive" style="max-height: 320px; overflow-y: auto;">
+                    <table class="table table-sm table-striped">
+                        <thead class="sticky-top bg-white">
+                            <tr><th>Tabla</th><th class="text-end">Registros</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for c in conteos %}
+                            <tr><td>{{ c.tabla }}</td><td class="text-end">{{ c.cantidad }}</td></tr>
+                            {% endfor %}
+                        </tbody>
+                        <tfoot>
+                            <tr class="fw-bold border-top border-2">
+                                <td>Total de registros a borrar</td>
+                                <td class="text-end">{{ total }}</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+
+                <a href="{{ url_for('admin_reset_sistema_respaldo') }}" class="btn btn-outline-primary mb-4">
+                    <i class="bi bi-download"></i> 1. Descargar respaldo completo (JSON) antes de continuar
+                </a>
+
+                <hr>
+
+                <form method="POST" action="{{ url_for('admin_reset_sistema_ejecutar') }}"
+                      onsubmit="return confirm('¿Estás seguro? Esto borra de forma permanente todo lo que aparece en la tabla de arriba. Esta acción no se puede deshacer.');">
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">2. Para confirmar, escribe exactamente: <code>BORRAR TODO</code></label>
+                        <input type="text" name="confirmacion" class="form-control" autocomplete="off" required placeholder="BORRAR TODO">
+                    </div>
+                    <button type="submit" class="btn btn-danger">
+                        <i class="bi bi-trash-fill"></i> Borrar todo y dejar el sistema limpio
+                    </button>
+                    <a href="{{ url_for('inventario') }}" class="btn btn-link">Cancelar, no borrar nada</a>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -23,6 +23,7 @@ from flask_migrate import Migrate
 from botocore.client import Config
 import os
 import io
+import json
 import subprocess
 import tempfile
 import requests
@@ -8957,6 +8958,173 @@ def fix_edicion_manual():
     except Exception as e:
         db.session.rollback()
         return f"<h2>Error: {str(e)}</h2>"
+
+# ======================================================
+# RESET DE DATOS DE PRUEBA (Zona de Peligro — solo admin)
+# Borra TODO lo transaccional (inventario, kardex, ventas/cotizaciones,
+# clientes, proveedores, categorías) y TODOS los usuarios excepto el que
+# ejecuta la acción, para dejar el sistema listo para importar datos reales.
+# Se conservan los catálogos de configuración (MotivoMovimiento, Presentacion,
+# CatalogoValor, CampoPersonalizado/Opcion, SystemConfig) porque no son datos
+# de prueba, son configuración del sistema.
+# Antes de borrar, genera SIEMPRE un respaldo JSON completo (se puede
+# descargar aparte, y además queda guardado en el servidor).
+# ======================================================
+
+# Orden de borrado: los hijos primero, para no romper llaves foráneas.
+TABLAS_RESET_ORDEN = [
+    ('registro_auditoria_foto', RegistroAuditoriaFoto),
+    ('registro_auditoria_valor_extra', RegistroAuditoriaValorExtra),
+    ('registro_auditoria_log', RegistroAuditoriaLog),
+    ('order_kit_component', OrderKitComponent),
+    ('intercompany_transfer', IntercompanyTransfer),
+    ('payment', Payment),
+    ('product_image', ProductImage),
+    ('client_contact_log', ClientContactLog),
+    ('registro_auditoria', RegistroAuditoria),
+    ('client_contact', ClientContact),
+    ('client_rubro_vendedor', ClientRubroVendedor),
+    ('order_detail', OrderDetail),
+    ('periodo_auditoria', PeriodoAuditoria),
+    ('order', Order),
+    ('product_movement', ProductMovement),
+    ('product_movement_importbolts', ProductMovementImportBolts),
+    ('client', Client),
+    ('proveedor', Proveedor),
+    ('product', Product),
+    ('product_importbolts', ProductImportBolts),
+    ('meta_vendedor', MetaVendedor),
+    ('audit_log', AuditLog),
+    ('category', Category),
+    ('category_importbolts', CategoryImportBolts),
+]
+
+
+def _fila_a_dict(obj):
+    """Convierte una fila de SQLAlchemy a un dict serializable en JSON."""
+    fila = {}
+    for c in obj.__table__.columns:
+        valor = getattr(obj, c.name)
+        if isinstance(valor, (datetime, date)):
+            valor = valor.isoformat()
+        fila[c.name] = valor
+    return fila
+
+
+def _contar_datos_reset():
+    """Cuenta cuántos registros hay hoy en cada tabla que se va a borrar."""
+    admin_id_actual = session.get('user_id')
+    conteos = [{'tabla': nombre, 'cantidad': modelo.query.count()} for nombre, modelo in TABLAS_RESET_ORDEN]
+    otros_usuarios = User.query.filter(User.id != admin_id_actual).count()
+    conteos.append({'tabla': 'user (otras cuentas — la tuya se conserva)', 'cantidad': otros_usuarios})
+    return conteos
+
+
+def _generar_backup_reset_json():
+    """Genera el respaldo completo (en memoria) de todo lo que el reset va a borrar."""
+    admin_id_actual = session.get('user_id')
+    backup = {
+        'generado_en': datetime.now().isoformat(),
+        'generado_por_username': session.get('username'),
+        'generado_por_user_id': admin_id_actual,
+        'tablas': {}
+    }
+    for nombre, modelo in TABLAS_RESET_ORDEN:
+        backup['tablas'][nombre] = [_fila_a_dict(obj) for obj in modelo.query.all()]
+    otros_usuarios = User.query.filter(User.id != admin_id_actual).all()
+    backup['tablas']['user_otras_cuentas'] = [_fila_a_dict(u) for u in otros_usuarios]
+    return backup
+
+
+@app.route('/admin/reset_sistema')
+def admin_reset_sistema():
+    """Página de confirmación: muestra qué se va a borrar antes de tocar nada."""
+    if session.get('role') != 'admin':
+        return "Acceso denegado", 403
+    conteos = _contar_datos_reset()
+    total = sum(c['cantidad'] for c in conteos)
+    return render_template('admin_reset_sistema.html', conteos=conteos, total=total)
+
+
+@app.route('/admin/reset_sistema/respaldo')
+def admin_reset_sistema_respaldo():
+    """Descarga el respaldo JSON completo SIN borrar nada. Se puede pedir las veces que quieras."""
+    if session.get('role') != 'admin':
+        return "Acceso denegado", 403
+    backup = _generar_backup_reset_json()
+    buffer = io.BytesIO(json.dumps(backup, ensure_ascii=False, indent=2, default=str).encode('utf-8'))
+    buffer.seek(0)
+    nombre_archivo = f"respaldo_antes_de_borrar_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    return send_file(buffer, as_attachment=True, download_name=nombre_archivo, mimetype='application/json')
+
+
+@app.route('/admin/reset_sistema/ejecutar', methods=['POST'])
+def admin_reset_sistema_ejecutar():
+    """Ejecuta el borrado real. Requiere escribir la frase exacta de confirmación."""
+    if session.get('role') != 'admin':
+        return "Acceso denegado", 403
+
+    confirmacion = (request.form.get('confirmacion') or '').strip()
+    if confirmacion != 'BORRAR TODO':
+        flash('Frase de confirmación incorrecta. No se borró absolutamente nada. Escribe exactamente: BORRAR TODO', 'error')
+        return redirect(url_for('admin_reset_sistema'))
+
+    admin_id_actual = session.get('user_id')
+
+    try:
+        # 1. Respaldo completo ANTES de borrar nada, y lo guardamos en el servidor
+        backup = _generar_backup_reset_json()
+        backup_bytes = json.dumps(backup, ensure_ascii=False, indent=2, default=str).encode('utf-8')
+
+        carpeta_backups = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'backups_reset')
+        os.makedirs(carpeta_backups, exist_ok=True)
+        nombre_archivo = f"respaldo_reset_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        with open(os.path.join(carpeta_backups, nombre_archivo), 'wb') as f:
+            f.write(backup_bytes)
+
+        # 2. Borrado en orden seguro (hijos antes que padres)
+        for _nombre, modelo in TABLAS_RESET_ORDEN:
+            modelo.query.delete(synchronize_session=False)
+
+        # 3. En los catálogos de configuración que SÍ se conservan, desvinculamos
+        #    (sin borrar el catálogo) las referencias a usuarios que van a desaparecer
+        db.session.query(CatalogoValor).filter(CatalogoValor.creado_por_id != admin_id_actual).update(
+            {CatalogoValor.creado_por_id: None}, synchronize_session=False)
+        db.session.query(CampoPersonalizado).filter(CampoPersonalizado.creado_por_id != admin_id_actual).update(
+            {CampoPersonalizado.creado_por_id: None}, synchronize_session=False)
+
+        # 4. Borrar todas las cuentas de usuario EXCEPTO la que está ejecutando esto ahora mismo
+        User.query.filter(User.id != admin_id_actual).delete(synchronize_session=False)
+
+        db.session.commit()
+        return redirect(url_for('admin_reset_sistema_completado', archivo=nombre_archivo))
+
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Ocurrió un error y se revirtió todo — no se borró nada: {str(e)}', 'error')
+        return redirect(url_for('admin_reset_sistema'))
+
+
+@app.route('/admin/reset_sistema/completado')
+def admin_reset_sistema_completado():
+    if session.get('role') != 'admin':
+        return "Acceso denegado", 403
+    archivo = request.args.get('archivo', '')
+    return render_template('admin_reset_sistema_completado.html', archivo=archivo)
+
+
+@app.route('/admin/reset_sistema/descargar/<path:nombre_archivo>')
+def admin_reset_sistema_descargar(nombre_archivo):
+    """Descarga un respaldo YA GENERADO que quedó guardado en el servidor."""
+    if session.get('role') != 'admin':
+        return "Acceso denegado", 403
+    nombre_seguro = secure_filename(nombre_archivo)
+    carpeta_backups = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'backups_reset')
+    ruta = os.path.join(carpeta_backups, nombre_seguro)
+    if not os.path.isfile(ruta):
+        return "Archivo no encontrado (puede que el servidor se haya reiniciado desde entonces).", 404
+    return send_file(ruta, as_attachment=True, download_name=nombre_seguro, mimetype='application/json')
+
 
 # ======================================================
 # DASHBOARDS DE VENTAS POR TONELADAS (Anclajes / ImportBolts / General)
