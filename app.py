@@ -6496,12 +6496,21 @@ def _calcular_rotacion_stock(origen_filtro='todos', categoria_filtro='todos', ca
         ).filter(ModeloMov.tipo == 'SALIDA', es_movimiento_real,
                  ModeloMov.fecha >= fecha_umbral).group_by(ModeloMov.product_id).subquery()
 
+        # Antigüedad real en catálogo: el primer movimiento que exista para el producto
+        # (normalmente el "Saldo Inicial" de cuando se cargó), sin importar si es real
+        # o no. Sirve solo como referencia de "hace cuánto está en el sistema", para
+        # priorizar dentro de listas grandes como "Nunca se vendieron".
+        primera_fecha_sq = db.session.query(
+            ModeloMov.product_id.label('pid'), func.min(ModeloMov.fecha).label('fecha')
+        ).group_by(ModeloMov.product_id).subquery()
+
         q = db.session.query(
             Modelo, ultima_entrada_sq.c.fecha, ultima_salida_sq.c.fecha,
-            salidas_periodo_sq.c.cantidad, salidas_periodo_sq.c.movs
+            salidas_periodo_sq.c.cantidad, salidas_periodo_sq.c.movs, primera_fecha_sq.c.fecha
         ).outerjoin(ultima_entrada_sq, ultima_entrada_sq.c.pid == Modelo.id
         ).outerjoin(ultima_salida_sq, ultima_salida_sq.c.pid == Modelo.id
         ).outerjoin(salidas_periodo_sq, salidas_periodo_sq.c.pid == Modelo.id
+        ).outerjoin(primera_fecha_sq, primera_fecha_sq.c.pid == Modelo.id
         ).filter(Modelo.activo.is_(True))
 
         if origen_label == 'ANCLAJES':
@@ -6517,11 +6526,17 @@ def _calcular_rotacion_stock(origen_filtro='todos', categoria_filtro='todos', ca
 
         filas = q.all()
         resultado = []
-        for prod, ult_entrada, ult_salida, salida_cant, movs in filas:
+        for prod, ult_entrada, ult_salida, salida_cant, movs, primera_fecha in filas:
             dias_sin_salida = (hoy - ult_salida).days if ult_salida else None
             dias_sin_entrada = (hoy - ult_entrada).days if ult_entrada else None
             precio_ref = prod.precio_unidad or 0
             valor_inmovilizado = round((prod.stock_actual or 0) * precio_ref, 2)
+
+            # Si nunca tuvo ni un solo movimiento en el Kardex, usamos la fecha de
+            # actualización del producto como última referencia disponible.
+            fecha_antiguedad = primera_fecha or prod.fecha_actualizacion
+            antiguedad_dias = (hoy - fecha_antiguedad).days if fecha_antiguedad else None
+
             resultado.append({
                 'id': prod.id, 'sku': prod.sku, 'nombre': prod.nombre,
                 'categoria': prod.categoria, 'calidad': prod.calidad or '-',
@@ -6533,6 +6548,7 @@ def _calcular_rotacion_stock(origen_filtro='todos', categoria_filtro='todos', ca
                 'origen': origen_label,
                 'tiene_entrada': ult_entrada is not None,
                 'tiene_salida': ult_salida is not None,
+                'fecha_antiguedad': fecha_antiguedad, 'antiguedad_dias': antiguedad_dias,
             })
         return resultado
 
@@ -6566,6 +6582,9 @@ def _ordenar_lista_rotacion(lista, orden):
         lista.sort(key=lambda x: (x['dias_sin_salida'] if x['dias_sin_salida'] is not None
                                    else (x['dias_sin_entrada'] if x['dias_sin_entrada'] is not None else 999999)),
                    reverse=True)
+    elif orden == 'antiguedad_desc':
+        # Sin dato de antigüedad va al final (no sabemos si es viejo o nuevo, mejor no asumir)
+        lista.sort(key=lambda x: (x['antiguedad_dias'] if x['antiguedad_dias'] is not None else -1), reverse=True)
     elif orden == 'stock_desc':
         lista.sort(key=lambda x: x['stock'], reverse=True)
     elif orden == 'nombre':
@@ -6602,7 +6621,9 @@ def rotacion_stock():
         vista = 'sin_salidas'
     orden = request.args.get('orden', 'valor_desc')
     page = request.args.get('page', 1, type=int)
-    per_page = 25
+    per_page = request.args.get('per_page', 25, type=int)
+    if per_page not in (25, 50, 100):
+        per_page = 25
 
     sin_salidas, sin_entradas, baja_rotacion, kpis, hoy = _calcular_rotacion_stock(
         origen_filtro, categoria_filtro, calidad_filtro, busqueda, dias_analisis, solo_con_stock
@@ -6678,6 +6699,7 @@ def rotacion_stock():
                            solo_con_stock=solo_con_stock,
                            orden=orden,
                            page=page,
+                           per_page=per_page,
                            total_paginas=total_paginas,
                            total_vista=total_vista,
                            inicio_rango=(inicio + 1 if total_vista > 0 else 0),
@@ -6719,6 +6741,7 @@ def exportar_rotacion_stock():
                 'ÚLTIMA ENTRADA': d['ultima_entrada'].strftime('%d/%m/%Y') if d['ultima_entrada'] else 'Nunca',
                 'ÚLTIMA SALIDA': d['ultima_salida'].strftime('%d/%m/%Y') if d['ultima_salida'] else 'Nunca',
                 'DÍAS SIN VENDER': d['dias_sin_salida'] if d['dias_sin_salida'] is not None else '-',
+                'ANTIGÜEDAD EN CATÁLOGO (DÍAS)': d['antiguedad_dias'] if d['antiguedad_dias'] is not None else '-',
             })
         return filas
 

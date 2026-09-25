@@ -145,8 +145,17 @@
                 <select name="orden" class="form-select" onchange="document.getElementById('formFiltrosRotacion').submit()">
                     <option value="valor_desc" {% if orden == 'valor_desc' %}selected{% endif %}>Valor</option>
                     <option value="dias_desc" {% if orden == 'dias_desc' %}selected{% endif %}>Días</option>
+                    <option value="antiguedad_desc" {% if orden == 'antiguedad_desc' %}selected{% endif %}>Antigüedad</option>
                     <option value="stock_desc" {% if orden == 'stock_desc' %}selected{% endif %}>Stock</option>
                     <option value="nombre" {% if orden == 'nombre' %}selected{% endif %}>Nombre</option>
+                </select>
+            </div>
+            <div class="col-6 col-md-1">
+                <label class="small fw-bold text-muted">Filas</label>
+                <select name="per_page" class="form-select" onchange="document.getElementById('formFiltrosRotacion').submit()">
+                    <option value="25" {% if per_page == 25 %}selected{% endif %}>25</option>
+                    <option value="50" {% if per_page == 50 %}selected{% endif %}>50</option>
+                    <option value="100" {% if per_page == 100 %}selected{% endif %}>100</option>
                 </select>
             </div>
 
@@ -174,21 +183,21 @@
 <ul class="nav nav-pills rotacion-tabs mb-3">
     <li class="nav-item">
         <a class="nav-link {% if vista == 'sin_salidas' %}active{% endif %}"
-           href="{{ url_for('rotacion_stock', vista='sin_salidas', f=1, origen=origen_filtro, categoria=categoria_filtro, calidad=calidad_filtro, busqueda=busqueda, dias=dias_analisis, orden=orden, solo_con_stock=('on' if solo_con_stock else '')) }}">
+           href="{{ url_for('rotacion_stock', vista='sin_salidas', f=1, origen=origen_filtro, categoria=categoria_filtro, calidad=calidad_filtro, busqueda=busqueda, dias=dias_analisis, orden=orden, per_page=per_page, solo_con_stock=('on' if solo_con_stock else '')) }}">
             <i class="bi bi-x-octagon"></i> Nunca se vendieron
             <span class="badge bg-danger ms-1">{{ kpis.total_sin_salidas }}</span>
         </a>
     </li>
     <li class="nav-item">
         <a class="nav-link {% if vista == 'baja_rotacion' %}active{% endif %}"
-           href="{{ url_for('rotacion_stock', vista='baja_rotacion', f=1, origen=origen_filtro, categoria=categoria_filtro, calidad=calidad_filtro, busqueda=busqueda, dias=dias_analisis, orden=orden, solo_con_stock=('on' if solo_con_stock else '')) }}">
+           href="{{ url_for('rotacion_stock', vista='baja_rotacion', f=1, origen=origen_filtro, categoria=categoria_filtro, calidad=calidad_filtro, busqueda=busqueda, dias=dias_analisis, orden=orden, per_page=per_page, solo_con_stock=('on' if solo_con_stock else '')) }}">
             <i class="bi bi-graph-down-arrow"></i> Baja rotación
             <span class="badge bg-warning text-dark ms-1">{{ kpis.total_baja_rotacion }}</span>
         </a>
     </li>
     <li class="nav-item">
         <a class="nav-link {% if vista == 'sin_entradas' %}active{% endif %}"
-           href="{{ url_for('rotacion_stock', vista='sin_entradas', f=1, origen=origen_filtro, categoria=categoria_filtro, calidad=calidad_filtro, busqueda=busqueda, dias=dias_analisis, orden=orden, solo_con_stock=('on' if solo_con_stock else '')) }}">
+           href="{{ url_for('rotacion_stock', vista='sin_entradas', f=1, origen=origen_filtro, categoria=categoria_filtro, calidad=calidad_filtro, busqueda=busqueda, dias=dias_analisis, orden=orden, per_page=per_page, solo_con_stock=('on' if solo_con_stock else '')) }}">
             <i class="bi bi-box-seam"></i> Sin reabastecer
             <span class="badge bg-secondary ms-1">{{ kpis.total_sin_entradas }}</span>
         </a>
@@ -197,18 +206,25 @@
 
 {% if vista == 'sin_salidas' %}
 <div class="alert alert-danger border-0 small py-2 mb-3"><i class="bi bi-lightbulb-fill"></i>
-    Estos productos <strong>jamás registraron una salida real</strong> (nunca se vendieron). Son los mejores candidatos
-    para promociones, combos o descuentos agresivos antes de que sigan ocupando espacio y capital.
+    Estos productos <strong>jamás registraron una salida real</strong> en toda su historia — este conteo
+    <strong>no cambia</strong> con el "Periodo de análisis" de arriba, porque es de siempre, no de un rango de fechas.
+    Ordena por <strong>Antigüedad</strong> para ver primero los que llevan más tiempo sin venderse ni una sola vez.
+    Son los mejores candidatos para promociones, combos o descuentos agresivos antes de que sigan ocupando espacio y capital.
 </div>
 {% elif vista == 'baja_rotacion' %}
 <div class="alert alert-warning border-0 small py-2 mb-3"><i class="bi bi-lightbulb-fill"></i>
-    Estos productos sí han tenido ventas alguna vez, pero <strong>no salen hace {{ dias_analisis }} días o más</strong>.
-    Son la alerta temprana: si no se actúa, en poco tiempo pasan a la lista de "Nunca se vendieron".
+    Estos productos <strong>sí se vendieron antes</strong> al menos una vez, pero su última venta real fue hace
+    <strong>{{ dias_analisis }} días o más</strong> (ese número lo cambias en "Periodo de análisis"). Un producto de
+    esta lista <u>nunca pasa</u> a "Nunca se vendieron" — esa otra lista es solo para los que jamás tuvieron una venta.
+    Lo que sí ocurre es que, mientras más tiempo pase sin una venta nueva, su badge de "Días sin vender" se pone más
+    crítico (gris → amarillo → rojo). Úsalos como alerta temprana para reactivarlos antes de que se conviertan en
+    stock realmente parado.
 </div>
 {% else %}
 <div class="alert alert-secondary border-0 small py-2 mb-3"><i class="bi bi-lightbulb-fill"></i>
-    Estos productos <strong>nunca registraron un ingreso real</strong> (con "Registrar Ingreso" en el inventario).
-    Revísalos: puede ser que dependan solo de la carga inicial y nunca se hayan vuelto a reabastecer.
+    Estos productos <strong>nunca registraron un ingreso real</strong> (con "Registrar Ingreso" en el inventario) —
+    tampoco depende del "Periodo de análisis". Revísalos: puede ser que dependan solo de la carga inicial y nunca se
+    hayan vuelto a reabastecer.
 </div>
 {% endif %}
 
@@ -225,6 +241,7 @@
                     <th class="text-end">Stock</th>
                     <th class="text-end">Precio Unit.</th>
                     <th class="text-end">Valor inmovilizado</th>
+                    <th class="text-center">Antigüedad</th>
                     <th>Última entrada</th>
                     <th>Última salida</th>
                     <th class="text-center">Días sin vender</th>
@@ -256,6 +273,13 @@
                         {% endif %}
                     </td>
                     <td class="text-end fw-bold">S/ {{ "%.2f"|format(p.valor_inmovilizado) }}</td>
+                    <td class="text-center" title="{{ p.fecha_antiguedad.strftime('%d/%m/%Y') if p.fecha_antiguedad else 'Sin dato' }}">
+                        {% if p.antiguedad_dias is not none %}
+                            {{ p.antiguedad_dias }} días
+                        {% else %}
+                            <span class="text-muted">Sin dato</span>
+                        {% endif %}
+                    </td>
                     <td>{{ p.ultima_entrada.strftime('%d/%m/%Y') if p.ultima_entrada else 'Nunca' }}</td>
                     <td>{{ p.ultima_salida.strftime('%d/%m/%Y') if p.ultima_salida else 'Nunca' }}</td>
                     <td class="text-center">
@@ -274,7 +298,7 @@
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="10" class="text-center text-muted py-5">
+                    <td colspan="11" class="text-center text-muted py-5">
                         <i class="bi bi-emoji-smile display-4 opacity-25"></i>
                         <p class="mt-2 mb-0">No hay productos que coincidan con estos filtros. ¡Buena señal!</p>
                     </td>
@@ -296,20 +320,20 @@
         {% if total_paginas > 1 %}
         <ul class="pagination pagination-sm mb-0 flex-wrap justify-content-center">
             <li class="page-item {% if page <= 1 %}disabled{% endif %}">
-                <a class="page-link" href="{{ url_for('rotacion_stock', vista=vista, page=page-1, f=1, origen=origen_filtro, categoria=categoria_filtro, calidad=calidad_filtro, busqueda=busqueda, dias=dias_analisis, orden=orden, solo_con_stock=('on' if solo_con_stock else '')) }}">Ant</a>
+                <a class="page-link" href="{{ url_for('rotacion_stock', vista=vista, page=page-1, f=1, origen=origen_filtro, categoria=categoria_filtro, calidad=calidad_filtro, busqueda=busqueda, dias=dias_analisis, orden=orden, per_page=per_page, solo_con_stock=('on' if solo_con_stock else '')) }}">Ant</a>
             </li>
             {% set ventana = 2 %}
             {% for p_num in range(1, total_paginas + 1) %}
                 {% if p_num == 1 or p_num == total_paginas or (p_num >= page - ventana and p_num <= page + ventana) %}
                     <li class="page-item {% if p_num == page %}active{% endif %}">
-                        <a class="page-link" href="{{ url_for('rotacion_stock', vista=vista, page=p_num, f=1, origen=origen_filtro, categoria=categoria_filtro, calidad=calidad_filtro, busqueda=busqueda, dias=dias_analisis, orden=orden, solo_con_stock=('on' if solo_con_stock else '')) }}">{{ p_num }}</a>
+                        <a class="page-link" href="{{ url_for('rotacion_stock', vista=vista, page=p_num, f=1, origen=origen_filtro, categoria=categoria_filtro, calidad=calidad_filtro, busqueda=busqueda, dias=dias_analisis, orden=orden, per_page=per_page, solo_con_stock=('on' if solo_con_stock else '')) }}">{{ p_num }}</a>
                     </li>
                 {% elif p_num == page - ventana - 1 or p_num == page + ventana + 1 %}
                     <li class="page-item disabled"><span class="page-link">...</span></li>
                 {% endif %}
             {% endfor %}
             <li class="page-item {% if page >= total_paginas %}disabled{% endif %}">
-                <a class="page-link" href="{{ url_for('rotacion_stock', vista=vista, page=page+1, f=1, origen=origen_filtro, categoria=categoria_filtro, calidad=calidad_filtro, busqueda=busqueda, dias=dias_analisis, orden=orden, solo_con_stock=('on' if solo_con_stock else '')) }}">Sig</a>
+                <a class="page-link" href="{{ url_for('rotacion_stock', vista=vista, page=page+1, f=1, origen=origen_filtro, categoria=categoria_filtro, calidad=calidad_filtro, busqueda=busqueda, dias=dias_analisis, orden=orden, per_page=per_page, solo_con_stock=('on' if solo_con_stock else '')) }}">Sig</a>
             </li>
         </ul>
         {% endif %}
