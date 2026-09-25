@@ -6475,19 +6475,26 @@ def _calcular_rotacion_stock(origen_filtro='todos', categoria_filtro='todos', ca
     fecha_umbral = hoy - timedelta(days=dias_analisis)
 
     def dataset_por_inventario(Modelo, ModeloMov, origen_label):
+        # --- Solo cuentan los movimientos REALES registrados por un trabajador con
+        # "Registrar Ingreso/Salida". Se excluyen los "Saldo Inicial" que genera el
+        # sistema automáticamente al importar un Excel o crear un producto nuevo:
+        # esos son cargas de datos, no una venta ni una compra real. ---
+        es_movimiento_real = or_(ModeloMov.motivo.is_(None), ~ModeloMov.motivo.ilike('%Inicial%'))
+
         ultima_entrada_sq = db.session.query(
             ModeloMov.product_id.label('pid'), func.max(ModeloMov.fecha).label('fecha')
-        ).filter(ModeloMov.tipo == 'ENTRADA').group_by(ModeloMov.product_id).subquery()
+        ).filter(ModeloMov.tipo == 'ENTRADA', es_movimiento_real).group_by(ModeloMov.product_id).subquery()
 
         ultima_salida_sq = db.session.query(
             ModeloMov.product_id.label('pid'), func.max(ModeloMov.fecha).label('fecha')
-        ).filter(ModeloMov.tipo == 'SALIDA').group_by(ModeloMov.product_id).subquery()
+        ).filter(ModeloMov.tipo == 'SALIDA', es_movimiento_real).group_by(ModeloMov.product_id).subquery()
 
         salidas_periodo_sq = db.session.query(
             ModeloMov.product_id.label('pid'),
             func.coalesce(func.sum(ModeloMov.cantidad), 0).label('cantidad'),
             func.count(ModeloMov.id).label('movs')
-        ).filter(ModeloMov.tipo == 'SALIDA', ModeloMov.fecha >= fecha_umbral).group_by(ModeloMov.product_id).subquery()
+        ).filter(ModeloMov.tipo == 'SALIDA', es_movimiento_real,
+                 ModeloMov.fecha >= fecha_umbral).group_by(ModeloMov.product_id).subquery()
 
         q = db.session.query(
             Modelo, ultima_entrada_sq.c.fecha, ultima_salida_sq.c.fecha,
@@ -6618,28 +6625,40 @@ def rotacion_stock():
     fin = inicio + per_page
     pagina_actual = lista_activa[inicio:fin]
 
-    # --- Listas de filtros dependientes del origen elegido (mismo patrón que Inventario General) ---
+    # --- Listas de filtros en cascada: Inventario -> Familia -> Calidad (mismo patrón que Kardex / Inventario General) ---
     if origen_filtro == 'ANCLAJES':
         lista_categorias = [c.nombre for c in Category.query
                              .filter(Category.nombre != 'TRASLADO IMPORTBOLTS').order_by(Category.nombre).all()]
-        lista_calidades = [c[0] for c in db.session.query(Product.calidad).filter(
+        q_cal = db.session.query(Product.calidad).filter(
             Product.es_shadow_importbolts.isnot(True), Product.calidad.isnot(None), Product.calidad != ''
-        ).distinct().order_by(Product.calidad).all()]
+        )
+        if categoria_filtro != 'todos':
+            q_cal = q_cal.filter(Product.categoria == categoria_filtro)
+        lista_calidades = [c[0] for c in q_cal.distinct().order_by(Product.calidad).all()]
     elif origen_filtro == 'IMPORTBOLTS':
         lista_categorias = [c.nombre for c in CategoryImportBolts.query.order_by(CategoryImportBolts.nombre).all()]
-        lista_calidades = [c[0] for c in db.session.query(ProductImportBolts.calidad).filter(
+        q_cal = db.session.query(ProductImportBolts.calidad).filter(
             ProductImportBolts.calidad.isnot(None), ProductImportBolts.calidad != ''
-        ).distinct().order_by(ProductImportBolts.calidad).all()]
+        )
+        if categoria_filtro != 'todos':
+            q_cal = q_cal.filter(ProductImportBolts.categoria == categoria_filtro)
+        lista_calidades = [c[0] for c in q_cal.distinct().order_by(ProductImportBolts.calidad).all()]
     else:
         cats_anc = [c.nombre for c in Category.query.filter(Category.nombre != 'TRASLADO IMPORTBOLTS').all()]
         cats_ib = [c.nombre for c in CategoryImportBolts.query.all()]
         lista_categorias = sorted(set(cats_anc + cats_ib))
-        cal_anc = [c[0] for c in db.session.query(Product.calidad).filter(
+
+        q_cal_anc = db.session.query(Product.calidad).filter(
             Product.es_shadow_importbolts.isnot(True), Product.calidad.isnot(None), Product.calidad != ''
-        ).distinct().all()]
-        cal_ib = [c[0] for c in db.session.query(ProductImportBolts.calidad).filter(
+        )
+        q_cal_ib = db.session.query(ProductImportBolts.calidad).filter(
             ProductImportBolts.calidad.isnot(None), ProductImportBolts.calidad != ''
-        ).distinct().all()]
+        )
+        if categoria_filtro != 'todos':
+            q_cal_anc = q_cal_anc.filter(Product.categoria == categoria_filtro)
+            q_cal_ib = q_cal_ib.filter(ProductImportBolts.categoria == categoria_filtro)
+        cal_anc = [c[0] for c in q_cal_anc.distinct().all()]
+        cal_ib = [c[0] for c in q_cal_ib.distinct().all()]
         lista_calidades = sorted(set(cal_anc + cal_ib))
 
     if categoria_filtro not in lista_categorias and categoria_filtro != 'todos':
@@ -6680,10 +6699,14 @@ def exportar_rotacion_stock():
     busqueda = request.args.get('busqueda', '').strip()
     dias_analisis = request.args.get('dias', 90, type=int)
     solo_con_stock = request.args.get('solo_con_stock') == 'on'
+    orden = request.args.get('orden', 'valor_desc')
 
     sin_salidas, sin_entradas, baja_rotacion, kpis, hoy = _calcular_rotacion_stock(
         origen_filtro, categoria_filtro, calidad_filtro, busqueda, dias_analisis, solo_con_stock
     )
+    sin_salidas = _ordenar_lista_rotacion(sin_salidas, orden)
+    sin_entradas = _ordenar_lista_rotacion(sin_entradas, orden)
+    baja_rotacion = _ordenar_lista_rotacion(baja_rotacion, orden)
 
     def _filas(lista):
         filas = []

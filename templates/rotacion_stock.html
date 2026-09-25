@@ -3,10 +3,38 @@
 {% block subtitle %}Productos sin movimiento y de baja rotación, para priorizar ventas y compras{% endblock %}
 
 {% block content %}
+<style>
+    /* El sidebar define .nav-link con texto blanco (para su fondo oscuro).
+       Aislamos las pestañas de este reporte para que no hereden ese estilo
+       y queden invisibles sobre el fondo blanco del contenido. */
+    .rotacion-tabs.nav-pills .nav-link {
+        color: #495057 !important;
+        background-color: #fff !important;
+        border: 1px solid #dee2e6 !important;
+        border-left: 1px solid #dee2e6 !important;
+        padding: .5rem 1rem !important;
+        margin-right: .4rem;
+        font-weight: 600;
+        font-size: .85rem;
+    }
+    .rotacion-tabs.nav-pills .nav-link:hover {
+        color: #212529 !important;
+        background-color: #f1f3f5 !important;
+        border-color: #ced4da !important;
+    }
+    .rotacion-tabs.nav-pills .nav-link.active {
+        color: #fff !important;
+        background-color: var(--theme-primary, #0F172A) !important;
+        border-color: var(--theme-primary, #0F172A) !important;
+    }
+    .badge-anclajes { background-color: #0B3D91; color: #fff; }
+    .badge-importbolts { background-color: #8BC34A; color: #1B5E20; }
+</style>
+
 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
     <h2 class="mb-0"><i class="bi bi-hourglass-split text-warning"></i> Rotación de Stock</h2>
     {% if session.get('role') in ['admin', 'almacen', 'administracion'] %}
-    <a href="{{ url_for('exportar_rotacion_stock', origen=origen_filtro, categoria=categoria_filtro, calidad=calidad_filtro, busqueda=busqueda, dias=dias_analisis, solo_con_stock=('on' if solo_con_stock else '')) }}"
+    <a href="{{ url_for('exportar_rotacion_stock', origen=origen_filtro, categoria=categoria_filtro, calidad=calidad_filtro, busqueda=busqueda, dias=dias_analisis, orden=orden, solo_con_stock=('on' if solo_con_stock else '')) }}"
        class="btn btn-outline-success btn-sm">
         <i class="bi bi-file-earmark-excel"></i> Exportar a Excel
     </a>
@@ -16,8 +44,9 @@
 <div class="alert alert-light border small py-2 mb-3">
     <i class="bi bi-info-circle-fill text-primary"></i>
     Cruza el Kardex de <strong>Anclajes</strong> e <strong>ImportBolts</strong> para detectar qué productos no se
-    están moviendo. Úsalo para armar promociones, aplicar descuentos o decidir qué NO volver a comprar.
-    Apenas un producto registra el movimiento que le faltaba, sale automáticamente de esa lista.
+    están moviendo. Solo cuenta movimientos reales registrados con el botón "Registrar Ingreso/Salida"; las cargas
+    iniciales de Excel y la creación de productos <strong>no</strong> se consideran movimiento. Apenas un producto
+    registra el movimiento que le faltaba, sale automáticamente de esa lista.
 </div>
 
 <!-- ===================== KPIs ===================== -->
@@ -54,7 +83,7 @@
             <div class="card-body">
                 <div class="text-muted small text-uppercase fw-bold">Sin reabastecer</div>
                 <div class="fs-3 fw-bold text-secondary">{{ kpis.total_sin_entradas }}</div>
-                <div class="small text-muted">Nunca registraron un ingreso (revisar dato)</div>
+                <div class="small text-muted">Nunca registraron un ingreso real</div>
             </div>
         </div>
     </div>
@@ -63,7 +92,7 @@
 <!-- ===================== FILTROS ===================== -->
 <div class="card bg-light border-0 shadow-sm mb-3">
     <div class="card-body py-3">
-        <form method="GET" class="row g-2 align-items-end">
+        <form method="GET" id="formFiltrosRotacion" class="row g-2 align-items-end">
             <input type="hidden" name="f" value="1">
             <input type="hidden" name="vista" value="{{ vista }}">
             <div class="col-12 col-md-3">
@@ -72,7 +101,7 @@
             </div>
             <div class="col-6 col-md-2">
                 <label class="small fw-bold text-muted">Inventario</label>
-                <select name="origen" class="form-select">
+                <select name="origen" class="form-select" onchange="cambioOrigenRotacion(this)">
                     <option value="todos" {% if origen_filtro == 'todos' %}selected{% endif %}>Todos</option>
                     <option value="ANCLAJES" {% if origen_filtro == 'ANCLAJES' %}selected{% endif %}>Anclajes</option>
                     <option value="IMPORTBOLTS" {% if origen_filtro == 'IMPORTBOLTS' %}selected{% endif %}>Import Bolts</option>
@@ -80,7 +109,7 @@
             </div>
             <div class="col-6 col-md-2">
                 <label class="small fw-bold text-muted">Familia</label>
-                <select name="categoria" class="form-select">
+                <select name="categoria" class="form-select" onchange="cambioFamiliaRotacion(this)">
                     <option value="todos" {% if categoria_filtro == 'todos' %}selected{% endif %}>Todas</option>
                     {% for c in lista_categorias %}
                     <option value="{{ c }}" {% if categoria_filtro == c %}selected{% endif %}>{{ c }}</option>
@@ -89,16 +118,21 @@
             </div>
             <div class="col-6 col-md-2">
                 <label class="small fw-bold text-muted">Calidad</label>
-                <select name="calidad" class="form-select">
+                <select name="calidad" class="form-select" onchange="document.getElementById('formFiltrosRotacion').submit()">
                     <option value="todos" {% if calidad_filtro == 'todos' %}selected{% endif %}>Todas</option>
                     {% for c in lista_calidades %}
                     <option value="{{ c }}" {% if calidad_filtro == c %}selected{% endif %}>{{ c }}</option>
                     {% endfor %}
                 </select>
+                {% if categoria_filtro != 'todos' %}
+                <div class="form-text small mt-1 mb-0" style="font-size:.68rem;">
+                    <i class="bi bi-info-circle"></i> Solo calidades de "{{ categoria_filtro }}"
+                </div>
+                {% endif %}
             </div>
             <div class="col-6 col-md-2">
                 <label class="small fw-bold text-muted">Periodo de análisis</label>
-                <select name="dias" class="form-select">
+                <select name="dias" class="form-select" onchange="document.getElementById('formFiltrosRotacion').submit()">
                     <option value="30" {% if dias_analisis == 30 %}selected{% endif %}>Últimos 30 días</option>
                     <option value="60" {% if dias_analisis == 60 %}selected{% endif %}>Últimos 60 días</option>
                     <option value="90" {% if dias_analisis == 90 %}selected{% endif %}>Últimos 90 días</option>
@@ -108,7 +142,7 @@
             </div>
             <div class="col-6 col-md-1">
                 <label class="small fw-bold text-muted">Orden</label>
-                <select name="orden" class="form-select">
+                <select name="orden" class="form-select" onchange="document.getElementById('formFiltrosRotacion').submit()">
                     <option value="valor_desc" {% if orden == 'valor_desc' %}selected{% endif %}>Valor</option>
                     <option value="dias_desc" {% if orden == 'dias_desc' %}selected{% endif %}>Días</option>
                     <option value="stock_desc" {% if orden == 'stock_desc' %}selected{% endif %}>Stock</option>
@@ -116,23 +150,28 @@
                 </select>
             </div>
 
-            <div class="col-12 col-md-8 d-flex align-items-center mt-2">
+            <div class="col-12 col-md-6 d-flex align-items-center mt-2">
                 <div class="form-check">
-                    <input class="form-check-input" type="checkbox" name="solo_con_stock" id="soloConStock" {% if solo_con_stock %}checked{% endif %}>
+                    <input class="form-check-input" type="checkbox" name="solo_con_stock" id="soloConStock"
+                           onchange="document.getElementById('formFiltrosRotacion').submit()"
+                           {% if solo_con_stock %}checked{% endif %}>
                     <label class="form-check-label small" for="soloConStock">
                         Solo productos con stock disponible (oculta los que ya están en cero)
                     </label>
                 </div>
             </div>
-            <div class="col-12 col-md-4 text-md-end mt-2">
+            <div class="col-12 col-md-6 d-flex justify-content-md-end gap-2 mt-2">
                 <button type="submit" class="btn btn-primary"><i class="bi bi-funnel"></i> Aplicar filtros</button>
+                <a href="{{ url_for('rotacion_stock') }}" class="btn btn-outline-secondary">
+                    <i class="bi bi-x-circle"></i> Limpiar
+                </a>
             </div>
         </form>
     </div>
 </div>
 
 <!-- ===================== TABS ===================== -->
-<ul class="nav nav-pills mb-3">
+<ul class="nav nav-pills rotacion-tabs mb-3">
     <li class="nav-item">
         <a class="nav-link {% if vista == 'sin_salidas' %}active{% endif %}"
            href="{{ url_for('rotacion_stock', vista='sin_salidas', f=1, origen=origen_filtro, categoria=categoria_filtro, calidad=calidad_filtro, busqueda=busqueda, dias=dias_analisis, orden=orden, solo_con_stock=('on' if solo_con_stock else '')) }}">
@@ -158,7 +197,7 @@
 
 {% if vista == 'sin_salidas' %}
 <div class="alert alert-danger border-0 small py-2 mb-3"><i class="bi bi-lightbulb-fill"></i>
-    Estos productos <strong>jamás registraron una salida</strong> (nunca se vendieron). Son los mejores candidatos
+    Estos productos <strong>jamás registraron una salida real</strong> (nunca se vendieron). Son los mejores candidatos
     para promociones, combos o descuentos agresivos antes de que sigan ocupando espacio y capital.
 </div>
 {% elif vista == 'baja_rotacion' %}
@@ -168,8 +207,8 @@
 </div>
 {% else %}
 <div class="alert alert-secondary border-0 small py-2 mb-3"><i class="bi bi-lightbulb-fill"></i>
-    Estos productos <strong>nunca registraron un ingreso</strong> en el Kardex (solo tienen salidas, o el stock inicial
-    no quedó registrado como movimiento). Revísalos: puede ser un tema de reabastecimiento o un dato pendiente de corregir.
+    Estos productos <strong>nunca registraron un ingreso real</strong> (con "Registrar Ingreso" en el inventario).
+    Revísalos: puede ser que dependan solo de la carga inicial y nunca se hayan vuelto a reabastecer.
 </div>
 {% endif %}
 
@@ -184,6 +223,7 @@
                     <th>Familia / Calidad</th>
                     <th>Origen</th>
                     <th class="text-end">Stock</th>
+                    <th class="text-end">Precio Unit.</th>
                     <th class="text-end">Valor inmovilizado</th>
                     <th>Última entrada</th>
                     <th>Última salida</th>
@@ -203,11 +243,18 @@
                         <div class="text-muted" style="font-size:.75rem">{{ p.calidad }}</div>
                     </td>
                     <td>
-                        <span class="badge {{ 'bg-primary-subtle text-primary' if p.origen == 'ANCLAJES' else 'bg-info-subtle text-info' }}">
+                        <span class="badge {{ 'badge-anclajes' if p.origen == 'ANCLAJES' else 'badge-importbolts' }}">
                             {{ p.origen }}
                         </span>
                     </td>
                     <td class="text-end">{{ p.stock }}</td>
+                    <td class="text-end">
+                        {% if p.precio_unidad %}
+                            S/ {{ "%.2f"|format(p.precio_unidad) }}
+                        {% else %}
+                            <span class="text-danger" title="Este producto no tiene precio unitario registrado">S/ 0.00</span>
+                        {% endif %}
+                    </td>
                     <td class="text-end fw-bold">S/ {{ "%.2f"|format(p.valor_inmovilizado) }}</td>
                     <td>{{ p.ultima_entrada.strftime('%d/%m/%Y') if p.ultima_entrada else 'Nunca' }}</td>
                     <td>{{ p.ultima_salida.strftime('%d/%m/%Y') if p.ultima_salida else 'Nunca' }}</td>
@@ -227,7 +274,7 @@
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="9" class="text-center text-muted py-5">
+                    <td colspan="10" class="text-center text-muted py-5">
                         <i class="bi bi-emoji-smile display-4 opacity-25"></i>
                         <p class="mt-2 mb-0">No hay productos que coincidan con estos filtros. ¡Buena señal!</p>
                     </td>
@@ -236,19 +283,50 @@
             </tbody>
         </table>
     </div>
-    {% if total_paginas > 1 %}
-    <div class="card-footer bg-white d-flex flex-wrap justify-content-between align-items-center gap-2 small">
-        <span class="text-muted">Mostrando {{ inicio_rango }}–{{ fin_rango }} de {{ total_vista }}</span>
-        <nav>
-            <ul class="pagination pagination-sm mb-0 flex-wrap">
-                {% for num in range(1, total_paginas + 1) %}
-                <li class="page-item {% if num == page %}active{% endif %}">
-                    <a class="page-link" href="{{ url_for('rotacion_stock', vista=vista, page=num, f=1, origen=origen_filtro, categoria=categoria_filtro, calidad=calidad_filtro, busqueda=busqueda, dias=dias_analisis, orden=orden, solo_con_stock=('on' if solo_con_stock else '')) }}">{{ num }}</a>
-                </li>
-                {% endfor %}
-            </ul>
-        </nav>
+
+    <div class="card-footer bg-white py-3 d-flex flex-column flex-md-row justify-content-between align-items-center gap-2">
+        <div class="text-muted small text-center text-md-start">
+            {% if total_vista > 0 %}
+                Mostrando <b>{{ inicio_rango }}-{{ fin_rango }}</b> de <b>{{ total_vista }}</b>
+                <span class="mx-1">|</span> Página <b>{{ page }}</b> de <b>{{ total_paginas }}</b>
+            {% else %}
+                Sin resultados
+            {% endif %}
+        </div>
+        {% if total_paginas > 1 %}
+        <ul class="pagination pagination-sm mb-0 flex-wrap justify-content-center">
+            <li class="page-item {% if page <= 1 %}disabled{% endif %}">
+                <a class="page-link" href="{{ url_for('rotacion_stock', vista=vista, page=page-1, f=1, origen=origen_filtro, categoria=categoria_filtro, calidad=calidad_filtro, busqueda=busqueda, dias=dias_analisis, orden=orden, solo_con_stock=('on' if solo_con_stock else '')) }}">Ant</a>
+            </li>
+            {% set ventana = 2 %}
+            {% for p_num in range(1, total_paginas + 1) %}
+                {% if p_num == 1 or p_num == total_paginas or (p_num >= page - ventana and p_num <= page + ventana) %}
+                    <li class="page-item {% if p_num == page %}active{% endif %}">
+                        <a class="page-link" href="{{ url_for('rotacion_stock', vista=vista, page=p_num, f=1, origen=origen_filtro, categoria=categoria_filtro, calidad=calidad_filtro, busqueda=busqueda, dias=dias_analisis, orden=orden, solo_con_stock=('on' if solo_con_stock else '')) }}">{{ p_num }}</a>
+                    </li>
+                {% elif p_num == page - ventana - 1 or p_num == page + ventana + 1 %}
+                    <li class="page-item disabled"><span class="page-link">...</span></li>
+                {% endif %}
+            {% endfor %}
+            <li class="page-item {% if page >= total_paginas %}disabled{% endif %}">
+                <a class="page-link" href="{{ url_for('rotacion_stock', vista=vista, page=page+1, f=1, origen=origen_filtro, categoria=categoria_filtro, calidad=calidad_filtro, busqueda=busqueda, dias=dias_analisis, orden=orden, solo_con_stock=('on' if solo_con_stock else '')) }}">Sig</a>
+            </li>
+        </ul>
+        {% endif %}
     </div>
-    {% endif %}
 </div>
+
+<script>
+    function cambioOrigenRotacion(select) {
+        const form = document.getElementById('formFiltrosRotacion');
+        form.querySelector('[name="categoria"]').value = 'todos';
+        form.querySelector('[name="calidad"]').value = 'todos';
+        form.submit();
+    }
+    function cambioFamiliaRotacion(select) {
+        const form = document.getElementById('formFiltrosRotacion');
+        form.querySelector('[name="calidad"]').value = 'todos';
+        form.submit();
+    }
+</script>
 {% endblock %}
