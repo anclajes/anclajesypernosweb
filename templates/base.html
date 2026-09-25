@@ -42,6 +42,26 @@
                 <a href="{{ url_for('auditoria_mis_registros') }}" class="nav-link {{ 'active' if request.endpoint == 'auditoria_mis_registros' }}">
                     <i class="bi bi-clock-history me-2"></i> <span>Mis Registros</span>
                 </a>
+            {% elif session.get('role') == 'almacen_visor' %}
+                <!-- ================================== -->
+                <!-- MENÚ EXCLUSIVO: VISOR DE INVENTARIO (solo lectura) -->
+                <!-- ================================== -->
+                <div class="nav-title">Inventario (solo ver)</div>
+                <a href="{{ url_for('inventario_general') }}" class="nav-link {{ 'active' if request.endpoint == 'inventario_general' }}">
+                    <i class="bi bi-collection me-2"></i> <span>Vista General</span>
+                </a>
+                <a href="{{ url_for('inventario') }}" class="nav-link {{ 'active' if request.endpoint == 'inventario' }}">
+                    <i class="bi bi-circle me-2"></i> <span>Inv. Anclajes</span>
+                </a>
+                <a href="{{ url_for('inventario_importbolts') }}" class="nav-link {{ 'active' if request.endpoint == 'inventario_importbolts' }}">
+                    <i class="bi bi-nut me-2"></i> <span>Inv. ImportBolts</span>
+                </a>
+                <a href="{{ url_for('ver_kardex') }}" class="nav-link {{ 'active' if request.endpoint == 'ver_kardex' }}">
+                    <i class="bi bi-clock-history me-2"></i> <span>Kardex Anclajes</span>
+                </a>
+                <a href="{{ url_for('ver_kardex_importbolts') }}" class="nav-link {{ 'active' if request.endpoint == 'ver_kardex_importbolts' }}">
+                    <i class="bi bi-clock-history me-2"></i> <span>Kardex ImportBolts</span>
+                </a>
             {% else %}
                 <!-- ================================== -->
                 <!-- MENÚ NORMAL (resto de roles)        -->

@@ -69,6 +69,8 @@
                             <span class="badge bg-info text-dark mb-1"><i class="bi bi-box-seam"></i> Almacén</span>
                         {% elif u.role == 'chofer' %}
                             <span class="badge bg-secondary mb-1"><i class="bi bi-truck"></i> Chofer</span>
+                        {% elif u.role == 'almacen_visor' %}
+                            <span class="badge bg-light text-dark border mb-1"><i class="bi bi-eye-fill"></i> Visor Inventario</span>
                         {% endif %}
                         
                         <div class="small text-muted" style="font-size: 0.75rem;">
@@ -179,6 +181,7 @@
                             <option value="chofer">Chofer / Transportista</option>
                             <option value="administracion">Administración</option>
                             <option value="auditor_stock">Auditor de Stock (Conteo Físico)</option>
+                            <option value="almacen_visor">Visor de Inventario (Solo Lectura)</option>
                             <option value="admin">Gerencia Total (Admin)</option>
                         </select>
                         <div id="adminWarning" class="form-text text-warning d-none">

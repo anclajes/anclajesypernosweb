@@ -43,7 +43,22 @@ ROLE_LABELS = {
     'vendedor': 'Vendedor',
     'almacen': 'Almacén',
     'chofer': 'Chofer',
-    'auditor_stock': 'Auditor de Stock'
+    'auditor_stock': 'Auditor de Stock',
+    'almacen_visor': 'Visor de Inventario'  # rol de solo lectura: Inventario (General/Anclajes/ImportBolts) y Kardex
+}
+
+# Rol de solo lectura: puede ENTRAR y buscar/filtrar en el Inventario General, el de Anclajes,
+# el de ImportBolts y sus respectivos Kardex — pero nada de crear, editar, registrar
+# movimientos ni moverse a ninguna otra parte del sistema (ventas, usuarios, etc.).
+# Los botones de crear/editar YA están ocultos en esas plantillas para cualquier rol que no
+# sea 'admin'/'almacen' (listas de roles permitidos, no listas de bloqueo), así que este rol
+# nunca los ve; y aunque alguien intente llamar a esas rutas de edición a mano, este mismo
+# candado las bloquea igual por no estar en la lista de abajo.
+RUTAS_PERMITIDAS_ALMACEN_VISOR = {
+    'index', 'login', 'logout', 'static',
+    'inventario_general', 'inventario', 'inventario_importbolts',
+    'ver_kardex', 'ver_kardex_importbolts',
+    'listar_fotos_producto', 'ver_foto_producto',
 }
 
 def orden_natural_ubicacion(valor):
@@ -445,6 +460,8 @@ def index():
     # ======================================================
     if rol == 'auditor_stock':
         return redirect(url_for('auditoria_inicio'))
+    if rol == 'almacen_visor':
+        return redirect(url_for('inventario_general'))
     if rol in ['admin', 'administracion']:
         # A. KPIs Financieros
         ventas_hoy = db.session.query(func.sum(Order.total)).filter(func.date(Order.fecha) == hoy).scalar() or 0
@@ -1490,6 +1507,21 @@ def login():
             flash('Usuario o contraseña incorrectos')
             
     return render_template('login.html') # Crearemos esto luego
+
+
+@app.before_request
+def _restringir_almacen_visor():
+    """El rol 'almacen_visor' es de SOLO LECTURA: su única vista permitida es el
+    Inventario General (con búsqueda, filtros y ver fotos). Si intenta entrar a
+    cualquier otra ruta (por un link viejo, un bookmark, escribiendo la URL, etc.),
+    lo mandamos de vuelta a esa misma vista en vez de dejarlo pasar."""
+    if session.get('role') == 'almacen_visor' and request.endpoint not in RUTAS_PERMITIDAS_ALMACEN_VISOR:
+        if request.endpoint is None:
+            return  # ruta que no existe: que Flask muestre su 404 normal
+        flash('Tu usuario solo tiene acceso a la vista de Inventario.', 'error')
+        return redirect(url_for('inventario_general'))
+
+
 # 1. ACTUALIZAR CONTEXT PROCESSOR (Para la campana inteligente)
 @app.context_processor
 def inject_notifications():
