@@ -1,24 +1,41 @@
 {% extends "base.html" %}
 
 {% block login_content %}
-<div class="login-wrapper d-flex flex-column align-items-center">
+<div class="login-shell">
 
-    <div class="text-center mb-4 login-brands">
-        <img src="{{ url_for('static', filename='img/logo.png') }}" alt="Anclajes y Pernos SAC" class="login-logo">
-        <span class="login-brands-sep">×</span>
-        <img src="{{ url_for('static', filename='img/logo_import.png') }}" alt="Import Bolts" class="login-logo login-logo-sm">
+    <!-- PANEL IZQUIERDO: MARCA (en celular se convierte en una cabecera compacta arriba del formulario) -->
+    <div class="login-brand-panel">
+        <div class="login-brand-decor"></div>
+        <div class="login-brand-content">
+            <div class="login-logos-card">
+                <img src="{{ url_for('static', filename='img/logo.png') }}" alt="Anclajes y Pernos SAC" class="login-logo-main">
+                <div class="login-logos-divider"></div>
+                <img src="{{ url_for('static', filename='img/logo_import.png') }}" alt="Import Bolts" class="login-logo-secundario">
+            </div>
+
+            <h1 class="login-brand-title">Sistema de Gestión ERP</h1>
+            <p class="login-brand-subtitle">Control total de inventario, ventas y logística en un solo lugar.</p>
+
+            <ul class="login-features list-unstyled">
+                <li><i class="bi bi-boxes"></i> Inventario en tiempo real, sin sorpresas de stock</li>
+                <li><i class="bi bi-graph-up-arrow"></i> Trazabilidad completa de ventas y despachos</li>
+                <li><i class="bi bi-shield-lock-fill"></i> Acceso seguro y controlado por roles</li>
+            </ul>
+        </div>
     </div>
 
-    <div class="card border-0 shadow-lg login-card {{ 'login-shake' if error }}" style="width: 400px; border-radius: 16px;">
-        <div class="card-body p-5">
-            <div class="text-center mb-4">
-                <h4 class="fw-bold text-dark mb-1">ANCLAJES Y PERNOS SAC</h4>
-                <p class="text-muted small mb-0">Sistema de Gestión ERP · Inicia sesión para continuar</p>
+    <!-- PANEL DERECHO: FORMULARIO -->
+    <div class="login-form-panel">
+        <div class="login-form-wrap {{ 'login-shake' if error }}">
+
+            <div class="mb-4">
+                <h2 class="login-welcome">Bienvenido de nuevo</h2>
+                <p class="text-muted mb-0">Ingresa tus credenciales para acceder al sistema.</p>
             </div>
 
             {% if error %}
-            <div class="alert alert-danger d-flex align-items-center gap-2 py-2 small mb-4" role="alert">
-                <i class="bi bi-exclamation-triangle-fill fs-5"></i>
+            <div class="alert alert-danger d-flex align-items-start gap-2 py-2 small mb-4" role="alert">
+                <i class="bi bi-exclamation-triangle-fill fs-5 mt-1"></i>
                 <div>{{ error }}</div>
             </div>
             {% endif %}
@@ -26,20 +43,20 @@
             <form method="POST" id="formLogin" novalidate>
                 <div class="mb-3">
                     <label class="form-label small fw-bold text-muted">USUARIO</label>
-                    <div class="input-group has-validation">
+                    <div class="input-group input-group-lg has-validation">
                         <span class="input-group-text bg-light border-end-0 {{ 'border-danger' if error }}"><i class="bi bi-person text-muted"></i></span>
                         <input type="text" name="username" id="inputLoginUser"
-                               class="form-control bg-light border-start-0 py-2 {{ 'border-danger' if error }}"
+                               class="form-control bg-light border-start-0 {{ 'border-danger' if error }}"
                                placeholder="Ej: admin" value="{{ username_val or '' }}"
                                required autofocus autocomplete="username">
                     </div>
                 </div>
                 <div class="mb-4">
                     <label class="form-label small fw-bold text-muted">CONTRASEÑA</label>
-                    <div class="input-group">
+                    <div class="input-group input-group-lg">
                         <span class="input-group-text bg-light border-end-0 {{ 'border-danger' if error }}"><i class="bi bi-lock text-muted"></i></span>
                         <input type="password" name="password" id="inputLoginPass"
-                               class="form-control bg-light border-start-0 border-end-0 py-2 {{ 'border-danger' if error }}"
+                               class="form-control bg-light border-start-0 border-end-0 {{ 'border-danger' if error }}"
                                placeholder="••••••••" required autocomplete="current-password">
                         <button class="btn btn-light border border-start-0 {{ 'border-danger' if error }} bg-light text-muted" type="button" onclick="toggleLoginPassword()">
                             <i class="bi bi-eye" id="iconLoginEye"></i>
@@ -47,39 +64,171 @@
                     </div>
                 </div>
                 <div class="d-grid">
-                    <button type="submit" class="btn btn-primary py-2 fw-bold" id="btnLoginSubmit">
+                    <button type="submit" class="btn btn-primary btn-lg py-2 fw-bold login-submit-btn" id="btnLoginSubmit">
                         <span id="btnLoginTexto">ACCEDER AL SISTEMA</span>
                         <span id="btnLoginSpinner" class="spinner-border spinner-border-sm ms-2 d-none" role="status" aria-hidden="true"></span>
                     </button>
                 </div>
             </form>
-        </div>
-        <div class="card-footer bg-light text-center py-3 border-0 rounded-bottom-4">
-            <small class="text-muted">© 2026 ANCLAJES Y PERNOS S.A.C. · Import Bolts</small>
+
+            <div class="login-footer-note">
+                <i class="bi bi-shield-check"></i> Conexión protegida · © 2026 ANCLAJES Y PERNOS S.A.C. · Import Bolts
+            </div>
         </div>
     </div>
 </div>
 
 <style>
-    .login-wrapper { width: 100%; padding: 24px 16px; }
+    /* El contenedor de base.html centra con flex; el login ahora ocupa toda la pantalla */
+    .login-shell {
+        display: flex;
+        width: 100%;
+        min-height: 100vh;
+        background: #ffffff;
+    }
 
-    .login-brands { display: flex; align-items: center; justify-content: center; gap: 14px; }
-    .login-logo { max-height: 56px; max-width: 170px; object-fit: contain; }
-    .login-logo-sm { max-height: 40px; opacity: 0.85; }
-    .login-brands-sep { color: #94a3b8; font-size: 1.1rem; font-weight: 300; }
+    /* ---------- PANEL DE MARCA (izquierda en desktop) ---------- */
+    .login-brand-panel {
+        position: relative;
+        flex: 0 0 44%;
+        max-width: 44%;
+        background: linear-gradient(155deg, #0F172A 0%, #1e293b 55%, #0b3a6b 100%);
+        color: #fff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 3rem 2.5rem;
+        overflow: hidden;
+    }
+    .login-brand-decor {
+        position: absolute;
+        inset: 0;
+        background:
+            radial-gradient(circle at 15% 15%, rgba(59,130,246,0.35) 0%, transparent 45%),
+            radial-gradient(circle at 85% 90%, rgba(59,130,246,0.25) 0%, transparent 50%),
+            radial-gradient(circle at 90% 10%, rgba(255,255,255,0.08) 0%, transparent 40%);
+        pointer-events: none;
+    }
+    .login-brand-content {
+        position: relative;
+        z-index: 1;
+        max-width: 440px;
+        animation: loginFadeIn .5s ease;
+    }
 
-    .login-card { animation: loginFadeIn 0.35s ease; }
+    .login-logos-card {
+        display: flex;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 20px;
+        background: rgba(255,255,255,0.97);
+        border-radius: 18px;
+        padding: 22px 28px;
+        margin-bottom: 2.25rem;
+        box-shadow: 0 12px 30px rgba(0,0,0,0.25);
+        width: fit-content;
+    }
+    .login-logo-main { max-height: 78px; max-width: 220px; object-fit: contain; }
+    .login-logos-divider { width: 1px; align-self: stretch; background: #dde3ea; }
+    .login-logo-secundario { max-height: 56px; max-width: 170px; object-fit: contain; opacity: .92; }
+
+    .login-brand-title {
+        font-size: 1.9rem;
+        font-weight: 800;
+        margin-bottom: .6rem;
+        letter-spacing: .2px;
+    }
+    .login-brand-subtitle {
+        color: rgba(255,255,255,0.75);
+        font-size: 1.02rem;
+        margin-bottom: 2.2rem;
+        line-height: 1.5;
+    }
+    .login-features { margin: 0; padding: 0; }
+    .login-features li {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 0;
+        border-top: 1px solid rgba(255,255,255,0.12);
+        color: rgba(255,255,255,0.9);
+        font-size: .95rem;
+    }
+    .login-features li:first-child { border-top: none; }
+    .login-features i {
+        font-size: 1.25rem;
+        color: #60a5fa;
+        flex-shrink: 0;
+        width: 28px;
+        text-align: center;
+    }
+
+    /* ---------- PANEL DEL FORMULARIO (derecha en desktop) ---------- */
+    .login-form-panel {
+        flex: 1 1 56%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 2.5rem 1.5rem;
+        background: #ffffff;
+    }
+    .login-form-wrap {
+        width: 100%;
+        max-width: 420px;
+        animation: loginFadeIn .45s ease .05s both;
+    }
+    .login-welcome {
+        font-weight: 800;
+        color: #0F172A;
+        margin-bottom: .25rem;
+    }
+
+    .login-submit-btn { border-radius: 10px; }
+    .input-group-lg .form-control,
+    .input-group-lg .input-group-text { border-radius: 0; }
+    .input-group-lg { border-radius: 10px; overflow: hidden; }
+
+    .login-footer-note {
+        margin-top: 2rem;
+        text-align: center;
+        font-size: .78rem;
+        color: #94a3b8;
+    }
+    .login-footer-note i { color: #22c55e; margin-right: 4px; }
+
     @keyframes loginFadeIn {
-        from { opacity: 0; transform: translateY(8px); }
+        from { opacity: 0; transform: translateY(10px); }
         to { opacity: 1; transform: translateY(0); }
     }
 
-    .login-shake { animation: loginFadeIn 0.35s ease, loginShake 0.4s ease 0.1s; }
+    .login-shake { animation: loginFadeIn .45s ease, loginShake .4s ease .15s; }
     @keyframes loginShake {
         10%, 90% { transform: translateX(-2px); }
         20%, 80% { transform: translateX(4px); }
         30%, 50%, 70% { transform: translateX(-8px); }
         40%, 60% { transform: translateX(8px); }
+    }
+
+    /* ---------- RESPONSIVE: en celular, el panel de marca se colapsa arriba ---------- */
+    @media (max-width: 991.98px) {
+        .login-shell { flex-direction: column; min-height: 100vh; }
+        .login-brand-panel {
+            flex: 0 0 auto;
+            max-width: 100%;
+            width: 100%;
+            padding: 2.25rem 1.5rem;
+        }
+        .login-logos-card { margin: 0 auto 1.5rem; justify-content: center; }
+        .login-brand-content { text-align: center; max-width: 100%; }
+        .login-brand-title { font-size: 1.5rem; }
+        .login-features { display: none; } /* en celular priorizamos ir directo al formulario */
+        .login-form-panel { flex: 1 1 auto; padding: 2rem 1.25rem 2.5rem; }
+    }
+
+    @media (max-width: 420px) {
+        .login-logos-card { padding: 16px 18px; gap: 14px; }
+        .login-logo-main { max-height: 56px; max-width: 150px; }
+        .login-logo-secundario { max-height: 40px; max-width: 120px; }
     }
 </style>
 
@@ -103,9 +252,9 @@
         const pass = document.getElementById('inputLoginPass').value;
         if (!user || !pass) {
             e.preventDefault();
-            const form = e.target;
-            form.classList.add('login-shake');
-            setTimeout(() => form.classList.remove('login-shake'), 500);
+            const wrap = document.querySelector('.login-form-wrap');
+            wrap.classList.add('login-shake');
+            setTimeout(() => wrap.classList.remove('login-shake'), 500);
             return;
         }
         // Evita doble click / doble envío mientras el servidor valida

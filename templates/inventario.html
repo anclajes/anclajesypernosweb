@@ -286,21 +286,32 @@
                     </div>
                 </div>
                 
-                <div class="col-12 col-md-3">
-                    <select name="categoria" id="filtro_familia" class="form-select" onchange="document.getElementById('formFiltros').submit()">
-                        <option value="todos">-- Todas las Familias --</option>
-                        {% for cat in lista_categorias %}
-                        <option value="{{ cat }}" {% if cat_filtro == cat %}selected{% endif %}>{{ cat }}</option>
-                        {% endfor %}
-                    </select>
+                <div class="col-12 col-md-2">
+                    <input type="text" name="categoria" id="filtro_familia" class="form-control text-uppercase"
+                           list="listFiltroFamilias" placeholder="-- Todas las Familias --"
+                           value="{{ '' if cat_filtro == 'todos' else cat_filtro }}"
+                           oninput="this.value = this.value.toUpperCase()"
+                           onchange="document.getElementById('formFiltros').submit()"
+                           title="Elige de la lista o escribe: se busca por coincidencia, no hace falta el nombre exacto ni elegirla primero.">
+                    <datalist id="listFiltroFamilias">{% for cat in lista_categorias %}<option value="{{ cat }}">{% endfor %}</datalist>
                 </div>
 
                 <div class="col-6 col-md-2">
-                    <select name="calidad" id="filtro_calidad" class="form-select" onchange="document.getElementById('formFiltros').submit()">
-                        <option value="todos">-- Calidad --</option>
-                        {% for cal in lista_calidades %}
-                        <option value="{{ cal }}" {% if calidad_filtro == cal %}selected{% endif %}>{{ cal }}</option>
-                        {% endfor %}
+                    <input type="text" name="calidad" id="filtro_calidad" class="form-control text-uppercase"
+                           list="listFiltroCalidades" placeholder="-- Calidad --"
+                           value="{{ '' if calidad_filtro == 'todos' else calidad_filtro }}"
+                           oninput="this.value = this.value.toUpperCase()"
+                           onchange="document.getElementById('formFiltros').submit()"
+                           title="Elige de la lista o escribe: se busca por coincidencia, no hace falta el nombre exacto ni elegirla primero.">
+                    <datalist id="listFiltroCalidades">{% for cal in lista_calidades %}<option value="{{ cal }}">{% endfor %}</datalist>
+                </div>
+
+                <div class="col-6 col-md-2">
+                    <select name="orden" class="form-select" onchange="document.getElementById('formFiltros').submit()">
+                        <option value="sku" {% if orden == 'sku' %}selected{% endif %}>Ordenar: Código</option>
+                        <option value="nombre" {% if orden == 'nombre' %}selected{% endif %}>Ordenar: Descripción (A-Z)</option>
+                        <option value="stock_asc" {% if orden == 'stock_asc' %}selected{% endif %}>Stock (menor a mayor)</option>
+                        <option value="stock_desc" {% if orden == 'stock_desc' %}selected{% endif %}>Stock (mayor a menor)</option>
                     </select>
                 </div>
 
@@ -1083,12 +1094,9 @@
             event.target.removeAttribute('tabindex');
         });
 
-        // 2. LA LÓGICA DE FILTROS (¡NO BORRAR!)
-        // Esto asegura que si ya elegiste familia, se carguen sus calidades
-        const familiaActual = document.getElementById('filtro_familia').value;
-        if(familiaActual && familiaActual !== 'todos') {
-            cargarCalidadesFiltroMain(false); 
-        }
+        // Nota: antes aquí se recargaba por AJAX la lista de Calidad según la Familia elegida.
+        // Ya no hace falta: el servidor ahora entrega ambas listas (Familia y Calidad) ya
+        // cruzadas entre sí en cada carga de la página (ver inventario() en app.py).
     });
 
 
@@ -1589,48 +1597,6 @@ function renombrarFamilia(nombreViejo) {
                     } else {
                         Swal.fire('Error', data.msg, 'error').then(() => modalInstance.show()); // Si falla, reabrimos modal
                     }
-                });
-            }
-        });
-    }
-
-    // --- CORRECCIÓN FINAL: FILTRO PRINCIPAL (submit inmediato + carga lazy) ---
-    function cargarCalidadesFiltroMain(shouldSubmit = true) {
-        const familia = document.getElementById('filtro_familia').value;
-        const selectCalidad = document.getElementById('filtro_calidad');
-        
-        // 1. Si el usuario cambió la familia, enviamos form de una para filtrar rápido
-        if (shouldSubmit) {
-            document.getElementById('formFiltros').submit();
-            return; 
-        }
-
-        // 2. Si estamos en carga inicial (shouldSubmit=false), cargamos las opciones
-        // PERO respetamos la opción que ya viene seleccionada desde el servidor (Jinja)
-        const calidadSeleccionada = "{{ calidad_filtro }}"; // Valor actual desde Flask
-
-        let formData = new FormData();
-        formData.append('familia', familia);
-
-        fetch('/api/calidades_de_familia', { method: 'POST', body: formData })
-        .then(r => r.json())
-        .then(data => {
-            // Guardamos la selección actual para restaurarla si existe en la nueva lista
-            const currentVal = selectCalidad.value;
-            selectCalidad.innerHTML = '';
-            
-            // Opción base
-            let optDef = document.createElement('option');
-            optDef.value = 'todos'; optDef.text = '-- Calidad --';
-            if(calidadSeleccionada === 'todos') optDef.selected = true;
-            selectCalidad.appendChild(optDef);
-
-            if (data.status === 'success') {
-                data.calidades.forEach(cal => {
-                    let opt = document.createElement('option');
-                    opt.value = cal; opt.text = cal;
-                    if (cal === calidadSeleccionada) opt.selected = true;
-                    selectCalidad.appendChild(opt);
                 });
             }
         });

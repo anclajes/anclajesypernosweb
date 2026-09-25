@@ -18,7 +18,7 @@ from werkzeug.utils import secure_filename
 from models import SystemConfig
 from num2words import num2words
 from sqlalchemy import text
-from sqlalchemy import or_, func, text, extract, String
+from sqlalchemy import or_, and_, func, text, extract, String
 from flask_migrate import Migrate
 from botocore.client import Config
 import os
@@ -2139,21 +2139,54 @@ def logout():
     session.clear()
     return redirect(url_for('login'))
 
+# =========================================================================================
+# BÚSQUEDA FLEXIBLE DE INVENTARIO (código/descripción por palabras, sin exigir orden ni frase exacta)
+# =========================================================================================
+
+def _filtro_busqueda_flexible(texto_busqueda, *columnas):
+    """Antes: 'perno 304' NO encontraba 'PERNO HEX. INOX. 304' porque se buscaba la frase
+    completa tal cual, en orden, como una sola cadena (LIKE '%perno 304%').
+    Ahora: partimos la búsqueda en palabras y exigimos que TODAS aparezcan (en cualquier
+    orden, en cualquiera de las columnas dadas), no que la frase completa coincida exacta.
+    Con esto 'perno 304' SÍ encuentra 'PERNO HEX. INOX. 304' porque contiene ambas palabras."""
+    palabras = [p for p in texto_busqueda.strip().split() if p]
+    if not palabras:
+        return None
+    condiciones_por_palabra = []
+    for palabra in palabras:
+        condiciones_por_palabra.append(or_(*[col.ilike(f"%{palabra}%") for col in columnas]))
+    return and_(*condiciones_por_palabra)
+
+
+def _orden_productos_lista(resultados, orden):
+    """Ordena una lista de dicts de producto (usada en Inventario General, que combina
+    dos tablas en memoria). 'codigo' (por SKU) es el orden predeterminado del sistema."""
+    if orden == 'nombre':
+        resultados.sort(key=lambda x: (x['nombre'] or '').upper())
+    elif orden == 'stock_asc':
+        resultados.sort(key=lambda x: x['stock'])
+    elif orden == 'stock_desc':
+        resultados.sort(key=lambda x: x['stock'], reverse=True)
+    else:  # 'sku' / codigo -> predeterminado
+        resultados.sort(key=lambda x: (x['sku'] or '').upper())
+
+
 # 1. ACTUALIZAR RUTA INVENTARIO (Para ver categorías nuevas vacías)
 # --- RUTA INVENTARIO (CORREGIDA) ---
 # --- RUTA INVENTARIO (CORREGIDA CON REGISTRO GLOBAL) ---
 @app.route('/inventario')
 def inventario():
     if session.get('user_id') is None: return redirect(url_for('login'))
-    
+
     # 1. Parámetros
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 20, type=int)
     search = request.args.get('busqueda', '')
-    cat_filtro = request.args.get('categoria', 'todos')
-    calidad_filtro = request.args.get('calidad', 'todos')
+    cat_filtro = request.args.get('categoria', 'todos').strip() or 'todos'
+    calidad_filtro = request.args.get('calidad', 'todos').strip() or 'todos'
     stock_bajo = request.args.get('stock_bajo') # Recibe 'on' o None
     estado_activo = request.args.get('estado_activo', 'activos')  # activos | inactivos | todos
+    orden = request.args.get('orden', 'sku')  # sku (código) es el predeterminado
 
     # 2. Query Base
     query = Product.query
@@ -2170,24 +2203,57 @@ def inventario():
             query = query.filter(Product.activo.is_(False))
         # si es 'todos', no se filtra por activo
 
-    if search:
-        query = query.filter(or_(Product.nombre.ilike(f"%{search}%"), Product.sku.ilike(f"%{search}%")))
-    
+    # --- BÚSQUEDA FLEXIBLE: coincide aunque las palabras no estén en el mismo orden
+    # ni sean una frase exacta (ej: "perno 304" encuentra "PERNO HEX. INOX. 304") ---
+    filtro_busqueda = _filtro_busqueda_flexible(search, Product.nombre, Product.sku) if search else None
+    if filtro_busqueda is not None:
+        query = query.filter(filtro_busqueda)
+
+    # --- FILTROS FLEXIBLES: no exigen orden entre sí. Además de elegir de la lista,
+    # se puede escribir directamente (coincidencia parcial, no exige el texto exacto) ---
     if cat_filtro != 'todos':
-        query = query.filter(Product.categoria == cat_filtro)
+        query = query.filter(Product.categoria.ilike(f"%{cat_filtro}%"))
 
     if calidad_filtro != 'todos':
-        query = query.filter(Product.calidad == calidad_filtro)
+        query = query.filter(Product.calidad.ilike(f"%{calidad_filtro}%"))
 
     # --- CORRECCIÓN CRÍTICA ---
     if stock_bajo == 'on':
         query = query.filter(Product.stock_actual <= Product.stock_minimo)
 
-    # Listas para los selects
+    # --- LISTAS DE SUGERENCIAS CRUZADAS: cada una se recalcula según lo que YA está
+    # elegido en la otra, así no hace falta seguir un orden (elegir calidad primero
+    # ya limita qué familias aparecen, y viceversa) ---
+    base_familias = Product.query
+    base_calidades = Product.query
+    if not puede_ver_inactivos:
+        base_familias = base_familias.filter(Product.activo.is_(True))
+        base_calidades = base_calidades.filter(Product.activo.is_(True))
+    elif estado_activo == 'activos':
+        base_familias = base_familias.filter(Product.activo.is_(True))
+        base_calidades = base_calidades.filter(Product.activo.is_(True))
+    elif estado_activo == 'inactivos':
+        base_familias = base_familias.filter(Product.activo.is_(False))
+        base_calidades = base_calidades.filter(Product.activo.is_(False))
+
+    if calidad_filtro != 'todos':
+        base_familias = base_familias.filter(Product.calidad.ilike(f"%{calidad_filtro}%"))
+    if cat_filtro != 'todos':
+        base_calidades = base_calidades.filter(Product.categoria.ilike(f"%{cat_filtro}%"))
+
+    familias_disponibles = set(c[0] for c in base_familias.with_entities(Product.categoria).distinct().all() if c[0])
+    # Las familias son un catálogo aparte (puede haber familias vacías); mostramos
+    # todas las familias del catálogo, pero si hay calidad elegida, solo las que sí tienen productos con esa calidad
     cats_db = Category.query.order_by(Category.nombre).all()
-    lista_categorias = [c.nombre for c in cats_db]
-    calidades = db.session.query(Product.calidad).distinct().order_by(Product.calidad).all()
-    lista_calidades = [c[0] for c in calidades if c[0]]
+    if calidad_filtro != 'todos':
+        lista_categorias = [c.nombre for c in cats_db if c.nombre in familias_disponibles]
+    else:
+        lista_categorias = [c.nombre for c in cats_db]
+
+    calidades_q = base_calidades.with_entities(Product.calidad).filter(
+        Product.calidad.isnot(None), Product.calidad != ''
+    ).distinct().order_by(Product.calidad).all()
+    lista_calidades = [c[0] for c in calidades_q]
 
     # --- NUEVO: OBTENER ESTADOS ÚNICOS PARA EL AUTOCOMPLETADO ---
     estados = db.session.query(Product.estado).filter(Product.estado != None, Product.estado != '').distinct().order_by(Product.estado).all()
@@ -2196,28 +2262,35 @@ def inventario():
     # Ordenar y Paginar
     if stock_bajo == 'on':
         query = query.order_by(Product.stock_actual.asc())
-    else:
-        query = query.order_by(Product.id.asc())
+    elif orden == 'nombre':
+        query = query.order_by(Product.nombre.asc())
+    elif orden == 'stock_asc':
+        query = query.order_by(Product.stock_actual.asc())
+    elif orden == 'stock_desc':
+        query = query.order_by(Product.stock_actual.desc())
+    else:  # 'sku' (código) -> predeterminado
+        query = query.order_by(Product.sku.asc())
 
     pagination = query.paginate(page=page, per_page=per_page, error_out=False)
     productos = pagination.items
-    
+
     # --- NUEVO: CONSULTA DE ÚLTIMA IMPORTACIÓN MASIVA ---
     info_importacion = SystemConfig.query.get('ultima_importacion')
-    
-    return render_template('inventario.html', 
-                           productos=productos, 
-                           lista_categorias=lista_categorias, 
+
+    return render_template('inventario.html',
+                           productos=productos,
+                           lista_categorias=lista_categorias,
                            lista_calidades=lista_calidades,
                            pagination=pagination,
                            search=search,
                            cat_filtro=cat_filtro,
                            calidad_filtro=calidad_filtro,
-                           stock_bajo=stock_bajo, 
+                           stock_bajo=stock_bajo,
                            limit=per_page,
                            lista_estados=lista_estados,
                            info_importacion=info_importacion,
-                           estado_activo=estado_activo)
+                           estado_activo=estado_activo,
+                           orden=orden)
                            
 
 # --- API: OBTENER SIGUIENTE SKU (Magia Automática) ---
@@ -6079,14 +6152,15 @@ def cancelar_despacho(order_id):
 @app.route('/inventario_importbolts')
 def inventario_importbolts():
     if session.get('user_id') is None: return redirect(url_for('login'))
-    
+
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 20, type=int)
     search = request.args.get('busqueda', '')
-    cat_filtro = request.args.get('categoria', 'todos')
-    calidad_filtro = request.args.get('calidad', 'todos')
+    cat_filtro = request.args.get('categoria', 'todos').strip() or 'todos'
+    calidad_filtro = request.args.get('calidad', 'todos').strip() or 'todos'
     stock_bajo = request.args.get('stock_bajo')
     estado_activo = request.args.get('estado_activo', 'activos')
+    orden = request.args.get('orden', 'sku')  # sku (código) es el predeterminado
 
     query = ProductImportBolts.query
 
@@ -6101,45 +6175,82 @@ def inventario_importbolts():
         elif estado_activo == 'inactivos':
             query = query.filter(ProductImportBolts.activo.is_(False))
 
-    if search:
-        query = query.filter(or_(ProductImportBolts.nombre.ilike(f"%{search}%"), ProductImportBolts.sku.ilike(f"%{search}%")))
+    # --- BÚSQUEDA FLEXIBLE por palabras (ver _filtro_busqueda_flexible) ---
+    filtro_busqueda = _filtro_busqueda_flexible(search, ProductImportBolts.nombre, ProductImportBolts.sku) if search else None
+    if filtro_busqueda is not None:
+        query = query.filter(filtro_busqueda)
+
+    # --- FILTROS FLEXIBLES: sin orden fijo, y con coincidencia parcial para admitir texto libre ---
     if cat_filtro != 'todos':
-        query = query.filter(ProductImportBolts.categoria == cat_filtro)
+        query = query.filter(ProductImportBolts.categoria.ilike(f"%{cat_filtro}%"))
     if calidad_filtro != 'todos':
-        query = query.filter(ProductImportBolts.calidad == calidad_filtro)
+        query = query.filter(ProductImportBolts.calidad.ilike(f"%{calidad_filtro}%"))
     if stock_bajo == 'on':
         query = query.filter(ProductImportBolts.stock_actual <= ProductImportBolts.stock_minimo)
 
+    # --- LISTAS DE SUGERENCIAS CRUZADAS (familia <-> calidad), igual que en Anclajes ---
+    base_familias = ProductImportBolts.query
+    base_calidades = ProductImportBolts.query
+    if not puede_ver_inactivos:
+        base_familias = base_familias.filter(ProductImportBolts.activo.is_(True))
+        base_calidades = base_calidades.filter(ProductImportBolts.activo.is_(True))
+    elif estado_activo == 'activos':
+        base_familias = base_familias.filter(ProductImportBolts.activo.is_(True))
+        base_calidades = base_calidades.filter(ProductImportBolts.activo.is_(True))
+    elif estado_activo == 'inactivos':
+        base_familias = base_familias.filter(ProductImportBolts.activo.is_(False))
+        base_calidades = base_calidades.filter(ProductImportBolts.activo.is_(False))
+
+    if calidad_filtro != 'todos':
+        base_familias = base_familias.filter(ProductImportBolts.calidad.ilike(f"%{calidad_filtro}%"))
+    if cat_filtro != 'todos':
+        base_calidades = base_calidades.filter(ProductImportBolts.categoria.ilike(f"%{cat_filtro}%"))
+
+    familias_disponibles = set(c[0] for c in base_familias.with_entities(ProductImportBolts.categoria).distinct().all() if c[0])
     cats_db = CategoryImportBolts.query.order_by(CategoryImportBolts.nombre).all()
-    lista_categorias = [c.nombre for c in cats_db]
-    calidades = db.session.query(ProductImportBolts.calidad).distinct().order_by(ProductImportBolts.calidad).all()
-    lista_calidades = [c[0] for c in calidades if c[0]]
+    if calidad_filtro != 'todos':
+        lista_categorias = [c.nombre for c in cats_db if c.nombre in familias_disponibles]
+    else:
+        lista_categorias = [c.nombre for c in cats_db]
+
+    calidades_q = base_calidades.with_entities(ProductImportBolts.calidad).filter(
+        ProductImportBolts.calidad.isnot(None), ProductImportBolts.calidad != ''
+    ).distinct().order_by(ProductImportBolts.calidad).all()
+    lista_calidades = [c[0] for c in calidades_q]
+
     estados = db.session.query(ProductImportBolts.estado).filter(ProductImportBolts.estado != None, ProductImportBolts.estado != '').distinct().order_by(ProductImportBolts.estado).all()
     lista_estados = [e[0] for e in estados]
 
     if stock_bajo == 'on':
         query = query.order_by(ProductImportBolts.stock_actual.asc())
-    else:
-        query = query.order_by(ProductImportBolts.id.asc())
+    elif orden == 'nombre':
+        query = query.order_by(ProductImportBolts.nombre.asc())
+    elif orden == 'stock_asc':
+        query = query.order_by(ProductImportBolts.stock_actual.asc())
+    elif orden == 'stock_desc':
+        query = query.order_by(ProductImportBolts.stock_actual.desc())
+    else:  # 'sku' (código) -> predeterminado
+        query = query.order_by(ProductImportBolts.sku.asc())
 
     pagination = query.paginate(page=page, per_page=per_page, error_out=False)
     productos = pagination.items
-    
+
     info_importacion = SystemConfig.query.get('ultima_importacion_importbolts')
-    
-    return render_template('inventario_importbolts.html', 
-                           productos=productos, 
-                           lista_categorias=lista_categorias, 
+
+    return render_template('inventario_importbolts.html',
+                           productos=productos,
+                           lista_categorias=lista_categorias,
                            lista_calidades=lista_calidades,
                            pagination=pagination,
                            search=search,
                            cat_filtro=cat_filtro,
                            calidad_filtro=calidad_filtro,
-                           stock_bajo=stock_bajo, 
+                           stock_bajo=stock_bajo,
                            limit=per_page,
                            lista_estados=lista_estados,
                            info_importacion=info_importacion,
-                           estado_activo=estado_activo)
+                           estado_activo=estado_activo,
+                           orden=orden)
     
 
 @app.route('/producto_importbolts/ajustar_stock', methods=['POST'])
@@ -7007,10 +7118,10 @@ def inventario_general():
 
     busqueda = request.args.get('busqueda', '').strip()
     origen_filtro = request.args.get('origen', 'todos')
-    categoria_filtro = request.args.get('categoria', 'todos')
-    calidad_filtro = request.args.get('calidad', 'todos')
+    categoria_filtro = request.args.get('categoria', 'todos').strip() or 'todos'
+    calidad_filtro = request.args.get('calidad', 'todos').strip() or 'todos'
     stock_bajo = request.args.get('stock_bajo')
-    orden = request.args.get('orden', 'nombre')
+    orden = request.args.get('orden', 'sku')  # código es el orden predeterminado
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 30, type=int)
     estado_activo = request.args.get('estado_activo', 'activos')
@@ -7031,7 +7142,9 @@ def inventario_general():
         else:
             q = q.filter(Product.activo.is_(True))
         if busqueda:
-            q = q.filter(or_(Product.nombre.ilike(f"%{busqueda}%"), Product.sku.ilike(f"%{busqueda}%")))
+            filtro_busqueda = _filtro_busqueda_flexible(busqueda, Product.nombre, Product.sku)
+            if filtro_busqueda is not None:
+                q = q.filter(filtro_busqueda)
         for p in q.all():
             resultados.append({
                 'id': p.id, 'sku': p.sku, 'nombre': p.nombre, 'categoria': p.categoria, 'calidad': p.calidad,
@@ -7054,7 +7167,9 @@ def inventario_general():
         else:
             q2 = q2.filter(ProductImportBolts.activo.is_(True))
         if busqueda:
-            q2 = q2.filter(or_(ProductImportBolts.nombre.ilike(f"%{busqueda}%"), ProductImportBolts.sku.ilike(f"%{busqueda}%")))
+            filtro_busqueda2 = _filtro_busqueda_flexible(busqueda, ProductImportBolts.nombre, ProductImportBolts.sku)
+            if filtro_busqueda2 is not None:
+                q2 = q2.filter(filtro_busqueda2)
         for p in q2.all():
             resultados.append({
                 'id': p.id, 'sku': p.sku, 'nombre': p.nombre, 'categoria': p.categoria, 'calidad': p.calidad,
@@ -7067,23 +7182,23 @@ def inventario_general():
                 'edicion_manual_por': p.ultima_edicion_manual_por
             })
 
-    # Filtro por categoría y calidad (ya combinados, aplicado sobre la lista en memoria)
+    # Filtro por categoría (familia) y calidad, FLEXIBLES entre sí (no exigen orden) y con
+    # coincidencia parcial: además de elegir de la lista, se puede escribir texto libre.
+    resultados_sin_categoria = resultados  # base para calcular calidades disponibles
+    resultados_sin_calidad = resultados    # base para calcular familias disponibles
     if categoria_filtro != 'todos':
-        resultados = [r for r in resultados if r['categoria'] == categoria_filtro]
+        cf = categoria_filtro.upper()
+        resultados_sin_calidad = [r for r in resultados if cf in (r['categoria'] or '').upper()]
+        resultados = resultados_sin_calidad
     if calidad_filtro != 'todos':
-        resultados = [r for r in resultados if r['calidad'] == calidad_filtro]
+        qf = calidad_filtro.upper()
+        resultados_sin_categoria = [r for r in resultados_sin_categoria if qf in (r['calidad'] or '').upper()]
+        resultados = [r for r in resultados if qf in (r['calidad'] or '').upper()]
     if stock_bajo == 'on':
         resultados = [r for r in resultados if r['stock'] <= r['stock_min']]
 
-    # Ordenamiento
-    if orden == 'sku':
-        resultados.sort(key=lambda x: x['sku'])
-    elif orden == 'stock_asc':
-        resultados.sort(key=lambda x: x['stock'])
-    elif orden == 'stock_desc':
-        resultados.sort(key=lambda x: x['stock'], reverse=True)
-    else:
-        resultados.sort(key=lambda x: x['nombre'])
+    # Ordenamiento (código/SKU es el predeterminado)
+    _orden_productos_lista(resultados, orden)
 
     total = len(resultados)
     inicio = (page - 1) * per_page
@@ -7095,39 +7210,31 @@ def inventario_general():
 
     # --- LISTAS DE FILTROS DEPENDIENTES DEL ORIGEN SELECCIONADO ---
     if origen_filtro == 'ANCLAJES':
-        lista_categorias = [c.nombre for c in Category.query
+        catalogo_categorias = [c.nombre for c in Category.query
                              .filter(Category.nombre != 'TRASLADO IMPORTBOLTS')
                              .order_by(Category.nombre).all()]
-        calidades_q = db.session.query(Product.calidad).filter(
-            Product.es_shadow_importbolts.isnot(True), Product.calidad.isnot(None), Product.calidad != ''
-        ).distinct().order_by(Product.calidad).all()
-        lista_calidades = [c[0] for c in calidades_q]
-
     elif origen_filtro == 'IMPORTBOLTS':
-        lista_categorias = [c.nombre for c in CategoryImportBolts.query.order_by(CategoryImportBolts.nombre).all()]
-        calidades_q = db.session.query(ProductImportBolts.calidad).filter(
-            ProductImportBolts.calidad.isnot(None), ProductImportBolts.calidad != ''
-        ).distinct().order_by(ProductImportBolts.calidad).all()
-        lista_calidades = [c[0] for c in calidades_q]
-
+        catalogo_categorias = [c.nombre for c in CategoryImportBolts.query.order_by(CategoryImportBolts.nombre).all()]
     else:  # 'todos' -> combinado de ambos inventarios
         cats_anc = [c.nombre for c in Category.query.filter(Category.nombre != 'TRASLADO IMPORTBOLTS').all()]
         cats_ib = [c.nombre for c in CategoryImportBolts.query.all()]
-        lista_categorias = sorted(set(cats_anc + cats_ib))
+        catalogo_categorias = sorted(set(cats_anc + cats_ib))
 
-        cal_anc = [c[0] for c in db.session.query(Product.calidad).filter(
-            Product.es_shadow_importbolts.isnot(True), Product.calidad.isnot(None), Product.calidad != ''
-        ).distinct().all()]
-        cal_ib = [c[0] for c in db.session.query(ProductImportBolts.calidad).filter(
-            ProductImportBolts.calidad.isnot(None), ProductImportBolts.calidad != ''
-        ).distinct().all()]
-        lista_calidades = sorted(set(cal_anc + cal_ib))
+    # --- FLEXIBILIDAD: cada lista de sugerencias se recalcula según lo YA elegido en la
+    # otra (calidad o familia), sin importar cuál se eligió primero. Si eliges Calidad sin
+    # tocar Familia, aquí se ve qué familias tienen esa calidad (y viceversa). ---
+    familias_con_datos = set((r['categoria'] or '') for r in resultados_sin_categoria if r['categoria'])
+    calidades_con_datos = sorted(set((r['calidad'] or '') for r in resultados_sin_calidad if r['calidad']))
 
-    # Si la categoría/calidad seleccionada ya no existe en la nueva lista (cambio de origen), resetear
-    if categoria_filtro not in lista_categorias and categoria_filtro != 'todos':
-        categoria_filtro = 'todos'
-    if calidad_filtro not in lista_calidades and calidad_filtro != 'todos':
-        calidad_filtro = 'todos'
+    if calidad_filtro != 'todos':
+        lista_categorias = [c for c in catalogo_categorias if c in familias_con_datos]
+    else:
+        lista_categorias = catalogo_categorias
+    lista_calidades = calidades_con_datos
+
+    # Si lo escrito/elegido ya no tiene ninguna coincidencia posible (ej. cambiaste de
+    # origen y esa familia no existe ahí), no lo borramos — el usuario puede estar escribiendo
+    # texto libre a propósito — solo evitamos que rompa la página.
 
     return render_template('inventario_general.html',
                            productos=pagina_actual,
