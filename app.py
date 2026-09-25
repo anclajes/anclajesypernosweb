@@ -411,6 +411,18 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = 'tesis_secreta_123'
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024
 
+
+@app.errorhandler(413)
+def _archivo_demasiado_grande(e):
+    """Mensaje amigable cuando un archivo supera el límite permitido (fotos: 5MB,
+    respaldo de restauración: 200MB), en vez de la página de error genérica del navegador."""
+    if request.path.startswith('/admin/reset_sistema/restaurar'):
+        flash('El archivo es demasiado grande (máximo 200MB). Si tu respaldo pesa más que '
+              'eso, avísame para subir aún más el límite.', 'error')
+        return redirect(url_for('admin_reset_sistema_restaurar'))
+    flash('El archivo que intentaste subir es demasiado grande (máximo 5MB).', 'error')
+    return redirect(request.referrer or url_for('index'))
+
 # --- CONFIGURACIÓN DE AMAZON S3 ---
 # Usamos .strip() para limpiar cualquier espacio invisible o salto de línea
 AWS_ACCESS_KEY_ID = os.environ.get('AWS_ACCESS_KEY_ID', '').strip()
@@ -1490,13 +1502,16 @@ def calidades_de_familia():
     
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    error = None
+    username_val = ''
     if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
-        
+        username_val = request.form.get('username', '').strip()
+        username = username_val.lower()  # el usuario se guarda en minúsculas al crearlo
+        password = request.form.get('password', '')
+
         user = User.query.filter_by(username=username).first()
-        
-        if user and check_password_hash(user.password, password):
+
+        if user and password and check_password_hash(user.password, password):
             session['user_id'] = user.id
             session['role'] = user.role
             session['username'] = user.username
@@ -1504,9 +1519,9 @@ def login():
             session['es_superadmin'] = bool(getattr(user, 'es_superadmin', False))
             return redirect(url_for('index'))
         else:
-            flash('Usuario o contraseña incorrectos')
-            
-    return render_template('login.html') # Crearemos esto luego
+            error = 'Usuario o contraseña incorrectos. Revisa mayúsculas, espacios y que Bloq Mayús esté apagado.'
+
+    return render_template('login.html', error=error, username_val=username_val)
 
 
 @app.before_request
@@ -9245,7 +9260,7 @@ def admin_reset_sistema_respaldo():
     if not _es_superadmin():
         return "Acceso denegado", 403
     backup = _generar_backup_completo_json()
-    buffer = io.BytesIO(json.dumps(backup, ensure_ascii=False, indent=2, default=str).encode('utf-8'))
+    buffer = io.BytesIO(json.dumps(backup, ensure_ascii=False, default=str).encode('utf-8'))
     buffer.seek(0)
     nombre_archivo = f"respaldo_antes_de_borrar_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
     return send_file(buffer, as_attachment=True, download_name=nombre_archivo, mimetype='application/json')
@@ -9267,7 +9282,7 @@ def admin_reset_sistema_ejecutar():
     try:
         # 1. Respaldo de TODO el sistema ANTES de borrar nada, y lo guardamos en el servidor
         backup = _generar_backup_completo_json()
-        backup_bytes = json.dumps(backup, ensure_ascii=False, indent=2, default=str).encode('utf-8')
+        backup_bytes = json.dumps(backup, ensure_ascii=False, default=str).encode('utf-8')
 
         carpeta_backups = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'backups_reset')
         os.makedirs(carpeta_backups, exist_ok=True)
@@ -9330,6 +9345,11 @@ def admin_reset_sistema_restaurar():
 
     if request.method == 'GET':
         return render_template('admin_reset_sistema_restaurar.html')
+
+    # El límite global de subida (MAX_CONTENT_LENGTH, 5MB) existe para proteger las
+    # rutas de fotos de productos. Un respaldo completo del sistema puede pesar más
+    # que eso, así que SOLO para esta ruta permitimos archivos más grandes (hasta 200MB).
+    request.max_content_length = 200 * 1024 * 1024
 
     archivo = request.files.get('archivo_backup')
     if not archivo or archivo.filename == '':

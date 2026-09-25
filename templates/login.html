@@ -1,40 +1,117 @@
 {% extends "base.html" %}
 
 {% block login_content %}
-<div class="card border-0 shadow-lg" style="width: 400px; border-radius: 16px;">
-    <div class="card-body p-5">
-        <div class="text-center mb-5">
-            <div class="d-inline-flex align-items-center justify-content-center bg-primary text-white rounded-3 mb-3" style="width: 48px; height: 48px;">
-                <i class="bi bi-box-seam-fill fs-4"></i>
-            </div>
-            <h4 class="fw-bold text-dark">ANCLAJES Y PERNOS SAC</h4>
-            <p class="text-muted small">Inicie sesión en el portal corporativo</p>
-        </div>
+<div class="login-wrapper d-flex flex-column align-items-center">
 
-        <form method="POST">
-            <div class="mb-3">
-                <label class="form-label small fw-bold text-muted">USUARIO</label>
-                <div class="input-group">
-                    <span class="input-group-text bg-light border-end-0"><i class="bi bi-person text-muted"></i></span>
-                    <input type="text" name="username" class="form-control bg-light border-start-0 py-2" placeholder="Ej: admin" required autofocus>
-                </div>
-            </div>
-            <div class="mb-4">
-                <label class="form-label small fw-bold text-muted">CONTRASEÑA</label>
-                <div class="input-group">
-                    <span class="input-group-text bg-light border-end-0"><i class="bi bi-lock text-muted"></i></span>
-                    <input type="password" name="password" class="form-control bg-light border-start-0 py-2" placeholder="••••••••" required>
-                </div>
-            </div>
-            <div class="d-grid">
-                <button type="submit" class="btn btn-primary py-2 fw-bold">
-                    ACCEDER AL SISTEMA
-                </button>
-            </div>
-        </form>
+    <div class="text-center mb-4 login-brands">
+        <img src="{{ url_for('static', filename='img/logo.png') }}" alt="Anclajes y Pernos SAC" class="login-logo">
+        <span class="login-brands-sep">×</span>
+        <img src="{{ url_for('static', filename='img/logo_import.png') }}" alt="Import Bolts" class="login-logo login-logo-sm">
     </div>
-    <div class="card-footer bg-light text-center py-3 border-0 rounded-bottom-4">
-        <small class="text-muted">© 2026 ANCLAJES Y PERNOS S.A.C.</small>
+
+    <div class="card border-0 shadow-lg login-card {{ 'login-shake' if error }}" style="width: 400px; border-radius: 16px;">
+        <div class="card-body p-5">
+            <div class="text-center mb-4">
+                <h4 class="fw-bold text-dark mb-1">ANCLAJES Y PERNOS SAC</h4>
+                <p class="text-muted small mb-0">Sistema de Gestión ERP · Inicia sesión para continuar</p>
+            </div>
+
+            {% if error %}
+            <div class="alert alert-danger d-flex align-items-center gap-2 py-2 small mb-4" role="alert">
+                <i class="bi bi-exclamation-triangle-fill fs-5"></i>
+                <div>{{ error }}</div>
+            </div>
+            {% endif %}
+
+            <form method="POST" id="formLogin" novalidate>
+                <div class="mb-3">
+                    <label class="form-label small fw-bold text-muted">USUARIO</label>
+                    <div class="input-group has-validation">
+                        <span class="input-group-text bg-light border-end-0 {{ 'border-danger' if error }}"><i class="bi bi-person text-muted"></i></span>
+                        <input type="text" name="username" id="inputLoginUser"
+                               class="form-control bg-light border-start-0 py-2 {{ 'border-danger' if error }}"
+                               placeholder="Ej: admin" value="{{ username_val or '' }}"
+                               required autofocus autocomplete="username">
+                    </div>
+                </div>
+                <div class="mb-4">
+                    <label class="form-label small fw-bold text-muted">CONTRASEÑA</label>
+                    <div class="input-group">
+                        <span class="input-group-text bg-light border-end-0 {{ 'border-danger' if error }}"><i class="bi bi-lock text-muted"></i></span>
+                        <input type="password" name="password" id="inputLoginPass"
+                               class="form-control bg-light border-start-0 border-end-0 py-2 {{ 'border-danger' if error }}"
+                               placeholder="••••••••" required autocomplete="current-password">
+                        <button class="btn btn-light border border-start-0 {{ 'border-danger' if error }} bg-light text-muted" type="button" onclick="toggleLoginPassword()">
+                            <i class="bi bi-eye" id="iconLoginEye"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="d-grid">
+                    <button type="submit" class="btn btn-primary py-2 fw-bold" id="btnLoginSubmit">
+                        <span id="btnLoginTexto">ACCEDER AL SISTEMA</span>
+                        <span id="btnLoginSpinner" class="spinner-border spinner-border-sm ms-2 d-none" role="status" aria-hidden="true"></span>
+                    </button>
+                </div>
+            </form>
+        </div>
+        <div class="card-footer bg-light text-center py-3 border-0 rounded-bottom-4">
+            <small class="text-muted">© 2026 ANCLAJES Y PERNOS S.A.C. · Import Bolts</small>
+        </div>
     </div>
 </div>
+
+<style>
+    .login-wrapper { width: 100%; padding: 24px 16px; }
+
+    .login-brands { display: flex; align-items: center; justify-content: center; gap: 14px; }
+    .login-logo { max-height: 56px; max-width: 170px; object-fit: contain; }
+    .login-logo-sm { max-height: 40px; opacity: 0.85; }
+    .login-brands-sep { color: #94a3b8; font-size: 1.1rem; font-weight: 300; }
+
+    .login-card { animation: loginFadeIn 0.35s ease; }
+    @keyframes loginFadeIn {
+        from { opacity: 0; transform: translateY(8px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    .login-shake { animation: loginFadeIn 0.35s ease, loginShake 0.4s ease 0.1s; }
+    @keyframes loginShake {
+        10%, 90% { transform: translateX(-2px); }
+        20%, 80% { transform: translateX(4px); }
+        30%, 50%, 70% { transform: translateX(-8px); }
+        40%, 60% { transform: translateX(8px); }
+    }
+</style>
+
+<script>
+    function toggleLoginPassword() {
+        const input = document.getElementById('inputLoginPass');
+        const icon = document.getElementById('iconLoginEye');
+        if (input.type === 'password') {
+            input.type = 'text';
+            icon.classList.remove('bi-eye');
+            icon.classList.add('bi-eye-slash');
+        } else {
+            input.type = 'password';
+            icon.classList.remove('bi-eye-slash');
+            icon.classList.add('bi-eye');
+        }
+    }
+
+    document.getElementById('formLogin').addEventListener('submit', function (e) {
+        const user = document.getElementById('inputLoginUser').value.trim();
+        const pass = document.getElementById('inputLoginPass').value;
+        if (!user || !pass) {
+            e.preventDefault();
+            const form = e.target;
+            form.classList.add('login-shake');
+            setTimeout(() => form.classList.remove('login-shake'), 500);
+            return;
+        }
+        // Evita doble click / doble envío mientras el servidor valida
+        document.getElementById('btnLoginSubmit').disabled = true;
+        document.getElementById('btnLoginTexto').textContent = 'VERIFICANDO...';
+        document.getElementById('btnLoginSpinner').classList.remove('d-none');
+    });
+</script>
 {% endblock %}
