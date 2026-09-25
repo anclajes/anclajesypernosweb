@@ -4381,7 +4381,9 @@ def editar_producto():
         prod.estado = estado_val
         prod.peso_kg = float(request.form.get('peso_kg', 0) or 0)
         prod.activo = request.form.get('activo') == '1'
-        
+        prod.ultima_edicion_manual_fecha = hora_peru()
+        prod.ultima_edicion_manual_por = session.get('nombre', 'Sistema')
+
         registrar_log(f"Editó producto {prod.sku}", "bi-pencil-fill", "text-warning")
         
         db.session.commit()
@@ -6263,7 +6265,9 @@ def editar_producto_importbolts():
         prod.estado = estado_val
         prod.peso_kg = float(request.form.get('peso_kg', 0) or 0)
         prod.activo = request.form.get('activo') == '1'
-        
+        prod.ultima_edicion_manual_fecha = hora_peru()
+        prod.ultima_edicion_manual_por = session.get('nombre', 'Sistema')
+
         registrar_log(f"Editó producto ImportBolts {prod.sku}", "bi-pencil-fill", "text-warning")
         db.session.commit()
         flash('✅ Producto actualizado correctamente.')
@@ -6908,7 +6912,9 @@ def inventario_general():
                 'peso_kg': p.peso_kg or 0, 'origen': 'ANCLAJES', 'activo': p.activo,
                 'ultimo_ajuste_fecha': p.ultimo_ajuste_auditoria_fecha,
                 'ultimo_ajuste_por': p.ultimo_ajuste_auditoria_por,
-                'ultimo_ajuste_conteo_por': p.ultimo_ajuste_auditoria_conteo_por
+                'ultimo_ajuste_conteo_por': p.ultimo_ajuste_auditoria_conteo_por,
+                'edicion_manual_fecha': p.ultima_edicion_manual_fecha,
+                'edicion_manual_por': p.ultima_edicion_manual_por
             })
 
     if origen_filtro in ['todos', 'IMPORTBOLTS']:
@@ -6929,7 +6935,9 @@ def inventario_general():
                 'peso_kg': p.peso_kg or 0, 'origen': 'IMPORTBOLTS', 'activo': p.activo,
                 'ultimo_ajuste_fecha': p.ultimo_ajuste_auditoria_fecha,
                 'ultimo_ajuste_por': p.ultimo_ajuste_auditoria_por,
-                'ultimo_ajuste_conteo_por': p.ultimo_ajuste_auditoria_conteo_por
+                'ultimo_ajuste_conteo_por': p.ultimo_ajuste_auditoria_conteo_por,
+                'edicion_manual_fecha': p.ultima_edicion_manual_fecha,
+                'edicion_manual_por': p.ultima_edicion_manual_por
             })
 
     # Filtro por categoría y calidad (ya combinados, aplicado sobre la lista en memoria)
@@ -8866,6 +8874,345 @@ def fix_auditoria_periodos_fotos():
     except Exception as e:
         db.session.rollback()
         return f"<h2>Error: {str(e)}</h2>"
+
+
+@app.route('/fix_edicion_manual_2026')
+def fix_edicion_manual():
+    """Agrega las columnas de 'edición manual' (quién y cuándo editó un producto vía Editar
+    Información) a product y product_importbolts. Visitar UNA vez después de desplegar."""
+    if session.get('role') != 'admin':
+        return "Acceso denegado", 403
+    try:
+        with db.engine.connect() as conn:
+            conn.execute(text("ALTER TABLE product ADD COLUMN IF NOT EXISTS ultima_edicion_manual_fecha TIMESTAMP"))
+            conn.execute(text("ALTER TABLE product ADD COLUMN IF NOT EXISTS ultima_edicion_manual_por VARCHAR(100)"))
+            conn.execute(text("ALTER TABLE product_importbolts ADD COLUMN IF NOT EXISTS ultima_edicion_manual_fecha TIMESTAMP"))
+            conn.execute(text("ALTER TABLE product_importbolts ADD COLUMN IF NOT EXISTS ultima_edicion_manual_por VARCHAR(100)"))
+            conn.commit()
+        return "<h2>✅ Columnas de edición manual agregadas correctamente.</h2>"
+    except Exception as e:
+        db.session.rollback()
+        return f"<h2>Error: {str(e)}</h2>"
+
+# ======================================================
+# DASHBOARDS DE VENTAS POR TONELADAS (Anclajes / ImportBolts / General)
+# Se basan en Order + OrderDetail (NO en el texto de motivo del Kardex),
+# filtrando Order.estado == 'Entregado' -> es el momento del despacho físico
+# real (salida de almacén confirmada), que es el evento que representa una
+# "venta" de verdad para efectos de este reporte.
+# ======================================================
+MESES_CORTOS_TON = ['', 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
+ESTADO_VENTA_REAL_TON = 'Entregado'
+
+
+def _join_producto_ton(empresa):
+    """Devuelve (ModeloProducto, condición_de_join) según la empresa."""
+    if empresa == 'IMPORTBOLTS':
+        return ProductImportBolts, (OrderDetail.product_id_importbolts == ProductImportBolts.id)
+    return Product, (OrderDetail.product_id == Product.id)
+
+
+def _query_lineas_ton(empresa, f_ini=None, f_fin=None):
+    """Líneas de detalle de pedidos REALMENTE despachados (Entregado) de la empresa
+    indicada. Solo item_type='PRODUCTO' (Fabricación/GLB no tienen peso propio)."""
+    ProductModel, join_cond = _join_producto_ton(empresa)
+    q = db.session.query(
+        OrderDetail.cantidad.label('cantidad'),
+        (OrderDetail.cantidad * ProductModel.peso_kg).label('peso_total'),
+        Order.id.label('order_id'),
+        Order.fecha.label('fecha'),
+        Order.cliente_id.label('cliente_id'),
+        ProductModel.id.label('producto_id'),
+        ProductModel.nombre.label('producto_nombre'),
+        ProductModel.sku.label('producto_sku'),
+        ProductModel.categoria.label('producto_categoria'),
+    ).select_from(OrderDetail) \
+     .join(Order, Order.id == OrderDetail.order_id) \
+     .join(ProductModel, join_cond) \
+     .filter(
+        Order.estado == ESTADO_VENTA_REAL_TON,
+        OrderDetail.origen_inventario == empresa,
+        OrderDetail.item_type == 'PRODUCTO'
+     )
+    if f_ini is not None and f_fin is not None:
+        q = q.filter(Order.fecha.between(f_ini, f_fin))
+    return q
+
+
+def _construir_ctx_dashboard_ton(empresa, request):
+    """Arma todo el contexto (KPIs, series de gráficos y tablas) del dashboard de
+    toneladas de una empresa ('ANCLAJES' o 'IMPORTBOLTS')."""
+    hoy = hora_peru().date()
+    ahora = hora_peru()
+
+    # --- Filtro de fechas (por defecto: últimos 90 días) ---
+    fecha_inicio_str = request.args.get('fecha_inicio')
+    fecha_fin_str = request.args.get('fecha_fin')
+    if fecha_inicio_str and fecha_fin_str:
+        f_ini = datetime.strptime(fecha_inicio_str, '%Y-%m-%d')
+        f_fin = datetime.strptime(fecha_fin_str + " 23:59:59", '%Y-%m-%d %H:%M:%S')
+    else:
+        f_fin = ahora
+        f_ini = f_fin - timedelta(days=90)
+        fecha_inicio_str = f_ini.strftime('%Y-%m-%d')
+        fecha_fin_str = f_fin.strftime('%Y-%m-%d')
+
+    duracion = f_fin - f_ini
+    f_ini_prev = f_ini - duracion
+    f_fin_prev = f_ini
+
+    # --- Ventana fija de 6 meses calendario (para tendencia mensual y tops de producto) ---
+    meses_ventana = []
+    cursor_mes = restar_meses(hoy.replace(day=1), 5)
+    for _ in range(6):
+        meses_ventana.append((cursor_mes.year, cursor_mes.month))
+        cursor_mes = date(cursor_mes.year + 1, 1, 1) if cursor_mes.month == 12 else date(cursor_mes.year, cursor_mes.month + 1, 1)
+    primer_anio, primer_mes = meses_ventana[0]
+    inicio_6m = datetime.combine(date(primer_anio, primer_mes, 1), datetime.min.time())
+    fin_6m = ahora
+
+    lineas_periodo = _query_lineas_ton(empresa, f_ini, f_fin).all()
+    lineas_prev = _query_lineas_ton(empresa, f_ini_prev, f_fin_prev).all()
+    lineas_6m = _query_lineas_ton(empresa, inicio_6m, fin_6m).all()
+
+    def kg(lineas):
+        return sum((l.peso_total or 0) for l in lineas)
+
+    toneladas_periodo = round(kg(lineas_periodo) / 1000, 2)
+    toneladas_prev = round(kg(lineas_prev) / 1000, 2)
+    unidades_periodo = sum(l.cantidad for l in lineas_periodo)
+    pedidos_periodo = len({l.order_id for l in lineas_periodo})
+    peso_promedio_pedido_kg = round((kg(lineas_periodo) / pedidos_periodo), 1) if pedidos_periodo > 0 else 0
+
+    if toneladas_prev > 0:
+        delta_toneladas = round(((toneladas_periodo - toneladas_prev) / toneladas_prev) * 100, 1)
+    else:
+        delta_toneladas = 100.0 if toneladas_periodo > 0 else 0.0
+
+    toneladas_hoy = round(sum((l.peso_total or 0) for l in lineas_6m if l.fecha.date() == hoy) / 1000, 2)
+    toneladas_mes_actual = round(sum((l.peso_total or 0) for l in lineas_6m if l.fecha.year == hoy.year and l.fecha.month == hoy.month) / 1000, 2)
+
+    # --- Evolución mensual (6 meses fijos, con ceros donde no hubo despachos) ---
+    por_mes = {k: 0.0 for k in meses_ventana}
+    for l in lineas_6m:
+        key = (l.fecha.year, l.fecha.month)
+        if key in por_mes:
+            por_mes[key] += (l.peso_total or 0)
+    labels_meses = [f"{MESES_CORTOS_TON[m]} {a}" for (a, m) in meses_ventana]
+    data_meses_ton = [round(por_mes[k] / 1000, 2) for k in meses_ventana]
+
+    # --- Toneladas por día (últimos 30 días, con ceros) ---
+    inicio_30d = hoy - timedelta(days=29)
+    por_dia = {}
+    for l in lineas_6m:
+        d = l.fecha.date()
+        if d >= inicio_30d:
+            por_dia[d] = por_dia.get(d, 0) + (l.peso_total or 0)
+    dias_ordenados = [inicio_30d + timedelta(days=i) for i in range(30)]
+    labels_dias = [d.strftime('%d/%m') for d in dias_ordenados]
+    data_dias_ton = [round(por_dia.get(d, 0) / 1000, 3) for d in dias_ordenados]
+
+    # --- Top productos: MES ACTUAL vs ÚLTIMOS 3 MESES ---
+    def top_productos(lineas_filtradas, limite=8):
+        agg = {}
+        for l in lineas_filtradas:
+            pid = l.producto_id
+            if pid not in agg:
+                agg[pid] = {'nombre': l.producto_nombre, 'sku': l.producto_sku, 'categoria': l.producto_categoria, 'ton': 0.0, 'unid': 0}
+            agg[pid]['ton'] += (l.peso_total or 0) / 1000
+            agg[pid]['unid'] += l.cantidad
+        ordenado = sorted(agg.values(), key=lambda x: x['ton'], reverse=True)[:limite]
+        for r in ordenado:
+            r['ton'] = round(r['ton'], 2)
+        return ordenado
+
+    lineas_mes_actual = [l for l in lineas_6m if l.fecha.year == hoy.year and l.fecha.month == hoy.month]
+    inicio_3m = restar_meses(hoy.replace(day=1), 2)
+    lineas_3meses = [l for l in lineas_6m if l.fecha.date() >= inicio_3m]
+
+    top_productos_mes = top_productos(lineas_mes_actual)
+    top_productos_3m = top_productos(lineas_3meses)
+
+    # --- Top clientes por toneladas (período filtrado) ---
+    agg_cli = {}
+    for l in lineas_periodo:
+        cid = l.cliente_id
+        agg_cli.setdefault(cid, {'ton': 0.0, 'unid': 0, 'pedidos': set()})
+        agg_cli[cid]['ton'] += (l.peso_total or 0) / 1000
+        agg_cli[cid]['unid'] += l.cantidad
+        agg_cli[cid]['pedidos'].add(l.order_id)
+    top_clientes_ids = sorted(agg_cli.keys(), key=lambda cid: agg_cli[cid]['ton'], reverse=True)[:10]
+    clientes_obj = {c.id: c for c in Client.query.filter(Client.id.in_(top_clientes_ids)).all()} if top_clientes_ids else {}
+    top_clientes = []
+    for cid in top_clientes_ids:
+        c = clientes_obj.get(cid)
+        top_clientes.append({
+            'id': cid, 'nombre': c.nombre if c else f'Cliente #{cid}',
+            'ubicacion': (c.distrito or c.provincia or '-') if c else '-',
+            'toneladas': round(agg_cli[cid]['ton'], 2),
+            'unidades': agg_cli[cid]['unid'],
+            'pedidos': len(agg_cli[cid]['pedidos'])
+        })
+
+    # --- Mix por categoría (período filtrado) ---
+    agg_cat = {}
+    for l in lineas_periodo:
+        cat = l.producto_categoria or 'Sin categoría'
+        agg_cat[cat] = agg_cat.get(cat, 0) + (l.peso_total or 0)
+    cat_ordenado = sorted(agg_cat.items(), key=lambda x: x[1], reverse=True)
+    categoria_labels = [c[0] for c in cat_ordenado[:6]]
+    categoria_data = [round(c[1] / 1000, 2) for c in cat_ordenado[:6]]
+    if len(cat_ordenado) > 6:
+        otras = sum(c[1] for c in cat_ordenado[6:])
+        categoria_labels.append('Otras')
+        categoria_data.append(round(otras / 1000, 2))
+    categoria_total_ton = sum(categoria_data) or 1
+    categoria_pct = [round((v / categoria_total_ton) * 100, 1) for v in categoria_data]
+
+    # --- Últimos despachos (tabla) ---
+    agg_pedidos = {}
+    for l in lineas_periodo:
+        agg_pedidos.setdefault(l.order_id, {'fecha': l.fecha, 'cliente_id': l.cliente_id, 'ton': 0.0, 'items': 0})
+        agg_pedidos[l.order_id]['ton'] += (l.peso_total or 0) / 1000
+        agg_pedidos[l.order_id]['items'] += 1
+    ultimos_ids = sorted(agg_pedidos.keys(), key=lambda oid: agg_pedidos[oid]['fecha'], reverse=True)[:10]
+    ids_clientes_ultimos = {agg_pedidos[oid]['cliente_id'] for oid in ultimos_ids}
+    clientes_ultimos = {c.id: c for c in Client.query.filter(Client.id.in_(ids_clientes_ultimos)).all()} if ultimos_ids else {}
+    ultimos_despachos = []
+    for oid in ultimos_ids:
+        info = agg_pedidos[oid]
+        c = clientes_ultimos.get(info['cliente_id'])
+        ultimos_despachos.append({
+            'order_id': oid, 'fecha': info['fecha'],
+            'cliente': c.nombre if c else f'Cliente #{info["cliente_id"]}',
+            'toneladas': round(info['ton'], 3), 'items': info['items']
+        })
+
+    # --- Nuevos clientes: su primera compra Entregada (histórica) cae dentro del período ---
+    primeras_compras = db.session.query(
+        Order.cliente_id, func.min(Order.fecha).label('primera_fecha')
+    ).join(OrderDetail, OrderDetail.order_id == Order.id).filter(
+        Order.estado == ESTADO_VENTA_REAL_TON,
+        OrderDetail.origen_inventario == empresa,
+        OrderDetail.item_type == 'PRODUCTO'
+    ).group_by(Order.cliente_id).all()
+    nuevos_ids = [r.cliente_id for r in primeras_compras if r.primera_fecha and f_ini <= r.primera_fecha <= f_fin]
+    nuevos_clientes_objs = Client.query.filter(Client.id.in_(nuevos_ids)).all() if nuevos_ids else []
+    nuevos_clientes_lista = sorted(
+        [{'nombre': c.nombre, 'ubicacion': c.distrito or c.provincia or '-'} for c in nuevos_clientes_objs],
+        key=lambda x: x['nombre']
+    )[:10]
+
+    return dict(
+        empresa=empresa,
+        fecha_inicio=fecha_inicio_str, fecha_fin=fecha_fin_str,
+        toneladas_periodo=toneladas_periodo, delta_toneladas=delta_toneladas,
+        toneladas_hoy=toneladas_hoy, toneladas_mes_actual=toneladas_mes_actual,
+        unidades_periodo=unidades_periodo, pedidos_periodo=pedidos_periodo,
+        peso_promedio_pedido_kg=peso_promedio_pedido_kg,
+        labels_meses=labels_meses, data_meses_ton=data_meses_ton,
+        labels_dias=labels_dias, data_dias_ton=data_dias_ton,
+        top_productos_mes=top_productos_mes, top_productos_3m=top_productos_3m,
+        top_clientes=top_clientes,
+        categoria_labels=categoria_labels, categoria_data=categoria_data, categoria_pct=categoria_pct,
+        ultimos_despachos=ultimos_despachos,
+        nuevos_clientes_lista=nuevos_clientes_lista, nuevos_clientes_total=len(nuevos_ids),
+        nuevos_clientes_ids=set(nuevos_ids),
+    )
+
+
+def _permiso_dashboard_ton():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    if session.get('role') not in ['admin', 'administracion', 'almacen']:
+        flash('No tienes permiso para ver este panel.', 'danger')
+        return redirect(url_for('index'))
+    return None
+
+
+@app.route('/dashboard/ventas/anclajes')
+def dashboard_ventas_anclajes():
+    redir = _permiso_dashboard_ton()
+    if redir: return redir
+    ctx = _construir_ctx_dashboard_ton('ANCLAJES', request)
+    return render_template('dashboard_ventas_empresa.html', **ctx)
+
+
+@app.route('/dashboard/ventas/importbolts')
+def dashboard_ventas_importbolts():
+    redir = _permiso_dashboard_ton()
+    if redir: return redir
+    ctx = _construir_ctx_dashboard_ton('IMPORTBOLTS', request)
+    return render_template('dashboard_ventas_empresa.html', **ctx)
+
+
+@app.route('/dashboard/ventas/general')
+def dashboard_ventas_general():
+    redir = _permiso_dashboard_ton()
+    if redir: return redir
+    ctx_a = _construir_ctx_dashboard_ton('ANCLAJES', request)
+    ctx_i = _construir_ctx_dashboard_ton('IMPORTBOLTS', request)
+
+    toneladas_periodo_total = round(ctx_a['toneladas_periodo'] + ctx_i['toneladas_periodo'], 2)
+    toneladas_hoy_total = round(ctx_a['toneladas_hoy'] + ctx_i['toneladas_hoy'], 2)
+    toneladas_mes_total = round(ctx_a['toneladas_mes_actual'] + ctx_i['toneladas_mes_actual'], 2)
+    unidades_periodo_total = ctx_a['unidades_periodo'] + ctx_i['unidades_periodo']
+    pedidos_periodo_total = ctx_a['pedidos_periodo'] + ctx_i['pedidos_periodo']
+
+    if toneladas_periodo_total > 0:
+        pct_anclajes = round((ctx_a['toneladas_periodo'] / toneladas_periodo_total) * 100, 1)
+        pct_importbolts = round(100 - pct_anclajes, 1)
+    else:
+        pct_anclajes = pct_importbolts = 0
+
+    # --- Top clientes combinados (mezcla los top-10 de cada empresa y re-ordena) ---
+    combinados_cliente = {}
+    for lst, emp in [(ctx_a['top_clientes'], 'Anclajes'), (ctx_i['top_clientes'], 'ImportBolts')]:
+        for c in lst:
+            reg = combinados_cliente.setdefault(c['id'], {'nombre': c['nombre'], 'ubicacion': c['ubicacion'], 'toneladas': 0.0, 'unidades': 0, 'pedidos': 0, 'empresas': set()})
+            reg['toneladas'] += c['toneladas']
+            reg['unidades'] += c['unidades']
+            reg['pedidos'] += c['pedidos']
+            reg['empresas'].add(emp)
+    top_clientes_general = sorted(combinados_cliente.values(), key=lambda x: x['toneladas'], reverse=True)[:10]
+    for c in top_clientes_general:
+        c['toneladas'] = round(c['toneladas'], 2)
+        c['empresas'] = ' + '.join(sorted(c['empresas']))
+
+    # --- Top productos combinados (top del mes actual de cada empresa) ---
+    productos_general = []
+    for p in ctx_a['top_productos_mes']:
+        productos_general.append({**p, 'empresa': 'Anclajes'})
+    for p in ctx_i['top_productos_mes']:
+        productos_general.append({**p, 'empresa': 'ImportBolts'})
+    productos_general = sorted(productos_general, key=lambda x: x['ton'], reverse=True)[:10]
+
+    # --- Nuevos clientes combinados (unión, sin duplicar al mismo cliente) ---
+    nuevos_ids_union = ctx_a['nuevos_clientes_ids'] | ctx_i['nuevos_clientes_ids']
+    nuevos_clientes_lista_general = sorted(
+        [{'nombre': c.nombre, 'ubicacion': c.distrito or c.provincia or '-'} for c in (Client.query.filter(Client.id.in_(nuevos_ids_union)).all() if nuevos_ids_union else [])],
+        key=lambda x: x['nombre']
+    )[:10]
+
+    return render_template('dashboard_ventas_general.html',
+        fecha_inicio=ctx_a['fecha_inicio'], fecha_fin=ctx_a['fecha_fin'],
+        anclajes=ctx_a, importbolts=ctx_i,
+        toneladas_periodo_total=toneladas_periodo_total,
+        toneladas_hoy_total=toneladas_hoy_total,
+        toneladas_mes_total=toneladas_mes_total,
+        unidades_periodo_total=unidades_periodo_total,
+        pedidos_periodo_total=pedidos_periodo_total,
+        nuevos_clientes_total=len(nuevos_ids_union),
+        pct_anclajes=pct_anclajes, pct_importbolts=pct_importbolts,
+        labels_meses=ctx_a['labels_meses'],
+        data_meses_anclajes=ctx_a['data_meses_ton'], data_meses_importbolts=ctx_i['data_meses_ton'],
+        labels_dias=ctx_a['labels_dias'],
+        data_dias_anclajes=ctx_a['data_dias_ton'], data_dias_importbolts=ctx_i['data_dias_ton'],
+        top_clientes_general=top_clientes_general,
+        productos_general=productos_general,
+        nuevos_clientes_lista_general=nuevos_clientes_lista_general,
+    )
+
 
 # --- ARRANQUE DE LA APLICACIÓN ---
 if __name__ == '__main__':

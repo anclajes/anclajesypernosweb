@@ -4,47 +4,95 @@
 
 {% block content %}
 <style>
+    .periodos-wrap { max-width: 960px; margin: 0 auto; }
+
     .card-periodo {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
         border: none;
         border-radius: 16px;
+        overflow: hidden;
         box-shadow: 0 4px 16px rgba(0,0,0,.08);
         transition: transform .2s ease, box-shadow .2s ease;
-        cursor: pointer;
-        height: 100%;
+        text-decoration: none;
+        background: #fff;
     }
-    .card-periodo:hover { transform: translateY(-4px); box-shadow: 0 12px 28px rgba(0,0,0,.15); }
+    .card-periodo:hover, .card-periodo:focus {
+        transform: translateY(-4px);
+        box-shadow: 0 12px 28px rgba(0,0,0,.15);
+        text-decoration: none;
+    }
     .card-periodo .card-header-periodo {
-        background: #0B3D91; color: #fff; padding: 1rem 1.25rem; border-radius: 16px 16px 0 0;
+        background: #0B3D91;
+        color: #fff;
+        padding: .9rem 1.1rem;
         font-weight: 700;
+        font-size: .95rem;
+        line-height: 1.3;
+        word-break: break-word;
+    }
+    .card-periodo .card-body-periodo {
+        flex: 1 1 auto;
+        display: flex;
+        flex-direction: column;
+        padding: 1rem 1.1rem 1.1rem;
+        color: #212529;
+    }
+    .card-periodo .periodo-meta {
+        flex: 1 1 auto;
+        margin-bottom: .75rem;
+    }
+    .card-periodo .periodo-meta p {
+        margin-bottom: .35rem;
+    }
+    .card-periodo .periodo-footer {
+        margin-top: auto;
+        padding-top: .6rem;
+        border-top: 1px solid #f0f1f3;
+        text-align: right;
+    }
+
+    @media (max-width: 575.98px) {
+        .periodos-wrap { padding: 0 .25rem; }
+        .card-periodo .card-header-periodo { font-size: .9rem; }
     }
 </style>
 
-<div class="d-flex flex-column align-items-center justify-content-center" style="min-height: 60vh;">
-    <h3 class="fw-bold mb-1">Hola, {{ session.get('nombre') }} 👋</h3>
-    <p class="text-muted mb-4">Elige la auditoría activa a la que vas a contribuir</p>
+<div class="d-flex flex-column align-items-center" style="min-height: 60vh; padding-top: 2rem;">
+    <div class="text-center mb-4 px-3">
+        <h3 class="fw-bold mb-1">Hola, {{ session.get('nombre') }} 👋</h3>
+        <p class="text-muted mb-0">Elige la auditoría activa a la que vas a contribuir</p>
+    </div>
 
     {% if periodos %}
-    <div class="row g-4 w-100" style="max-width: 900px;">
-        {% for p in periodos %}
-        <div class="col-12 col-md-6 col-lg-4">
-            <a href="{{ url_for('auditoria_entrar_periodo', periodo_id=p.id) }}" class="card-periodo d-block text-decoration-none">
-                <div class="card-header-periodo">
-                    <i class="bi bi-calendar2-check-fill"></i> {{ p.nombre }}
-                </div>
-                <div class="card-body bg-white" style="border-radius: 0 0 16px 16px;">
-                    {% if p.descripcion %}<p class="small text-muted mb-2">{{ p.descripcion }}</p>{% endif %}
-                    <p class="small text-muted mb-1"><i class="bi bi-play-circle"></i> Abierta desde: {{ p.fecha_creacion.strftime('%d/%m/%Y') }}</p>
-                    {% if p.fecha_cierre_programada %}
-                    <p class="small text-muted mb-0"><i class="bi bi-hourglass-split"></i> Se cerrará automáticamente el {{ p.fecha_cierre_programada.strftime('%d/%m/%Y %H:%M') }}</p>
-                    {% endif %}
-                    <div class="text-end mt-2"><span class="badge bg-success">Activa — Ingresar <i class="bi bi-arrow-right"></i></span></div>
-                </div>
-            </a>
+    <div class="periodos-wrap w-100 px-2">
+        <div class="row g-3 g-md-4 justify-content-center">
+            {% for p in periodos %}
+            <div class="col-12 col-sm-6 col-lg-4 d-flex">
+                <a href="{{ url_for('auditoria_entrar_periodo', periodo_id=p.id) }}" class="card-periodo w-100">
+                    <div class="card-header-periodo">
+                        <i class="bi bi-calendar2-check-fill"></i> {{ p.nombre }}
+                    </div>
+                    <div class="card-body-periodo">
+                        <div class="periodo-meta small text-muted">
+                            {% if p.descripcion %}<p class="text-body">{{ p.descripcion }}</p>{% endif %}
+                            <p><i class="bi bi-play-circle"></i> Abierta desde: {{ p.fecha_creacion.strftime('%d/%m/%Y') }}</p>
+                            {% if p.fecha_cierre_programada %}
+                            <p class="mb-0"><i class="bi bi-hourglass-split"></i> Se cerrará el {{ p.fecha_cierre_programada.strftime('%d/%m/%Y %H:%M') }}</p>
+                            {% endif %}
+                        </div>
+                        <div class="periodo-footer">
+                            <span class="badge bg-success">Activa — Ingresar <i class="bi bi-arrow-right"></i></span>
+                        </div>
+                    </div>
+                </a>
+            </div>
+            {% endfor %}
         </div>
-        {% endfor %}
     </div>
     {% else %}
-    <div class="alert alert-warning text-center" style="max-width: 500px;">
+    <div class="alert alert-warning text-center mx-3" style="max-width: 500px;">
         <i class="bi bi-exclamation-triangle-fill fs-3 d-block mb-2"></i>
         <b>No hay ninguna auditoría activa en este momento.</b><br>
         <span class="small">Contacta al administrador para que abra un nuevo período de auditoría antes de continuar.</span>

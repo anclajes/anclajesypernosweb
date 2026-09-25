@@ -57,6 +57,10 @@ class Product(db.Model):
     ultimo_ajuste_auditoria_por = db.Column(db.String(100), nullable=True)
     ultimo_ajuste_auditoria_conteo_por = db.Column(db.String(100), nullable=True)  # quién hizo el CONTEO físico
 
+    # Edición manual (vía "Editar Información"), separada del ajuste por auditoría
+    ultima_edicion_manual_fecha = db.Column(db.DateTime, nullable=True)
+    ultima_edicion_manual_por = db.Column(db.String(100), nullable=True)
+
 
 # --- 4. KARDEX ---
 class ProductMovement(db.Model):
@@ -417,6 +421,10 @@ class ProductImportBolts(db.Model):
     ultimo_ajuste_auditoria_fecha = db.Column(db.DateTime, nullable=True)
     ultimo_ajuste_auditoria_por = db.Column(db.String(100), nullable=True)
     ultimo_ajuste_auditoria_conteo_por = db.Column(db.String(100), nullable=True)  # quién hizo el CONTEO físico
+
+    # Edición manual (vía "Editar Información"), separada del ajuste por auditoría
+    ultima_edicion_manual_fecha = db.Column(db.DateTime, nullable=True)
+    ultima_edicion_manual_por = db.Column(db.String(100), nullable=True)
 
 class ProductMovementImportBolts(db.Model):
     __tablename__ = 'product_movement_importbolts'

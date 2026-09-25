@@ -122,7 +122,13 @@
         <div class="card-body">
             <div class="form-text mb-2">Máximo 5 fotos, hasta 5MB cada una (JPG, PNG o WEBP).</div>
             <div id="lista_fotos_registro" class="d-flex flex-wrap gap-2 mb-2"></div>
-            <input type="file" id="input_foto_editar" class="form-control" accept="image/jpeg,image/png,image/webp">
+            <div class="d-flex gap-2 flex-wrap">
+                <input type="file" id="input_foto_editar" accept="image/jpeg,image/png,image/webp" class="form-control form-control-sm" style="max-width:220px;">
+                <input type="file" id="input_foto_editar_camara" accept="image/*" capture="environment" class="d-none">
+                <button type="button" class="btn btn-sm btn-outline-primary" onclick="document.getElementById('input_foto_editar_camara').click()">
+                    <i class="bi bi-camera-fill"></i> Tomar Foto
+                </button>
+            </div>
         </div>
     </div>
 </div>
@@ -152,7 +158,35 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!archivo) return;
         subirFotoRegistro(archivo);
     });
+
+    document.getElementById('input_foto_editar_camara').addEventListener('change', function(e) {
+        const archivo = e.target.files[0];
+        e.target.value = '';
+        if (!archivo) return;
+        subirFotoRegistro(archivo);
+    });
 });
+
+function comprimirImagen(archivo, maxWidth = 1200, calidad = 0.8) {
+    return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                let w = img.width, h = img.height;
+                if (w > maxWidth) { h = h * (maxWidth / w); w = maxWidth; }
+                canvas.width = w; canvas.height = h;
+                canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                canvas.toBlob((blob) => resolve(blob || archivo), 'image/jpeg', calidad);
+            };
+            img.onerror = () => resolve(archivo);
+            img.src = e.target.result;
+        };
+        reader.onerror = () => resolve(archivo);
+        reader.readAsDataURL(archivo);
+    });
+}
 
 function cargarFotosRegistro() {
     fetch(`/api/auditoria/registro/${REG_ID}/fotos`).then(r => r.json()).then(data => {
@@ -173,12 +207,15 @@ function cargarFotosRegistro() {
     });
 }
 
-function subirFotoRegistro(archivo) {
+async function subirFotoRegistro(archivo) {
     if (archivo.size > 5 * 1024 * 1024) return Swal.fire('Foto muy pesada', `"${archivo.name}" supera los 5MB.`, 'warning');
-    if (!archivo.type.startsWith('image/')) return Swal.fire('Formato no permitido', `"${archivo.name}" no es una imagen.`, 'warning');
+    if (!archivo.type || !archivo.type.startsWith('image/')) return Swal.fire('Formato no permitido', `"${archivo.name || 'archivo'}" no es una imagen.`, 'warning');
+
+    Swal.fire({ title: 'Subiendo...', didOpen: () => Swal.showLoading(), allowOutsideClick: false });
+    const comprimida = await comprimirImagen(archivo);
 
     const fd = new FormData();
-    fd.append('foto', archivo);
+    fd.append('foto', comprimida, 'foto.jpg');
     fetch(`/api/auditoria/registro/${REG_ID}/subir_foto`, { method: 'POST', body: fd })
         .then(r => r.json())
         .then(data => {

@@ -175,7 +175,13 @@
             </div>
             <div class="card-body">
                 <div class="form-text mb-2">Máximo 5 fotos, hasta 5MB cada una (JPG, PNG o WEBP).</div>
-                <input type="file" id="input_fotos" class="form-control" accept="image/jpeg,image/png,image/webp" multiple>
+                <div class="d-flex gap-2 flex-wrap">
+                    <input type="file" id="input_fotos" accept="image/jpeg,image/png,image/webp" multiple class="form-control form-control-sm" style="max-width:220px;">
+                    <input type="file" id="input_foto_camara" accept="image/*" capture="environment" class="d-none">
+                    <button type="button" class="btn btn-sm btn-outline-primary" onclick="document.getElementById('input_foto_camara').click()">
+                        <i class="bi bi-camera-fill"></i> Tomar Foto
+                    </button>
+                </div>
                 <div id="preview_fotos" class="d-flex flex-wrap gap-2 mt-2"></div>
             </div>
         </div>
@@ -204,26 +210,54 @@ document.addEventListener('DOMContentLoaded', () => {
     cargarCamposPersonalizados();
 
     document.getElementById('input_fotos').addEventListener('change', function(e) {
-        const nuevos = Array.from(e.target.files);
-        for (const archivo of nuevos) {
-            if (fotosSeleccionadas.length >= 5) {
-                Swal.fire({ icon: 'warning', title: 'Máximo 5 fotos', timer: 1800, showConfirmButton: false });
-                break;
-            }
-            if (archivo.size > 5 * 1024 * 1024) {
-                Swal.fire({ icon: 'warning', title: 'Foto muy pesada', text: `"${archivo.name}" supera los 5MB.` });
-                continue;
-            }
-            if (!archivo.type.startsWith('image/')) {
-                Swal.fire({ icon: 'warning', title: 'Formato no permitido', text: `"${archivo.name}" no es una imagen.` });
-                continue;
-            }
-            fotosSeleccionadas.push(archivo);
-        }
+        Array.from(e.target.files).forEach(agregarFotoSeleccionada);
+        e.target.value = '';
+        renderPreviewFotos();
+    });
+
+    document.getElementById('input_foto_camara').addEventListener('change', function(e) {
+        Array.from(e.target.files).forEach(agregarFotoSeleccionada);
         e.target.value = '';
         renderPreviewFotos();
     });
 });
+
+function agregarFotoSeleccionada(archivo) {
+    if (fotosSeleccionadas.length >= 5) {
+        Swal.fire({ icon: 'warning', title: 'Máximo 5 fotos', timer: 1800, showConfirmButton: false });
+        return;
+    }
+    if (archivo.size > 5 * 1024 * 1024) {
+        Swal.fire({ icon: 'warning', title: 'Foto muy pesada', text: `"${archivo.name}" supera los 5MB.` });
+        return;
+    }
+    if (!archivo.type || !archivo.type.startsWith('image/')) {
+        Swal.fire({ icon: 'warning', title: 'Formato no permitido', text: `"${archivo.name || 'archivo'}" no es una imagen.` });
+        return;
+    }
+    fotosSeleccionadas.push(archivo);
+}
+
+function comprimirImagen(archivo, maxWidth = 1200, calidad = 0.8) {
+    return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                let w = img.width, h = img.height;
+                if (w > maxWidth) { h = h * (maxWidth / w); w = maxWidth; }
+                canvas.width = w; canvas.height = h;
+                canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                canvas.toBlob((blob) => resolve(blob || archivo), 'image/jpeg', calidad);
+            };
+            img.onerror = () => resolve(archivo);
+            img.src = e.target.result;
+        };
+        reader.onerror = () => resolve(archivo);
+        reader.readAsDataURL(archivo);
+    });
+}
 
 function renderPreviewFotos() {
     const cont = document.getElementById('preview_fotos');
@@ -348,8 +382,12 @@ function enviarConteo() {
     Swal.fire({
         title: '¿Confirmar envío?', text: 'Una vez enviado, no podrás editar este registro.',
         icon: 'question', showCancelButton: true, confirmButtonText: 'Sí, enviar'
-    }).then(result => {
+    }).then(async result => {
         if (!result.isConfirmed) return;
+
+        if (fotosSeleccionadas.length > 0) {
+            Swal.fire({ title: 'Preparando fotos...', didOpen: () => Swal.showLoading(), allowOutsideClick: false });
+        }
 
         const fd = new FormData();
         fd.append('producto_id', productoId);
@@ -363,7 +401,10 @@ function enviarConteo() {
         fd.append('estado_fisico', estadoFisico);
         fd.append('observaciones', document.getElementById('observaciones').value);
         document.querySelectorAll('#campos_dinamicos [name^="campo_"]').forEach(el => fd.append(el.name, el.value));
-        fotosSeleccionadas.forEach(archivo => fd.append('fotos', archivo));
+        for (const archivo of fotosSeleccionadas) {
+            const comprimida = await comprimirImagen(archivo);
+            fd.append('fotos', comprimida, 'foto.jpg');
+        }
 
         fetch(`/auditoria/${ORIGEN}/guardar`, { method: 'POST', body: fd })
             .then(r => r.json())
