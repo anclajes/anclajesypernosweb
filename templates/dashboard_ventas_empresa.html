@@ -98,7 +98,7 @@
         </div>
     </div>
     <div class="col-6 col-md-4 col-xl-2">
-        <div class="card border-0 shadow-sm h-100 kpi-ton kpi-clickable" onclick="mostrarInfoDato('Ton. Mes Actual', true, '&sum; (cantidad &times; peso nominal) de las Salidas por Venta del <b>mes calendario en curso</b> (1&ordm; del mes hasta hoy).')">
+        <div class="card border-0 shadow-sm h-100 kpi-ton kpi-clickable" onclick="mostrarInfoDato('Ton. Mes Actual', true, 'Sí: es el total de <b>este mes</b> (el mes en el que estamos hoy). El sistema mira la fecha de hoy, identifica el mes calendario actual y suma &sum; (cantidad &times; peso nominal) de todas las Salidas por Venta desde el día 1 de ese mes hasta hoy. El día 1 del próximo mes, este número vuelve a empezar en 0.')">
             <i class="bi bi-info-circle kpi-info-dot"></i>
             <div class="card-body text-center py-3">
                 <div class="text-muted small fw-bold text-uppercase">Ton. Mes Actual</div>
@@ -107,7 +107,7 @@
         </div>
     </div>
     <div class="col-6 col-md-4 col-xl-2">
-        <div class="card border-0 shadow-sm h-100 kpi-ton kpi-clickable" onclick="mostrarInfoDato('Ton. Período', false, '&sum; (cantidad &times; peso nominal) de todas las Salidas por Venta <b>dentro del rango de fechas filtrado</b> ({{ fecha_inicio }} a {{ fecha_fin }}).<hr class=\'my-2\'><b>% vs anterior</b>: compara contra el mismo número de días inmediatamente anterior. Si ese período previo tuvo <b>0 t</b> (como ahora, por ser datos nuevos del Kardex), el sistema muestra <b>100%</b> por convención en vez de un porcentaje real, ya que no hay base de comparación.')">
+        <div class="card border-0 shadow-sm h-100 kpi-ton kpi-clickable" onclick="mostrarInfoDato('Ton. Período', false, '&sum; (cantidad &times; peso nominal) de todas las Salidas por Venta <b>dentro del rango de fechas filtrado</b> ({{ fecha_inicio }} a {{ fecha_fin }}).<hr class=\'my-2\'><b>% vs anterior</b>: toma el mismo número de días de tu rango y compara contra el tramo inmediatamente anterior. Ejemplo: si filtras 3 meses, compara contra los 3 meses justo antes de esos. Si ese período previo tuvo <b>0 t</b> (como ahora, por ser datos nuevos del Kardex), el sistema muestra <b>100%</b> por convención en vez de un porcentaje real, ya que no hay base de comparación.')">
             <i class="bi bi-info-circle kpi-info-dot"></i>
             <div class="card-body text-center py-3">
                 <div class="text-muted small fw-bold text-uppercase">Ton. Período</div>
@@ -139,7 +139,7 @@
         </div>
     </div>
     <div class="col-6 col-md-4 col-xl-2">
-        <div class="card border-0 shadow-sm h-100 kpi-compras kpi-clickable" onclick="mostrarInfoDato('Ingresos por Compras', false, '&sum; (cantidad &times; peso nominal) de las <b>Entradas</b> del Kardex cuyo motivo contiene la palabra "Compra" (p.ej. "Compra Nacional", "Compra Importación"), <b>dentro del rango de fechas filtrado</b>. Es un subconjunto de la tabla "Nuevos Ingresos por Categoría" de más abajo.')">
+        <div class="card border-0 shadow-sm h-100 kpi-compras kpi-clickable" onclick="mostrarInfoDato('Ingresos por Compras', false, '&sum; (cantidad &times; peso nominal) de las <b>Entradas</b> del Kardex cuyo motivo contiene la palabra &quot;Compra&quot; (p.ej. &quot;Compra Nacional&quot;, &quot;Compra Importación&quot;), <b>dentro del rango de fechas filtrado</b>. Es un subconjunto de la tabla &quot;Nuevos Ingresos por Categoría&quot; de más abajo.')">
             <i class="bi bi-info-circle kpi-info-dot"></i>
             <div class="card-body text-center py-3">
                 <div class="text-success small fw-bold text-uppercase"><i class="bi bi-box-arrow-in-down"></i> Ingresos por Compras</div>
@@ -165,7 +165,7 @@
         <div class="card border-0 shadow-sm h-100">
             <div class="card-header bg-white fw-bold card-header-info">
                 <span><i class="bi bi-pie-chart-fill"></i> Mix de Ventas por Categoría (período)</span>
-                <button type="button" class="info-btn" onclick="mostrarInfoDato('Mix de Ventas por Categoría', false, 'Agrupa las Salidas por Venta <b>del período filtrado</b> por categoría de producto y suma &sum; (cantidad &times; peso nominal) de cada una. El % es sobre el total de toneladas del período (se agrupan como "Otras" las categorías fuera del Top 6).<hr class=\'my-2\'><i class=\'bi bi-cursor-fill\'></i> Haz clic en una categoría (en el gráfico o en la lista) para ver esas ventas en el Kardex, ya filtradas por Salida + Venta + esa categoría.')"><i class="bi bi-info-circle"></i></button>
+                <button type="button" class="info-btn" onclick="mostrarInfoDato('Mix de Ventas por Categoría', false, 'Agrupa las Salidas por Venta <b>del período filtrado</b> por categoría de producto y suma &sum; (cantidad &times; peso nominal) de cada una. El % es sobre el total de toneladas del período (se agrupan como &quot;Otras&quot; las categorías fuera del Top 6).<hr class=\'my-2\'><i class=\'bi bi-cursor-fill\'></i> Haz clic en una categoría (en el gráfico o en la lista) para ver esas ventas en el Kardex, ya filtradas por Salida + Venta + esa categoría.')"><i class="bi bi-info-circle"></i></button>
             </div>
             <div class="card-body">
                 <div style="position:relative;height:180px;"><canvas id="chartCategoriaTon"></canvas></div>
@@ -204,7 +204,7 @@
     <div class="card-header bg-white d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-2">
         <span class="fw-bold">
             <i class="bi bi-box-seam"></i> Productos Más Vendidos (por toneladas)
-            <button type="button" class="info-btn" onclick="mostrarInfoDato('Productos Más Vendidos', true, 'Suma &sum; (cantidad &times; peso nominal) por producto, agrupando las Salidas por Venta. Las pestañas "Este Mes" y "Últimos 3 Meses" son <b>ventanas fijas por calendario</b>: no cambian con el filtro de fecha de arriba.')"><i class="bi bi-info-circle"></i></button>
+            <button type="button" class="info-btn" onclick="mostrarInfoDato('Productos Más Vendidos', true, 'Suma &sum; (cantidad &times; peso nominal) por producto, agrupando las Salidas por Venta. Las pestañas &quot;Este Mes&quot; y &quot;Últimos 3 Meses&quot; son <b>ventanas fijas por calendario</b>: no cambian con el filtro de fecha de arriba.')"><i class="bi bi-info-circle"></i></button>
         </span>
         <div class="btn-group btn-group-sm" role="group">
             <button type="button" class="btn btn-outline-secondary toggle-productos active" data-target="mes" onclick="cambiarVistaProductos('mes')">Este Mes</button>
@@ -257,7 +257,7 @@
         <div class="card border-0 shadow-sm h-100">
             <div class="card-header bg-white fw-bold card-header-info">
                 <span><i class="bi bi-people-fill"></i> Toneladas por Cliente / Destino (período)</span>
-                <button type="button" class="info-btn" onclick="mostrarInfoDato('Toneladas por Cliente / Destino', false, 'Agrupa las Salidas por Venta <b>del período filtrado</b> por el campo "Destino / Cliente" que se ingresa en "Movimiento de Stock", sumando &sum; (cantidad &times; peso nominal). Las que no tienen destino especificado aparecen como "Sin especificar".')"><i class="bi bi-info-circle"></i></button>
+                <button type="button" class="info-btn" onclick="mostrarInfoDato('Toneladas por Cliente / Destino', false, 'Agrupa las Salidas por Venta <b>del período filtrado</b> por el campo &quot;Destino / Cliente&quot; que se ingresa en &quot;Movimiento de Stock&quot;, sumando &sum; (cantidad &times; peso nominal). Las que no tienen destino especificado aparecen como &quot;Sin especificar&quot;.')"><i class="bi bi-info-circle"></i></button>
             </div>
             <div class="card-body p-0 table-responsive" style="max-height:360px;overflow-y:auto;">
                 <table class="table table-hover table-sm align-middle mb-0 small">
@@ -312,7 +312,7 @@
 <div class="card border-0 shadow-sm mb-4">
     <div class="card-header bg-white fw-bold text-success card-header-info">
         <span><i class="bi bi-box-arrow-in-down"></i> Nuevos Ingresos por Categoría (período)</span>
-        <button type="button" class="info-btn" onclick="mostrarInfoDato('Nuevos Ingresos por Categoría', false, 'Agrupa las <b>Entradas</b> del Kardex (cualquier motivo: Compras, Devoluciones, Traslados, etc.) <b>dentro del rango de fechas filtrado</b>, por categoría de producto.<hr class=\'my-2\'><b>Toneladas Ingresadas</b> = &sum; (cantidad &times; peso nominal) de cada línea.<br><b>Peso Nom. Prom.</b> = el peso nominal unitario promedio de los productos de esa categoría que ingresaron (toneladas &times; 1000 &divide; unidades) — referencial, ya que una categoría agrupa productos de distinto peso.<br><b>De las cuales, por Compras</b> = el subconjunto cuyo motivo contiene la palabra "Compra" (se resalta porque son las que más importan para reposición de stock).')"><i class="bi bi-info-circle"></i></button>
+        <button type="button" class="info-btn" onclick="mostrarInfoDato('Nuevos Ingresos por Categoría', false, 'Agrupa las <b>Entradas</b> del Kardex (cualquier motivo: Compras, Devoluciones, Traslados, etc.) <b>dentro del rango de fechas filtrado</b>, por categoría de producto.<hr class=\'my-2\'><b>Toneladas Ingresadas</b> = &sum; (cantidad &times; peso nominal) de cada línea.<br><b>Peso Nom. Prom.</b> = el peso nominal unitario promedio de los productos de esa categoría que ingresaron (toneladas &times; 1000 &divide; unidades) — referencial, ya que una categoría agrupa productos de distinto peso.<br><b>De las cuales, por Compras</b> = el subconjunto cuyo motivo contiene la palabra &quot;Compra&quot; (se resalta porque son las que más importan para reposición de stock).')"><i class="bi bi-info-circle"></i></button>
     </div>
     <div class="card-body p-0 table-responsive">
         <table class="table table-hover table-sm align-middle mb-0 small">

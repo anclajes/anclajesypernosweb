@@ -81,7 +81,7 @@
         </div>
     </div>
     <div class="col-6 col-md-4 col-xl-2">
-        <div class="card border-0 shadow-sm h-100 kpi-gen kpi-clickable" onclick="mostrarInfoDato('Ton. Mes Actual', true, '&sum; de las toneladas del mes calendario en curso de <b>ambas empresas</b>.')">
+        <div class="card border-0 shadow-sm h-100 kpi-gen kpi-clickable" onclick="mostrarInfoDato('Ton. Mes Actual', true, 'Sí: es el total de <b>este mes</b> (el mes en el que estamos hoy), de <b>ambas empresas</b>. El sistema mira la fecha de hoy, identifica el mes calendario actual y suma desde el día 1 de ese mes hasta hoy. El día 1 del próximo mes, este número vuelve a empezar en 0.')">
             <i class="bi bi-info-circle kpi-info-dot"></i>
             <div class="card-body text-center py-3">
                 <div class="text-muted small fw-bold text-uppercase">Ton. Mes Actual</div>
@@ -90,7 +90,7 @@
         </div>
     </div>
     <div class="col-6 col-md-4 col-xl-2">
-        <div class="card border-0 shadow-sm h-100 kpi-gen kpi-clickable" onclick="mostrarInfoDato('Ton. Período', false, '&sum; de las toneladas <b>dentro del rango de fechas filtrado</b> ({{ fecha_inicio }} a {{ fecha_fin }}) de ambas empresas. Cada una compara contra su propio período anterior; si ese período previo tuvo 0 t (dato nuevo), esa empresa muestra 100% por convención — ver la tabla \"Resumen Comparativo\" más abajo para el detalle por empresa.')">
+        <div class="card border-0 shadow-sm h-100 kpi-gen kpi-clickable" onclick="mostrarInfoDato('Ton. Período', false, '&sum; de las toneladas <b>dentro del rango de fechas filtrado</b> ({{ fecha_inicio }} a {{ fecha_fin }}) de ambas empresas. Cada empresa compara contra un tramo de la misma duración justo antes de tu rango (ejemplo: si filtras 3 meses, compara contra los 3 meses anteriores). Si ese período previo tuvo 0 t (dato nuevo), esa empresa muestra 100% por convención — ver la tabla &quot;Resumen Comparativo&quot; más abajo para el detalle por empresa.')">
             <i class="bi bi-info-circle kpi-info-dot"></i>
             <div class="card-body text-center py-3">
                 <div class="text-muted small fw-bold text-uppercase">Ton. Período</div>
@@ -117,7 +117,7 @@
         </div>
     </div>
     <div class="col-6 col-md-4 col-xl-2">
-        <div class="card border-0 shadow-sm h-100 kpi-clickable" style="border-left:4px solid #198754 !important;" onclick="mostrarInfoDato('Ingresos (Compras)', false, '&sum; de las Entradas de Kardex cuyo motivo contiene "Compra", <b>dentro del rango de fechas filtrado</b>, de ambas empresas.')">
+        <div class="card border-0 shadow-sm h-100 kpi-clickable" style="border-left:4px solid #198754 !important;" onclick="mostrarInfoDato('Ingresos (Compras)', false, '&sum; de las Entradas de Kardex cuyo motivo contiene &quot;Compra&quot;, <b>dentro del rango de fechas filtrado</b>, de ambas empresas.')">
             <i class="bi bi-info-circle kpi-info-dot"></i>
             <div class="card-body text-center py-3">
                 <div class="text-success small fw-bold text-uppercase"><i class="bi bi-box-arrow-in-down"></i> Ingresos (Compras)</div>
@@ -177,7 +177,7 @@
 <div class="card border-0 shadow-sm mb-3">
     <div class="card-header bg-white fw-bold card-header-info">
         <span><i class="bi bi-table"></i> Resumen Comparativo por Empresa (período)</span>
-        <button type="button" class="info-btn" onclick="mostrarInfoDato('Resumen Comparativo por Empresa', false, 'Toneladas, unidades, movimientos e ingresos por compras de cada empresa <b>dentro del rango de fechas filtrado</b>.<hr class=\'my-2\'><b>Var. vs período anterior</b>: compara contra el mismo número de días inmediatamente anterior, por empresa. Si ese período previo tuvo 0 t (dato nuevo del Kardex), se muestra 100% por convención en vez de un porcentaje real.')"><i class="bi bi-info-circle"></i></button>
+        <button type="button" class="info-btn" onclick="mostrarInfoDato('Resumen Comparativo por Empresa', false, 'Toneladas, unidades, movimientos e ingresos por compras de cada empresa <b>dentro del rango de fechas filtrado</b>.<hr class=\'my-2\'><b>Var. vs período anterior</b>: por cada empresa, toma el mismo número de días de tu rango filtrado y compara contra el tramo inmediatamente anterior (ejemplo: si filtras 3 meses, compara contra los 3 meses justo antes). Si ese período previo tuvo 0 t (dato nuevo del Kardex), se muestra 100% por convención en vez de un porcentaje real.')"><i class="bi bi-info-circle"></i></button>
     </div>
     <div class="card-body p-0 table-responsive">
         <table class="table table-hover align-middle mb-0 small">
@@ -242,7 +242,7 @@
         <div class="card border-0 shadow-sm h-100">
             <div class="card-header bg-white fw-bold card-header-info">
                 <span><i class="bi bi-people-fill"></i> Top Clientes por Toneladas (ambas empresas)</span>
-                <button type="button" class="info-btn" onclick="mostrarInfoDato('Top Clientes por Toneladas', false, 'Clientes/destinos con más toneladas <b>dentro del rango de fechas filtrado</b>, combinando ambas empresas (si un cliente compró a las dos, se suman y se listan ambas en "Empresa(s)").')"><i class="bi bi-info-circle"></i></button>
+                <button type="button" class="info-btn" onclick="mostrarInfoDato('Top Clientes por Toneladas', false, 'Clientes/destinos con más toneladas <b>dentro del rango de fechas filtrado</b>, combinando ambas empresas (si un cliente compró a las dos, se suman y se listan ambas en &quot;Empresa(s)&quot;).')"><i class="bi bi-info-circle"></i></button>
             </div>
             <div class="card-body p-0 table-responsive" style="max-height:360px;overflow-y:auto;">
                 <table class="table table-hover table-sm align-middle mb-0 small">
@@ -270,7 +270,7 @@
 <div class="card border-0 shadow-sm mb-4">
     <div class="card-header bg-white fw-bold text-success card-header-info">
         <span><i class="bi bi-box-arrow-in-down"></i> Nuevos Ingresos por Categoría (ambas empresas, período)</span>
-        <button type="button" class="info-btn" onclick="mostrarInfoDato('Nuevos Ingresos por Categoría', false, 'Entradas del Kardex de ambas empresas <b>dentro del rango de fechas filtrado</b>, agrupadas por categoría.<hr class=\'my-2\'><b>Toneladas</b> = &sum; (cantidad &times; peso nominal) de cada línea.<br><b>Peso Nom. Prom.</b> = peso nominal unitario promedio de esa categoría en esa empresa (toneladas &times; 1000 &divide; unidades) — referencial.<br><b>Por Compras</b> = el subconjunto cuyo motivo contiene la palabra "Compra".')"><i class="bi bi-info-circle"></i></button>
+        <button type="button" class="info-btn" onclick="mostrarInfoDato('Nuevos Ingresos por Categoría', false, 'Entradas del Kardex de ambas empresas <b>dentro del rango de fechas filtrado</b>, agrupadas por categoría.<hr class=\'my-2\'><b>Toneladas</b> = &sum; (cantidad &times; peso nominal) de cada línea.<br><b>Peso Nom. Prom.</b> = peso nominal unitario promedio de esa categoría en esa empresa (toneladas &times; 1000 &divide; unidades) — referencial.<br><b>Por Compras</b> = el subconjunto cuyo motivo contiene la palabra &quot;Compra&quot;.')"><i class="bi bi-info-circle"></i></button>
     </div>
     <div class="card-body p-0 table-responsive">
         <table class="table table-hover table-sm align-middle mb-0 small">
