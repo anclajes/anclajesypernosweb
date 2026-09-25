@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-7">
+        <div class="card shadow border-success">
+            <div class="card-header bg-success text-white">
+                <h4 class="mb-0"><i class="bi bi-check-circle-fill"></i> Respaldo restaurado</h4>
+            </div>
+            <div class="card-body">
+                <p>Esto es lo que se trajo de vuelta:</p>
+                <div class="table-responsive" style="max-height: 320px; overflow-y: auto;">
+                    <table class="table table-sm table-striped">
+                        <thead class="sticky-top bg-white">
+                            <tr><th>Tabla</th><th class="text-end">Restauradas</th><th class="text-end">Ya existían</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for r in resumen %}
+                            <tr>
+                                <td>{{ r.tabla }}</td>
+                                <td class="text-end">{{ r.insertados }}</td>
+                                <td class="text-end text-muted">{{ r.ya_existian }}</td>
+                            </tr>
+                            {% else %}
+                            <tr><td colspan="3" class="text-center text-muted">El archivo no traía filas nuevas para restaurar.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                <div class="mt-4">
+                    <a href="{{ url_for('inventario') }}" class="btn btn-secondary">
+                        <i class="bi bi-box-seam"></i> Ir al Inventario
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

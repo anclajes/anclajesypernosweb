@@ -27,6 +27,10 @@ class User(db.Model):
     celular = db.Column(db.String(20))
     cargo_formal = db.Column(db.String(100)) # NUEVO
     email_empresa = db.Column(db.String(100)) # NUEVO
+    # Acceso superior, INDEPENDIENTE del rol: aparte de ser 'admin', esta cuenta puede además
+    # borrar/restaurar TODO el sistema (ver /admin/reset_sistema). Un admin normal no puede
+    # tocar esas rutas a menos que también tenga esto en True.
+    es_superadmin = db.Column(db.Boolean, default=False, nullable=False)
 
 # --- 3. PRODUCTOS ---
 class Product(db.Model):

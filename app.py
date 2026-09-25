@@ -24,6 +24,7 @@ from botocore.client import Config
 import os
 import io
 import json
+import secrets
 import subprocess
 import tempfile
 import requests
@@ -409,6 +410,11 @@ s3_client = boto3.client(
     region_name=AWS_REGION,
     config=Config(signature_version='s3v4')
 )
+
+# Token secreto para el backup automático (lo llama un Cron Job externo, no una persona logueada).
+# Configúralo como variable de entorno en Render: BACKUP_CRON_TOKEN=<algo largo y random>.
+# Si no está configurado, la ruta de backup automático queda desactivada por seguridad.
+BACKUP_CRON_TOKEN = os.environ.get('BACKUP_CRON_TOKEN', '').strip()
 
 # Carpeta EXCLUSIVA para Órdenes de Compra locales (Pre-AWS)
 app.config['UPLOAD_FOLDER_OC'] = os.path.join(os.getcwd(), 'uploads_oc')
@@ -1478,6 +1484,7 @@ def login():
             session['role'] = user.role
             session['username'] = user.username
             session['nombre'] = user.nombre_completo
+            session['es_superadmin'] = bool(getattr(user, 'es_superadmin', False))
             return redirect(url_for('index'))
         else:
             flash('Usuario o contraseña incorrectos')
@@ -2299,7 +2306,12 @@ def guardar_usuario():
     celular = request.form.get('celular', '').strip()
     cargo = request.form.get('cargo_formal', '').strip().upper()
     email = request.form.get('email_empresa', '').strip().lower()
-    
+
+    # Acceso superior (borrar/restaurar TODO el sistema): es un checkbox aparte del rol.
+    # Solo alguien que YA es superadmin puede otorgar o quitar esto — si el formulario viene
+    # de alguien que no lo es, se ignora en silencio (no se toca ese campo).
+    es_superadmin_solicitado = request.form.get('es_superadmin') == 'on'
+
     try:
         # 2. VALIDACIONES DE NEGOCIO (BACKEND)
         
@@ -2328,7 +2340,9 @@ def guardar_usuario():
             usuario.celular = celular
             usuario.cargo_formal = cargo
             usuario.email_empresa = email
-            
+            if _es_superadmin():
+                usuario.es_superadmin = es_superadmin_solicitado
+
             if password:
                 usuario.password = generate_password_hash(password)
                 flash(f'✅ Perfil de {nombres} actualizado con nueva contraseña.')
@@ -2341,13 +2355,14 @@ def guardar_usuario():
                 return redirect(url_for('gestion_usuarios'))
                 
             nuevo = User(
-                username=username, 
-                nombre_completo=nombre_final, 
-                password=generate_password_hash(password), 
-                role=rol, 
+                username=username,
+                nombre_completo=nombre_final,
+                password=generate_password_hash(password),
+                role=rol,
                 celular=celular,
-                cargo_formal=cargo, 
-                email_empresa=email
+                cargo_formal=cargo,
+                email_empresa=email,
+                es_superadmin=(es_superadmin_solicitado if _es_superadmin() else False)
             )
             db.session.add(nuevo)
             flash(f'✅ Usuario "{username}" creado exitosamente.')
@@ -8959,19 +8974,58 @@ def fix_edicion_manual():
         db.session.rollback()
         return f"<h2>Error: {str(e)}</h2>"
 
+
+@app.route('/fix_superadmin_columna_2026')
+def fix_superadmin_columna():
+    """Agrega la columna es_superadmin a User y te la activa a ti (el admin que visita esta
+    URL). Visitar UNA vez después de desplegar este cambio, SIN cerrar sesión antes — si cierras
+    sesión y tratas de volver a entrar antes de correr esto, el login fallará porque la tabla
+    todavía no tiene esta columna que el código ya espera."""
+    if session.get('role') != 'admin':
+        return "Acceso denegado", 403
+    try:
+        with db.engine.connect() as conn:
+            conn.execute(text('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS es_superadmin BOOLEAN NOT NULL DEFAULT FALSE'))
+            conn.commit()
+
+        yo = User.query.get(session.get('user_id'))
+        if yo:
+            yo.es_superadmin = True
+            db.session.commit()
+            session['es_superadmin'] = True
+
+        return ("<h2>✅ Columna es_superadmin agregada. Tu cuenta (" + (yo.username if yo else '?') +
+                ") ya tiene acceso superior activado. Ya puedes entrar a /admin/reset_sistema.</h2>")
+    except Exception as e:
+        db.session.rollback()
+        return f"<h2>Error: {str(e)}</h2>"
+
+
 # ======================================================
-# RESET DE DATOS DE PRUEBA (Zona de Peligro — solo admin)
+# RESET DE DATOS DE PRUEBA + BACKUPS / RESTAURAR (Zona de Peligro — solo superadmin)
 # Borra TODO lo transaccional (inventario, kardex, ventas/cotizaciones,
 # clientes, proveedores, categorías) y TODOS los usuarios excepto el que
 # ejecuta la acción, para dejar el sistema listo para importar datos reales.
 # Se conservan los catálogos de configuración (MotivoMovimiento, Presentacion,
 # CatalogoValor, CampoPersonalizado/Opcion, SystemConfig) porque no son datos
 # de prueba, son configuración del sistema.
-# Antes de borrar, genera SIEMPRE un respaldo JSON completo (se puede
-# descargar aparte, y además queda guardado en el servidor).
+# Antes de borrar, genera SIEMPRE un respaldo JSON de TODO el sistema (no solo
+# lo que se borra), y ese mismo respaldo se puede volver a subir para
+# restaurar todo tal cual estaba (ver admin_reset_sistema_restaurar).
+# Además hay una ruta de backup automático (con token, sin sesión) pensada
+# para que un Cron Job externo la llame periódicamente y guarde el respaldo
+# en S3, sin que nadie tenga que entrar a la app.
 # ======================================================
 
-# Orden de borrado: los hijos primero, para no romper llaves foráneas.
+def _es_superadmin():
+    """El acceso a borrar/restaurar TODO el sistema es independiente del rol 'admin':
+    hace falta además tener la bandera es_superadmin (ver /fix_superadmin_columna_2026)."""
+    return session.get('role') == 'admin' and bool(session.get('es_superadmin'))
+
+
+# Orden de borrado del RESET (los hijos primero, para no romper llaves foráneas).
+# Los catálogos de configuración (motivo_movimiento, presentacion, catalogo_valor,
+# campo_personalizado/opcion, system_config) NO están aquí a propósito: no se borran.
 TABLAS_RESET_ORDEN = [
     ('registro_auditoria_foto', RegistroAuditoriaFoto),
     ('registro_auditoria_valor_extra', RegistroAuditoriaValorExtra),
@@ -8999,6 +9053,42 @@ TABLAS_RESET_ORDEN = [
     ('category_importbolts', CategoryImportBolts),
 ]
 
+# Orden de TODAS las tablas del sistema, de padres a hijos (para exportar/restaurar
+# el 100% de los datos — incluye también lo que el reset NUNCA borra).
+TABLAS_TODAS_ORDEN = [
+    ('user', User),
+    ('motivo_movimiento', MotivoMovimiento),
+    ('presentacion', Presentacion),
+    ('system_config', SystemConfig),
+    ('catalogo_valor', CatalogoValor),
+    ('campo_personalizado', CampoPersonalizado),
+    ('campo_personalizado_opcion', CampoPersonalizadoOpcion),
+    ('category', Category),
+    ('category_importbolts', CategoryImportBolts),
+    ('proveedor', Proveedor),
+    ('product', Product),
+    ('product_importbolts', ProductImportBolts),
+    ('client', Client),
+    ('client_contact', ClientContact),
+    ('client_contact_log', ClientContactLog),
+    ('client_rubro_vendedor', ClientRubroVendedor),
+    ('order', Order),
+    ('order_detail', OrderDetail),
+    ('payment', Payment),
+    ('intercompany_transfer', IntercompanyTransfer),
+    ('order_kit_component', OrderKitComponent),
+    ('product_movement', ProductMovement),
+    ('product_movement_importbolts', ProductMovementImportBolts),
+    ('product_image', ProductImage),
+    ('meta_vendedor', MetaVendedor),
+    ('audit_log', AuditLog),
+    ('periodo_auditoria', PeriodoAuditoria),
+    ('registro_auditoria', RegistroAuditoria),
+    ('registro_auditoria_foto', RegistroAuditoriaFoto),
+    ('registro_auditoria_valor_extra', RegistroAuditoriaValorExtra),
+    ('registro_auditoria_log', RegistroAuditoriaLog),
+]
+
 
 def _fila_a_dict(obj):
     """Convierte una fila de SQLAlchemy a un dict serializable en JSON."""
@@ -9012,7 +9102,7 @@ def _fila_a_dict(obj):
 
 
 def _contar_datos_reset():
-    """Cuenta cuántos registros hay hoy en cada tabla que se va a borrar."""
+    """Cuenta cuántos registros hay hoy en cada tabla que el RESET va a borrar."""
     admin_id_actual = session.get('user_id')
     conteos = [{'tabla': nombre, 'cantidad': modelo.query.count()} for nombre, modelo in TABLAS_RESET_ORDEN]
     otros_usuarios = User.query.filter(User.id != admin_id_actual).count()
@@ -9020,26 +9110,97 @@ def _contar_datos_reset():
     return conteos
 
 
-def _generar_backup_reset_json():
-    """Genera el respaldo completo (en memoria) de todo lo que el reset va a borrar."""
-    admin_id_actual = session.get('user_id')
+def _generar_backup_completo_json():
+    """Respaldo de TODO el sistema (todas las tablas, sin excepciones). Se usa para: el
+    respaldo automático antes de un reset, la descarga manual 'backup completo', y el
+    backup automático por Cron. El mismo formato sirve para restaurar después."""
     backup = {
+        'version': 1,
         'generado_en': datetime.now().isoformat(),
         'generado_por_username': session.get('username'),
-        'generado_por_user_id': admin_id_actual,
+        'generado_por_user_id': session.get('user_id'),
         'tablas': {}
     }
-    for nombre, modelo in TABLAS_RESET_ORDEN:
+    for nombre, modelo in TABLAS_TODAS_ORDEN:
         backup['tablas'][nombre] = [_fila_a_dict(obj) for obj in modelo.query.all()]
-    otros_usuarios = User.query.filter(User.id != admin_id_actual).all()
-    backup['tablas']['user_otras_cuentas'] = [_fila_a_dict(u) for u in otros_usuarios]
     return backup
+
+
+def _restaurar_backup(datos_backup):
+    """Restaura un respaldo generado por _generar_backup_completo_json(). Por seguridad,
+    en cada tabla SOLO inserta las filas cuyo ID todavía no existe (nunca pisa ni duplica
+    una fila que ya está ahí) — así se puede usar tanto después de un reset (para traer de
+    vuelta todo) como, sin ningún riesgo, para 'completar' datos que ya existen."""
+    tablas_backup = datos_backup.get('tablas')
+    if not isinstance(tablas_backup, dict):
+        raise ValueError("El archivo no tiene el formato esperado (falta la clave 'tablas').")
+
+    resumen = []
+    for nombre_tabla, modelo in TABLAS_TODAS_ORDEN:
+        filas_backup = tablas_backup.get(nombre_tabla)
+        if not filas_backup:
+            continue
+
+        pk_col = list(modelo.__table__.primary_key.columns)[0].name
+        columnas_modelo = {c.name: c for c in modelo.__table__.columns}
+        existentes = {fila[0] for fila in db.session.query(getattr(modelo, pk_col)).all()}
+
+        insertados, ya_existian = 0, 0
+        for fila_dict in filas_backup:
+            valor_pk = fila_dict.get(pk_col)
+            if valor_pk in existentes:
+                ya_existian += 1
+                continue
+
+            datos_fila = {}
+            for nombre_col, valor in fila_dict.items():
+                col = columnas_modelo.get(nombre_col)
+                if col is not None and valor is not None:
+                    try:
+                        tipo_py = col.type.python_type
+                        if tipo_py is datetime and isinstance(valor, str):
+                            valor = datetime.fromisoformat(valor)
+                        elif tipo_py is date and isinstance(valor, str):
+                            valor = date.fromisoformat(valor)
+                    except NotImplementedError:
+                        pass
+                datos_fila[nombre_col] = valor
+
+            db.session.add(modelo(**datos_fila))
+            existentes.add(valor_pk)
+            insertados += 1
+
+        db.session.flush()
+
+        # Reacomodar la secuencia de autoincremento (solo aplica a PK entera tipo serial,
+        # como 'id' — SystemConfig usa 'key' como PK y no entra aquí).
+        if pk_col == 'id':
+            max_id = db.session.query(func.max(getattr(modelo, pk_col))).scalar()
+            db.session.execute(
+                text("SELECT setval(pg_get_serial_sequence(:tabla, 'id'), :val)"),
+                {'tabla': modelo.__tablename__, 'val': max_id or 1}
+            )
+
+        resumen.append({'tabla': nombre_tabla, 'insertados': insertados, 'ya_existian': ya_existian})
+
+    return resumen
+
+
+def _podar_backups_automaticos_s3(prefijo, mantener=30):
+    """Borra de S3 los backups automáticos más viejos, dejando solo los últimos `mantener`."""
+    try:
+        objetos = s3_client.list_objects_v2(Bucket=S3_BUCKET_NAME, Prefix=prefijo).get('Contents', [])
+        objetos.sort(key=lambda o: o['LastModified'], reverse=True)
+        for viejo in objetos[mantener:]:
+            s3_client.delete_object(Bucket=S3_BUCKET_NAME, Key=viejo['Key'])
+    except Exception:
+        pass  # la poda es solo limpieza; si falla, no debe tumbar el backup que sí se generó
 
 
 @app.route('/admin/reset_sistema')
 def admin_reset_sistema():
     """Página de confirmación: muestra qué se va a borrar antes de tocar nada."""
-    if session.get('role') != 'admin':
+    if not _es_superadmin():
         return "Acceso denegado", 403
     conteos = _contar_datos_reset()
     total = sum(c['cantidad'] for c in conteos)
@@ -9049,9 +9210,9 @@ def admin_reset_sistema():
 @app.route('/admin/reset_sistema/respaldo')
 def admin_reset_sistema_respaldo():
     """Descarga el respaldo JSON completo SIN borrar nada. Se puede pedir las veces que quieras."""
-    if session.get('role') != 'admin':
+    if not _es_superadmin():
         return "Acceso denegado", 403
-    backup = _generar_backup_reset_json()
+    backup = _generar_backup_completo_json()
     buffer = io.BytesIO(json.dumps(backup, ensure_ascii=False, indent=2, default=str).encode('utf-8'))
     buffer.seek(0)
     nombre_archivo = f"respaldo_antes_de_borrar_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
@@ -9061,7 +9222,7 @@ def admin_reset_sistema_respaldo():
 @app.route('/admin/reset_sistema/ejecutar', methods=['POST'])
 def admin_reset_sistema_ejecutar():
     """Ejecuta el borrado real. Requiere escribir la frase exacta de confirmación."""
-    if session.get('role') != 'admin':
+    if not _es_superadmin():
         return "Acceso denegado", 403
 
     confirmacion = (request.form.get('confirmacion') or '').strip()
@@ -9072,8 +9233,8 @@ def admin_reset_sistema_ejecutar():
     admin_id_actual = session.get('user_id')
 
     try:
-        # 1. Respaldo completo ANTES de borrar nada, y lo guardamos en el servidor
-        backup = _generar_backup_reset_json()
+        # 1. Respaldo de TODO el sistema ANTES de borrar nada, y lo guardamos en el servidor
+        backup = _generar_backup_completo_json()
         backup_bytes = json.dumps(backup, ensure_ascii=False, indent=2, default=str).encode('utf-8')
 
         carpeta_backups = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'backups_reset')
@@ -9107,7 +9268,7 @@ def admin_reset_sistema_ejecutar():
 
 @app.route('/admin/reset_sistema/completado')
 def admin_reset_sistema_completado():
-    if session.get('role') != 'admin':
+    if not _es_superadmin():
         return "Acceso denegado", 403
     archivo = request.args.get('archivo', '')
     return render_template('admin_reset_sistema_completado.html', archivo=archivo)
@@ -9116,7 +9277,7 @@ def admin_reset_sistema_completado():
 @app.route('/admin/reset_sistema/descargar/<path:nombre_archivo>')
 def admin_reset_sistema_descargar(nombre_archivo):
     """Descarga un respaldo YA GENERADO que quedó guardado en el servidor."""
-    if session.get('role') != 'admin':
+    if not _es_superadmin():
         return "Acceso denegado", 403
     nombre_seguro = secure_filename(nombre_archivo)
     carpeta_backups = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'backups_reset')
@@ -9124,6 +9285,65 @@ def admin_reset_sistema_descargar(nombre_archivo):
     if not os.path.isfile(ruta):
         return "Archivo no encontrado (puede que el servidor se haya reiniciado desde entonces).", 404
     return send_file(ruta, as_attachment=True, download_name=nombre_seguro, mimetype='application/json')
+
+
+@app.route('/admin/reset_sistema/restaurar', methods=['GET', 'POST'])
+def admin_reset_sistema_restaurar():
+    """Sube un archivo de respaldo (el que descarga esta misma sección) y restaura todo lo
+    que traiga. Pensada para usarse justo después de un Borrar Todo, para deshacerlo, o para
+    recuperar el sistema si algo salió mal. Por seguridad no restaura encima de un sistema que
+    ya tiene productos/clientes/ventas reales — primero hay que dejarlo limpio."""
+    if not _es_superadmin():
+        return "Acceso denegado", 403
+
+    if request.method == 'GET':
+        return render_template('admin_reset_sistema_restaurar.html')
+
+    archivo = request.files.get('archivo_backup')
+    if not archivo or archivo.filename == '':
+        flash('No seleccionaste ningún archivo.', 'error')
+        return redirect(url_for('admin_reset_sistema_restaurar'))
+
+    if Product.query.count() > 0 or Client.query.count() > 0 or Order.query.count() > 0:
+        flash('El sistema ya tiene productos, clientes u órdenes cargadas. Por seguridad, '
+              'Restaurar solo funciona sobre un sistema recién limpiado (usa primero Borrar Todo, '
+              'o pide ayuda si de verdad necesitas mezclar datos).', 'error')
+        return redirect(url_for('admin_reset_sistema_restaurar'))
+
+    try:
+        datos_backup = json.loads(archivo.read().decode('utf-8'))
+        resumen = _restaurar_backup(datos_backup)
+        db.session.commit()
+        return render_template('admin_reset_sistema_restaurado.html', resumen=resumen)
+    except Exception as e:
+        db.session.rollback()
+        flash(f'No se pudo restaurar (no se cambió nada): {str(e)}', 'error')
+        return redirect(url_for('admin_reset_sistema_restaurar'))
+
+
+@app.route('/sistema/backup_automatico')
+def backup_automatico_cron():
+    """Ruta pensada para ser llamada por un Cron Job EXTERNO (Render Cron Job, cron-job.org,
+    GitHub Actions programado, etc.), no por una persona logueada. Se autentica con un token
+    secreto por query string (?token=...), configurado en la variable de entorno
+    BACKUP_CRON_TOKEN. Genera un respaldo de TODO el sistema y lo sube a S3 (no al disco del
+    servidor, que en Render se borra en cada reinicio/deploy)."""
+    token_recibido = request.args.get('token', '')
+    if not BACKUP_CRON_TOKEN or not secrets.compare_digest(token_recibido, BACKUP_CRON_TOKEN):
+        return {"status": "error", "msg": "No autorizado"}, 403
+
+    try:
+        backup = _generar_backup_completo_json()
+        backup_bytes = json.dumps(backup, ensure_ascii=False, default=str).encode('utf-8')
+
+        clave_s3 = f"backups_automaticos/backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        s3_client.put_object(Bucket=S3_BUCKET_NAME, Key=clave_s3, Body=backup_bytes, ContentType='application/json')
+
+        _podar_backups_automaticos_s3('backups_automaticos/', mantener=30)
+
+        return {"status": "ok", "archivo": clave_s3, "tamano_bytes": len(backup_bytes)}
+    except Exception as e:
+        return {"status": "error", "msg": str(e)}, 500
 
 
 # ======================================================

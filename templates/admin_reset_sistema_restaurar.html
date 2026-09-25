@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-7">
+        <div class="card shadow border-primary">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0"><i class="bi bi-upload"></i> Restaurar desde un Respaldo</h4>
+            </div>
+            <div class="card-body">
+                <p>
+                    Sube el archivo JSON que descargaste (o que el sistema generó automáticamente) y se van a
+                    recrear todos los datos que traiga, tal cual estaban.
+                </p>
+                <div class="alert alert-warning">
+                    <ul class="mb-0">
+                        <li>Esto solo funciona sobre un sistema <strong>recién limpiado</strong> (después de "Borrar Todo"), no encima de datos reales ya cargados — si ya hay productos, clientes u órdenes, la restauración se rechaza por seguridad.</li>
+                        <li>Ninguna fila se pisa ni se duplica: si algo ya existe con el mismo ID, simplemente se salta.</li>
+                        <li>Al final se te mostrará cuántas filas se restauraron por cada tabla.</li>
+                    </ul>
+                </div>
+
+                <form method="POST" enctype="multipart/form-data"
+                      onsubmit="return confirm('¿Confirmas que quieres restaurar este archivo? Esto va a recrear todos los datos que contenga.');">
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Archivo de respaldo (.json)</label>
+                        <input type="file" name="archivo_backup" class="form-control" accept="application/json,.json" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-cloud-upload-fill"></i> Restaurar este respaldo
+                    </button>
+                    <a href="{{ url_for('admin_reset_sistema') }}" class="btn btn-link">Volver</a>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -44,7 +44,7 @@
                 </div>
 
                 <a href="{{ url_for('admin_reset_sistema_respaldo') }}" class="btn btn-outline-primary mb-4">
-                    <i class="bi bi-download"></i> 1. Descargar respaldo completo (JSON) antes de continuar
+                    <i class="bi bi-download"></i> 1. Descargar respaldo de TODO el sistema (JSON) antes de continuar
                 </a>
 
                 <hr>
@@ -60,6 +60,32 @@
                     </button>
                     <a href="{{ url_for('inventario') }}" class="btn btn-link">Cancelar, no borrar nada</a>
                 </form>
+            </div>
+        </div>
+
+        <div class="card shadow border-primary mt-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="bi bi-clock-history"></i> Restaurar un respaldo / Backups automáticos</h5>
+            </div>
+            <div class="card-body">
+                <p class="mb-2">
+                    ¿Ya descargaste (o el sistema ya generó) un respaldo JSON antes? Desde aquí lo puedes volver a
+                    subir para traer de vuelta todos los datos, tal cual estaban.
+                </p>
+                <a href="{{ url_for('admin_reset_sistema_restaurar') }}" class="btn btn-outline-primary">
+                    <i class="bi bi-upload"></i> Restaurar desde un archivo de respaldo
+                </a>
+                <hr>
+                <p class="mb-1 small text-muted">
+                    <i class="bi bi-info-circle"></i> El sistema también puede generar estos respaldos solo, cada
+                    cierto tiempo, sin que nadie tenga que entrar aquí — se guardan directamente en tu almacenamiento
+                    S3, en la carpeta <code>backups_automaticos/</code>. Para activarlo, hay que configurar un Cron
+                    Job (en Render o en un servicio externo gratuito) que llame a esta URL periódicamente:
+                </p>
+                <code class="d-block bg-light p-2 rounded small">/sistema/backup_automatico?token=TU_TOKEN_SECRETO</code>
+                <p class="small text-muted mt-1 mb-0">
+                    (el token se configura una vez como variable de entorno <code>BACKUP_CRON_TOKEN</code> — pregúntame si quieres que te ayude a dejarlo listo)
+                </p>
             </div>
         </div>
     </div>

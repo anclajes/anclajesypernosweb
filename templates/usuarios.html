@@ -48,6 +48,9 @@
                                     {% if u.role == 'admin' %}
                                     <i class="bi bi-shield-fill-check text-primary" style="font-size: 0.75rem;" title="Super Admin"></i>
                                     {% endif %}
+                                    {% if u.es_superadmin %}
+                                    <i class="bi bi-key-fill text-danger ms-1" style="font-size: 0.75rem;" title="Acceso Superior: puede borrar/restaurar TODO el sistema"></i>
+                                    {% endif %}
                                 </div>
                             </div>
                         </div>
@@ -89,8 +92,8 @@
 
                     <td class="text-center pe-4">
                         <div class="btn-group">
-                            <button class="btn btn-sm btn-light border text-primary" 
-                                    onclick="abrirModalEditar('{{u.id}}', '{{u.nombre_completo}}', '{{u.username}}', '{{u.role}}', '{{u.celular}}','{{u.cargo_formal}}', '{{u.email_empresa}}')"
+                            <button class="btn btn-sm btn-light border text-primary"
+                                    onclick="abrirModalEditar('{{u.id}}', '{{u.nombre_completo}}', '{{u.username}}', '{{u.role}}', '{{u.celular}}','{{u.cargo_formal}}', '{{u.email_empresa}}', {{ 'true' if u.es_superadmin else 'false' }})"
                                     title="Editar Perfil">
                                 <i class="bi bi-pencil-square"></i>
                             </button>
@@ -182,6 +185,18 @@
                             <i class="bi bi-exclamation-triangle"></i> Cuidado: Está editando sus propios permisos.
                         </div>
                     </div>
+
+                    {% if session.get('es_superadmin') %}
+                    <div class="mb-3 form-check form-switch bg-light border rounded-3 p-3">
+                        <input class="form-check-input" type="checkbox" name="es_superadmin" id="inputSuperadmin" role="switch">
+                        <label class="form-check-label small fw-bold text-danger" for="inputSuperadmin">
+                            <i class="bi bi-key-fill"></i> Acceso Superior (además del rol)
+                        </label>
+                        <div class="form-text" style="font-size: 0.75rem;">
+                            Permite entrar a "Borrar Todo / Restaurar Sistema". Solo dáselo a quien de verdad lo necesite.
+                        </div>
+                    </div>
+                    {% endif %}
 
                     <div class="row g-2">
                         <div class="col-12 col-sm-6">
@@ -275,7 +290,10 @@
         document.getElementById('inputCelular').value = "";
         document.getElementById('inputCargo').value = "";
         document.getElementById('selectRol').value = "";
-        
+        if (document.getElementById('inputSuperadmin')) {
+            document.getElementById('inputSuperadmin').checked = false;
+        }
+
         document.getElementById('modalTitulo').innerText = "Crear Nuevo Usuario";
         document.getElementById('msgPassword').innerText = "Al crear, defina una contraseña inicial. El usuario podrá cambiarla si lo solicita.";
         document.getElementById('adminWarning').classList.add('d-none');
@@ -283,7 +301,7 @@
         new bootstrap.Modal(document.getElementById('modalUsuario')).show();
     }
 
-    function abrirModalEditar(id, nombreCompleto, user, rol, celular, cargo, email) {
+    function abrirModalEditar(id, nombreCompleto, user, rol, celular, cargo, email, esSuperadmin) {
         document.getElementById('userId').value = id;
         document.getElementById('hiddenNombreCompleto').value = nombreCompleto;
         
@@ -307,7 +325,11 @@
         
         document.getElementById('inputPass').value = "";
         document.getElementById('inputPass').required = false; // OPCIONAL al editar
-        
+
+        if (document.getElementById('inputSuperadmin')) {
+            document.getElementById('inputSuperadmin').checked = !!esSuperadmin;
+        }
+
         document.getElementById('modalTitulo').innerText = "Editar Usuario: " + user;
         document.getElementById('msgPassword').innerText = "Deje el campo vacío para MANTENER la contraseña actual. Escriba solo si desea cambiarla.";
         
