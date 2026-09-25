@@ -14,6 +14,13 @@
     .bg-importbolts { background-color: #5FA82E; }
     .logo-mini { width: 32px; height: 32px; object-fit: cover; border-radius: 50%; }
     @media (max-width: 575.98px) { .fs-kpi { font-size: 1.35rem !important; } }
+    .kpi-clickable { cursor: pointer; position: relative; transition: transform .15s ease, box-shadow .15s ease; }
+    .kpi-clickable:hover { transform: translateY(-2px); box-shadow: 0 .6rem 1.1rem rgba(0,0,0,.1) !important; }
+    .kpi-info-dot { position: absolute; top: 8px; right: 10px; color: #adb5bd; font-size: .85rem; }
+    .info-btn { border: none; background: transparent; color: #adb5bd; padding: 0 2px; line-height: 1; cursor: pointer; }
+    .info-btn:hover { color: #0F172A; }
+    .card-header-info { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+    .chart-click-hint { font-size: .72rem; color: #868e96; text-align: center; margin-top: 6px; }
 </style>
 
 <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-3 gap-2">
@@ -36,7 +43,8 @@
 
 <div class="alert alert-light border small py-2 mb-3 d-flex align-items-center gap-2">
     <i class="bi bi-info-circle-fill text-primary"></i>
-    <span>Estas cifras vienen de los movimientos de Kardex marcados manualmente como <strong>Salida &rarr; Venta</strong> desde "Movimiento de Stock" en cada inventario. Aún no incluyen las cotizaciones de Gestión Comercial.</span>
+    <span>Estas cifras vienen de los movimientos de Kardex marcados manualmente como <strong>Salida &rarr; Venta</strong> desde "Movimiento de Stock" en cada inventario. Aún no incluyen las cotizaciones de Gestión Comercial.
+    No todas las tarjetas cambian con el filtro de fecha: haz clic en cualquier tarjeta, gráfico o tabla <i class="bi bi-info-circle text-primary"></i> para ver exactamente cómo se calcula y si usa el filtro o una ventana fija.</span>
 </div>
 
 <!-- FILTRO DE FECHAS -->
@@ -64,7 +72,8 @@
 <!-- KPIs GENERALES -->
 <div class="row g-3 mb-3">
     <div class="col-6 col-md-4 col-xl-2">
-        <div class="card border-0 shadow-sm h-100 kpi-gen">
+        <div class="card border-0 shadow-sm h-100 kpi-gen kpi-clickable" onclick="mostrarInfoDato('Ton. Hoy', true, '&sum; de las toneladas de hoy de <b>ambas empresas</b> (Anclajes + ImportBolts). Cada una se calcula como &sum; (cantidad &times; peso nominal) de sus Salidas por Venta de hoy.')">
+            <i class="bi bi-info-circle kpi-info-dot"></i>
             <div class="card-body text-center py-3">
                 <div class="text-muted small fw-bold text-uppercase">Ton. Hoy</div>
                 <div class="fs-4 fs-kpi fw-bold" style="color:#0F172A;">{{ "%.2f"|format(toneladas_hoy_total) }} t</div>
@@ -72,7 +81,8 @@
         </div>
     </div>
     <div class="col-6 col-md-4 col-xl-2">
-        <div class="card border-0 shadow-sm h-100 kpi-gen">
+        <div class="card border-0 shadow-sm h-100 kpi-gen kpi-clickable" onclick="mostrarInfoDato('Ton. Mes Actual', true, '&sum; de las toneladas del mes calendario en curso de <b>ambas empresas</b>.')">
+            <i class="bi bi-info-circle kpi-info-dot"></i>
             <div class="card-body text-center py-3">
                 <div class="text-muted small fw-bold text-uppercase">Ton. Mes Actual</div>
                 <div class="fs-4 fs-kpi fw-bold" style="color:#0F172A;">{{ "%.2f"|format(toneladas_mes_total) }} t</div>
@@ -80,7 +90,8 @@
         </div>
     </div>
     <div class="col-6 col-md-4 col-xl-2">
-        <div class="card border-0 shadow-sm h-100 kpi-gen">
+        <div class="card border-0 shadow-sm h-100 kpi-gen kpi-clickable" onclick="mostrarInfoDato('Ton. Período', false, '&sum; de las toneladas <b>dentro del rango de fechas filtrado</b> ({{ fecha_inicio }} a {{ fecha_fin }}) de ambas empresas. Cada una compara contra su propio período anterior; si ese período previo tuvo 0 t (dato nuevo), esa empresa muestra 100% por convención — ver la tabla \"Resumen Comparativo\" más abajo para el detalle por empresa.')">
+            <i class="bi bi-info-circle kpi-info-dot"></i>
             <div class="card-body text-center py-3">
                 <div class="text-muted small fw-bold text-uppercase">Ton. Período</div>
                 <div class="fs-4 fs-kpi fw-bold" style="color:#0F172A;">{{ "%.2f"|format(toneladas_periodo_total) }} t</div>
@@ -88,7 +99,8 @@
         </div>
     </div>
     <div class="col-6 col-md-4 col-xl-2">
-        <div class="card border-0 shadow-sm h-100 kpi-gen">
+        <div class="card border-0 shadow-sm h-100 kpi-gen kpi-clickable" onclick="mostrarInfoDato('Unidades', false, '&sum; de las unidades vendidas (no toneladas) <b>dentro del rango de fechas filtrado</b>, de ambas empresas.')">
+            <i class="bi bi-info-circle kpi-info-dot"></i>
             <div class="card-body text-center py-3">
                 <div class="text-muted small fw-bold text-uppercase">Unidades</div>
                 <div class="fs-4 fs-kpi fw-bold text-dark">{{ "{:,d}".format(unidades_periodo_total) }}</div>
@@ -96,7 +108,8 @@
         </div>
     </div>
     <div class="col-6 col-md-4 col-xl-2">
-        <div class="card border-0 shadow-sm h-100 kpi-gen">
+        <div class="card border-0 shadow-sm h-100 kpi-gen kpi-clickable" onclick="mostrarInfoDato('Movimientos', false, 'Cantidad total de líneas del Kardex registradas como Salida por Venta <b>dentro del rango de fechas filtrado</b>, sumando ambas empresas.')">
+            <i class="bi bi-info-circle kpi-info-dot"></i>
             <div class="card-body text-center py-3">
                 <div class="text-muted small fw-bold text-uppercase">Movimientos</div>
                 <div class="fs-4 fs-kpi fw-bold text-dark">{{ movimientos_periodo_total }}</div>
@@ -104,7 +117,8 @@
         </div>
     </div>
     <div class="col-6 col-md-4 col-xl-2">
-        <div class="card border-0 shadow-sm h-100" style="border-left:4px solid #198754 !important;">
+        <div class="card border-0 shadow-sm h-100 kpi-clickable" style="border-left:4px solid #198754 !important;" onclick="mostrarInfoDato('Ingresos (Compras)', false, '&sum; de las Entradas de Kardex cuyo motivo contiene "Compra", <b>dentro del rango de fechas filtrado</b>, de ambas empresas.')">
+            <i class="bi bi-info-circle kpi-info-dot"></i>
             <div class="card-body text-center py-3">
                 <div class="text-success small fw-bold text-uppercase"><i class="bi bi-box-arrow-in-down"></i> Ingresos (Compras)</div>
                 <div class="fs-4 fs-kpi fw-bold text-success">{{ "%.2f"|format(ton_ingresos_compras_total) }} t</div>
@@ -117,7 +131,10 @@
 <div class="row g-3 mb-3">
     <div class="col-12 col-lg-4">
         <div class="card border-0 shadow-sm h-100">
-            <div class="card-header bg-white fw-bold"><i class="bi bi-pie-chart-fill"></i> Participación por Toneladas Vendidas</div>
+            <div class="card-header bg-white fw-bold card-header-info">
+                <span><i class="bi bi-pie-chart-fill"></i> Participación por Toneladas Vendidas</span>
+                <button type="button" class="info-btn" onclick="mostrarInfoDato('Participación por Toneladas', false, 'Compara las toneladas de cada empresa <b>dentro del rango de fechas filtrado</b> (Ton. Período de cada una) y calcula el % de participación de cada una sobre el total combinado.')"><i class="bi bi-info-circle"></i></button>
+            </div>
             <div class="card-body">
                 <div style="position:relative;height:190px;"><canvas id="chartSplit"></canvas></div>
                 <div class="d-flex justify-content-around mt-3 small">
@@ -135,7 +152,10 @@
     </div>
     <div class="col-12 col-lg-8">
         <div class="card border-0 shadow-sm h-100">
-            <div class="card-header bg-white fw-bold"><i class="bi bi-graph-up-arrow"></i> Evolución Mensual Comparativa — Últimos 6 Meses</div>
+            <div class="card-header bg-white fw-bold card-header-info">
+                <span><i class="bi bi-graph-up-arrow"></i> Evolución Mensual Comparativa — Últimos 6 Meses</span>
+                <button type="button" class="info-btn" onclick="mostrarInfoDato('Evolución Mensual Comparativa', true, 'Toneladas de cada <b>mes calendario</b> de los últimos 6 meses, por empresa. Es una <b>ventana fija</b>: no cambia con el filtro de fecha de arriba.')"><i class="bi bi-info-circle"></i></button>
+            </div>
             <div class="card-body"><canvas id="chartMesesComparativo" height="90"></canvas></div>
         </div>
     </div>
@@ -143,13 +163,22 @@
 
 <!-- TONELADAS POR DÍA COMPARATIVO -->
 <div class="card border-0 shadow-sm mb-3">
-    <div class="card-header bg-white fw-bold"><i class="bi bi-calendar3"></i> Toneladas Vendidas por Día — Últimos 30 Días</div>
-    <div class="card-body"><div style="position:relative;height:260px;"><canvas id="chartDiaComparativo"></canvas></div></div>
+    <div class="card-header bg-white fw-bold card-header-info">
+        <span><i class="bi bi-calendar3"></i> Toneladas Vendidas por Día — Últimos 30 Días</span>
+        <button type="button" class="info-btn" onclick="mostrarInfoDato('Toneladas por Día', true, 'Toneladas de cada día de los <b>últimos 30 días</b>, apiladas por empresa. Es una <b>ventana fija</b>: no cambia con el filtro de fecha de arriba.<hr class=\'my-2\'><i class=\'bi bi-cursor-fill\'></i> Haz clic en el tramo de una barra para ver esas ventas de esa empresa y ese día en su Kardex.')"><i class="bi bi-info-circle"></i></button>
+    </div>
+    <div class="card-body">
+        <div style="position:relative;height:260px;"><canvas id="chartDiaComparativo"></canvas></div>
+        <div class="chart-click-hint"><i class="bi bi-cursor-fill"></i> Clic en un tramo &rarr; ver esas ventas en el Kardex de esa empresa</div>
+    </div>
 </div>
 
 <!-- RESUMEN COMPARATIVO -->
 <div class="card border-0 shadow-sm mb-3">
-    <div class="card-header bg-white fw-bold"><i class="bi bi-table"></i> Resumen Comparativo por Empresa (período)</div>
+    <div class="card-header bg-white fw-bold card-header-info">
+        <span><i class="bi bi-table"></i> Resumen Comparativo por Empresa (período)</span>
+        <button type="button" class="info-btn" onclick="mostrarInfoDato('Resumen Comparativo por Empresa', false, 'Toneladas, unidades, movimientos e ingresos por compras de cada empresa <b>dentro del rango de fechas filtrado</b>.<hr class=\'my-2\'><b>Var. vs período anterior</b>: compara contra el mismo número de días inmediatamente anterior, por empresa. Si ese período previo tuvo 0 t (dato nuevo del Kardex), se muestra 100% por convención en vez de un porcentaje real.')"><i class="bi bi-info-circle"></i></button>
+    </div>
     <div class="card-body p-0 table-responsive">
         <table class="table table-hover align-middle mb-0 small">
             <thead class="bg-light text-uppercase text-muted">
@@ -185,7 +214,10 @@
 <div class="row g-3 mb-3">
     <div class="col-12 col-lg-6">
         <div class="card border-0 shadow-sm h-100">
-            <div class="card-header bg-white fw-bold"><i class="bi bi-box-seam"></i> Top Productos del Mes (ambas empresas)</div>
+            <div class="card-header bg-white fw-bold card-header-info">
+                <span><i class="bi bi-box-seam"></i> Top Productos del Mes (ambas empresas)</span>
+                <button type="button" class="info-btn" onclick="mostrarInfoDato('Top Productos del Mes', true, 'Productos con más toneladas vendidas en el <b>mes calendario en curso</b>, de ambas empresas. Es una <b>ventana fija</b>: no cambia con el filtro de fecha de arriba.')"><i class="bi bi-info-circle"></i></button>
+            </div>
             <div class="card-body p-0 table-responsive" style="max-height:360px;overflow-y:auto;">
                 <table class="table table-hover table-sm align-middle mb-0 small">
                     <thead class="bg-light text-uppercase text-muted sticky-top">
@@ -194,9 +226,9 @@
                     <tbody>
                         {% for p in productos_general %}
                         <tr>
-                            <td class="ps-3 fw-bold text-truncate" style="max-width:160px;">{{ p.nombre }}</td>
+                            <td class="ps-3 fw-bold" style="white-space:normal;word-break:break-word;min-width:200px;">{{ p.nombre }}</td>
                             <td><span class="badge {% if p.empresa == 'Anclajes' %}bg-anclajes{% else %}bg-importbolts{% endif %}">{{ p.empresa }}</span></td>
-                            <td class="text-end pe-3 fw-bold">{{ "%.2f"|format(p.ton) }} t</td>
+                            <td class="text-end pe-3 fw-bold text-nowrap">{{ "%.2f"|format(p.ton) }} t</td>
                         </tr>
                         {% else %}
                         <tr><td colspan="3" class="text-center text-muted py-4">Sin ventas registradas este mes.</td></tr>
@@ -208,7 +240,10 @@
     </div>
     <div class="col-12 col-lg-6">
         <div class="card border-0 shadow-sm h-100">
-            <div class="card-header bg-white fw-bold"><i class="bi bi-people-fill"></i> Top Clientes por Toneladas (ambas empresas)</div>
+            <div class="card-header bg-white fw-bold card-header-info">
+                <span><i class="bi bi-people-fill"></i> Top Clientes por Toneladas (ambas empresas)</span>
+                <button type="button" class="info-btn" onclick="mostrarInfoDato('Top Clientes por Toneladas', false, 'Clientes/destinos con más toneladas <b>dentro del rango de fechas filtrado</b>, combinando ambas empresas (si un cliente compró a las dos, se suman y se listan ambas en "Empresa(s)").')"><i class="bi bi-info-circle"></i></button>
+            </div>
             <div class="card-body p-0 table-responsive" style="max-height:360px;overflow-y:auto;">
                 <table class="table table-hover table-sm align-middle mb-0 small">
                     <thead class="bg-light text-uppercase text-muted sticky-top">
@@ -217,7 +252,7 @@
                     <tbody>
                         {% for c in top_clientes_general %}
                         <tr>
-                            <td class="ps-3 fw-bold text-truncate" style="max-width:140px;">{{ c.nombre }}</td>
+                            <td class="ps-3 fw-bold text-truncate" style="max-width:140px;" title="{{ c.nombre }}">{{ c.nombre }}</td>
                             <td class="small text-muted">{{ c.empresas }}</td>
                             <td class="text-end pe-3 fw-bold">{{ "%.2f"|format(c.toneladas) }} t</td>
                         </tr>
@@ -233,11 +268,14 @@
 
 <!-- INGRESOS COMBINADOS -->
 <div class="card border-0 shadow-sm mb-4">
-    <div class="card-header bg-white fw-bold text-success"><i class="bi bi-box-arrow-in-down"></i> Nuevos Ingresos por Categoría (ambas empresas, período)</div>
+    <div class="card-header bg-white fw-bold text-success card-header-info">
+        <span><i class="bi bi-box-arrow-in-down"></i> Nuevos Ingresos por Categoría (ambas empresas, período)</span>
+        <button type="button" class="info-btn" onclick="mostrarInfoDato('Nuevos Ingresos por Categoría', false, 'Entradas del Kardex de ambas empresas <b>dentro del rango de fechas filtrado</b>, agrupadas por categoría.<hr class=\'my-2\'><b>Toneladas</b> = &sum; (cantidad &times; peso nominal) de cada línea.<br><b>Peso Nom. Prom.</b> = peso nominal unitario promedio de esa categoría en esa empresa (toneladas &times; 1000 &divide; unidades) — referencial.<br><b>Por Compras</b> = el subconjunto cuyo motivo contiene la palabra "Compra".')"><i class="bi bi-info-circle"></i></button>
+    </div>
     <div class="card-body p-0 table-responsive">
         <table class="table table-hover table-sm align-middle mb-0 small">
             <thead class="bg-light text-uppercase text-muted">
-                <tr><th class="ps-3">Categoría</th><th>Empresa</th><th class="text-end">Toneladas</th><th class="text-end pe-3">Por Compras</th></tr>
+                <tr><th class="ps-3">Categoría</th><th>Empresa</th><th class="text-end">Toneladas</th><th class="text-end">Peso Nom. Prom. (Kg)</th><th class="text-end pe-3">Por Compras</th></tr>
             </thead>
             <tbody>
                 {% for r in ingresos_general %}
@@ -245,6 +283,7 @@
                     <td class="ps-3 fw-bold">{{ r.categoria }}</td>
                     <td><span class="badge {% if r.empresa == 'Anclajes' %}bg-anclajes{% else %}bg-importbolts{% endif %}">{{ r.empresa }}</span></td>
                     <td class="text-end">{{ "%.2f"|format(r.toneladas) }} t</td>
+                    <td class="text-end text-muted">{{ "%.3f"|format(r.peso_promedio_kg) }}</td>
                     <td class="text-end pe-3">
                         {% if r.toneladas_compras > 0 %}
                         <span class="badge bg-success-subtle text-success border border-success fw-bold">{{ "%.2f"|format(r.toneladas_compras) }} t</span>
@@ -254,7 +293,7 @@
                     </td>
                 </tr>
                 {% else %}
-                <tr><td colspan="4" class="text-center text-muted py-4">Sin ingresos registrados en el período.</td></tr>
+                <tr><td colspan="5" class="text-center text-muted py-4">Sin ingresos registrados en el período.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -263,6 +302,30 @@
 
 <script>
 const colorAnclajes = '#2456B3', colorImportBolts = '#5FA82E';
+const kardexUrlAnclajes = "{{ url_for('ver_kardex') }}";
+const kardexUrlImportBolts = "{{ url_for('ver_kardex_importbolts') }}";
+const diasIso = {{ dias_iso | tojson }};
+
+// --- Panel de información (explica cómo se calcula cada dato) ---
+function mostrarInfoDato(titulo, esFijo, htmlExplicacion) {
+    const tag = esFijo
+        ? '<span class="badge bg-secondary-subtle text-secondary border mb-2"><i class="bi bi-lock-fill"></i> Ventana fija — no cambia con el filtro de fecha</span>'
+        : '<span class="badge bg-primary-subtle text-primary border mb-2"><i class="bi bi-funnel-fill"></i> Cambia según el filtro de fecha</span>';
+    Swal.fire({
+        title: titulo,
+        html: `<div class="text-start small">${tag}<div class="mt-2">${htmlExplicacion}</div></div>`,
+        icon: 'info',
+        confirmButtonText: 'Entendido',
+        confirmButtonColor: '#0F172A',
+        width: 500
+    });
+}
+
+function irAKardexPorDia(fechaIso, empresa) {
+    const base = empresa === 'Anclajes' ? kardexUrlAnclajes : kardexUrlImportBolts;
+    const params = new URLSearchParams({ tipo: 'SALIDA', motivo: 'venta', manual: '1', fecha_inicio: fechaIso, fecha_fin: fechaIso });
+    window.location.href = base + '?' + params.toString();
+}
 
 // --- Participación (split) ---
 new Chart(document.getElementById('chartSplit'), {
@@ -303,6 +366,14 @@ new Chart(document.getElementById('chartDiaComparativo'), {
     },
     options: {
         responsive: true, maintainAspectRatio: false,
+        onHover: (evt, els) => { evt.native.target.style.cursor = els.length ? 'pointer' : 'default'; },
+        onClick: (evt, els) => {
+            if (!els.length) return;
+            const el = els[0];
+            const empresa = el.datasetIndex === 0 ? 'Anclajes' : 'ImportBolts';
+            const fecha = diasIso[el.index];
+            if (fecha) irAKardexPorDia(fecha, empresa);
+        },
         plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } }, tooltip: { callbacks: { label: (i) => `${i.dataset.label}: ${i.formattedValue} t` } } },
         scales: { x: { stacked: true, ticks: { maxRotation: 90, minRotation: 60, font: { size: 9 } } }, y: { stacked: true, beginAtZero: true } }
     }

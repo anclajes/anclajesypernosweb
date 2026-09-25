@@ -122,6 +122,19 @@
                 </div>
             </div>
 
+            <!-- MOTIVO -->
+            <div class="col-6 col-lg-2">
+                <div class="kardex-filtros-grupo">
+                    <label class="form-label"><i class="bi bi-clipboard-check"></i> Motivo</label>
+                    <select name="motivo" class="form-select form-select-sm" onchange="document.getElementById('formFiltroKardex').submit()">
+                        <option value="" {% if not request.args.get('motivo') %}selected{% endif %}>Todos</option>
+                        {% for mot in motivos_con_movimientos %}
+                        <option value="{{ mot }}" {% if request.args.get('motivo') == mot %}selected{% endif %}>{{ mot }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+
             <!-- FECHAS -->
             <div class="col-6 col-lg-2">
                 <div class="kardex-filtros-grupo">
@@ -150,6 +163,14 @@
                                name="solo_interempresa" {% if request.args.get('solo_interempresa') == 'on' %}checked{% endif %}
                                onchange="document.getElementById('formFiltroKardex').submit()">
                         <label class="form-check-label small" for="soloInterempresa">Solo movimientos Inter-Empresa</label>
+                    </div>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" role="switch" id="soloManual"
+                               name="manual" value="1" {% if request.args.get('manual') == '1' %}checked{% endif %}
+                               onchange="document.getElementById('formFiltroKardex').submit()">
+                        <label class="form-check-label small" for="soloManual" title="Excluye los movimientos automáticos generados por Cotización/Gestión Comercial">
+                            Solo registrados manualmente <i class="bi bi-info-circle text-muted"></i>
+                        </label>
                     </div>
                 </div>
             </div>
@@ -184,6 +205,8 @@
                     <th>Proveedor / RUC</th>
                     <th class="text-end">Precio</th>
                     <th>Presentación</th>
+                    <th class="text-end">Peso Unit. (Kg)</th>
+                    <th class="text-end">Peso Total (Kg)</th>
                     <th>Usuario</th>
                     <th class="text-center">Cant.</th>
                     <th class="text-center pe-3">Saldo Final</th>
@@ -229,7 +252,14 @@
                     </td>
                     <td class="text-end small">{% if m.precio_unitario %}{{ "%.2f"|format(m.precio_unitario) }}{% else %}-{% endif %}</td>
                     <td class="small">{{ m.presentacion or '-' }}</td>
-                    
+
+                    <td class="text-end small text-muted">
+                        {% if m.product.peso_kg %}{{ "%.3f"|format(m.product.peso_kg) }}{% else %}-{% endif %}
+                    </td>
+                    <td class="text-end small fw-bold">
+                        {% if m.product.peso_kg %}{{ "%.2f"|format(m.product.peso_kg * m.cantidad) }}{% else %}-{% endif %}
+                    </td>
+
                     <td>
                         <i class="bi bi-person-fill text-secondary"></i> {{ m.user.username }}
                     </td>
@@ -244,7 +274,7 @@
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="12" class="text-center py-5 text-muted">
+                    <td colspan="14" class="text-center py-5 text-muted">
                         <i class="bi bi-search display-4 opacity-25"></i>
                         <p class="mt-2">No se encontraron movimientos con estos filtros.</p>
                     </td>
@@ -258,7 +288,7 @@
         <nav aria-label="Navegación">
             <ul class="pagination justify-content-center mb-0 pagination-sm">
                 <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
-                    <a class="page-link" href="{{ url_for('ver_kardex_importbolts', page=pagination.prev_num, busqueda=request.args.get('busqueda',''), categoria=cat_filtro, calidad=calidad_filtro, proveedor=request.args.get('proveedor','todos'), tipo=request.args.get('tipo',''), fecha_inicio=request.args.get('fecha_inicio',''), fecha_fin=request.args.get('fecha_fin',''), ocultar_iniciales=request.args.get('ocultar_iniciales',''), solo_interempresa=request.args.get('solo_interempresa','')) }}">Anterior</a>
+                    <a class="page-link" href="{{ url_for('ver_kardex_importbolts', page=pagination.prev_num, busqueda=request.args.get('busqueda',''), categoria=cat_filtro, calidad=calidad_filtro, proveedor=request.args.get('proveedor','todos'), tipo=request.args.get('tipo',''), fecha_inicio=request.args.get('fecha_inicio',''), fecha_fin=request.args.get('fecha_fin',''), ocultar_iniciales=request.args.get('ocultar_iniciales',''), solo_interempresa=request.args.get('solo_interempresa',''), motivo=request.args.get('motivo',''), manual=request.args.get('manual','')) }}">Anterior</a>
                 </li>
                 <li class="page-item disabled">
                     <span class="page-link text-muted">
@@ -267,7 +297,7 @@
                     </span>
                 </li>
                 <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
-                    <a class="page-link" href="{{ url_for('ver_kardex_importbolts', page=pagination.next_num, busqueda=request.args.get('busqueda',''), categoria=cat_filtro, calidad=calidad_filtro, proveedor=request.args.get('proveedor','todos'), tipo=request.args.get('tipo',''), fecha_inicio=request.args.get('fecha_inicio',''), fecha_fin=request.args.get('fecha_fin',''), ocultar_iniciales=request.args.get('ocultar_iniciales',''), solo_interempresa=request.args.get('solo_interempresa','')) }}">Siguiente</a>
+                    <a class="page-link" href="{{ url_for('ver_kardex_importbolts', page=pagination.next_num, busqueda=request.args.get('busqueda',''), categoria=cat_filtro, calidad=calidad_filtro, proveedor=request.args.get('proveedor','todos'), tipo=request.args.get('tipo',''), fecha_inicio=request.args.get('fecha_inicio',''), fecha_fin=request.args.get('fecha_fin',''), ocultar_iniciales=request.args.get('ocultar_iniciales',''), solo_interempresa=request.args.get('solo_interempresa',''), motivo=request.args.get('motivo',''), manual=request.args.get('manual','')) }}">Siguiente</a>
                 </li>
             </ul>
         </nav>

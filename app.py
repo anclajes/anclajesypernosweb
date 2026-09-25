@@ -4687,6 +4687,19 @@ def ver_kardex():
             )
         )
 
+    # 9. Filtro por Motivo exacto (usado por los links desde los Dashboards de Ventas,
+    #    separado de "busqueda" para no mezclar coincidencias con nombre/cliente/proveedor)
+    motivo_filtro = request.args.get('motivo', '').strip()
+    if motivo_filtro:
+        query = query.filter(ProductMovement.motivo.ilike(f"%{motivo_filtro}%"))
+
+    # 10. Solo movimientos registrados manualmente desde "Movimiento de Stock"
+    #     (motivo_id viene del catálogo). Excluye los automáticos de Cotización/
+    #     Gestión Comercial, que aunque digan "Venta" en el texto no tienen motivo_id.
+    solo_manual = request.args.get('manual')
+    if solo_manual == '1':
+        query = query.filter(ProductMovement.motivo_id.isnot(None))
+
     query = query.order_by(ProductMovement.fecha.desc())
 
     page = request.args.get('page', 1, type=int)
@@ -4708,14 +4721,23 @@ def ver_kardex():
         ProductMovement.ruc_proveedor, ProductMovement.razon_social_proveedor
     ).filter(ProductMovement.ruc_proveedor.isnot(None)).distinct().order_by(ProductMovement.razon_social_proveedor).all()
 
+    # Motivos registrados manualmente desde "Movimiento de Stock" (motivo_id no nulo),
+    # para el filtro por Motivo del Kardex (p.ej. llegar directo a "Venta" desde el Dashboard)
+    motivos_con_movimientos = [
+        m[0] for m in db.session.query(ProductMovement.motivo)
+        .filter(ProductMovement.motivo_id.isnot(None))
+        .distinct().order_by(ProductMovement.motivo).all()
+    ]
+
     return render_template('kardex.html',
                            movimientos=movimientos,
                            categorias=categorias,
                            pagination=pagination,
                            proveedores_con_movimientos=proveedores_con_movimientos,
                            lista_calidades_kardex=lista_calidades_kardex,
+                           motivos_con_movimientos=motivos_con_movimientos,
                            cat_filtro=cat_nombre,
-                           calidad_filtro=calidad_nombre)   
+                           calidad_filtro=calidad_nombre)
 
 
 
@@ -6535,6 +6557,19 @@ def ver_kardex_importbolts():
             )
         )
 
+    # Filtro por Motivo exacto (usado por los links desde los Dashboards de Ventas,
+    # separado de "busqueda" para no mezclar coincidencias con nombre/cliente/proveedor)
+    motivo_filtro = request.args.get('motivo', '').strip()
+    if motivo_filtro:
+        query = query.filter(ProductMovementImportBolts.motivo.ilike(f"%{motivo_filtro}%"))
+
+    # Solo movimientos registrados manualmente desde "Movimiento de Stock"
+    # (motivo_id viene del catálogo). Excluye los automáticos de Cotización/
+    # Gestión Comercial, que aunque digan "Venta" en el texto no tienen motivo_id.
+    solo_manual = request.args.get('manual')
+    if solo_manual == '1':
+        query = query.filter(ProductMovementImportBolts.motivo_id.isnot(None))
+
     query = query.order_by(ProductMovementImportBolts.fecha.desc())
 
     page = request.args.get('page', 1, type=int)
@@ -6555,12 +6590,21 @@ def ver_kardex_importbolts():
         ProductMovementImportBolts.ruc_proveedor, ProductMovementImportBolts.razon_social_proveedor
     ).filter(ProductMovementImportBolts.ruc_proveedor.isnot(None)).distinct().order_by(ProductMovementImportBolts.razon_social_proveedor).all()
 
+    # Motivos registrados manualmente desde "Movimiento de Stock" (motivo_id no nulo),
+    # para el filtro por Motivo del Kardex (p.ej. llegar directo a "Venta" desde el Dashboard)
+    motivos_con_movimientos = [
+        m[0] for m in db.session.query(ProductMovementImportBolts.motivo)
+        .filter(ProductMovementImportBolts.motivo_id.isnot(None))
+        .distinct().order_by(ProductMovementImportBolts.motivo).all()
+    ]
+
     return render_template('kardex_importbolts.html',
                            movimientos=movimientos,
                            categorias=categorias,
                            pagination=pagination,
                            proveedores_con_movimientos=proveedores_con_movimientos,
                            lista_calidades_kardex=lista_calidades_kardex,
+                           motivos_con_movimientos=motivos_con_movimientos,
                            cat_filtro=cat_nombre,
                            calidad_filtro=calidad_nombre)
 
@@ -9045,6 +9089,8 @@ def _construir_ctx_dashboard_ton(empresa, request):
     dias_ordenados = [inicio_30d + timedelta(days=i) for i in range(30)]
     labels_dias = [d.strftime('%d/%m') for d in dias_ordenados]
     data_dias_ton = [round(por_dia.get(d, 0) / 1000, 3) for d in dias_ordenados]
+    # Fecha ISO de cada barra del gráfico de días, para el click-through al Kardex
+    dias_iso = [d.isoformat() for d in dias_ordenados]
 
     # --- Top productos: MES ACTUAL vs ÚLTIMOS 3 MESES ---
     def top_productos(lineas_filtradas, limite=8):
@@ -9125,7 +9171,9 @@ def _construir_ctx_dashboard_ton(empresa, request):
     ingresos_por_categoria = sorted(
         [{
             'categoria': k, 'toneladas': round(v['ton'], 2), 'unidades': v['unid'],
-            'toneladas_compras': round(v['ton_compras'], 2), 'unidades_compras': v['unid_compras']
+            'toneladas_compras': round(v['ton_compras'], 2), 'unidades_compras': v['unid_compras'],
+            # Peso nominal promedio de esta categoría en el período = toneladas*1000 / unidades
+            'peso_promedio_kg': round((v['ton'] * 1000 / v['unid']), 3) if v['unid'] > 0 else 0
         } for k, v in agg_ing_cat.items()],
         key=lambda x: x['toneladas'], reverse=True
     )
@@ -9138,7 +9186,7 @@ def _construir_ctx_dashboard_ton(empresa, request):
         unidades_periodo=unidades_periodo, movimientos_periodo=movimientos_periodo,
         peso_promedio_mov_kg=peso_promedio_mov_kg,
         labels_meses=labels_meses, data_meses_ton=data_meses_ton,
-        labels_dias=labels_dias, data_dias_ton=data_dias_ton,
+        labels_dias=labels_dias, data_dias_ton=data_dias_ton, dias_iso=dias_iso,
         top_productos_mes=top_productos_mes, top_productos_3m=top_productos_3m,
         top_clientes=top_clientes,
         categoria_labels=categoria_labels, categoria_data=categoria_data, categoria_pct=categoria_pct,
@@ -9237,7 +9285,7 @@ def dashboard_ventas_general():
         pct_anclajes=pct_anclajes, pct_importbolts=pct_importbolts,
         labels_meses=ctx_a['labels_meses'],
         data_meses_anclajes=ctx_a['data_meses_ton'], data_meses_importbolts=ctx_i['data_meses_ton'],
-        labels_dias=ctx_a['labels_dias'],
+        labels_dias=ctx_a['labels_dias'], dias_iso=ctx_a['dias_iso'],
         data_dias_anclajes=ctx_a['data_dias_ton'], data_dias_importbolts=ctx_i['data_dias_ton'],
         top_clientes_general=top_clientes_general,
         productos_general=productos_general,
