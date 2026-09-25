@@ -113,6 +113,18 @@
             </button>
         </div>
     </form>
+
+    <!-- FOTOS DEL CONTEO -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header text-white fw-bold" style="background-color: var(--auditoria-primary);">
+            <i class="bi bi-camera-fill"></i> Fotos del Conteo
+        </div>
+        <div class="card-body">
+            <div class="form-text mb-2">Máximo 5 fotos, hasta 5MB cada una (JPG, PNG o WEBP).</div>
+            <div id="lista_fotos_registro" class="d-flex flex-wrap gap-2 mb-2"></div>
+            <input type="file" id="input_foto_editar" class="form-control" accept="image/jpeg,image/png,image/webp">
+        </div>
+    </div>
 </div>
 
 <script>
@@ -132,7 +144,72 @@ document.addEventListener('DOMContentLoaded', () => {
     cargarCatalogoConSeleccion('UNIDAD_MEDIDA', 'unidad_medida', VALOR_UNIDAD_ACTUAL, false);
     cargarCatalogoConSeleccion('ESTADO_FISICO', 'estado_fisico', VALOR_ESTADO_ACTUAL, false);
     cargarCamposPersonalizadosConValores();
+    cargarFotosRegistro();
+
+    document.getElementById('input_foto_editar').addEventListener('change', function(e) {
+        const archivo = e.target.files[0];
+        e.target.value = '';
+        if (!archivo) return;
+        subirFotoRegistro(archivo);
+    });
 });
+
+function cargarFotosRegistro() {
+    fetch(`/api/auditoria/registro/${REG_ID}/fotos`).then(r => r.json()).then(data => {
+        const cont = document.getElementById('lista_fotos_registro');
+        cont.innerHTML = '';
+        (data.fotos || []).forEach(f => {
+            const div = document.createElement('div');
+            div.style.position = 'relative';
+            div.id = `foto-editar-${f.id}`;
+            div.innerHTML = `
+                <a href="${f.url}" target="_blank"><img src="${f.url}" style="width:90px; height:90px; object-fit:cover; border-radius:8px; border:1px solid #dee2e6;"></a>
+                <button type="button" class="btn btn-sm btn-danger" style="position:absolute; top:-8px; right:-8px; border-radius:50%; padding:0; width:22px; height:22px; line-height:1;" onclick="eliminarFotoRegistro(${f.id})">&times;</button>`;
+            cont.appendChild(div);
+        });
+        if (!data.fotos || data.fotos.length === 0) {
+            cont.innerHTML = '<span class="text-muted small">Sin fotos adjuntas aún.</span>';
+        }
+    });
+}
+
+function subirFotoRegistro(archivo) {
+    if (archivo.size > 5 * 1024 * 1024) return Swal.fire('Foto muy pesada', `"${archivo.name}" supera los 5MB.`, 'warning');
+    if (!archivo.type.startsWith('image/')) return Swal.fire('Formato no permitido', `"${archivo.name}" no es una imagen.`, 'warning');
+
+    const fd = new FormData();
+    fd.append('foto', archivo);
+    fetch(`/api/auditoria/registro/${REG_ID}/subir_foto`, { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(data => {
+            if (data.status !== 'success') {
+                Swal.fire('No se pudo subir', data.msg, 'error');
+                return;
+            }
+            cargarFotosRegistro();
+            Swal.fire({ icon: 'success', title: 'Foto agregada', timer: 1200, showConfirmButton: false });
+        })
+        .catch(() => Swal.fire('Error', 'No se pudo comunicar con el servidor.', 'error'));
+}
+
+function eliminarFotoRegistro(fotoId) {
+    Swal.fire({
+        title: '¿Eliminar esta foto?', icon: 'warning',
+        showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Sí, eliminar'
+    }).then(result => {
+        if (!result.isConfirmed) return;
+        fetch(`/api/auditoria/foto/${fotoId}/eliminar`, { method: 'POST' })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status !== 'success') {
+                    Swal.fire('No se pudo eliminar', data.msg, 'error');
+                    return;
+                }
+                cargarFotosRegistro();
+            })
+            .catch(() => Swal.fire('Error', 'No se pudo comunicar con el servidor.', 'error'));
+    });
+}
 
 function cargarCatalogoConSeleccion(tipo, selectId, valorActual, esSelect2) {
     fetch(`/api/catalogo/${tipo}`).then(r => r.json()).then(data => {

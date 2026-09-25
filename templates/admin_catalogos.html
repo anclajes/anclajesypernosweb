@@ -24,6 +24,22 @@
 
 <h4 class="fw-bold mb-3"><i class="bi bi-sliders"></i> Catálogos y Campos del Conteo Físico</h4>
 
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-body d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <div>
+            <b><i class="bi bi-camera-fill"></i> Fotos en el Conteo Físico</b>
+            <div class="small text-muted">Define si el auditor está obligado a adjuntar al menos una foto para poder enviar un conteo.</div>
+        </div>
+        <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" id="switch_fotos_obligatorias" style="width:3em; height:1.5em;"
+                   {% if fotos_obligatorias %}checked{% endif %} onchange="toggleFotosObligatorias(this)">
+            <label class="form-check-label fw-bold" id="label_fotos_obligatorias">
+                {% if fotos_obligatorias %}Obligatorio{% else %}Opcional{% endif %}
+            </label>
+        </div>
+    </div>
+</div>
+
 <ul class="nav nav-tabs cat-tabs mb-3 flex-wrap" id="tabsCatalogos">
     <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-ESTADO_FISICO">Estado Físico</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-UNIDAD_MEDIDA">Unidades</button></li>
@@ -163,6 +179,26 @@
 </div>
 
 <script>
+function toggleFotosObligatorias(chk) {
+    const fd = new FormData();
+    fd.append('activo', chk.checked ? '1' : '0');
+    fetch('/admin/catalogos/fotos_auditoria/toggle', { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(data => {
+            if (data.status !== 'success') {
+                Swal.fire('Error', 'No se pudo cambiar la configuración.', 'error');
+                chk.checked = !chk.checked;
+                return;
+            }
+            document.getElementById('label_fotos_obligatorias').textContent = data.activo ? 'Obligatorio' : 'Opcional';
+            Swal.fire({ icon: 'success', title: data.activo ? 'Ahora es obligatorio' : 'Ahora es opcional', timer: 1200, showConfirmButton: false });
+        })
+        .catch(() => {
+            Swal.fire('Error', 'No se pudo comunicar con el servidor.', 'error');
+            chk.checked = !chk.checked;
+        });
+}
+
 function toggleOpcionesCampo() {
     document.getElementById('wrap_opciones_campo').style.display = document.getElementById('nuevo_campo_tipo').value === 'SELECT' ? 'block' : 'none';
 }

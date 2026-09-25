@@ -3,8 +3,9 @@
 {% block content %}
 <h4 class="fw-bold mb-3"><i class="bi bi-clipboard2-data-fill"></i> Revisión de Conteos Físicos</h4>
 
-<div class="mb-3">
+<div class="mb-3 d-flex gap-2 flex-wrap">
     <a href="{{ url_for('admin_auditorias_historial') }}" class="btn btn-outline-dark btn-sm"><i class="bi bi-journal-text"></i> Ver Kardex Completo</a>
+    <a href="{{ url_for('admin_periodos_lista') }}" class="btn btn-outline-primary btn-sm"><i class="bi bi-calendar-range"></i> Períodos de Auditoría</a>
 </div>
 
 <div class="card border-0 shadow-sm mb-3">
@@ -36,6 +37,16 @@
                     {% endfor %}
                 </select>
             </div>
+            <div class="col-6 col-md-3">
+                <label class="small fw-bold text-muted">Auditoría (Período)</label>
+                <select name="periodo" class="form-select form-select-sm" onchange="this.form.submit()">
+                    <option value="todos" {% if periodo_filtro == 'todos' %}selected{% endif %}>Todos</option>
+                    {% for p in lista_periodos %}
+                    <option value="{{ p.id }}" {% if periodo_filtro == p.id|string %}selected{% endif %}>{{ p.nombre }} {{ '(activa)' if p.estado == 'ABIERTO' else '' }}</option>
+                    {% endfor %}
+                    <option value="sin_periodo" {% if periodo_filtro == 'sin_periodo' %}selected{% endif %}>Sin período (anteriores)</option>
+                </select>
+            </div>
         </form>
     </div>
 </div>
@@ -48,6 +59,7 @@
                     <th class="ps-3">Enviado</th>
                     <th>Última Edición</th>
                     <th>Auditor</th>
+                    <th>Auditoría</th>
                     <th>Origen</th>
                     <th>SKU</th>
                     <th>Descripción</th>
@@ -70,6 +82,7 @@
                         {% endif %}
                     </td>
                     <td>{{ r.trabajador.nombre_completo }}</td>
+                    <td>{{ r.periodo.nombre if r.periodo else '-' }}</td>
                     <td><span class="badge bg-light text-dark border">{{ r.origen_inventario }}</span></td>
                     <td class="fw-bold text-primary">{{ r.sku_snapshot }}</td>
                     <td>{{ r.nombre_snapshot }}</td>
@@ -93,7 +106,7 @@
                     </td>
                 </tr>
                 {% else %}
-                <tr><td colspan="9" class="text-center py-4 text-muted">No hay registros con este filtro.</td></tr>
+                <tr><td colspan="10" class="text-center py-4 text-muted">No hay registros con este filtro.</td></tr>
                 {% endfor %}
             </tbody>
         </table>

@@ -36,7 +36,7 @@
                 <!-- MENÚ EXCLUSIVO: AUDITOR DE STOCK    -->
                 <!-- ================================== -->
                 <div class="nav-title">Conteo Físico</div>
-                <a href="{{ url_for('auditoria_inicio') }}" class="nav-link {{ 'active' if request.endpoint in ['auditoria_inicio', 'auditoria_form'] }}">
+                <a href="{{ url_for('auditoria_inicio') }}" class="nav-link {{ 'active' if request.endpoint in ['auditoria_inicio', 'auditoria_form', 'auditoria_elegir_periodo'] }}">
                     <i class="bi bi-clipboard2-check-fill me-2"></i> <span>Nuevo Conteo</span>
                 </a>
                 <a href="{{ url_for('auditoria_mis_registros') }}" class="nav-link {{ 'active' if request.endpoint == 'auditoria_mis_registros' }}">
@@ -140,6 +140,9 @@
                 <div class="nav-title">Auditoría</div>
                 <a href="{{ url_for('admin_auditorias_lista') }}" class="nav-link {{ 'active' if request.endpoint in ['admin_auditorias_lista', 'admin_auditorias_detalle'] }}">
                     <i class="bi bi-clipboard2-data-fill me-2"></i> <span>Revisión de Conteos</span>
+                </a>
+                <a href="{{ url_for('admin_periodos_lista') }}" class="nav-link {{ 'active' if request.endpoint == 'admin_periodos_lista' }}">
+                    <i class="bi bi-calendar-range me-2"></i> <span>Períodos de Auditoría</span>
                 </a>
                 <a href="{{ url_for('admin_auditorias_historial') }}" class="nav-link {{ 'active' if request.endpoint == 'admin_auditorias_historial' }}">
                     <i class="bi bi-journal-text me-2"></i> <span>Kardex de Auditorías</span>

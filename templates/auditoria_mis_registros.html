@@ -5,12 +5,21 @@
     <h4 class="fw-bold mb-0">Mis Registros Enviados</h4>
     <a href="{{ url_for('auditoria_inicio') }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Volver</a>
 </div>
+
+<div class="alert alert-light border small">
+    <i class="bi bi-info-circle-fill text-primary"></i>
+    Puedes <b>corregir</b> un conteo mientras esté <span class="badge bg-warning text-dark">Pendiente</span>.
+    En cuanto el administrador lo <b>aplique</b> o lo <b>rechace</b>, el registro queda bloqueado y ya no se puede editar.
+    Si necesitas corregir un dato después de eso, <b>crea un nuevo registro</b> para ese producto.
+</div>
+
 <div class="card shadow-sm border-0">
     <div class="table-responsive">
         <table class="table table-hover align-middle mb-0 small">
             <thead class="table-dark">
                 <tr>
                     <th class="ps-3">Fecha</th>
+                    <th>Auditoría</th>
                     <th>Origen</th>
                     <th>SKU</th>
                     <th>Descripción</th>
@@ -24,6 +33,7 @@
                 {% for r in registros %}
                 <tr>
                     <td class="ps-3">{{ r.fecha_registro.strftime('%d/%m/%Y %H:%M') }}</td>
+                    <td>{{ r.periodo.nombre if r.periodo else '-' }}</td>
                     <td>{{ r.origen_inventario }}</td>
                     <td class="fw-bold">{{ r.sku_snapshot }}</td>
                     <td>{{ r.nombre_snapshot }}</td>
@@ -42,11 +52,15 @@
                     <td class="text-center pe-3">
                         {% if r.estado_registro == 'PENDIENTE' %}
                         <a href="{{ url_for('auditoria_editar_form', reg_id=r.id) }}" class="btn btn-sm btn-outline-warning"><i class="bi bi-pencil-fill"></i> Editar</a>
-                        {% else %}-{% endif %}
+                        {% else %}
+                        <span class="text-muted" style="font-size:.75rem;" title="Ya fue revisado por el administrador. Crea un nuevo registro si necesitas corregir algo.">
+                            <i class="bi bi-lock-fill"></i> Bloqueado
+                        </span>
+                        {% endif %}
                     </td>
                 </tr>
                 {% else %}
-                <tr><td colspan="8" class="text-center py-4 text-muted">Sin registros enviados aún.</td></tr>
+                <tr><td colspan="9" class="text-center py-4 text-muted">Sin registros enviados aún.</td></tr>
                 {% endfor %}
             </tbody>
         </table>

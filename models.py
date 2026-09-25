@@ -529,6 +529,38 @@ class Presentacion(db.Model):
 
 # --- MÓDULO DE AUDITORÍA / CONTEO FÍSICO ---
 
+class PeriodoAuditoria(db.Model):
+    """Agrupa los conteos físicos en campañas/periodos (mensual, anual, etc.) para no mezclar
+    auditorías distintas entre sí. Es GLOBAL: cubre tanto ANCLAJES como IMPORTBOLTS a la vez, ya
+    que el auditor primero elige el período y luego, dentro de él, la empresa a contar.
+    Recomendación: mantener como máximo UN período en estado ABIERTO a la vez, para evitar que
+    los auditores mezclen conteos de campañas distintas."""
+    __tablename__ = 'periodo_auditoria'
+    id = db.Column(db.Integer, primary_key=True)
+    nombre = db.Column(db.String(150), nullable=False)
+    descripcion = db.Column(db.String(500), nullable=True)
+
+    estado = db.Column(db.String(20), nullable=False, default='ABIERTO')  # ABIERTO / CERRADO
+
+    creado_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    fecha_creacion = db.Column(db.DateTime, default=hora_peru)
+
+    # Cierre automático opcional: si se define, al llegar esta fecha el período se cierra solo
+    # (evaluado de forma perezosa, la primera vez que alguien lo consulta después de esa fecha).
+    fecha_cierre_programada = db.Column(db.DateTime, nullable=True)
+
+    # Cuándo y quién lo cerró realmente. cerrado_por_id = NULL significa cierre automático.
+    fecha_cierre = db.Column(db.DateTime, nullable=True)
+    cerrado_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+
+    creado_por = db.relationship('User', foreign_keys=[creado_por_id])
+    cerrado_por = db.relationship('User', foreign_keys=[cerrado_por_id])
+
+    @property
+    def esta_abierto(self):
+        return self.estado == 'ABIERTO'
+
+
 class CatalogoValor(db.Model):
     """Catálogo genérico y administrable: ESTADO_FISICO, UNIDAD_MEDIDA, ANAQUEL, NICHO.
     Solo el admin puede agregar/desactivar valores."""
@@ -604,6 +636,10 @@ class RegistroAuditoria(db.Model):
 
     stock_sistema_snapshot = db.Column(db.Integer)  # oculto al auditor (conteo ciego)
 
+    # Período de auditoría al que pertenece este conteo (nullable: los registros anteriores a
+    # esta funcionalidad quedan sin período asignado).
+    periodo_id = db.Column(db.Integer, db.ForeignKey('periodo_auditoria.id'), nullable=True)
+
     estado_registro = db.Column(db.String(20), default='PENDIENTE')  # PENDIENTE, APROBADO, RECHAZADO, APLICADO
     bloqueado = db.Column(db.Boolean, default=True)
     motivo_rechazo = db.Column(db.Text)
@@ -630,10 +666,26 @@ class RegistroAuditoria(db.Model):
     aplicado_por = db.relationship('User', foreign_keys=[aplicado_por_id])
     product = db.relationship('Product')
     product_importbolts = db.relationship('ProductImportBolts')
+    periodo = db.relationship('PeriodoAuditoria')
 
     @property
     def producto(self):
         return self.product_importbolts if self.origen_inventario == 'IMPORTBOLTS' else self.product
+
+
+class RegistroAuditoriaFoto(db.Model):
+    """Fotos adjuntadas a un conteo físico (mismas reglas que las fotos de producto:
+    máx. 5 fotos, máx. 5MB cada una, solo formatos de imagen)."""
+    __tablename__ = 'registro_auditoria_foto'
+    id = db.Column(db.Integer, primary_key=True)
+    registro_id = db.Column(db.Integer, db.ForeignKey('registro_auditoria.id'), nullable=False)
+    url_s3 = db.Column(db.String(500), nullable=False)
+    s3_key = db.Column(db.String(500), nullable=False)
+    subido_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    fecha_subida = db.Column(db.DateTime, default=hora_peru)
+
+    registro = db.relationship('RegistroAuditoria', backref=db.backref('fotos', cascade="all, delete-orphan"))
+    subido_por = db.relationship('User')
 
 
 class RegistroAuditoriaValorExtra(db.Model):

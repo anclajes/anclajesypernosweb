@@ -19,6 +19,7 @@
             <div class="card-body small">
                 <table class="table table-sm mb-0">
                     <tr><td class="text-muted">Auditor</td><td class="fw-bold">{{ registro.trabajador.nombre_completo }}</td></tr>
+                    <tr><td class="text-muted">Auditoría (Período)</td><td>{{ registro.periodo.nombre if registro.periodo else '-' }}</td></tr>
                     <tr><td class="text-muted">Fecha/Hora de Envío</td><td>{{ registro.fecha_registro.strftime('%d/%m/%Y %H:%M') }}</td></tr>
                     {% set logs_edicion = registro.logs | selectattr('accion', 'equalto', 'EDITADO_POR_AUDITOR') | list %}
                     {% if logs_edicion %}
@@ -123,6 +124,16 @@
     </div>
 </div>
 
+<!-- FOTOS DEL CONTEO -->
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-header fw-bold"><i class="bi bi-camera-fill"></i> Fotos del Conteo</div>
+    <div class="card-body">
+        <div id="lista_fotos_detalle" class="d-flex flex-wrap gap-2">
+            <span class="text-muted small">Cargando...</span>
+        </div>
+    </div>
+</div>
+
 <!-- ACCIONES DE REVISIÓN -->
 <!-- ACCIONES DE REVISIÓN -->
 {% if registro.estado_registro != 'APLICADO' %}
@@ -220,6 +231,46 @@
 
 <script>
 const REG_ID = {{ registro.id }};
+
+function cargarFotosDetalle() {
+    fetch(`/api/auditoria/registro/${REG_ID}/fotos`).then(r => r.json()).then(data => {
+        const cont = document.getElementById('lista_fotos_detalle');
+        cont.innerHTML = '';
+        (data.fotos || []).forEach(f => {
+            const div = document.createElement('div');
+            div.style.position = 'relative';
+            div.innerHTML = `
+                <a href="${f.url}" target="_blank"><img src="${f.url}" style="width:110px; height:110px; object-fit:cover; border-radius:8px; border:1px solid #dee2e6;"></a>
+                <div class="text-muted" style="font-size:.65rem; max-width:110px;">${f.subido_por} — ${f.fecha_hora}</div>
+                <button type="button" class="btn btn-sm btn-danger" style="position:absolute; top:-8px; right:-8px; border-radius:50%; padding:0; width:22px; height:22px; line-height:1;" onclick="eliminarFotoDetalle(${f.id})">&times;</button>`;
+            cont.appendChild(div);
+        });
+        if (!data.fotos || data.fotos.length === 0) {
+            cont.innerHTML = '<span class="text-muted small">Este conteo no tiene fotos adjuntas.</span>';
+        }
+    });
+}
+
+function eliminarFotoDetalle(fotoId) {
+    Swal.fire({
+        title: '¿Eliminar esta foto?', icon: 'warning',
+        showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Sí, eliminar'
+    }).then(result => {
+        if (!result.isConfirmed) return;
+        fetch(`/api/auditoria/foto/${fotoId}/eliminar`, { method: 'POST' })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status !== 'success') {
+                    Swal.fire('No se pudo eliminar', data.msg, 'error');
+                    return;
+                }
+                cargarFotosDetalle();
+            })
+            .catch(() => Swal.fire('Error', 'No se pudo comunicar con el servidor.', 'error'));
+    });
+}
+
+document.addEventListener('DOMContentLoaded', cargarFotosDetalle);
 
 function rechazar() {
     Swal.fire({title:'Motivo de rechazo', input:'text', showCancelButton:true, confirmButtonText:'Rechazar'}).then(result=>{

@@ -1,5 +1,5 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, session
-from models import db, User, Product, Category, Client, Order, OrderDetail, ProductMovement, AuditLog, SystemConfig,OrderKitComponent, ClientContact, ClientContactLog, ClientRubroVendedor, IntercompanyTransfer, MetaVendedor, ProductImage, MotivoMovimiento, Proveedor, Presentacion, RegistroAuditoria, RegistroAuditoriaLog, RegistroAuditoriaValorExtra, CatalogoValor, CampoPersonalizado, CampoPersonalizadoOpcion
+from models import db, User, Product, Category, Client, Order, OrderDetail, ProductMovement, AuditLog, SystemConfig,OrderKitComponent, ClientContact, ClientContactLog, ClientRubroVendedor, IntercompanyTransfer, MetaVendedor, ProductImage, MotivoMovimiento, Proveedor, Presentacion, RegistroAuditoria, RegistroAuditoriaLog, RegistroAuditoriaValorExtra, CatalogoValor, CampoPersonalizado, CampoPersonalizadoOpcion, PeriodoAuditoria, RegistroAuditoriaFoto
 from models import ProductImportBolts, CategoryImportBolts, ProductMovementImportBolts
 from models import ProductMovement
 from models import Payment
@@ -251,6 +251,108 @@ def registrar_log_auditoria(registro, accion, detalle=''):
         realizado_por_id=session.get('user_id'), fecha=hora_peru()
     )
     db.session.add(log)
+
+
+# ============================================
+# HELPERS: PERÍODOS DE AUDITORÍA Y FOTOS DE CONTEO
+# ============================================
+
+def _fotos_auditoria_obligatorias():
+    """True si el admin exige al menos una foto por cada conteo físico enviado."""
+    cfg = SystemConfig.query.get('auditoria_fotos_obligatorias')
+    return bool(cfg and cfg.value == '1')
+
+
+def _verificar_cierre_automatico_periodo(periodo):
+    """Si el período tiene una fecha de cierre programada y ya pasó, lo cierra automáticamente
+    (cierre 'perezoso': se evalúa la primera vez que alguien lo consulta después de esa fecha).
+    Devuelve True si hizo un cambio (el caller debe hacer commit)."""
+    if periodo and periodo.estado == 'ABIERTO' and periodo.fecha_cierre_programada and hora_peru() >= periodo.fecha_cierre_programada:
+        periodo.estado = 'CERRADO'
+        periodo.fecha_cierre = periodo.fecha_cierre_programada
+        periodo.cerrado_por_id = None  # None = se cerró solo, no un admin
+        db.session.add(periodo)
+        return True
+    return False
+
+
+def _obtener_periodo_activo_sesion():
+    """Devuelve el PeriodoAuditoria que el auditor tiene elegido en su sesión, siempre que siga
+    ABIERTO. Si no hay ninguno elegido, o el que tenía ya se cerró, limpia la sesión y devuelve None."""
+    periodo_id = session.get('periodo_auditoria_id')
+    if not periodo_id:
+        return None
+    periodo = PeriodoAuditoria.query.get(periodo_id)
+    if not periodo:
+        session.pop('periodo_auditoria_id', None)
+        session.pop('periodo_auditoria_nombre', None)
+        return None
+    if _verificar_cierre_automatico_periodo(periodo):
+        db.session.commit()
+    if not periodo.esta_abierto:
+        session.pop('periodo_auditoria_id', None)
+        session.pop('periodo_auditoria_nombre', None)
+        return None
+    return periodo
+
+
+def _validar_archivo_imagen(archivo):
+    """Valida un FileStorage recibido: extensión, contenido real (magic bytes) y tamaño máx. 5MB.
+    Devuelve (True, extension) si es válido, o (False, mensaje_error) si no."""
+    if not archivo or archivo.filename == '':
+        return False, 'Archivo vacío.'
+
+    ext = archivo.filename.rsplit('.', 1)[-1].lower() if '.' in archivo.filename else ''
+    if ext not in ['jpg', 'jpeg', 'png', 'webp']:
+        return False, f'Formato no permitido en "{archivo.filename}". Use JPG, PNG o WEBP.'
+
+    cabecera = archivo.stream.read(12)
+    archivo.stream.seek(0)
+    es_jpeg = cabecera.startswith(b'\xff\xd8\xff')
+    es_png = cabecera.startswith(b'\x89PNG\r\n\x1a\n')
+    es_webp = cabecera[0:4] == b'RIFF' and cabecera[8:12] == b'WEBP'
+    if not (es_jpeg or es_png or es_webp):
+        return False, f'"{archivo.filename}" no es una imagen válida. Se rechazó por seguridad.'
+
+    if not archivo.content_type or not archivo.content_type.startswith('image/'):
+        return False, f'"{archivo.filename}" no es una imagen válida.'
+
+    archivo.seek(0, 2)
+    tamano = archivo.tell()
+    archivo.seek(0)
+    if tamano > 5 * 1024 * 1024:
+        return False, f'"{archivo.filename}" supera los 5MB permitidos.'
+
+    return True, ext
+
+
+def _subir_foto_auditoria(registro, archivo):
+    """Valida y sube una foto de conteo físico a S3, y crea su registro en la BD.
+    Devuelve (RegistroAuditoriaFoto, None) si todo salió bien, o (None, mensaje_error) si no."""
+    ok, resultado = _validar_archivo_imagen(archivo)
+    if not ok:
+        return None, resultado
+    ext = resultado
+
+    try:
+        carpeta = 'auditorias/importbolts' if registro.origen_inventario == 'IMPORTBOLTS' else 'auditorias/anclajes'
+        nombre_archivo = f"{uuid.uuid4().hex}.{ext}"
+        s3_key = f"{carpeta}/{registro.id}/{nombre_archivo}"
+
+        s3_client.upload_fileobj(
+            archivo, S3_BUCKET_NAME, s3_key,
+            ExtraArgs={'ContentType': archivo.content_type}
+        )
+        foto = RegistroAuditoriaFoto(
+            registro_id=registro.id,
+            url_s3=f"s3://{S3_BUCKET_NAME}/{s3_key}",
+            s3_key=s3_key,
+            subido_por_id=session.get('user_id')
+        )
+        db.session.add(foto)
+        return foto, None
+    except Exception as e:
+        return None, f'Error al subir "{archivo.filename}": {str(e)}'
 
 
 def comparar_cambios(dict_antes, dict_despues):
@@ -7697,15 +7799,63 @@ def verificar_nombre_existe():
 # MÓDULO AUDITORÍA - VISTA AUDITOR DE STOCK
 # ============================================
 
+@app.route('/auditoria/periodo')
+def auditoria_elegir_periodo():
+    """Primera pantalla que ve el auditor: elige a qué campaña/período de auditoría va a
+    contribuir antes de elegir la empresa. Si ya tiene un período válido en su sesión y no se
+    pidió explícitamente cambiar, lo saltea directo al siguiente paso."""
+    if session.get('role') != 'auditor_stock': return "Acceso denegado", 403
+
+    forzar_cambio = request.args.get('cambiar') == '1'
+    if forzar_cambio:
+        session.pop('periodo_auditoria_id', None)
+        session.pop('periodo_auditoria_nombre', None)
+    elif _obtener_periodo_activo_sesion():
+        return redirect(url_for('auditoria_inicio'))
+
+    periodos_abiertos = PeriodoAuditoria.query.filter_by(estado='ABIERTO').order_by(PeriodoAuditoria.fecha_creacion.desc()).all()
+    hubo_cambios = False
+    for p in periodos_abiertos:
+        if _verificar_cierre_automatico_periodo(p):
+            hubo_cambios = True
+    if hubo_cambios:
+        db.session.commit()
+        periodos_abiertos = [p for p in periodos_abiertos if p.esta_abierto]
+
+    return render_template('auditoria_elegir_periodo.html', periodos=periodos_abiertos)
+
+
+@app.route('/auditoria/periodo/<int:periodo_id>/entrar')
+def auditoria_entrar_periodo(periodo_id):
+    if session.get('role') != 'auditor_stock': return "Acceso denegado", 403
+    periodo = PeriodoAuditoria.query.get_or_404(periodo_id)
+    if _verificar_cierre_automatico_periodo(periodo):
+        db.session.commit()
+    if not periodo.esta_abierto:
+        flash('Esta auditoría ya fue cerrada. Elige otra que esté activa.')
+        return redirect(url_for('auditoria_elegir_periodo'))
+
+    session['periodo_auditoria_id'] = periodo.id
+    session['periodo_auditoria_nombre'] = periodo.nombre
+    return redirect(url_for('auditoria_inicio'))
+
+
 @app.route('/auditoria')
 def auditoria_inicio():
     if session.get('role') != 'auditor_stock': return "Acceso denegado", 403
-    return render_template('auditoria_inicio.html')
+    periodo = _obtener_periodo_activo_sesion()
+    if not periodo:
+        return redirect(url_for('auditoria_elegir_periodo'))
+    return render_template('auditoria_inicio.html', periodo=periodo)
 
 
 @app.route('/auditoria/<origen>/nuevo', methods=['GET'])
 def auditoria_form(origen):
     if session.get('role') != 'auditor_stock': return "Acceso denegado", 403
+    periodo = _obtener_periodo_activo_sesion()
+    if not periodo:
+        flash('Debes elegir una auditoría activa antes de continuar.')
+        return redirect(url_for('auditoria_elegir_periodo'))
     if origen not in ['ANCLAJES', 'IMPORTBOLTS']: return redirect(url_for('auditoria_inicio'))
 
     CatModelo = CategoryImportBolts if origen == 'IMPORTBOLTS' else Category
@@ -7713,6 +7863,8 @@ def auditoria_form(origen):
 
     return render_template('auditoria_form.html',
                            origen=origen,
+                           periodo=periodo,
+                           fotos_obligatorias=_fotos_auditoria_obligatorias(),
                            lista_categorias=lista_categorias,
                            now_str=hora_peru().strftime('%d/%m/%Y %H:%M'))
 
@@ -7772,6 +7924,10 @@ def auditoria_guardar(origen):
     if session.get('role') != 'auditor_stock': return {'status': 'error', 'msg': 'No autorizado'}, 403
     if origen not in ['ANCLAJES', 'IMPORTBOLTS']: return {'status': 'error', 'msg': 'Origen inválido'}
 
+    periodo = _obtener_periodo_activo_sesion()
+    if not periodo:
+        return {'status': 'error', 'msg': 'Tu auditoría activa ya no está disponible (fue cerrada). Vuelve a elegir una auditoría activa antes de enviar este conteo.', 'periodo_invalido': True}
+
     try:
         prod_id = int(request.form['producto_id'])
         Modelo = ProductImportBolts if origen == 'IMPORTBOLTS' else Product
@@ -7812,6 +7968,7 @@ def auditoria_guardar(origen):
             estado_fisico=estado_fisico_val,
             observaciones=request.form.get('observaciones', '').strip(),
             stock_sistema_snapshot=prod.stock_actual,  # oculto, solo para el admin
+            periodo_id=periodo.id,
             estado_registro='PENDIENTE',
             bloqueado=True
         )
@@ -7844,8 +8001,22 @@ def auditoria_guardar(origen):
                     etiqueta_snapshot=campo.etiqueta, valor=valor_enviado
                 ))
 
+        # --- Fotos del conteo (máx. 5, máx. 5MB c/u, solo imágenes) ---
+        archivos_fotos = request.files.getlist('fotos')[:5]
+        if _fotos_auditoria_obligatorias() and not any(a and a.filename for a in archivos_fotos):
+            db.session.rollback()
+            return {'status': 'error', 'msg': 'Debe adjuntar al menos una foto del conteo físico.'}
+
+        for archivo in archivos_fotos:
+            if not archivo or not archivo.filename:
+                continue
+            foto, error = _subir_foto_auditoria(registro, archivo)
+            if error:
+                db.session.rollback()
+                return {'status': 'error', 'msg': error}
+
         registrar_log_auditoria(registro, 'CREADO',
-            f"Conteo enviado por {session.get('nombre')}: {registro.cantidad_total} {registro.unidad_medida}")
+            f"Conteo enviado por {session.get('nombre')}: {registro.cantidad_total} {registro.unidad_medida} (Período: {periodo.nombre})")
 
         db.session.commit()
         return {'status': 'success', 'msg': f'Registro enviado para {prod.sku}. Quedará pendiente de revisión.'}
@@ -7862,6 +8033,115 @@ def auditoria_mis_registros():
         .order_by(RegistroAuditoria.fecha_registro.desc()).limit(100).all()
     return render_template('auditoria_mis_registros.html', registros=registros)
 
+
+# ============================================
+# FOTOS DE CONTEO FÍSICO (Auditoría)
+# ============================================
+
+def _puede_ver_fotos_auditoria(registro):
+    rol = session.get('role')
+    if rol in ['admin', 'administracion']:
+        return True
+    if rol == 'auditor_stock' and registro.trabajador_id == session.get('user_id'):
+        return True
+    return False
+
+
+@app.route('/api/auditoria/registro/<int:reg_id>/fotos')
+def listar_fotos_auditoria(reg_id):
+    registro = RegistroAuditoria.query.get_or_404(reg_id)
+    if not _puede_ver_fotos_auditoria(registro):
+        return {'status': 'error', 'msg': 'No autorizado'}, 403
+
+    return {'status': 'success', 'fotos': [{
+        'id': f.id, 'url': url_for('ver_foto_auditoria', foto_id=f.id),
+        'subido_por': f.subido_por.nombre_completo if f.subido_por else '-',
+        'fecha_hora': f.fecha_subida.strftime('%d/%m/%Y %H:%M')
+    } for f in registro.fotos]}
+
+
+@app.route('/api/auditoria/foto/<int:foto_id>/ver')
+def ver_foto_auditoria(foto_id):
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+
+    foto = RegistroAuditoriaFoto.query.get_or_404(foto_id)
+    if not _puede_ver_fotos_auditoria(foto.registro):
+        return "No autorizado", 403
+
+    forzar_descarga = request.args.get('download') == '1'
+    try:
+        archivo_s3 = s3_client.get_object(Bucket=S3_BUCKET_NAME, Key=foto.s3_key)
+        extension = foto.s3_key.rsplit('.', 1)[-1].lower()
+        tipo_mime = {
+            'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
+            'png': 'image/png', 'webp': 'image/webp'
+        }.get(extension, 'application/octet-stream')
+
+        return send_file(
+            io.BytesIO(archivo_s3['Body'].read()),
+            mimetype=tipo_mime,
+            as_attachment=forzar_descarga,
+            download_name=f"conteo_{foto.registro_id}_foto_{foto.id}.{extension}"
+        )
+    except Exception as e:
+        return f"<h3>No se pudo recuperar la imagen</h3><p>{str(e)}</p>", 404
+
+
+@app.route('/api/auditoria/registro/<int:reg_id>/subir_foto', methods=['POST'])
+def subir_foto_auditoria_registro(reg_id):
+    """Solo el auditor dueño del registro puede AGREGAR fotos, y solo mientras esté PENDIENTE
+    (una vez revisado por el admin, el registro queda bloqueado igual que el resto de sus datos)."""
+    registro = RegistroAuditoria.query.get_or_404(reg_id)
+    if session.get('role') != 'auditor_stock' or registro.trabajador_id != session.get('user_id'):
+        return {'status': 'error', 'msg': 'No autorizado'}, 403
+    if registro.estado_registro != 'PENDIENTE':
+        return {'status': 'error', 'msg': 'Este registro ya fue revisado y no se puede modificar.'}
+
+    if len(registro.fotos) >= 5:
+        return {'status': 'error', 'msg': 'Este conteo ya tiene el máximo de 5 fotos. Elimine una para subir otra.'}
+
+    if 'foto' not in request.files:
+        return {'status': 'error', 'msg': 'No se envió ninguna imagen.'}
+
+    foto, error = _subir_foto_auditoria(registro, request.files['foto'])
+    if error:
+        db.session.rollback()
+        return {'status': 'error', 'msg': error}
+
+    db.session.commit()
+    return {
+        'status': 'success', 'msg': 'Foto subida correctamente.',
+        'url': url_for('ver_foto_auditoria', foto_id=foto.id),
+        'id': foto.id
+    }
+
+
+@app.route('/api/auditoria/foto/<int:foto_id>/eliminar', methods=['POST'])
+def eliminar_foto_auditoria(foto_id):
+    """El auditor dueño puede borrar sus propias fotos mientras el registro esté PENDIENTE.
+    El admin/administración puede borrar cualquier foto en cualquier momento (p.ej. para
+    depurar fotos irrelevantes o repetidas al revisar el conteo)."""
+    foto = RegistroAuditoriaFoto.query.get_or_404(foto_id)
+    registro = foto.registro
+    rol = session.get('role')
+
+    es_admin = rol in ['admin', 'administracion']
+    es_dueno_pendiente = (rol == 'auditor_stock' and registro.trabajador_id == session.get('user_id')
+                           and registro.estado_registro == 'PENDIENTE')
+    if not (es_admin or es_dueno_pendiente):
+        return {'status': 'error', 'msg': 'No autorizado'}, 403
+
+    try:
+        s3_client.delete_object(Bucket=S3_BUCKET_NAME, Key=foto.s3_key)
+    except Exception as e:
+        print(f"Aviso: no se pudo borrar de S3 ({e}), se elimina igual el registro.")
+
+    db.session.delete(foto)
+    db.session.commit()
+    return {'status': 'success', 'msg': 'Foto eliminada.'}
+
+
 # ============================================
 # MÓDULO AUDITORÍA - VISTA ADMIN
 # ============================================
@@ -7873,6 +8153,7 @@ def admin_auditorias_lista():
     estado_filtro = request.args.get('estado', 'PENDIENTE')
     origen_filtro = request.args.get('origen', 'todos')
     trabajador_filtro = request.args.get('trabajador', 'todos')
+    periodo_filtro = request.args.get('periodo', 'todos')
 
     query = RegistroAuditoria.query
     if estado_filtro != 'todos':
@@ -7881,9 +8162,14 @@ def admin_auditorias_lista():
         query = query.filter_by(origen_inventario=origen_filtro)
     if trabajador_filtro != 'todos':
         query = query.filter_by(trabajador_id=trabajador_filtro)
+    if periodo_filtro == 'sin_periodo':
+        query = query.filter(RegistroAuditoria.periodo_id.is_(None))
+    elif periodo_filtro != 'todos':
+        query = query.filter_by(periodo_id=periodo_filtro)
 
     registros = query.order_by(RegistroAuditoria.fecha_registro.desc()).all()
     trabajadores = User.query.filter_by(role='auditor_stock').all()
+    lista_periodos = PeriodoAuditoria.query.order_by(PeriodoAuditoria.fecha_creacion.desc()).all()
 
     # Para cada registro, buscamos si tiene una edición del auditor y cuándo fue la última
     ids_registros = [r.id for r in registros]
@@ -7901,6 +8187,7 @@ def admin_auditorias_lista():
                            registros=registros, trabajadores=trabajadores,
                            estado_filtro=estado_filtro, origen_filtro=origen_filtro,
                            trabajador_filtro=trabajador_filtro,
+                           periodo_filtro=periodo_filtro, lista_periodos=lista_periodos,
                            ultimas_ediciones=ultimas_ediciones)
 
 
@@ -7992,7 +8279,7 @@ def admin_auditoria_aplicar(reg_id):
             movimiento = ModeloMov(
                 product_id=prod.id, user_id=session['user_id'], tipo=tipo_mov,
                 cantidad=abs(diferencia), stock_anterior=stock_antes, stock_nuevo=nuevo_stock,
-                motivo=f"Ajuste por Conteo Físico #{registro.id} (Auditor: {registro.trabajador.nombre_completo})"
+                motivo=f"Ajuste por Conteo Físico #{registro.id} (Auditor: {registro.trabajador.nombre_completo}, Período: {registro.periodo.nombre if registro.periodo else 'Sin período'})"
             )
             db.session.add(movimiento)
 
@@ -8032,7 +8319,23 @@ def admin_catalogos():
             valores.sort(key=lambda v: v.valor)
         catalogos[t] = valores
     campos = CampoPersonalizado.query.order_by(CampoPersonalizado.orden, CampoPersonalizado.id).all()
-    return render_template('admin_catalogos.html', catalogos=catalogos, campos=campos)
+    return render_template('admin_catalogos.html', catalogos=catalogos, campos=campos,
+                           fotos_obligatorias=_fotos_auditoria_obligatorias())
+
+
+@app.route('/admin/catalogos/fotos_auditoria/toggle', methods=['POST'])
+def admin_catalogos_fotos_toggle():
+    if session.get('role') != 'admin': return {'status': 'error', 'msg': 'No autorizado'}, 403
+    activar = request.form.get('activo') == '1'
+    cfg = SystemConfig.query.get('auditoria_fotos_obligatorias')
+    if not cfg:
+        cfg = SystemConfig(key='auditoria_fotos_obligatorias')
+        db.session.add(cfg)
+    cfg.value = '1' if activar else '0'
+    cfg.updated_at = hora_peru()
+    cfg.updated_by = session.get('nombre', 'Sistema')
+    db.session.commit()
+    return {'status': 'success', 'activo': activar}
 
 
 @app.route('/admin/catalogos/valor/nuevo', methods=['POST'])
@@ -8261,6 +8564,120 @@ def admin_auditorias_historial():
                            usuario_filtro=usuario_filtro, busqueda=busqueda,
                            usuarios_con_logs=usuarios_con_logs)
 
+
+# ============================================
+# PERÍODOS DE AUDITORÍA (campañas de conteo físico)
+# ============================================
+
+@app.route('/admin/auditorias/periodos')
+def admin_periodos_lista():
+    if session.get('role') not in ['admin', 'administracion']: return "Acceso denegado", 403
+
+    periodos = PeriodoAuditoria.query.order_by(PeriodoAuditoria.fecha_creacion.desc()).all()
+    cambios = False
+    for p in periodos:
+        if _verificar_cierre_automatico_periodo(p):
+            cambios = True
+    if cambios:
+        db.session.commit()
+
+    # Conteo de registros por período (para mostrar cuántos conteos tiene cada uno)
+    conteos = dict(
+        db.session.query(RegistroAuditoria.periodo_id, func.count(RegistroAuditoria.id))
+        .group_by(RegistroAuditoria.periodo_id).all()
+    )
+    hay_periodo_abierto = any(p.esta_abierto for p in periodos)
+
+    return render_template('admin_periodos_auditoria.html',
+                           periodos=periodos, conteos=conteos,
+                           hay_periodo_abierto=hay_periodo_abierto)
+
+
+@app.route('/admin/auditorias/periodos/nuevo', methods=['POST'])
+def admin_periodo_crear():
+    if session.get('role') not in ['admin', 'administracion']: return {'status': 'error', 'msg': 'No autorizado'}, 403
+
+    nombre = request.form.get('nombre', '').strip()
+    descripcion = request.form.get('descripcion', '').strip()
+    fecha_cierre_raw = request.form.get('fecha_cierre_programada', '').strip()
+    cerrar_actual = request.form.get('cerrar_actual') == '1'
+
+    if not nombre:
+        return {'status': 'error', 'msg': 'Debe indicar un nombre para identificar el período (ej. "Auditoría Anual 2026").'}
+
+    fecha_cierre_programada = None
+    if fecha_cierre_raw:
+        try:
+            fecha_cierre_programada = datetime.strptime(fecha_cierre_raw, '%Y-%m-%dT%H:%M')
+        except ValueError:
+            return {'status': 'error', 'msg': 'Fecha de cierre automático inválida.'}
+        if fecha_cierre_programada <= hora_peru():
+            return {'status': 'error', 'msg': 'La fecha de cierre automático debe ser en el futuro.'}
+
+    abiertos = PeriodoAuditoria.query.filter_by(estado='ABIERTO').all()
+    if abiertos and not cerrar_actual:
+        nombres = ', '.join(p.nombre for p in abiertos)
+        return {
+            'status': 'error',
+            'msg': f'Ya hay una auditoría activa ({nombres}). Para evitar mezclar conteos, ciérrala primero o marca la opción de cerrarla automáticamente al crear esta nueva.',
+            'hay_abierto': True
+        }
+
+    if cerrar_actual:
+        for p in abiertos:
+            p.estado = 'CERRADO'
+            p.fecha_cierre = hora_peru()
+            p.cerrado_por_id = session.get('user_id')
+
+    nuevo = PeriodoAuditoria(
+        nombre=nombre,
+        descripcion=descripcion or None,
+        estado='ABIERTO',
+        creado_por_id=session.get('user_id'),
+        fecha_cierre_programada=fecha_cierre_programada
+    )
+    db.session.add(nuevo)
+    registrar_log(f"Creó el período de auditoría '{nombre}'", "bi-calendar-plus", "text-success")
+    db.session.commit()
+    return {'status': 'success', 'msg': f'Período "{nombre}" creado y activo.', 'id': nuevo.id}
+
+
+@app.route('/admin/auditorias/periodos/<int:periodo_id>/cerrar', methods=['POST'])
+def admin_periodo_cerrar(periodo_id):
+    if session.get('role') not in ['admin', 'administracion']: return {'status': 'error', 'msg': 'No autorizado'}, 403
+    periodo = PeriodoAuditoria.query.get_or_404(periodo_id)
+    if periodo.estado != 'ABIERTO':
+        return {'status': 'error', 'msg': 'Este período ya está cerrado.'}
+
+    periodo.estado = 'CERRADO'
+    periodo.fecha_cierre = hora_peru()
+    periodo.cerrado_por_id = session.get('user_id')
+    registrar_log(f"Cerró manualmente el período de auditoría '{periodo.nombre}'", "bi-lock-fill", "text-warning")
+    db.session.commit()
+    return {'status': 'success', 'msg': f'Período "{periodo.nombre}" cerrado. Ya no se aceptarán más conteos para él.'}
+
+
+@app.route('/admin/auditorias/periodos/<int:periodo_id>/reabrir', methods=['POST'])
+def admin_periodo_reabrir(periodo_id):
+    """Red de seguridad por si se cerró un período por error. Solo se permite si no hay
+    otro período abierto en este momento, para no volver a mezclar auditorías."""
+    if session.get('role') not in ['admin', 'administracion']: return {'status': 'error', 'msg': 'No autorizado'}, 403
+    periodo = PeriodoAuditoria.query.get_or_404(periodo_id)
+    if periodo.estado == 'ABIERTO':
+        return {'status': 'error', 'msg': 'Este período ya está abierto.'}
+
+    otro_abierto = PeriodoAuditoria.query.filter_by(estado='ABIERTO').first()
+    if otro_abierto:
+        return {'status': 'error', 'msg': f'No se puede reabrir: "{otro_abierto.nombre}" ya está activo. Ciérralo primero.'}
+
+    periodo.estado = 'ABIERTO'
+    periodo.fecha_cierre = None
+    periodo.cerrado_por_id = None
+    registrar_log(f"Reabrió el período de auditoría '{periodo.nombre}'", "bi-unlock-fill", "text-info")
+    db.session.commit()
+    return {'status': 'success', 'msg': f'Período "{periodo.nombre}" reabierto.'}
+
+
 # --- mientras esté PENDIENTE ---
 
 @app.route('/auditoria/registro/<int:reg_id>/editar')
@@ -8270,7 +8687,10 @@ def auditoria_editar_form(reg_id):
     if registro.trabajador_id != session['user_id']:
         return "No autorizado", 403
     if registro.estado_registro != 'PENDIENTE':
-        flash('Este registro ya fue revisado y no se puede editar.')
+        if registro.estado_registro == 'APLICADO':
+            flash('Este conteo ya fue aplicado al inventario por el administrador, por lo que no se puede editar. Si el dato cambió, crea un nuevo registro para este producto.')
+        else:
+            flash('Este conteo ya fue revisado (rechazado) por el administrador, por lo que no se puede editar. Crea un nuevo registro para este producto si corresponde.')
         return redirect(url_for('auditoria_mis_registros'))
 
     valores_extra = {ve.campo_id: ve.valor for ve in registro.valores_extra}
@@ -8403,7 +8823,50 @@ def fix_auditoria_columnas():
     except Exception as e:
         db.session.rollback()
         return f"<h2>Error: {str(e)}</h2>"
-    
+
+
+@app.route('/fix_auditoria_periodos_fotos_2026')
+def fix_auditoria_periodos_fotos():
+    """Crea las tablas nuevas para 'Períodos de Auditoría' y 'Fotos de Conteo Físico',
+    y agrega la columna periodo_id a registro_auditoria. Visitar UNA vez después de desplegar."""
+    if session.get('role') != 'admin':
+        return "Acceso denegado", 403
+    try:
+        with db.engine.connect() as conn:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS periodo_auditoria (
+                    id SERIAL PRIMARY KEY,
+                    nombre VARCHAR(150) NOT NULL,
+                    descripcion VARCHAR(500),
+                    estado VARCHAR(20) NOT NULL DEFAULT 'ABIERTO',
+                    creado_por_id INTEGER,
+                    fecha_creacion TIMESTAMP,
+                    fecha_cierre_programada TIMESTAMP,
+                    fecha_cierre TIMESTAMP,
+                    cerrado_por_id INTEGER
+                )
+            """))
+
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS registro_auditoria_foto (
+                    id SERIAL PRIMARY KEY,
+                    registro_id INTEGER NOT NULL,
+                    url_s3 VARCHAR(500) NOT NULL,
+                    s3_key VARCHAR(500) NOT NULL,
+                    subido_por_id INTEGER,
+                    fecha_subida TIMESTAMP
+                )
+            """))
+
+            conn.execute(text("ALTER TABLE registro_auditoria ADD COLUMN IF NOT EXISTS periodo_id INTEGER"))
+
+            conn.commit()
+
+        return "<h2>✅ Módulo de Auditoría actualizado: tablas de Períodos de Auditoría y Fotos de Conteo creadas correctamente.</h2>"
+    except Exception as e:
+        db.session.rollback()
+        return f"<h2>Error: {str(e)}</h2>"
+
 # --- ARRANQUE DE LA APLICACIÓN ---
 if __name__ == '__main__':
     # host='0.0.0.0' permite que otras PCs/celulares en la red te vean

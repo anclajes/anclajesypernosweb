@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+{% block title %}Períodos de Auditoría{% endblock %}
+{% block subtitle %}Campañas de Conteo Físico{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <h4 class="fw-bold mb-0"><i class="bi bi-calendar-range"></i> Períodos de Auditoría</h4>
+    <a href="{{ url_for('admin_auditorias_lista') }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Volver a Revisión</a>
+</div>
+
+<div class="alert alert-light border small">
+    <i class="bi bi-info-circle-fill text-primary"></i>
+    Un <b>período</b> agrupa todos los conteos físicos de una campaña (mensual, anual, etc.) para no mezclarlos con otras.
+    Cubre <b>ambos inventarios</b> (Anclajes e Import Bolts) a la vez: el auditor primero elige el período activo y luego,
+    dentro de él, la empresa que va a contar. <b>Recomendación:</b> mantener solo <b>un período activo</b> a la vez para evitar confusión entre auditores.
+</div>
+
+<div class="card border-0 shadow-sm mb-4" id="cardCrearPeriodo">
+    <div class="card-header fw-bold"><i class="bi bi-plus-square-dotted"></i> Crear Nuevo Período</div>
+    <div class="card-body">
+        {% if hay_periodo_abierto %}
+        <div class="alert alert-warning small mb-3" id="avisoPeriodoAbierto">
+            <i class="bi bi-exclamation-triangle-fill"></i> Ya hay una auditoría activa en este momento. Si creas una nueva, marca la opción de abajo para cerrar automáticamente la actual (recomendado para no mezclar auditorías).
+        </div>
+        {% endif %}
+        <div class="row g-3">
+            <div class="col-12 col-md-5">
+                <label class="small fw-bold">Nombre de identificación <span class="text-danger">*</span></label>
+                <input type="text" id="nuevo_periodo_nombre" class="form-control" placeholder="Ej: Auditoría Anual 2026">
+            </div>
+            <div class="col-12 col-md-7">
+                <label class="small fw-bold">Descripción (opcional)</label>
+                <input type="text" id="nuevo_periodo_descripcion" class="form-control" placeholder="Ej: Conteo general de fin de año, todos los almacenes">
+            </div>
+            <div class="col-12 col-md-6">
+                <label class="small fw-bold">Cierre automático (opcional)</label>
+                <input type="datetime-local" id="nuevo_periodo_cierre" class="form-control">
+                <div class="form-text">Si lo defines, el período se cerrará solo en esa fecha/hora y ya no se aceptarán más conteos, aunque el administrador no esté conectado en ese momento.</div>
+            </div>
+            <div class="col-12 col-md-6 d-flex align-items-center">
+                <div class="form-check mt-4">
+                    <input class="form-check-input" type="checkbox" id="nuevo_periodo_cerrar_actual" {% if hay_periodo_abierto %}checked{% endif %}>
+                    <label class="form-check-label small fw-bold" for="nuevo_periodo_cerrar_actual">
+                        Cerrar automáticamente la auditoría activa actual (si existe) al crear esta
+                    </label>
+                </div>
+            </div>
+            <div class="col-12">
+                <button class="btn btn-primary fw-bold" onclick="crearPeriodo()"><i class="bi bi-plus-lg"></i> Crear Período</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0 small" id="tablaPeriodos">
+            <thead class="table-dark">
+                <tr>
+                    <th class="ps-3">Nombre</th>
+                    <th>Estado</th>
+                    <th>Creado</th>
+                    <th>Cierre</th>
+                    <th class="text-center">Conteos</th>
+                    <th class="text-center pe-3">Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in periodos %}
+                <tr id="fila-periodo-{{ p.id }}">
+                    <td class="ps-3">
+                        <b>{{ p.nombre }}</b>
+                        {% if p.descripcion %}<br><span class="text-muted" style="font-size:.8rem;">{{ p.descripcion }}</span>{% endif %}
+                    </td>
+                    <td id="estado-periodo-{{ p.id }}">
+                        {% if p.estado == 'ABIERTO' %}<span class="badge bg-success">Activa</span>
+                        {% else %}<span class="badge bg-secondary">Cerrada</span>{% endif %}
+                    </td>
+                    <td>
+                        {{ p.fecha_creacion.strftime('%d/%m/%Y %H:%M') }}<br>
+                        <span class="text-muted" style="font-size:.75rem;">{{ p.creado_por.nombre_completo if p.creado_por else '-' }}</span>
+                    </td>
+                    <td id="cierre-periodo-{{ p.id }}">
+                        {% if p.fecha_cierre %}
+                            {{ p.fecha_cierre.strftime('%d/%m/%Y %H:%M') }}<br>
+                            <span class="text-muted" style="font-size:.75rem;">{{ p.cerrado_por.nombre_completo if p.cerrado_por else 'Cierre automático' }}</span>
+                        {% elif p.fecha_cierre_programada %}
+                            <span class="text-muted"><i class="bi bi-hourglass-split"></i> Programado: {{ p.fecha_cierre_programada.strftime('%d/%m/%Y %H:%M') }}</span>
+                        {% else %}
+                            <span class="text-muted">-</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-center">
+                        <a href="{{ url_for('admin_auditorias_lista', periodo=p.id, estado='todos') }}" class="badge bg-light text-dark border text-decoration-none">
+                            {{ conteos.get(p.id, 0) }} registro(s)
+                        </a>
+                    </td>
+                    <td class="text-center pe-3" id="acciones-periodo-{{ p.id }}">
+                        {% if p.estado == 'ABIERTO' %}
+                        <button class="btn btn-sm btn-outline-danger" onclick="cerrarPeriodo({{ p.id }})"><i class="bi bi-lock-fill"></i> Cerrar Ahora</button>
+                        {% else %}
+                        <button class="btn btn-sm btn-outline-secondary" onclick="reabrirPeriodo({{ p.id }})"><i class="bi bi-unlock-fill"></i> Reabrir</button>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr id="fila-vacia-periodos"><td colspan="6" class="text-center text-muted py-4">Aún no se ha creado ningún período de auditoría.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+function crearPeriodo() {
+    const nombre = document.getElementById('nuevo_periodo_nombre').value.trim();
+    const descripcion = document.getElementById('nuevo_periodo_descripcion').value.trim();
+    const cierre = document.getElementById('nuevo_periodo_cierre').value;
+    const cerrarActual = document.getElementById('nuevo_periodo_cerrar_actual').checked;
+
+    if (!nombre) {
+        return Swal.fire({ icon: 'warning', title: 'Falta el nombre', text: 'Escribe un nombre para identificar este período.' });
+    }
+
+    const fd = new FormData();
+    fd.append('nombre', nombre);
+    fd.append('descripcion', descripcion);
+    if (cierre) fd.append('fecha_cierre_programada', cierre);
+    fd.append('cerrar_actual', cerrarActual ? '1' : '0');
+
+    fetch('/admin/auditorias/periodos/nuevo', { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(data => {
+            if (data.status !== 'success') {
+                Swal.fire({ icon: 'error', title: 'No se pudo crear', text: data.msg });
+                return;
+            }
+            Swal.fire({ icon: 'success', title: 'Período creado', text: data.msg, timer: 1800, showConfirmButton: false })
+                .then(() => location.reload());
+        })
+        .catch(() => Swal.fire('Error', 'No se pudo comunicar con el servidor.', 'error'));
+}
+
+function cerrarPeriodo(id) {
+    Swal.fire({
+        title: '¿Cerrar esta auditoría ahora?',
+        text: 'Ya no se aceptarán más conteos físicos para este período. Esta acción se puede revertir con "Reabrir" si no hay otra auditoría activa.',
+        icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Sí, cerrar ahora'
+    }).then(result => {
+        if (!result.isConfirmed) return;
+        fetch(`/admin/auditorias/periodos/${id}/cerrar`, { method: 'POST' })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status !== 'success') {
+                    Swal.fire('No se pudo cerrar', data.msg, 'error');
+                    return;
+                }
+                Swal.fire({ icon: 'success', title: 'Cerrado', timer: 1200, showConfirmButton: false }).then(() => location.reload());
+            })
+            .catch(() => Swal.fire('Error', 'No se pudo comunicar con el servidor.', 'error'));
+    });
+}
+
+function reabrirPeriodo(id) {
+    fetch(`/admin/auditorias/periodos/${id}/reabrir`, { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            if (data.status !== 'success') {
+                Swal.fire('No se pudo reabrir', data.msg, 'error');
+                return;
+            }
+            Swal.fire({ icon: 'success', title: 'Reabierto', timer: 1200, showConfirmButton: false }).then(() => location.reload());
+        })
+        .catch(() => Swal.fire('Error', 'No se pudo comunicar con el servidor.', 'error'));
+}
+</script>
+{% endblock %}

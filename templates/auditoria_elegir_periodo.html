@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Elegir Auditoría{% endblock %}
+{% block subtitle %}Conteo Físico{% endblock %}
+
+{% block content %}
+<style>
+    .card-periodo {
+        border: none;
+        border-radius: 16px;
+        box-shadow: 0 4px 16px rgba(0,0,0,.08);
+        transition: transform .2s ease, box-shadow .2s ease;
+        cursor: pointer;
+        height: 100%;
+    }
+    .card-periodo:hover { transform: translateY(-4px); box-shadow: 0 12px 28px rgba(0,0,0,.15); }
+    .card-periodo .card-header-periodo {
+        background: #0B3D91; color: #fff; padding: 1rem 1.25rem; border-radius: 16px 16px 0 0;
+        font-weight: 700;
+    }
+</style>
+
+<div class="d-flex flex-column align-items-center justify-content-center" style="min-height: 60vh;">
+    <h3 class="fw-bold mb-1">Hola, {{ session.get('nombre') }} 👋</h3>
+    <p class="text-muted mb-4">Elige la auditoría activa a la que vas a contribuir</p>
+
+    {% if periodos %}
+    <div class="row g-4 w-100" style="max-width: 900px;">
+        {% for p in periodos %}
+        <div class="col-12 col-md-6 col-lg-4">
+            <a href="{{ url_for('auditoria_entrar_periodo', periodo_id=p.id) }}" class="card-periodo d-block text-decoration-none">
+                <div class="card-header-periodo">
+                    <i class="bi bi-calendar2-check-fill"></i> {{ p.nombre }}
+                </div>
+                <div class="card-body bg-white" style="border-radius: 0 0 16px 16px;">
+                    {% if p.descripcion %}<p class="small text-muted mb-2">{{ p.descripcion }}</p>{% endif %}
+                    <p class="small text-muted mb-1"><i class="bi bi-play-circle"></i> Abierta desde: {{ p.fecha_creacion.strftime('%d/%m/%Y') }}</p>
+                    {% if p.fecha_cierre_programada %}
+                    <p class="small text-muted mb-0"><i class="bi bi-hourglass-split"></i> Se cerrará automáticamente el {{ p.fecha_cierre_programada.strftime('%d/%m/%Y %H:%M') }}</p>
+                    {% endif %}
+                    <div class="text-end mt-2"><span class="badge bg-success">Activa — Ingresar <i class="bi bi-arrow-right"></i></span></div>
+                </div>
+            </a>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="alert alert-warning text-center" style="max-width: 500px;">
+        <i class="bi bi-exclamation-triangle-fill fs-3 d-block mb-2"></i>
+        <b>No hay ninguna auditoría activa en este momento.</b><br>
+        <span class="small">Contacta al administrador para que abra un nuevo período de auditoría antes de continuar.</span>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

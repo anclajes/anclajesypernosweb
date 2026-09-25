@@ -26,6 +26,10 @@
 
 <div class="d-flex flex-column align-items-center justify-content-center" style="min-height: 60vh;">
     <h3 class="fw-bold mb-1">Hola, {{ session.get('nombre') }} 👋</h3>
+    <div class="alert alert-primary d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3" style="max-width: 760px; width: 100%;">
+        <span><i class="bi bi-calendar2-check-fill"></i> Auditoría activa: <b>{{ periodo.nombre }}</b></span>
+        <a href="{{ url_for('auditoria_elegir_periodo', cambiar=1) }}" class="btn btn-sm btn-outline-primary">Cambiar auditoría</a>
+    </div>
     <p class="text-muted mb-4">Selecciona el almacén que vas a auditar</p>
 
     <div class="row g-4 w-100" style="max-width: 760px;">
