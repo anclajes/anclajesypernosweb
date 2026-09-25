@@ -271,18 +271,17 @@
                         {% if not p.activo %}
                             <span class="badge bg-secondary ms-1" style="font-size:.65rem;"><i class="bi bi-eye-slash-fill"></i> INACTIVO</span>
                         {% endif %}
-                        {% if p.ultimo_ajuste_fecha %}
-                            <br>
-                            <span class="badge text-white mt-1 d-inline-block text-start" style="font-size:.65rem; background-color:#6f42c1; white-space:normal; line-height:1.3;">
-                                <i class="bi bi-clipboard2-check-fill"></i> Auditado: {{ p.ultimo_ajuste_fecha.strftime('%d/%m/%Y %H:%M') }}<br>
-                                <span class="fw-normal">Contado por {{ p.ultimo_ajuste_conteo_por or '-' }}, aplicado por {{ p.ultimo_ajuste_por or '-' }}</span>
-                            </span>
-                        {% endif %}
-                        {% if p.edicion_manual_fecha %}
-                            <br>
-                            <span class="badge text-dark border mt-1 d-inline-block text-start" style="font-size:.65rem; background-color:#fff3cd; white-space:normal; line-height:1.3;">
-                                <i class="bi bi-pencil-fill"></i> Edición manual por {{ p.edicion_manual_por or '-' }}, hora {{ p.edicion_manual_fecha.strftime('%d/%m/%Y %H:%M') }}
-                            </span>
+                        {% if p.ultimo_ajuste_fecha or p.edicion_manual_fecha %}
+                        <span class="ms-1 align-middle">
+                            {% if p.ultimo_ajuste_fecha %}
+                            <i class="bi bi-clipboard2-check-fill" style="font-size:0.8rem;color:#6f42c1;cursor:pointer;" title="Ver historial de auditoría"
+                               onclick="mostrarHistorialProducto('auditoria', '{{ p.ultimo_ajuste_fecha.strftime('%d/%m/%Y %H:%M') }}', '{{ (p.ultimo_ajuste_conteo_por or '-')|replace("'", "\\'")|replace('"', '&quot;') }}', '{{ (p.ultimo_ajuste_por or '-')|replace("'", "\\'")|replace('"', '&quot;') }}')"></i>
+                            {% endif %}
+                            {% if p.edicion_manual_fecha %}
+                            <i class="bi bi-pencil-fill" style="font-size:0.8rem;color:#b8860b;cursor:pointer;" title="Ver historial de edición manual"
+                               onclick="mostrarHistorialProducto('edicion', '{{ p.edicion_manual_fecha.strftime('%d/%m/%Y %H:%M') }}', '{{ (p.edicion_manual_por or '-')|replace("'", "\\'")|replace('"', '&quot;') }}', '')"></i>
+                            {% endif %}
+                        </span>
                         {% endif %}
                     </td>
                     <td><span class="badge bg-light text-dark border">{{ p.categoria }}</span></td>
@@ -382,6 +381,29 @@ let productoGaleriaActual = null;
 let origenGaleriaActual = 'ANCLAJES';
 let fotosActuales = [];
 let indiceLightboxActual = 0;
+
+// Muestra el historial de auditoría / edición manual de un producto sin
+// ocupar espacio permanente en la tabla (solo un ícono clicable por fila).
+function mostrarHistorialProducto(tipo, fecha, quien1, quien2) {
+    if (tipo === 'auditoria') {
+        Swal.fire({
+            icon: 'info', title: 'Historial de Auditoría',
+            html: `<div class="text-start">
+                <p class="mb-1"><i class="bi bi-clipboard2-check-fill" style="color:#6f42c1;"></i> Auditado: <b>${fecha}</b></p>
+                <p class="mb-1">Contado por: <b>${quien1}</b></p>
+                <p class="mb-0">Aplicado por: <b>${quien2}</b></p>
+            </div>`
+        });
+    } else {
+        Swal.fire({
+            icon: 'info', title: 'Edición Manual',
+            html: `<div class="text-start">
+                <p class="mb-1"><i class="bi bi-pencil-fill text-warning"></i> Editado por: <b>${quien1}</b></p>
+                <p class="mb-0">Hora: <b>${fecha}</b></p>
+            </div>`
+        });
+    }
+}
 
 function abrirGaleria(productId, sku, origen) {
     productoGaleriaActual = productId;

@@ -370,20 +370,18 @@
                                 <i class="bi bi-exclamation-triangle-fill"></i> {{ p.estado }}
                             </span>
                         {% endif %}
-                        {% if p.ultimo_ajuste_auditoria_fecha %}
-                            <br>
-                            <span class="badge text-white mt-1 shadow-sm d-inline-block text-start" style="font-size: 0.65rem; background-color:#6f42c1; white-space:normal; line-height:1.3;">
-                                <i class="bi bi-clipboard2-check-fill"></i> Auditado: {{ p.ultimo_ajuste_auditoria_fecha.strftime('%d/%m/%Y %H:%M') }}<br>
-                                <span class="fw-normal">Contado por {{ p.ultimo_ajuste_auditoria_conteo_por or '-' }}, aplicado por {{ p.ultimo_ajuste_auditoria_por or '-' }}</span>
-                            </span>
+                        {% if p.ultimo_ajuste_auditoria_fecha or p.ultima_edicion_manual_fecha %}
+                        <span class="ms-1 align-middle">
+                            {% if p.ultimo_ajuste_auditoria_fecha %}
+                            <i class="bi bi-clipboard2-check-fill" style="font-size:0.8rem;color:#6f42c1;cursor:pointer;" title="Ver historial de auditoría"
+                               onclick="mostrarHistorialProducto('auditoria', '{{ p.ultimo_ajuste_auditoria_fecha.strftime('%d/%m/%Y %H:%M') }}', '{{ (p.ultimo_ajuste_auditoria_conteo_por or '-')|replace("'", "\\'")|replace('"', '&quot;') }}', '{{ (p.ultimo_ajuste_auditoria_por or '-')|replace("'", "\\'")|replace('"', '&quot;') }}')"></i>
+                            {% endif %}
+                            {% if p.ultima_edicion_manual_fecha %}
+                            <i class="bi bi-pencil-fill" style="font-size:0.8rem;color:#b8860b;cursor:pointer;" title="Ver historial de edición manual"
+                               onclick="mostrarHistorialProducto('edicion', '{{ p.ultima_edicion_manual_fecha.strftime('%d/%m/%Y %H:%M') }}', '{{ (p.ultima_edicion_manual_por or '-')|replace("'", "\\'")|replace('"', '&quot;') }}', '')"></i>
+                            {% endif %}
+                        </span>
                         {% endif %}
-                        {% if p.ultima_edicion_manual_fecha %}
-                            <br>
-                            <span class="badge text-dark border mt-1 shadow-sm d-inline-block text-start" style="font-size: 0.65rem; background-color:#fff3cd; white-space:normal; line-height:1.3;">
-                                <i class="bi bi-pencil-fill"></i> Edición manual por {{ p.ultima_edicion_manual_por or '-' }}, hora {{ p.ultima_edicion_manual_fecha.strftime('%d/%m/%Y %H:%M') }}
-                            </span>
-                        {% endif %}
-                    </td>
                     </td>
                     <td><span class="badge bg-light text-dark border">{{ p.categoria }}</span></td>
                     <td class="text-nowrap text-muted">{% if p.ubicacion %}<i class="bi bi-geo-alt-fill text-danger small"></i> {{ p.ubicacion }}{% else %}-{% endif %}</td>
@@ -1107,6 +1105,29 @@
         return txt.value;
     }
 
+    // Muestra el historial de auditoría / edición manual de un producto sin
+    // ocupar espacio permanente en la tabla (solo un ícono clicable por fila).
+    function mostrarHistorialProducto(tipo, fecha, quien1, quien2) {
+        if (tipo === 'auditoria') {
+            Swal.fire({
+                icon: 'info', title: 'Historial de Auditoría',
+                html: `<div class="text-start">
+                    <p class="mb-1"><i class="bi bi-clipboard2-check-fill" style="color:#6f42c1;"></i> Auditado: <b>${fecha}</b></p>
+                    <p class="mb-1">Contado por: <b>${quien1}</b></p>
+                    <p class="mb-0">Aplicado por: <b>${quien2}</b></p>
+                </div>`
+            });
+        } else {
+            Swal.fire({
+                icon: 'info', title: 'Edición Manual',
+                html: `<div class="text-start">
+                    <p class="mb-1"><i class="bi bi-pencil-fill text-warning"></i> Editado por: <b>${quien1}</b></p>
+                    <p class="mb-0">Hora: <b>${fecha}</b></p>
+                </div>`
+            });
+        }
+    }
+
     function abrirEditar(id, nombre, stock, punidad, pcaja, ubicacion, categoria, calidad, stockMin, estado, pesoKg, activo) {
         document.getElementById('edit_id').value = id;
         
@@ -1132,7 +1153,8 @@
             calidad: (calidad && calidad !== 'None') ? calidad : '',
             punidad: parseFloat(punidad),
             pcaja: parseFloat(pcaja),
-            stock_min: stockMin
+            stock_min: stockMin,
+            peso_kg: parseFloat(pesoKg) || 0
         };
         originalData.estado = estado;
 
@@ -1151,6 +1173,13 @@
         const nuevoPUni = parseFloat(document.getElementById('edit_punidad').value);
         const nuevoPCaja = parseFloat(document.getElementById('edit_pcaja').value);
         const nuevoStockMin = parseInt(document.getElementById('edit_stock_min').value);
+        const nuevoPesoKgRaw = document.getElementById('edit_peso_kg').value;
+        const nuevoPesoKg = parseFloat(nuevoPesoKgRaw);
+
+        if (nuevoPesoKgRaw !== '' && (isNaN(nuevoPesoKg) || nuevoPesoKg < 0)) {
+            Swal.fire({ icon: 'error', title: 'Peso Unitario inválido', text: 'Ingrese un peso en Kg válido (0 o mayor), o déjelo vacío.' });
+            return;
+        }
 
         let cambios = [];
 
@@ -1161,6 +1190,7 @@
         if (nuevoPUni !== originalData.punidad) cambios.push(`P. Unidad: <b>${originalData.punidad}</b> → <b>${nuevoPUni}</b>`);
         if (nuevoPCaja !== originalData.pcaja) cambios.push(`P. Caja: <b>${originalData.pcaja}</b> → <b>${nuevoPCaja}</b>`);
         if (nuevoStockMin != originalData.stock_min) cambios.push(`Stock Mínimo: <b>${originalData.stock_min}</b> → <b>${nuevoStockMin}</b>`);
+        if ((parseFloat(nuevoPesoKg) || 0) !== originalData.peso_kg) cambios.push(`Peso Unitario: <b>${originalData.peso_kg} Kg</b> → <b>${(parseFloat(nuevoPesoKg) || 0)} Kg</b>`);
 
         if (cambios.length === 0) {
             form.submit();

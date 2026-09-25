@@ -8896,52 +8896,86 @@ def fix_edicion_manual():
 
 # ======================================================
 # DASHBOARDS DE VENTAS POR TONELADAS (Anclajes / ImportBolts / General)
-# Se basan en Order + OrderDetail (NO en el texto de motivo del Kardex),
-# filtrando Order.estado == 'Entregado' -> es el momento del despacho físico
-# real (salida de almacén confirmada), que es el evento que representa una
-# "venta" de verdad para efectos de este reporte.
+# Fuente de datos: SOLO el Kardex (ProductMovement / ProductMovementImportBolts)
+# registrado MANUALMENTE desde "Movimiento de Stock" en cada inventario
+# (se reconoce porque motivo_id IS NOT NULL: viene del catálogo de motivos,
+# a diferencia de los movimientos automáticos que genera el flujo de
+# Cotización/Gestión Comercial, que nunca llenan motivo_id).
+#   - "Ventas": movimientos SALIDA cuyo motivo contiene "venta" (ej. "Venta",
+#     "Ventas", "Venta Directa"...). El campo Destino/Cliente de ese
+#     movimiento (razon_social_proveedor) se usa como el cliente.
+#   - "Ingresos": movimientos ENTRADA (cualquier motivo manual), separados
+#     por categoría de producto, resaltando los que tienen motivo "Compras".
+# NO se usa Order/OrderDetail (cotizaciones) por ahora, a pedido explícito.
 # ======================================================
 MESES_CORTOS_TON = ['', 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
-ESTADO_VENTA_REAL_TON = 'Entregado'
 
 
-def _join_producto_ton(empresa):
-    """Devuelve (ModeloProducto, condición_de_join) según la empresa."""
+def _modelo_movimiento_ton(empresa):
+    """Devuelve (ModeloMovimiento, ModeloProducto, condición_de_join) según la empresa."""
     if empresa == 'IMPORTBOLTS':
-        return ProductImportBolts, (OrderDetail.product_id_importbolts == ProductImportBolts.id)
-    return Product, (OrderDetail.product_id == Product.id)
+        return ProductMovementImportBolts, ProductImportBolts, (ProductMovementImportBolts.product_id == ProductImportBolts.id)
+    return ProductMovement, Product, (ProductMovement.product_id == Product.id)
 
 
-def _query_lineas_ton(empresa, f_ini=None, f_fin=None):
-    """Líneas de detalle de pedidos REALMENTE despachados (Entregado) de la empresa
-    indicada. Solo item_type='PRODUCTO' (Fabricación/GLB no tienen peso propio)."""
-    ProductModel, join_cond = _join_producto_ton(empresa)
+def _query_salidas_venta_ton(empresa, f_ini=None, f_fin=None):
+    """Movimientos SALIDA registrados manualmente desde el inventario, con motivo
+    de catálogo que contiene 'venta' (ej. Venta, Ventas, Venta Directa...)."""
+    MovModel, ProductModel, join_cond = _modelo_movimiento_ton(empresa)
     q = db.session.query(
-        OrderDetail.cantidad.label('cantidad'),
-        (OrderDetail.cantidad * ProductModel.peso_kg).label('peso_total'),
-        Order.id.label('order_id'),
-        Order.fecha.label('fecha'),
-        Order.cliente_id.label('cliente_id'),
+        MovModel.cantidad.label('cantidad'),
+        (MovModel.cantidad * ProductModel.peso_kg).label('peso_total'),
+        MovModel.fecha.label('fecha'),
+        MovModel.razon_social_proveedor.label('destino'),
         ProductModel.id.label('producto_id'),
         ProductModel.nombre.label('producto_nombre'),
         ProductModel.sku.label('producto_sku'),
         ProductModel.categoria.label('producto_categoria'),
-    ).select_from(OrderDetail) \
-     .join(Order, Order.id == OrderDetail.order_id) \
+    ).select_from(MovModel) \
      .join(ProductModel, join_cond) \
+     .join(MotivoMovimiento, MovModel.motivo_id == MotivoMovimiento.id) \
      .filter(
-        Order.estado == ESTADO_VENTA_REAL_TON,
-        OrderDetail.origen_inventario == empresa,
-        OrderDetail.item_type == 'PRODUCTO'
+        MovModel.tipo == 'SALIDA',
+        MovModel.motivo_id.isnot(None),
+        MotivoMovimiento.nombre.ilike('%venta%')
      )
     if f_ini is not None and f_fin is not None:
-        q = q.filter(Order.fecha.between(f_ini, f_fin))
+        q = q.filter(MovModel.fecha.between(f_ini, f_fin))
     return q
+
+
+def _query_entradas_ton(empresa, f_ini=None, f_fin=None):
+    """Movimientos ENTRADA registrados manualmente desde el inventario (cualquier motivo)."""
+    MovModel, ProductModel, join_cond = _modelo_movimiento_ton(empresa)
+    q = db.session.query(
+        MovModel.cantidad.label('cantidad'),
+        (MovModel.cantidad * ProductModel.peso_kg).label('peso_total'),
+        MovModel.fecha.label('fecha'),
+        MovModel.razon_social_proveedor.label('proveedor'),
+        MotivoMovimiento.nombre.label('motivo_nombre'),
+        ProductModel.id.label('producto_id'),
+        ProductModel.nombre.label('producto_nombre'),
+        ProductModel.categoria.label('producto_categoria'),
+    ).select_from(MovModel) \
+     .join(ProductModel, join_cond) \
+     .join(MotivoMovimiento, MovModel.motivo_id == MotivoMovimiento.id) \
+     .filter(
+        MovModel.tipo == 'ENTRADA',
+        MovModel.motivo_id.isnot(None)
+     )
+    if f_ini is not None and f_fin is not None:
+        q = q.filter(MovModel.fecha.between(f_ini, f_fin))
+    return q
+
+
+def _es_compra(motivo_nombre):
+    return bool(motivo_nombre) and 'compra' in motivo_nombre.lower()
 
 
 def _construir_ctx_dashboard_ton(empresa, request):
     """Arma todo el contexto (KPIs, series de gráficos y tablas) del dashboard de
-    toneladas de una empresa ('ANCLAJES' o 'IMPORTBOLTS')."""
+    toneladas de una empresa ('ANCLAJES' o 'IMPORTBOLTS'), a partir del Kardex
+    manual (Salidas por Venta + Entradas)."""
     hoy = hora_peru().date()
     ahora = hora_peru()
 
@@ -8971,9 +9005,9 @@ def _construir_ctx_dashboard_ton(empresa, request):
     inicio_6m = datetime.combine(date(primer_anio, primer_mes, 1), datetime.min.time())
     fin_6m = ahora
 
-    lineas_periodo = _query_lineas_ton(empresa, f_ini, f_fin).all()
-    lineas_prev = _query_lineas_ton(empresa, f_ini_prev, f_fin_prev).all()
-    lineas_6m = _query_lineas_ton(empresa, inicio_6m, fin_6m).all()
+    lineas_periodo = _query_salidas_venta_ton(empresa, f_ini, f_fin).all()
+    lineas_prev = _query_salidas_venta_ton(empresa, f_ini_prev, f_fin_prev).all()
+    lineas_6m = _query_salidas_venta_ton(empresa, inicio_6m, fin_6m).all()
 
     def kg(lineas):
         return sum((l.peso_total or 0) for l in lineas)
@@ -8981,8 +9015,8 @@ def _construir_ctx_dashboard_ton(empresa, request):
     toneladas_periodo = round(kg(lineas_periodo) / 1000, 2)
     toneladas_prev = round(kg(lineas_prev) / 1000, 2)
     unidades_periodo = sum(l.cantidad for l in lineas_periodo)
-    pedidos_periodo = len({l.order_id for l in lineas_periodo})
-    peso_promedio_pedido_kg = round((kg(lineas_periodo) / pedidos_periodo), 1) if pedidos_periodo > 0 else 0
+    movimientos_periodo = len(lineas_periodo)
+    peso_promedio_mov_kg = round((kg(lineas_periodo) / movimientos_periodo), 1) if movimientos_periodo > 0 else 0
 
     if toneladas_prev > 0:
         delta_toneladas = round(((toneladas_periodo - toneladas_prev) / toneladas_prev) * 100, 1)
@@ -8992,7 +9026,7 @@ def _construir_ctx_dashboard_ton(empresa, request):
     toneladas_hoy = round(sum((l.peso_total or 0) for l in lineas_6m if l.fecha.date() == hoy) / 1000, 2)
     toneladas_mes_actual = round(sum((l.peso_total or 0) for l in lineas_6m if l.fecha.year == hoy.year and l.fecha.month == hoy.month) / 1000, 2)
 
-    # --- Evolución mensual (6 meses fijos, con ceros donde no hubo despachos) ---
+    # --- Evolución mensual (6 meses fijos, con ceros donde no hubo ventas registradas) ---
     por_mes = {k: 0.0 for k in meses_ventana}
     for l in lineas_6m:
         key = (l.fecha.year, l.fecha.month)
@@ -9033,26 +9067,18 @@ def _construir_ctx_dashboard_ton(empresa, request):
     top_productos_mes = top_productos(lineas_mes_actual)
     top_productos_3m = top_productos(lineas_3meses)
 
-    # --- Top clientes por toneladas (período filtrado) ---
+    # --- Top clientes/destinos por toneladas (período filtrado) ---
     agg_cli = {}
     for l in lineas_periodo:
-        cid = l.cliente_id
-        agg_cli.setdefault(cid, {'ton': 0.0, 'unid': 0, 'pedidos': set()})
-        agg_cli[cid]['ton'] += (l.peso_total or 0) / 1000
-        agg_cli[cid]['unid'] += l.cantidad
-        agg_cli[cid]['pedidos'].add(l.order_id)
-    top_clientes_ids = sorted(agg_cli.keys(), key=lambda cid: agg_cli[cid]['ton'], reverse=True)[:10]
-    clientes_obj = {c.id: c for c in Client.query.filter(Client.id.in_(top_clientes_ids)).all()} if top_clientes_ids else {}
-    top_clientes = []
-    for cid in top_clientes_ids:
-        c = clientes_obj.get(cid)
-        top_clientes.append({
-            'id': cid, 'nombre': c.nombre if c else f'Cliente #{cid}',
-            'ubicacion': (c.distrito or c.provincia or '-') if c else '-',
-            'toneladas': round(agg_cli[cid]['ton'], 2),
-            'unidades': agg_cli[cid]['unid'],
-            'pedidos': len(agg_cli[cid]['pedidos'])
-        })
+        nombre_cli = (l.destino or '').strip() or 'Sin especificar'
+        reg = agg_cli.setdefault(nombre_cli, {'ton': 0.0, 'unid': 0, 'movs': 0})
+        reg['ton'] += (l.peso_total or 0) / 1000
+        reg['unid'] += l.cantidad
+        reg['movs'] += 1
+    top_clientes = sorted(
+        [{'nombre': k, 'toneladas': round(v['ton'], 2), 'unidades': v['unid'], 'movimientos': v['movs']} for k, v in agg_cli.items()],
+        key=lambda x: x['toneladas'], reverse=True
+    )[:10]
 
     # --- Mix por categoría (período filtrado) ---
     agg_cat = {}
@@ -9069,55 +9095,58 @@ def _construir_ctx_dashboard_ton(empresa, request):
     categoria_total_ton = sum(categoria_data) or 1
     categoria_pct = [round((v / categoria_total_ton) * 100, 1) for v in categoria_data]
 
-    # --- Últimos despachos (tabla) ---
-    agg_pedidos = {}
-    for l in lineas_periodo:
-        agg_pedidos.setdefault(l.order_id, {'fecha': l.fecha, 'cliente_id': l.cliente_id, 'ton': 0.0, 'items': 0})
-        agg_pedidos[l.order_id]['ton'] += (l.peso_total or 0) / 1000
-        agg_pedidos[l.order_id]['items'] += 1
-    ultimos_ids = sorted(agg_pedidos.keys(), key=lambda oid: agg_pedidos[oid]['fecha'], reverse=True)[:10]
-    ids_clientes_ultimos = {agg_pedidos[oid]['cliente_id'] for oid in ultimos_ids}
-    clientes_ultimos = {c.id: c for c in Client.query.filter(Client.id.in_(ids_clientes_ultimos)).all()} if ultimos_ids else {}
-    ultimos_despachos = []
-    for oid in ultimos_ids:
-        info = agg_pedidos[oid]
-        c = clientes_ultimos.get(info['cliente_id'])
-        ultimos_despachos.append({
-            'order_id': oid, 'fecha': info['fecha'],
-            'cliente': c.nombre if c else f'Cliente #{info["cliente_id"]}',
-            'toneladas': round(info['ton'], 3), 'items': info['items']
-        })
+    # --- Últimas ventas registradas (tabla) ---
+    ultimas_ventas_orden = sorted(lineas_periodo, key=lambda l: l.fecha, reverse=True)[:10]
+    ultimas_ventas = [{
+        'fecha': l.fecha, 'cliente': (l.destino or '').strip() or 'Sin especificar',
+        'producto': l.producto_nombre, 'toneladas': round((l.peso_total or 0) / 1000, 3), 'unidades': l.cantidad
+    } for l in ultimas_ventas_orden]
 
-    # --- Nuevos clientes: su primera compra Entregada (histórica) cae dentro del período ---
-    primeras_compras = db.session.query(
-        Order.cliente_id, func.min(Order.fecha).label('primera_fecha')
-    ).join(OrderDetail, OrderDetail.order_id == Order.id).filter(
-        Order.estado == ESTADO_VENTA_REAL_TON,
-        OrderDetail.origen_inventario == empresa,
-        OrderDetail.item_type == 'PRODUCTO'
-    ).group_by(Order.cliente_id).all()
-    nuevos_ids = [r.cliente_id for r in primeras_compras if r.primera_fecha and f_ini <= r.primera_fecha <= f_fin]
-    nuevos_clientes_objs = Client.query.filter(Client.id.in_(nuevos_ids)).all() if nuevos_ids else []
-    nuevos_clientes_lista = sorted(
-        [{'nombre': c.nombre, 'ubicacion': c.distrito or c.provincia or '-'} for c in nuevos_clientes_objs],
-        key=lambda x: x['nombre']
-    )[:10]
+    # --- INGRESOS (entradas manuales al Kardex), separados por categoría,
+    #     resaltando los que vienen con motivo "Compras" ---
+    entradas_periodo = _query_entradas_ton(empresa, f_ini, f_fin).all()
+    entradas_compras = [l for l in entradas_periodo if _es_compra(l.motivo_nombre)]
+
+    ton_ingresos_total = round(kg(entradas_periodo) / 1000, 2)
+    unid_ingresos_total = sum(l.cantidad for l in entradas_periodo)
+    ton_ingresos_compras = round(kg(entradas_compras) / 1000, 2)
+    unid_ingresos_compras = sum(l.cantidad for l in entradas_compras)
+    count_ingresos_compras = len(entradas_compras)
+
+    agg_ing_cat = {}
+    for l in entradas_periodo:
+        cat = l.producto_categoria or 'Sin categoría'
+        reg = agg_ing_cat.setdefault(cat, {'ton': 0.0, 'unid': 0, 'ton_compras': 0.0, 'unid_compras': 0})
+        reg['ton'] += (l.peso_total or 0) / 1000
+        reg['unid'] += l.cantidad
+        if _es_compra(l.motivo_nombre):
+            reg['ton_compras'] += (l.peso_total or 0) / 1000
+            reg['unid_compras'] += l.cantidad
+    ingresos_por_categoria = sorted(
+        [{
+            'categoria': k, 'toneladas': round(v['ton'], 2), 'unidades': v['unid'],
+            'toneladas_compras': round(v['ton_compras'], 2), 'unidades_compras': v['unid_compras']
+        } for k, v in agg_ing_cat.items()],
+        key=lambda x: x['toneladas'], reverse=True
+    )
 
     return dict(
         empresa=empresa,
         fecha_inicio=fecha_inicio_str, fecha_fin=fecha_fin_str,
         toneladas_periodo=toneladas_periodo, delta_toneladas=delta_toneladas,
         toneladas_hoy=toneladas_hoy, toneladas_mes_actual=toneladas_mes_actual,
-        unidades_periodo=unidades_periodo, pedidos_periodo=pedidos_periodo,
-        peso_promedio_pedido_kg=peso_promedio_pedido_kg,
+        unidades_periodo=unidades_periodo, movimientos_periodo=movimientos_periodo,
+        peso_promedio_mov_kg=peso_promedio_mov_kg,
         labels_meses=labels_meses, data_meses_ton=data_meses_ton,
         labels_dias=labels_dias, data_dias_ton=data_dias_ton,
         top_productos_mes=top_productos_mes, top_productos_3m=top_productos_3m,
         top_clientes=top_clientes,
         categoria_labels=categoria_labels, categoria_data=categoria_data, categoria_pct=categoria_pct,
-        ultimos_despachos=ultimos_despachos,
-        nuevos_clientes_lista=nuevos_clientes_lista, nuevos_clientes_total=len(nuevos_ids),
-        nuevos_clientes_ids=set(nuevos_ids),
+        ultimas_ventas=ultimas_ventas,
+        ton_ingresos_total=ton_ingresos_total, unid_ingresos_total=unid_ingresos_total,
+        ton_ingresos_compras=ton_ingresos_compras, unid_ingresos_compras=unid_ingresos_compras,
+        count_ingresos_compras=count_ingresos_compras,
+        ingresos_por_categoria=ingresos_por_categoria,
     )
 
 
@@ -9157,7 +9186,8 @@ def dashboard_ventas_general():
     toneladas_hoy_total = round(ctx_a['toneladas_hoy'] + ctx_i['toneladas_hoy'], 2)
     toneladas_mes_total = round(ctx_a['toneladas_mes_actual'] + ctx_i['toneladas_mes_actual'], 2)
     unidades_periodo_total = ctx_a['unidades_periodo'] + ctx_i['unidades_periodo']
-    pedidos_periodo_total = ctx_a['pedidos_periodo'] + ctx_i['pedidos_periodo']
+    movimientos_periodo_total = ctx_a['movimientos_periodo'] + ctx_i['movimientos_periodo']
+    ton_ingresos_compras_total = round(ctx_a['ton_ingresos_compras'] + ctx_i['ton_ingresos_compras'], 2)
 
     if toneladas_periodo_total > 0:
         pct_anclajes = round((ctx_a['toneladas_periodo'] / toneladas_periodo_total) * 100, 1)
@@ -9165,14 +9195,14 @@ def dashboard_ventas_general():
     else:
         pct_anclajes = pct_importbolts = 0
 
-    # --- Top clientes combinados (mezcla los top-10 de cada empresa y re-ordena) ---
+    # --- Top clientes/destinos combinados (mezcla los top-10 de cada empresa y re-ordena) ---
     combinados_cliente = {}
     for lst, emp in [(ctx_a['top_clientes'], 'Anclajes'), (ctx_i['top_clientes'], 'ImportBolts')]:
         for c in lst:
-            reg = combinados_cliente.setdefault(c['id'], {'nombre': c['nombre'], 'ubicacion': c['ubicacion'], 'toneladas': 0.0, 'unidades': 0, 'pedidos': 0, 'empresas': set()})
+            reg = combinados_cliente.setdefault(c['nombre'], {'nombre': c['nombre'], 'toneladas': 0.0, 'unidades': 0, 'movimientos': 0, 'empresas': set()})
             reg['toneladas'] += c['toneladas']
             reg['unidades'] += c['unidades']
-            reg['pedidos'] += c['pedidos']
+            reg['movimientos'] += c['movimientos']
             reg['empresas'].add(emp)
     top_clientes_general = sorted(combinados_cliente.values(), key=lambda x: x['toneladas'], reverse=True)[:10]
     for c in top_clientes_general:
@@ -9187,12 +9217,13 @@ def dashboard_ventas_general():
         productos_general.append({**p, 'empresa': 'ImportBolts'})
     productos_general = sorted(productos_general, key=lambda x: x['ton'], reverse=True)[:10]
 
-    # --- Nuevos clientes combinados (unión, sin duplicar al mismo cliente) ---
-    nuevos_ids_union = ctx_a['nuevos_clientes_ids'] | ctx_i['nuevos_clientes_ids']
-    nuevos_clientes_lista_general = sorted(
-        [{'nombre': c.nombre, 'ubicacion': c.distrito or c.provincia or '-'} for c in (Client.query.filter(Client.id.in_(nuevos_ids_union)).all() if nuevos_ids_union else [])],
-        key=lambda x: x['nombre']
-    )[:10]
+    # --- Ingresos por categoría combinados (ambas empresas, etiquetados) ---
+    ingresos_general = []
+    for r in ctx_a['ingresos_por_categoria']:
+        ingresos_general.append({**r, 'empresa': 'Anclajes'})
+    for r in ctx_i['ingresos_por_categoria']:
+        ingresos_general.append({**r, 'empresa': 'ImportBolts'})
+    ingresos_general = sorted(ingresos_general, key=lambda x: x['toneladas'], reverse=True)[:12]
 
     return render_template('dashboard_ventas_general.html',
         fecha_inicio=ctx_a['fecha_inicio'], fecha_fin=ctx_a['fecha_fin'],
@@ -9201,8 +9232,8 @@ def dashboard_ventas_general():
         toneladas_hoy_total=toneladas_hoy_total,
         toneladas_mes_total=toneladas_mes_total,
         unidades_periodo_total=unidades_periodo_total,
-        pedidos_periodo_total=pedidos_periodo_total,
-        nuevos_clientes_total=len(nuevos_ids_union),
+        movimientos_periodo_total=movimientos_periodo_total,
+        ton_ingresos_compras_total=ton_ingresos_compras_total,
         pct_anclajes=pct_anclajes, pct_importbolts=pct_importbolts,
         labels_meses=ctx_a['labels_meses'],
         data_meses_anclajes=ctx_a['data_meses_ton'], data_meses_importbolts=ctx_i['data_meses_ton'],
@@ -9210,7 +9241,7 @@ def dashboard_ventas_general():
         data_dias_anclajes=ctx_a['data_dias_ton'], data_dias_importbolts=ctx_i['data_dias_ton'],
         top_clientes_general=top_clientes_general,
         productos_general=productos_general,
-        nuevos_clientes_lista_general=nuevos_clientes_lista_general,
+        ingresos_general=ingresos_general,
     )
 
 
