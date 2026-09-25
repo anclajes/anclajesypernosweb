@@ -1,0 +1,254 @@
+{% extends "base.html" %}
+{% block title %}Rotación de Stock{% endblock %}
+{% block subtitle %}Productos sin movimiento y de baja rotación, para priorizar ventas y compras{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <h2 class="mb-0"><i class="bi bi-hourglass-split text-warning"></i> Rotación de Stock</h2>
+    {% if session.get('role') in ['admin', 'almacen', 'administracion'] %}
+    <a href="{{ url_for('exportar_rotacion_stock', origen=origen_filtro, categoria=categoria_filtro, calidad=calidad_filtro, busqueda=busqueda, dias=dias_analisis, solo_con_stock=('on' if solo_con_stock else '')) }}"
+       class="btn btn-outline-success btn-sm">
+        <i class="bi bi-file-earmark-excel"></i> Exportar a Excel
+    </a>
+    {% endif %}
+</div>
+
+<div class="alert alert-light border small py-2 mb-3">
+    <i class="bi bi-info-circle-fill text-primary"></i>
+    Cruza el Kardex de <strong>Anclajes</strong> e <strong>ImportBolts</strong> para detectar qué productos no se
+    están moviendo. Úsalo para armar promociones, aplicar descuentos o decidir qué NO volver a comprar.
+    Apenas un producto registra el movimiento que le faltaba, sale automáticamente de esa lista.
+</div>
+
+<!-- ===================== KPIs ===================== -->
+<div class="row g-3 mb-3">
+    <div class="col-6 col-lg-3">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <div class="text-muted small text-uppercase fw-bold">Nunca se vendieron</div>
+                <div class="fs-3 fw-bold text-danger">{{ kpis.total_sin_salidas }}</div>
+                <div class="small text-muted">{{ kpis.pct_sin_salidas }}% del catálogo activo filtrado</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <div class="text-muted small text-uppercase fw-bold">Valor inmovilizado</div>
+                <div class="fs-3 fw-bold text-dark">S/ {{ "%.2f"|format(kpis.valor_sin_salidas) }}</div>
+                <div class="small text-muted">Capital detenido en productos sin ventas</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <div class="text-muted small text-uppercase fw-bold">Baja rotación</div>
+                <div class="fs-3 fw-bold text-warning">{{ kpis.total_baja_rotacion }}</div>
+                <div class="small text-muted">Sin venderse hace {{ dias_analisis }}+ días</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body">
+                <div class="text-muted small text-uppercase fw-bold">Sin reabastecer</div>
+                <div class="fs-3 fw-bold text-secondary">{{ kpis.total_sin_entradas }}</div>
+                <div class="small text-muted">Nunca registraron un ingreso (revisar dato)</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ===================== FILTROS ===================== -->
+<div class="card bg-light border-0 shadow-sm mb-3">
+    <div class="card-body py-3">
+        <form method="GET" class="row g-2 align-items-end">
+            <input type="hidden" name="f" value="1">
+            <input type="hidden" name="vista" value="{{ vista }}">
+            <div class="col-12 col-md-3">
+                <label class="small fw-bold text-muted">Buscar producto</label>
+                <input type="text" name="busqueda" class="form-control" placeholder="Código o descripción..." value="{{ busqueda }}">
+            </div>
+            <div class="col-6 col-md-2">
+                <label class="small fw-bold text-muted">Inventario</label>
+                <select name="origen" class="form-select">
+                    <option value="todos" {% if origen_filtro == 'todos' %}selected{% endif %}>Todos</option>
+                    <option value="ANCLAJES" {% if origen_filtro == 'ANCLAJES' %}selected{% endif %}>Anclajes</option>
+                    <option value="IMPORTBOLTS" {% if origen_filtro == 'IMPORTBOLTS' %}selected{% endif %}>Import Bolts</option>
+                </select>
+            </div>
+            <div class="col-6 col-md-2">
+                <label class="small fw-bold text-muted">Familia</label>
+                <select name="categoria" class="form-select">
+                    <option value="todos" {% if categoria_filtro == 'todos' %}selected{% endif %}>Todas</option>
+                    {% for c in lista_categorias %}
+                    <option value="{{ c }}" {% if categoria_filtro == c %}selected{% endif %}>{{ c }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-6 col-md-2">
+                <label class="small fw-bold text-muted">Calidad</label>
+                <select name="calidad" class="form-select">
+                    <option value="todos" {% if calidad_filtro == 'todos' %}selected{% endif %}>Todas</option>
+                    {% for c in lista_calidades %}
+                    <option value="{{ c }}" {% if calidad_filtro == c %}selected{% endif %}>{{ c }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-6 col-md-2">
+                <label class="small fw-bold text-muted">Periodo de análisis</label>
+                <select name="dias" class="form-select">
+                    <option value="30" {% if dias_analisis == 30 %}selected{% endif %}>Últimos 30 días</option>
+                    <option value="60" {% if dias_analisis == 60 %}selected{% endif %}>Últimos 60 días</option>
+                    <option value="90" {% if dias_analisis == 90 %}selected{% endif %}>Últimos 90 días</option>
+                    <option value="180" {% if dias_analisis == 180 %}selected{% endif %}>Últimos 180 días</option>
+                    <option value="365" {% if dias_analisis == 365 %}selected{% endif %}>Último año</option>
+                </select>
+            </div>
+            <div class="col-6 col-md-1">
+                <label class="small fw-bold text-muted">Orden</label>
+                <select name="orden" class="form-select">
+                    <option value="valor_desc" {% if orden == 'valor_desc' %}selected{% endif %}>Valor</option>
+                    <option value="dias_desc" {% if orden == 'dias_desc' %}selected{% endif %}>Días</option>
+                    <option value="stock_desc" {% if orden == 'stock_desc' %}selected{% endif %}>Stock</option>
+                    <option value="nombre" {% if orden == 'nombre' %}selected{% endif %}>Nombre</option>
+                </select>
+            </div>
+
+            <div class="col-12 col-md-8 d-flex align-items-center mt-2">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="solo_con_stock" id="soloConStock" {% if solo_con_stock %}checked{% endif %}>
+                    <label class="form-check-label small" for="soloConStock">
+                        Solo productos con stock disponible (oculta los que ya están en cero)
+                    </label>
+                </div>
+            </div>
+            <div class="col-12 col-md-4 text-md-end mt-2">
+                <button type="submit" class="btn btn-primary"><i class="bi bi-funnel"></i> Aplicar filtros</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ===================== TABS ===================== -->
+<ul class="nav nav-pills mb-3">
+    <li class="nav-item">
+        <a class="nav-link {% if vista == 'sin_salidas' %}active{% endif %}"
+           href="{{ url_for('rotacion_stock', vista='sin_salidas', f=1, origen=origen_filtro, categoria=categoria_filtro, calidad=calidad_filtro, busqueda=busqueda, dias=dias_analisis, orden=orden, solo_con_stock=('on' if solo_con_stock else '')) }}">
+            <i class="bi bi-x-octagon"></i> Nunca se vendieron
+            <span class="badge bg-danger ms-1">{{ kpis.total_sin_salidas }}</span>
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if vista == 'baja_rotacion' %}active{% endif %}"
+           href="{{ url_for('rotacion_stock', vista='baja_rotacion', f=1, origen=origen_filtro, categoria=categoria_filtro, calidad=calidad_filtro, busqueda=busqueda, dias=dias_analisis, orden=orden, solo_con_stock=('on' if solo_con_stock else '')) }}">
+            <i class="bi bi-graph-down-arrow"></i> Baja rotación
+            <span class="badge bg-warning text-dark ms-1">{{ kpis.total_baja_rotacion }}</span>
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if vista == 'sin_entradas' %}active{% endif %}"
+           href="{{ url_for('rotacion_stock', vista='sin_entradas', f=1, origen=origen_filtro, categoria=categoria_filtro, calidad=calidad_filtro, busqueda=busqueda, dias=dias_analisis, orden=orden, solo_con_stock=('on' if solo_con_stock else '')) }}">
+            <i class="bi bi-box-seam"></i> Sin reabastecer
+            <span class="badge bg-secondary ms-1">{{ kpis.total_sin_entradas }}</span>
+        </a>
+    </li>
+</ul>
+
+{% if vista == 'sin_salidas' %}
+<div class="alert alert-danger border-0 small py-2 mb-3"><i class="bi bi-lightbulb-fill"></i>
+    Estos productos <strong>jamás registraron una salida</strong> (nunca se vendieron). Son los mejores candidatos
+    para promociones, combos o descuentos agresivos antes de que sigan ocupando espacio y capital.
+</div>
+{% elif vista == 'baja_rotacion' %}
+<div class="alert alert-warning border-0 small py-2 mb-3"><i class="bi bi-lightbulb-fill"></i>
+    Estos productos sí han tenido ventas alguna vez, pero <strong>no salen hace {{ dias_analisis }} días o más</strong>.
+    Son la alerta temprana: si no se actúa, en poco tiempo pasan a la lista de "Nunca se vendieron".
+</div>
+{% else %}
+<div class="alert alert-secondary border-0 small py-2 mb-3"><i class="bi bi-lightbulb-fill"></i>
+    Estos productos <strong>nunca registraron un ingreso</strong> en el Kardex (solo tienen salidas, o el stock inicial
+    no quedó registrado como movimiento). Revísalos: puede ser un tema de reabastecimiento o un dato pendiente de corregir.
+</div>
+{% endif %}
+
+<!-- ===================== TABLA ===================== -->
+<div class="card shadow-sm border-0">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0 small">
+            <thead class="table-light">
+                <tr>
+                    <th>SKU</th>
+                    <th>Producto</th>
+                    <th>Familia / Calidad</th>
+                    <th>Origen</th>
+                    <th class="text-end">Stock</th>
+                    <th class="text-end">Valor inmovilizado</th>
+                    <th>Última entrada</th>
+                    <th>Última salida</th>
+                    <th class="text-center">Días sin vender</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in productos %}
+                <tr>
+                    <td class="fw-bold text-primary">{{ p.sku }}</td>
+                    <td>
+                        {{ p.nombre }}
+                        <div class="text-muted" style="font-size:.75rem"><i class="bi bi-geo-alt"></i> {{ p.ubicacion }}</div>
+                    </td>
+                    <td>
+                        {{ p.categoria }}
+                        <div class="text-muted" style="font-size:.75rem">{{ p.calidad }}</div>
+                    </td>
+                    <td>
+                        <span class="badge {{ 'bg-primary-subtle text-primary' if p.origen == 'ANCLAJES' else 'bg-info-subtle text-info' }}">
+                            {{ p.origen }}
+                        </span>
+                    </td>
+                    <td class="text-end">{{ p.stock }}</td>
+                    <td class="text-end fw-bold">S/ {{ "%.2f"|format(p.valor_inmovilizado) }}</td>
+                    <td>{{ p.ultima_entrada.strftime('%d/%m/%Y') if p.ultima_entrada else 'Nunca' }}</td>
+                    <td>{{ p.ultima_salida.strftime('%d/%m/%Y') if p.ultima_salida else 'Nunca' }}</td>
+                    <td class="text-center">
+                        {% if p.dias_sin_salida is not none %}
+                            {% if p.dias_sin_salida >= 180 %}
+                                <span class="badge bg-danger">{{ p.dias_sin_salida }} días</span>
+                            {% elif p.dias_sin_salida >= 90 %}
+                                <span class="badge bg-warning text-dark">{{ p.dias_sin_salida }} días</span>
+                            {% else %}
+                                <span class="badge bg-secondary">{{ p.dias_sin_salida }} días</span>
+                            {% endif %}
+                        {% else %}
+                            <span class="badge bg-dark">Nunca vendido</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="9" class="text-center text-muted py-5">
+                        <i class="bi bi-emoji-smile display-4 opacity-25"></i>
+                        <p class="mt-2 mb-0">No hay productos que coincidan con estos filtros. ¡Buena señal!</p>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% if total_paginas > 1 %}
+    <div class="card-footer bg-white d-flex flex-wrap justify-content-between align-items-center gap-2 small">
+        <span class="text-muted">Mostrando {{ inicio_rango }}–{{ fin_rango }} de {{ total_vista }}</span>
+        <nav>
+            <ul class="pagination pagination-sm mb-0 flex-wrap">
+                {% for num in range(1, total_paginas + 1) %}
+                <li class="page-item {% if num == page %}active{% endif %}">
+                    <a class="page-link" href="{{ url_for('rotacion_stock', vista=vista, page=num, f=1, origen=origen_filtro, categoria=categoria_filtro, calidad=calidad_filtro, busqueda=busqueda, dias=dias_analisis, orden=orden, solo_con_stock=('on' if solo_con_stock else '')) }}">{{ num }}</a>
+                </li>
+                {% endfor %}
+            </ul>
+        </nav>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

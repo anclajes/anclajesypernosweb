@@ -6458,6 +6458,270 @@ def ver_kardex_importbolts():
                            cat_filtro=cat_nombre,
                            calidad_filtro=calidad_nombre)
 
+
+# =====================================================================
+#  ROTACIÓN DE STOCK (Productos sin movimiento / baja rotación)
+#  Analiza el Kardex de ambos inventarios (Anclajes + ImportBolts) para
+#  detectar: productos que nunca se vendieron, productos que nunca se
+#  reabastecieron, y productos "de baja rotación" (se movieron alguna
+#  vez, pero llevan mucho tiempo sin salir). Pensado para que Ventas y
+#  Almacén prioricen promociones, descuentos o pausen recompras.
+# =====================================================================
+
+def _calcular_rotacion_stock(origen_filtro='todos', categoria_filtro='todos', calidad_filtro='todos',
+                              busqueda='', dias_analisis=90, solo_con_stock=True):
+    """Devuelve (sin_salidas, sin_entradas, baja_rotacion, kpis, hoy) ya filtrados."""
+    hoy = hora_peru()
+    fecha_umbral = hoy - timedelta(days=dias_analisis)
+
+    def dataset_por_inventario(Modelo, ModeloMov, origen_label):
+        ultima_entrada_sq = db.session.query(
+            ModeloMov.product_id.label('pid'), func.max(ModeloMov.fecha).label('fecha')
+        ).filter(ModeloMov.tipo == 'ENTRADA').group_by(ModeloMov.product_id).subquery()
+
+        ultima_salida_sq = db.session.query(
+            ModeloMov.product_id.label('pid'), func.max(ModeloMov.fecha).label('fecha')
+        ).filter(ModeloMov.tipo == 'SALIDA').group_by(ModeloMov.product_id).subquery()
+
+        salidas_periodo_sq = db.session.query(
+            ModeloMov.product_id.label('pid'),
+            func.coalesce(func.sum(ModeloMov.cantidad), 0).label('cantidad'),
+            func.count(ModeloMov.id).label('movs')
+        ).filter(ModeloMov.tipo == 'SALIDA', ModeloMov.fecha >= fecha_umbral).group_by(ModeloMov.product_id).subquery()
+
+        q = db.session.query(
+            Modelo, ultima_entrada_sq.c.fecha, ultima_salida_sq.c.fecha,
+            salidas_periodo_sq.c.cantidad, salidas_periodo_sq.c.movs
+        ).outerjoin(ultima_entrada_sq, ultima_entrada_sq.c.pid == Modelo.id
+        ).outerjoin(ultima_salida_sq, ultima_salida_sq.c.pid == Modelo.id
+        ).outerjoin(salidas_periodo_sq, salidas_periodo_sq.c.pid == Modelo.id
+        ).filter(Modelo.activo.is_(True))
+
+        if origen_label == 'ANCLAJES':
+            q = q.filter(Modelo.es_shadow_importbolts.isnot(True))
+        if busqueda:
+            q = q.filter(or_(Modelo.nombre.ilike(f"%{busqueda}%"), Modelo.sku.ilike(f"%{busqueda}%")))
+        if categoria_filtro != 'todos':
+            q = q.filter(Modelo.categoria == categoria_filtro)
+        if calidad_filtro != 'todos':
+            q = q.filter(Modelo.calidad == calidad_filtro)
+        if solo_con_stock:
+            q = q.filter(Modelo.stock_actual > 0)
+
+        filas = q.all()
+        resultado = []
+        for prod, ult_entrada, ult_salida, salida_cant, movs in filas:
+            dias_sin_salida = (hoy - ult_salida).days if ult_salida else None
+            dias_sin_entrada = (hoy - ult_entrada).days if ult_entrada else None
+            precio_ref = prod.precio_unidad or 0
+            valor_inmovilizado = round((prod.stock_actual or 0) * precio_ref, 2)
+            resultado.append({
+                'id': prod.id, 'sku': prod.sku, 'nombre': prod.nombre,
+                'categoria': prod.categoria, 'calidad': prod.calidad or '-',
+                'ubicacion': prod.ubicacion or '-', 'stock': prod.stock_actual or 0,
+                'precio_unidad': precio_ref, 'valor_inmovilizado': valor_inmovilizado,
+                'ultima_entrada': ult_entrada, 'ultima_salida': ult_salida,
+                'dias_sin_salida': dias_sin_salida, 'dias_sin_entrada': dias_sin_entrada,
+                'salidas_periodo': int(salida_cant or 0), 'movs_periodo': int(movs or 0),
+                'origen': origen_label,
+                'tiene_entrada': ult_entrada is not None,
+                'tiene_salida': ult_salida is not None,
+            })
+        return resultado
+
+    dataset = []
+    if origen_filtro in ('todos', 'ANCLAJES'):
+        dataset += dataset_por_inventario(Product, ProductMovement, 'ANCLAJES')
+    if origen_filtro in ('todos', 'IMPORTBOLTS'):
+        dataset += dataset_por_inventario(ProductImportBolts, ProductMovementImportBolts, 'IMPORTBOLTS')
+
+    # --- Clasificación (una vez que un producto registra el movimiento que le faltaba, sale de esa lista) ---
+    sin_salidas = [d for d in dataset if not d['tiene_salida']]
+    sin_entradas = [d for d in dataset if not d['tiene_entrada']]
+    baja_rotacion = [d for d in dataset
+                      if d['tiene_salida'] and d['dias_sin_salida'] is not None and d['dias_sin_salida'] >= dias_analisis]
+
+    kpis = {
+        'total_catalogo': len(dataset),
+        'total_sin_salidas': len(sin_salidas),
+        'total_sin_entradas': len(sin_entradas),
+        'total_baja_rotacion': len(baja_rotacion),
+        'valor_sin_salidas': round(sum(d['valor_inmovilizado'] for d in sin_salidas), 2),
+        'valor_baja_rotacion': round(sum(d['valor_inmovilizado'] for d in baja_rotacion), 2),
+        'pct_sin_salidas': round((len(sin_salidas) / len(dataset) * 100), 1) if dataset else 0,
+    }
+
+    return sin_salidas, sin_entradas, baja_rotacion, kpis, hoy
+
+
+def _ordenar_lista_rotacion(lista, orden):
+    if orden == 'dias_desc':
+        lista.sort(key=lambda x: (x['dias_sin_salida'] if x['dias_sin_salida'] is not None
+                                   else (x['dias_sin_entrada'] if x['dias_sin_entrada'] is not None else 999999)),
+                   reverse=True)
+    elif orden == 'stock_desc':
+        lista.sort(key=lambda x: x['stock'], reverse=True)
+    elif orden == 'nombre':
+        lista.sort(key=lambda x: x['nombre'])
+    else:  # valor_desc (por defecto)
+        lista.sort(key=lambda x: x['valor_inmovilizado'], reverse=True)
+    return lista
+
+
+@app.route('/reportes/rotacion_stock')
+def rotacion_stock():
+    if session.get('user_id') is None: return redirect(url_for('login'))
+    if session.get('role') not in ['admin', 'almacen', 'administracion', 'vendedor']:
+        return "Acceso denegado", 403
+
+    origen_filtro = request.args.get('origen', 'todos')
+    categoria_filtro = request.args.get('categoria', 'todos')
+    calidad_filtro = request.args.get('calidad', 'todos')
+    busqueda = request.args.get('busqueda', '').strip()
+
+    dias_analisis = request.args.get('dias', 90, type=int)
+    if dias_analisis not in (30, 60, 90, 180, 365):
+        dias_analisis = 90
+
+    # Truco para checkbox en GET: si el form ya se envió ('f' en la URL), respetamos
+    # si vino marcado o no; si es la primera visita (sin 'f'), arranca marcado por defecto.
+    if 'f' in request.args:
+        solo_con_stock = request.args.get('solo_con_stock') == 'on'
+    else:
+        solo_con_stock = True
+
+    vista = request.args.get('vista', 'sin_salidas')
+    if vista not in ('sin_salidas', 'sin_entradas', 'baja_rotacion'):
+        vista = 'sin_salidas'
+    orden = request.args.get('orden', 'valor_desc')
+    page = request.args.get('page', 1, type=int)
+    per_page = 25
+
+    sin_salidas, sin_entradas, baja_rotacion, kpis, hoy = _calcular_rotacion_stock(
+        origen_filtro, categoria_filtro, calidad_filtro, busqueda, dias_analisis, solo_con_stock
+    )
+
+    sin_salidas = _ordenar_lista_rotacion(sin_salidas, orden)
+    sin_entradas = _ordenar_lista_rotacion(sin_entradas, orden)
+    baja_rotacion = _ordenar_lista_rotacion(baja_rotacion, orden)
+
+    listas = {'sin_salidas': sin_salidas, 'sin_entradas': sin_entradas, 'baja_rotacion': baja_rotacion}
+    lista_activa = listas[vista]
+
+    total_vista = len(lista_activa)
+    total_paginas = (total_vista // per_page) + (1 if total_vista % per_page else 0)
+    if total_paginas == 0:
+        total_paginas = 1
+    if page > total_paginas:
+        page = total_paginas
+    inicio = (page - 1) * per_page
+    fin = inicio + per_page
+    pagina_actual = lista_activa[inicio:fin]
+
+    # --- Listas de filtros dependientes del origen elegido (mismo patrón que Inventario General) ---
+    if origen_filtro == 'ANCLAJES':
+        lista_categorias = [c.nombre for c in Category.query
+                             .filter(Category.nombre != 'TRASLADO IMPORTBOLTS').order_by(Category.nombre).all()]
+        lista_calidades = [c[0] for c in db.session.query(Product.calidad).filter(
+            Product.es_shadow_importbolts.isnot(True), Product.calidad.isnot(None), Product.calidad != ''
+        ).distinct().order_by(Product.calidad).all()]
+    elif origen_filtro == 'IMPORTBOLTS':
+        lista_categorias = [c.nombre for c in CategoryImportBolts.query.order_by(CategoryImportBolts.nombre).all()]
+        lista_calidades = [c[0] for c in db.session.query(ProductImportBolts.calidad).filter(
+            ProductImportBolts.calidad.isnot(None), ProductImportBolts.calidad != ''
+        ).distinct().order_by(ProductImportBolts.calidad).all()]
+    else:
+        cats_anc = [c.nombre for c in Category.query.filter(Category.nombre != 'TRASLADO IMPORTBOLTS').all()]
+        cats_ib = [c.nombre for c in CategoryImportBolts.query.all()]
+        lista_categorias = sorted(set(cats_anc + cats_ib))
+        cal_anc = [c[0] for c in db.session.query(Product.calidad).filter(
+            Product.es_shadow_importbolts.isnot(True), Product.calidad.isnot(None), Product.calidad != ''
+        ).distinct().all()]
+        cal_ib = [c[0] for c in db.session.query(ProductImportBolts.calidad).filter(
+            ProductImportBolts.calidad.isnot(None), ProductImportBolts.calidad != ''
+        ).distinct().all()]
+        lista_calidades = sorted(set(cal_anc + cal_ib))
+
+    if categoria_filtro not in lista_categorias and categoria_filtro != 'todos':
+        categoria_filtro = 'todos'
+    if calidad_filtro not in lista_calidades and calidad_filtro != 'todos':
+        calidad_filtro = 'todos'
+
+    return render_template('rotacion_stock.html',
+                           productos=pagina_actual,
+                           vista=vista,
+                           kpis=kpis,
+                           origen_filtro=origen_filtro,
+                           categoria_filtro=categoria_filtro,
+                           calidad_filtro=calidad_filtro,
+                           busqueda=busqueda,
+                           dias_analisis=dias_analisis,
+                           solo_con_stock=solo_con_stock,
+                           orden=orden,
+                           page=page,
+                           total_paginas=total_paginas,
+                           total_vista=total_vista,
+                           inicio_rango=(inicio + 1 if total_vista > 0 else 0),
+                           fin_rango=min(fin, total_vista),
+                           lista_categorias=lista_categorias,
+                           lista_calidades=lista_calidades,
+                           hoy=hoy)
+
+
+@app.route('/reportes/rotacion_stock/exportar')
+def exportar_rotacion_stock():
+    import gc
+    if session.get('role') not in ['admin', 'almacen', 'administracion']:
+        return "No autorizado", 403
+
+    origen_filtro = request.args.get('origen', 'todos')
+    categoria_filtro = request.args.get('categoria', 'todos')
+    calidad_filtro = request.args.get('calidad', 'todos')
+    busqueda = request.args.get('busqueda', '').strip()
+    dias_analisis = request.args.get('dias', 90, type=int)
+    solo_con_stock = request.args.get('solo_con_stock') == 'on'
+
+    sin_salidas, sin_entradas, baja_rotacion, kpis, hoy = _calcular_rotacion_stock(
+        origen_filtro, categoria_filtro, calidad_filtro, busqueda, dias_analisis, solo_con_stock
+    )
+
+    def _filas(lista):
+        filas = []
+        for d in lista:
+            filas.append({
+                'ORIGEN': d['origen'], 'CÓDIGO': d['sku'], 'DESCRIPCIÓN': d['nombre'],
+                'FAMILIA': d['categoria'], 'CALIDAD': d['calidad'], 'UBICACIÓN': d['ubicacion'],
+                'STOCK ACTUAL': d['stock'], 'PRECIO UNIT.': d['precio_unidad'],
+                'VALOR INMOVILIZADO': d['valor_inmovilizado'],
+                'ÚLTIMA ENTRADA': d['ultima_entrada'].strftime('%d/%m/%Y') if d['ultima_entrada'] else 'Nunca',
+                'ÚLTIMA SALIDA': d['ultima_salida'].strftime('%d/%m/%Y') if d['ultima_salida'] else 'Nunca',
+                'DÍAS SIN VENDER': d['dias_sin_salida'] if d['dias_sin_salida'] is not None else '-',
+            })
+        return filas
+
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        for nombre_hoja, lista in [('Sin Salidas', sin_salidas), ('Sin Entradas', sin_entradas), ('Baja Rotacion', baja_rotacion)]:
+            df = pd.DataFrame(_filas(lista))
+            if df.empty:
+                df = pd.DataFrame([{'INFO': 'Sin registros para este criterio'}])
+            df.to_excel(writer, index=False, sheet_name=nombre_hoja)
+            worksheet = writer.sheets[nombre_hoja]
+            for idx, col in enumerate(df.columns):
+                max_len = max(df[col].astype(str).map(len).max(), len(col)) + 2
+                worksheet.set_column(idx, idx, max_len)
+
+    output.seek(0)
+    gc.collect()
+
+    return send_file(
+        output,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        as_attachment=True,
+        download_name=f'Rotacion_Stock_{hora_peru().strftime("%Y%m%d")}.xlsx'
+    )
+
+
 @app.route('/inventario_general')
 def inventario_general():
     if session.get('user_id') is None: return redirect(url_for('login'))
