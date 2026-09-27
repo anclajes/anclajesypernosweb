@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Resultado de la Sincronización{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="mb-0"><i class="bi bi-check2-circle text-success"></i> Sincronización completada</h2>
+    <a href="{{ url_for('admin_maestro') }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Volver</a>
+</div>
+
+<p class="text-muted small">
+    Hoja leída: <code>{{ r.hoja_usada }}</code> · Filas con código válido: <strong>{{ r.filas_leidas }}</strong> ·
+    Lote: <code>{{ r.lote_id }}</code>
+</p>
+
+<div class="row g-3 mb-3">
+    <div class="col-6 col-md-3">
+        <div class="card border-0 shadow-sm text-center py-3">
+            <div class="fs-3 fw-bold text-primary">{{ r.actualizados_anclajes }}</div>
+            <div class="small text-muted">Pesos actualizados<br>en Anclajes</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card border-0 shadow-sm text-center py-3">
+            <div class="fs-3 fw-bold text-primary">{{ r.actualizados_importbolts }}</div>
+            <div class="small text-muted">Pesos actualizados<br>en ImportBolts</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card border-0 shadow-sm text-center py-3">
+            <div class="fs-3 fw-bold text-success">{{ r.sin_cambio }}</div>
+            <div class="small text-muted">Ya estaban<br>al día</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card border-0 shadow-sm text-center py-3">
+            <div class="fs-3 fw-bold text-danger">{{ r.no_encontrados_total }}</div>
+            <div class="small text-muted">Códigos no<br>encontrados</div>
+        </div>
+    </div>
+</div>
+
+<div class="d-flex gap-2 mb-3">
+    <a href="{{ url_for('admin_maestro_auditoria', lote=r.lote_id) }}" class="btn btn-primary btn-sm">
+        <i class="bi bi-list-ul"></i> Ver el detalle de estos cambios en el historial
+    </a>
+</div>
+
+<div class="row g-3">
+    <div class="col-12 col-lg-6">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white fw-bold">
+                <i class="bi bi-question-circle text-danger"></i> Códigos del Maestro no encontrados
+                {% if r.no_encontrados_total > 0 %}<span class="badge bg-danger">{{ r.no_encontrados_total }}</span>{% endif %}
+            </div>
+            <div class="card-body">
+                {% if r.no_encontrados_muestra %}
+                <p class="small text-muted">Estos códigos están en el Maestro pero no existen todavía en Anclajes ni en ImportBolts. No se creó nada: revísalos y créalos manualmente si corresponde.</p>
+                <div style="max-height: 280px; overflow-y: auto;">
+                    <div class="d-flex flex-wrap gap-1">
+                        {% for c in r.no_encontrados_muestra %}
+                        <span class="badge bg-light text-dark border">{{ c }}</span>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% if r.no_encontrados_total > r.no_encontrados_muestra|length %}
+                <p class="small text-muted mt-2 mb-0">Mostrando los primeros {{ r.no_encontrados_muestra|length }} de {{ r.no_encontrados_total }}.</p>
+                {% endif %}
+                {% else %}
+                <p class="text-muted small mb-0">Todos los códigos del Maestro se encontraron en algún inventario. 🎉</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-lg-6">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white fw-bold">
+                <i class="bi bi-exclamation-triangle text-warning"></i> Diferencias detectadas (no se tocaron)
+                {% if r.diferencias_total > 0 %}<span class="badge bg-warning text-dark">{{ r.diferencias_total }}</span>{% endif %}
+            </div>
+            <div class="card-body">
+                {% if r.diferencias_muestra %}
+                <p class="small text-muted">Descripción, calidad o familia distintas entre el Maestro y el inventario. Solo informativo — no se cambió nada automáticamente.</p>
+                <div class="table-responsive" style="max-height: 280px; overflow-y: auto;">
+                    <table class="table table-sm small mb-0">
+                        <thead class="table-light"><tr><th>Código</th><th>Inventario</th><th>Campos distintos</th></tr></thead>
+                        <tbody>
+                            {% for d in r.diferencias_muestra %}
+                            <tr><td class="fw-bold text-primary">{{ d.sku }}</td><td>{{ d.inventario }}</td><td>{{ d.campos }}</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% if r.diferencias_total > r.diferencias_muestra|length %}
+                <p class="small text-muted mt-2 mb-0">Mostrando las primeras {{ r.diferencias_muestra|length }} de {{ r.diferencias_total }}.</p>
+                {% endif %}
+                {% else %}
+                <p class="text-muted small mb-0">No se detectaron diferencias de descripción, calidad ni familia.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

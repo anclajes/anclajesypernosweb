@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Historial del Maestro{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="mb-0"><i class="bi bi-clock-history text-primary"></i> Historial de cambios del Maestro</h2>
+    <a href="{{ url_for('admin_maestro') }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Volver</a>
+</div>
+
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-body py-3">
+        <form method="GET" class="row g-2 align-items-end">
+            <div class="col-6 col-md-4">
+                <label class="small fw-bold text-muted">Código</label>
+                <input type="text" name="sku" class="form-control" placeholder="Ej: PER-001" value="{{ sku_filtro }}">
+            </div>
+            <div class="col-6 col-md-4">
+                <label class="small fw-bold text-muted">Lote (subida específica)</label>
+                <input type="text" name="lote" class="form-control" placeholder="Ej: 20260926103000" value="{{ lote_filtro }}">
+            </div>
+            <div class="col-12 col-md-2">
+                <button type="submit" class="btn btn-primary w-100"><i class="bi bi-search"></i> Filtrar</button>
+            </div>
+            <div class="col-12 col-md-2">
+                <a href="{{ url_for('admin_maestro_auditoria') }}" class="btn btn-outline-secondary w-100">Limpiar</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card shadow-sm border-0">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0 small">
+            <thead class="table-dark">
+                <tr>
+                    <th class="ps-3">Fecha</th>
+                    <th>Código</th>
+                    <th>Inventario</th>
+                    <th>Campo</th>
+                    <th class="text-end">Valor anterior</th>
+                    <th class="text-end">Valor nuevo</th>
+                    <th>Usuario</th>
+                    <th class="pe-3">Lote</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for c in pagination.items %}
+                <tr>
+                    <td class="ps-3">{{ c.fecha.strftime('%d/%m/%y %H:%M') }}</td>
+                    <td class="fw-bold text-primary">{{ c.sku }}</td>
+                    <td><span class="badge bg-light text-dark border">{{ c.inventario }}</span></td>
+                    <td>{{ c.campo }}</td>
+                    <td class="text-end">{{ c.valor_anterior }}</td>
+                    <td class="text-end fw-bold">{{ c.valor_nuevo }}</td>
+                    <td>{{ c.usuario }}</td>
+                    <td class="pe-3">
+                        <a href="{{ url_for('admin_maestro_auditoria', lote=c.lote_id) }}" class="small text-muted">{{ c.lote_id }}</a>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="8" class="text-center py-4 text-muted">No hay cambios registrados con este filtro.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% if pagination.pages > 1 %}
+<div class="d-flex justify-content-between align-items-center mt-3">
+    <small class="text-muted">Página {{ pagination.page }} de {{ pagination.pages }} · Total: {{ pagination.total }} cambios</small>
+    <ul class="pagination pagination-sm mb-0">
+        <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
+            <a class="page-link" href="{{ url_for('admin_maestro_auditoria', page=pagination.prev_num, sku=sku_filtro, lote=lote_filtro) }}">Ant</a>
+        </li>
+        {% for page_num in pagination.iter_pages(left_edge=1, right_edge=1, left_current=1, right_current=1) %}
+            {% if page_num %}
+            <li class="page-item {% if page_num == pagination.page %}active{% endif %}">
+                <a class="page-link" href="{{ url_for('admin_maestro_auditoria', page=page_num, sku=sku_filtro, lote=lote_filtro) }}">{{ page_num }}</a>
+            </li>
+            {% else %}
+            <li class="page-item disabled"><span class="page-link">…</span></li>
+            {% endif %}
+        {% endfor %}
+        <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
+            <a class="page-link" href="{{ url_for('admin_maestro_auditoria', page=pagination.next_num, sku=sku_filtro, lote=lote_filtro) }}">Sig</a>
+        </li>
+    </ul>
+</div>
+{% endif %}
+{% endblock %}

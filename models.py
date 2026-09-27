@@ -725,3 +725,21 @@ class RegistroAuditoriaLog(db.Model):
 
     realizado_por = db.relationship('User')
     registro = db.relationship('RegistroAuditoria', backref=db.backref('logs', order_by='RegistroAuditoriaLog.fecha.desc()'))
+
+
+# --- MAESTRO DE PRODUCTOS (Excel maestro compartido entre Anclajes e ImportBolts) ---
+class MaestroCambioLog(db.Model):
+    """Auditoría de cada cambio que hace la importación del Excel Maestro (hoja MAESTROV2).
+    Por ahora el Maestro solo actualiza PESO NOMINAL, pero el campo 'campo' ya queda listo
+    para si en el futuro se sincronizan más columnas (calidad, familia, descripción, etc).
+    Cada importación agrupa sus filas bajo el mismo 'lote_id' para poder revisarlas juntas."""
+    __tablename__ = 'maestro_cambio_log'
+    id = db.Column(db.Integer, primary_key=True)
+    fecha = db.Column(db.DateTime, default=hora_peru)
+    usuario = db.Column(db.String(100))
+    lote_id = db.Column(db.String(40), index=True)
+    sku = db.Column(db.String(50), nullable=False, index=True)
+    inventario = db.Column(db.String(20))       # 'ANCLAJES' o 'IMPORTBOLTS'
+    campo = db.Column(db.String(30), default='peso_kg')
+    valor_anterior = db.Column(db.String(100))
+    valor_nuevo = db.Column(db.String(100))

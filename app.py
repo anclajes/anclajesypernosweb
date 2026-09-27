@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 from models import db, User, Product, Category, Client, Order, OrderDetail, ProductMovement, AuditLog, SystemConfig,OrderKitComponent, ClientContact, ClientContactLog, ClientRubroVendedor, IntercompanyTransfer, MetaVendedor, ProductImage, MotivoMovimiento, Proveedor, Presentacion, RegistroAuditoria, RegistroAuditoriaLog, RegistroAuditoriaValorExtra, CatalogoValor, CampoPersonalizado, CampoPersonalizadoOpcion, PeriodoAuditoria, RegistroAuditoriaFoto
 from models import ProductImportBolts, CategoryImportBolts, ProductMovementImportBolts
+from models import MaestroCambioLog
 from models import ProductMovement
 from models import Payment
 from models import Category
@@ -4418,6 +4419,267 @@ def importar_excel_importbolts():
         gc.collect()
 
     return redirect(url_for('inventario_importbolts'))
+
+
+# =========================================================================================
+# MAESTRO DE PRODUCTOS (Excel maestro, hoja MAESTROV2) — sincroniza PESO NOMINAL
+# =========================================================================================
+# Anclajes e ImportBolts comparten el mismo "nuevo codigo" para un mismo ítem físico (mismo
+# código, descripción, calidad, familia, peso). El Excel Maestro es la fuente de verdad de
+# esos datos base. Por ahora esta sección SOLO actualiza el PESO NOMINAL en ambos inventarios
+# cuando el código coincide (no crea productos nuevos, no toca descripción/calidad/familia:
+# eso solo se reporta como diferencia informativa, ver _procesar_excel_maestro). Cada
+# actualización real queda registrada en MaestroCambioLog, agrupada por 'lote_id'.
+
+def _limpiar_texto_maestro(v):
+    if v is None:
+        return ''
+    s = str(v).strip()
+    return '' if s.lower() in ('nan', 'none') else s
+
+
+def _limpiar_codigo_maestro(v):
+    s = _limpiar_texto_maestro(v)
+    if s.endswith('.0'):
+        s = s[:-2]
+    return s
+
+
+def _limpiar_peso_maestro(v):
+    """Devuelve el peso como float positivo, o None si viene vacío/inválido/cero
+    (un peso en 0 o vacío en el Maestro no debe borrar el peso que ya existe)."""
+    try:
+        s = str(v).replace(',', '.').strip()
+        if not s or s.lower() in ('nan', 'none'):
+            return None
+        val = float(s)
+        return val if val > 0 else None
+    except Exception:
+        return None
+
+
+def _procesar_excel_maestro(filepath, usuario_actual, user_id_actual):
+    """Lee la hoja MAESTROV2 del Excel Maestro en modo streaming (poca RAM, igual que la
+    importación de inventario) y compara cada 'nuevo codigo' contra Anclajes e ImportBolts.
+    Cuando el peso del Maestro es distinto al que ya está guardado, lo actualiza en ESE
+    inventario y deja constancia en MaestroCambioLog. Devuelve un resumen para mostrar en
+    pantalla (no se guarda en sesión/flash porque puede ser una lista larga)."""
+    from openpyxl import load_workbook
+
+    wb = load_workbook(filename=filepath, read_only=True, data_only=True)
+    try:
+        hoja_maestro = next((n for n in wb.sheetnames if 'MAESTRO' in n.strip().upper()), None)
+        if not hoja_maestro:
+            return {
+                'error': f'No se encontró una hoja llamada "MAESTROV2" en este archivo. '
+                         f'Hojas encontradas: {", ".join(wb.sheetnames)}.'
+            }
+        ws = wb[hoja_maestro]
+
+        header_row = next(ws.iter_rows(min_row=1, max_row=1, values_only=True), None)
+        if not header_row:
+            return {'error': f'La hoja "{hoja_maestro}" está vacía.'}
+        headers = [str(h).strip().upper() if h is not None else '' for h in header_row]
+
+        def get_col(row_vals, *posibles_nombres):
+            for nombre in posibles_nombres:
+                if nombre in headers:
+                    idx = headers.index(nombre)
+                    if idx < len(row_vals):
+                        return row_vals[idx]
+            return None
+
+        # --- Pre-cargamos ambos inventarios en memoria (una sola consulta por tabla) ---
+        anclajes_por_sku = {
+            fila[0]: {'id': fila[1], 'peso_kg': fila[2], 'nombre': fila[3], 'categoria': fila[4], 'calidad': fila[5]}
+            for fila in db.session.query(Product.sku, Product.id, Product.peso_kg, Product.nombre, Product.categoria, Product.calidad).all()
+        }
+        importbolts_por_sku = {
+            fila[0]: {'id': fila[1], 'peso_kg': fila[2], 'nombre': fila[3], 'categoria': fila[4], 'calidad': fila[5]}
+            for fila in db.session.query(ProductImportBolts.sku, ProductImportBolts.id, ProductImportBolts.peso_kg, ProductImportBolts.nombre, ProductImportBolts.categoria, ProductImportBolts.calidad).all()
+        }
+
+        lote_id = hora_peru().strftime('%Y%m%d%H%M%S')
+        cambios_anclajes = []      # [{'sku', 'anterior', 'nuevo'}]
+        cambios_importbolts = []
+        sin_cambio = 0
+        no_encontrados = []
+        diferencias_info = []      # descripcion/calidad/familia distintas (NO se tocan, solo se avisa)
+        filas_leidas = 0
+        codigos_vistos = set()
+
+        for row_vals in ws.iter_rows(min_row=2, values_only=True):
+            codigo = _limpiar_codigo_maestro(get_col(row_vals, 'NUEVO CODIGO', 'NUEVO CÓDIGO'))
+            if not codigo:
+                continue
+            filas_leidas += 1
+            if codigo in codigos_vistos:
+                continue  # el Maestro no debería repetir códigos; si pasa, solo tomamos el primero
+            codigos_vistos.add(codigo)
+
+            peso_master = _limpiar_peso_maestro(get_col(row_vals, 'PESO NOMINAL (KG)', 'PESO NOMINAL(KG)', 'PESO NOMINAL', 'PESO (KG)', 'PESO_KG', 'PESO KG'))
+            desc_master = _limpiar_texto_maestro(get_col(row_vals, 'DESCRIPCIÓN', 'DESCRIPCION'))
+            calidad_master = _limpiar_texto_maestro(get_col(row_vals, 'CALIDAD'))
+            familia_master = _limpiar_texto_maestro(get_col(row_vals, 'FAMILIA'))
+
+            encontrado = False
+
+            for inventario, tabla_dict, lista_cambios in (
+                ('ANCLAJES', anclajes_por_sku, cambios_anclajes),
+                ('IMPORTBOLTS', importbolts_por_sku, cambios_importbolts),
+            ):
+                prod = tabla_dict.get(codigo)
+                if not prod:
+                    continue
+                encontrado = True
+
+                if peso_master is not None:
+                    peso_actual = prod['peso_kg'] or 0.0
+                    if abs(peso_actual - peso_master) > 0.001:
+                        lista_cambios.append({'sku': codigo, 'anterior': peso_actual, 'nuevo': peso_master})
+                    else:
+                        sin_cambio += 1
+
+                # Comparación informativa (no se modifica nada): ayuda a detectar
+                # productos que quedaron desincronizados en descripción/calidad/familia.
+                dif = []
+                if desc_master and desc_master.upper() != (prod['nombre'] or '').upper():
+                    dif.append('descripción')
+                if calidad_master and calidad_master.upper() != (prod['calidad'] or '').upper():
+                    dif.append('calidad')
+                if familia_master and familia_master.upper() != (prod['categoria'] or '').upper():
+                    dif.append('familia')
+                if dif:
+                    diferencias_info.append({'sku': codigo, 'inventario': inventario, 'campos': ', '.join(dif)})
+
+            if not encontrado:
+                no_encontrados.append(codigo)
+
+        # --- Aplicar cambios de peso (UPDATE por lotes, igual que la importación de inventario) ---
+        if cambios_anclajes:
+            db.session.execute(
+                text("UPDATE product SET peso_kg=:nuevo WHERE sku=:sku"),
+                [{'sku': c['sku'], 'nuevo': c['nuevo']} for c in cambios_anclajes]
+            )
+        if cambios_importbolts:
+            db.session.execute(
+                text("UPDATE product_importbolts SET peso_kg=:nuevo WHERE sku=:sku"),
+                [{'sku': c['sku'], 'nuevo': c['nuevo']} for c in cambios_importbolts]
+            )
+
+        registros_log = []
+        hora_actual = hora_peru()
+        for inventario, lista_cambios in (('ANCLAJES', cambios_anclajes), ('IMPORTBOLTS', cambios_importbolts)):
+            for c in lista_cambios:
+                registros_log.append(MaestroCambioLog(
+                    fecha=hora_actual, usuario=usuario_actual, lote_id=lote_id, sku=c['sku'],
+                    inventario=inventario, campo='peso_kg',
+                    valor_anterior=str(c['anterior']), valor_nuevo=str(c['nuevo'])
+                ))
+        if registros_log:
+            db.session.add_all(registros_log)
+
+        db.session.commit()
+
+        return {
+            'error': None,
+            'lote_id': lote_id,
+            'hoja_usada': hoja_maestro,
+            'filas_leidas': filas_leidas,
+            'actualizados_anclajes': len(cambios_anclajes),
+            'actualizados_importbolts': len(cambios_importbolts),
+            'sin_cambio': sin_cambio,
+            'no_encontrados_total': len(no_encontrados),
+            'no_encontrados_muestra': no_encontrados[:200],
+            'diferencias_total': len(diferencias_info),
+            'diferencias_muestra': diferencias_info[:100],
+        }
+    finally:
+        wb.close()
+
+
+@app.route('/admin/maestro')
+def admin_maestro():
+    """Página del Maestro de Productos: explica qué hace, permite subir el Excel Maestro
+    y muestra cuándo fue la última vez que se sincronizaron pesos."""
+    if session.get('role') not in ['admin', 'almacen']:
+        return "Acceso denegado", 403
+    info_maestro = SystemConfig.query.get('ultima_importacion_maestro')
+    ultimos_cambios = MaestroCambioLog.query.order_by(MaestroCambioLog.fecha.desc()).limit(15).all()
+    return render_template('admin_maestro.html', info_maestro=info_maestro, ultimos_cambios=ultimos_cambios)
+
+
+@app.route('/admin/maestro/importar', methods=['POST'])
+def admin_maestro_importar():
+    import traceback
+
+    if session.get('role') not in ['admin', 'almacen']:
+        return "Acceso denegado", 403
+
+    archivo = request.files.get('archivo_maestro')
+    if not archivo or archivo.filename == '':
+        flash('No seleccionaste ningún archivo.', 'error')
+        return redirect(url_for('admin_maestro'))
+
+    filename = secure_filename(archivo.filename)
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    archivo.save(filepath)
+
+    usuario_actual = session.get('username', 'Sistema')
+    user_id_actual = session.get('user_id')
+    resultado = None
+
+    try:
+        resultado = _procesar_excel_maestro(filepath, usuario_actual, user_id_actual)
+
+        if not resultado.get('error'):
+            hora_final = hora_peru()
+            config_import = SystemConfig.query.get('ultima_importacion_maestro')
+            if not config_import:
+                config_import = SystemConfig(key='ultima_importacion_maestro', value='EXITOSO',
+                                              updated_at=hora_final, updated_by=usuario_actual)
+                db.session.add(config_import)
+            else:
+                config_import.updated_at = hora_final
+                config_import.updated_by = usuario_actual
+            db.session.commit()
+
+    except Exception as e:
+        db.session.rollback()
+        print(f"ERROR IMPORTACIÓN MAESTRO:\n{traceback.format_exc()}")
+        resultado = {'error': f'No se pudo procesar el archivo: {str(e)}'}
+    finally:
+        if os.path.exists(filepath):
+            os.remove(filepath)
+
+    if resultado.get('error'):
+        flash(resultado['error'], 'error')
+        return redirect(url_for('admin_maestro'))
+
+    return render_template('admin_maestro_resultado.html', r=resultado)
+
+
+@app.route('/admin/maestro/auditoria')
+def admin_maestro_auditoria():
+    """Historial de TODOS los cambios de peso que ha hecho el Maestro, con filtro por código
+    y por lote (una misma subida de archivo)."""
+    if session.get('role') not in ['admin', 'almacen']:
+        return "Acceso denegado", 403
+
+    sku_filtro = request.args.get('sku', '').strip()
+    lote_filtro = request.args.get('lote', '').strip()
+    page = request.args.get('page', 1, type=int)
+
+    query = MaestroCambioLog.query.order_by(MaestroCambioLog.fecha.desc())
+    if sku_filtro:
+        query = query.filter(MaestroCambioLog.sku.ilike(f"%{sku_filtro}%"))
+    if lote_filtro:
+        query = query.filter(MaestroCambioLog.lote_id == lote_filtro)
+
+    pagination = query.paginate(page=page, per_page=50, error_out=False)
+    return render_template('admin_maestro_auditoria.html', pagination=pagination,
+                            sku_filtro=sku_filtro, lote_filtro=lote_filtro)
+
 
 # 2. ACTUALIZAR NUEVO PRODUCTO (Para responder JSON y no borrar datos)
 # --- FUNCIÓN NUEVO PRODUCTO (Actualizada) ---
@@ -9064,6 +9326,20 @@ def fix_auditoria_columnas():
         return "<h2>✅ Módulo de Auditoría actualizado: columnas de snapshot 'antes de aplicar' agregadas correctamente.</h2>"
     except Exception as e:
         db.session.rollback()
+        return f"<h2>Error: {str(e)}</h2>"
+
+
+@app.route('/fix_maestro_tabla_2026')
+def fix_maestro_tabla():
+    """Crea la tabla maestro_cambio_log (auditoría de pesos del Excel Maestro).
+    db.create_all() es seguro: solo crea tablas que todavía no existen, nunca toca
+    las que ya están. Visitar UNA vez después de desplegar este cambio."""
+    if session.get('role') != 'admin':
+        return "Acceso denegado", 403
+    try:
+        db.create_all()
+        return "<h2>✅ Tabla del Maestro de Productos (maestro_cambio_log) lista. Ya puedes entrar a /admin/maestro.</h2>"
+    except Exception as e:
         return f"<h2>Error: {str(e)}</h2>"
 
 
