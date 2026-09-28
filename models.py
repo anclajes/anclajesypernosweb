@@ -743,3 +743,26 @@ class MaestroCambioLog(db.Model):
     campo = db.Column(db.String(30), default='peso_kg')
     valor_anterior = db.Column(db.String(100))
     valor_nuevo = db.Column(db.String(100))
+
+
+class MaestroProducto(db.Model):
+    """Catálogo maestro: la 'ficha física' de cada producto, compartida entre Anclajes e
+    ImportBolts (mismo código, descripción, calidad, familia y peso en las dos empresas).
+    A partir de este catálogo se crean los productos nuevos y se reparten a ambos
+    inventarios — Anclajes e ImportBolts ya NO crean productos por su cuenta, solo editan
+    los campos que sí pueden variar por empresa (stock, stock mínimo, precio, fotos, ubicación).
+    Se llena manualmente ('Nuevo Producto' aquí en el Maestro) o automáticamente cuando la
+    importación del Excel Maestro encuentra un código que no existe todavía en ningún lado."""
+    __tablename__ = 'maestro_producto'
+    id = db.Column(db.Integer, primary_key=True)
+    sku = db.Column(db.String(50), unique=True, nullable=False, index=True)
+    nombre = db.Column(db.String(500), nullable=False)       # Descripción
+    calidad = db.Column(db.String(200))
+    familia = db.Column(db.String(200), nullable=False)
+    peso_nominal_kg = db.Column(db.Float, default=0.0)
+
+    origen = db.Column(db.String(40), default='Manual')      # Manual / Importación Excel Maestro / Backfill inicial
+    creado_por = db.Column(db.String(100))
+    fecha_creacion = db.Column(db.DateTime, default=hora_peru)
+    actualizado_por = db.Column(db.String(100))
+    fecha_actualizacion = db.Column(db.DateTime, nullable=True)

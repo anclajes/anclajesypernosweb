@@ -33,8 +33,8 @@
     </div>
     <div class="col-6 col-md-3">
         <div class="card border-0 shadow-sm text-center py-3">
-            <div class="fs-3 fw-bold text-danger">{{ r.no_encontrados_total }}</div>
-            <div class="small text-muted">Códigos no<br>encontrados</div>
+            <div class="fs-3 fw-bold text-primary">{{ r.creados_total }}</div>
+            <div class="small text-muted">Productos nuevos<br>creados</div>
         </div>
     </div>
 </div>
@@ -49,24 +49,35 @@
     <div class="col-12 col-lg-6">
         <div class="card border-0 shadow-sm">
             <div class="card-header bg-white fw-bold">
-                <i class="bi bi-question-circle text-danger"></i> Códigos del Maestro no encontrados
-                {% if r.no_encontrados_total > 0 %}<span class="badge bg-danger">{{ r.no_encontrados_total }}</span>{% endif %}
+                <i class="bi bi-plus-circle text-primary"></i> Productos nuevos creados
+                {% if r.creados_total > 0 %}<span class="badge bg-primary">{{ r.creados_total }}</span>{% endif %}
             </div>
             <div class="card-body">
-                {% if r.no_encontrados_muestra %}
-                <p class="small text-muted">Estos códigos están en el Maestro pero no existen todavía en Anclajes ni en ImportBolts. No se creó nada: revísalos y créalos manualmente si corresponde.</p>
+                {% if r.creados_muestra %}
+                <p class="small text-muted">Estos códigos no existían ni en el Maestro ni en ningún inventario — se crearon en el Maestro y se repartieron a Anclajes e ImportBolts con <strong>stock en 0</strong>. Entra a cada inventario y edítalos para completar Stock Mínimo, Precio y Fotos.</p>
                 <div style="max-height: 280px; overflow-y: auto;">
                     <div class="d-flex flex-wrap gap-1">
-                        {% for c in r.no_encontrados_muestra %}
-                        <span class="badge bg-light text-dark border">{{ c }}</span>
+                        {% for c in r.creados_muestra %}
+                        <span class="badge bg-primary-subtle text-primary border">{{ c }}</span>
                         {% endfor %}
                     </div>
                 </div>
-                {% if r.no_encontrados_total > r.no_encontrados_muestra|length %}
-                <p class="small text-muted mt-2 mb-0">Mostrando los primeros {{ r.no_encontrados_muestra|length }} de {{ r.no_encontrados_total }}.</p>
+                {% if r.creados_total > r.creados_muestra|length %}
+                <p class="small text-muted mt-2 mb-0">Mostrando los primeros {{ r.creados_muestra|length }} de {{ r.creados_total }}.</p>
                 {% endif %}
                 {% else %}
-                <p class="text-muted small mb-0">Todos los códigos del Maestro se encontraron en algún inventario. 🎉</p>
+                <p class="text-muted small mb-0">No se encontraron códigos nuevos en esta subida.</p>
+                {% endif %}
+
+                {% if r.omitidos_total and r.omitidos_total > 0 %}
+                <hr>
+                <p class="small text-danger fw-bold mb-1"><i class="bi bi-exclamation-triangle"></i> {{ r.omitidos_total }} código(s) nuevos NO se pudieron crear</p>
+                <p class="small text-muted">Les faltaba Descripción o Familia en el Excel (son obligatorias para crear un producto). Complétalas en el Excel y vuelve a subirlo.</p>
+                <div class="d-flex flex-wrap gap-1">
+                    {% for c in r.omitidos_muestra %}
+                    <span class="badge bg-light text-danger border">{{ c }}</span>
+                    {% endfor %}
+                </div>
                 {% endif %}
             </div>
         </div>

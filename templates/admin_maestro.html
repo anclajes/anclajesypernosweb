@@ -3,8 +3,18 @@
 {% block subtitle %}Sincroniza el Peso Nominal de Anclajes e ImportBolts desde el Excel Maestro{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
     <h2 class="mb-0"><i class="bi bi-file-earmark-spreadsheet text-primary"></i> Maestro de Productos</h2>
+    <a href="{{ url_for('admin_maestro_nuevo') }}" class="btn btn-brand shadow-sm fw-bold">
+        <i class="bi bi-plus-lg"></i> Nuevo Producto
+    </a>
+</div>
+
+<div class="alert py-2 shadow-sm mb-3 border-0" style="background-color: #eef7ee; border-left: 4px solid #198754 !important;">
+    <i class="bi bi-info-circle-fill text-success"></i>
+    Desde aquí se crean <strong>todos</strong> los productos nuevos del sistema — Anclajes e ImportBolts ya no
+    tienen botón de "Nuevo Producto" propio, solo editan lo que sí puede variar por empresa (stock, stock mínimo,
+    precio, fotos, ubicación). Un producto creado aquí se reparte automáticamente a ambos inventarios con stock en 0.
 </div>
 
 <div class="row g-3">
@@ -17,10 +27,11 @@
             <div class="card-body">
                 <p class="text-muted small mb-3">
                     Sube el Excel Maestro completo (el que tiene varias hojas). El sistema busca automáticamente
-                    la hoja <code>MAESTROV2</code> y compara cada <strong>NUEVO CODIGO</strong> contra Anclajes e
-                    ImportBolts. Por ahora, cuando el código coincide, <strong>solo actualiza el Peso Nominal (Kg)</strong>
-                    si es distinto al que ya está guardado — no crea productos nuevos ni cambia descripción,
-                    calidad o familia.
+                    la hoja <code>MAESTROV2</code> y compara cada <strong>NUEVO CODIGO</strong> contra el Maestro y
+                    contra Anclajes e ImportBolts. Si el código ya existe, <strong>actualiza el Peso Nominal (Kg)</strong>
+                    donde sea distinto (descripción/calidad/familia solo se avisan, no se sobreescriben solas). Si el
+                    código <strong>no existe en ningún lado, lo crea</strong> — en el Maestro y repartido a ambos
+                    inventarios con stock en 0, listo para completar precio y stock mínimo en cada uno.
                 </p>
                 <form method="POST" action="{{ url_for('admin_maestro_importar') }}" enctype="multipart/form-data"
                       onsubmit="document.getElementById('btnImportarMaestro').disabled = true; document.getElementById('btnImportarMaestro').innerHTML = '<span class=\'spinner-border spinner-border-sm me-2\'></span> Procesando...';">
@@ -88,33 +99,125 @@
             <div class="card-body small">
                 <p class="fw-bold mb-1">¿Qué hace esta sección hoy?</p>
                 <ul class="ps-3 mb-3">
-                    <li>Lee la hoja <code>MAESTROV2</code> de tu Excel Maestro.</li>
-                    <li>Usa la columna <strong>NUEVO CODIGO</strong> como llave (es el mismo código que <code>sku</code> en Anclajes e ImportBolts).</li>
-                    <li>Si ese código existe en Anclajes, ImportBolts, o en ambos, actualiza el <strong>Peso Nominal (Kg)</strong> ahí donde el peso sea distinto.</li>
-                    <li>Cada cambio real queda en el historial (código, inventario, peso anterior/nuevo, fecha, usuario) para que puedas auditar qué se tocó.</li>
-                    <li>Un peso vacío o en 0 en el Maestro <strong>no borra</strong> el peso que ya tenías guardado (se ignora esa fila).</li>
-                    <li>No crea productos nuevos: si un código del Maestro no existe todavía en ningún inventario, solo se reporta como "no encontrado" para que lo revises tú.</li>
+                    <li>El Maestro es la única fuente para <strong>crear</strong> productos nuevos (botón "Nuevo Producto" arriba, o subiendo el Excel) — Anclajes e ImportBolts ya no crean productos por su cuenta, solo editan.</li>
+                    <li>Al crear un producto aquí (código, descripción, calidad, familia y peso), se reparte automáticamente a Anclajes e ImportBolts con stock en 0.</li>
+                    <li>Lee la hoja <code>MAESTROV2</code> de tu Excel Maestro y usa <strong>NUEVO CODIGO</strong> como llave (mismo código que <code>sku</code> en ambos inventarios).</li>
+                    <li>Si el código ya existe, actualiza el <strong>Peso Nominal (Kg)</strong> donde sea distinto (Maestro y cada inventario que lo tenga). Si no existe en ningún lado, lo <strong>crea</strong> — igual que el botón manual.</li>
+                    <li>Cada cambio y cada creación queda en el historial (código, inventario, antes/después, fecha, usuario) para auditar qué se tocó.</li>
+                    <li>Un peso vacío o en 0 en el Maestro <strong>no borra</strong> el peso que ya tenías guardado.</li>
+                    <li>Descripción, calidad y familia de un código YA existente solo se avisan si difieren del Excel — no se sobreescriben solas, para no pisar una corrección manual que ya hiciste.</li>
                 </ul>
 
                 <p class="fw-bold mb-1">Cómo te recomiendo usarlo bien</p>
                 <ul class="ps-3 mb-3">
                     <li>Mantén <strong>NUEVO CODIGO</strong> como el código único y definitivo — evita reutilizar <code>CODIGO ORIGEN</code>/<code>CODIGO1.1</code> para nada nuevo, son solo referencia histórica.</li>
                     <li>Súbelo después de cada actualización real del Excel Maestro (por ejemplo, cuando el área de costos/ingeniería cierre una revisión de pesos), no en cada venta o movimiento diario.</li>
-                    <li>Revisa siempre el resumen de "códigos no encontrados" después de subirlo: normalmente son productos que faltan crear, o un código mal tipeado.</li>
+                    <li>Después de subir el Excel, revisa siempre cuántos "Productos nuevos creados" salieron — entra a cada inventario y complétales Stock Mínimo, Precio y Fotos antes de venderlos.</li>
                     <li>Antes de una subida grande, puedes descargar el respaldo JSON completo del sistema (en la Zona de Administración) por si necesitas revertir algo.</li>
                 </ul>
 
                 <p class="fw-bold mb-1">Qué más se le podría agregar más adelante</p>
                 <ul class="ps-3 mb-0">
-                    <li><strong>Sincronizar también Descripción, Calidad y Familia</strong> (hoy solo se avisan las diferencias, no se aplican) — con el mismo tipo de auditoría por campo.</li>
-                    <li><strong>Crear automáticamente</strong> (con tu confirmación) los códigos del Maestro que no existan todavía en ningún inventario.</li>
                     <li><strong>Exportar</strong> un Excel comparativo: Maestro + estado actual en Anclajes/ImportBolts + diferencias, ordenado por código, listo para revisión o para reemplazar al Excel Maestro.</li>
                     <li><strong>Usar el Código de Barras</strong> del Maestro para habilitar lectura con lector de código de barras en el picking o en auditoría física.</li>
                     <li><strong>Guardar las bandas de precio</strong> (Mínimo/Medio/Máximo) del Maestro como referencia al momento de cotizar, sin que reemplacen el precio real que ya manejas.</li>
-                    <li>Un modo "vista previa" que muestre los cambios detectados <em>antes</em> de aplicarlos, para confirmar antes de guardar (como ya existe en Borrar Todo / Restaurar).</li>
+                    <li>Un modo "vista previa" que muestre los cambios y creaciones detectados <em>antes</em> de aplicarlos, para confirmar antes de guardar (como ya existe en Borrar Todo / Restaurar).</li>
                 </ul>
             </div>
         </div>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm mt-3">
+    <div class="card-header bg-white fw-bold d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <span><i class="bi bi-collection"></i> Catálogo Maestro <span class="badge bg-light text-dark border">{{ total_maestro }}</span></span>
+    </div>
+    <div class="card-body">
+        <form method="GET" class="row g-2 align-items-end mb-3" id="formFiltrosMaestro">
+            <div class="col-12 col-md-4">
+                <label class="small fw-bold text-muted">Código o Descripción</label>
+                <div class="input-group">
+                    <input type="text" name="busqueda" class="form-control" placeholder="Ej: perno 304" value="{{ search }}">
+                    <button type="submit" class="btn btn-primary" title="Buscar"><i class="bi bi-search"></i></button>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <label class="small fw-bold text-muted">Familia</label>
+                <input type="text" name="familia" class="form-control" list="listaFamiliasMaestro"
+                       value="{{ '' if familia_filtro == 'todos' else familia_filtro }}" placeholder="Todas">
+                <datalist id="listaFamiliasMaestro">
+                    {% for f in lista_familias %}<option value="{{ f }}">{% endfor %}
+                </datalist>
+            </div>
+            <div class="col-6 col-md-3">
+                <label class="small fw-bold text-muted">Calidad</label>
+                <input type="text" name="calidad" class="form-control" list="listaCalidadesMaestro"
+                       value="{{ '' if calidad_filtro == 'todos' else calidad_filtro }}" placeholder="Todas">
+                <datalist id="listaCalidadesMaestro">
+                    {% for c in lista_calidades %}<option value="{{ c }}">{% endfor %}
+                </datalist>
+            </div>
+            <div class="col-8 col-md-1">
+                <label class="small fw-bold text-muted">Orden</label>
+                <select name="orden" class="form-select" onchange="this.form.submit()">
+                    <option value="sku" {% if orden == 'sku' %}selected{% endif %}>Código</option>
+                    <option value="nombre" {% if orden == 'nombre' %}selected{% endif %}>Nombre</option>
+                    <option value="reciente" {% if orden == 'reciente' %}selected{% endif %}>Más reciente</option>
+                </select>
+            </div>
+            <div class="col-4 col-md-1">
+                <a href="{{ url_for('admin_maestro') }}" class="btn btn-outline-secondary w-100" title="Limpiar filtros"><i class="bi bi-x-lg"></i></a>
+            </div>
+        </form>
+
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0 small">
+                <thead class="table-light">
+                    <tr>
+                        <th>Código</th><th>Descripción</th><th>Calidad</th><th>Familia</th>
+                        <th class="text-end">Peso Nominal (Kg)</th><th>Origen</th><th>Creado por</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for m in productos %}
+                    <tr>
+                        <td class="fw-bold text-primary">{{ m.sku }}</td>
+                        <td>{{ m.nombre }}</td>
+                        <td>{{ m.calidad or '-' }}</td>
+                        <td>{{ m.familia }}</td>
+                        <td class="text-end">{{ '%.4f'|format(m.peso_nominal_kg or 0) }}</td>
+                        <td><span class="badge bg-light text-dark border">{{ m.origen }}</span></td>
+                        <td class="text-muted">{{ m.creado_por }}<br><small>{{ m.fecha_creacion.strftime('%d/%m/%y') if m.fecha_creacion else '' }}</small></td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="7" class="text-center text-muted py-4">No hay productos que coincidan con este filtro.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {% if pagination and pagination.pages > 1 %}
+        <div class="d-flex justify-content-between align-items-center mt-3">
+            <small class="text-muted">Página {{ pagination.page }} de {{ pagination.pages }} · Total: {{ pagination.total }}</small>
+            <ul class="pagination pagination-sm mb-0">
+                <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
+                    <a class="page-link" href="{{ url_for('admin_maestro', page=pagination.prev_num, busqueda=search, familia=familia_filtro, calidad=calidad_filtro, orden=orden) }}">Ant</a>
+                </li>
+                {% for page_num in pagination.iter_pages(left_edge=1, right_edge=1, left_current=1, right_current=1) %}
+                    {% if page_num %}
+                    <li class="page-item {% if page_num == pagination.page %}active{% endif %}">
+                        <a class="page-link" href="{{ url_for('admin_maestro', page=page_num, busqueda=search, familia=familia_filtro, calidad=calidad_filtro, orden=orden) }}">{{ page_num }}</a>
+                    </li>
+                    {% else %}
+                    <li class="page-item disabled"><span class="page-link">…</span></li>
+                    {% endif %}
+                {% endfor %}
+                <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
+                    <a class="page-link" href="{{ url_for('admin_maestro', page=pagination.next_num, busqueda=search, familia=familia_filtro, calidad=calidad_filtro, orden=orden) }}">Sig</a>
+                </li>
+            </ul>
+        </div>
+        {% endif %}
     </div>
 </div>
 {% endblock %}

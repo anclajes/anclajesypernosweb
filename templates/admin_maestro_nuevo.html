@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}Nuevo Producto (Maestro){% endblock %}
+{% block subtitle %}Se crea en el Maestro y se reparte automáticamente a Anclajes e ImportBolts{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="mb-0"><i class="bi bi-plus-circle text-primary"></i> Nuevo Producto</h2>
+    <a href="{{ url_for('admin_maestro') }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Volver al Maestro</a>
+</div>
+
+<div class="row g-3">
+    <div class="col-12 col-lg-7">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('admin_maestro_nuevo') }}" autocomplete="off">
+                    <div class="mb-3 position-relative">
+                        <label class="form-label fw-bold small text-muted">Código <span class="text-danger">*</span></label>
+                        <input type="text" name="sku" id="inputCodigo" class="form-control fw-bold" placeholder="Ej: PER-005" required
+                               oninput="buscarCodigosSimilares(this.value)" style="text-transform:uppercase;">
+                        <div id="codigosSimilares" class="list-group position-absolute w-100 shadow-sm" style="z-index: 20; max-height: 220px; overflow-y:auto; display:none;"></div>
+                        <div class="form-text">Escribe libremente. Mientras tipeas, se muestran códigos parecidos ya existentes para que no se repita ni pierdas el patrón de la familia.</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold small text-muted">Descripción <span class="text-danger">*</span></label>
+                        <input type="text" name="nombre" class="form-control" placeholder="Ej: PERNO HEX. INOX. 304 1/2&quot; x 2&quot;" required>
+                    </div>
+
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label class="form-label fw-bold small text-muted">Familia <span class="text-danger">*</span></label>
+                            <input type="text" name="familia" class="form-control" list="listaFamilias" required>
+                            <datalist id="listaFamilias">
+                                {% for f in familias %}<option value="{{ f }}">{% endfor %}
+                            </datalist>
+                            <div class="form-text">Si escribes una familia nueva, se crea automáticamente.</div>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label fw-bold small text-muted">Calidad</label>
+                            <input type="text" name="calidad" class="form-control" list="listaCalidades">
+                            <datalist id="listaCalidades">
+                                {% for c in calidades %}<option value="{{ c }}">{% endfor %}
+                            </datalist>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold small text-muted">Peso Nominal (Kg)</label>
+                        <input type="number" step="0.0001" min="0" name="peso_nominal_kg" class="form-control" placeholder="0.0000">
+                        <div class="form-text">Hasta 4 decimales. Es el mismo peso para Anclajes e ImportBolts.</div>
+                    </div>
+
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-brand fw-bold">
+                            <i class="bi bi-check2-circle"></i> Crear y repartir a ambos inventarios
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-lg-5">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white fw-bold">
+                <i class="bi bi-lightbulb-fill text-warning"></i> Qué pasa al guardar
+            </div>
+            <div class="card-body small">
+                <ul class="ps-3 mb-0">
+                    <li>Se crea la ficha en el <strong>Maestro</strong> (Código, Descripción, Calidad, Familia, Peso) con tu usuario y la fecha de hoy.</li>
+                    <li>Se crea el mismo producto en <strong>Anclajes</strong> y en <strong>ImportBolts</strong>, con <strong>stock en 0</strong>.</li>
+                    <li>Stock Mínimo, Precio Unidad, Precio Caja, Ubicación y Fotos <strong>no se piden aquí</strong> porque pueden ser distintos en cada empresa — se completan después entrando a "Editar" el producto en cada inventario.</li>
+                    <li>Si el código ya existe (en el Maestro o en algún inventario), el sistema no deja crearlo de nuevo.</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let timeoutBusqueda = null;
+function buscarCodigosSimilares(valor) {
+    const cont = document.getElementById('codigosSimilares');
+    clearTimeout(timeoutBusqueda);
+    if (!valor || valor.trim().length < 2) {
+        cont.style.display = 'none';
+        cont.innerHTML = '';
+        return;
+    }
+    timeoutBusqueda = setTimeout(() => {
+        fetch(`/api/maestro/codigos_similares?q=${encodeURIComponent(valor.trim())}`)
+            .then(r => r.json())
+            .then(data => {
+                const codigos = data.codigos || [];
+                if (codigos.length === 0) {
+                    cont.style.display = 'none';
+                    cont.innerHTML = '';
+                    return;
+                }
+                cont.innerHTML = codigos.map(c =>
+                    `<div class="list-group-item list-group-item-action small py-1">
+                        <span class="fw-bold text-primary">${c.sku}</span> — ${c.nombre}
+                        <span class="text-muted">(${c.familia}${c.calidad ? ' · ' + c.calidad : ''})</span>
+                    </div>`
+                ).join('');
+                cont.style.display = 'block';
+            })
+            .catch(() => { cont.style.display = 'none'; });
+    }, 250);
+}
+document.addEventListener('click', function(e) {
+    if (!e.target.closest('#inputCodigo') && !e.target.closest('#codigosSimilares')) {
+        document.getElementById('codigosSimilares').style.display = 'none';
+    }
+});
+</script>
+{% endblock %}

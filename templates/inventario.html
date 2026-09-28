@@ -250,12 +250,16 @@
             <a href="{{ url_for('exportar_excel') }}" class="btn btn-outline-success shadow-sm flex-grow-1 flex-md-grow-0">
                 <i class="bi bi-download"></i> Exportar
             </a>
+            <a href="{{ url_for('inventario_respaldo') }}" class="btn btn-outline-dark shadow-sm flex-grow-1 flex-md-grow-0" title="Respaldo JSON solo de Anclajes (productos, categorías, Kardex y fotos) — útil antes de una importación grande">
+                <i class="bi bi-shield-lock"></i> Respaldo JSON
+            </a>
             <button class="btn btn-success shadow-sm fw-bold flex-grow-1 flex-md-grow-0" data-bs-toggle="modal" data-bs-target="#modalImportar">
                 <i class="bi bi-file-earmark-excel"></i> Importar Excel
             </button>
-            <button class="btn btn-brand shadow-sm fw-bold w-100 w-md-auto mt-2 mt-md-0" data-bs-toggle="modal" data-bs-target="#modalNuevo">
+            <a href="{{ url_for('admin_maestro_nuevo') }}" class="btn btn-brand shadow-sm fw-bold w-100 w-md-auto mt-2 mt-md-0"
+               title="Los productos nuevos se crean desde el Maestro, así quedan repartidos automáticamente en Anclajes e ImportBolts">
                 <i class="bi bi-plus-lg"></i> Nuevo Producto
-            </button>
+            </a>
             {% endif %}
         </div>
     </div>
