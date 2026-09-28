@@ -862,9 +862,9 @@
 
                     <!-- REFERENCIA (solo aparece si el motivo es COMPRA o VENTA) -->
                     <div class="mb-3 d-none" id="bloqueReferenciaMovimiento">
-                        <label class="small text-muted fw-bold mb-1" id="label_referencia_movimiento">Orden de Compra</label>
+                        <label class="small text-muted fw-bold mb-1" id="label_referencia_movimiento">Factura o Guía</label>
                         <input type="text" name="referencia" id="stock_referencia" maxlength="50"
-                               class="form-control form-control-sm shadow-sm text-uppercase" placeholder="Ej: OC1234">
+                               class="form-control form-control-sm shadow-sm text-uppercase" placeholder="Ej: F001-1234 o T001-5678">
                     </div>
 
                     <hr class="my-3">
@@ -2092,8 +2092,8 @@ function seleccionarMotivo() {
     document.getElementById('stock_motivo_id').value = select.value;
     document.getElementById('stock_motivo_texto').value = nombreMotivo;
 
-    // Campo de Referencia: solo aparece en Ingreso + motivo COMPRA (Nº de Orden de Compra),
-    // o en Salida + motivo VENTA (Nº de Factura o Guía). Se guarda igual en los dos casos
+    // Campo de Referencia: solo aparece en Ingreso + motivo COMPRA (Nº de Factura o Guía del proveedor),
+    // o en Salida + motivo VENTA (Nº de Orden de Compra). Se guarda igual en los dos casos
     // (campo "referencia" del movimiento) y luego se muestra en el Kardex como Motivo / Referencia.
     const tipo = document.getElementById('stock_tipo_movimiento').value;
     const bloqueRef = document.getElementById('bloqueReferenciaMovimiento');
@@ -2102,12 +2102,12 @@ function seleccionarMotivo() {
 
     if (tipo === 'ingreso' && nombreMotivo === 'COMPRA') {
         bloqueRef.classList.remove('d-none');
-        labelRef.innerText = 'Orden de Compra';
-        inputRef.placeholder = 'Ej: OC1234';
-    } else if (tipo === 'salida' && nombreMotivo === 'VENTA') {
-        bloqueRef.classList.remove('d-none');
         labelRef.innerText = 'Factura o Guía';
         inputRef.placeholder = 'Ej: F001-1234 o T001-5678';
+    } else if (tipo === 'salida' && nombreMotivo === 'VENTA') {
+        bloqueRef.classList.remove('d-none');
+        labelRef.innerText = 'Orden de Compra';
+        inputRef.placeholder = 'Ej: OC1234';
     } else {
         bloqueRef.classList.add('d-none');
         inputRef.value = '';
