@@ -30,16 +30,18 @@
                     la hoja <code>MAESTROV2</code> y compara cada <strong>NUEVO CODIGO</strong> contra el Maestro y
                     contra Anclajes e ImportBolts. Si el código ya existe, <strong>actualiza el Peso Nominal (Kg)</strong>
                     donde sea distinto (descripción/calidad/familia solo se avisan, no se sobreescriben solas). Si el
-                    código <strong>no existe en ningún lado, lo crea</strong> — en el Maestro y repartido a ambos
-                    inventarios con stock en 0, listo para completar precio y stock mínimo en cada uno.
+                    código <strong>no existe en ningún lado</strong>, primero te muestra una <strong>vista previa</strong>
+                    con lo que va a crear — con avisos si un código se parece mucho a uno que ya existe (posible error
+                    de tipeo), si una descripción se repite, o si hay códigos repetidos en el mismo archivo — y recién
+                    se crea (en el Maestro y repartido a ambos inventarios con stock en 0) cuando tú lo confirmas.
                 </p>
                 <form method="POST" action="{{ url_for('admin_maestro_importar') }}" enctype="multipart/form-data"
-                      onsubmit="document.getElementById('btnImportarMaestro').disabled = true; document.getElementById('btnImportarMaestro').innerHTML = '<span class=\'spinner-border spinner-border-sm me-2\'></span> Procesando...';">
+                      onsubmit="document.getElementById('btnImportarMaestro').disabled = true; document.getElementById('btnImportarMaestro').innerHTML = '<span class=\'spinner-border spinner-border-sm me-2\'></span> Analizando...';">
                     <div class="mb-3">
                         <input type="file" name="archivo_maestro" class="form-control" accept=".xlsx,.xls" required>
                     </div>
                     <button type="submit" id="btnImportarMaestro" class="btn btn-primary">
-                        <i class="bi bi-arrow-repeat"></i> Comparar y actualizar pesos
+                        <i class="bi bi-search"></i> Analizar y ver vista previa
                     </button>
                 </form>
             </div>
@@ -112,7 +114,8 @@
                 <ul class="ps-3 mb-3">
                     <li>Mantén <strong>NUEVO CODIGO</strong> como el código único y definitivo — evita reutilizar <code>CODIGO ORIGEN</code>/<code>CODIGO1.1</code> para nada nuevo, son solo referencia histórica.</li>
                     <li>Súbelo después de cada actualización real del Excel Maestro (por ejemplo, cuando el área de costos/ingeniería cierre una revisión de pesos), no en cada venta o movimiento diario.</li>
-                    <li>Después de subir el Excel, revisa siempre cuántos "Productos nuevos creados" salieron — entra a cada inventario y complétales Stock Mínimo, Precio y Fotos antes de venderlos.</li>
+                    <li>En la vista previa, revisa con calma cualquier fila marcada con advertencia (código parecido a uno existente o descripción repetida) antes de confirmar — es la oportunidad de corregir un error de tipeo en el Excel sin haber creado nada todavía.</li>
+                    <li>Después de confirmar, entra a cada inventario y completa Stock Mínimo, Precio y Fotos de los productos recién creados antes de venderlos.</li>
                     <li>Antes de una subida grande, puedes descargar el respaldo JSON completo del sistema (en la Zona de Administración) por si necesitas revertir algo.</li>
                 </ul>
 
@@ -121,7 +124,6 @@
                     <li><strong>Exportar</strong> un Excel comparativo: Maestro + estado actual en Anclajes/ImportBolts + diferencias, ordenado por código, listo para revisión o para reemplazar al Excel Maestro.</li>
                     <li><strong>Usar el Código de Barras</strong> del Maestro para habilitar lectura con lector de código de barras en el picking o en auditoría física.</li>
                     <li><strong>Guardar las bandas de precio</strong> (Mínimo/Medio/Máximo) del Maestro como referencia al momento de cotizar, sin que reemplacen el precio real que ya manejas.</li>
-                    <li>Un modo "vista previa" que muestre los cambios y creaciones detectados <em>antes</em> de aplicarlos, para confirmar antes de guardar (como ya existe en Borrar Todo / Restaurar).</li>
                 </ul>
             </div>
         </div>
@@ -144,7 +146,8 @@
             <div class="col-6 col-md-3">
                 <label class="small fw-bold text-muted">Familia</label>
                 <input type="text" name="familia" class="form-control" list="listaFamiliasMaestro"
-                       value="{{ '' if familia_filtro == 'todos' else familia_filtro }}" placeholder="Todas">
+                       value="{{ '' if familia_filtro == 'todos' else familia_filtro }}" placeholder="Todas"
+                       onchange="document.getElementById('formFiltrosMaestro').submit()">
                 <datalist id="listaFamiliasMaestro">
                     {% for f in lista_familias %}<option value="{{ f }}">{% endfor %}
                 </datalist>
@@ -152,7 +155,8 @@
             <div class="col-6 col-md-3">
                 <label class="small fw-bold text-muted">Calidad</label>
                 <input type="text" name="calidad" class="form-control" list="listaCalidadesMaestro"
-                       value="{{ '' if calidad_filtro == 'todos' else calidad_filtro }}" placeholder="Todas">
+                       value="{{ '' if calidad_filtro == 'todos' else calidad_filtro }}" placeholder="Todas"
+                       onchange="document.getElementById('formFiltrosMaestro').submit()">
                 <datalist id="listaCalidadesMaestro">
                     {% for c in lista_calidades %}<option value="{{ c }}">{% endfor %}
                 </datalist>

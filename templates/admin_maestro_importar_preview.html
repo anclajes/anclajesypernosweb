@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+{% block title %}Vista previa de la importación{% endblock %}
+{% block subtitle %}Revisa antes de confirmar — todavía no se aplicó ningún cambio{% endblock %}
+
+{% block content %}
+{% set total_advertencias = a.creados | selectattr('advertencias') | list | length %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="mb-0"><i class="bi bi-eye text-primary"></i> Vista previa de la importación</h2>
+    <form method="POST" action="{{ url_for('admin_maestro_importar_cancelar') }}">
+        <input type="hidden" name="token" value="{{ token }}">
+        <button type="submit" class="btn btn-outline-secondary btn-sm"><i class="bi bi-x-lg"></i> Cancelar</button>
+    </form>
+</div>
+
+<div class="alert py-2 shadow-sm mb-3 border-0" style="background-color: #e6f0fa; border-left: 4px solid var(--theme-primary, #0F172A) !important;">
+    <i class="bi bi-info-circle-fill"></i> Todavía <strong>no se ha guardado nada</strong>. Esto es solo un análisis del archivo —
+    revisa especialmente la lista de productos nuevos a crear y confirma abajo si todo está correcto.
+</div>
+
+<p class="text-muted small">Hoja leída: <code>{{ a.hoja_usada }}</code> · Filas con código válido: <strong>{{ a.filas_leidas }}</strong></p>
+
+<div class="row g-3 mb-3">
+    <div class="col-6 col-md-2">
+        <div class="card border-0 shadow-sm text-center py-3">
+            <div class="fs-4 fw-bold text-primary">{{ a.cambios_anclajes|length }}</div>
+            <div class="small text-muted">Pesos a actualizar<br>en Anclajes</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-2">
+        <div class="card border-0 shadow-sm text-center py-3">
+            <div class="fs-4 fw-bold text-primary">{{ a.cambios_importbolts|length }}</div>
+            <div class="small text-muted">Pesos a actualizar<br>en ImportBolts</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-2">
+        <div class="card border-0 shadow-sm text-center py-3">
+            <div class="fs-4 fw-bold text-success">{{ a.sin_cambio }}</div>
+            <div class="small text-muted">Ya están<br>al día</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-2">
+        <div class="card border-0 shadow-sm text-center py-3">
+            <div class="fs-4 fw-bold {{ 'text-warning' if total_advertencias else 'text-primary' }}">{{ a.creados|length }}</div>
+            <div class="small text-muted">Productos nuevos<br>a crear</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-2">
+        <div class="card border-0 shadow-sm text-center py-3">
+            <div class="fs-4 fw-bold {{ 'text-danger' if total_advertencias else 'text-muted' }}">{{ total_advertencias }}</div>
+            <div class="small text-muted">Con advertencia<br>a revisar</div>
+        </div>
+    </div>
+    <div class="col-6 col-md-2">
+        <div class="card border-0 shadow-sm text-center py-3">
+            <div class="fs-4 fw-bold text-danger">{{ a.omitidos_incompletos|length }}</div>
+            <div class="small text-muted">Omitidos<br>(datos incompletos)</div>
+        </div>
+    </div>
+</div>
+
+{% if a.codigos_duplicados_en_archivo %}
+<div class="alert alert-danger py-2 px-3 mb-3 small">
+    <i class="bi bi-exclamation-triangle-fill"></i> <strong>{{ a.codigos_duplicados_en_archivo|length }} código(s) están repetidos dentro del mismo archivo</strong> — solo se toma la primera aparición de cada uno.
+    <ul class="mb-0 mt-1">
+        {% for d in a.codigos_duplicados_en_archivo %}
+        <li><span class="fw-bold">{{ d.sku }}</span> — filas {{ d.filas | join(' y ') }} del Excel</li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-white fw-bold d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <span><i class="bi bi-plus-circle text-primary"></i> Productos nuevos que se van a crear
+        {% if a.creados %}<span class="badge bg-primary">{{ a.creados|length }}</span>{% endif %}</span>
+        {% if total_advertencias %}
+        <span class="badge bg-danger">{{ total_advertencias }} con advertencia — revísalos antes de confirmar</span>
+        {% endif %}
+    </div>
+    <div class="card-body">
+        {% if a.creados %}
+        <p class="small text-muted">Ninguno de estos códigos existe hoy — ni en el Maestro ni en Anclajes ni en ImportBolts. Al confirmar, se crean en el Maestro y se reparten a ambos inventarios con <strong>stock en 0</strong>.</p>
+        <div class="table-responsive" style="max-height: 420px; overflow-y: auto;">
+            <table class="table table-sm table-hover align-middle mb-0 small">
+                <thead class="table-light sticky-top">
+                    <tr><th>Código</th><th>Descripción</th><th>Calidad</th><th>Familia</th><th class="text-end">Peso (Kg)</th><th>Advertencias</th></tr>
+                </thead>
+                <tbody>
+                    {% for c in a.creados %}
+                    <tr class="{{ 'table-warning' if c.advertencias else '' }}">
+                        <td class="fw-bold text-primary">{{ c.sku }}</td>
+                        <td>{{ c.nombre }}</td>
+                        <td>{{ c.calidad or '-' }}</td>
+                        <td>{{ c.familia }}</td>
+                        <td class="text-end">{{ '%.4f'|format(c.peso or 0) }}</td>
+                        <td>
+                            {% if c.advertencias %}
+                            {% for adv in c.advertencias %}
+                            <div class="text-danger small"><i class="bi bi-exclamation-triangle-fill"></i> {{ adv }}</div>
+                            {% endfor %}
+                            {% else %}
+                            <span class="text-success small"><i class="bi bi-check-circle"></i> Sin advertencias</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted small mb-0">No hay códigos nuevos para crear en esta subida — solo se actualizarán pesos (si hay cambios).</p>
+        {% endif %}
+
+        {% if a.omitidos_incompletos %}
+        <hr>
+        <p class="small text-danger fw-bold mb-1"><i class="bi bi-exclamation-triangle"></i> {{ a.omitidos_incompletos|length }} código(s) nuevos NO se van a crear</p>
+        <p class="small text-muted">Les falta Descripción o Familia en el Excel (son obligatorias para crear un producto). Complétalas en el Excel y vuelve a subirlo.</p>
+        <div class="d-flex flex-wrap gap-1">
+            {% for c in a.omitidos_incompletos %}
+            <span class="badge bg-light text-danger border">{{ c }}</span>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{% if a.diferencias_info %}
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-white fw-bold">
+        <i class="bi bi-info-circle text-warning"></i> Diferencias informativas (no se van a tocar)
+        <span class="badge bg-warning text-dark">{{ a.diferencias_info|length }}</span>
+    </div>
+    <div class="card-body">
+        <p class="small text-muted">Descripción, calidad o familia distintas entre el Maestro y el inventario, o un código que solo existe en uno de los dos inventarios. Solo informativo.</p>
+        <div class="table-responsive" style="max-height: 280px; overflow-y: auto;">
+            <table class="table table-sm small mb-0">
+                <thead class="table-light"><tr><th>Código</th><th>Inventario</th><th>Detalle</th></tr></thead>
+                <tbody>
+                    {% for d in a.diferencias_info %}
+                    <tr><td class="fw-bold text-primary">{{ d.sku }}</td><td>{{ d.inventario }}</td><td>{{ d.campos }}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div class="card border-0 shadow-sm">
+    <div class="card-body d-flex flex-column flex-md-row gap-2 justify-content-end">
+        <form method="POST" action="{{ url_for('admin_maestro_importar_cancelar') }}">
+            <input type="hidden" name="token" value="{{ token }}">
+            <button type="submit" class="btn btn-outline-secondary w-100 w-md-auto">Cancelar, no aplicar nada</button>
+        </form>
+        <form method="POST" action="{{ url_for('admin_maestro_importar_confirmar') }}" id="formConfirmarImportacion">
+            <input type="hidden" name="token" value="{{ token }}">
+            <button type="submit" class="btn btn-brand fw-bold w-100 w-md-auto">
+                <i class="bi bi-check2-circle"></i> Confirmar y aplicar estos cambios
+            </button>
+        </form>
+    </div>
+</div>
+
+<script>
+document.getElementById('formConfirmarImportacion').addEventListener('submit', function(e) {
+    {% if total_advertencias %}
+    const ok = confirm('Hay {{ total_advertencias }} producto(s) nuevo(s) con advertencia (posible error de tipeo o descripción repetida). ¿Seguro que quieres crearlos de todas formas?');
+    if (!ok) { e.preventDefault(); return false; }
+    {% endif %}
+    this.querySelector('button[type="submit"]').disabled = true;
+    this.querySelector('button[type="submit"]').innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> Aplicando...';
+});
+</script>
+{% endblock %}

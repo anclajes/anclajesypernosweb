@@ -4491,18 +4491,21 @@ def _crear_categoria_si_falta(familia, modelo_categoria, cache_categorias):
     cache_categorias[familia] = prefijo_final
 
 
-def _procesar_excel_maestro(filepath, usuario_actual, user_id_actual):
-    """Lee la hoja MAESTROV2 del Excel Maestro en modo streaming (poca RAM, igual que la
-    importación de inventario) y compara cada 'nuevo codigo' contra el catálogo Maestro y
-    contra Anclajes e ImportBolts.
+def _leer_excel_maestro(filepath):
+    """SOLO LECTURA: lee la hoja MAESTROV2 del Excel Maestro y compara cada 'nuevo codigo'
+    contra el catálogo Maestro y contra Anclajes e ImportBolts, sin escribir nada en la base
+    de datos todavía. Se usa para armar la vista previa que el usuario debe confirmar antes
+    de crear productos nuevos (así se detectan a tiempo errores de tipeo: un espacio, una
+    coma, un código casi igual a uno que ya existe, una descripción repetida, etc.).
 
-    - Si el código YA existe (en el Maestro o en algún inventario): actualiza el Peso Nominal
-      (Kg) donde sea distinto — en el Maestro y en cada inventario que lo tenga — y deja
-      constancia en MaestroCambioLog. Descripción/calidad/familia solo se comparan de forma
-      informativa (no se sobreescriben solas).
-    - Si el código NO existe en ningún lado: se crea un producto nuevo — en el Maestro y
-      repartido automáticamente a Anclajes e ImportBolts, con stock en 0 (el stock, precio,
-      stock mínimo y fotos se completan después, por inventario, editando el producto)."""
+    - Código YA existe (Maestro o algún inventario): se calcula el cambio de Peso Nominal
+      (Kg) donde sea distinto. Descripción/calidad/familia solo se comparan de forma
+      informativa. Si el código está en algún inventario pero todavía no en el Maestro, se
+      arma un backfill silencioso (no es una creación nueva, no necesita confirmación).
+    - Código NO existe en ningún lado: candidato a CREAR. Se marca con advertencias si su
+      código es muy parecido a uno ya existente, o si su descripción coincide con la de un
+      producto que ya existe (bajo otro código) o con la de otra fila nueva del mismo archivo."""
+    import difflib
     from openpyxl import load_workbook
 
     wb = load_workbook(filename=filepath, read_only=True, data_only=True)
@@ -4529,43 +4532,44 @@ def _procesar_excel_maestro(filepath, usuario_actual, user_id_actual):
             return None
 
         # --- Pre-cargamos el Maestro y ambos inventarios en memoria (una sola consulta por tabla) ---
-        maestro_por_sku = {
-            m.sku: m for m in MaestroProducto.query.all()
-        }
+        maestro_por_sku = {m.sku: m for m in MaestroProducto.query.all()}
         anclajes_por_sku = {
-            fila[0]: {'id': fila[1], 'peso_kg': fila[2], 'nombre': fila[3], 'categoria': fila[4], 'calidad': fila[5]}
-            for fila in db.session.query(Product.sku, Product.id, Product.peso_kg, Product.nombre, Product.categoria, Product.calidad).all()
+            fila[0]: {'peso_kg': fila[1], 'nombre': fila[2], 'categoria': fila[3], 'calidad': fila[4]}
+            for fila in db.session.query(Product.sku, Product.peso_kg, Product.nombre, Product.categoria, Product.calidad).all()
         }
         importbolts_por_sku = {
-            fila[0]: {'id': fila[1], 'peso_kg': fila[2], 'nombre': fila[3], 'categoria': fila[4], 'calidad': fila[5]}
-            for fila in db.session.query(ProductImportBolts.sku, ProductImportBolts.id, ProductImportBolts.peso_kg, ProductImportBolts.nombre, ProductImportBolts.categoria, ProductImportBolts.calidad).all()
+            fila[0]: {'peso_kg': fila[1], 'nombre': fila[2], 'categoria': fila[3], 'calidad': fila[4]}
+            for fila in db.session.query(ProductImportBolts.sku, ProductImportBolts.peso_kg, ProductImportBolts.nombre, ProductImportBolts.categoria, ProductImportBolts.calidad).all()
         }
-        cache_cat_anclajes = {c.nombre: c.prefijo for c in Category.query.all()}
-        cache_cat_importbolts = {c.nombre: c.prefijo for c in CategoryImportBolts.query.all()}
+        # Todos los códigos que ya existen hoy en algún lado, para el chequeo de "parecido a"
+        todos_skus_existentes = set(maestro_por_sku) | set(anclajes_por_sku) | set(importbolts_por_sku)
+        # Descripciones ya existentes en el Maestro (normalizadas), para detectar "mismo producto, otro código"
+        desc_existente_norm = {}
+        for sku_ex, m in maestro_por_sku.items():
+            desc_existente_norm.setdefault(' '.join((m.nombre or '').upper().split()), sku_ex)
 
-        lote_id = hora_peru().strftime('%Y%m%d%H%M%S')
-        hora_actual = hora_peru()
         cambios_anclajes = []      # [{'sku', 'anterior', 'nuevo'}]
         cambios_importbolts = []
         cambios_maestro = []
+        maestro_backfill = []      # [{'sku','nombre','calidad','familia','peso'}]
         sin_cambio = 0
-        diferencias_info = []      # descripcion/calidad/familia distintas (NO se tocan, solo se avisa)
+        diferencias_info = []      # descripcion/calidad/familia distintas, o falta en un inventario (NO se toca, solo se avisa)
         filas_leidas = 0
-        codigos_vistos = set()
-        creados = []                # códigos nuevos creados en Maestro + ambos inventarios
-        omitidos_incompletos = []   # códigos nuevos que no se pudieron crear (faltó descripción/familia)
-        nuevos_maestro_rows = []
-        nuevos_anclajes_rows = []
-        nuevos_importbolts_rows = []
+        codigos_vistos = {}        # codigo -> nro de fila de su primera aparición
+        codigos_duplicados_en_archivo = []   # [{'sku','filas':[...]}]
+        creados = []                # candidatos a crear: [{'sku','nombre','calidad','familia','peso','advertencias':[...]}]
+        omitidos_incompletos = []   # códigos nuevos que no se pudieron evaluar (faltó descripción o familia)
+        descripciones_creadas = {}  # desc normalizada -> [skus] entre los candidatos a crear
 
-        for row_vals in ws.iter_rows(min_row=2, values_only=True):
+        for idx, row_vals in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
             codigo = _limpiar_codigo_maestro(get_col(row_vals, 'NUEVO CODIGO', 'NUEVO CÓDIGO'))
             if not codigo:
                 continue
             filas_leidas += 1
             if codigo in codigos_vistos:
+                codigos_duplicados_en_archivo.append({'sku': codigo, 'filas': [codigos_vistos[codigo], idx]})
                 continue  # el Maestro no debería repetir códigos; si pasa, solo tomamos el primero
-            codigos_vistos.add(codigo)
+            codigos_vistos[codigo] = idx
 
             peso_master = _limpiar_peso_maestro(get_col(row_vals, 'PESO NOMINAL (KG)', 'PESO NOMINAL(KG)', 'PESO NOMINAL', 'PESO (KG)', 'PESO_KG', 'PESO KG'))
             desc_master = _limpiar_texto_maestro(get_col(row_vals, 'DESCRIPCIÓN', 'DESCRIPCION'))
@@ -4605,27 +4609,31 @@ def _procesar_excel_maestro(filepath, usuario_actual, user_id_actual):
                     if dif:
                         diferencias_info.append({'sku': codigo, 'inventario': inventario, 'campos': ', '.join(dif)})
 
+                # El código existe pero no en los dos inventarios a la vez: dato de antes de
+                # este cambio (desde ahora, todo producto nuevo se crea siempre en ambos).
+                # Solo se avisa, no se toca nada automáticamente.
+                if existe_en_anclajes != existe_en_importbolts:
+                    faltante = 'ImportBolts' if existe_en_anclajes else 'Anclajes'
+                    diferencias_info.append({'sku': codigo, 'inventario': faltante, 'campos': 'no existe en este inventario (dato anterior a este cambio, revisar)'})
+
                 # Mantener el propio catálogo Maestro al día: si ya existía, solo se
                 # actualiza el peso cuando cambia; si el código existía en algún inventario
                 # pero todavía no tenía fila en el Maestro (datos de antes de esta función),
-                # se crea ahora para ir completando el catálogo (backfill silencioso).
+                # se completa ahora para ir llenando el catálogo (backfill silencioso, no es
+                # una creación nueva: el producto ya existía).
                 m = maestro_por_sku.get(codigo)
                 if m:
                     if peso_master is not None and abs((m.peso_nominal_kg or 0.0) - peso_master) > 0.001:
                         cambios_maestro.append({'sku': codigo, 'anterior': m.peso_nominal_kg or 0.0, 'nuevo': peso_master})
                 elif desc_master and familia_master:
                     ref = anclajes_por_sku.get(codigo) or importbolts_por_sku.get(codigo) or {}
-                    nuevo_m = MaestroProducto(
-                        sku=codigo,
-                        nombre=desc_master or ref.get('nombre') or codigo,
-                        calidad=calidad_master or ref.get('calidad') or '',
-                        familia=familia_master or ref.get('categoria') or 'GENERAL',
-                        peso_nominal_kg=peso_master if peso_master is not None else (ref.get('peso_kg') or 0.0),
-                        origen='Backfill (Importación Excel Maestro)',
-                        creado_por=usuario_actual, fecha_creacion=hora_actual,
-                    )
-                    nuevos_maestro_rows.append(nuevo_m)
-                    maestro_por_sku[codigo] = nuevo_m
+                    maestro_backfill.append({
+                        'sku': codigo,
+                        'nombre': desc_master or ref.get('nombre') or codigo,
+                        'calidad': calidad_master or ref.get('calidad') or '',
+                        'familia': familia_master or ref.get('categoria') or 'GENERAL',
+                        'peso': peso_master if peso_master is not None else (ref.get('peso_kg') or 0.0),
+                    })
 
             else:
                 # --- CÓDIGO GENUINAMENTE NUEVO: no está ni en el Maestro ni en ningún inventario ---
@@ -4633,99 +4641,170 @@ def _procesar_excel_maestro(filepath, usuario_actual, user_id_actual):
                     omitidos_incompletos.append(codigo)
                     continue
 
-                _crear_categoria_si_falta(familia_master, Category, cache_cat_anclajes)
-                _crear_categoria_si_falta(familia_master, CategoryImportBolts, cache_cat_importbolts)
+                advertencias = []
 
-                peso_final = peso_master if peso_master is not None else 0.0
+                parecidos = difflib.get_close_matches(codigo, todos_skus_existentes, n=3, cutoff=0.85)
+                if parecidos:
+                    advertencias.append(f'El código se parece mucho a: {", ".join(parecidos)} — revisa que no sea un espacio, una coma o una letra de más/menos.')
 
-                nuevos_maestro_rows.append(MaestroProducto(
-                    sku=codigo, nombre=desc_master, calidad=calidad_master, familia=familia_master,
-                    peso_nominal_kg=peso_final, origen='Importación Excel Maestro',
-                    creado_por=usuario_actual, fecha_creacion=hora_actual,
-                ))
-                nuevos_anclajes_rows.append(Product(
-                    sku=codigo, nombre=desc_master, categoria=familia_master, calidad=calidad_master,
-                    peso_kg=peso_final, stock_actual=0, stock_minimo=10,
-                    precio_unidad=0.0, precio_docena=0.0, precio_caja=0.0, costo_referencial=0.0,
-                    fecha_actualizacion=hora_actual, actualizado_por=usuario_actual,
-                ))
-                nuevos_importbolts_rows.append(ProductImportBolts(
-                    sku=codigo, nombre=desc_master, categoria=familia_master, calidad=calidad_master,
-                    peso_kg=peso_final, stock_actual=0, stock_minimo=10,
-                    precio_unidad=0.0, precio_docena=0.0, precio_caja=0.0, costo_referencial=0.0,
-                    fecha_actualizacion=hora_actual, actualizado_por=usuario_actual,
-                ))
-                creados.append(codigo)
+                desc_norm = ' '.join(desc_master.upper().split())
+                sku_igual = desc_existente_norm.get(desc_norm)
+                if sku_igual:
+                    advertencias.append(f'Ya existe un producto con la MISMA descripción, con el código {sku_igual}.')
 
-        # --- Aplicar cambios de peso (UPDATE por lotes, igual que la importación de inventario) ---
-        if cambios_anclajes:
-            db.session.execute(
-                text("UPDATE product SET peso_kg=:nuevo WHERE sku=:sku"),
-                [{'sku': c['sku'], 'nuevo': c['nuevo']} for c in cambios_anclajes]
-            )
-        if cambios_importbolts:
-            db.session.execute(
-                text("UPDATE product_importbolts SET peso_kg=:nuevo WHERE sku=:sku"),
-                [{'sku': c['sku'], 'nuevo': c['nuevo']} for c in cambios_importbolts]
-            )
-        if cambios_maestro:
-            db.session.execute(
-                text("UPDATE maestro_producto SET peso_nominal_kg=:nuevo, actualizado_por=:usuario, "
-                     "fecha_actualizacion=:fecha WHERE sku=:sku"),
-                [{'sku': c['sku'], 'nuevo': c['nuevo'], 'usuario': usuario_actual, 'fecha': hora_actual}
-                 for c in cambios_maestro]
-            )
+                descripciones_creadas.setdefault(desc_norm, []).append(codigo)
 
-        # --- Insertar productos nuevos (Maestro + ambos inventarios) ---
-        if nuevos_maestro_rows:
-            db.session.add_all(nuevos_maestro_rows)
-        if nuevos_anclajes_rows:
-            db.session.add_all(nuevos_anclajes_rows)
-        if nuevos_importbolts_rows:
-            db.session.add_all(nuevos_importbolts_rows)
+                creados.append({
+                    'sku': codigo, 'nombre': desc_master, 'calidad': calidad_master, 'familia': familia_master,
+                    'peso': peso_master if peso_master is not None else 0.0, 'advertencias': advertencias,
+                })
+                # Para que un duplicado ENTRE dos filas nuevas del archivo también se detecte
+                # en el chequeo de "código parecido" de las filas siguientes.
+                todos_skus_existentes.add(codigo)
 
-        registros_log = []
-        for inventario, lista_cambios in (('ANCLAJES', cambios_anclajes), ('IMPORTBOLTS', cambios_importbolts)):
-            for c in lista_cambios:
-                registros_log.append(MaestroCambioLog(
-                    fecha=hora_actual, usuario=usuario_actual, lote_id=lote_id, sku=c['sku'],
-                    inventario=inventario, campo='peso_kg',
-                    valor_anterior=str(c['anterior']), valor_nuevo=str(c['nuevo'])
-                ))
-        for c in cambios_maestro:
-            registros_log.append(MaestroCambioLog(
-                fecha=hora_actual, usuario=usuario_actual, lote_id=lote_id, sku=c['sku'],
-                inventario='MAESTRO', campo='peso_nominal_kg',
-                valor_anterior=str(c['anterior']), valor_nuevo=str(c['nuevo'])
-            ))
-        for codigo in creados:
-            registros_log.append(MaestroCambioLog(
-                fecha=hora_actual, usuario=usuario_actual, lote_id=lote_id, sku=codigo,
-                inventario='MAESTRO+ANCLAJES+IMPORTBOLTS', campo='creacion',
-                valor_anterior='', valor_nuevo='Producto nuevo creado y repartido a ambos inventarios'
-            ))
-        if registros_log:
-            db.session.add_all(registros_log)
-
-        db.session.commit()
+        # Descripciones repetidas entre dos (o más) filas nuevas del mismo archivo
+        for desc_norm, skus in descripciones_creadas.items():
+            if len(skus) > 1:
+                for c in creados:
+                    if c['sku'] in skus:
+                        otros = ', '.join(s for s in skus if s != c['sku'])
+                        c['advertencias'].append(f'La misma descripción se repite en este archivo con: {otros}.')
 
         return {
             'error': None,
-            'lote_id': lote_id,
             'hoja_usada': hoja_maestro,
             'filas_leidas': filas_leidas,
-            'actualizados_anclajes': len(cambios_anclajes),
-            'actualizados_importbolts': len(cambios_importbolts),
+            'cambios_anclajes': cambios_anclajes,
+            'cambios_importbolts': cambios_importbolts,
+            'cambios_maestro': cambios_maestro,
+            'maestro_backfill': maestro_backfill,
             'sin_cambio': sin_cambio,
-            'creados_total': len(creados),
-            'creados_muestra': creados[:200],
-            'omitidos_total': len(omitidos_incompletos),
-            'omitidos_muestra': omitidos_incompletos[:200],
-            'diferencias_total': len(diferencias_info),
-            'diferencias_muestra': diferencias_info[:100],
+            'diferencias_info': diferencias_info,
+            'creados': creados,
+            'omitidos_incompletos': omitidos_incompletos,
+            'codigos_duplicados_en_archivo': codigos_duplicados_en_archivo,
         }
     finally:
         wb.close()
+
+
+def _procesar_excel_maestro(filepath, usuario_actual, user_id_actual):
+    """FASE DE APLICAR: reutiliza _leer_excel_maestro() para el análisis (que no toca la base
+    de datos) y recién aquí escribe todo — pesos actualizados, backfill del Maestro y
+    productos nuevos creados y repartidos a Anclajes e ImportBolts. Se llama solo después de
+    que el usuario confirmó la vista previa (admin_maestro_importar_confirmar)."""
+    analisis = _leer_excel_maestro(filepath)
+    if analisis.get('error'):
+        return analisis
+
+    lote_id = hora_peru().strftime('%Y%m%d%H%M%S')
+    hora_actual = hora_peru()
+
+    cache_cat_anclajes = {c.nombre: c.prefijo for c in Category.query.all()}
+    cache_cat_importbolts = {c.nombre: c.prefijo for c in CategoryImportBolts.query.all()}
+
+    nuevos_maestro_rows = []
+    nuevos_anclajes_rows = []
+    nuevos_importbolts_rows = []
+
+    for b in analisis['maestro_backfill']:
+        nuevos_maestro_rows.append(MaestroProducto(
+            sku=b['sku'], nombre=b['nombre'], calidad=b['calidad'], familia=b['familia'],
+            peso_nominal_kg=b['peso'], origen='Backfill (Importación Excel Maestro)',
+            creado_por=usuario_actual, fecha_creacion=hora_actual,
+        ))
+
+    creados_skus = []
+    for c in analisis['creados']:
+        _crear_categoria_si_falta(c['familia'], Category, cache_cat_anclajes)
+        _crear_categoria_si_falta(c['familia'], CategoryImportBolts, cache_cat_importbolts)
+
+        nuevos_maestro_rows.append(MaestroProducto(
+            sku=c['sku'], nombre=c['nombre'], calidad=c['calidad'], familia=c['familia'],
+            peso_nominal_kg=c['peso'], origen='Importación Excel Maestro',
+            creado_por=usuario_actual, fecha_creacion=hora_actual,
+        ))
+        nuevos_anclajes_rows.append(Product(
+            sku=c['sku'], nombre=c['nombre'], categoria=c['familia'], calidad=c['calidad'],
+            peso_kg=c['peso'], stock_actual=0, stock_minimo=10,
+            precio_unidad=0.0, precio_docena=0.0, precio_caja=0.0, costo_referencial=0.0,
+            fecha_actualizacion=hora_actual, actualizado_por=usuario_actual,
+        ))
+        nuevos_importbolts_rows.append(ProductImportBolts(
+            sku=c['sku'], nombre=c['nombre'], categoria=c['familia'], calidad=c['calidad'],
+            peso_kg=c['peso'], stock_actual=0, stock_minimo=10,
+            precio_unidad=0.0, precio_docena=0.0, precio_caja=0.0, costo_referencial=0.0,
+            fecha_actualizacion=hora_actual, actualizado_por=usuario_actual,
+        ))
+        creados_skus.append(c['sku'])
+
+    # --- Aplicar cambios de peso (UPDATE por lotes, igual que la importación de inventario) ---
+    if analisis['cambios_anclajes']:
+        db.session.execute(
+            text("UPDATE product SET peso_kg=:nuevo WHERE sku=:sku"),
+            [{'sku': c['sku'], 'nuevo': c['nuevo']} for c in analisis['cambios_anclajes']]
+        )
+    if analisis['cambios_importbolts']:
+        db.session.execute(
+            text("UPDATE product_importbolts SET peso_kg=:nuevo WHERE sku=:sku"),
+            [{'sku': c['sku'], 'nuevo': c['nuevo']} for c in analisis['cambios_importbolts']]
+        )
+    if analisis['cambios_maestro']:
+        db.session.execute(
+            text("UPDATE maestro_producto SET peso_nominal_kg=:nuevo, actualizado_por=:usuario, "
+                 "fecha_actualizacion=:fecha WHERE sku=:sku"),
+            [{'sku': c['sku'], 'nuevo': c['nuevo'], 'usuario': usuario_actual, 'fecha': hora_actual}
+             for c in analisis['cambios_maestro']]
+        )
+
+    # --- Insertar productos nuevos + backfill (Maestro + ambos inventarios) ---
+    if nuevos_maestro_rows:
+        db.session.add_all(nuevos_maestro_rows)
+    if nuevos_anclajes_rows:
+        db.session.add_all(nuevos_anclajes_rows)
+    if nuevos_importbolts_rows:
+        db.session.add_all(nuevos_importbolts_rows)
+
+    registros_log = []
+    for inventario, lista_cambios in (('ANCLAJES', analisis['cambios_anclajes']), ('IMPORTBOLTS', analisis['cambios_importbolts'])):
+        for c in lista_cambios:
+            registros_log.append(MaestroCambioLog(
+                fecha=hora_actual, usuario=usuario_actual, lote_id=lote_id, sku=c['sku'],
+                inventario=inventario, campo='peso_kg',
+                valor_anterior=str(c['anterior']), valor_nuevo=str(c['nuevo'])
+            ))
+    for c in analisis['cambios_maestro']:
+        registros_log.append(MaestroCambioLog(
+            fecha=hora_actual, usuario=usuario_actual, lote_id=lote_id, sku=c['sku'],
+            inventario='MAESTRO', campo='peso_nominal_kg',
+            valor_anterior=str(c['anterior']), valor_nuevo=str(c['nuevo'])
+        ))
+    for codigo in creados_skus:
+        registros_log.append(MaestroCambioLog(
+            fecha=hora_actual, usuario=usuario_actual, lote_id=lote_id, sku=codigo,
+            inventario='MAESTRO+ANCLAJES+IMPORTBOLTS', campo='creacion',
+            valor_anterior='', valor_nuevo='Producto nuevo creado y repartido a ambos inventarios (confirmado por el usuario)'
+        ))
+    if registros_log:
+        db.session.add_all(registros_log)
+
+    db.session.commit()
+
+    return {
+        'error': None,
+        'lote_id': lote_id,
+        'hoja_usada': analisis['hoja_usada'],
+        'filas_leidas': analisis['filas_leidas'],
+        'actualizados_anclajes': len(analisis['cambios_anclajes']),
+        'actualizados_importbolts': len(analisis['cambios_importbolts']),
+        'sin_cambio': analisis['sin_cambio'],
+        'creados_total': len(creados_skus),
+        'creados_muestra': creados_skus[:200],
+        'omitidos_total': len(analisis['omitidos_incompletos']),
+        'omitidos_muestra': analisis['omitidos_incompletos'][:200],
+        'diferencias_total': len(analisis['diferencias_info']),
+        'diferencias_muestra': analisis['diferencias_info'][:100],
+    }
 
 
 @app.route('/admin/maestro')
@@ -4782,6 +4861,11 @@ def admin_maestro():
 
 @app.route('/admin/maestro/importar', methods=['POST'])
 def admin_maestro_importar():
+    """PASO 1: solo analiza el Excel (no escribe nada en la base de datos) y muestra una
+    vista previa con todo lo que se va a actualizar y — sobre todo — todo lo que se va a
+    CREAR, con advertencias de posibles errores de tipeo, para que el usuario revise antes
+    de confirmar. El archivo se guarda temporalmente con un token; el paso de confirmar lo
+    vuelve a leer desde ahí (así no hay que reenviar el Excel ni confiar en datos del navegador)."""
     import traceback
 
     if session.get('role') not in ['admin', 'almacen']:
@@ -4792,9 +4876,44 @@ def admin_maestro_importar():
         flash('No seleccionaste ningún archivo.', 'error')
         return redirect(url_for('admin_maestro'))
 
-    filename = secure_filename(archivo.filename)
+    token = f"maestro_{hora_peru().strftime('%Y%m%d%H%M%S')}_{secrets.token_hex(4)}"
+    filename = secure_filename(f"{token}.xlsx")
     filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     archivo.save(filepath)
+
+    try:
+        analisis = _leer_excel_maestro(filepath)
+    except Exception:
+        if os.path.exists(filepath):
+            os.remove(filepath)
+        print(f"ERROR ANALIZANDO EXCEL MAESTRO:\n{traceback.format_exc()}")
+        flash('No se pudo leer el archivo. Revisa que sea un Excel válido con la hoja MAESTROV2.', 'error')
+        return redirect(url_for('admin_maestro'))
+
+    if analisis.get('error'):
+        if os.path.exists(filepath):
+            os.remove(filepath)
+        flash(analisis['error'], 'error')
+        return redirect(url_for('admin_maestro'))
+
+    return render_template('admin_maestro_importar_preview.html', a=analisis, token=token)
+
+
+@app.route('/admin/maestro/importar/confirmar', methods=['POST'])
+def admin_maestro_importar_confirmar():
+    """PASO 2: el usuario ya revisó la vista previa y confirma. Se vuelve a leer el mismo
+    archivo (por su token) y recién aquí se escriben los cambios en la base de datos."""
+    import traceback
+
+    if session.get('role') not in ['admin', 'almacen']:
+        return "Acceso denegado", 403
+
+    token = request.form.get('token', '').strip()
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], secure_filename(f"{token}.xlsx")) if token else None
+
+    if not token or not filepath or not os.path.exists(filepath):
+        flash('La vista previa expiró o el archivo ya no está disponible. Sube el Excel de nuevo.', 'error')
+        return redirect(url_for('admin_maestro'))
 
     usuario_actual = session.get('username', 'Sistema')
     user_id_actual = session.get('user_id')
@@ -4828,6 +4947,22 @@ def admin_maestro_importar():
         return redirect(url_for('admin_maestro'))
 
     return render_template('admin_maestro_resultado.html', r=resultado)
+
+
+@app.route('/admin/maestro/importar/cancelar', methods=['POST'])
+def admin_maestro_importar_cancelar():
+    """El usuario revisó la vista previa y decidió NO continuar (por ejemplo, porque vio un
+    código con un error de tipeo). No se aplicó ningún cambio; solo se borra el archivo
+    temporal de la vista previa."""
+    if session.get('role') not in ['admin', 'almacen']:
+        return "Acceso denegado", 403
+    token = request.form.get('token', '').strip()
+    if token:
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], secure_filename(f"{token}.xlsx"))
+        if os.path.exists(filepath):
+            os.remove(filepath)
+    flash('Importación cancelada. No se aplicó ningún cambio.')
+    return redirect(url_for('admin_maestro'))
 
 
 @app.route('/admin/maestro/auditoria')
@@ -4869,6 +5004,73 @@ def api_maestro_codigos_similares():
     return {'codigos': [{'sku': m.sku, 'nombre': m.nombre, 'familia': m.familia, 'calidad': m.calidad} for m in filas]}
 
 
+@app.route('/api/maestro/verificar_codigo')
+def api_maestro_verificar_codigo():
+    """Validación en vivo del código mientras se escribe en 'Nuevo Producto' del Maestro:
+    dice si ya existe (en el Maestro o en cualquiera de los dos inventarios) para que el
+    usuario no lo descubra recién al intentar guardar."""
+    if session.get('role') not in ['admin', 'almacen']:
+        return {'existe': False}, 403
+    codigo = _limpiar_codigo_maestro(request.args.get('q', ''))
+    if not codigo:
+        return {'existe': False}
+
+    m = MaestroProducto.query.filter_by(sku=codigo).first()
+    if m:
+        return {'existe': True, 'origen': 'Maestro', 'nombre': m.nombre}
+    p = Product.query.filter_by(sku=codigo).first()
+    if p:
+        return {'existe': True, 'origen': 'Anclajes (no estaba en el Maestro)', 'nombre': p.nombre}
+    pi = ProductImportBolts.query.filter_by(sku=codigo).first()
+    if pi:
+        return {'existe': True, 'origen': 'ImportBolts (no estaba en el Maestro)', 'nombre': pi.nombre}
+    return {'existe': False}
+
+
+@app.route('/api/maestro/productos_similares', methods=['POST'])
+def api_maestro_productos_similares():
+    """Mientras se llena Familia/Calidad/Descripción en 'Nuevo Producto' del Maestro, sugiere
+    productos ya existentes parecidos — para que el usuario revise si lo que está por crear
+    no es, en realidad, un producto que ya existe con otro código (misma lógica que ya
+    usábamos para esto en Anclajes/ImportBolts, aplicada ahora sobre el catálogo Maestro)."""
+    if session.get('role') not in ['admin', 'almacen']:
+        return {'status': 'error'}, 403
+    familia = request.form.get('familia', '').strip()
+    calidad = request.form.get('calidad', '').strip()
+    nombre = request.form.get('nombre', '').strip()
+
+    if not familia and not calidad and len(nombre) < 3:
+        return {'status': 'success', 'productos': []}
+
+    query = MaestroProducto.query
+    if familia:
+        query = query.filter(MaestroProducto.familia == familia)
+    candidatos = query.limit(500).all()
+
+    palabras_nombre = [p for p in nombre.upper().split() if len(p) >= 3][:5]
+
+    puntuados = []
+    for p in candidatos:
+        score = 0
+        if calidad and p.calidad and calidad.upper() in p.calidad.upper():
+            score += 3
+        nombre_prod = (p.nombre or '').upper()
+        for palabra in palabras_nombre:
+            if palabra in nombre_prod:
+                score += 2
+        if score > 0:
+            puntuados.append((score, p))
+
+    if not puntuados and familia and not calidad and len(nombre) < 3:
+        puntuados = [(1, p) for p in candidatos[:15]]
+
+    puntuados.sort(key=lambda x: (-x[0], x[1].sku))
+    top = puntuados[:15]
+
+    lista = [{'sku': p.sku, 'nombre': p.nombre, 'familia': p.familia, 'calidad': p.calidad} for score, p in top]
+    return {'status': 'success', 'productos': lista}
+
+
 @app.route('/admin/maestro/nuevo', methods=['GET', 'POST'])
 def admin_maestro_nuevo():
     """Registrar un producto nuevo DESDE el Maestro: es la única forma de crear productos
@@ -4878,12 +5080,19 @@ def admin_maestro_nuevo():
     if session.get('role') not in ['admin', 'almacen']:
         return "Acceso denegado", 403
 
+    familias = [c.nombre for c in Category.query.order_by(Category.nombre).all()]
+    calidades = [c[0] for c in db.session.query(MaestroProducto.calidad)
+                 .filter(MaestroProducto.calidad.isnot(None), MaestroProducto.calidad != '')
+                 .distinct().order_by(MaestroProducto.calidad).all()]
+
     if request.method == 'GET':
-        familias = [c.nombre for c in Category.query.order_by(Category.nombre).all()]
-        calidades = [c[0] for c in db.session.query(MaestroProducto.calidad)
-                     .filter(MaestroProducto.calidad.isnot(None), MaestroProducto.calidad != '')
-                     .distinct().order_by(MaestroProducto.calidad).all()]
-        return render_template('admin_maestro_nuevo.html', familias=familias, calidades=calidades)
+        # Al confirmar un producto se vuelve a esta misma página con la Familia/Calidad ya
+        # seleccionadas (para seguir creando la siguiente en la misma secuencia sin tener
+        # que ir y volver del listado).
+        familia_preseleccion = request.args.get('familia', '')
+        calidad_preseleccion = request.args.get('calidad', '')
+        return render_template('admin_maestro_nuevo.html', familias=familias, calidades=calidades,
+                                familia_preseleccion=familia_preseleccion, calidad_preseleccion=calidad_preseleccion)
 
     try:
         codigo = request.form.get('sku', '').strip().upper()
@@ -4894,21 +5103,32 @@ def admin_maestro_nuevo():
 
         if not codigo:
             flash('⛔ El código es obligatorio.', 'error')
-            return redirect(url_for('admin_maestro_nuevo'))
+            return redirect(url_for('admin_maestro_nuevo', familia=familia, calidad=calidad))
         if not nombre:
             flash('⛔ La descripción es obligatoria.', 'error')
-            return redirect(url_for('admin_maestro_nuevo'))
+            return redirect(url_for('admin_maestro_nuevo', familia=familia, calidad=calidad))
         if not familia:
             flash('⛔ La familia es obligatoria.', 'error')
             return redirect(url_for('admin_maestro_nuevo'))
 
+        # Familia y Calidad se eligen de lo que YA existe — aquí no se crean familias ni
+        # calidades nuevas (si hace falta una familia nueva, se gestiona aparte, en Categorías).
+        if familia not in familias:
+            flash(f'⛔ "{familia}" no es una familia existente. Elige una de la lista — si necesitas una '
+                  f'familia nueva, créala primero desde Categorías.', 'error')
+            return redirect(url_for('admin_maestro_nuevo'))
+        if calidad and calidad not in calidades:
+            flash(f'⛔ "{calidad}" no es una calidad ya registrada en el Maestro. Elige una de la lista o '
+                  f'déjala en blanco.', 'error')
+            return redirect(url_for('admin_maestro_nuevo', familia=familia))
+
         if MaestroProducto.query.filter_by(sku=codigo).first():
             flash(f'⛔ El código "{codigo}" ya existe en el Maestro.', 'error')
-            return redirect(url_for('admin_maestro_nuevo'))
+            return redirect(url_for('admin_maestro_nuevo', familia=familia, calidad=calidad))
         if Product.query.filter_by(sku=codigo).first() or ProductImportBolts.query.filter_by(sku=codigo).first():
             flash(f'⛔ El código "{codigo}" ya existe en algún inventario (aunque no estaba en el Maestro). '
                   f'Usa "{codigo}" con cuidado o elige otro código — avísale al admin para revisar este caso.', 'error')
-            return redirect(url_for('admin_maestro_nuevo'))
+            return redirect(url_for('admin_maestro_nuevo', familia=familia, calidad=calidad))
 
         try:
             peso = round(float(peso_raw.replace(',', '.')) if peso_raw else 0.0, 4)
@@ -4916,15 +5136,10 @@ def admin_maestro_nuevo():
                 raise ValueError()
         except ValueError:
             flash('⛔ El peso nominal debe ser un número válido (hasta 4 decimales).', 'error')
-            return redirect(url_for('admin_maestro_nuevo'))
+            return redirect(url_for('admin_maestro_nuevo', familia=familia, calidad=calidad))
 
         usuario_actual = session.get('username', 'Sistema')
         hora_actual = hora_peru()
-
-        cache_cat_anclajes = {c.nombre: c.prefijo for c in Category.query.all()}
-        cache_cat_importbolts = {c.nombre: c.prefijo for c in CategoryImportBolts.query.all()}
-        _crear_categoria_si_falta(familia, Category, cache_cat_anclajes)
-        _crear_categoria_si_falta(familia, CategoryImportBolts, cache_cat_importbolts)
 
         nuevo_maestro = MaestroProducto(
             sku=codigo, nombre=nombre, calidad=calidad, familia=familia,
@@ -4952,7 +5167,9 @@ def admin_maestro_nuevo():
 
         flash(f'✅ Producto "{codigo}" creado y repartido a Anclajes e ImportBolts con stock en 0. '
               f'Entra a cada inventario para completar Stock Mínimo, Precio y Fotos.')
-        return redirect(url_for('admin_maestro'))
+        # Se queda en la misma página, con la misma Familia/Calidad ya elegidas, listo para
+        # seguir cargando el siguiente código de la secuencia sin tener que ir y volver.
+        return redirect(url_for('admin_maestro_nuevo', familia=familia, calidad=calidad))
 
     except Exception as e:
         db.session.rollback()

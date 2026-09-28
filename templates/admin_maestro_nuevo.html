@@ -12,35 +12,49 @@
     <div class="col-12 col-lg-7">
         <div class="card border-0 shadow-sm">
             <div class="card-body">
-                <form method="POST" action="{{ url_for('admin_maestro_nuevo') }}" autocomplete="off">
-                    <div class="mb-3 position-relative">
-                        <label class="form-label fw-bold small text-muted">Código <span class="text-danger">*</span></label>
-                        <input type="text" name="sku" id="inputCodigo" class="form-control fw-bold" placeholder="Ej: PER-005" required
-                               oninput="buscarCodigosSimilares(this.value)" style="text-transform:uppercase;">
-                        <div id="codigosSimilares" class="list-group position-absolute w-100 shadow-sm" style="z-index: 20; max-height: 220px; overflow-y:auto; display:none;"></div>
-                        <div class="form-text">Escribe libremente. Mientras tipeas, se muestran códigos parecidos ya existentes para que no se repita ni pierdas el patrón de la familia.</div>
+                <form method="POST" action="{{ url_for('admin_maestro_nuevo') }}" id="formNuevoMaestro" autocomplete="off" onsubmit="return validarAntesDeEnviar(event)">
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <label class="form-label fw-bold small text-muted">Familia <span class="text-danger">*</span></label>
+                            <select name="familia" id="selectFamilia" class="form-select" required onchange="buscarProductosSimilares()">
+                                <option value="" selected disabled>-- Seleccione --</option>
+                                {% for f in familias %}
+                                <option value="{{ f }}" {% if f == familia_preseleccion %}selected{% endif %}>{{ f }}</option>
+                                {% endfor %}
+                            </select>
+                            <div class="form-text">Solo familias ya existentes. Si falta una, créala primero desde Categorías.</div>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label fw-bold small text-muted">Calidad</label>
+                            <select name="calidad" id="selectCalidad" class="form-select" onchange="buscarProductosSimilares()">
+                                <option value="" {% if not calidad_preseleccion %}selected{% endif %}>-- Sin especificar --</option>
+                                {% for c in calidades %}
+                                <option value="{{ c }}" {% if c == calidad_preseleccion %}selected{% endif %}>{{ c }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
                     </div>
 
                     <div class="mb-3">
                         <label class="form-label fw-bold small text-muted">Descripción <span class="text-danger">*</span></label>
-                        <input type="text" name="nombre" class="form-control" placeholder="Ej: PERNO HEX. INOX. 304 1/2&quot; x 2&quot;" required>
+                        <input type="text" name="nombre" id="inputNombre" class="form-control" placeholder="Ej: PERNO HEX. INOX. 304 1/2&quot; x 2&quot;" required
+                               oninput="buscarProductosSimilares()">
                     </div>
 
-                    <div class="row g-2 mb-3">
-                        <div class="col-6">
-                            <label class="form-label fw-bold small text-muted">Familia <span class="text-danger">*</span></label>
-                            <input type="text" name="familia" class="form-control" list="listaFamilias" required>
-                            <datalist id="listaFamilias">
-                                {% for f in familias %}<option value="{{ f }}">{% endfor %}
-                            </datalist>
-                            <div class="form-text">Si escribes una familia nueva, se crea automáticamente.</div>
-                        </div>
-                        <div class="col-6">
-                            <label class="form-label fw-bold small text-muted">Calidad</label>
-                            <input type="text" name="calidad" class="form-control" list="listaCalidades">
-                            <datalist id="listaCalidades">
-                                {% for c in calidades %}<option value="{{ c }}">{% endfor %}
-                            </datalist>
+                    <div class="col-12 mb-3">
+                        <div id="panelProductosSimilares" class="d-none">
+                            <div class="alert alert-warning py-2 px-3 mb-2 small">
+                                <i class="bi bi-exclamation-triangle-fill"></i>
+                                <strong>Antes de continuar:</strong> revisa si alguno de estos productos ya existentes es el mismo que estás por crear.
+                            </div>
+                            <div class="table-responsive border rounded bg-white shadow-sm" style="max-height: 180px; overflow-y: auto;">
+                                <table class="table table-sm table-hover mb-0 small">
+                                    <thead class="table-light sticky-top">
+                                        <tr><th>Código</th><th>Descripción</th><th>Calidad</th></tr>
+                                    </thead>
+                                    <tbody id="tablaProductosSimilares"></tbody>
+                                </table>
+                            </div>
                         </div>
                     </div>
 
@@ -48,6 +62,15 @@
                         <label class="form-label fw-bold small text-muted">Peso Nominal (Kg)</label>
                         <input type="number" step="0.0001" min="0" name="peso_nominal_kg" class="form-control" placeholder="0.0000">
                         <div class="form-text">Hasta 4 decimales. Es el mismo peso para Anclajes e ImportBolts.</div>
+                    </div>
+
+                    <div class="mb-3 position-relative">
+                        <label class="form-label fw-bold small text-danger">Código <span class="text-danger">*</span></label>
+                        <input type="text" name="sku" id="inputCodigo" class="form-control fw-bold border-danger" placeholder="Ej: PER-005" required
+                               oninput="this.value = this.value.toUpperCase(); onCodigoInput();" style="text-transform:uppercase;">
+                        <div id="codigosSimilares" class="list-group position-absolute w-100 shadow-sm" style="z-index: 20; max-height: 220px; overflow-y:auto; display:none;"></div>
+                        <div id="codigoValidacionMsg" class="form-text small mt-1"></div>
+                        <div class="form-text">Mientras tipeas, se muestran códigos ya existentes con esa secuencia para que sigas el mismo patrón y no se repita.</div>
                     </div>
 
                     <div class="d-grid">
@@ -71,6 +94,8 @@
                     <li>Se crea el mismo producto en <strong>Anclajes</strong> y en <strong>ImportBolts</strong>, con <strong>stock en 0</strong>.</li>
                     <li>Stock Mínimo, Precio Unidad, Precio Caja, Ubicación y Fotos <strong>no se piden aquí</strong> porque pueden ser distintos en cada empresa — se completan después entrando a "Editar" el producto en cada inventario.</li>
                     <li>Si el código ya existe (en el Maestro o en algún inventario), el sistema no deja crearlo de nuevo.</li>
+                    <li>Familia y Calidad solo se eligen entre las que ya existen — esta pantalla no crea familias ni calidades nuevas.</li>
+                    <li>Al guardar, la página se queda aquí mismo (con la misma Familia/Calidad) para que sigas cargando el siguiente código de la secuencia.</li>
                 </ul>
             </div>
         </div>
@@ -78,16 +103,25 @@
 </div>
 
 <script>
-let timeoutBusqueda = null;
-function buscarCodigosSimilares(valor) {
+let timeoutBusquedaCodigo = null;
+let timeoutBusquedaSimilares = null;
+let codigoValido = false;
+
+function onCodigoInput() {
+    buscarCodigosSimilares();
+    verificarCodigoExacto();
+}
+
+function buscarCodigosSimilares() {
+    const valor = document.getElementById('inputCodigo').value;
     const cont = document.getElementById('codigosSimilares');
-    clearTimeout(timeoutBusqueda);
+    clearTimeout(timeoutBusquedaCodigo);
     if (!valor || valor.trim().length < 2) {
         cont.style.display = 'none';
         cont.innerHTML = '';
         return;
     }
-    timeoutBusqueda = setTimeout(() => {
+    timeoutBusquedaCodigo = setTimeout(() => {
         fetch(`/api/maestro/codigos_similares?q=${encodeURIComponent(valor.trim())}`)
             .then(r => r.json())
             .then(data => {
@@ -108,9 +142,105 @@ function buscarCodigosSimilares(valor) {
             .catch(() => { cont.style.display = 'none'; });
     }, 250);
 }
+
+function verificarCodigoExacto() {
+    const sku = document.getElementById('inputCodigo').value.trim();
+    const msg = document.getElementById('codigoValidacionMsg');
+    codigoValido = false;
+
+    if (!sku) {
+        msg.innerHTML = '';
+        return;
+    }
+    if (sku.length < 3) {
+        msg.innerHTML = '<span class="text-muted">Escriba el código completo...</span>';
+        return;
+    }
+
+    setTimeout(() => {
+        if (document.getElementById('inputCodigo').value.trim() !== sku) return; // sigue escribiendo, se descarta esta verificación
+        fetch(`/api/maestro/verificar_codigo?q=${encodeURIComponent(sku)}`)
+            .then(r => r.json())
+            .then(data => {
+                if (document.getElementById('inputCodigo').value.trim() !== sku) return;
+                if (data.existe) {
+                    msg.innerHTML = `<span class="text-danger fw-bold"><i class="bi bi-x-circle-fill"></i> Este código YA EXISTE en ${data.origen}: "${data.nombre}". Use uno diferente.</span>`;
+                    codigoValido = false;
+                } else {
+                    msg.innerHTML = `<span class="text-success fw-bold"><i class="bi bi-check-circle-fill"></i> Código disponible.</span>`;
+                    codigoValido = true;
+                }
+            });
+    }, 300);
+}
+
+function buscarProductosSimilares() {
+    clearTimeout(timeoutBusquedaSimilares);
+    timeoutBusquedaSimilares = setTimeout(() => {
+        const familia = document.getElementById('selectFamilia').value;
+        const calidad = document.getElementById('selectCalidad').value;
+        const nombre = document.getElementById('inputNombre').value.trim();
+
+        if (!familia && !calidad && nombre.length < 3) {
+            document.getElementById('panelProductosSimilares').classList.add('d-none');
+            return;
+        }
+
+        let fd = new FormData();
+        fd.append('familia', familia);
+        fd.append('calidad', calidad);
+        fd.append('nombre', nombre);
+
+        fetch('/api/maestro/productos_similares', { method: 'POST', body: fd })
+            .then(r => r.json())
+            .then(data => {
+                const panel = document.getElementById('panelProductosSimilares');
+                const tbody = document.getElementById('tablaProductosSimilares');
+                tbody.innerHTML = '';
+
+                if (data.status === 'success' && data.productos.length > 0) {
+                    data.productos.forEach(p => {
+                        tbody.innerHTML += `
+                            <tr>
+                                <td class="fw-bold text-primary">${p.sku}</td>
+                                <td>${p.nombre}</td>
+                                <td>${p.calidad || '-'}</td>
+                            </tr>`;
+                    });
+                    panel.classList.remove('d-none');
+                } else {
+                    panel.classList.add('d-none');
+                }
+            });
+    }, 400);
+}
+
+function validarAntesDeEnviar(e) {
+    const sku = document.getElementById('inputCodigo').value.trim();
+    if (!sku) {
+        e.preventDefault();
+        alert('El código es obligatorio.');
+        return false;
+    }
+    if (!codigoValido) {
+        e.preventDefault();
+        alert('Verifica el código: espera a que confirme "Código disponible" o corrígelo — ya existe o todavía no se ha verificado.');
+        return false;
+    }
+    return true;
+}
+
 document.addEventListener('click', function(e) {
     if (!e.target.closest('#inputCodigo') && !e.target.closest('#codigosSimilares')) {
         document.getElementById('codigosSimilares').style.display = 'none';
+    }
+});
+
+// Si venimos con Familia/Calidad ya preseleccionadas (después de crear el producto
+// anterior), disparamos también la búsqueda de similares por si acaso.
+document.addEventListener('DOMContentLoaded', function() {
+    if (document.getElementById('selectFamilia').value) {
+        buscarProductosSimilares();
     }
 });
 </script>
