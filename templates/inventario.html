@@ -814,6 +814,13 @@
                         </div>
                     </div>
 
+                    <!-- REFERENCIA (solo aparece si el motivo es COMPRA o VENTA) -->
+                    <div class="mb-3 d-none" id="bloqueReferenciaMovimiento">
+                        <label class="small text-muted fw-bold mb-1" id="label_referencia_movimiento">Orden de Compra</label>
+                        <input type="text" name="referencia" id="stock_referencia" maxlength="50"
+                               class="form-control form-control-sm shadow-sm text-uppercase" placeholder="Ej: OC1234">
+                    </div>
+
                     <hr class="my-3">
 
                     <!-- PROVEEDOR / DESTINO -->
@@ -2025,6 +2032,10 @@ function cambioTipoMovimiento() {
     document.getElementById('bloquePrecio').style.display = (tipo === 'ingreso') ? 'block' : 'none';
     document.getElementById('label_proveedor_seccion').innerText = (tipo === 'ingreso') ? 'Proveedor' : 'Destino / Cliente';
     cargarMotivos(tipo);
+    // Cambiar de tipo invalida el motivo elegido, así que ocultamos el campo de Referencia
+    // hasta que se elija un motivo de nuevo (seleccionarMotivo lo vuelve a mostrar si aplica).
+    document.getElementById('bloqueReferenciaMovimiento').classList.add('d-none');
+    document.getElementById('stock_referencia').value = '';
 }
 
 function cargarMotivos(tipoMovimiento) {
@@ -2049,8 +2060,30 @@ function cargarMotivos(tipoMovimiento) {
 function seleccionarMotivo() {
     const select = document.getElementById('stock_select_motivo');
     const selected = select.options[select.selectedIndex];
+    const nombreMotivo = selected ? (selected.dataset.nombre || '') : '';
     document.getElementById('stock_motivo_id').value = select.value;
-    document.getElementById('stock_motivo_texto').value = selected ? selected.dataset.nombre : '';
+    document.getElementById('stock_motivo_texto').value = nombreMotivo;
+
+    // Campo de Referencia: solo aparece en Ingreso + motivo COMPRA (Nº de Orden de Compra),
+    // o en Salida + motivo VENTA (Nº de Factura o Guía). Se guarda igual en los dos casos
+    // (campo "referencia" del movimiento) y luego se muestra en el Kardex como Motivo / Referencia.
+    const tipo = document.getElementById('stock_tipo_movimiento').value;
+    const bloqueRef = document.getElementById('bloqueReferenciaMovimiento');
+    const labelRef = document.getElementById('label_referencia_movimiento');
+    const inputRef = document.getElementById('stock_referencia');
+
+    if (tipo === 'ingreso' && nombreMotivo === 'COMPRA') {
+        bloqueRef.classList.remove('d-none');
+        labelRef.innerText = 'Orden de Compra';
+        inputRef.placeholder = 'Ej: OC1234';
+    } else if (tipo === 'salida' && nombreMotivo === 'VENTA') {
+        bloqueRef.classList.remove('d-none');
+        labelRef.innerText = 'Factura o Guía';
+        inputRef.placeholder = 'Ej: F001-1234 o T001-5678';
+    } else {
+        bloqueRef.classList.add('d-none');
+        inputRef.value = '';
+    }
 }
 
 function cambioTipoProveedor() {

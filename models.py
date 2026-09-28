@@ -86,6 +86,7 @@ class ProductMovement(db.Model):
     precio_unitario = db.Column(db.Float, nullable=True)  # solo Ingresos
     presentacion = db.Column(db.String(50), nullable=True)  # Metros, Kg, Unidades...
     motivo_id = db.Column(db.Integer, db.ForeignKey('motivo_movimiento.id'), nullable=True)
+    referencia = db.Column(db.String(50), nullable=True)  # Nº de Orden de Compra (motivo COMPRA) o Nº de Factura/Guía (motivo VENTA)
 
     proveedor = db.relationship('Proveedor')
 
@@ -450,6 +451,7 @@ class ProductMovementImportBolts(db.Model):
     precio_unitario = db.Column(db.Float, nullable=True)  # solo Ingresos
     presentacion = db.Column(db.String(50), nullable=True)  # Metros, Kg, Unidades...
     motivo_id = db.Column(db.Integer, db.ForeignKey('motivo_movimiento.id'), nullable=True)
+    referencia = db.Column(db.String(50), nullable=True)  # Nº de Orden de Compra (motivo COMPRA) o Nº de Factura/Guía (motivo VENTA)
 
     proveedor = db.relationship('Proveedor')
 

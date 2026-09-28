@@ -5547,6 +5547,7 @@ def ajustar_stock():
     id_fiscal_proveedor_form = request.form.get('id_fiscal_proveedor', '').strip()
     precio_unitario = request.form.get('precio_unitario', '').strip()
     presentacion = request.form.get('presentacion', '').strip()
+    referencia = request.form.get('referencia', '').strip().upper()[:50]
 
     if not motivo_texto:
         flash('⛔ Debe seleccionar un motivo.')
@@ -5648,7 +5649,8 @@ def ajustar_stock():
         ruc_proveedor=ruc_proveedor_final,
         razon_social_proveedor=razon_social_final,
         precio_unitario=float(precio_unitario) if precio_unitario else None,
-        presentacion=presentacion or None
+        presentacion=presentacion or None,
+        referencia=referencia or None
     )
     db.session.add(kardex)
     db.session.commit()
@@ -5672,6 +5674,7 @@ def ver_kardex():
                 Product.nombre.ilike(f"%{busqueda}%"),
                 Product.sku.ilike(f"%{busqueda}%"),
                 ProductMovement.motivo.ilike(f"%{busqueda}%"),
+                ProductMovement.referencia.ilike(f"%{busqueda}%"),
                 ProductMovement.ruc_proveedor.ilike(f"%{busqueda}%"),
                 ProductMovement.razon_social_proveedor.ilike(f"%{busqueda}%")
             )
@@ -7183,6 +7186,7 @@ def ajustar_stock_importbolts():
     id_fiscal_proveedor_form = request.form.get('id_fiscal_proveedor', '').strip()
     precio_unitario = request.form.get('precio_unitario', '').strip()
     presentacion = request.form.get('presentacion', '').strip()
+    referencia = request.form.get('referencia', '').strip().upper()[:50]
 
     if not motivo_texto:
         flash('⛔ Debe seleccionar un motivo.')
@@ -7281,7 +7285,8 @@ def ajustar_stock_importbolts():
         ruc_proveedor=ruc_proveedor_final,
         razon_social_proveedor=razon_social_final,
         precio_unitario=float(precio_unitario) if precio_unitario else None,
-        presentacion=presentacion or None
+        presentacion=presentacion or None,
+        referencia=referencia or None
     )
     db.session.add(kardex)
     db.session.commit()
@@ -7614,6 +7619,7 @@ def ver_kardex_importbolts():
                 ProductImportBolts.nombre.ilike(f"%{busqueda}%"),
                 ProductImportBolts.sku.ilike(f"%{busqueda}%"),
                 ProductMovementImportBolts.motivo.ilike(f"%{busqueda}%"),
+                ProductMovementImportBolts.referencia.ilike(f"%{busqueda}%"),
                 ProductMovementImportBolts.ruc_proveedor.ilike(f"%{busqueda}%"),
                 ProductMovementImportBolts.razon_social_proveedor.ilike(f"%{busqueda}%")
             )
@@ -10101,6 +10107,21 @@ def fix_maestro_cambio_log_extra():
             conn.execute(text("ALTER TABLE maestro_cambio_log ADD COLUMN IF NOT EXISTS calidad VARCHAR(200)"))
             conn.commit()
         return "<h2>✅ Auditoría del Maestro actualizada: columnas de familia y calidad agregadas correctamente.</h2>"
+    except Exception as e:
+        db.session.rollback()
+        return f"<h2>Error: {str(e)}</h2>"
+
+
+@app.route('/fix_kardex_referencia_2026')
+def fix_kardex_referencia():
+    if session.get('role') != 'admin':
+        return "Acceso denegado", 403
+    try:
+        with db.engine.connect() as conn:
+            conn.execute(text("ALTER TABLE product_movement ADD COLUMN IF NOT EXISTS referencia VARCHAR(50)"))
+            conn.execute(text("ALTER TABLE product_movement_importbolts ADD COLUMN IF NOT EXISTS referencia VARCHAR(50)"))
+            conn.commit()
+        return "<h2>✅ Kardex actualizado: columna de Nº de Orden de Compra / Factura-Guía agregada correctamente.</h2>"
     except Exception as e:
         db.session.rollback()
         return f"<h2>Error: {str(e)}</h2>"
