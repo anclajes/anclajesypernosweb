@@ -17,120 +17,7 @@
     precio, fotos, ubicación). Un producto creado aquí se reparte automáticamente a ambos inventarios con stock en 0.
 </div>
 
-<div class="row g-3">
-    <div class="col-12 col-lg-7">
-
-        <div class="card border-0 shadow-sm mb-3">
-            <div class="card-header bg-white fw-bold">
-                <i class="bi bi-upload"></i> Subir Excel Maestro
-            </div>
-            <div class="card-body">
-                <p class="text-muted small mb-3">
-                    Sube el Excel Maestro completo (el que tiene varias hojas). El sistema busca automáticamente
-                    la hoja <code>MAESTROV2</code> y compara cada <strong>NUEVO CODIGO</strong> contra el Maestro y
-                    contra Anclajes e ImportBolts. Si el código ya existe, <strong>actualiza el Peso Nominal (Kg)</strong>
-                    donde sea distinto (descripción/calidad/familia solo se avisan, no se sobreescriben solas). Si el
-                    código <strong>no existe en ningún lado</strong>, primero te muestra una <strong>vista previa</strong>
-                    con lo que va a crear — con avisos si un código se parece mucho a uno que ya existe (posible error
-                    de tipeo), si una descripción se repite, o si hay códigos repetidos en el mismo archivo — y recién
-                    se crea (en el Maestro y repartido a ambos inventarios con stock en 0) cuando tú lo confirmas.
-                </p>
-                <form method="POST" action="{{ url_for('admin_maestro_importar') }}" enctype="multipart/form-data"
-                      onsubmit="document.getElementById('btnImportarMaestro').disabled = true; document.getElementById('btnImportarMaestro').innerHTML = '<span class=\'spinner-border spinner-border-sm me-2\'></span> Analizando...';">
-                    <div class="mb-3">
-                        <input type="file" name="archivo_maestro" class="form-control" accept=".xlsx,.xls" required>
-                    </div>
-                    <button type="submit" id="btnImportarMaestro" class="btn btn-primary">
-                        <i class="bi bi-search"></i> Analizar y ver vista previa
-                    </button>
-                </form>
-            </div>
-        </div>
-
-        {% if info_maestro %}
-        <div class="alert py-2 shadow-sm d-flex align-items-center mb-3 border-0" style="background-color: #e6f0fa; border-left: 4px solid var(--theme-primary, #0F172A) !important;">
-            <i class="bi bi-info-circle-fill fs-5 me-3" style="color: var(--theme-primary, #0F172A);"></i>
-            <div>
-                <h6 class="mb-0 fw-bold" style="color: var(--theme-primary, #0F172A);">Última sincronización del Maestro</h6>
-                <small class="text-muted">
-                    {{ info_maestro.updated_at.strftime('%d/%m/%Y a las %H:%M') }} por <strong>{{ info_maestro.updated_by }}</strong>
-                </small>
-            </div>
-        </div>
-        {% endif %}
-
-        <div class="card border-0 shadow-sm">
-            <div class="card-header bg-white fw-bold d-flex justify-content-between align-items-center">
-                <span><i class="bi bi-clock-history"></i> Últimos cambios de peso</span>
-                <a href="{{ url_for('admin_maestro_auditoria') }}" class="btn btn-sm btn-outline-primary">Ver historial completo</a>
-            </div>
-            <div class="table-responsive">
-                <table class="table table-sm table-hover mb-0 small align-middle">
-                    <thead class="table-light">
-                        <tr>
-                            <th class="ps-3">Fecha</th>
-                            <th>Código</th>
-                            <th>Inventario</th>
-                            <th class="text-end">Peso anterior</th>
-                            <th class="text-end pe-3">Peso nuevo</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for c in ultimos_cambios %}
-                        <tr>
-                            <td class="ps-3">{{ c.fecha.strftime('%d/%m/%y %H:%M') }}</td>
-                            <td class="fw-bold text-primary">{{ c.sku }}</td>
-                            <td><span class="badge bg-light text-dark border">{{ c.inventario }}</span></td>
-                            <td class="text-end">{{ c.valor_anterior }}</td>
-                            <td class="text-end pe-3 fw-bold">{{ c.valor_nuevo }}</td>
-                        </tr>
-                        {% else %}
-                        <tr><td colspan="5" class="text-center text-muted py-4">Todavía no se ha sincronizado ningún peso.</td></tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-12 col-lg-5">
-        <div class="card border-0 shadow-sm">
-            <div class="card-header bg-white fw-bold">
-                <i class="bi bi-lightbulb-fill text-warning"></i> Guía y recomendaciones
-            </div>
-            <div class="card-body small">
-                <p class="fw-bold mb-1">¿Qué hace esta sección hoy?</p>
-                <ul class="ps-3 mb-3">
-                    <li>El Maestro es la única fuente para <strong>crear</strong> productos nuevos (botón "Nuevo Producto" arriba, o subiendo el Excel) — Anclajes e ImportBolts ya no crean productos por su cuenta, solo editan.</li>
-                    <li>Al crear un producto aquí (código, descripción, calidad, familia y peso), se reparte automáticamente a Anclajes e ImportBolts con stock en 0.</li>
-                    <li>Lee la hoja <code>MAESTROV2</code> de tu Excel Maestro y usa <strong>NUEVO CODIGO</strong> como llave (mismo código que <code>sku</code> en ambos inventarios).</li>
-                    <li>Si el código ya existe, actualiza el <strong>Peso Nominal (Kg)</strong> donde sea distinto (Maestro y cada inventario que lo tenga). Si no existe en ningún lado, lo <strong>crea</strong> — igual que el botón manual.</li>
-                    <li>Cada cambio y cada creación queda en el historial (código, inventario, antes/después, fecha, usuario) para auditar qué se tocó.</li>
-                    <li>Un peso vacío o en 0 en el Maestro <strong>no borra</strong> el peso que ya tenías guardado.</li>
-                    <li>Descripción, calidad y familia de un código YA existente solo se avisan si difieren del Excel — no se sobreescriben solas, para no pisar una corrección manual que ya hiciste.</li>
-                </ul>
-
-                <p class="fw-bold mb-1">Cómo te recomiendo usarlo bien</p>
-                <ul class="ps-3 mb-3">
-                    <li>Mantén <strong>NUEVO CODIGO</strong> como el código único y definitivo — evita reutilizar <code>CODIGO ORIGEN</code>/<code>CODIGO1.1</code> para nada nuevo, son solo referencia histórica.</li>
-                    <li>Súbelo después de cada actualización real del Excel Maestro (por ejemplo, cuando el área de costos/ingeniería cierre una revisión de pesos), no en cada venta o movimiento diario.</li>
-                    <li>En la vista previa, revisa con calma cualquier fila marcada con advertencia (código parecido a uno existente o descripción repetida) antes de confirmar — es la oportunidad de corregir un error de tipeo en el Excel sin haber creado nada todavía.</li>
-                    <li>Después de confirmar, entra a cada inventario y completa Stock Mínimo, Precio y Fotos de los productos recién creados antes de venderlos.</li>
-                    <li>Antes de una subida grande, puedes descargar el respaldo JSON completo del sistema (en la Zona de Administración) por si necesitas revertir algo.</li>
-                </ul>
-
-                <p class="fw-bold mb-1">Qué más se le podría agregar más adelante</p>
-                <ul class="ps-3 mb-0">
-                    <li><strong>Exportar</strong> un Excel comparativo: Maestro + estado actual en Anclajes/ImportBolts + diferencias, ordenado por código, listo para revisión o para reemplazar al Excel Maestro.</li>
-                    <li><strong>Usar el Código de Barras</strong> del Maestro para habilitar lectura con lector de código de barras en el picking o en auditoría física.</li>
-                    <li><strong>Guardar las bandas de precio</strong> (Mínimo/Medio/Máximo) del Maestro como referencia al momento de cotizar, sin que reemplacen el precio real que ya manejas.</li>
-                </ul>
-            </div>
-        </div>
-    </div>
-</div>
-
-<div class="card border-0 shadow-sm mt-3">
+<div class="card border-0 shadow-sm mb-3">
     <div class="card-header bg-white fw-bold d-flex justify-content-between align-items-center flex-wrap gap-2">
         <span><i class="bi bi-collection"></i> Catálogo Maestro <span class="badge bg-light text-dark border">{{ total_maestro }}</span></span>
     </div>
@@ -222,6 +109,120 @@
             </ul>
         </div>
         {% endif %}
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-12 col-lg-7">
+
+        <div class="card border-0 shadow-sm mb-3">
+            <div class="card-header bg-white fw-bold">
+                <i class="bi bi-upload"></i> Subir Excel Maestro
+            </div>
+            <div class="card-body">
+                <p class="text-muted small mb-3">
+                    Sube el Excel Maestro completo (el que tiene varias hojas). El sistema busca automáticamente
+                    la hoja <code>MAESTROV2</code> y compara cada <strong>NUEVO CODIGO</strong> contra el Maestro y
+                    contra Anclajes e ImportBolts. Si el código ya existe, <strong>actualiza el Peso Nominal (Kg)</strong>
+                    donde sea distinto (descripción/calidad/familia solo se avisan, no se sobreescriben solas). Si el
+                    código <strong>no existe en ningún lado</strong>, primero te muestra una <strong>vista previa</strong>
+                    con lo que va a crear — con avisos si un código se parece mucho a uno que ya existe (posible error
+                    de tipeo), si una descripción se repite, o si hay códigos repetidos en el mismo archivo — y recién
+                    se crea (en el Maestro y repartido a ambos inventarios con stock en 0) cuando tú lo confirmas.
+                </p>
+                <form method="POST" action="{{ url_for('admin_maestro_importar') }}" enctype="multipart/form-data"
+                      onsubmit="document.getElementById('btnImportarMaestro').disabled = true; document.getElementById('btnImportarMaestro').innerHTML = '<span class=\'spinner-border spinner-border-sm me-2\'></span> Analizando...';">
+                    <div class="mb-3">
+                        <input type="file" name="archivo_maestro" class="form-control" accept=".xlsx,.xls" required>
+                    </div>
+                    <button type="submit" id="btnImportarMaestro" class="btn btn-primary">
+                        <i class="bi bi-search"></i> Analizar y ver vista previa
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        {% if info_maestro %}
+        <div class="alert py-2 shadow-sm d-flex align-items-center mb-3 border-0" style="background-color: #e6f0fa; border-left: 4px solid var(--theme-primary, #0F172A) !important;">
+            <i class="bi bi-info-circle-fill fs-5 me-3" style="color: var(--theme-primary, #0F172A);"></i>
+            <div>
+                <h6 class="mb-0 fw-bold" style="color: var(--theme-primary, #0F172A);">Última sincronización del Maestro</h6>
+                <small class="text-muted">
+                    {{ info_maestro.updated_at.strftime('%d/%m/%Y a las %H:%M') }} por <strong>{{ info_maestro.updated_by }}</strong>
+                </small>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white fw-bold d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-clock-history"></i> Últimos cambios de peso</span>
+                <a href="{{ url_for('admin_maestro_auditoria') }}" class="btn btn-sm btn-outline-primary">Ver historial completo</a>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm table-hover mb-0 small align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="ps-3">Fecha</th>
+                            <th>Código</th>
+                            <th>Inventario</th>
+                            <th class="text-end">Peso anterior</th>
+                            <th class="text-end pe-3">Peso nuevo</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for c in ultimos_cambios %}
+                        <tr>
+                            <td class="ps-3">{{ c.fecha.strftime('%d/%m/%y %H:%M') }}</td>
+                            <td class="fw-bold text-primary">{{ c.sku }}</td>
+                            <td><span class="badge bg-light text-dark border">{{ c.inventario }}</span></td>
+                            <td class="text-end">{{ c.valor_anterior }}</td>
+                            <td class="text-end pe-3 fw-bold">{{ c.valor_nuevo }}</td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="5" class="text-center text-muted py-4">Todavía no se ha sincronizado ningún peso.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-lg-5">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white fw-bold">
+                <i class="bi bi-lightbulb-fill text-warning"></i> Guía y recomendaciones
+            </div>
+            <div class="card-body small">
+                <p class="fw-bold mb-1">¿Qué hace esta sección hoy?</p>
+                <ul class="ps-3 mb-3">
+                    <li>El Maestro es la única fuente para <strong>crear</strong> productos nuevos (botón "Nuevo Producto" arriba, o subiendo el Excel) — Anclajes e ImportBolts ya no crean productos por su cuenta, solo editan.</li>
+                    <li>Al crear un producto aquí (código, descripción, calidad, familia y peso), se reparte automáticamente a Anclajes e ImportBolts con stock en 0.</li>
+                    <li>Lee la hoja <code>MAESTROV2</code> de tu Excel Maestro y usa <strong>NUEVO CODIGO</strong> como llave (mismo código que <code>sku</code> en ambos inventarios).</li>
+                    <li>Si el código ya existe, actualiza el <strong>Peso Nominal (Kg)</strong> donde sea distinto (Maestro y cada inventario que lo tenga). Si no existe en ningún lado, lo <strong>crea</strong> — igual que el botón manual.</li>
+                    <li>Si un código existe en el Maestro (o en un inventario) pero <strong>no en el otro</strong>, solo se avisa en "Diferencias informativas" — no se crea automáticamente ahí, para no repartir por accidente algo que quizás esté descontinuado a propósito. Si de verdad ya no se usa, lo más simple es sacarlo del Excel Maestro; si sí debería existir en el inventario que le falta, avísale al administrador para completarlo ahí.</li>
+                    <li>Cada cambio y cada creación queda en el historial (código, inventario, antes/después, fecha, usuario) para auditar qué se tocó.</li>
+                    <li>Un peso vacío o en 0 en el Maestro <strong>no borra</strong> el peso que ya tenías guardado.</li>
+                    <li>Descripción, calidad y familia de un código YA existente solo se avisan si difieren del Excel — no se sobreescriben solas, para no pisar una corrección manual que ya hiciste.</li>
+                </ul>
+
+                <p class="fw-bold mb-1">Cómo te recomiendo usarlo bien</p>
+                <ul class="ps-3 mb-3">
+                    <li>Mantén <strong>NUEVO CODIGO</strong> como el código único y definitivo — evita reutilizar <code>CODIGO ORIGEN</code>/<code>CODIGO1.1</code> para nada nuevo, son solo referencia histórica.</li>
+                    <li>Súbelo después de cada actualización real del Excel Maestro (por ejemplo, cuando el área de costos/ingeniería cierre una revisión de pesos), no en cada venta o movimiento diario.</li>
+                    <li>En la vista previa, revisa con calma cualquier fila marcada con advertencia (código parecido a uno existente o descripción repetida) antes de confirmar — es la oportunidad de corregir un error de tipeo en el Excel sin haber creado nada todavía.</li>
+                    <li>Después de confirmar, entra a cada inventario y completa Stock Mínimo, Precio y Fotos de los productos recién creados antes de venderlos.</li>
+                    <li>Antes de una subida grande, puedes descargar el respaldo JSON completo del sistema (en la Zona de Administración) por si necesitas revertir algo.</li>
+                </ul>
+
+                <p class="fw-bold mb-1">Qué más se le podría agregar más adelante</p>
+                <ul class="ps-3 mb-0">
+                    <li><strong>Exportar</strong> un Excel comparativo: Maestro + estado actual en Anclajes/ImportBolts + diferencias, ordenado por código, listo para revisión o para reemplazar al Excel Maestro.</li>
+                    <li><strong>Usar el Código de Barras</strong> del Maestro para habilitar lectura con lector de código de barras en el picking o en auditoría física.</li>
+                    <li><strong>Guardar las bandas de precio</strong> (Mínimo/Medio/Máximo) del Maestro como referencia al momento de cotizar, sin que reemplacen el precio real que ya manejas.</li>
+                </ul>
+            </div>
+        </div>
     </div>
 </div>
 {% endblock %}

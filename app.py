@@ -4782,7 +4782,7 @@ def _procesar_excel_maestro(filepath, usuario_actual, user_id_actual):
     for codigo in creados_skus:
         registros_log.append(MaestroCambioLog(
             fecha=hora_actual, usuario=usuario_actual, lote_id=lote_id, sku=codigo,
-            inventario='MAESTRO+ANCLAJES+IMPORTBOLTS', campo='creacion',
+            inventario='MAESTRO+AMBOS', campo='creacion',
             valor_anterior='', valor_nuevo='Producto nuevo creado y repartido a ambos inventarios (confirmado por el usuario)'
         ))
     if registros_log:
@@ -5097,30 +5097,62 @@ def admin_maestro_nuevo():
     try:
         codigo = request.form.get('sku', '').strip().upper()
         nombre = request.form.get('nombre', '').strip()
-        calidad = request.form.get('calidad', '').strip()
-        familia = request.form.get('familia', '').strip()
+        familia_sel = request.form.get('familia', '').strip()
+        calidad_sel = request.form.get('calidad', '').strip()
+        familia_nueva = request.form.get('familia_nueva', '').strip().upper()
+        calidad_nueva = request.form.get('calidad_nueva', '').strip().upper()
         peso_raw = request.form.get('peso_nominal_kg', '0').strip()
 
         if not codigo:
             flash('⛔ El código es obligatorio.', 'error')
-            return redirect(url_for('admin_maestro_nuevo', familia=familia, calidad=calidad))
+            return redirect(url_for('admin_maestro_nuevo', familia=familia_sel, calidad=calidad_sel))
         if not nombre:
             flash('⛔ La descripción es obligatoria.', 'error')
-            return redirect(url_for('admin_maestro_nuevo', familia=familia, calidad=calidad))
-        if not familia:
+            return redirect(url_for('admin_maestro_nuevo', familia=familia_sel, calidad=calidad_sel))
+        if not familia_sel:
             flash('⛔ La familia es obligatoria.', 'error')
             return redirect(url_for('admin_maestro_nuevo'))
 
-        # Familia y Calidad se eligen de lo que YA existe — aquí no se crean familias ni
-        # calidades nuevas (si hace falta una familia nueva, se gestiona aparte, en Categorías).
-        if familia not in familias:
-            flash(f'⛔ "{familia}" no es una familia existente. Elige una de la lista — si necesitas una '
-                  f'familia nueva, créala primero desde Categorías.', 'error')
-            return redirect(url_for('admin_maestro_nuevo'))
-        if calidad and calidad not in calidades:
-            flash(f'⛔ "{calidad}" no es una calidad ya registrada en el Maestro. Elige una de la lista o '
-                  f'déjala en blanco.', 'error')
-            return redirect(url_for('admin_maestro_nuevo', familia=familia))
+        # Familia: se elige de lo que ya existe, o se crea una nueva con "+ Agregar familia
+        # nueva" — validando primero (sin importar mayúsculas/minúsculas) que no exista ya.
+        familia_es_nueva = False
+        if familia_sel == '__nueva__':
+            if not familia_nueva:
+                flash('⛔ Escribe el nombre de la familia nueva.', 'error')
+                return redirect(url_for('admin_maestro_nuevo'))
+            coincide = next((f for f in familias if f.upper() == familia_nueva), None)
+            if coincide:
+                flash(f'⛔ La familia "{familia_nueva}" ya existe como "{coincide}". Selecciónala de la lista en '
+                      f'vez de crear una nueva.', 'error')
+                return redirect(url_for('admin_maestro_nuevo'))
+            familia = familia_nueva
+            familia_es_nueva = True
+        else:
+            familia = familia_sel
+            if familia not in familias:
+                flash(f'⛔ "{familia}" no es una familia reconocida. Elige una de la lista o usa '
+                      f'"+ Agregar familia nueva".', 'error')
+                return redirect(url_for('admin_maestro_nuevo'))
+
+        # Calidad: igual — de la lista, "+ Agregar calidad nueva" (validada), o en blanco.
+        calidad_es_nueva = False
+        if calidad_sel == '__nueva__':
+            if calidad_nueva:
+                coincide_cal = next((c for c in calidades if c.upper() == calidad_nueva), None)
+                if coincide_cal:
+                    flash(f'⛔ La calidad "{calidad_nueva}" ya existe como "{coincide_cal}". Selecciónala de la '
+                          f'lista en vez de crear una nueva.', 'error')
+                    return redirect(url_for('admin_maestro_nuevo', familia=familia))
+                calidad = calidad_nueva
+                calidad_es_nueva = True
+            else:
+                calidad = ''
+        else:
+            calidad = calidad_sel
+            if calidad and calidad not in calidades:
+                flash(f'⛔ "{calidad}" no es una calidad reconocida. Elige una de la lista, usa '
+                      f'"+ Agregar calidad nueva", o déjala en blanco.', 'error')
+                return redirect(url_for('admin_maestro_nuevo', familia=familia))
 
         if MaestroProducto.query.filter_by(sku=codigo).first():
             flash(f'⛔ El código "{codigo}" ya existe en el Maestro.', 'error')
@@ -5140,6 +5172,12 @@ def admin_maestro_nuevo():
 
         usuario_actual = session.get('username', 'Sistema')
         hora_actual = hora_peru()
+
+        if familia_es_nueva:
+            cache_cat_anclajes = {c.nombre: c.prefijo for c in Category.query.all()}
+            cache_cat_importbolts = {c.nombre: c.prefijo for c in CategoryImportBolts.query.all()}
+            _crear_categoria_si_falta(familia, Category, cache_cat_anclajes)
+            _crear_categoria_si_falta(familia, CategoryImportBolts, cache_cat_importbolts)
 
         nuevo_maestro = MaestroProducto(
             sku=codigo, nombre=nombre, calidad=calidad, familia=familia,

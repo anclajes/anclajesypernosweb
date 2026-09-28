@@ -16,22 +16,34 @@
                     <div class="row g-2 mb-3">
                         <div class="col-6">
                             <label class="form-label fw-bold small text-muted">Familia <span class="text-danger">*</span></label>
-                            <select name="familia" id="selectFamilia" class="form-select" required onchange="buscarProductosSimilares()">
+                            <select name="familia" id="selectFamilia" class="form-select" required onchange="onFamiliaChange()">
                                 <option value="" selected disabled>-- Seleccione --</option>
+                                <option value="__nueva__">+ Agregar familia nueva...</option>
                                 {% for f in familias %}
                                 <option value="{{ f }}" {% if f == familia_preseleccion %}selected{% endif %}>{{ f }}</option>
                                 {% endfor %}
                             </select>
-                            <div class="form-text">Solo familias ya existentes. Si falta una, créala primero desde Categorías.</div>
+                            <div id="cajaFamiliaNueva" class="mt-2 d-none">
+                                <input type="text" name="familia_nueva" id="inputFamiliaNueva" class="form-control"
+                                       placeholder="Nombre de la familia nueva" oninput="this.value = this.value.toUpperCase(); validarFamiliaNueva(); buscarProductosSimilares();">
+                                <div id="familiaNuevaMsg" class="form-text small mt-1"></div>
+                            </div>
+                            <div class="form-text">Elige una existente, o "+ Agregar familia nueva" — se valida que no sea igual a una que ya existe.</div>
                         </div>
                         <div class="col-6">
                             <label class="form-label fw-bold small text-muted">Calidad</label>
-                            <select name="calidad" id="selectCalidad" class="form-select" onchange="buscarProductosSimilares()">
+                            <select name="calidad" id="selectCalidad" class="form-select" onchange="onCalidadChange()">
                                 <option value="" {% if not calidad_preseleccion %}selected{% endif %}>-- Sin especificar --</option>
+                                <option value="__nueva__">+ Agregar calidad nueva...</option>
                                 {% for c in calidades %}
                                 <option value="{{ c }}" {% if c == calidad_preseleccion %}selected{% endif %}>{{ c }}</option>
                                 {% endfor %}
                             </select>
+                            <div id="cajaCalidadNueva" class="mt-2 d-none">
+                                <input type="text" name="calidad_nueva" id="inputCalidadNueva" class="form-control"
+                                       placeholder="Nombre de la calidad nueva" oninput="this.value = this.value.toUpperCase(); validarCalidadNueva(); buscarProductosSimilares();">
+                                <div id="calidadNuevaMsg" class="form-text small mt-1"></div>
+                            </div>
                         </div>
                     </div>
 
@@ -94,7 +106,7 @@
                     <li>Se crea el mismo producto en <strong>Anclajes</strong> y en <strong>ImportBolts</strong>, con <strong>stock en 0</strong>.</li>
                     <li>Stock Mínimo, Precio Unidad, Precio Caja, Ubicación y Fotos <strong>no se piden aquí</strong> porque pueden ser distintos en cada empresa — se completan después entrando a "Editar" el producto en cada inventario.</li>
                     <li>Si el código ya existe (en el Maestro o en algún inventario), el sistema no deja crearlo de nuevo.</li>
-                    <li>Familia y Calidad solo se eligen entre las que ya existen — esta pantalla no crea familias ni calidades nuevas.</li>
+                    <li>Puedes elegir una Familia/Calidad ya existente, o escribir una nueva con "+ Agregar... nueva" — se valida en vivo que no sea igual (sin importar mayúsculas/minúsculas) a una que ya existe, para no crear duplicados por accidente.</li>
                     <li>Al guardar, la página se queda aquí mismo (con la misma Familia/Calidad) para que sigas cargando el siguiente código de la secuencia.</li>
                 </ul>
             </div>
@@ -103,9 +115,82 @@
 </div>
 
 <script>
+const FAMILIAS_EXISTENTES = {{ familias | tojson }};
+const CALIDADES_EXISTENTES = {{ calidades | tojson }};
+
 let timeoutBusquedaCodigo = null;
 let timeoutBusquedaSimilares = null;
 let codigoValido = false;
+let familiaNuevaValida = false;
+let calidadNuevaValida = true; // la calidad nueva es opcional: vacía se considera válida
+
+function onFamiliaChange() {
+    const select = document.getElementById('selectFamilia');
+    const caja = document.getElementById('cajaFamiliaNueva');
+    if (select.value === '__nueva__') {
+        caja.classList.remove('d-none');
+        document.getElementById('inputFamiliaNueva').focus();
+        validarFamiliaNueva();
+    } else {
+        caja.classList.add('d-none');
+        document.getElementById('inputFamiliaNueva').value = '';
+        document.getElementById('familiaNuevaMsg').innerHTML = '';
+        familiaNuevaValida = false; // se revalida solo si vuelve a elegir "nueva"
+    }
+    buscarProductosSimilares();
+}
+
+function onCalidadChange() {
+    const select = document.getElementById('selectCalidad');
+    const caja = document.getElementById('cajaCalidadNueva');
+    if (select.value === '__nueva__') {
+        caja.classList.remove('d-none');
+        document.getElementById('inputCalidadNueva').focus();
+        validarCalidadNueva();
+    } else {
+        caja.classList.add('d-none');
+        document.getElementById('inputCalidadNueva').value = '';
+        document.getElementById('calidadNuevaMsg').innerHTML = '';
+        calidadNuevaValida = true;
+    }
+    buscarProductosSimilares();
+}
+
+function validarFamiliaNueva() {
+    const valor = document.getElementById('inputFamiliaNueva').value.trim();
+    const msg = document.getElementById('familiaNuevaMsg');
+    if (!valor) {
+        msg.innerHTML = '<span class="text-muted">Escribe el nombre de la familia nueva.</span>';
+        familiaNuevaValida = false;
+        return;
+    }
+    const existente = FAMILIAS_EXISTENTES.find(f => f.toUpperCase() === valor.toUpperCase());
+    if (existente) {
+        msg.innerHTML = `<span class="text-danger fw-bold"><i class="bi bi-x-circle-fill"></i> Ya existe como "${existente}" — selecciónala de la lista en vez de crear una nueva.</span>`;
+        familiaNuevaValida = false;
+    } else {
+        msg.innerHTML = '<span class="text-success fw-bold"><i class="bi bi-check-circle-fill"></i> Familia nueva disponible.</span>';
+        familiaNuevaValida = true;
+    }
+}
+
+function validarCalidadNueva() {
+    const valor = document.getElementById('inputCalidadNueva').value.trim();
+    const msg = document.getElementById('calidadNuevaMsg');
+    if (!valor) {
+        msg.innerHTML = '';
+        calidadNuevaValida = true; // vacío es válido (calidad es opcional)
+        return;
+    }
+    const existente = CALIDADES_EXISTENTES.find(c => c.toUpperCase() === valor.toUpperCase());
+    if (existente) {
+        msg.innerHTML = `<span class="text-danger fw-bold"><i class="bi bi-x-circle-fill"></i> Ya existe como "${existente}" — selecciónala de la lista en vez de crear una nueva.</span>`;
+        calidadNuevaValida = false;
+    } else {
+        msg.innerHTML = '<span class="text-success fw-bold"><i class="bi bi-check-circle-fill"></i> Calidad nueva disponible.</span>';
+        calidadNuevaValida = true;
+    }
+}
 
 function onCodigoInput() {
     buscarCodigosSimilares();
@@ -174,11 +259,21 @@ function verificarCodigoExacto() {
     }, 300);
 }
 
+function familiaResuelta() {
+    const select = document.getElementById('selectFamilia').value;
+    return select === '__nueva__' ? document.getElementById('inputFamiliaNueva').value.trim() : select;
+}
+
+function calidadResuelta() {
+    const select = document.getElementById('selectCalidad').value;
+    return select === '__nueva__' ? document.getElementById('inputCalidadNueva').value.trim() : select;
+}
+
 function buscarProductosSimilares() {
     clearTimeout(timeoutBusquedaSimilares);
     timeoutBusquedaSimilares = setTimeout(() => {
-        const familia = document.getElementById('selectFamilia').value;
-        const calidad = document.getElementById('selectCalidad').value;
+        const familia = familiaResuelta();
+        const calidad = calidadResuelta();
         const nombre = document.getElementById('inputNombre').value.trim();
 
         if (!familia && !calidad && nombre.length < 3) {
@@ -226,6 +321,22 @@ function validarAntesDeEnviar(e) {
         e.preventDefault();
         alert('Verifica el código: espera a que confirme "Código disponible" o corrígelo — ya existe o todavía no se ha verificado.');
         return false;
+    }
+    if (document.getElementById('selectFamilia').value === '__nueva__') {
+        validarFamiliaNueva();
+        if (!familiaNuevaValida) {
+            e.preventDefault();
+            alert('Revisa la familia nueva: falta escribirla o ya existe una igual — en ese caso selecciónala de la lista.');
+            return false;
+        }
+    }
+    if (document.getElementById('selectCalidad').value === '__nueva__') {
+        validarCalidadNueva();
+        if (!calidadNuevaValida) {
+            e.preventDefault();
+            alert('Revisa la calidad nueva: ya existe una igual — selecciónala de la lista en vez de crear otra.');
+            return false;
+        }
     }
     return true;
 }
