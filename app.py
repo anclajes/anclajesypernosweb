@@ -5223,6 +5223,94 @@ def admin_maestro_nuevo():
         return redirect(url_for('admin_maestro_nuevo'))
 
 
+@app.route('/admin/maestro/<sku>/eliminar', methods=['POST'])
+def admin_maestro_eliminar(sku):
+    """Borra por completo un código del Maestro y de ambos inventarios (Anclajes e
+    ImportBolts) — pensado para corregir errores de digitación al crear un producto (código
+    mal tipeado, no se parece a nada de su familia, etc). Solo se permite si el código NO
+    tiene NINGÚN rastro de uso real todavía: sin movimientos de Kardex, sin ventas/cotizaciones,
+    sin kits, sin traslados inter-empresa y sin conteos de auditoría — en cualquiera de los dos
+    inventarios. Si tiene aunque sea uno de esos, se bloquea (para eso está "Desactivar")."""
+    if session.get('role') != 'admin':
+        return {'status': 'error', 'msg': 'No autorizado'}, 403
+
+    sku = sku.strip().upper()
+    maestro = MaestroProducto.query.filter_by(sku=sku).first()
+    if not maestro:
+        return {'status': 'error', 'msg': f'"{sku}" no existe en el Maestro.'}, 404
+
+    prod_anclajes = Product.query.filter_by(sku=sku).first()
+    prod_importbolts = ProductImportBolts.query.filter_by(sku=sku).first()
+
+    bloqueos = []
+    if prod_anclajes:
+        n = ProductMovement.query.filter_by(product_id=prod_anclajes.id).count()
+        if n: bloqueos.append(f'{n} movimiento(s) de Kardex en Anclajes')
+        n = OrderDetail.query.filter_by(product_id=prod_anclajes.id).count()
+        if n: bloqueos.append(f'{n} línea(s) de cotización/pedido en Anclajes')
+        n = OrderKitComponent.query.filter_by(product_id=prod_anclajes.id).count()
+        if n: bloqueos.append(f'{n} uso(s) como componente de kit')
+        n = RegistroAuditoria.query.filter_by(product_id=prod_anclajes.id).count()
+        if n: bloqueos.append(f'{n} conteo(s) de auditoría en Anclajes')
+    if prod_importbolts:
+        n = ProductMovementImportBolts.query.filter_by(product_id=prod_importbolts.id).count()
+        if n: bloqueos.append(f'{n} movimiento(s) de Kardex en ImportBolts')
+        n = OrderDetail.query.filter_by(product_id_importbolts=prod_importbolts.id).count()
+        if n: bloqueos.append(f'{n} línea(s) de cotización/pedido en ImportBolts')
+        n = IntercompanyTransfer.query.filter_by(product_importbolts_id=prod_importbolts.id).count()
+        if n: bloqueos.append(f'{n} traslado(s) inter-empresa')
+        n = RegistroAuditoria.query.filter_by(product_importbolts_id=prod_importbolts.id).count()
+        if n: bloqueos.append(f'{n} conteo(s) de auditoría en ImportBolts')
+
+    if bloqueos:
+        return {'status': 'error', 'msg': f'No se puede eliminar "{sku}": tiene ' + '; '.join(bloqueos) +
+                                           '. Ya no se considera un simple error de digitación — usa "Desactivar" '
+                                           'en cada inventario en vez de borrarlo, para no perder ese historial.'}
+
+    try:
+        usuario_actual = session.get('username', 'Sistema')
+        hora_actual = hora_peru()
+
+        # Limpieza de fotos (DB + S3) en ambos inventarios, para no dejar huérfanos.
+        if prod_anclajes:
+            for foto in ProductImage.query.filter_by(product_id=prod_anclajes.id).all():
+                try:
+                    s3_client.delete_object(Bucket=S3_BUCKET_NAME, Key=foto.s3_key)
+                except Exception as e:
+                    print(f"Aviso: no se pudo borrar foto de S3 ({foto.s3_key}): {e}")
+                db.session.delete(foto)
+        if prod_importbolts:
+            for foto in ProductImage.query.filter_by(product_importbolts_id=prod_importbolts.id).all():
+                try:
+                    s3_client.delete_object(Bucket=S3_BUCKET_NAME, Key=foto.s3_key)
+                except Exception as e:
+                    print(f"Aviso: no se pudo borrar foto de S3 ({foto.s3_key}): {e}")
+                db.session.delete(foto)
+
+        familia_log, calidad_log = maestro.familia, maestro.calidad
+
+        if prod_anclajes:
+            db.session.delete(prod_anclajes)
+        if prod_importbolts:
+            db.session.delete(prod_importbolts)
+        db.session.delete(maestro)
+
+        db.session.add(MaestroCambioLog(
+            fecha=hora_actual, usuario=usuario_actual, lote_id=f"ELIM-{hora_actual.strftime('%Y%m%d%H%M%S')}",
+            sku=sku, inventario='MAESTRO+AMBOS', campo='eliminacion',
+            valor_anterior='Producto eliminado del Maestro y de ambos inventarios (sin movimientos ni ventas).',
+            valor_nuevo='', familia=familia_log, calidad=calidad_log,
+        ))
+
+        registrar_log(f"Eliminó el producto {sku} del Maestro (sin movimientos ni ventas) y de ambos inventarios",
+                      "bi-trash-fill", "text-danger")
+        db.session.commit()
+        return {'status': 'success', 'msg': f'Producto "{sku}" eliminado del Maestro y de ambos inventarios.'}
+    except Exception as e:
+        db.session.rollback()
+        return {'status': 'error', 'msg': f'Error al eliminar: {str(e)}'}, 500
+
+
 # 2. ACTUALIZAR NUEVO PRODUCTO (Para responder JSON y no borrar datos)
 # --- FUNCIÓN NUEVO PRODUCTO (Actualizada) ---
 @app.route('/producto/nuevo', methods=['POST'])

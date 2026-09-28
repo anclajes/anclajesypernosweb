@@ -67,11 +67,12 @@
                     <tr>
                         <th>Código</th><th>Descripción</th><th>Calidad</th><th>Familia</th>
                         <th class="text-end">Peso Nominal (Kg)</th><th>Origen</th><th>Creado por</th>
+                        {% if session.get('role') == 'admin' %}<th class="text-end pe-3">Acciones</th>{% endif %}
                     </tr>
                 </thead>
                 <tbody>
                     {% for m in productos %}
-                    <tr>
+                    <tr id="fila-maestro-{{ m.sku }}">
                         <td class="fw-bold text-primary">{{ m.sku }}</td>
                         <td>{{ m.nombre }}</td>
                         <td>{{ m.calidad or '-' }}</td>
@@ -79,9 +80,17 @@
                         <td class="text-end">{{ '%.4f'|format(m.peso_nominal_kg or 0) }}</td>
                         <td><span class="badge bg-light text-dark border">{{ m.origen }}</span></td>
                         <td class="text-muted">{{ m.creado_por }}<br><small>{{ m.fecha_creacion.strftime('%d/%m/%y') if m.fecha_creacion else '' }}</small></td>
+                        {% if session.get('role') == 'admin' %}
+                        <td class="text-end pe-3">
+                            <button class="btn btn-sm btn-outline-danger" title="Eliminar (solo si no tiene movimientos ni ventas en ningún inventario)"
+                                    onclick="eliminarProductoMaestro('{{ m.sku }}')">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </td>
+                        {% endif %}
                     </tr>
                     {% else %}
-                    <tr><td colspan="7" class="text-center text-muted py-4">No hay productos que coincidan con este filtro.</td></tr>
+                    <tr><td colspan="{{ 8 if session.get('role') == 'admin' else 7 }}" class="text-center text-muted py-4">No hay productos que coincidan con este filtro.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>
@@ -182,6 +191,8 @@
                             <td>
                                 {% if c.campo == 'creacion' %}
                                 <span class="badge bg-success">Creación</span>
+                                {% elif c.campo == 'eliminacion' %}
+                                <span class="badge bg-danger">Eliminación</span>
                                 {% else %}
                                 <span class="badge bg-info text-dark">Peso</span>
                                 {% endif %}
@@ -192,6 +203,8 @@
                             <td style="max-width: 260px;">
                                 {% if c.campo == 'creacion' %}
                                 <span class="text-muted">{{ c.valor_nuevo }}</span>
+                                {% elif c.campo == 'eliminacion' %}
+                                <span class="text-danger">{{ c.valor_anterior }}</span>
                                 {% else %}
                                 {{ c.valor_anterior }} <i class="bi bi-arrow-right mx-1"></i> <span class="fw-bold">{{ c.valor_nuevo }}</span>
                                 {% endif %}
@@ -221,6 +234,7 @@
                     <li>Si el código ya existe, actualiza el <strong>Peso Nominal (Kg)</strong> donde sea distinto (Maestro y cada inventario que lo tenga). Si no existe en ningún lado, lo <strong>crea</strong> — igual que el botón manual.</li>
                     <li>Si un código existe en el Maestro (o en un inventario) pero <strong>no en el otro</strong>, solo se avisa en "Diferencias informativas" — no se crea automáticamente ahí, para no repartir por accidente algo que quizás esté descontinuado a propósito. Si de verdad ya no se usa, lo más simple es sacarlo del Excel Maestro; si sí debería existir en el inventario que le falta, avísale al administrador para completarlo ahí.</li>
                     <li>Cada cambio y cada creación queda en el historial (código, familia/calidad, inventario, antes/después, fecha, usuario) para auditar qué se tocó — incluye tanto las creaciones manuales ("Nuevo Producto") como las creadas al confirmar un Excel Maestro.</li>
+                    <li>Si te equivocaste al tipear un código nuevo (no se parece a nada de su familia, por ejemplo), el <strong>admin</strong> puede eliminarlo desde la tabla (ícono <i class="bi bi-trash text-danger"></i>) — pero solo mientras ese código no tenga <strong>ningún</strong> movimiento de Kardex, venta, kit, traslado ni conteo de auditoría en Anclajes o ImportBolts. Si ya tiene algo de eso, usa "Desactivar" en el inventario en vez de borrarlo, para no perder ese historial.</li>
                     <li>Un peso vacío o en 0 en el Maestro <strong>no borra</strong> el peso que ya tenías guardado.</li>
                     <li>Descripción, calidad y familia de un código YA existente solo se avisan si difieren del Excel — no se sobreescriben solas, para no pisar una corrección manual que ya hiciste.</li>
                 </ul>
@@ -244,4 +258,36 @@
         </div>
     </div>
 </div>
+
+{% if session.get('role') == 'admin' %}
+<script>
+function eliminarProductoMaestro(sku) {
+    Swal.fire({
+        title: `¿Eliminar "${sku}" del Maestro?`,
+        html: 'Se borra del Maestro y de <b>ambos inventarios</b> (Anclajes e ImportBolts).<br>' +
+              'Solo funciona si el código todavía no tiene movimientos de Kardex, ventas/cotizaciones, kits, ' +
+              'traslados inter-empresa ni conteos de auditoría en ninguno de los dos inventarios — pensado para ' +
+              'corregir un error de digitación recién creado.<br><br><strong>Esta acción no se puede deshacer.</strong>',
+        icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Sí, eliminar'
+    }).then(result => {
+        if (!result.isConfirmed) return;
+        fetch(`/admin/maestro/${encodeURIComponent(sku)}/eliminar`, { method: 'POST' })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status !== 'success') {
+                    Swal.fire({ icon: 'error', title: 'No se pudo eliminar', text: data.msg, width: 600 });
+                    return;
+                }
+                const fila = document.getElementById(`fila-maestro-${sku}`);
+                if (fila) fila.remove();
+                Swal.fire({ icon: 'success', title: 'Eliminado', text: data.msg, timer: 2200, showConfirmButton: false });
+            })
+            .catch(err => {
+                console.error('Error en eliminarProductoMaestro:', err);
+                Swal.fire('Error', 'No se pudo comunicar con el servidor.', 'error');
+            });
+    });
+}
+</script>
+{% endif %}
 {% endblock %}

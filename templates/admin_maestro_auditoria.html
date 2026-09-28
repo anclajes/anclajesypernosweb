@@ -53,6 +53,8 @@
                     <td>
                         {% if c.campo == 'creacion' %}
                         <span class="badge bg-success">Creación</span>
+                        {% elif c.campo == 'eliminacion' %}
+                        <span class="badge bg-danger">Eliminación</span>
                         {% else %}
                         <span class="badge bg-info text-dark">{{ c.campo }}</span>
                         {% endif %}
