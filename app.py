@@ -4779,11 +4779,12 @@ def _procesar_excel_maestro(filepath, usuario_actual, user_id_actual):
             inventario='MAESTRO', campo='peso_nominal_kg',
             valor_anterior=str(c['anterior']), valor_nuevo=str(c['nuevo'])
         ))
-    for codigo in creados_skus:
+    for c in analisis['creados']:
         registros_log.append(MaestroCambioLog(
-            fecha=hora_actual, usuario=usuario_actual, lote_id=lote_id, sku=codigo,
+            fecha=hora_actual, usuario=usuario_actual, lote_id=lote_id, sku=c['sku'],
             inventario='MAESTRO+AMBOS', campo='creacion',
-            valor_anterior='', valor_nuevo='Producto nuevo creado y repartido a ambos inventarios (confirmado por el usuario)'
+            valor_anterior='', valor_nuevo='Producto nuevo creado por importación de Excel Maestro (repartido a ambos inventarios).',
+            familia=c['familia'], calidad=c['calidad'],
         ))
     if registros_log:
         db.session.add_all(registros_log)
@@ -5197,6 +5198,13 @@ def admin_maestro_nuevo():
             peso_kg=peso, stock_actual=0, stock_minimo=10,
             precio_unidad=0.0, precio_docena=0.0, precio_caja=0.0, costo_referencial=0.0,
             fecha_actualizacion=hora_actual, actualizado_por=usuario_actual,
+        ))
+
+        db.session.add(MaestroCambioLog(
+            fecha=hora_actual, usuario=usuario_actual, lote_id=f"MANUAL-{hora_actual.strftime('%Y%m%d%H%M%S')}",
+            sku=codigo, inventario='MAESTRO+AMBOS', campo='creacion',
+            valor_anterior='', valor_nuevo='Producto nuevo creado manualmente desde el Maestro (repartido a ambos inventarios).',
+            familia=familia, calidad=calidad,
         ))
 
         registrar_log(f"Creó producto {codigo} desde el Maestro (repartido a Anclajes e ImportBolts)",
@@ -9379,7 +9387,12 @@ def admin_catalogos():
             valores.sort(key=lambda v: v.valor)
         catalogos[t] = valores
     campos = CampoPersonalizado.query.order_by(CampoPersonalizado.orden, CampoPersonalizado.id).all()
+    motivos_entrada = MotivoMovimiento.query.filter_by(tipo='ENTRADA').order_by(MotivoMovimiento.nombre).all()
+    motivos_salida = MotivoMovimiento.query.filter_by(tipo='SALIDA').order_by(MotivoMovimiento.nombre).all()
+    presentaciones = Presentacion.query.order_by(Presentacion.nombre).all()
     return render_template('admin_catalogos.html', catalogos=catalogos, campos=campos,
+                           motivos_entrada=motivos_entrada, motivos_salida=motivos_salida,
+                           presentaciones=presentaciones,
                            fotos_obligatorias=_fotos_auditoria_obligatorias())
 
 
@@ -9438,6 +9451,111 @@ def admin_catalogo_valor_eliminar(val_id):
 
     registrar_log(f"Eliminó '{v.valor}' del catálogo {v.tipo}", "bi-trash-fill", "text-danger")
     db.session.delete(v)
+    db.session.commit()
+    return {'status': 'success'}
+
+
+# ============================================
+# MOTIVOS DE MOVIMIENTO Y PRESENTACIONES (compartidos entre Anclajes e ImportBolts):
+# editar (renombrar), activar/desactivar y eliminar — para poder limpiar duplicados por
+# error de tipeo (p. ej. "CAJA X 8000" vs "CAJA POR 8000 UNIDADES"). Crear uno nuevo ya
+# existía (/api/motivos_movimiento/nuevo y /api/presentaciones/nueva, ambos solo admin).
+# ============================================
+
+@app.route('/admin/motivos/<int:motivo_id>/editar', methods=['POST'])
+def admin_motivo_editar(motivo_id):
+    if session.get('role') != 'admin': return {'status': 'error', 'msg': 'No autorizado'}, 403
+    m = MotivoMovimiento.query.get_or_404(motivo_id)
+    nombre_nuevo = request.form.get('nombre', '').strip().upper()
+    if not nombre_nuevo:
+        return {'status': 'error', 'msg': 'Escriba un nombre.'}
+    if len(nombre_nuevo) > 100:
+        return {'status': 'error', 'msg': 'El nombre es demasiado largo (máximo 100 caracteres).'}
+    existente = MotivoMovimiento.query.filter(
+        MotivoMovimiento.tipo == m.tipo, MotivoMovimiento.id != m.id,
+        db.func.upper(MotivoMovimiento.nombre) == nombre_nuevo
+    ).first()
+    if existente:
+        return {'status': 'error', 'msg': f'Ya existe un motivo "{existente.nombre}" para {m.tipo.lower()}s. '
+                                           f'Desactiva o elimina el duplicado en vez de crear otro igual.'}
+    anterior = m.nombre
+    m.nombre = nombre_nuevo
+    registrar_log(f"Renombró el motivo '{anterior}' a '{nombre_nuevo}' ({m.tipo})", "bi-pencil-fill", "text-primary")
+    db.session.commit()
+    return {'status': 'success', 'nombre': m.nombre}
+
+
+@app.route('/admin/motivos/<int:motivo_id>/toggle', methods=['POST'])
+def admin_motivo_toggle(motivo_id):
+    if session.get('role') != 'admin': return {'status': 'error'}, 403
+    m = MotivoMovimiento.query.get_or_404(motivo_id)
+    m.activo = not m.activo
+    registrar_log(f"{'Activó' if m.activo else 'Desactivó'} el motivo '{m.nombre}' ({m.tipo})", "bi-tag-fill", "text-info")
+    db.session.commit()
+    return {'status': 'success', 'activo': m.activo}
+
+
+@app.route('/admin/motivos/<int:motivo_id>/eliminar', methods=['POST'])
+def admin_motivo_eliminar(motivo_id):
+    if session.get('role') != 'admin': return {'status': 'error', 'msg': 'No autorizado'}, 403
+    m = MotivoMovimiento.query.get_or_404(motivo_id)
+    if m.es_predeterminado:
+        return {'status': 'error', 'msg': 'Este motivo es predeterminado del sistema y no se puede eliminar. Puede desactivarlo en su lugar.'}
+    usos = (ProductMovement.query.filter_by(motivo_id=m.id).count()
+            + ProductMovementImportBolts.query.filter_by(motivo_id=m.id).count())
+    if usos > 0:
+        return {'status': 'error', 'msg': f'Este motivo ya se usó en {usos} movimiento(s) del Kardex — no se puede '
+                                           f'eliminar sin perder esa referencia. Desactívalo en su lugar (deja de '
+                                           f'aparecer para movimientos nuevos, pero el historial no se toca).'}
+    registrar_log(f"Eliminó el motivo '{m.nombre}' ({m.tipo})", "bi-trash-fill", "text-danger")
+    db.session.delete(m)
+    db.session.commit()
+    return {'status': 'success'}
+
+
+@app.route('/admin/presentaciones/<int:pres_id>/editar', methods=['POST'])
+def admin_presentacion_editar(pres_id):
+    if session.get('role') != 'admin': return {'status': 'error', 'msg': 'No autorizado'}, 403
+    p = Presentacion.query.get_or_404(pres_id)
+    nombre_nuevo = request.form.get('nombre', '').strip().upper()
+    if not nombre_nuevo:
+        return {'status': 'error', 'msg': 'Escriba un nombre.'}
+    if len(nombre_nuevo) > 50:
+        return {'status': 'error', 'msg': 'El nombre es demasiado largo (máximo 50 caracteres).'}
+    existente = Presentacion.query.filter(
+        Presentacion.id != p.id, db.func.upper(Presentacion.nombre) == nombre_nuevo
+    ).first()
+    if existente:
+        return {'status': 'error', 'msg': f'Ya existe "{existente.nombre}". Desactiva o elimina el duplicado en '
+                                           f'vez de crear otro igual.'}
+    anterior = p.nombre
+    p.nombre = nombre_nuevo
+    registrar_log(f"Renombró la presentación '{anterior}' a '{nombre_nuevo}'", "bi-pencil-fill", "text-primary")
+    db.session.commit()
+    return {'status': 'success', 'nombre': p.nombre}
+
+
+@app.route('/admin/presentaciones/<int:pres_id>/toggle', methods=['POST'])
+def admin_presentacion_toggle(pres_id):
+    if session.get('role') != 'admin': return {'status': 'error'}, 403
+    p = Presentacion.query.get_or_404(pres_id)
+    p.activo = not p.activo
+    registrar_log(f"{'Activó' if p.activo else 'Desactivó'} la presentación '{p.nombre}'", "bi-tag-fill", "text-info")
+    db.session.commit()
+    return {'status': 'success', 'activo': p.activo}
+
+
+@app.route('/admin/presentaciones/<int:pres_id>/eliminar', methods=['POST'])
+def admin_presentacion_eliminar(pres_id):
+    if session.get('role') != 'admin': return {'status': 'error', 'msg': 'No autorizado'}, 403
+    p = Presentacion.query.get_or_404(pres_id)
+    if p.es_predeterminado:
+        return {'status': 'error', 'msg': 'Esta presentación es predeterminada del sistema y no se puede eliminar. Puede desactivarla en su lugar.'}
+    # 'presentacion' se guarda como texto suelto en cada movimiento (no es una llave foránea),
+    # así que eliminarla del catálogo nunca rompe el historial — solo deja de ofrecerse para
+    # movimientos nuevos.
+    registrar_log(f"Eliminó la presentación '{p.nombre}'", "bi-trash-fill", "text-danger")
+    db.session.delete(p)
     db.session.commit()
     return {'status': 'success'}
 
@@ -9880,6 +9998,21 @@ def fix_auditoria_columnas():
             db.session.commit()
 
         return "<h2>✅ Módulo de Auditoría actualizado: columnas de snapshot 'antes de aplicar' agregadas correctamente.</h2>"
+    except Exception as e:
+        db.session.rollback()
+        return f"<h2>Error: {str(e)}</h2>"
+
+
+@app.route('/fix_maestro_cambio_log_extra_2026')
+def fix_maestro_cambio_log_extra():
+    if session.get('role') != 'admin':
+        return "Acceso denegado", 403
+    try:
+        with db.engine.connect() as conn:
+            conn.execute(text("ALTER TABLE maestro_cambio_log ADD COLUMN IF NOT EXISTS familia VARCHAR(200)"))
+            conn.execute(text("ALTER TABLE maestro_cambio_log ADD COLUMN IF NOT EXISTS calidad VARCHAR(200)"))
+            conn.commit()
+        return "<h2>✅ Auditoría del Maestro actualizada: columnas de familia y calidad agregadas correctamente.</h2>"
     except Exception as e:
         db.session.rollback()
         return f"<h2>Error: {str(e)}</h2>"

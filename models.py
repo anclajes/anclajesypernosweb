@@ -743,6 +743,8 @@ class MaestroCambioLog(db.Model):
     campo = db.Column(db.String(30), default='peso_kg')
     valor_anterior = db.Column(db.String(100))
     valor_nuevo = db.Column(db.String(100))
+    familia = db.Column(db.String(200), nullable=True)
+    calidad = db.Column(db.String(200), nullable=True)
 
 
 class MaestroProducto(db.Model):

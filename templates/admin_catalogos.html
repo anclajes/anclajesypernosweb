@@ -45,6 +45,8 @@
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-UNIDAD_MEDIDA">Unidades</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-ANAQUEL">Anaqueles</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-NICHO">Nichos</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-motivos">Motivos de Movimiento (Kardex)</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-presentaciones">Presentaciones (Kardex)</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-campos">Campos Personalizados</button></li>
 </ul>
 
@@ -90,6 +92,101 @@
         </div>
     </div>
     {% endfor %}
+
+    <div class="tab-pane fade" id="tab-motivos">
+        <div class="alert py-2 shadow-sm mb-3 border-0" style="background-color: #e6f0fa; border-left: 4px solid var(--theme-primary, #0F172A) !important;">
+            <i class="bi bi-info-circle-fill"></i> Estos motivos son <strong>compartidos entre Anclajes e ImportBolts</strong> —
+            se usan al registrar un movimiento en el Kardex de cualquiera de los dos inventarios. Renombrar o desactivar uno
+            aquí no cambia el historial ya registrado, solo las opciones que se ofrecen de ahora en adelante.
+        </div>
+        <div class="row g-3">
+            {% for tipo, titulo, lista in [('ENTRADA', 'Motivos de Entrada', motivos_entrada), ('SALIDA', 'Motivos de Salida', motivos_salida)] %}
+            <div class="col-12 col-lg-6">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header fw-bold">{{ titulo }}</div>
+                    <div class="card-body">
+                        <div class="d-flex flex-column flex-sm-row gap-2 mb-3">
+                            <input type="text" class="form-control form-control-sm text-uppercase" id="nuevo_motivo_{{ tipo }}"
+                                   placeholder="Nuevo motivo de {{ 'entrada' if tipo == 'ENTRADA' else 'salida' }}..."
+                                   onkeydown="if(event.key==='Enter'){event.preventDefault(); agregarMotivo('{{ tipo }}');}">
+                            <button class="btn btn-sm btn-primary flex-shrink-0" onclick="agregarMotivo('{{ tipo }}')"><i class="bi bi-plus-lg"></i> Agregar</button>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover mb-0" id="tabla_motivo_{{ tipo }}">
+                                <thead><tr><th>Nombre</th><th class="text-center">Estado</th><th class="text-end">Acciones</th></tr></thead>
+                                <tbody>
+                                    {% for m in lista %}
+                                    <tr id="fila-motivo-{{ m.id }}">
+                                        <td id="nombre-motivo-{{ m.id }}">{{ m.nombre }} {% if m.es_predeterminado %}<span class="badge bg-light text-muted border ms-1" style="font-size:.65rem;">predeterminado</span>{% endif %}</td>
+                                        <td class="text-center" id="estado-motivo-{{ m.id }}">
+                                            {% if m.activo %}<span class="badge bg-success">Activo</span>{% else %}<span class="badge bg-secondary">Inactivo</span>{% endif %}
+                                        </td>
+                                        <td class="text-end text-nowrap">
+                                            <button class="btn btn-sm btn-outline-primary" onclick="editarMotivo({{ m.id }})" title="Renombrar"><i class="bi bi-pencil-fill"></i></button>
+                                            <button class="btn btn-sm btn-outline-secondary" onclick="toggleMotivo({{ m.id }})" title="Activar/Desactivar">
+                                                <i class="bi {{ 'bi-toggle-on' if m.activo else 'bi-toggle-off' }}" id="icono-motivo-{{ m.id }}"></i>
+                                            </button>
+                                            {% if not m.es_predeterminado %}
+                                            <button class="btn btn-sm btn-outline-danger" onclick="eliminarMotivo({{ m.id }})" title="Eliminar"><i class="bi bi-trash"></i></button>
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                    {% else %}
+                                    <tr id="fila-vacia-motivo-{{ tipo }}"><td colspan="3" class="text-center text-muted py-3">Sin motivos aún.</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="tab-pane fade" id="tab-presentaciones">
+        <div class="alert py-2 shadow-sm mb-3 border-0" style="background-color: #e6f0fa; border-left: 4px solid var(--theme-primary, #0F172A) !important;">
+            <i class="bi bi-info-circle-fill"></i> Igual que los motivos: se comparten entre Anclajes e ImportBolts. Si ves
+            duplicados por error de tipeo (por ejemplo "CAJA X 8000" y "CAJA POR 8000 UNIDADES"), renombra uno para que
+            coincida con el otro, o desactiva/elimina el que sobra.
+        </div>
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="d-flex flex-column flex-sm-row gap-2 mb-3">
+                    <input type="text" class="form-control form-control-sm text-uppercase" id="nueva_presentacion"
+                           placeholder="Nueva presentación..."
+                           onkeydown="if(event.key==='Enter'){event.preventDefault(); agregarPresentacion();}">
+                    <button class="btn btn-sm btn-primary flex-shrink-0" onclick="agregarPresentacion()"><i class="bi bi-plus-lg"></i> Agregar</button>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0" id="tabla_presentaciones">
+                        <thead><tr><th>Nombre</th><th class="text-center">Estado</th><th class="text-end">Acciones</th></tr></thead>
+                        <tbody>
+                            {% for p in presentaciones %}
+                            <tr id="fila-presentacion-{{ p.id }}">
+                                <td id="nombre-presentacion-{{ p.id }}">{{ p.nombre }} {% if p.es_predeterminado %}<span class="badge bg-light text-muted border ms-1" style="font-size:.65rem;">predeterminado</span>{% endif %}</td>
+                                <td class="text-center" id="estado-presentacion-{{ p.id }}">
+                                    {% if p.activo %}<span class="badge bg-success">Activo</span>{% else %}<span class="badge bg-secondary">Inactivo</span>{% endif %}
+                                </td>
+                                <td class="text-end text-nowrap">
+                                    <button class="btn btn-sm btn-outline-primary" onclick="editarPresentacion({{ p.id }})" title="Renombrar"><i class="bi bi-pencil-fill"></i></button>
+                                    <button class="btn btn-sm btn-outline-secondary" onclick="togglePresentacion({{ p.id }})" title="Activar/Desactivar">
+                                        <i class="bi {{ 'bi-toggle-on' if p.activo else 'bi-toggle-off' }}" id="icono-presentacion-{{ p.id }}"></i>
+                                    </button>
+                                    {% if not p.es_predeterminado %}
+                                    <button class="btn btn-sm btn-outline-danger" onclick="eliminarPresentacion({{ p.id }})" title="Eliminar"><i class="bi bi-trash"></i></button>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr id="fila-vacia-presentaciones"><td colspan="3" class="text-center text-muted py-3">Sin presentaciones aún.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <div class="tab-pane fade" id="tab-campos">
         <div class="card border-0 shadow-sm mb-3">
@@ -299,6 +396,231 @@ function eliminarValor(id) {
             })
             .catch(err => {
                 console.error('Error en eliminarValor:', err);
+                Swal.fire('Error', 'No se pudo comunicar con el servidor.', 'error');
+            });
+    });
+}
+
+// ============================================
+// MOTIVOS DE MOVIMIENTO (Kardex, compartidos entre Anclajes e ImportBolts)
+// ============================================
+
+function agregarMotivo(tipo) {
+    const input = document.getElementById(`nuevo_motivo_${tipo}`);
+    const nombre = input.value.trim();
+    if (!nombre) {
+        return Swal.fire({ icon: 'warning', title: 'Falta el nombre', text: 'Escriba un nombre antes de presionar Agregar.', timer: 2200, showConfirmButton: false });
+    }
+    const fd = new FormData();
+    fd.append('nombre', nombre);
+    fd.append('tipo', tipo);
+    fetch('/api/motivos_movimiento/nuevo', { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(data => {
+            if (data.status !== 'success') {
+                Swal.fire({ icon: 'error', title: 'No se pudo agregar', text: data.msg });
+                return;
+            }
+            const filaVacia = document.getElementById(`fila-vacia-motivo-${tipo}`);
+            if (filaVacia) filaVacia.remove();
+            const tbody = document.querySelector(`#tabla_motivo_${tipo} tbody`);
+            const fila = document.createElement('tr');
+            fila.id = `fila-motivo-${data.id}`;
+            fila.innerHTML = `
+                <td id="nombre-motivo-${data.id}">${data.nombre}</td>
+                <td class="text-center" id="estado-motivo-${data.id}"><span class="badge bg-success">Activo</span></td>
+                <td class="text-end text-nowrap">
+                    <button class="btn btn-sm btn-outline-primary" onclick="editarMotivo(${data.id})" title="Renombrar"><i class="bi bi-pencil-fill"></i></button>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="toggleMotivo(${data.id})" title="Activar/Desactivar"><i class="bi bi-toggle-on" id="icono-motivo-${data.id}"></i></button>
+                    <button class="btn btn-sm btn-outline-danger" onclick="eliminarMotivo(${data.id})" title="Eliminar"><i class="bi bi-trash"></i></button>
+                </td>`;
+            tbody.appendChild(fila);
+            input.value = '';
+            Swal.fire({ icon: 'success', title: 'Agregado', timer: 1200, showConfirmButton: false });
+        })
+        .catch(err => {
+            console.error('Error en agregarMotivo:', err);
+            Swal.fire({ icon: 'error', title: 'Error de conexión', text: 'No se pudo comunicar con el servidor. Intente de nuevo.' });
+        });
+}
+
+function editarMotivo(id) {
+    const actual = document.getElementById(`nombre-motivo-${id}`).textContent.replace('predeterminado', '').trim();
+    Swal.fire({
+        title: 'Renombrar motivo', input: 'text', inputValue: actual,
+        showCancelButton: true, confirmButtonText: 'Guardar',
+        inputValidator: (value) => { if (!value || !value.trim()) return 'Escriba un nombre'; }
+    }).then(result => {
+        if (!result.isConfirmed) return;
+        const fd = new FormData();
+        fd.append('nombre', result.value.trim());
+        fetch(`/admin/motivos/${id}/editar`, { method: 'POST', body: fd })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status !== 'success') {
+                    Swal.fire('No se pudo renombrar', data.msg, 'error');
+                    return;
+                }
+                document.getElementById(`nombre-motivo-${id}`).textContent = data.nombre;
+                Swal.fire({ icon: 'success', title: 'Renombrado', timer: 1000, showConfirmButton: false });
+            })
+            .catch(err => {
+                console.error('Error en editarMotivo:', err);
+                Swal.fire('Error', 'No se pudo comunicar con el servidor.', 'error');
+            });
+    });
+}
+
+function toggleMotivo(id) {
+    fetch(`/admin/motivos/${id}/toggle`, { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            if (data.status !== 'success') {
+                Swal.fire('Error', 'No se pudo cambiar el estado.', 'error');
+                return;
+            }
+            const badge = document.getElementById(`estado-motivo-${id}`);
+            const icono = document.getElementById(`icono-motivo-${id}`);
+            if (badge) badge.innerHTML = data.activo ? '<span class="badge bg-success">Activo</span>' : '<span class="badge bg-secondary">Inactivo</span>';
+            if (icono) icono.className = data.activo ? 'bi bi-toggle-on' : 'bi bi-toggle-off';
+        })
+        .catch(err => {
+            console.error('Error en toggleMotivo:', err);
+            Swal.fire('Error', 'No se pudo comunicar con el servidor.', 'error');
+        });
+}
+
+function eliminarMotivo(id) {
+    Swal.fire({
+        title: '¿Eliminar este motivo?', text: 'Esta acción no se puede deshacer.',
+        icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Sí, eliminar'
+    }).then(result => {
+        if (!result.isConfirmed) return;
+        fetch(`/admin/motivos/${id}/eliminar`, { method: 'POST' })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status !== 'success') {
+                    Swal.fire('No se pudo eliminar', data.msg, 'error');
+                    return;
+                }
+                const fila = document.getElementById(`fila-motivo-${id}`);
+                if (fila) fila.remove();
+                Swal.fire({ icon: 'success', title: 'Eliminado', timer: 1000, showConfirmButton: false });
+            })
+            .catch(err => {
+                console.error('Error en eliminarMotivo:', err);
+                Swal.fire('Error', 'No se pudo comunicar con el servidor.', 'error');
+            });
+    });
+}
+
+// ============================================
+// PRESENTACIONES (Kardex, compartidas entre Anclajes e ImportBolts)
+// ============================================
+
+function agregarPresentacion() {
+    const input = document.getElementById('nueva_presentacion');
+    const nombre = input.value.trim();
+    if (!nombre) {
+        return Swal.fire({ icon: 'warning', title: 'Falta el nombre', text: 'Escriba un nombre antes de presionar Agregar.', timer: 2200, showConfirmButton: false });
+    }
+    const fd = new FormData();
+    fd.append('nombre', nombre);
+    fetch('/api/presentaciones/nueva', { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(data => {
+            if (data.status !== 'success') {
+                Swal.fire({ icon: 'error', title: 'No se pudo agregar', text: data.msg });
+                return;
+            }
+            const filaVacia = document.getElementById('fila-vacia-presentaciones');
+            if (filaVacia) filaVacia.remove();
+            const tbody = document.querySelector('#tabla_presentaciones tbody');
+            const fila = document.createElement('tr');
+            fila.id = `fila-presentacion-${data.id}`;
+            fila.innerHTML = `
+                <td id="nombre-presentacion-${data.id}">${data.nombre}</td>
+                <td class="text-center" id="estado-presentacion-${data.id}"><span class="badge bg-success">Activo</span></td>
+                <td class="text-end text-nowrap">
+                    <button class="btn btn-sm btn-outline-primary" onclick="editarPresentacion(${data.id})" title="Renombrar"><i class="bi bi-pencil-fill"></i></button>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="togglePresentacion(${data.id})" title="Activar/Desactivar"><i class="bi bi-toggle-on" id="icono-presentacion-${data.id}"></i></button>
+                    <button class="btn btn-sm btn-outline-danger" onclick="eliminarPresentacion(${data.id})" title="Eliminar"><i class="bi bi-trash"></i></button>
+                </td>`;
+            tbody.appendChild(fila);
+            input.value = '';
+            Swal.fire({ icon: 'success', title: 'Agregada', timer: 1200, showConfirmButton: false });
+        })
+        .catch(err => {
+            console.error('Error en agregarPresentacion:', err);
+            Swal.fire({ icon: 'error', title: 'Error de conexión', text: 'No se pudo comunicar con el servidor. Intente de nuevo.' });
+        });
+}
+
+function editarPresentacion(id) {
+    const actual = document.getElementById(`nombre-presentacion-${id}`).textContent.replace('predeterminado', '').trim();
+    Swal.fire({
+        title: 'Renombrar presentación', input: 'text', inputValue: actual,
+        showCancelButton: true, confirmButtonText: 'Guardar',
+        inputValidator: (value) => { if (!value || !value.trim()) return 'Escriba un nombre'; }
+    }).then(result => {
+        if (!result.isConfirmed) return;
+        const fd = new FormData();
+        fd.append('nombre', result.value.trim());
+        fetch(`/admin/presentaciones/${id}/editar`, { method: 'POST', body: fd })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status !== 'success') {
+                    Swal.fire('No se pudo renombrar', data.msg, 'error');
+                    return;
+                }
+                document.getElementById(`nombre-presentacion-${id}`).textContent = data.nombre;
+                Swal.fire({ icon: 'success', title: 'Renombrada', timer: 1000, showConfirmButton: false });
+            })
+            .catch(err => {
+                console.error('Error en editarPresentacion:', err);
+                Swal.fire('Error', 'No se pudo comunicar con el servidor.', 'error');
+            });
+    });
+}
+
+function togglePresentacion(id) {
+    fetch(`/admin/presentaciones/${id}/toggle`, { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            if (data.status !== 'success') {
+                Swal.fire('Error', 'No se pudo cambiar el estado.', 'error');
+                return;
+            }
+            const badge = document.getElementById(`estado-presentacion-${id}`);
+            const icono = document.getElementById(`icono-presentacion-${id}`);
+            if (badge) badge.innerHTML = data.activo ? '<span class="badge bg-success">Activo</span>' : '<span class="badge bg-secondary">Inactivo</span>';
+            if (icono) icono.className = data.activo ? 'bi bi-toggle-on' : 'bi bi-toggle-off';
+        })
+        .catch(err => {
+            console.error('Error en togglePresentacion:', err);
+            Swal.fire('Error', 'No se pudo comunicar con el servidor.', 'error');
+        });
+}
+
+function eliminarPresentacion(id) {
+    Swal.fire({
+        title: '¿Eliminar esta presentación?', text: 'Esta acción no se puede deshacer.',
+        icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Sí, eliminar'
+    }).then(result => {
+        if (!result.isConfirmed) return;
+        fetch(`/admin/presentaciones/${id}/eliminar`, { method: 'POST' })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status !== 'success') {
+                    Swal.fire('No se pudo eliminar', data.msg, 'error');
+                    return;
+                }
+                const fila = document.getElementById(`fila-presentacion-${id}`);
+                if (fila) fila.remove();
+                Swal.fire({ icon: 'success', title: 'Eliminada', timer: 1000, showConfirmButton: false });
+            })
+            .catch(err => {
+                console.error('Error en eliminarPresentacion:', err);
                 Swal.fire('Error', 'No se pudo comunicar con el servidor.', 'error');
             });
     });

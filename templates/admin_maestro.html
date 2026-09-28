@@ -156,18 +156,22 @@
 
         <div class="card border-0 shadow-sm">
             <div class="card-header bg-white fw-bold d-flex justify-content-between align-items-center">
-                <span><i class="bi bi-clock-history"></i> Últimos cambios de peso</span>
+                <span><i class="bi bi-clock-history"></i> Últimos cambios y creaciones</span>
                 <a href="{{ url_for('admin_maestro_auditoria') }}" class="btn btn-sm btn-outline-primary">Ver historial completo</a>
             </div>
+            <p class="text-muted small px-3 pt-2 mb-0">Auditoría de todo lo que toca al Maestro: quién creó cada producto (manual o por Excel), en qué familia/calidad, y cada peso actualizado.</p>
             <div class="table-responsive">
                 <table class="table table-sm table-hover mb-0 small align-middle">
                     <thead class="table-light">
                         <tr>
                             <th class="ps-3">Fecha</th>
                             <th>Código</th>
+                            <th>Tipo</th>
+                            <th>Familia</th>
+                            <th>Calidad</th>
                             <th>Inventario</th>
-                            <th class="text-end">Peso anterior</th>
-                            <th class="text-end pe-3">Peso nuevo</th>
+                            <th>Detalle</th>
+                            <th class="pe-3">Usuario</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -175,12 +179,27 @@
                         <tr>
                             <td class="ps-3">{{ c.fecha.strftime('%d/%m/%y %H:%M') }}</td>
                             <td class="fw-bold text-primary">{{ c.sku }}</td>
+                            <td>
+                                {% if c.campo == 'creacion' %}
+                                <span class="badge bg-success">Creación</span>
+                                {% else %}
+                                <span class="badge bg-info text-dark">Peso</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ c.familia or '-' }}</td>
+                            <td>{{ c.calidad or '-' }}</td>
                             <td><span class="badge bg-light text-dark border">{{ c.inventario }}</span></td>
-                            <td class="text-end">{{ c.valor_anterior }}</td>
-                            <td class="text-end pe-3 fw-bold">{{ c.valor_nuevo }}</td>
+                            <td style="max-width: 260px;">
+                                {% if c.campo == 'creacion' %}
+                                <span class="text-muted">{{ c.valor_nuevo }}</span>
+                                {% else %}
+                                {{ c.valor_anterior }} <i class="bi bi-arrow-right mx-1"></i> <span class="fw-bold">{{ c.valor_nuevo }}</span>
+                                {% endif %}
+                            </td>
+                            <td class="pe-3">{{ c.usuario }}</td>
                         </tr>
                         {% else %}
-                        <tr><td colspan="5" class="text-center text-muted py-4">Todavía no se ha sincronizado ningún peso.</td></tr>
+                        <tr><td colspan="8" class="text-center text-muted py-4">Todavía no se ha sincronizado ningún peso ni creado productos.</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>
@@ -201,7 +220,7 @@
                     <li>Lee la hoja <code>MAESTROV2</code> de tu Excel Maestro y usa <strong>NUEVO CODIGO</strong> como llave (mismo código que <code>sku</code> en ambos inventarios).</li>
                     <li>Si el código ya existe, actualiza el <strong>Peso Nominal (Kg)</strong> donde sea distinto (Maestro y cada inventario que lo tenga). Si no existe en ningún lado, lo <strong>crea</strong> — igual que el botón manual.</li>
                     <li>Si un código existe en el Maestro (o en un inventario) pero <strong>no en el otro</strong>, solo se avisa en "Diferencias informativas" — no se crea automáticamente ahí, para no repartir por accidente algo que quizás esté descontinuado a propósito. Si de verdad ya no se usa, lo más simple es sacarlo del Excel Maestro; si sí debería existir en el inventario que le falta, avísale al administrador para completarlo ahí.</li>
-                    <li>Cada cambio y cada creación queda en el historial (código, inventario, antes/después, fecha, usuario) para auditar qué se tocó.</li>
+                    <li>Cada cambio y cada creación queda en el historial (código, familia/calidad, inventario, antes/después, fecha, usuario) para auditar qué se tocó — incluye tanto las creaciones manuales ("Nuevo Producto") como las creadas al confirmar un Excel Maestro.</li>
                     <li>Un peso vacío o en 0 en el Maestro <strong>no borra</strong> el peso que ya tenías guardado.</li>
                     <li>Descripción, calidad y familia de un código YA existente solo se avisan si difieren del Excel — no se sobreescriben solas, para no pisar una corrección manual que ya hiciste.</li>
                 </ul>

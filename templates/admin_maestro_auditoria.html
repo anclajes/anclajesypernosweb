@@ -35,8 +35,10 @@
                 <tr>
                     <th class="ps-3">Fecha</th>
                     <th>Código</th>
+                    <th>Tipo</th>
+                    <th>Familia</th>
+                    <th>Calidad</th>
                     <th>Inventario</th>
-                    <th>Campo</th>
                     <th class="text-end">Valor anterior</th>
                     <th class="text-end">Valor nuevo</th>
                     <th>Usuario</th>
@@ -48,17 +50,25 @@
                 <tr>
                     <td class="ps-3">{{ c.fecha.strftime('%d/%m/%y %H:%M') }}</td>
                     <td class="fw-bold text-primary">{{ c.sku }}</td>
+                    <td>
+                        {% if c.campo == 'creacion' %}
+                        <span class="badge bg-success">Creación</span>
+                        {% else %}
+                        <span class="badge bg-info text-dark">{{ c.campo }}</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ c.familia or '-' }}</td>
+                    <td>{{ c.calidad or '-' }}</td>
                     <td><span class="badge bg-light text-dark border">{{ c.inventario }}</span></td>
-                    <td>{{ c.campo }}</td>
                     <td class="text-end">{{ c.valor_anterior }}</td>
-                    <td class="text-end fw-bold">{{ c.valor_nuevo }}</td>
+                    <td class="text-end fw-bold" style="max-width: 260px;">{{ c.valor_nuevo }}</td>
                     <td>{{ c.usuario }}</td>
                     <td class="pe-3">
                         <a href="{{ url_for('admin_maestro_auditoria', lote=c.lote_id) }}" class="small text-muted">{{ c.lote_id }}</a>
                     </td>
                 </tr>
                 {% else %}
-                <tr><td colspan="8" class="text-center py-4 text-muted">No hay cambios registrados con este filtro.</td></tr>
+                <tr><td colspan="10" class="text-center py-4 text-muted">No hay cambios registrados con este filtro.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
