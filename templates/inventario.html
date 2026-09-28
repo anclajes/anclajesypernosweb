@@ -806,7 +806,7 @@
                             <select id="stock_select_motivo" class="form-select form-select-sm shadow-sm" required onchange="seleccionarMotivo()">
                                 <option value="" selected disabled>-- Seleccione un motivo --</option>
                             </select>
-                            {% if session.get('role') == 'admin' %}
+                            {% if session.get('role') in ['admin', 'almacen'] %}
                             <button type="button" class="btn btn-sm btn-outline-secondary" title="Agregar nuevo motivo" onclick="abrirNuevoMotivo()">
                                 <i class="bi bi-plus-lg"></i>
                             </button>
@@ -894,7 +894,7 @@
                             <select name="presentacion" id="stock_select_presentacion" class="form-select form-select-sm shadow-sm">
                                 <option value="" selected disabled>-- Seleccione --</option>
                             </select>
-                            {% if session.get('role') == 'admin' %}
+                            {% if session.get('role') in ['admin', 'almacen'] %}
                             <button type="button" class="btn btn-sm btn-outline-secondary" title="Agregar presentación" onclick="abrirNuevaPresentacion()">
                                 <i class="bi bi-plus-lg"></i>
                             </button>

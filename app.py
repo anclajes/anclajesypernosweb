@@ -8684,8 +8684,8 @@ def listar_motivos_movimiento(tipo):
 
 @app.route('/api/motivos_movimiento/nuevo', methods=['POST'])
 def crear_motivo_movimiento():
-    if session.get('role') != 'admin':
-        return {'status': 'error', 'msg': 'Solo el administrador puede agregar motivos'}, 403
+    if session.get('role') not in ['admin', 'almacen']:
+        return {'status': 'error', 'msg': 'No autorizado para agregar motivos'}, 403
 
     nombre = request.form.get('nombre', '').strip().upper()
     tipo = request.form.get('tipo', '').strip().upper()
@@ -8710,8 +8710,8 @@ def listar_presentaciones():
 
 @app.route('/api/presentaciones/nueva', methods=['POST'])
 def crear_presentacion():
-    if session.get('role') != 'admin':
-        return {'status': 'error', 'msg': 'Solo el administrador puede agregar presentaciones'}, 403
+    if session.get('role') not in ['admin', 'almacen']:
+        return {'status': 'error', 'msg': 'No autorizado para agregar presentaciones'}, 403
 
     nombre = request.form.get('nombre', '').strip().upper()
     if not nombre:
@@ -9108,7 +9108,7 @@ def auditoria_mis_registros():
 
 def _puede_ver_fotos_auditoria(registro):
     rol = session.get('role')
-    if rol in ['admin', 'administracion']:
+    if rol in ['admin', 'administracion', 'almacen']:
         return True
     if rol == 'auditor_stock' and registro.trabajador_id == session.get('user_id'):
         return True
@@ -9194,7 +9194,7 @@ def eliminar_foto_auditoria(foto_id):
     registro = foto.registro
     rol = session.get('role')
 
-    es_admin = rol in ['admin', 'administracion']
+    es_admin = rol in ['admin', 'administracion', 'almacen']
     es_dueno_pendiente = (rol == 'auditor_stock' and registro.trabajador_id == session.get('user_id')
                            and registro.estado_registro == 'PENDIENTE')
     if not (es_admin or es_dueno_pendiente):
@@ -9216,7 +9216,7 @@ def eliminar_foto_auditoria(foto_id):
 
 @app.route('/admin/auditorias')
 def admin_auditorias_lista():
-    if session.get('role') not in ['admin', 'administracion']: return "Acceso denegado", 403
+    if session.get('role') not in ['admin', 'administracion', 'almacen']: return "Acceso denegado", 403
 
     estado_filtro = request.args.get('estado', 'PENDIENTE')
     origen_filtro = request.args.get('origen', 'todos')
@@ -9261,7 +9261,7 @@ def admin_auditorias_lista():
 
 @app.route('/admin/auditorias/<int:reg_id>')
 def admin_auditorias_detalle(reg_id):
-    if session.get('role') not in ['admin', 'administracion']: return "Acceso denegado", 403
+    if session.get('role') not in ['admin', 'administracion', 'almacen']: return "Acceso denegado", 403
     registro = RegistroAuditoria.query.get_or_404(reg_id)
     prod_actual = registro.producto
     return render_template('admin_auditorias_detalle.html', registro=registro, prod_actual=prod_actual)
@@ -9269,7 +9269,7 @@ def admin_auditorias_detalle(reg_id):
 
 @app.route('/admin/auditorias/<int:reg_id>/rechazar', methods=['POST'])
 def admin_auditoria_rechazar(reg_id):
-    if session.get('role') not in ['admin', 'administracion']: return {'status': 'error'}, 403
+    if session.get('role') not in ['admin', 'administracion', 'almacen']: return {'status': 'error'}, 403
     registro = RegistroAuditoria.query.get_or_404(reg_id)
     motivo = request.form.get('motivo', '').strip()
     if not motivo:
@@ -9289,7 +9289,7 @@ def admin_auditoria_rechazar(reg_id):
 def admin_auditoria_aplicar(reg_id):
     """Actualiza la ficha completa del producto en el sistema, basándose en lo que el admin
     confirme en el panel editable (prellenado con el conteo + datos actuales)."""
-    if session.get('role') not in ['admin', 'administracion']: return {'status': 'error'}, 403
+    if session.get('role') not in ['admin', 'administracion', 'almacen']: return {'status': 'error'}, 403
     registro = RegistroAuditoria.query.get_or_404(reg_id)
 
     if registro.estado_registro == 'APLICADO':
@@ -9376,7 +9376,7 @@ def admin_auditoria_aplicar(reg_id):
 # ============================================
 @app.route('/admin/catalogos')
 def admin_catalogos():
-    if session.get('role') != 'admin': return "Acceso denegado", 403
+    if session.get('role') not in ['admin', 'almacen']: return "Acceso denegado", 403
     tipos = ['ESTADO_FISICO', 'UNIDAD_MEDIDA', 'ANAQUEL', 'NICHO']
     catalogos = {}
     for t in tipos:
@@ -9398,7 +9398,7 @@ def admin_catalogos():
 
 @app.route('/admin/catalogos/fotos_auditoria/toggle', methods=['POST'])
 def admin_catalogos_fotos_toggle():
-    if session.get('role') != 'admin': return {'status': 'error', 'msg': 'No autorizado'}, 403
+    if session.get('role') not in ['admin', 'almacen']: return {'status': 'error', 'msg': 'No autorizado'}, 403
     activar = request.form.get('activo') == '1'
     cfg = SystemConfig.query.get('auditoria_fotos_obligatorias')
     if not cfg:
@@ -9413,7 +9413,7 @@ def admin_catalogos_fotos_toggle():
 
 @app.route('/admin/catalogos/valor/nuevo', methods=['POST'])
 def admin_catalogo_valor_nuevo():
-    if session.get('role') != 'admin': return {'status': 'error', 'msg': 'No autorizado'}, 403
+    if session.get('role') not in ['admin', 'almacen']: return {'status': 'error', 'msg': 'No autorizado'}, 403
     tipo = request.form.get('tipo', '').strip().upper()
     valor = request.form.get('valor', '').strip().upper()
 
@@ -9433,7 +9433,7 @@ def admin_catalogo_valor_nuevo():
 
 @app.route('/admin/catalogos/valor/<int:val_id>/toggle', methods=['POST'])
 def admin_catalogo_valor_toggle(val_id):
-    if session.get('role') != 'admin': return {'status': 'error'}, 403
+    if session.get('role') not in ['admin', 'almacen']: return {'status': 'error'}, 403
     v = CatalogoValor.query.get_or_404(val_id)
     v.activo = not v.activo
     registrar_log(f"{'Activó' if v.activo else 'Desactivó'} '{v.valor}' del catálogo {v.tipo}", "bi-tag-fill", "text-info")
@@ -9443,7 +9443,7 @@ def admin_catalogo_valor_toggle(val_id):
 
 @app.route('/admin/catalogos/valor/<int:val_id>/eliminar', methods=['POST'])
 def admin_catalogo_valor_eliminar(val_id):
-    if session.get('role') != 'admin': return {'status': 'error', 'msg': 'No autorizado'}, 403
+    if session.get('role') not in ['admin', 'almacen']: return {'status': 'error', 'msg': 'No autorizado'}, 403
     v = CatalogoValor.query.get_or_404(val_id)
 
     if v.es_predeterminado:
@@ -9464,7 +9464,7 @@ def admin_catalogo_valor_eliminar(val_id):
 
 @app.route('/admin/motivos/<int:motivo_id>/editar', methods=['POST'])
 def admin_motivo_editar(motivo_id):
-    if session.get('role') != 'admin': return {'status': 'error', 'msg': 'No autorizado'}, 403
+    if session.get('role') not in ['admin', 'almacen']: return {'status': 'error', 'msg': 'No autorizado'}, 403
     m = MotivoMovimiento.query.get_or_404(motivo_id)
     nombre_nuevo = request.form.get('nombre', '').strip().upper()
     if not nombre_nuevo:
@@ -9487,7 +9487,7 @@ def admin_motivo_editar(motivo_id):
 
 @app.route('/admin/motivos/<int:motivo_id>/toggle', methods=['POST'])
 def admin_motivo_toggle(motivo_id):
-    if session.get('role') != 'admin': return {'status': 'error'}, 403
+    if session.get('role') not in ['admin', 'almacen']: return {'status': 'error'}, 403
     m = MotivoMovimiento.query.get_or_404(motivo_id)
     m.activo = not m.activo
     registrar_log(f"{'Activó' if m.activo else 'Desactivó'} el motivo '{m.nombre}' ({m.tipo})", "bi-tag-fill", "text-info")
@@ -9497,7 +9497,7 @@ def admin_motivo_toggle(motivo_id):
 
 @app.route('/admin/motivos/<int:motivo_id>/eliminar', methods=['POST'])
 def admin_motivo_eliminar(motivo_id):
-    if session.get('role') != 'admin': return {'status': 'error', 'msg': 'No autorizado'}, 403
+    if session.get('role') not in ['admin', 'almacen']: return {'status': 'error', 'msg': 'No autorizado'}, 403
     m = MotivoMovimiento.query.get_or_404(motivo_id)
     if m.es_predeterminado:
         return {'status': 'error', 'msg': 'Este motivo es predeterminado del sistema y no se puede eliminar. Puede desactivarlo en su lugar.'}
@@ -9515,7 +9515,7 @@ def admin_motivo_eliminar(motivo_id):
 
 @app.route('/admin/presentaciones/<int:pres_id>/editar', methods=['POST'])
 def admin_presentacion_editar(pres_id):
-    if session.get('role') != 'admin': return {'status': 'error', 'msg': 'No autorizado'}, 403
+    if session.get('role') not in ['admin', 'almacen']: return {'status': 'error', 'msg': 'No autorizado'}, 403
     p = Presentacion.query.get_or_404(pres_id)
     nombre_nuevo = request.form.get('nombre', '').strip().upper()
     if not nombre_nuevo:
@@ -9537,7 +9537,7 @@ def admin_presentacion_editar(pres_id):
 
 @app.route('/admin/presentaciones/<int:pres_id>/toggle', methods=['POST'])
 def admin_presentacion_toggle(pres_id):
-    if session.get('role') != 'admin': return {'status': 'error'}, 403
+    if session.get('role') not in ['admin', 'almacen']: return {'status': 'error'}, 403
     p = Presentacion.query.get_or_404(pres_id)
     p.activo = not p.activo
     registrar_log(f"{'Activó' if p.activo else 'Desactivó'} la presentación '{p.nombre}'", "bi-tag-fill", "text-info")
@@ -9547,7 +9547,7 @@ def admin_presentacion_toggle(pres_id):
 
 @app.route('/admin/presentaciones/<int:pres_id>/eliminar', methods=['POST'])
 def admin_presentacion_eliminar(pres_id):
-    if session.get('role') != 'admin': return {'status': 'error', 'msg': 'No autorizado'}, 403
+    if session.get('role') not in ['admin', 'almacen']: return {'status': 'error', 'msg': 'No autorizado'}, 403
     p = Presentacion.query.get_or_404(pres_id)
     if p.es_predeterminado:
         return {'status': 'error', 'msg': 'Esta presentación es predeterminada del sistema y no se puede eliminar. Puede desactivarla en su lugar.'}
@@ -9562,7 +9562,7 @@ def admin_presentacion_eliminar(pres_id):
 
 @app.route('/admin/catalogos/campo/nuevo', methods=['POST'])
 def admin_campo_personalizado_nuevo():
-    if session.get('role') != 'admin': return {'status': 'error', 'msg': 'No autorizado'}, 403
+    if session.get('role') not in ['admin', 'almacen']: return {'status': 'error', 'msg': 'No autorizado'}, 403
     etiqueta = request.form.get('etiqueta', '').strip()
     tipo_campo = request.form.get('tipo_campo', 'TEXTO').strip().upper()
 
@@ -9599,7 +9599,7 @@ def admin_campo_personalizado_nuevo():
 
 @app.route('/admin/catalogos/campo/<int:campo_id>/opcion/nueva', methods=['POST'])
 def admin_campo_opcion_nueva(campo_id):
-    if session.get('role') != 'admin': return {'status': 'error', 'msg': 'No autorizado'}, 403
+    if session.get('role') not in ['admin', 'almacen']: return {'status': 'error', 'msg': 'No autorizado'}, 403
     campo = CampoPersonalizado.query.get_or_404(campo_id)
     valor = request.form.get('valor', '').strip()
 
@@ -9616,7 +9616,7 @@ def admin_campo_opcion_nueva(campo_id):
 
 @app.route('/admin/catalogos/campo/<int:campo_id>/toggle', methods=['POST'])
 def admin_campo_toggle(campo_id):
-    if session.get('role') != 'admin': return {'status': 'error'}, 403
+    if session.get('role') not in ['admin', 'almacen']: return {'status': 'error'}, 403
     campo = CampoPersonalizado.query.get_or_404(campo_id)
     campo.activo = not campo.activo
     registrar_log(f"{'Activó' if campo.activo else 'Desactivó'} campo personalizado '{campo.etiqueta}'", "bi-input-cursor-text", "text-info")
@@ -9629,7 +9629,7 @@ def admin_campo_toggle(campo_id):
 
 @app.route('/admin/catalogos/campo/<int:campo_id>/editar', methods=['POST'])
 def admin_campo_editar(campo_id):
-    if session.get('role') != 'admin': return {'status': 'error', 'msg': 'No autorizado'}, 403
+    if session.get('role') not in ['admin', 'almacen']: return {'status': 'error', 'msg': 'No autorizado'}, 403
     campo = CampoPersonalizado.query.get_or_404(campo_id)
     nueva_etiqueta = request.form.get('etiqueta', '').strip()
 
@@ -9651,7 +9651,7 @@ def admin_campo_editar(campo_id):
 
 @app.route('/admin/catalogos/campo/<int:campo_id>/eliminar', methods=['POST'])
 def admin_campo_eliminar(campo_id):
-    if session.get('role') != 'admin': return {'status': 'error', 'msg': 'No autorizado'}, 403
+    if session.get('role') not in ['admin', 'almacen']: return {'status': 'error', 'msg': 'No autorizado'}, 403
     campo = CampoPersonalizado.query.get_or_404(campo_id)
 
     en_uso = RegistroAuditoriaValorExtra.query.filter_by(campo_id=campo.id).count()
@@ -9666,7 +9666,7 @@ def admin_campo_eliminar(campo_id):
 
 @app.route('/admin/catalogos/opcion/<int:opcion_id>/editar', methods=['POST'])
 def admin_opcion_editar(opcion_id):
-    if session.get('role') != 'admin': return {'status': 'error', 'msg': 'No autorizado'}, 403
+    if session.get('role') not in ['admin', 'almacen']: return {'status': 'error', 'msg': 'No autorizado'}, 403
     opcion = CampoPersonalizadoOpcion.query.get_or_404(opcion_id)
     nuevo_valor = request.form.get('valor', '').strip()
 
@@ -9688,7 +9688,7 @@ def admin_opcion_editar(opcion_id):
 
 @app.route('/admin/catalogos/opcion/<int:opcion_id>/eliminar', methods=['POST'])
 def admin_opcion_eliminar(opcion_id):
-    if session.get('role') != 'admin': return {'status': 'error', 'msg': 'No autorizado'}, 403
+    if session.get('role') not in ['admin', 'almacen']: return {'status': 'error', 'msg': 'No autorizado'}, 403
     opcion = CampoPersonalizadoOpcion.query.get_or_404(opcion_id)
     db.session.delete(opcion)
     db.session.commit()
@@ -9698,13 +9698,13 @@ def admin_opcion_eliminar(opcion_id):
 @app.route('/admin/catalogos/campos_listado')
 def admin_campos_listado_parcial():
     """Devuelve el HTML actualizado de la tabla de campos (para refrescar sin recargar la página)."""
-    if session.get('role') != 'admin': return {'status': 'error'}, 403
+    if session.get('role') not in ['admin', 'almacen']: return {'status': 'error'}, 403
     campo = CampoPersonalizado.query.get_or_404(request.args.get('id'))
     return {'status': 'success', 'opciones': [{'id': o.id, 'valor': o.valor} for o in campo.opciones]}
 
 @app.route('/admin/auditorias/historial')
 def admin_auditorias_historial():
-    if session.get('role') not in ['admin', 'administracion']: return "Acceso denegado", 403
+    if session.get('role') not in ['admin', 'administracion', 'almacen']: return "Acceso denegado", 403
 
     accion_filtro = request.args.get('accion', 'todas')
     origen_filtro = request.args.get('origen', 'todos')
@@ -9749,7 +9749,7 @@ def admin_auditorias_historial():
 
 @app.route('/admin/auditorias/periodos')
 def admin_periodos_lista():
-    if session.get('role') not in ['admin', 'administracion']: return "Acceso denegado", 403
+    if session.get('role') not in ['admin', 'administracion', 'almacen']: return "Acceso denegado", 403
 
     periodos = PeriodoAuditoria.query.order_by(PeriodoAuditoria.fecha_creacion.desc()).all()
     cambios = False
@@ -9773,7 +9773,7 @@ def admin_periodos_lista():
 
 @app.route('/admin/auditorias/periodos/nuevo', methods=['POST'])
 def admin_periodo_crear():
-    if session.get('role') not in ['admin', 'administracion']: return {'status': 'error', 'msg': 'No autorizado'}, 403
+    if session.get('role') not in ['admin', 'administracion', 'almacen']: return {'status': 'error', 'msg': 'No autorizado'}, 403
 
     nombre = request.form.get('nombre', '').strip()
     descripcion = request.form.get('descripcion', '').strip()
@@ -9822,7 +9822,7 @@ def admin_periodo_crear():
 
 @app.route('/admin/auditorias/periodos/<int:periodo_id>/cerrar', methods=['POST'])
 def admin_periodo_cerrar(periodo_id):
-    if session.get('role') not in ['admin', 'administracion']: return {'status': 'error', 'msg': 'No autorizado'}, 403
+    if session.get('role') not in ['admin', 'administracion', 'almacen']: return {'status': 'error', 'msg': 'No autorizado'}, 403
     periodo = PeriodoAuditoria.query.get_or_404(periodo_id)
     if periodo.estado != 'ABIERTO':
         return {'status': 'error', 'msg': 'Este período ya está cerrado.'}
@@ -9839,7 +9839,7 @@ def admin_periodo_cerrar(periodo_id):
 def admin_periodo_reabrir(periodo_id):
     """Red de seguridad por si se cerró un período por error. Solo se permite si no hay
     otro período abierto en este momento, para no volver a mezclar auditorías."""
-    if session.get('role') not in ['admin', 'administracion']: return {'status': 'error', 'msg': 'No autorizado'}, 403
+    if session.get('role') not in ['admin', 'administracion', 'almacen']: return {'status': 'error', 'msg': 'No autorizado'}, 403
     periodo = PeriodoAuditoria.query.get_or_404(periodo_id)
     if periodo.estado == 'ABIERTO':
         return {'status': 'error', 'msg': 'Este período ya está abierto.'}
