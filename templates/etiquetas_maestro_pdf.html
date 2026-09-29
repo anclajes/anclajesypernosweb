@@ -15,17 +15,15 @@
         width: 100%;
         border-collapse: collapse;
     }
-    /* El borde ya NO va en la celda de la tabla (eso causaba que la línea se dibujara mal
-       y pisara las letras en xhtml2pdf) -- ahora va en el <div> de adentro, que se recorta
-       limpio alrededor de su propio contenido. */
+    /* Sin líneas divisorias: el espacio en blanco entre etiquetas ya las separa bien, y así
+       se evita también el problema de la línea pisando las letras en xhtml2pdf. */
     table.hoja td.celda {
         width: 50%;
-        padding: 5px;
+        padding: 14px;
         vertical-align: top;
     }
     div.etiqueta {
-        border: 1px solid #bbbbbb;
-        padding: 12px;
+        padding: 6px;
         page-break-inside: avoid;
     }
     table.interna {
