@@ -21,9 +21,15 @@
     <div class="card-header bg-white fw-bold d-flex justify-content-between align-items-center flex-wrap gap-2">
         <span><i class="bi bi-collection"></i> Catálogo Maestro <span class="badge bg-light text-dark border">{{ total_maestro }}</span></span>
         {% if session.get('role') in ['admin', 'almacen'] %}
-        <button type="button" class="btn btn-outline-dark btn-sm" id="btnImprimirCodigosSeleccionados" disabled onclick="imprimirCodigosSeleccionados()">
-            <i class="bi bi-printer-fill"></i> Imprimir códigos seleccionados (<span id="contadorSeleccionadosMaestro">0</span>)
-        </button>
+        <div class="d-flex gap-2 flex-wrap align-items-center">
+            <small class="text-muted d-none d-md-inline">La selección se mantiene aunque cambies de página o de filtro</small>
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="btnLimpiarSeleccionMaestro" onclick="limpiarSeleccionMaestro()" title="Vaciar toda la selección (de todas las páginas)">
+                <i class="bi bi-x-circle"></i> Limpiar selección
+            </button>
+            <button type="button" class="btn btn-outline-dark btn-sm" id="btnImprimirCodigosSeleccionados" disabled onclick="imprimirCodigosSeleccionados()">
+                <i class="bi bi-printer-fill"></i> Imprimir códigos seleccionados (<span id="contadorSeleccionadosMaestro">0</span>)
+            </button>
+        </div>
         {% endif %}
     </div>
     <div class="card-body">
@@ -82,7 +88,7 @@
                     {% for m in productos %}
                     <tr id="fila-maestro-{{ m.sku }}">
                         {% if session.get('role') in ['admin', 'almacen'] %}
-                        <td><input type="checkbox" class="chk-maestro-sku" value="{{ m.sku }}" onchange="actualizarContadorSeleccionadosMaestro()"></td>
+                        <td><input type="checkbox" class="chk-maestro-sku" value="{{ m.sku }}" onchange="alCambiarCheckboxMaestro(this)"></td>
                         {% endif %}
                         <td class="fw-bold text-primary">{{ m.sku }}</td>
                         <td id="fila-maestro-{{ m.sku }}-nombre">{{ m.nombre }}</td>
@@ -293,37 +299,112 @@
 {% if session.get('role') in ['admin', 'almacen'] %}
 <script>
 // --- Selección de productos (checkboxes) para imprimir su código QR + descripción en una
-// hoja de etiquetas. La selección es solo de la página actual (la tabla está paginada); si
-// se cambia de página se pierde la selección de la página anterior, a propósito, para no
-// enviar un formulario gigante con miles de SKUs sin que el usuario lo note.
-function actualizarContadorSeleccionadosMaestro() {
-    const marcados = document.querySelectorAll('.chk-maestro-sku:checked');
-    const contador = document.getElementById('contadorSeleccionadosMaestro');
-    const boton = document.getElementById('btnImprimirCodigosSeleccionados');
-    if (contador) contador.textContent = marcados.length;
-    if (boton) boton.disabled = marcados.length === 0;
+// hoja de etiquetas. La selección se guarda en este navegador (localStorage) y SOBREVIVE
+// al cambiar de página o de filtro/búsqueda -- así se puede ir marcando productos
+// repartidos en varias hojas del Maestro sin perder lo ya marcado antes. "Seleccionar
+// todo" solo marca las filas de LA PÁGINA ACTUAL (normalmente 25) -- nunca selecciona de
+// un solo click el catálogo completo (~5000 productos): para eso habría que ir página por
+// página marcando "Todo" en cada una, une por une. Como respaldo, el servidor también
+// rechaza cualquier intento de imprimir más de MAESTRO_QR_MAX_ETIQUETAS de una sola vez.
+const MAESTRO_QR_STORAGE_KEY = 'maestro_qr_skus_seleccionados';
+const MAESTRO_QR_MAX_ETIQUETAS = 300;  // debe coincidir con MAX_ETIQUETAS_IMPRESION en app.py
 
-    // Si algunas (pero no todas) las filas visibles están marcadas, el checkbox "Todo"
-    // queda en estado indeterminado en vez de marcado u ocultamente desmarcado.
-    const todas = document.querySelectorAll('.chk-maestro-sku');
-    const chkTodo = document.getElementById('chkSeleccionarTodoMaestro');
-    if (chkTodo && todas.length) {
-        chkTodo.checked = marcados.length === todas.length;
-        chkTodo.indeterminate = marcados.length > 0 && marcados.length < todas.length;
+function obtenerSkusSeleccionadosGlobal() {
+    try {
+        const bruto = localStorage.getItem(MAESTRO_QR_STORAGE_KEY);
+        const lista = bruto ? JSON.parse(bruto) : [];
+        return Array.isArray(lista) ? lista : [];
+    } catch (e) {
+        return [];  // localStorage bloqueado (modo privado, etc.): simplemente no persiste
     }
 }
 
-function toggleSeleccionarTodoMaestro(checkboxTodo) {
-    document.querySelectorAll('.chk-maestro-sku').forEach(chk => { chk.checked = checkboxTodo.checked; });
+function guardarSkusSeleccionadosGlobal(lista) {
+    try {
+        localStorage.setItem(MAESTRO_QR_STORAGE_KEY, JSON.stringify(lista));
+    } catch (e) {
+        // No rompe nada más: solo no sobrevive el cambio de página en este caso.
+    }
+}
+
+function sincronizarCheckboxesConSeleccionGlobal() {
+    const seleccionados = new Set(obtenerSkusSeleccionadosGlobal());
+    document.querySelectorAll('.chk-maestro-sku').forEach(chk => {
+        chk.checked = seleccionados.has(chk.value);
+    });
     actualizarContadorSeleccionadosMaestro();
 }
 
+function actualizarContadorSeleccionadosMaestro() {
+    const total = obtenerSkusSeleccionadosGlobal().length;
+    const contador = document.getElementById('contadorSeleccionadosMaestro');
+    const boton = document.getElementById('btnImprimirCodigosSeleccionados');
+    if (contador) contador.textContent = total;
+    if (boton) boton.disabled = total === 0;
+
+    // Si algunas (pero no todas) las filas visibles están marcadas, el checkbox "Todo"
+    // de esta página queda en estado indeterminado en vez de marcado u ocultamente
+    // desmarcado (esto es por página, no por el total global).
+    const todasEnPagina = document.querySelectorAll('.chk-maestro-sku');
+    const marcadasEnPagina = document.querySelectorAll('.chk-maestro-sku:checked');
+    const chkTodo = document.getElementById('chkSeleccionarTodoMaestro');
+    if (chkTodo && todasEnPagina.length) {
+        chkTodo.checked = marcadasEnPagina.length === todasEnPagina.length;
+        chkTodo.indeterminate = marcadasEnPagina.length > 0 && marcadasEnPagina.length < todasEnPagina.length;
+    }
+}
+
+function alCambiarCheckboxMaestro(chk) {
+    const seleccionados = new Set(obtenerSkusSeleccionadosGlobal());
+    if (chk.checked) {
+        seleccionados.add(chk.value);
+    } else {
+        seleccionados.delete(chk.value);
+    }
+    guardarSkusSeleccionadosGlobal(Array.from(seleccionados));
+    actualizarContadorSeleccionadosMaestro();
+}
+
+function toggleSeleccionarTodoMaestro(checkboxTodo) {
+    // OJO: esto solo toca los productos que están EN ESTA PÁGINA (normalmente 25), nunca
+    // el catálogo completo -- ver nota arriba.
+    const seleccionados = new Set(obtenerSkusSeleccionadosGlobal());
+    document.querySelectorAll('.chk-maestro-sku').forEach(chk => {
+        chk.checked = checkboxTodo.checked;
+        if (checkboxTodo.checked) {
+            seleccionados.add(chk.value);
+        } else {
+            seleccionados.delete(chk.value);
+        }
+    });
+    guardarSkusSeleccionadosGlobal(Array.from(seleccionados));
+    actualizarContadorSeleccionadosMaestro();
+}
+
+function limpiarSeleccionMaestro() {
+    guardarSkusSeleccionadosGlobal([]);
+    sincronizarCheckboxesConSeleccionGlobal();
+}
+
 function imprimirCodigosSeleccionados() {
-    const skus = Array.from(document.querySelectorAll('.chk-maestro-sku:checked')).map(chk => chk.value);
+    const skus = obtenerSkusSeleccionadosGlobal();
     if (skus.length === 0) return;
+    if (skus.length > MAESTRO_QR_MAX_ETIQUETAS) {
+        Swal.fire({
+            icon: 'warning',
+            title: 'Selección muy grande',
+            html: `Tienes <b>${skus.length}</b> productos seleccionados, y por ahora el máximo por hoja es de ` +
+                  `<b>${MAESTRO_QR_MAX_ETIQUETAS}</b> (para que el PDF no tarde demasiado ni pese demasiado).<br><br>` +
+                  `Imprime en varias tandas: imprime este primer grupo, usa "Limpiar selección" y arma el siguiente.`,
+            confirmButtonText: 'Entendido'
+        });
+        return;
+    }
     document.getElementById('inputSkusImprimirMaestro').value = skus.join(',');
     document.getElementById('formImprimirCodigosMaestro').submit();
 }
+
+document.addEventListener('DOMContentLoaded', sincronizarCheckboxesConSeleccionGlobal);
 
 // Convierte a mayúsculas SIN mandar el cursor al final del texto (ver inventario.html/
 // inventario_importbolts.html, mismo arreglo aplicado aquí para el modal de Editar).

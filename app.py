@@ -2178,6 +2178,9 @@ def _orden_productos_lista(resultados, orden):
         resultados.sort(key=lambda x: (x['sku'] or '').upper())
 
 
+MAX_ETIQUETAS_IMPRESION = 300  # debe coincidir con MAESTRO_QR_MAX_ETIQUETAS en admin_maestro.html
+
+
 def _generar_qr_data_uri(texto):
     """Genera un código QR en memoria (nunca se guarda como archivo) a partir de un texto
     o URL, y lo devuelve como un data URI base64 listo para usar directo en un <img src="...">.
@@ -2189,7 +2192,7 @@ def _generar_qr_data_uri(texto):
     qr = qrcode.QRCode(
         version=None,
         error_correction=qrcode.constants.ERROR_CORRECT_M,
-        box_size=10,
+        box_size=18,
         border=2,
     )
     qr.add_data(texto)
@@ -5587,6 +5590,15 @@ def admin_maestro_imprimir_codigos():
     lista_skus = sorted(set(s.strip().upper() for s in skus_raw.split(',') if s.strip()))
     if not lista_skus:
         flash('No seleccionaste ningún producto para imprimir.', 'error')
+        return redirect(url_for('admin_maestro'))
+
+    # Respaldo del límite que ya avisa el JS antes de enviar el formulario: si de todas
+    # formas llega una selección más grande (varias pestañas, localStorage editado a mano,
+    # etc.), no dejamos que el servidor intente generar cientos/miles de QR y un PDF
+    # gigante de una sola vez.
+    if len(lista_skus) > MAX_ETIQUETAS_IMPRESION:
+        flash(f'Seleccionaste {len(lista_skus)} productos, y el máximo por hoja es '
+              f'{MAX_ETIQUETAS_IMPRESION}. Imprime en varias tandas más pequeñas.', 'error')
         return redirect(url_for('admin_maestro'))
 
     productos = (MaestroProducto.query

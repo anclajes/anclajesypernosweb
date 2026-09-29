@@ -12,18 +12,20 @@
         color: #1a1a1a;
     }
     h1.titulo {
-        font-size: 12pt;
-        margin: 0 0 8px 0;
+        font-size: 13pt;
+        margin: 0 0 10px 0;
         color: #333333;
     }
     table.hoja {
         width: 100%;
         border-collapse: collapse;
     }
+    /* Antes eran 3 etiquetas por fila; ahora son 2, bien más grandes (letra y QR casi el
+       doble), para que se lean y se escaneen fácil ya pegadas en el anaquel. */
     table.hoja td.etiqueta {
-        width: 33.33%;
+        width: 50%;
         border: 1px solid #bbbbbb;
-        padding: 8px;
+        padding: 14px;
         vertical-align: top;
         page-break-inside: avoid;
     }
@@ -31,32 +33,33 @@
         width: 100%;
     }
     table.interna td.qr {
-        width: 95px;
+        width: 190px;
         text-align: center;
         vertical-align: middle;
     }
     table.interna td.qr img {
-        width: 88px;
-        height: 88px;
+        width: 175px;
+        height: 175px;
     }
     table.interna td.datos {
         vertical-align: middle;
-        padding-left: 8px;
+        padding-left: 14px;
     }
     .sku {
-        font-size: 10pt;
+        font-size: 20pt;
         font-weight: bold;
         color: #0F172A;
     }
     .nombre {
-        font-size: 8pt;
+        font-size: 14pt;
         color: #333333;
-        margin-top: 2px;
+        margin-top: 5px;
+        line-height: 1.25;
     }
     .calidad {
-        font-size: 7pt;
-        color: #666666;
-        margin-top: 2px;
+        font-size: 12pt;
+        color: #555555;
+        margin-top: 5px;
     }
 </style>
 </head>
@@ -64,7 +67,7 @@
     <h1 class="titulo">Etiquetas de Productos — {{ etiquetas|length }} código(s)</h1>
 
     <table class="hoja">
-        {% for fila in etiquetas|batch(3) %}
+        {% for fila in etiquetas|batch(2) %}
         <tr>
             {% for e in fila %}
             <td class="etiqueta">
@@ -73,14 +76,14 @@
                         <td class="qr"><img src="{{ e.qr_data_uri }}" /></td>
                         <td class="datos">
                             <div class="sku">{{ e.sku }}</div>
-                            <div class="nombre">{{ e.nombre[:70] }}{% if e.nombre|length > 70 %}...{% endif %}</div>
+                            <div class="nombre">{{ e.nombre[:100] }}{% if e.nombre|length > 100 %}...{% endif %}</div>
                             {% if e.calidad %}<div class="calidad">{{ e.calidad }}</div>{% endif %}
                         </td>
                     </tr>
                 </table>
             </td>
             {% endfor %}
-            {% for _ in range(3 - fila|length) %}
+            {% for _ in range(2 - fila|length) %}
             <td class="etiqueta" style="border:none;"></td>
             {% endfor %}
         </tr>
