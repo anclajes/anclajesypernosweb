@@ -3,13 +3,72 @@
 {% block subtitle %}Ficha de consulta rápida — pensada para abrir escaneando el QR{% endblock %}
 {% block content %}
 
-<div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-3">
+<style>
+    .pi-hero {
+        background: linear-gradient(135deg, #0F172A 0%, #1e293b 100%);
+        color: #fff;
+        border-radius: 14px;
+        padding: 20px 24px;
+    }
+    .pi-hero .text-muted { color: #cbd5e1 !important; }
+    .pi-qr-box {
+        background: #fff;
+        border-radius: 10px;
+        padding: 8px;
+        display: inline-block;
+    }
+
+    /* --- ANCLAJES: acento azul, del logo de Anclajes y Pernos --- */
+    .card-anclajes .card-header {
+        background: linear-gradient(135deg, #123e91 0%, #1d5fd6 100%);
+        color: #fff;
+        border-bottom: 0;
+    }
+    .card-anclajes {
+        border: 1px solid #cfe0fb !important;
+        overflow: hidden;
+    }
+    .card-anclajes .stock-pill { background: #eaf1fd; color: #123e91; border: 1px solid #cfe0fb; }
+    .card-anclajes .dato-box { background: #f5f9ff; border: 1px solid #e3edfd; border-radius: 8px; }
+    .card-anclajes .badge-estado { background: #1d5fd6; }
+
+    /* --- IMPORT BOLTS: acento verde, del hexágono del logo de Import Bolts --- */
+    .card-importbolts .card-header {
+        background: linear-gradient(135deg, #3f6e14 0%, #6fae2e 100%);
+        color: #fff;
+        border-bottom: 0;
+    }
+    .card-importbolts {
+        border: 1px solid #d9edc2 !important;
+        overflow: hidden;
+    }
+    .card-importbolts .stock-pill { background: #eef7e4; color: #3f6e14; border: 1px solid #d9edc2; }
+    .card-importbolts .dato-box { background: #f6fbef; border: 1px solid #e6f3d9; border-radius: 8px; }
+    .card-importbolts .badge-estado { background: #6fae2e; }
+
+    .pi-logo-empresa {
+        max-height: 62px;
+        max-width: 170px;
+        object-fit: contain;
+        background: #fff;
+        border-radius: 8px;
+        padding: 5px 10px;
+    }
+    .pi-sin-datos {
+        opacity: .55;
+    }
+    .pi-sin-datos .pi-logo-empresa { filter: grayscale(70%); }
+</style>
+
+<div class="pi-hero d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
     <div>
-        <h2 class="mb-1"><i class="bi bi-qr-code-scan text-primary"></i> {{ maestro.sku }}</h2>
+        <h2 class="mb-1"><i class="bi bi-qr-code-scan"></i> {{ maestro.sku }}</h2>
         <div class="text-muted">{{ maestro.nombre }}</div>
     </div>
     <div class="text-center">
-        <img src="{{ qr_data_uri }}" alt="QR {{ maestro.sku }}" style="width:110px;height:110px;">
+        <div class="pi-qr-box">
+            <img src="{{ qr_data_uri }}" alt="QR {{ maestro.sku }}" style="width:150px;height:150px;display:block;">
+        </div>
         <div class="small text-muted mt-1">Escanéame</div>
     </div>
 </div>
@@ -44,37 +103,45 @@
 
 <div class="row g-3">
     <div class="col-12 col-lg-6">
-        <div class="card border-0 shadow-sm h-100">
-            <div class="card-header bg-white fw-bold d-flex justify-content-between align-items-center">
-                <span><i class="bi bi-building"></i> Anclajes</span>
+        <div class="card border-0 shadow-sm h-100 card-anclajes {{ '' if prod_anclajes else 'pi-sin-datos' }}">
+            <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <img src="{{ url_for('static', filename='img/logo.png') }}" alt="Anclajes y Pernos" class="pi-logo-empresa">
                 {% if prod_anclajes %}
-                    <span class="badge bg-light text-dark border">Stock: {{ prod_anclajes.stock_actual }}</span>
+                    <span class="badge stock-pill fw-bold">Stock: {{ prod_anclajes.stock_actual }}</span>
                 {% endif %}
             </div>
             <div class="card-body">
                 {% if prod_anclajes %}
-                <div class="row g-3 mb-3">
+                <div class="row g-2 mb-3">
                     <div class="col-6">
-                        <div class="small fw-bold text-muted">Estado</div>
-                        <div>
-                            {% if prod_anclajes.estado %}
-                                <span class="badge bg-warning text-dark">{{ prod_anclajes.estado }}</span>
-                            {% else %}
-                                <span class="text-muted">-</span>
-                            {% endif %}
+                        <div class="dato-box p-2">
+                            <div class="small fw-bold text-muted">Estado</div>
+                            <div>
+                                {% if prod_anclajes.estado %}
+                                    <span class="badge badge-estado">{{ prod_anclajes.estado }}</span>
+                                {% else %}
+                                    <span class="text-muted">-</span>
+                                {% endif %}
+                            </div>
                         </div>
                     </div>
                     <div class="col-6">
-                        <div class="small fw-bold text-muted">Ubicación</div>
-                        <div>{{ prod_anclajes.ubicacion or '-' }}</div>
+                        <div class="dato-box p-2">
+                            <div class="small fw-bold text-muted">Ubicación</div>
+                            <div>{{ prod_anclajes.ubicacion or '-' }}</div>
+                        </div>
                     </div>
                     <div class="col-6">
-                        <div class="small fw-bold text-muted">Stock Mínimo</div>
-                        <div>{{ prod_anclajes.stock_minimo }}</div>
+                        <div class="dato-box p-2">
+                            <div class="small fw-bold text-muted">Stock Mínimo</div>
+                            <div>{{ prod_anclajes.stock_minimo }}</div>
+                        </div>
                     </div>
                     <div class="col-6">
-                        <div class="small fw-bold text-muted">Activo</div>
-                        <div>{{ 'Sí' if prod_anclajes.activo else 'No' }}</div>
+                        <div class="dato-box p-2">
+                            <div class="small fw-bold text-muted">Activo</div>
+                            <div>{{ 'Sí' if prod_anclajes.activo else 'No' }}</div>
+                        </div>
                     </div>
                 </div>
 
@@ -115,37 +182,45 @@
     </div>
 
     <div class="col-12 col-lg-6">
-        <div class="card border-0 shadow-sm h-100">
-            <div class="card-header bg-white fw-bold d-flex justify-content-between align-items-center">
-                <span><i class="bi bi-box-seam"></i> Import Bolts</span>
+        <div class="card border-0 shadow-sm h-100 card-importbolts {{ '' if prod_importbolts else 'pi-sin-datos' }}">
+            <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <img src="{{ url_for('static', filename='img/logo_import.png') }}" alt="Import Bolts" class="pi-logo-empresa">
                 {% if prod_importbolts %}
-                    <span class="badge bg-light text-dark border">Stock: {{ prod_importbolts.stock_actual }}</span>
+                    <span class="badge stock-pill fw-bold">Stock: {{ prod_importbolts.stock_actual }}</span>
                 {% endif %}
             </div>
             <div class="card-body">
                 {% if prod_importbolts %}
-                <div class="row g-3 mb-3">
+                <div class="row g-2 mb-3">
                     <div class="col-6">
-                        <div class="small fw-bold text-muted">Estado</div>
-                        <div>
-                            {% if prod_importbolts.estado %}
-                                <span class="badge bg-warning text-dark">{{ prod_importbolts.estado }}</span>
-                            {% else %}
-                                <span class="text-muted">-</span>
-                            {% endif %}
+                        <div class="dato-box p-2">
+                            <div class="small fw-bold text-muted">Estado</div>
+                            <div>
+                                {% if prod_importbolts.estado %}
+                                    <span class="badge badge-estado">{{ prod_importbolts.estado }}</span>
+                                {% else %}
+                                    <span class="text-muted">-</span>
+                                {% endif %}
+                            </div>
                         </div>
                     </div>
                     <div class="col-6">
-                        <div class="small fw-bold text-muted">Ubicación</div>
-                        <div>{{ prod_importbolts.ubicacion or '-' }}</div>
+                        <div class="dato-box p-2">
+                            <div class="small fw-bold text-muted">Ubicación</div>
+                            <div>{{ prod_importbolts.ubicacion or '-' }}</div>
+                        </div>
                     </div>
                     <div class="col-6">
-                        <div class="small fw-bold text-muted">Stock Mínimo</div>
-                        <div>{{ prod_importbolts.stock_minimo }}</div>
+                        <div class="dato-box p-2">
+                            <div class="small fw-bold text-muted">Stock Mínimo</div>
+                            <div>{{ prod_importbolts.stock_minimo }}</div>
+                        </div>
                     </div>
                     <div class="col-6">
-                        <div class="small fw-bold text-muted">Activo</div>
-                        <div>{{ 'Sí' if prod_importbolts.activo else 'No' }}</div>
+                        <div class="dato-box p-2">
+                            <div class="small fw-bold text-muted">Activo</div>
+                            <div>{{ 'Sí' if prod_importbolts.activo else 'No' }}</div>
+                        </div>
                     </div>
                 </div>
 

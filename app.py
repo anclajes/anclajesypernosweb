@@ -2189,7 +2189,7 @@ def _generar_qr_data_uri(texto):
     qr = qrcode.QRCode(
         version=None,
         error_correction=qrcode.constants.ERROR_CORRECT_M,
-        box_size=8,
+        box_size=10,
         border=2,
     )
     qr.add_data(texto)
