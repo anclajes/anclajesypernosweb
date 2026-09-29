@@ -36,6 +36,8 @@ import uuid
 from botocore.exceptions import ClientError
 from werkzeug.security import generate_password_hash, check_password_hash
 from xhtml2pdf import pisa
+import base64
+import qrcode
 
 
 ROLE_LABELS = {
@@ -1588,7 +1590,11 @@ def exportar_excel():
             'PESO_KG': p.peso_kg or 0,
             'PRECIO UNIT': p.precio_unidad,
             'PRECIO CAJA': p.precio_caja,
-            'ACTIVO': 'SI' if p.activo else 'NO'
+            'ACTIVO': 'SI' if p.activo else 'NO',
+            # Texto plano con la URL que codifica el QR del producto (no la imagen: un
+            # celular puede escribirla o abrirla igual, y así el Excel no se vuelve pesado
+            # con imágenes incrustadas por fila).
+            'CÓDIGO DE BARRAS (URL)': url_for('producto_info', sku=p.sku, _external=True),
         })
     
     # Liberamos la memoria RAM de SQLAlchemy antes de procesar el Excel
@@ -2170,6 +2176,30 @@ def _orden_productos_lista(resultados, orden):
         resultados.sort(key=lambda x: x['stock'], reverse=True)
     else:  # 'sku' / codigo -> predeterminado
         resultados.sort(key=lambda x: (x['sku'] or '').upper())
+
+
+def _generar_qr_data_uri(texto):
+    """Genera un código QR en memoria (nunca se guarda como archivo) a partir de un texto
+    o URL, y lo devuelve como un data URI base64 listo para usar directo en un <img src="...">.
+    Se usa para el QR de cada producto del Maestro: en vez de guardar un 'código de barras'
+    nuevo en la base de datos, el QR simplemente codifica la URL de su página de información
+    (/producto/<sku>/info) construida a partir del SKU que ya existe — así no hace falta
+    ninguna migración ni columna nueva, y el QR queda siempre disponible para cualquier
+    producto, incluso los que ya existían antes de este cambio."""
+    qr = qrcode.QRCode(
+        version=None,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        box_size=8,
+        border=2,
+    )
+    qr.add_data(texto)
+    qr.make(fit=True)
+    imagen = qr.make_image(fill_color='black', back_color='white')
+    buffer = io.BytesIO()
+    imagen.save(buffer, format='PNG')
+    buffer.seek(0)
+    b64 = base64.b64encode(buffer.getvalue()).decode('ascii')
+    return f"data:image/png;base64,{b64}"
 
 
 # 1. ACTUALIZAR RUTA INVENTARIO (Para ver categorías nuevas vacías)
@@ -5499,6 +5529,99 @@ def admin_maestro_editar(sku):
         return {'status': 'error', 'msg': f'Error al editar: {str(e)}'}, 500
 
 
+@app.route('/producto/<sku>/info')
+def producto_info(sku):
+    """Página de solo información de un producto, pensada para abrirse escaneando con el
+    celular el código QR que se imprime junto a su descripción. Requiere tener sesión
+    iniciada (cualquier rol), y muestra los datos del Maestro más, si existen, la ficha de
+    Anclajes y de ImportBolts para ese mismo código (calidad, familia, estado, ubicación,
+    stock) y un mini-Kardex con sus últimos movimientos en cada inventario donde exista.
+    No revela nada que un conteo de auditoría no debiera ver: esto es una pantalla de
+    consulta aparte, no la auditoría."""
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+
+    sku = sku.strip().upper()
+    maestro = MaestroProducto.query.filter_by(sku=sku).first_or_404()
+
+    prod_anclajes = Product.query.filter_by(sku=sku).first()
+    prod_importbolts = ProductImportBolts.query.filter_by(sku=sku).first()
+
+    kardex_anclajes = []
+    if prod_anclajes:
+        kardex_anclajes = (ProductMovement.query
+                            .filter_by(product_id=prod_anclajes.id)
+                            .order_by(ProductMovement.fecha.desc())
+                            .limit(10).all())
+
+    kardex_importbolts = []
+    if prod_importbolts:
+        kardex_importbolts = (ProductMovementImportBolts.query
+                               .filter_by(product_id=prod_importbolts.id)
+                               .order_by(ProductMovementImportBolts.fecha.desc())
+                               .limit(10).all())
+
+    url_actual = url_for('producto_info', sku=sku, _external=True)
+    qr_data_uri = _generar_qr_data_uri(url_actual)
+
+    return render_template('producto_info.html',
+                            maestro=maestro,
+                            prod_anclajes=prod_anclajes,
+                            prod_importbolts=prod_importbolts,
+                            kardex_anclajes=kardex_anclajes,
+                            kardex_importbolts=kardex_importbolts,
+                            qr_data_uri=qr_data_uri,
+                            url_actual=url_actual)
+
+
+@app.route('/admin/maestro/imprimir_codigos', methods=['POST'])
+def admin_maestro_imprimir_codigos():
+    """Genera un PDF descargable con una hoja de etiquetas (código QR + SKU + descripción)
+    para los productos del Maestro que el admin/almacén seleccionó con los checkboxes de la
+    tabla, en una cuadrícula genérica pensada para hoja carta, lista para imprimir y recortar
+    y pegar junto a cada producto físico en el almacén."""
+    if session.get('role') not in ['admin', 'almacen']:
+        return "Acceso denegado", 403
+
+    skus_raw = request.form.get('skus', '')
+    lista_skus = sorted(set(s.strip().upper() for s in skus_raw.split(',') if s.strip()))
+    if not lista_skus:
+        flash('No seleccionaste ningún producto para imprimir.', 'error')
+        return redirect(url_for('admin_maestro'))
+
+    productos = (MaestroProducto.query
+                 .filter(MaestroProducto.sku.in_(lista_skus))
+                 .order_by(MaestroProducto.sku).all())
+    if not productos:
+        flash('No se encontraron los productos seleccionados.', 'error')
+        return redirect(url_for('admin_maestro'))
+
+    etiquetas = []
+    for p in productos:
+        url_p = url_for('producto_info', sku=p.sku, _external=True)
+        etiquetas.append({
+            'sku': p.sku,
+            'nombre': p.nombre,
+            'calidad': p.calidad or '',
+            'qr_data_uri': _generar_qr_data_uri(url_p),
+        })
+
+    html_renderizado = render_template('etiquetas_maestro_pdf.html', etiquetas=etiquetas)
+
+    pdf_buffer = io.BytesIO()
+    resultado = pisa.CreatePDF(src=html_renderizado, dest=pdf_buffer, encoding='utf-8')
+    if resultado.err:
+        return f"<h2>Error generando PDF de etiquetas</h2><pre>{html_renderizado}</pre>", 500
+    pdf_buffer.seek(0)
+
+    return send_file(
+        pdf_buffer,
+        as_attachment=True,
+        download_name=f"etiquetas_maestro_{hora_peru().strftime('%Y%m%d_%H%M')}.pdf",
+        mimetype='application/pdf'
+    )
+
+
 # 2. ACTUALIZAR NUEVO PRODUCTO (Para responder JSON y no borrar datos)
 # --- FUNCIÓN NUEVO PRODUCTO (Actualizada) ---
 @app.route('/producto/nuevo', methods=['POST'])
@@ -7686,7 +7809,9 @@ def exportar_excel_importbolts():
             'CANT. ACT.': p.stock_actual, 'STOCK MÍNIMO': p.stock_minimo,
             'PESO_KG': p.peso_kg or 0,
             'PRECIO UNIT': p.precio_unidad, 'PRECIO CAJA': p.precio_caja,
-            'ACTIVO': 'SI' if p.activo else 'NO'
+            'ACTIVO': 'SI' if p.activo else 'NO',
+            # Igual que en el Excel de Anclajes: texto plano con la URL del QR del producto.
+            'CÓDIGO DE BARRAS (URL)': url_for('producto_info', sku=p.sku, _external=True),
         })
     
     del productos

@@ -1,0 +1,90 @@
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+    @page {
+        size: letter;
+        margin: 1.2cm;
+    }
+    body {
+        font-family: Helvetica, Arial, sans-serif;
+        font-size: 9pt;
+        color: #1a1a1a;
+    }
+    h1.titulo {
+        font-size: 12pt;
+        margin: 0 0 8px 0;
+        color: #333333;
+    }
+    table.hoja {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    table.hoja td.etiqueta {
+        width: 33.33%;
+        border: 1px solid #bbbbbb;
+        padding: 8px;
+        vertical-align: top;
+        page-break-inside: avoid;
+    }
+    table.interna {
+        width: 100%;
+    }
+    table.interna td.qr {
+        width: 70px;
+        text-align: center;
+        vertical-align: middle;
+    }
+    table.interna td.qr img {
+        width: 62px;
+        height: 62px;
+    }
+    table.interna td.datos {
+        vertical-align: middle;
+        padding-left: 8px;
+    }
+    .sku {
+        font-size: 10pt;
+        font-weight: bold;
+        color: #0F172A;
+    }
+    .nombre {
+        font-size: 8pt;
+        color: #333333;
+        margin-top: 2px;
+    }
+    .calidad {
+        font-size: 7pt;
+        color: #666666;
+        margin-top: 2px;
+    }
+</style>
+</head>
+<body>
+    <h1 class="titulo">Etiquetas de Productos — {{ etiquetas|length }} código(s)</h1>
+
+    <table class="hoja">
+        {% for fila in etiquetas|batch(3) %}
+        <tr>
+            {% for e in fila %}
+            <td class="etiqueta">
+                <table class="interna">
+                    <tr>
+                        <td class="qr"><img src="{{ e.qr_data_uri }}" /></td>
+                        <td class="datos">
+                            <div class="sku">{{ e.sku }}</div>
+                            <div class="nombre">{{ e.nombre[:70] }}{% if e.nombre|length > 70 %}...{% endif %}</div>
+                            {% if e.calidad %}<div class="calidad">{{ e.calidad }}</div>{% endif %}
+                        </td>
+                    </tr>
+                </table>
+            </td>
+            {% endfor %}
+            {% for _ in range(3 - fila|length) %}
+            <td class="etiqueta" style="border:none;"></td>
+            {% endfor %}
+        </tr>
+        {% endfor %}
+    </table>
+</body>
+</html>
