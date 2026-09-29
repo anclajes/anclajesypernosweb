@@ -4,46 +4,46 @@
 <style>
     @page {
         size: letter;
-        margin: 1.2cm;
+        margin: 1cm;
     }
     body {
         font-family: Helvetica, Arial, sans-serif;
         font-size: 9pt;
         color: #1a1a1a;
     }
-    h1.titulo {
-        font-size: 13pt;
-        margin: 0 0 10px 0;
-        color: #333333;
-    }
     table.hoja {
         width: 100%;
         border-collapse: collapse;
     }
-    /* Antes eran 3 etiquetas por fila; ahora son 2, bien más grandes (letra y QR casi el
-       doble), para que se lean y se escaneen fácil ya pegadas en el anaquel. */
-    table.hoja td.etiqueta {
+    /* El borde ya NO va en la celda de la tabla (eso causaba que la línea se dibujara mal
+       y pisara las letras en xhtml2pdf) -- ahora va en el <div> de adentro, que se recorta
+       limpio alrededor de su propio contenido. */
+    table.hoja td.celda {
         width: 50%;
-        border: 1px solid #bbbbbb;
-        padding: 14px;
+        padding: 5px;
         vertical-align: top;
+    }
+    div.etiqueta {
+        border: 1px solid #bbbbbb;
+        padding: 12px;
         page-break-inside: avoid;
     }
     table.interna {
         width: 100%;
+        table-layout: fixed;
     }
     table.interna td.qr {
-        width: 190px;
+        width: 180px;
         text-align: center;
         vertical-align: middle;
     }
     table.interna td.qr img {
-        width: 175px;
-        height: 175px;
+        width: 165px;
+        height: 165px;
     }
     table.interna td.datos {
         vertical-align: middle;
-        padding-left: 14px;
+        padding-left: 12px;
     }
     .sku {
         font-size: 20pt;
@@ -64,27 +64,27 @@
 </style>
 </head>
 <body>
-    <h1 class="titulo">Etiquetas de Productos — {{ etiquetas|length }} código(s)</h1>
-
     <table class="hoja">
         {% for fila in etiquetas|batch(2) %}
         <tr>
             {% for e in fila %}
-            <td class="etiqueta">
-                <table class="interna">
-                    <tr>
-                        <td class="qr"><img src="{{ e.qr_data_uri }}" /></td>
-                        <td class="datos">
-                            <div class="sku">{{ e.sku }}</div>
-                            <div class="nombre">{{ e.nombre[:100] }}{% if e.nombre|length > 100 %}...{% endif %}</div>
-                            {% if e.calidad %}<div class="calidad">{{ e.calidad }}</div>{% endif %}
-                        </td>
-                    </tr>
-                </table>
+            <td class="celda">
+                <div class="etiqueta">
+                    <table class="interna">
+                        <tr>
+                            <td class="qr"><img src="{{ e.qr_data_uri }}" /></td>
+                            <td class="datos">
+                                <div class="sku">{{ e.sku }}</div>
+                                <div class="nombre">{{ e.nombre[:100] }}{% if e.nombre|length > 100 %}...{% endif %}</div>
+                                {% if e.calidad %}<div class="calidad">{{ e.calidad }}</div>{% endif %}
+                            </td>
+                        </tr>
+                    </table>
+                </div>
             </td>
             {% endfor %}
             {% for _ in range(2 - fila|length) %}
-            <td class="etiqueta" style="border:none;"></td>
+            <td class="celda"></td>
             {% endfor %}
         </tr>
         {% endfor %}
