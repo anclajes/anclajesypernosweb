@@ -2211,12 +2211,38 @@ def inventario():
         query = query.filter(filtro_busqueda)
 
     # --- FILTROS FLEXIBLES: no exigen orden entre sí. Además de elegir de la lista,
-    # se puede escribir directamente (coincidencia parcial, no exige el texto exacto) ---
+    # se puede escribir directamente (coincidencia parcial, no exige el texto exacto).
+    # EXCEPCIÓN: si el texto escrito coincide EXACTO (sin importar mayúsc./espacios) con
+    # una familia o calidad real del catálogo, filtramos exacto en vez de parcial, para
+    # que por ejemplo "TUERCA HEX. INOX. 304" no arrastre también a "TUERCA HEX. INOX. 304
+    # MILIM." solo porque su nombre empieza igual ---
+    cat_filtro_exacto = None
     if cat_filtro != 'todos':
-        query = query.filter(Product.categoria.ilike(f"%{cat_filtro}%"))
+        _match_cat = Category.query.filter(
+            db.func.lower(db.func.trim(Category.nombre)) == cat_filtro.strip().lower()
+        ).first()
+        if _match_cat:
+            cat_filtro_exacto = _match_cat.nombre
+
+    calidad_filtro_exacto = None
+    if calidad_filtro != 'todos':
+        _match_calidad = Product.query.filter(
+            db.func.lower(db.func.trim(Product.calidad)) == calidad_filtro.strip().lower()
+        ).first()
+        if _match_calidad:
+            calidad_filtro_exacto = _match_calidad.calidad
+
+    if cat_filtro != 'todos':
+        if cat_filtro_exacto is not None:
+            query = query.filter(db.func.lower(db.func.trim(Product.categoria)) == cat_filtro_exacto.strip().lower())
+        else:
+            query = query.filter(Product.categoria.ilike(f"%{cat_filtro}%"))
 
     if calidad_filtro != 'todos':
-        query = query.filter(Product.calidad.ilike(f"%{calidad_filtro}%"))
+        if calidad_filtro_exacto is not None:
+            query = query.filter(db.func.lower(db.func.trim(Product.calidad)) == calidad_filtro_exacto.strip().lower())
+        else:
+            query = query.filter(Product.calidad.ilike(f"%{calidad_filtro}%"))
 
     # --- CORRECCIÓN CRÍTICA ---
     if stock_bajo == 'on':
@@ -2238,9 +2264,15 @@ def inventario():
         base_calidades = base_calidades.filter(Product.activo.is_(False))
 
     if calidad_filtro != 'todos':
-        base_familias = base_familias.filter(Product.calidad.ilike(f"%{calidad_filtro}%"))
+        if calidad_filtro_exacto is not None:
+            base_familias = base_familias.filter(db.func.lower(db.func.trim(Product.calidad)) == calidad_filtro_exacto.strip().lower())
+        else:
+            base_familias = base_familias.filter(Product.calidad.ilike(f"%{calidad_filtro}%"))
     if cat_filtro != 'todos':
-        base_calidades = base_calidades.filter(Product.categoria.ilike(f"%{cat_filtro}%"))
+        if cat_filtro_exacto is not None:
+            base_calidades = base_calidades.filter(db.func.lower(db.func.trim(Product.categoria)) == cat_filtro_exacto.strip().lower())
+        else:
+            base_calidades = base_calidades.filter(Product.categoria.ilike(f"%{cat_filtro}%"))
 
     familias_disponibles = set(c[0] for c in base_familias.with_entities(Product.categoria).distinct().all() if c[0])
     # Las familias son un catálogo aparte (puede haber familias vacías); mostramos
@@ -7080,11 +7112,37 @@ def inventario_importbolts():
     if filtro_busqueda is not None:
         query = query.filter(filtro_busqueda)
 
-    # --- FILTROS FLEXIBLES: sin orden fijo, y con coincidencia parcial para admitir texto libre ---
+    # --- FILTROS FLEXIBLES: sin orden fijo, y con coincidencia parcial para admitir texto libre.
+    # EXCEPCIÓN: si el texto escrito coincide EXACTO (sin importar mayúsc./espacios) con una
+    # familia o calidad real del catálogo, filtramos exacto en vez de parcial, para que por
+    # ejemplo "TUERCA HEX. INOX. 304" no arrastre también a "TUERCA HEX. INOX. 304 MILIM."
+    # solo porque su nombre empieza igual ---
+    cat_filtro_exacto = None
     if cat_filtro != 'todos':
-        query = query.filter(ProductImportBolts.categoria.ilike(f"%{cat_filtro}%"))
+        _match_cat = CategoryImportBolts.query.filter(
+            db.func.lower(db.func.trim(CategoryImportBolts.nombre)) == cat_filtro.strip().lower()
+        ).first()
+        if _match_cat:
+            cat_filtro_exacto = _match_cat.nombre
+
+    calidad_filtro_exacto = None
     if calidad_filtro != 'todos':
-        query = query.filter(ProductImportBolts.calidad.ilike(f"%{calidad_filtro}%"))
+        _match_calidad = ProductImportBolts.query.filter(
+            db.func.lower(db.func.trim(ProductImportBolts.calidad)) == calidad_filtro.strip().lower()
+        ).first()
+        if _match_calidad:
+            calidad_filtro_exacto = _match_calidad.calidad
+
+    if cat_filtro != 'todos':
+        if cat_filtro_exacto is not None:
+            query = query.filter(db.func.lower(db.func.trim(ProductImportBolts.categoria)) == cat_filtro_exacto.strip().lower())
+        else:
+            query = query.filter(ProductImportBolts.categoria.ilike(f"%{cat_filtro}%"))
+    if calidad_filtro != 'todos':
+        if calidad_filtro_exacto is not None:
+            query = query.filter(db.func.lower(db.func.trim(ProductImportBolts.calidad)) == calidad_filtro_exacto.strip().lower())
+        else:
+            query = query.filter(ProductImportBolts.calidad.ilike(f"%{calidad_filtro}%"))
     if stock_bajo == 'on':
         query = query.filter(ProductImportBolts.stock_actual <= ProductImportBolts.stock_minimo)
 
@@ -7102,9 +7160,15 @@ def inventario_importbolts():
         base_calidades = base_calidades.filter(ProductImportBolts.activo.is_(False))
 
     if calidad_filtro != 'todos':
-        base_familias = base_familias.filter(ProductImportBolts.calidad.ilike(f"%{calidad_filtro}%"))
+        if calidad_filtro_exacto is not None:
+            base_familias = base_familias.filter(db.func.lower(db.func.trim(ProductImportBolts.calidad)) == calidad_filtro_exacto.strip().lower())
+        else:
+            base_familias = base_familias.filter(ProductImportBolts.calidad.ilike(f"%{calidad_filtro}%"))
     if cat_filtro != 'todos':
-        base_calidades = base_calidades.filter(ProductImportBolts.categoria.ilike(f"%{cat_filtro}%"))
+        if cat_filtro_exacto is not None:
+            base_calidades = base_calidades.filter(db.func.lower(db.func.trim(ProductImportBolts.categoria)) == cat_filtro_exacto.strip().lower())
+        else:
+            base_calidades = base_calidades.filter(ProductImportBolts.categoria.ilike(f"%{cat_filtro}%"))
 
     familias_disponibles = set(c[0] for c in base_familias.with_entities(ProductImportBolts.categoria).distinct().all() if c[0])
     cats_db = CategoryImportBolts.query.order_by(CategoryImportBolts.nombre).all()
