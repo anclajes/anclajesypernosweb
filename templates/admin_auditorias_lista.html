@@ -71,7 +71,8 @@
             </thead>
             <tbody>
                 {% for r in registros %}
-                <tr>
+                {% set info = info_por_registro.get(r.id) %}
+                <tr{% if info and info.total > 1 %} class="border-start border-3 border-info-subtle"{% endif %}>
                     <td class="ps-3">{{ r.fecha_registro.strftime('%d/%m/%y %H:%M') }}</td>
                     <td>
                         {% if r.id in ultimas_ediciones %}
@@ -84,8 +85,25 @@
                     <td>{{ r.trabajador.nombre_completo }}</td>
                     <td>{{ r.periodo.nombre if r.periodo else '-' }}</td>
                     <td><span class="badge bg-light text-dark border">{{ r.origen_inventario }}</span></td>
-                    <td class="fw-bold text-primary">{{ r.sku_snapshot }}</td>
-                    <td>{{ r.nombre_snapshot }}</td>
+                    <td class="fw-bold text-primary">
+                        {{ r.sku_snapshot }}
+                        {% if info and info.total > 1 %}
+                            <span class="badge bg-info-subtle text-info-emphasis border border-info-subtle ms-1" style="font-size:.65rem;" title="Este código tiene {{ info.total }} conteos en esta auditoría">
+                                <i class="bi bi-link-45deg"></i> {{ info.total }}
+                            </span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {{ r.nombre_snapshot }}
+                        {% if info and info.aplicado_id and info.aplicado_id != r.id %}
+                            <div class="small text-success mt-1">
+                                <i class="bi bi-check-circle-fill"></i> Ya aplicado en
+                                <a href="{{ url_for('admin_auditorias_detalle', reg_id=info.aplicado_id) }}">#{{ info.aplicado_id }}</a>
+                                {% if info.aplicado_por %}por {{ info.aplicado_por }}{% endif %}
+                                {% if info.aplicado_fecha %}el {{ info.aplicado_fecha }}{% endif %}
+                            </div>
+                        {% endif %}
+                    </td>
                     <td class="text-center">{{ r.cantidad_total }} {{ r.unidad_medida }}</td>
                     <td class="text-center">
                         {% if r.estado_registro == 'PENDIENTE' %}<span class="badge bg-warning text-dark">Pendiente</span>

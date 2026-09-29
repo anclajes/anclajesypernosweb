@@ -9283,6 +9283,59 @@ def auditoria_api_codigos(origen):
         {'id': p.id, 'sku': p.sku, 'nombre': p.nombre, 'estado': p.estado or ''} for p in productos
     ]}
 
+
+@app.route('/api/auditoria/verificar_duplicado/<origen>', methods=['POST'])
+def auditoria_api_verificar_duplicado(origen):
+    """Avisa al auditor, ANTES de enviar, si el código que eligió ya tiene otro(s) conteo(s)
+    dentro de esta MISMA auditoría (mismo período) — para que no registre dos veces el mismo
+    hallazgo por error, o para que sepa que si de verdad encontró más en otra ubicación, puede
+    seguir adelante con confianza. No mira períodos anteriores (eso es otro aviso, aparte, que
+    ve el admin al aplicar)."""
+    if session.get('role') != 'auditor_stock': return {'status': 'error', 'duplicados': []}, 403
+    try:
+        producto_id = int(request.form.get('producto_id') or 0)
+    except ValueError:
+        producto_id = 0
+    if not producto_id:
+        return {'status': 'success', 'duplicados': []}
+
+    excluir_registro_id = request.form.get('excluir_registro_id')
+
+    periodo = _obtener_periodo_activo_sesion()
+    if not periodo:
+        return {'status': 'success', 'duplicados': []}
+
+    campo_producto = 'product_importbolts_id' if origen == 'IMPORTBOLTS' else 'product_id'
+    q = RegistroAuditoria.query.filter(
+        getattr(RegistroAuditoria, campo_producto) == producto_id,
+        RegistroAuditoria.origen_inventario == origen,
+        RegistroAuditoria.periodo_id == periodo.id,
+        RegistroAuditoria.estado_registro != 'RECHAZADO',
+    )
+    if excluir_registro_id:
+        q = q.filter(RegistroAuditoria.id != int(excluir_registro_id))
+
+    registros = q.order_by(RegistroAuditoria.fecha_registro).all()
+    duplicados = []
+    for r in registros:
+        ubic = ' '.join(filter(None, [
+            f"Anaquel {r.anaquel}" if r.anaquel else '',
+            f"Nicho {r.nicho}" if r.nicho else '',
+        ])).strip() or 'sin ubicación registrada'
+        item = {
+            'id': r.id, 'auditor': r.trabajador.nombre_completo, 'ubicacion': ubic,
+            'cantidad_total': r.cantidad_total, 'unidad_medida': r.unidad_medida,
+            'fecha_registro': r.fecha_registro.strftime('%d/%m/%Y %H:%M') if r.fecha_registro else '',
+            'estado_registro': r.estado_registro,
+        }
+        if r.estado_registro == 'APLICADO':
+            item['aplicado_por'] = r.aplicado_por.nombre_completo if r.aplicado_por else ''
+            item['fecha_aplicacion'] = r.fecha_aplicacion.strftime('%d/%m/%Y %H:%M') if r.fecha_aplicacion else ''
+        duplicados.append(item)
+
+    return {'status': 'success', 'duplicados': duplicados}
+
+
 @app.route('/api/catalogo/<tipo>')
 def api_catalogo_valores(tipo):
     if session.get('role') not in ['auditor_stock', 'admin', 'administracion']: return {'valores': []}, 403
@@ -9568,12 +9621,54 @@ def admin_auditorias_lista():
             if log.registro_id not in ultimas_ediciones:
                 ultimas_ediciones[log.registro_id] = log.fecha
 
+    # Agrupamos por código (mismo origen + sku_snapshot + período) para que los conteos del
+    # mismo producto queden juntos en la tabla y se note si alguno del grupo ya fue aplicado,
+    # aunque el filtro de Estado actual solo esté mostrando Pendientes (por eso esta consulta
+    # de "info_por_registro" va SIN el filtro de estado_filtro: necesita ver todo el grupo).
+    info_por_registro = {}
+    if registros:
+        claves_grupo = {(r.origen_inventario, r.sku_snapshot, r.periodo_id) for r in registros}
+        grupos_info = {}
+        for origen_g, sku_g, periodo_g in claves_grupo:
+            q_grupo = RegistroAuditoria.query.filter(
+                RegistroAuditoria.origen_inventario == origen_g,
+                RegistroAuditoria.sku_snapshot == sku_g,
+                RegistroAuditoria.estado_registro != 'RECHAZADO',
+            )
+            if periodo_g is not None:
+                q_grupo = q_grupo.filter(RegistroAuditoria.periodo_id == periodo_g)
+            else:
+                q_grupo = q_grupo.filter(RegistroAuditoria.periodo_id.is_(None))
+            miembros = q_grupo.all()
+            aplicado = next((m for m in miembros if m.estado_registro == 'APLICADO'), None)
+            grupos_info[(origen_g, sku_g, periodo_g)] = {
+                'total': len(miembros),
+                'aplicado_id': aplicado.id if aplicado else None,
+                'aplicado_por': (aplicado.aplicado_por.nombre_completo if aplicado and aplicado.aplicado_por else None),
+                'aplicado_fecha': (aplicado.fecha_aplicacion.strftime('%d/%m/%y %H:%M') if aplicado and aplicado.fecha_aplicacion else None),
+            }
+        for r in registros:
+            info_por_registro[r.id] = grupos_info[(r.origen_inventario, r.sku_snapshot, r.periodo_id)]
+
+        # Reordenamos: los grupos con actividad más reciente primero, y dentro de cada grupo
+        # el más reciente primero — así los conteos del mismo código quedan pegados uno al
+        # otro en vez de dispersos solo por fecha de envío.
+        grupos_max_fecha = {}
+        for r in registros:
+            key = (r.origen_inventario, r.sku_snapshot, r.periodo_id)
+            if key not in grupos_max_fecha or r.fecha_registro > grupos_max_fecha[key]:
+                grupos_max_fecha[key] = r.fecha_registro
+        registros.sort(
+            key=lambda r: (grupos_max_fecha[(r.origen_inventario, r.sku_snapshot, r.periodo_id)], r.fecha_registro),
+            reverse=True
+        )
+
     return render_template('admin_auditorias_lista.html',
                            registros=registros, trabajadores=trabajadores,
                            estado_filtro=estado_filtro, origen_filtro=origen_filtro,
                            trabajador_filtro=trabajador_filtro,
                            periodo_filtro=periodo_filtro, lista_periodos=lista_periodos,
-                           ultimas_ediciones=ultimas_ediciones)
+                           ultimas_ediciones=ultimas_ediciones, info_por_registro=info_por_registro)
 
 
 @app.route('/admin/auditorias/<int:reg_id>')
@@ -9581,7 +9676,45 @@ def admin_auditorias_detalle(reg_id):
     if session.get('role') not in ['admin', 'administracion', 'almacen']: return "Acceso denegado", 403
     registro = RegistroAuditoria.query.get_or_404(reg_id)
     prod_actual = registro.producto
-    return render_template('admin_auditorias_detalle.html', registro=registro, prod_actual=prod_actual)
+
+    # Otros conteos PENDIENTES/APROBADOS del MISMO código, en el MISMO período y el mismo
+    # inventario (ANCLAJES/IMPORTBOLTS) que este. Casi todo en este sistema se separa por
+    # código (incluso por estado físico: oxidado, nacional, roto, etc. suelen tener su propio
+    # código), así que agrupar por sku_snapshot es lo correcto para detectar que un mismo
+    # producto se contó en más de una ubicación dentro de la misma auditoría.
+    hermanos_q = RegistroAuditoria.query.filter(
+        RegistroAuditoria.id != registro.id,
+        RegistroAuditoria.origen_inventario == registro.origen_inventario,
+        RegistroAuditoria.sku_snapshot == registro.sku_snapshot,
+        RegistroAuditoria.estado_registro.in_(['PENDIENTE', 'APROBADO']),
+    )
+    if registro.periodo_id is not None:
+        hermanos_q = hermanos_q.filter(RegistroAuditoria.periodo_id == registro.periodo_id)
+    else:
+        hermanos_q = hermanos_q.filter(RegistroAuditoria.periodo_id.is_(None))
+    hermanos = hermanos_q.order_by(RegistroAuditoria.fecha_registro).all()
+
+    grupo_conteos = [registro] + hermanos
+    unidades_grupo = {r.unidad_medida for r in grupo_conteos}
+    estados_grupo = {(r.estado_fisico or '').strip().upper() for r in grupo_conteos}
+    misma_unidad = len(unidades_grupo) <= 1
+    mismo_estado = len(estados_grupo) <= 1
+
+    suma_sugerida = sum(r.cantidad_total for r in grupo_conteos) if misma_unidad else None
+
+    partes_ubicacion = []
+    for r in grupo_conteos:
+        ubic = ' '.join(filter(None, [
+            f"ANAQUEL {r.anaquel}" if r.anaquel else '',
+            f"NICHO {r.nicho}" if r.nicho else '',
+        ])).strip()
+        if ubic:
+            partes_ubicacion.append(f"{ubic} ({r.cantidad_total} {r.unidad_medida})")
+    ubicacion_combinada = ' + '.join(partes_ubicacion) if len(grupo_conteos) > 1 else None
+
+    return render_template('admin_auditorias_detalle.html', registro=registro, prod_actual=prod_actual,
+                           hermanos=hermanos, misma_unidad=misma_unidad, mismo_estado=mismo_estado,
+                           suma_sugerida=suma_sugerida, ubicacion_combinada=ubicacion_combinada)
 
 
 @app.route('/admin/auditorias/<int:reg_id>/rechazar', methods=['POST'])
@@ -9611,6 +9744,29 @@ def admin_auditoria_aplicar(reg_id):
 
     if registro.estado_registro == 'APLICADO':
         return {'status': 'error', 'msg': 'Este registro ya fue aplicado anteriormente.'}
+
+    # Registros "hermanos" (mismo código, mismo período, distinta ubicación) que el admin
+    # decidió sumar junto con este. Vienen del bloque "Otros conteos de este mismo código"
+    # en Detalle Conteo. Se validan de nuevo aquí por si alguien más los aplicó/rechazó
+    # mientras el admin tenía la pantalla abierta.
+    ids_hermanos_raw = request.form.get('registros_incluidos', '').strip()
+    hermanos = []
+    if ids_hermanos_raw:
+        try:
+            ids_hermanos = [int(x) for x in ids_hermanos_raw.split(',') if x.strip()]
+        except ValueError:
+            return {'status': 'error', 'msg': 'IDs de registros hermanos inválidos.'}
+        for hid in ids_hermanos:
+            h = RegistroAuditoria.query.get(hid)
+            if not h or h.id == registro.id:
+                continue
+            if (h.origen_inventario != registro.origen_inventario or
+                    h.sku_snapshot != registro.sku_snapshot or
+                    h.periodo_id != registro.periodo_id):
+                return {'status': 'error', 'msg': f'El registro #{hid} ya no corresponde al mismo código/período. Actualiza la página e intenta de nuevo.'}
+            if h.estado_registro not in ['PENDIENTE', 'APROBADO']:
+                return {'status': 'error', 'msg': f'El registro #{hid} ya fue {h.estado_registro.lower()} por otra persona mientras revisabas. Actualiza la página e intenta de nuevo.'}
+            hermanos.append(h)
 
     try:
         origen = registro.origen_inventario
@@ -9679,7 +9835,21 @@ def admin_auditoria_aplicar(reg_id):
                    f"Ubicación: '{nueva_ubicacion}'. Peso: {nuevo_peso}Kg. "
                    f"P.Unit: ${nuevo_precio_unidad}. P.Caja: ${nuevo_precio_caja}. "
                    f"Estado: '{nuevo_estado}'. Activo: {nuevo_activo}.")
+        if hermanos:
+            detalle += f" Incluye la suma de {len(hermanos)} conteo(s) más del mismo código: #{', #'.join(str(h.id) for h in hermanos)}."
         registrar_log_auditoria(registro, 'APLICADO', f"{session.get('nombre')} aplicó: {detalle}")
+
+        # Los hermanos ya quedaron reflejados en la ficha (se sumaron en el Stock a Registrar
+        # que llegó en el formulario), así que solo falta cerrarlos como APLICADO para que no
+        # se queden pendientes ni alguien intente aplicarlos otra vez por separado.
+        for h in hermanos:
+            h.estado_registro = 'APLICADO'
+            h.aplicado_por_id = session['user_id']
+            h.fecha_aplicacion = hora_peru()
+            h.revisado_por_id = h.revisado_por_id or session['user_id']
+            h.fecha_revision = h.fecha_revision or hora_peru()
+            h.bloqueado = True
+            registrar_log_auditoria(h, 'APLICADO', f"{session.get('nombre')} lo aplicó en conjunto con el registro #{registro.id} (mismo código, misma auditoría). {detalle}")
 
         db.session.commit()
         return {'status': 'success', 'msg': f'Ficha de {prod.sku} actualizada correctamente. {detalle}'}

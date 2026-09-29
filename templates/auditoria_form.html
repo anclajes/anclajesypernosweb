@@ -94,6 +94,9 @@
                         <label class="form-label small fw-bold text-muted">Descripción Completa</label>
                         <input type="text" id="descripcion_mostrar" class="form-control bg-light" readonly>
                     </div>
+                    <div class="col-12">
+                        <div id="alerta_duplicado_periodo" class="d-none"></div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -140,6 +143,20 @@
                     <div class="col-4">
                         <label class="form-label small fw-bold">Unidad <span class="text-danger">*</span></label>
                         <select id="unidad_medida" class="form-select" required></select>
+                    </div>
+                    <div class="col-12">
+                        <div class="border rounded p-2" style="background:#f8f9fa;">
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <span class="small fw-bold text-muted"><i class="bi bi-calculator-fill"></i> Suma rápida (opcional)</span>
+                                <span class="small text-muted">Acumulado: <b id="calc_total_acumulado">0</b></span>
+                            </div>
+                            <div class="d-flex gap-2">
+                                <input type="number" id="calc_input_parcial" class="form-control form-control-sm" placeholder="Ej: 20" min="0" step="any">
+                                <button type="button" class="btn btn-sm btn-outline-primary text-nowrap" onclick="calcAgregarParcial()"><i class="bi bi-plus-lg"></i> Agregar</button>
+                                <button type="button" class="btn btn-sm btn-success text-nowrap" onclick="calcUsarTotal()"><i class="bi bi-check-lg"></i> Usar total</button>
+                            </div>
+                            <div id="calc_lista_parciales" class="d-flex flex-wrap gap-1 mt-2"></div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -224,7 +241,46 @@ document.addEventListener('DOMContentLoaded', () => {
         e.target.value = '';
         renderPreviewFotos();
     });
+
+    document.getElementById('calc_input_parcial').addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); calcAgregarParcial(); }
+    });
 });
+
+// Suma rápida: el auditor va agregando cantidades parciales (cajas, grupos, etc.) mientras
+// cuenta, ve el acumulado, y con "Usar total" lo escribe directo en Cantidad Total Contada
+// sin tener que sumar de cabeza o en otra app.
+let calcParciales = [];
+
+function calcAgregarParcial() {
+    const el = document.getElementById('calc_input_parcial');
+    const val = parseFloat(el.value);
+    if (isNaN(val) || val <= 0) return;
+    calcParciales.push(val);
+    el.value = '';
+    el.focus();
+    calcRenderizar();
+}
+
+function calcQuitarParcial(idx) {
+    calcParciales.splice(idx, 1);
+    calcRenderizar();
+}
+
+function calcRenderizar() {
+    const total = calcParciales.reduce((a, b) => a + b, 0);
+    document.getElementById('calc_total_acumulado').textContent = total;
+    const cont = document.getElementById('calc_lista_parciales');
+    cont.innerHTML = calcParciales.map((v, i) =>
+        `<span class="badge bg-secondary">${v} <a href="javascript:void(0)" class="text-white ms-1" onclick="calcQuitarParcial(${i})">&times;</a></span>`
+    ).join('');
+}
+
+function calcUsarTotal() {
+    const total = calcParciales.reduce((a, b) => a + b, 0);
+    document.getElementById('cantidad_total').value = total;
+    Swal.fire({ icon: 'success', title: 'Cantidad actualizada', text: `Se colocó ${total} en Cantidad Total Contada.`, timer: 1400, showConfirmButton: false });
+}
 
 function agregarFotoSeleccionada(archivo) {
     if (fotosSeleccionadas.length >= 5) {
@@ -378,7 +434,52 @@ $(document).on('change', '#producto_id', function() {
     const id = $(this).val();
     const p = productosCache.find(x => x.id == id);
     document.getElementById('descripcion_mostrar').value = p ? (p.nombre + (p.estado ? `  ·  Estado: ${p.estado}` : '')) : '';
+    verificarDuplicadoPeriodo(id);
 });
+
+// Avisa, ANTES de que el auditor envíe, si este código ya tiene otro(s) conteo(s) dentro de
+// esta MISMA auditoría (mismo período) — para que no lo registre dos veces por error, o para
+// que sepa que si de verdad encontró más en otra ubicación puede seguir adelante tranquilo.
+let duplicadosPeriodo = [];
+
+function verificarDuplicadoPeriodo(productoId) {
+    const cont = document.getElementById('alerta_duplicado_periodo');
+    duplicadosPeriodo = [];
+    cont.className = 'd-none';
+    cont.innerHTML = '';
+    if (!productoId) return;
+
+    fetch(`/api/auditoria/verificar_duplicado/${ORIGEN}`, {
+        method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: `producto_id=${encodeURIComponent(productoId)}`
+    }).then(r => r.json()).then(data => {
+        duplicadosPeriodo = data.duplicados || [];
+        renderAlertaDuplicadoPeriodo();
+    });
+}
+
+function renderAlertaDuplicadoPeriodo() {
+    const cont = document.getElementById('alerta_duplicado_periodo');
+    if (duplicadosPeriodo.length === 0) {
+        cont.className = 'd-none';
+        cont.innerHTML = '';
+        return;
+    }
+    const filas = duplicadosPeriodo.map(d => {
+        let linea = `<li>${escHtml(d.ubicacion)} — <b>${d.cantidad_total} ${escHtml(d.unidad_medida)}</b>, contado por ${escHtml(d.auditor)} el ${d.fecha_registro}`;
+        if (d.estado_registro === 'APLICADO') {
+            linea += ` — <span class="badge bg-success">Ya aplicado</span> por ${escHtml(d.aplicado_por)} el ${d.fecha_aplicacion}`;
+        } else {
+            linea += ` — <span class="badge bg-warning text-dark">Pendiente de revisión</span>`;
+        }
+        return linea + '</li>';
+    }).join('');
+    cont.className = 'alert alert-warning small mb-0';
+    cont.innerHTML = `
+        <i class="bi bi-exclamation-triangle-fill"></i> <b>Este código ya tiene ${duplicadosPeriodo.length} conteo(s) en esta misma auditoría:</b>
+        <ul class="mb-1 mt-1">${filas}</ul>
+        Si ya lo contaste antes (o es un error), no lo envíes de nuevo. Si de verdad encontraste <b>más de este producto en otra ubicación</b>, continúa normalmente — el admin los sumará al aplicar.`;
+}
 
 function escHtml(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -410,6 +511,10 @@ function construirResumenHtml() {
     const observaciones = document.getElementById('observaciones').value;
 
     let html = '<div style="max-height:55vh; overflow-y:auto; text-align:left; font-size:.85rem; padding:0 2px;">';
+
+    if (duplicadosPeriodo.length > 0) {
+        html += `<div class="alert alert-warning small text-start mb-2"><i class="bi bi-exclamation-triangle-fill"></i> Este código ya tiene ${duplicadosPeriodo.length} conteo(s) más en esta misma auditoría. Revisa arriba antes de enviar — si es un error, cancela; si encontraste más en otra ubicación, está bien continuar.</div>`;
+    }
 
     html += '<div class="text-uppercase small fw-bold mb-1" style="color:var(--auditoria-primary);"><i class="bi bi-upc-scan"></i> Producto</div>';
     html += construirFilaResumen('Código', p ? p.sku : '');

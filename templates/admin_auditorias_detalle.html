@@ -124,6 +124,63 @@
     </div>
 </div>
 
+{% if hermanos %}
+<!-- OTROS CONTEOS DEL MISMO CÓDIGO EN ESTA MISMA AUDITORÍA -->
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-header fw-bold" style="background-color:#fff3cd;">
+        <i class="bi bi-diagram-3-fill"></i> Otros conteos de este mismo código en esta auditoría ({{ hermanos|length + 1 }} en total)
+    </div>
+    <div class="card-body p-0">
+        {% if not mismo_estado %}
+        <div class="alert alert-warning small mb-0 rounded-0 border-0 border-bottom">
+            <i class="bi bi-exclamation-triangle-fill"></i> Estos conteos reportan <b>estados físicos distintos</b>. Si de verdad es un estado distinto (como oxidado, nacional o roto), lo normal en este sistema es que tenga su propio código — revisa si corresponde crear uno nuevo antes de aplicar. Si fue un error de captura del auditor, corrígelo primero.
+        </div>
+        {% endif %}
+        {% if not misma_unidad %}
+        <div class="alert alert-warning small mb-0 rounded-0 border-0 border-bottom">
+            <i class="bi bi-exclamation-triangle-fill"></i> Estos conteos usan <b>unidades de medida distintas</b>, así que <b>no se sumaron automáticamente</b>. Revísalos y escribe tú mismo la cantidad final en "Stock a Registrar" (puede que el auditor haya elegido mal la unidad).
+        </div>
+        {% endif %}
+        {% if misma_unidad and mismo_estado %}
+        <div class="alert alert-success small mb-0 rounded-0 border-0 border-bottom">
+            <i class="bi bi-check-circle-fill"></i> Mismo estado físico y misma unidad en los {{ hermanos|length + 1 }} conteos: el "Stock a Registrar" de abajo ya viene con la <b>suma de todos</b> y la ubicación combinada. Puedes editarlo si no corresponde, y desmarcar los que no quieras incluir en esta aplicación.
+        </div>
+        {% endif %}
+        <div class="table-responsive">
+            <table class="table table-sm mb-0 align-middle">
+                <thead class="table-light"><tr>
+                    <th class="ps-3">Incluir</th><th>Auditor</th><th>Fecha/Hora</th><th>Ubicación</th><th>Cantidad</th><th>Estado Físico</th>
+                </tr></thead>
+                <tbody>
+                    <tr class="table-primary">
+                        <td class="ps-3"><span class="badge bg-primary">Este · #{{ registro.id }}</span></td>
+                        <td>{{ registro.trabajador.nombre_completo }}</td>
+                        <td>{{ registro.fecha_registro.strftime('%d/%m/%Y %H:%M') }}</td>
+                        <td>{{ registro.anaquel or '-' }} / {{ registro.nicho or '-' }}</td>
+                        <td class="fw-bold">{{ registro.cantidad_total }} {{ registro.unidad_medida }}</td>
+                        <td>{{ registro.estado_fisico or 'BUEN ESTADO (OK)' }}</td>
+                    </tr>
+                    {% for h in hermanos %}
+                    <tr>
+                        <td class="ps-3">
+                            <div class="form-check">
+                                <input class="form-check-input chk-hermano" type="checkbox" value="{{ h.id }}" {% if misma_unidad and mismo_estado %}checked{% endif %}>
+                            </div>
+                        </td>
+                        <td>{{ h.trabajador.nombre_completo }}</td>
+                        <td>{{ h.fecha_registro.strftime('%d/%m/%Y %H:%M') }}</td>
+                        <td>{{ h.anaquel or '-' }} / {{ h.nicho or '-' }}</td>
+                        <td class="fw-bold">{{ h.cantidad_total }} {{ h.unidad_medida }}</td>
+                        <td>{{ h.estado_fisico or 'BUEN ESTADO (OK)' }} <a href="{{ url_for('admin_auditorias_detalle', reg_id=h.id) }}" class="ms-1 small">Ver #{{ h.id }} →</a></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <!-- FOTOS DEL CONTEO -->
 <div class="card border-0 shadow-sm mb-3">
     <div class="card-header fw-bold"><i class="bi bi-camera-fill"></i> Fotos del Conteo</div>
@@ -150,15 +207,37 @@
         <i class="bi bi-database-fill-gear"></i> Actualizar Ficha del Producto en el Sistema
     </div>
     <div class="card-body">
+        {% if prod_actual.ultimo_ajuste_auditoria_fecha %}
+        <div class="alert alert-info border small mb-3">
+            <i class="bi bi-info-circle-fill"></i>
+            <b>Este producto ya fue aplicado antes:</b> quedó con <b>{{ prod_actual.stock_actual }}</b> en
+            <b>{{ prod_actual.ubicacion or 'sin ubicación registrada' }}</b>, aplicado por
+            <b>{{ prod_actual.ultimo_ajuste_auditoria_por }}</b> el {{ prod_actual.ultimo_ajuste_auditoria_fecha.strftime('%d/%m/%Y %H:%M') }}
+            (contado por {{ prod_actual.ultimo_ajuste_auditoria_conteo_por or '-' }}).
+            Si este nuevo conteo son <b>más unidades encontradas en otro lugar</b> (no un recuento del mismo sitio ya aplicado), usa el botón para sumarlo al stock ya aplicado en vez de reemplazarlo.
+            <div class="mt-2">
+                <button type="button" class="btn btn-sm btn-outline-primary" onclick="sumarAlStockAplicado()">
+                    <i class="bi bi-plus-circle"></i> Sumar este conteo al stock ya aplicado
+                </button>
+            </div>
+        </div>
+        {% endif %}
         <div class="alert alert-light border small mb-3">
             <i class="bi bi-info-circle-fill text-success"></i>
-            Estos campos vienen prellenados con el <b>dato actual del sistema</b>. El <b>Stock</b> ya trae sugerido el conteo físico ({{ registro.cantidad_total }} {{ registro.unidad_medida }}). Revise y edite lo que corresponda antes de actualizar.
+            Estos campos vienen prellenados con el <b>dato actual del sistema</b>.
+            {% if hermanos and misma_unidad and mismo_estado %}
+                El <b>Stock</b> ya trae la <b>suma</b> de los {{ hermanos|length + 1 }} conteos de este código en esta auditoría ({{ suma_sugerida }} {{ registro.unidad_medida }}), y la <b>Ubicación</b> ya viene combinada.
+            {% else %}
+                El <b>Stock</b> ya trae sugerido el conteo físico ({{ registro.cantidad_total }} {{ registro.unidad_medida }}).
+            {% endif %}
+            Revise y edite lo que corresponda antes de actualizar.
         </div>
         <form id="formActualizarProducto">
             <div class="row g-3">
                 <div class="col-6 col-md-3">
                     <label class="form-label small fw-bold text-danger">Stock a Registrar *</label>
-                    <input type="number" id="f_stock_actual" class="form-control fw-bold border-danger" value="{{ registro.cantidad_total }}" min="0" required>
+                    <input type="number" id="f_stock_actual" class="form-control fw-bold border-danger"
+                           value="{{ suma_sugerida if (hermanos and misma_unidad and mismo_estado and suma_sugerida is not none) else registro.cantidad_total }}" min="0" required>
                 </div>
                 <div class="col-6 col-md-3">
                     <label class="form-label small fw-bold">Stock Mínimo</label>
@@ -167,7 +246,7 @@
                 <div class="col-12 col-md-6">
                     <label class="form-label small fw-bold">Ubicación</label>
                     <input type="text" id="f_ubicacion" class="form-control text-uppercase"
-                           value="{{ (registro.anaquel and 'ANAQUEL ' ~ registro.anaquel ~ ' ' or '') ~ (registro.nicho and 'NICHO ' ~ registro.nicho or '') or prod_actual.ubicacion or '' }}">
+                           value="{{ ubicacion_combinada if (hermanos and misma_unidad and mismo_estado and ubicacion_combinada) else ((registro.anaquel and 'ANAQUEL ' ~ registro.anaquel ~ ' ' or '') ~ (registro.nicho and 'NICHO ' ~ registro.nicho or '') or prod_actual.ubicacion or '') }}">
                 </div>
                 <div class="col-6 col-md-4">
                     <label class="form-label small fw-bold">Peso Nominal (Kg)</label>
@@ -283,6 +362,31 @@ function rechazar() {
     });
 }
 
+// Si este producto ya tiene un aplicado previo (aviso azul de arriba), este botón suma el
+// conteo actual a lo que ya estaba aplicado, en vez de reemplazarlo, y combina las ubicaciones
+// (para el caso típico de "encontré más de esto en otro sitio"). Sigue siendo editable después.
+function sumarAlStockAplicado() {
+    const stockAplicado = {{ (prod_actual.stock_actual if prod_actual else 0) | tojson }};
+    const stockCampo = document.getElementById('f_stock_actual');
+    const nuevoTotal = stockAplicado + {{ registro.cantidad_total | tojson }};
+    stockCampo.value = nuevoTotal;
+
+    const ubicPrevia = {{ (prod_actual.ubicacion or '') | tojson }};
+    const ubicCampo = document.getElementById('f_ubicacion');
+    const partes = [ubicPrevia, ubicCampo.value.trim()].filter(Boolean);
+    ubicCampo.value = [...new Set(partes)].join(' + ');
+
+    Swal.fire({
+        icon: 'info', title: 'Sumado al stock ya aplicado',
+        text: `Stock a Registrar = ${stockAplicado} (ya aplicado) + {{ registro.cantidad_total }} (este conteo) = ${nuevoTotal}. Revisa la ubicación combinada antes de confirmar.`,
+        timer: 2800, showConfirmButton: false
+    });
+}
+
+function idsHermanosIncluidos() {
+    return Array.from(document.querySelectorAll('.chk-hermano:checked')).map(el => el.value);
+}
+
 function confirmarActualizacion() {
     const stock = document.getElementById('f_stock_actual').value;
     if (stock === '' || stock === null) {
@@ -292,6 +396,7 @@ function confirmarActualizacion() {
     const stockSistemaActual = {{ prod_actual.stock_actual if prod_actual else 0 }};
     const diferencia = parseInt(stock) - stockSistemaActual;
     const signo = diferencia >= 0 ? '+' : '';
+    const hermanosIncluidos = idsHermanosIncluidos();
 
     Swal.fire({
         title: '¿Confirmar actualización del inventario?',
@@ -305,6 +410,7 @@ function confirmarActualizacion() {
                     <li>P. Unidad: <b>$${document.getElementById('f_precio_unidad').value}</b></li>
                     <li>Estado: <b>${document.getElementById('f_activo').checked ? 'Activo' : 'Inactivo'}</b></li>
                 </ul>
+                ${hermanosIncluidos.length > 0 ? `<p class="mt-2 mb-0"><i class="bi bi-diagram-3-fill"></i> También se aplicarán y cerrarán junto con este: <b>#${hermanosIncluidos.join(', #')}</b>.</p>` : ''}
                 <p class="text-danger mt-2 mb-0"><i class="bi bi-exclamation-triangle-fill"></i> Se generará un movimiento en el Kardex con su fecha, hora y usuario.</p>
             </div>`,
         icon: 'warning', showCancelButton: true, confirmButtonColor: '#198754', confirmButtonText: 'Sí, actualizar ahora'
@@ -325,6 +431,7 @@ function aplicarInventario() {
     fd.append('precio_caja', document.getElementById('f_precio_caja').value);
     fd.append('estado', document.getElementById('f_estado').value);
     fd.append('activo', document.getElementById('f_activo').checked ? '1' : '0');
+    fd.append('registros_incluidos', idsHermanosIncluidos().join(','));
 
     fetch(`/admin/auditorias/${REG_ID}/aplicar`, { method: 'POST', body: fd })
         .then(r => r.json())
