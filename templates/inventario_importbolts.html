@@ -311,7 +311,7 @@
                     <input type="text" name="categoria" id="filtro_familia" class="form-control bg-light text-uppercase"
                            list="listFiltroFamilias" placeholder="-- Todas las Familias --"
                            value="{{ '' if cat_filtro == 'todos' else cat_filtro }}"
-                           oninput="this.value = this.value.toUpperCase()"
+                           oninput="mantenerMayusYCursor(this)"
                            onchange="document.getElementById('formFiltros').submit()"
                            title="Elige de la lista o escribe: se busca por coincidencia, no hace falta el nombre exacto ni elegirla primero.">
                     <datalist id="listFiltroFamilias">{% for cat in lista_categorias %}<option value="{{ cat }}">{% endfor %}</datalist>
@@ -321,7 +321,7 @@
                     <input type="text" name="calidad" id="filtro_calidad" class="form-control bg-light text-uppercase"
                            list="listFiltroCalidades" placeholder="-- Calidad --"
                            value="{{ '' if calidad_filtro == 'todos' else calidad_filtro }}"
-                           oninput="this.value = this.value.toUpperCase()"
+                           oninput="mantenerMayusYCursor(this)"
                            onchange="document.getElementById('formFiltros').submit()"
                            title="Elige de la lista o escribe: se busca por coincidencia, no hace falta el nombre exacto ni elegirla primero.">
                     <datalist id="listFiltroCalidades">{% for cal in lista_calidades %}<option value="{{ cal }}">{% endfor %}</datalist>
@@ -585,7 +585,7 @@
                         <div class="col-12 col-md-6">
                             <label class="form-label small fw-bold">Calidad</label>
                             <input type="text" name="calidad" id="inputCalidadNuevo" class="form-control form-control-sm text-uppercase" 
-                                list="listCalidades" placeholder="Ej: ZINCADO" oninput="this.value = this.value.toUpperCase(); buscarCodigosRelacionadosIB();">
+                                list="listCalidades" placeholder="Ej: ZINCADO" oninput="mantenerMayusYCursor(this); buscarCodigosRelacionadosIB();">
                             <datalist id="listCalidades">{% for cal in lista_calidades %} <option value="{{ cal }}"> {% endfor %}</datalist>
                         </div>
                         <div class="col-12 col-md-6">
@@ -596,7 +596,7 @@
                         </div>
                         <div class="col-12 col-md-6">
                             <label class="form-label small fw-bold text-muted">Ubicación</label>
-                            <input type="text" name="ubicacion" class="form-control form-control-sm text-uppercase" placeholder="Ej: PASILLO 4" oninput="this.value = this.value.toUpperCase()">
+                            <input type="text" name="ubicacion" class="form-control form-control-sm text-uppercase" placeholder="Ej: PASILLO 4" oninput="mantenerMayusYCursor(this)">
                         </div>
                         <div class="col-12 col-md-6">
                             <label class="form-label small fw-bold text-muted">Peso Unitario (Kg)</label>
@@ -608,7 +608,7 @@
                         <div class="col-12">
                             <label class="form-label small">Descripción *</label>
                             <input name="nombre" id="inputNombreNuevo" class="form-control text-uppercase" required 
-                                oninput="this.value = this.value.toUpperCase(); buscarCodigosRelacionadosIB(); validarNombreEnVivoIB();">
+                                oninput="mantenerMayusYCursor(this); buscarCodigosRelacionadosIB(); validarNombreEnVivoIB();">
                             <div id="nombreValidacionMsg" class="form-text small mt-1"></div>
                         </div>
 
@@ -661,7 +661,7 @@
                             <label class="form-label small fw-bold text-danger">CÓDIGO / SKU * (Manual — siga la nomenclatura de la empresa)</label>
                             <input type="text" name="sku" id="inputSKUNuevo" class="form-control fw-bold text-uppercase border-danger" 
                                 placeholder="Ej: PGR8Z1180004C" required
-                                oninput="this.value = this.value.toUpperCase(); validarSkuEnVivoIB();">
+                                oninput="mantenerMayusYCursor(this); validarSkuEnVivoIB();">
                             <div id="skuValidacionMsg" class="form-text small mt-1"></div>
                         </div>
                     </div>
@@ -689,7 +689,7 @@
                 <div class="modal-body">
                     <div class="mb-2">
                         <label class="form-label small fw-bold">Descripción *</label>
-                        <input id="edit_nombre" name="nombre" class="form-control text-uppercase" required oninput="this.value = this.value.toUpperCase()">
+                        <input id="edit_nombre" name="nombre" class="form-control text-uppercase" required oninput="mantenerMayusYCursor(this)">
                     </div>
                     <div class="row g-2 mb-2">
                         <div class="col-12 col-sm-6">
@@ -700,7 +700,7 @@
                         </div>
                         <div class="col-12 col-sm-6">
                             <label class="form-label small fw-bold">Calidad *</label>
-                            <input type="text" name="calidad" id="edit_calidad" class="form-control form-control-sm text-uppercase" list="listCalidadesEdit" required oninput="this.value = this.value.toUpperCase()">
+                            <input type="text" name="calidad" id="edit_calidad" class="form-control form-control-sm text-uppercase" list="listCalidadesEdit" required oninput="mantenerMayusYCursor(this)">
                             <datalist id="listCalidadesEdit">{% for cal in lista_calidades %} <option value="{{ cal }}"> {% endfor %}</datalist>
                         </div>
                         <div class="col-12 col-sm-6">
@@ -711,7 +711,7 @@
                         </div>
                         <div class="col-12 col-sm-6">
                             <label class="form-label small fw-bold">Ubicación</label>
-                            <input id="edit_ubicacion" name="ubicacion" class="form-control form-control-sm text-uppercase" oninput="this.value = this.value.toUpperCase()">
+                            <input id="edit_ubicacion" name="ubicacion" class="form-control form-control-sm text-uppercase" oninput="mantenerMayusYCursor(this)">
                         </div>
                     </div>
                     <div class="row g-2">
@@ -769,7 +769,7 @@
                     <div class="row g-2 align-items-end">
                         <div class="col-12 col-md-9">
                             <label class="small fw-bold text-muted">Nombre de Familia</label>
-                            <input name="cat_nombre" class="form-control form-control-sm text-uppercase" placeholder="Ej: SENSORES" required oninput="this.value = this.value.toUpperCase()">
+                            <input name="cat_nombre" class="form-control form-control-sm text-uppercase" placeholder="Ej: SENSORES" required oninput="mantenerMayusYCursor(this)">
                         </div>
                         <div class="col-12 col-md-3">
                             <button type="submit" class="btn btn-sm w-100 fw-bold" style="background-color: var(--theme-primary); color: white;">Crear</button>
@@ -810,7 +810,7 @@
 <div class="modal fade" id="modalStock" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content border-0 shadow-lg">
-            <form action="{{ url_for('ajustar_stock_importbolts') }}" method="POST" id="formAjusteStock">
+            <form action="{{ url_for('ajustar_stock_importbolts') }}" method="POST" id="formAjusteStock" onsubmit="return evitarDobleEnvioMovimiento(event)">
                 <input type="hidden" name="prod_id" id="stock_id">
                 <input type="hidden" name="url_origen" id="stock_url_origen">
                 <input type="hidden" name="motivo_id" id="stock_motivo_id">
@@ -956,7 +956,7 @@
                     </div>
                 </div>
                 <div class="modal-footer p-2 bg-light flex-column">
-                    <button type="submit" class="btn w-100 btn-sm fw-bold text-white shadow-sm" style="background-color: var(--theme-primary);">Registrar Movimiento</button>
+                    <button type="submit" id="btnRegistrarMovimiento" class="btn w-100 btn-sm fw-bold text-white shadow-sm" style="background-color: var(--theme-primary);">Registrar Movimiento</button>
                     <button type="button" class="btn w-100 btn-sm btn-secondary" data-bs-dismiss="modal">Cancelar</button>
                 </div>
             </form>
@@ -1142,6 +1142,43 @@
     <div class="lightbox-counter" id="lightbox_contador"></div>
 </div>
 <script>
+// Convierte a mayúsculas SIN mandar el cursor al final del texto (antes se usaba
+// this.value = this.value.toUpperCase() directamente en el oninput, lo que reposiciona
+// el cursor cada vez que se escribe/sobrescribe en medio del texto, interrumpiendo la
+// escritura). Solo toca el value si realmente cambia algo, y siempre restaura la posición.
+function mantenerMayusYCursor(el) {
+    const inicio = el.selectionStart;
+    const fin = el.selectionEnd;
+    const nuevo = el.value.toUpperCase();
+    if (nuevo !== el.value) {
+        el.value = nuevo;
+        if (inicio !== null && fin !== null) {
+            el.setSelectionRange(inicio, fin);
+        }
+    }
+}
+
+// Evita que un doble click (o un click de "no pasó nada, vuelvo a hacer click" mientras el
+// servidor tarda en responder, por ejemplo justo durante un despliegue) registre el MISMO
+// movimiento de Kardex dos veces. Este formulario se envía de forma normal (no por AJAX), así
+// que basta con deshabilitar el botón apenas se dispara el primer submit — el navegador ya
+// tiene ese envío en curso y el segundo click, si llega, no hace nada porque el botón está
+// deshabilitado. Se reinicia solo al reabrir el modal (ver abrirModalStock).
+let enviandoMovimientoKardex = false;
+function evitarDobleEnvioMovimiento(event) {
+    if (enviandoMovimientoKardex) {
+        event.preventDefault();
+        return false;
+    }
+    enviandoMovimientoKardex = true;
+    const btn = document.getElementById('btnRegistrarMovimiento');
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Guardando...';
+    }
+    return true;
+}
+
 // --- INICIO DE CARGA (TODO LO QUE DEBE PASAR AL ABRIR LA PÁGINA) ---
     document.addEventListener('DOMContentLoaded', () => {
         

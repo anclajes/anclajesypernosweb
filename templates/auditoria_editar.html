@@ -31,14 +31,40 @@
 
     <div class="card border-0 shadow-sm mb-3">
         <div class="card-header text-white fw-bold" style="background-color: var(--auditoria-primary);">
-            <i class="bi bi-upc-scan"></i> Producto (no editable)
+            <i class="bi bi-upc-scan"></i> Producto
         </div>
         <div class="card-body">
-            <table class="table table-sm mb-0">
-                <tr><td class="text-muted">SKU</td><td class="fw-bold">{{ registro.sku_snapshot }}</td></tr>
-                <tr><td class="text-muted">Descripción</td><td>{{ registro.nombre_snapshot }}</td></tr>
-                <tr><td class="text-muted">Familia / Calidad</td><td>{{ registro.familia }} / {{ registro.calidad }}</td></tr>
-            </table>
+            <div class="alert alert-light border small mb-3">
+                <i class="bi bi-info-circle-fill"></i> Si te equivocaste de familia, calidad o código al contar,
+                puedes volver a buscar aquí entre los productos que <b>ya existen</b> en el catálogo — esto no
+                crea códigos nuevos, solo cambia a cuál de los que ya existen pertenece este conteo.
+            </div>
+            <div class="row g-3">
+                <div class="col-12 col-md-6">
+                    <label class="form-label small fw-bold">Familia *</label>
+                    <select id="familia" class="form-select" required onchange="cargarCalidades()">
+                        <option value="" selected disabled>-- Seleccione --</option>
+                        {% for cat in lista_categorias %}<option value="{{ cat }}">{{ cat }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div class="col-12 col-md-6">
+                    <label class="form-label small fw-bold">Calidad *</label>
+                    <select id="calidad" class="form-select" required disabled onchange="cargarCodigos()">
+                        <option value="" selected disabled>-- Primero seleccione familia --</option>
+                    </select>
+                </div>
+                <div class="col-12">
+                    <label class="form-label small fw-bold">Código o Descripción *</label>
+                    <select id="producto_id" class="form-select" required disabled style="width:100%;">
+                        <option value=""></option>
+                    </select>
+                    <div class="form-text">Puede escribir el código o parte de la descripción para buscar.</div>
+                </div>
+                <div class="col-12">
+                    <label class="form-label small fw-bold text-muted">Descripción Completa</label>
+                    <input type="text" id="descripcion_mostrar" class="form-control bg-light" readonly>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -135,15 +161,27 @@
 
 <script>
 const REG_ID = {{ registro.id }};
+const ORIGEN = '{{ registro.origen_inventario }}';
+const VALOR_FAMILIA_ACTUAL = "{{ registro.familia or '' }}";
+const VALOR_CALIDAD_ACTUAL = "{{ registro.calidad or '' }}";
+const PRODUCTO_ACTUAL_ID = {{ producto_actual_id | tojson }};
 const VALOR_ANAQUEL_ACTUAL = "{{ registro.anaquel or '' }}";
 const VALOR_NICHO_ACTUAL = "{{ registro.nicho or '' }}";
 const VALOR_UNIDAD_ACTUAL = "{{ registro.unidad_medida or '' }}";
 const VALOR_ESTADO_ACTUAL = "{{ registro.estado_fisico or '' }}";
 const VALORES_EXTRA_ACTUALES = {{ valores_extra | tojson }};
+let productosCache = [];
+let camposPersonalizadosCache = [];
 
 document.addEventListener('DOMContentLoaded', () => {
+    $('#producto_id').select2({
+        placeholder: '-- Busque por código o descripción --', width: '100%',
+        templateResult: formatearOpcionProducto, templateSelection: formatearOpcionProducto
+    });
     $('#anaquel').select2({ width: '100%' });
     $('#nicho').select2({ width: '100%' });
+
+    cargarSeleccionInicialProducto();
 
     cargarCatalogoConSeleccion('ANAQUEL', 'anaquel', VALOR_ANAQUEL_ACTUAL, true);
     cargarCatalogoConSeleccion('NICHO', 'nicho', VALOR_NICHO_ACTUAL, true);
@@ -166,6 +204,81 @@ document.addEventListener('DOMContentLoaded', () => {
         subirFotoRegistro(archivo);
     });
 });
+
+// Igual que en "Nuevo Conteo" (auditoria_form.html): Familia -> Calidad -> Código, en cascada,
+// buscando solo entre productos que YA existen en el catálogo de este mismo inventario (nunca
+// crea códigos nuevos). cargarCalidades()/cargarCodigos() devuelven la promesa del fetch para
+// poder encadenarlas al precargar la selección actual del registro.
+function cargarCalidades() {
+    const familia = document.getElementById('familia').value;
+    const selCal = document.getElementById('calidad');
+    selCal.innerHTML = '<option value="" selected disabled>Cargando...</option>';
+    selCal.disabled = true;
+    $('#producto_id').prop('disabled', true).empty().append('<option value=""></option>').trigger('change');
+    document.getElementById('descripcion_mostrar').value = '';
+
+    return fetch(`/api/auditoria/calidades/${ORIGEN}`, {
+        method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: `familia=${encodeURIComponent(familia)}`
+    }).then(r => r.json()).then(data => {
+        selCal.innerHTML = '<option value="" selected disabled>-- Seleccione --</option>';
+        (data.calidades || []).forEach(c => selCal.innerHTML += `<option value="${c}">${c}</option>`);
+        selCal.disabled = false;
+    });
+}
+
+function cargarCodigos() {
+    const familia = document.getElementById('familia').value;
+    const calidad = document.getElementById('calidad').value;
+    document.getElementById('descripcion_mostrar').value = '';
+
+    return fetch(`/api/auditoria/codigos/${ORIGEN}`, {
+        method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: `familia=${encodeURIComponent(familia)}&calidad=${encodeURIComponent(calidad)}`
+    }).then(r => r.json()).then(data => {
+        productosCache = data.productos || [];
+        const sel = $('#producto_id');
+        sel.empty().append('<option value=""></option>');
+        productosCache.forEach(p => sel.append(new Option(`${p.sku} — ${p.nombre}`, p.id, false, false)));
+        sel.prop('disabled', false).trigger('change');
+    });
+}
+
+// Muestra el estado físico del producto (oxidado, retocar, etc.) junto al código/descripción
+// en el buscador, para que el auditor no confunda productos parecidos que están en distinto
+// estado. Si el producto no tiene estado registrado, se ve igual que antes (sin etiqueta).
+function formatearOpcionProducto(opcion) {
+    if (!opcion.id) return opcion.text;
+    const p = productosCache.find(x => x.id == opcion.id);
+    if (!p) return opcion.text;
+    let html = `<span>${escHtml(p.sku)} — ${escHtml(p.nombre)}</span>`;
+    if (p.estado) {
+        html += ` <span class="badge bg-danger ms-1" style="font-size:.65rem;"><i class="bi bi-exclamation-triangle-fill"></i> ${escHtml(p.estado)}</span>`;
+    }
+    return $(html);
+}
+
+$(document).on('change', '#producto_id', function() {
+    const id = $(this).val();
+    const p = productosCache.find(x => x.id == id);
+    document.getElementById('descripcion_mostrar').value = p ? (p.nombre + (p.estado ? `  ·  Estado: ${p.estado}` : '')) : '';
+});
+
+// Precarga Familia/Calidad/Código con lo que ya tenía este registro, para que el auditor solo
+// tenga que tocar algo si de verdad se equivocó de producto.
+function cargarSeleccionInicialProducto() {
+    if (!VALOR_FAMILIA_ACTUAL) return;
+    document.getElementById('familia').value = VALOR_FAMILIA_ACTUAL;
+    cargarCalidades().then(() => {
+        if (!VALOR_CALIDAD_ACTUAL) return;
+        document.getElementById('calidad').value = VALOR_CALIDAD_ACTUAL;
+        cargarCodigos().then(() => {
+            if (PRODUCTO_ACTUAL_ID) {
+                $('#producto_id').val(PRODUCTO_ACTUAL_ID).trigger('change');
+            }
+        });
+    });
+}
 
 function comprimirImagen(archivo, maxWidth = 1200, calidad = 0.8) {
     return new Promise((resolve) => {
@@ -266,6 +379,7 @@ function cargarCatalogoConSeleccion(tipo, selectId, valorActual, esSelect2) {
 
 function cargarCamposPersonalizadosConValores() {
     fetch('/api/campos_personalizados').then(r => r.json()).then(data => {
+        camposPersonalizadosCache = data.campos || [];
         const cont = document.getElementById('campos_dinamicos');
         cont.innerHTML = '';
         (data.campos || []).forEach(c => {
@@ -291,26 +405,99 @@ function cargarCamposPersonalizadosConValores() {
     });
 }
 
+function escHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function construirFilaResumen(label, valor) {
+    const vacio = valor === '' || valor === null || valor === undefined;
+    return `<div class="d-flex justify-content-between align-items-start border-bottom py-1">
+        <span class="text-muted" style="flex:0 0 48%;">${escHtml(label)}</span>
+        <span class="fw-bold text-end" style="flex:1;">${vacio ? '<span class="text-muted fst-italic">(vacío)</span>' : escHtml(valor)}</span>
+    </div>`;
+}
+
+// Resumen completo de la corrección, pensado para revisarse cómodo en una pantalla de celular
+// antes de confirmar el guardado (SweetAlert2 con html: en vez de text:).
+function construirResumenEdicionHtml() {
+    const productoId = $('#producto_id').val();
+    const p = productosCache.find(x => x.id == productoId);
+    const familia = document.getElementById('familia').value;
+    const calidad = document.getElementById('calidad').value;
+    const anaquelVal = $('#anaquel').val();
+    const nichoVal = $('#nicho').val();
+    const numCajas = document.getElementById('num_cajas').value;
+    const pesoProm = document.getElementById('peso_promedio_20u').value;
+    const numBolsas = document.getElementById('num_bolsas').value;
+    const cantidad = document.getElementById('cantidad_total').value;
+    const unidad = document.getElementById('unidad_medida').value;
+    const estadoFisico = document.getElementById('estado_fisico').value;
+    const observaciones = document.getElementById('observaciones').value;
+    const fotosActuales = document.querySelectorAll('#lista_fotos_registro > div').length;
+
+    let html = '<div style="max-height:55vh; overflow-y:auto; text-align:left; font-size:.85rem; padding:0 2px;">';
+
+    html += '<div class="text-uppercase small fw-bold mb-1" style="color:var(--auditoria-primary);"><i class="bi bi-upc-scan"></i> Producto</div>';
+    html += construirFilaResumen('Código', p ? p.sku : document.getElementById('descripcion_mostrar').value);
+    html += construirFilaResumen('Descripción', p ? p.nombre : document.getElementById('descripcion_mostrar').value);
+    html += construirFilaResumen('Familia', familia);
+    html += construirFilaResumen('Calidad', calidad);
+    html += construirFilaResumen('Estado del Producto', p ? p.estado : '');
+
+    html += '<div class="text-uppercase small fw-bold mt-3 mb-1" style="color:var(--auditoria-primary);"><i class="bi bi-geo-alt-fill"></i> Ubicación</div>';
+    html += construirFilaResumen('Anaquel', anaquelVal);
+    html += construirFilaResumen('Nicho', nichoVal);
+
+    html += '<div class="text-uppercase small fw-bold mt-3 mb-1" style="color:var(--auditoria-primary);"><i class="bi bi-calculator-fill"></i> Cantidades</div>';
+    html += construirFilaResumen('# Cajas', numCajas);
+    html += construirFilaResumen('Peso prom. 20 UND (Kg)', pesoProm);
+    html += construirFilaResumen('# Bolsas', numBolsas);
+    html += construirFilaResumen('Cantidad Total', (cantidad || '0') + ' ' + (unidad || ''));
+
+    html += '<div class="text-uppercase small fw-bold mt-3 mb-1" style="color:var(--auditoria-primary);"><i class="bi bi-clipboard2-pulse-fill"></i> Estado y Detalles</div>';
+    html += construirFilaResumen('Estado Físico', estadoFisico);
+    camposPersonalizadosCache.forEach(c => {
+        const el = document.querySelector(`#campos_dinamicos [name="campo_${c.id}"]`);
+        html += construirFilaResumen(c.etiqueta, el ? el.value : '');
+    });
+    html += construirFilaResumen('Observaciones', observaciones);
+
+    html += '<div class="text-uppercase small fw-bold mt-3 mb-1" style="color:var(--auditoria-primary);"><i class="bi bi-camera-fill"></i> Fotos</div>';
+    html += construirFilaResumen('Fotos adjuntas', String(fotosActuales));
+
+    html += '</div>';
+    return html;
+}
+
 function guardarCorreccion() {
+    const productoId = $('#producto_id').val();
     const anaquelVal = $('#anaquel').val();
     const nichoVal = $('#nicho').val();
     const cantidad = document.getElementById('cantidad_total').value;
     const unidad = document.getElementById('unidad_medida').value;
     const estado = document.getElementById('estado_fisico').value;
 
+    if (!productoId) return Swal.fire('Falta producto', 'Busque y seleccione el producto.', 'warning');
     if (!anaquelVal) return Swal.fire('Falta Anaquel', 'Debe seleccionar el Anaquel.', 'warning');
     if (!nichoVal) return Swal.fire('Falta Nicho', 'Debe seleccionar el Nicho.', 'warning');
     if (cantidad === '' || cantidad === null) return Swal.fire('Falta cantidad', 'Ingrese la cantidad total contada.', 'warning');
     if (!unidad) return Swal.fire('Falta Unidad', 'Debe seleccionar la Unidad de Medida.', 'warning');
     if (!estado) return Swal.fire('Falta Estado Físico', 'Debe seleccionar el Estado Físico.', 'warning');
 
+    const cambioDeProducto = PRODUCTO_ACTUAL_ID && String(productoId) !== String(PRODUCTO_ACTUAL_ID);
+    const avisoCambio = cambioDeProducto
+        ? '<div class="alert alert-warning small mt-2 mb-0 text-start"><i class="bi bi-exclamation-triangle-fill"></i> Este conteo se va a reasignar a otro producto del catálogo.</div>'
+        : '';
     Swal.fire({
-        title: '¿Guardar corrección?', text: 'Se actualizará este registro de conteo.',
-        icon: 'question', showCancelButton: true, confirmButtonText: 'Sí, guardar'
+        title: 'Revisa la corrección antes de guardar',
+        html: construirResumenEdicionHtml() + avisoCambio,
+        icon: 'question', showCancelButton: true, confirmButtonText: 'Sí, guardar', cancelButtonText: 'Revisar de nuevo',
+        width: 480
     }).then(result => {
         if (!result.isConfirmed) return;
 
         const fd = new FormData();
+        fd.append('producto_id', productoId);
         fd.append('anaquel', anaquelVal);
         fd.append('nicho', nichoVal);
         fd.append('num_cajas', document.getElementById('num_cajas').value);

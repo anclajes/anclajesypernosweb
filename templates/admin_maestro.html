@@ -67,30 +67,36 @@
                     <tr>
                         <th>Código</th><th>Descripción</th><th>Calidad</th><th>Familia</th>
                         <th class="text-end">Peso Nominal (Kg)</th><th>Origen</th><th>Creado por</th>
-                        {% if session.get('role') == 'admin' %}<th class="text-end pe-3">Acciones</th>{% endif %}
+                        {% if session.get('role') in ['admin', 'almacen'] %}<th class="text-end pe-3">Acciones</th>{% endif %}
                     </tr>
                 </thead>
                 <tbody>
                     {% for m in productos %}
                     <tr id="fila-maestro-{{ m.sku }}">
                         <td class="fw-bold text-primary">{{ m.sku }}</td>
-                        <td>{{ m.nombre }}</td>
-                        <td>{{ m.calidad or '-' }}</td>
-                        <td>{{ m.familia }}</td>
-                        <td class="text-end">{{ '%.4f'|format(m.peso_nominal_kg or 0) }}</td>
+                        <td id="fila-maestro-{{ m.sku }}-nombre">{{ m.nombre }}</td>
+                        <td id="fila-maestro-{{ m.sku }}-calidad">{{ m.calidad or '-' }}</td>
+                        <td id="fila-maestro-{{ m.sku }}-familia">{{ m.familia }}</td>
+                        <td class="text-end" id="fila-maestro-{{ m.sku }}-peso">{{ '%.4f'|format(m.peso_nominal_kg or 0) }}</td>
                         <td><span class="badge bg-light text-dark border">{{ m.origen }}</span></td>
                         <td class="text-muted">{{ m.creado_por }}<br><small>{{ m.fecha_creacion.strftime('%d/%m/%y') if m.fecha_creacion else '' }}</small></td>
-                        {% if session.get('role') == 'admin' %}
+                        {% if session.get('role') in ['admin', 'almacen'] %}
                         <td class="text-end pe-3">
+                            <button class="btn btn-sm btn-outline-warning" title="Editar"
+                                    onclick="abrirEditarMaestro('{{ m.sku }}', '{{ m.nombre|replace("'", "\\'")|replace('"', '&quot;') }}', '{{ m.familia|replace("'", "\\'")|replace('"', '&quot;') }}', '{{ (m.calidad or '')|replace("'", "\\'")|replace('"', '&quot;') }}', '{{ m.peso_nominal_kg|default(0, true) }}')">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                            {% if session.get('role') == 'admin' %}
                             <button class="btn btn-sm btn-outline-danger" title="Eliminar (solo si no tiene movimientos ni ventas en ningún inventario)"
                                     onclick="eliminarProductoMaestro('{{ m.sku }}')">
                                 <i class="bi bi-trash"></i>
                             </button>
+                            {% endif %}
                         </td>
                         {% endif %}
                     </tr>
                     {% else %}
-                    <tr><td colspan="{{ 8 if session.get('role') == 'admin' else 7 }}" class="text-center text-muted py-4">No hay productos que coincidan con este filtro.</td></tr>
+                    <tr><td colspan="{{ 8 if session.get('role') in ['admin', 'almacen'] else 7 }}" class="text-center text-muted py-4">No hay productos que coincidan con este filtro.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>
@@ -193,8 +199,10 @@
                                 <span class="badge bg-success">Creación</span>
                                 {% elif c.campo == 'eliminacion' %}
                                 <span class="badge bg-danger">Eliminación</span>
-                                {% else %}
+                                {% elif c.campo in ['peso_kg', 'peso_nominal_kg'] %}
                                 <span class="badge bg-info text-dark">Peso</span>
+                                {% else %}
+                                <span class="badge bg-warning text-dark">Edición</span>
                                 {% endif %}
                             </td>
                             <td>{{ c.familia or '-' }}</td>
@@ -206,6 +214,7 @@
                                 {% elif c.campo == 'eliminacion' %}
                                 <span class="text-danger">{{ c.valor_anterior }}</span>
                                 {% else %}
+                                {% if c.campo == 'descripcion' %}<span class="text-muted small">Desc.:</span> {% elif c.campo == 'familia' %}<span class="text-muted small">Familia:</span> {% elif c.campo == 'calidad' %}<span class="text-muted small">Calidad:</span> {% endif %}
                                 {{ c.valor_anterior }} <i class="bi bi-arrow-right mx-1"></i> <span class="fw-bold">{{ c.valor_nuevo }}</span>
                                 {% endif %}
                             </td>
@@ -235,6 +244,7 @@
                     <li>Si un código existe en el Maestro (o en un inventario) pero <strong>no en el otro</strong>, solo se avisa en "Diferencias informativas" — no se crea automáticamente ahí, para no repartir por accidente algo que quizás esté descontinuado a propósito. Si de verdad ya no se usa, lo más simple es sacarlo del Excel Maestro; si sí debería existir en el inventario que le falta, avísale al administrador para completarlo ahí.</li>
                     <li>Cada cambio y cada creación queda en el historial (código, familia/calidad, inventario, antes/después, fecha, usuario) para auditar qué se tocó — incluye tanto las creaciones manuales ("Nuevo Producto") como las creadas al confirmar un Excel Maestro.</li>
                     <li>Si te equivocaste al tipear un código nuevo (no se parece a nada de su familia, por ejemplo), el <strong>admin</strong> puede eliminarlo desde la tabla (ícono <i class="bi bi-trash text-danger"></i>) — pero solo mientras ese código no tenga <strong>ningún</strong> movimiento de Kardex, venta, kit, traslado ni conteo de auditoría en Anclajes o ImportBolts. Si ya tiene algo de eso, usa "Desactivar" en el inventario en vez de borrarlo, para no perder ese historial.</li>
+                    <li>Para corregir Descripción, Familia, Calidad o Peso de un producto ya existente, usa el ícono <i class="bi bi-pencil text-warning"></i> "Editar" de la tabla (admin y jefe de almacén) — el cambio se guarda en el Maestro y se refleja al instante en Anclajes e ImportBolts, y queda auditado abajo.</li>
                     <li>Un peso vacío o en 0 en el Maestro <strong>no borra</strong> el peso que ya tenías guardado.</li>
                     <li>Descripción, calidad y familia de un código YA existente solo se avisan si difieren del Excel — no se sobreescriben solas, para no pisar una corrección manual que ya hiciste.</li>
                 </ul>
@@ -258,6 +268,115 @@
         </div>
     </div>
 </div>
+
+{% if session.get('role') in ['admin', 'almacen'] %}
+<script>
+// Convierte a mayúsculas SIN mandar el cursor al final del texto (ver inventario.html/
+// inventario_importbolts.html, mismo arreglo aplicado aquí para el modal de Editar).
+function mantenerMayusYCursor(el) {
+    const inicio = el.selectionStart;
+    const fin = el.selectionEnd;
+    const nuevo = el.value.toUpperCase();
+    if (nuevo !== el.value) {
+        el.value = nuevo;
+        if (inicio !== null && fin !== null) {
+            el.setSelectionRange(inicio, fin);
+        }
+    }
+}
+</script>
+<div class="modal fade" id="modalEditarMaestro" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form id="formEditarMaestro" onsubmit="guardarEdicionMaestro(event)">
+                <div class="modal-header bg-warning">
+                    <h5 class="modal-title fw-bold"><i class="bi bi-pencil-square"></i> Editar en el Maestro — <span id="editMaestroSku"></span></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="small text-muted">El cambio se guarda en el Maestro y se refleja automáticamente en Anclajes e ImportBolts (si el código existe ahí).</p>
+                    <div class="mb-2">
+                        <label class="form-label small fw-bold">Descripción *</label>
+                        <input id="editMaestroNombre" class="form-control text-uppercase" required oninput="mantenerMayusYCursor(this)">
+                    </div>
+                    <div class="row g-2 mb-2">
+                        <div class="col-12 col-md-6">
+                            <label class="form-label small fw-bold">Familia *</label>
+                            <select id="editMaestroFamilia" class="form-select form-select-sm" required>
+                                {% for f in familias_catalogo %}<option value="{{ f }}">{{ f }}</option>{% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-12 col-md-6">
+                            <label class="form-label small fw-bold">Calidad</label>
+                            <input type="text" id="editMaestroCalidad" class="form-control form-control-sm text-uppercase" list="listCalidadesEditarMaestro" oninput="mantenerMayusYCursor(this)">
+                            <datalist id="listCalidadesEditarMaestro">{% for c in calidades_catalogo %}<option value="{{ c }}">{% endfor %}</datalist>
+                        </div>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small fw-bold text-muted">Peso Nominal (Kg)</label>
+                        <div class="input-group input-group-sm">
+                            <input id="editMaestroPeso" type="number" step="0.0001" min="0" class="form-control">
+                            <span class="input-group-text">Kg</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-warning fw-bold"><i class="bi bi-check-lg"></i> Guardar cambios</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<script>
+function abrirEditarMaestro(sku, nombre, familia, calidad, peso) {
+    document.getElementById('editMaestroSku').innerText = sku;
+    document.getElementById('formEditarMaestro').dataset.sku = sku;
+    document.getElementById('editMaestroNombre').value = nombre;
+    document.getElementById('editMaestroFamilia').value = familia;
+    document.getElementById('editMaestroCalidad').value = calidad;
+    document.getElementById('editMaestroPeso').value = peso;
+    new bootstrap.Modal(document.getElementById('modalEditarMaestro')).show();
+}
+
+function guardarEdicionMaestro(event) {
+    event.preventDefault();
+    const sku = document.getElementById('formEditarMaestro').dataset.sku;
+    const body = new URLSearchParams({
+        nombre: document.getElementById('editMaestroNombre').value.trim(),
+        familia: document.getElementById('editMaestroFamilia').value,
+        calidad: document.getElementById('editMaestroCalidad').value.trim(),
+        peso_nominal_kg: document.getElementById('editMaestroPeso').value || '0',
+    });
+    fetch(`/admin/maestro/${encodeURIComponent(sku)}/editar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body.toString(),
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (data.status !== 'success') {
+                Swal.fire({ icon: 'error', title: 'No se pudo guardar', text: data.msg, width: 600 });
+                return;
+            }
+            const nombreCell = document.getElementById(`fila-maestro-${sku}-nombre`);
+            const familiaCell = document.getElementById(`fila-maestro-${sku}-familia`);
+            const calidadCell = document.getElementById(`fila-maestro-${sku}-calidad`);
+            const pesoCell = document.getElementById(`fila-maestro-${sku}-peso`);
+            if (nombreCell) nombreCell.innerText = data.nombre;
+            if (familiaCell) familiaCell.innerText = data.familia;
+            if (calidadCell) calidadCell.innerText = data.calidad || '-';
+            if (pesoCell) pesoCell.innerText = Number(data.peso_nominal_kg).toFixed(4);
+            bootstrap.Modal.getInstance(document.getElementById('modalEditarMaestro')).hide();
+            Swal.fire({ icon: 'success', title: 'Actualizado', text: data.msg, timer: 2200, showConfirmButton: false });
+        })
+        .catch(err => {
+            console.error('Error en guardarEdicionMaestro:', err);
+            Swal.fire('Error', 'No se pudo comunicar con el servidor.', 'error');
+        });
+}
+</script>
+{% endif %}
 
 {% if session.get('role') == 'admin' %}
 <script>

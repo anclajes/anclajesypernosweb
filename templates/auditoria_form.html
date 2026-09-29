@@ -197,9 +197,13 @@ const ORIGEN = "{{ origen }}";
 const FOTOS_OBLIGATORIAS = {{ 'true' if fotos_obligatorias else 'false' }};
 let productosCache = [];
 let fotosSeleccionadas = [];
+let camposPersonalizadosCache = [];
 
 document.addEventListener('DOMContentLoaded', () => {
-    $('#producto_id').select2({ placeholder: '-- Busque por código o descripción --', width: '100%' });
+    $('#producto_id').select2({
+        placeholder: '-- Busque por código o descripción --', width: '100%',
+        templateResult: formatearOpcionProducto, templateSelection: formatearOpcionProducto
+    });
     $('#anaquel').select2({ placeholder: '-- Ninguno --', width: '100%', allowClear: true });
     $('#nicho').select2({ placeholder: '-- Ninguno --', width: '100%', allowClear: true });
 
@@ -296,6 +300,7 @@ function cargarCatalogo(tipo, selectId, esSelect2) {
 
 function cargarCamposPersonalizados() {
     fetch('/api/campos_personalizados').then(r => r.json()).then(data => {
+        camposPersonalizadosCache = data.campos || [];
         const cont = document.getElementById('campos_dinamicos');
         cont.innerHTML = '';
         (data.campos || []).forEach(c => {
@@ -355,11 +360,88 @@ function cargarCodigos() {
     });
 }
 
+// Muestra el estado físico del producto (oxidado, retocar, etc.) junto al código/descripción
+// en el buscador, para que el auditor no confunda productos parecidos que están en distinto
+// estado. Si el producto no tiene estado registrado, se ve igual que antes (sin etiqueta).
+function formatearOpcionProducto(opcion) {
+    if (!opcion.id) return opcion.text;
+    const p = productosCache.find(x => x.id == opcion.id);
+    if (!p) return opcion.text;
+    let html = `<span>${escHtml(p.sku)} — ${escHtml(p.nombre)}</span>`;
+    if (p.estado) {
+        html += ` <span class="badge bg-danger ms-1" style="font-size:.65rem;"><i class="bi bi-exclamation-triangle-fill"></i> ${escHtml(p.estado)}</span>`;
+    }
+    return $(html);
+}
+
 $(document).on('change', '#producto_id', function() {
     const id = $(this).val();
     const p = productosCache.find(x => x.id == id);
-    document.getElementById('descripcion_mostrar').value = p ? p.nombre : '';
+    document.getElementById('descripcion_mostrar').value = p ? (p.nombre + (p.estado ? `  ·  Estado: ${p.estado}` : '')) : '';
 });
+
+function escHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function construirFilaResumen(label, valor) {
+    const vacio = valor === '' || valor === null || valor === undefined;
+    return `<div class="d-flex justify-content-between align-items-start border-bottom py-1">
+        <span class="text-muted" style="flex:0 0 48%;">${escHtml(label)}</span>
+        <span class="fw-bold text-end" style="flex:1;">${vacio ? '<span class="text-muted fst-italic">(vacío)</span>' : escHtml(valor)}</span>
+    </div>`;
+}
+
+// Resumen completo del conteo, pensado para revisarse cómodo en una pantalla de celular
+// antes de confirmar el envío (SweetAlert2 con html: en vez de text:).
+function construirResumenHtml() {
+    const productoId = $('#producto_id').val();
+    const p = productosCache.find(x => x.id == productoId);
+    const familia = document.getElementById('familia').value;
+    const calidad = document.getElementById('calidad').value;
+    const anaquelVal = $('#anaquel').val();
+    const nichoVal = $('#nicho').val();
+    const numCajas = document.getElementById('num_cajas').value;
+    const pesoProm = document.getElementById('peso_promedio_20u').value;
+    const numBolsas = document.getElementById('num_bolsas').value;
+    const cantidad = document.getElementById('cantidad_total').value;
+    const unidad = document.getElementById('unidad_medida').value;
+    const estadoFisico = document.getElementById('estado_fisico').value;
+    const observaciones = document.getElementById('observaciones').value;
+
+    let html = '<div style="max-height:55vh; overflow-y:auto; text-align:left; font-size:.85rem; padding:0 2px;">';
+
+    html += '<div class="text-uppercase small fw-bold mb-1" style="color:var(--auditoria-primary);"><i class="bi bi-upc-scan"></i> Producto</div>';
+    html += construirFilaResumen('Código', p ? p.sku : '');
+    html += construirFilaResumen('Descripción', p ? p.nombre : '');
+    html += construirFilaResumen('Familia', familia);
+    html += construirFilaResumen('Calidad', calidad);
+    html += construirFilaResumen('Estado del Producto', p ? p.estado : '');
+
+    html += '<div class="text-uppercase small fw-bold mt-3 mb-1" style="color:var(--auditoria-primary);"><i class="bi bi-geo-alt-fill"></i> Ubicación</div>';
+    html += construirFilaResumen('Anaquel', anaquelVal);
+    html += construirFilaResumen('Nicho', nichoVal);
+
+    html += '<div class="text-uppercase small fw-bold mt-3 mb-1" style="color:var(--auditoria-primary);"><i class="bi bi-calculator-fill"></i> Cantidades</div>';
+    html += construirFilaResumen('# Cajas', numCajas);
+    html += construirFilaResumen('Peso prom. 20 UND (Kg)', pesoProm);
+    html += construirFilaResumen('# Bolsas', numBolsas);
+    html += construirFilaResumen('Cantidad Total', (cantidad || '0') + ' ' + (unidad || ''));
+
+    html += '<div class="text-uppercase small fw-bold mt-3 mb-1" style="color:var(--auditoria-primary);"><i class="bi bi-clipboard2-pulse-fill"></i> Estado y Detalles</div>';
+    html += construirFilaResumen('Estado Físico', estadoFisico);
+    camposPersonalizadosCache.forEach(c => {
+        const el = document.querySelector(`#campos_dinamicos [name="campo_${c.id}"]`);
+        html += construirFilaResumen(c.etiqueta, el ? el.value : '');
+    });
+    html += construirFilaResumen('Observaciones', observaciones);
+
+    html += '<div class="text-uppercase small fw-bold mt-3 mb-1" style="color:var(--auditoria-primary);"><i class="bi bi-camera-fill"></i> Fotos</div>';
+    html += construirFilaResumen('Fotos adjuntas', String(fotosSeleccionadas.length));
+
+    html += '</div>';
+    return html;
+}
 
 function enviarConteo() {
     const productoId = $('#producto_id').val();
@@ -380,8 +462,10 @@ function enviarConteo() {
     }
 
     Swal.fire({
-        title: '¿Confirmar envío?', text: 'Una vez enviado, no podrás editar este registro.',
-        icon: 'question', showCancelButton: true, confirmButtonText: 'Sí, enviar'
+        title: 'Revisa tu conteo antes de enviar',
+        html: construirResumenHtml() + '<div class="alert alert-warning small mt-2 mb-0 text-start"><i class="bi bi-exclamation-triangle-fill"></i> Una vez enviado, no podrás editar este registro.</div>',
+        icon: 'question', showCancelButton: true, confirmButtonText: 'Sí, enviar', cancelButtonText: 'Revisar de nuevo',
+        width: 480
     }).then(async result => {
         if (!result.isConfirmed) return;
 

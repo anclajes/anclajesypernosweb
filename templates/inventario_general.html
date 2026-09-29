@@ -273,6 +273,9 @@
                         {% if not p.activo %}
                             <span class="badge bg-secondary ms-1" style="font-size:.65rem;"><i class="bi bi-eye-slash-fill"></i> INACTIVO</span>
                         {% endif %}
+                        {% if p.estado %}
+                            <span class="badge bg-danger ms-1" style="font-size:.65rem;"><i class="bi bi-exclamation-triangle-fill"></i> {{ p.estado }}</span>
+                        {% endif %}
                         {% if p.ultimo_ajuste_fecha or p.edicion_manual_fecha %}
                         <span class="ms-1 align-middle">
                             {% if p.ultimo_ajuste_fecha %}

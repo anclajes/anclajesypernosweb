@@ -4861,17 +4861,50 @@ def admin_maestro():
     filtro_busqueda = _filtro_busqueda_flexible(search, MaestroProducto.nombre, MaestroProducto.sku) if search else None
     if filtro_busqueda is not None:
         query = query.filter(filtro_busqueda)
+
+    # --- Igual que en los inventarios: si el texto coincide EXACTO (sin importar
+    # mayúsc./espacios) con una familia o calidad real del Maestro, filtramos exacto en
+    # vez de parcial, para que por ejemplo "TUERCA HEX. INOX. 304" no arrastre también
+    # a "TUERCA HEX. INOX. 304 MILIM." solo porque su nombre empieza igual ---
+    familia_filtro_exacta = None
     if familia_filtro != 'todos':
-        query = query.filter(MaestroProducto.familia.ilike(f"%{familia_filtro}%"))
+        _match_familia = MaestroProducto.query.filter(
+            db.func.lower(db.func.trim(MaestroProducto.familia)) == familia_filtro.strip().lower()
+        ).first()
+        if _match_familia:
+            familia_filtro_exacta = _match_familia.familia
+
+    calidad_filtro_exacta = None
     if calidad_filtro != 'todos':
-        query = query.filter(MaestroProducto.calidad.ilike(f"%{calidad_filtro}%"))
+        _match_calidad = MaestroProducto.query.filter(
+            db.func.lower(db.func.trim(MaestroProducto.calidad)) == calidad_filtro.strip().lower()
+        ).first()
+        if _match_calidad:
+            calidad_filtro_exacta = _match_calidad.calidad
+
+    if familia_filtro != 'todos':
+        if familia_filtro_exacta is not None:
+            query = query.filter(db.func.lower(db.func.trim(MaestroProducto.familia)) == familia_filtro_exacta.strip().lower())
+        else:
+            query = query.filter(MaestroProducto.familia.ilike(f"%{familia_filtro}%"))
+    if calidad_filtro != 'todos':
+        if calidad_filtro_exacta is not None:
+            query = query.filter(db.func.lower(db.func.trim(MaestroProducto.calidad)) == calidad_filtro_exacta.strip().lower())
+        else:
+            query = query.filter(MaestroProducto.calidad.ilike(f"%{calidad_filtro}%"))
 
     base_familias = MaestroProducto.query
     base_calidades = MaestroProducto.query
     if calidad_filtro != 'todos':
-        base_familias = base_familias.filter(MaestroProducto.calidad.ilike(f"%{calidad_filtro}%"))
+        if calidad_filtro_exacta is not None:
+            base_familias = base_familias.filter(db.func.lower(db.func.trim(MaestroProducto.calidad)) == calidad_filtro_exacta.strip().lower())
+        else:
+            base_familias = base_familias.filter(MaestroProducto.calidad.ilike(f"%{calidad_filtro}%"))
     if familia_filtro != 'todos':
-        base_calidades = base_calidades.filter(MaestroProducto.familia.ilike(f"%{familia_filtro}%"))
+        if familia_filtro_exacta is not None:
+            base_calidades = base_calidades.filter(db.func.lower(db.func.trim(MaestroProducto.familia)) == familia_filtro_exacta.strip().lower())
+        else:
+            base_calidades = base_calidades.filter(MaestroProducto.familia.ilike(f"%{familia_filtro}%"))
     lista_familias = sorted(set(c[0] for c in base_familias.with_entities(MaestroProducto.familia).distinct().all() if c[0]))
     lista_calidades = sorted(set(c[0] for c in base_calidades.with_entities(MaestroProducto.calidad).distinct().all() if c[0]))
 
@@ -4885,10 +4918,18 @@ def admin_maestro():
     pagination = query.paginate(page=page, per_page=25, error_out=False)
     total_maestro = MaestroProducto.query.count()
 
+    # Catálogo completo de familias y calidades (no solo las que coinciden con el filtro
+    # actual de la página), para el modal de Editar — igual que en "Nuevo Producto".
+    familias_catalogo = [c.nombre for c in Category.query.order_by(Category.nombre).all()]
+    calidades_catalogo = [c[0] for c in db.session.query(MaestroProducto.calidad)
+                           .filter(MaestroProducto.calidad.isnot(None), MaestroProducto.calidad != '')
+                           .distinct().order_by(MaestroProducto.calidad).all()]
+
     return render_template('admin_maestro.html', info_maestro=info_maestro, ultimos_cambios=ultimos_cambios,
                             pagination=pagination, productos=pagination.items, search=search,
                             familia_filtro=familia_filtro, calidad_filtro=calidad_filtro, orden=orden,
                             lista_familias=lista_familias, lista_calidades=lista_calidades,
+                            familias_catalogo=familias_catalogo, calidades_catalogo=calidades_catalogo,
                             total_maestro=total_maestro)
 
 
@@ -5341,6 +5382,121 @@ def admin_maestro_eliminar(sku):
     except Exception as e:
         db.session.rollback()
         return {'status': 'error', 'msg': f'Error al eliminar: {str(e)}'}, 500
+
+
+def _recortar_para_log(texto, largo=97):
+    """Recorta un texto para que quepa en las columnas VARCHAR(100) de MaestroCambioLog,
+    agregando '...' si se recortó, para nunca arriesgar un StringDataRightTruncation."""
+    texto = texto or ''
+    if len(texto) <= largo:
+        return texto
+    return texto[:largo].rstrip() + '...'
+
+
+@app.route('/admin/maestro/<sku>/editar', methods=['POST'])
+def admin_maestro_editar(sku):
+    """Edita Descripción, Familia, Calidad y Peso Nominal de un producto DESDE el Maestro —
+    misma idea que 'Editar Información' en cada inventario, pero aquí es la fuente de verdad:
+    el cambio se refleja también en Product y ProductImportBolts (si el código existe en esos
+    inventarios), y queda auditado en MaestroCambioLog (una fila por cada campo que sí cambió,
+    para no arriesgar los VARCHAR(100) de esa tabla con descripciones largas)."""
+    if session.get('role') not in ['admin', 'almacen']:
+        return {'status': 'error', 'msg': 'No autorizado'}, 403
+
+    sku = sku.strip().upper()
+    maestro = MaestroProducto.query.filter_by(sku=sku).first()
+    if not maestro:
+        return {'status': 'error', 'msg': f'"{sku}" no existe en el Maestro.'}, 404
+
+    nombre_nuevo = request.form.get('nombre', '').strip()
+    familia_nueva = request.form.get('familia', '').strip()
+    calidad_nueva = request.form.get('calidad', '').strip()
+    peso_raw = request.form.get('peso_nominal_kg', '0').strip()
+
+    if not nombre_nuevo:
+        return {'status': 'error', 'msg': 'La descripción no puede estar vacía.'}
+    if not familia_nueva:
+        return {'status': 'error', 'msg': 'La familia es obligatoria.'}
+
+    familias_validas = [c.nombre for c in Category.query.all()]
+    if familia_nueva not in familias_validas:
+        return {'status': 'error', 'msg': f'"{familia_nueva}" no es una familia reconocida. '
+                                           f'Elige una de la lista (para crear una familia nueva, usa '
+                                           f'"Nuevo Producto").'}
+
+    try:
+        peso_nuevo = round(float(peso_raw.replace(',', '.')) if peso_raw else 0.0, 4)
+        if peso_nuevo < 0:
+            raise ValueError()
+    except ValueError:
+        return {'status': 'error', 'msg': 'El peso nominal debe ser un número válido (hasta 4 decimales).'}
+
+    nombre_anterior = maestro.nombre
+    familia_anterior = maestro.familia
+    calidad_anterior = maestro.calidad or ''
+    peso_anterior = maestro.peso_nominal_kg or 0.0
+
+    logs_nuevos = []
+    if nombre_anterior != nombre_nuevo:
+        logs_nuevos.append(('descripcion', _recortar_para_log(nombre_anterior), _recortar_para_log(nombre_nuevo)))
+    if familia_anterior != familia_nueva:
+        logs_nuevos.append(('familia', _recortar_para_log(familia_anterior), _recortar_para_log(familia_nueva)))
+    if calidad_anterior != calidad_nueva:
+        logs_nuevos.append(('calidad', _recortar_para_log(calidad_anterior) or '-', _recortar_para_log(calidad_nueva) or '-'))
+    if round(peso_anterior, 4) != peso_nuevo:
+        logs_nuevos.append(('peso_kg', str(peso_anterior), str(peso_nuevo)))
+
+    if not logs_nuevos:
+        return {'status': 'error', 'msg': 'No hay ningún cambio que guardar.'}
+
+    try:
+        usuario_actual = session.get('username', 'Sistema')
+        hora_actual = hora_peru()
+        lote_id = f"EDIT-{hora_actual.strftime('%Y%m%d%H%M%S')}"
+
+        maestro.nombre = nombre_nuevo
+        maestro.familia = familia_nueva
+        maestro.calidad = calidad_nueva
+        maestro.peso_nominal_kg = peso_nuevo
+        maestro.actualizado_por = usuario_actual
+        maestro.fecha_actualizacion = hora_actual
+
+        prod_anclajes = Product.query.filter_by(sku=sku).first()
+        if prod_anclajes:
+            prod_anclajes.nombre = nombre_nuevo
+            prod_anclajes.categoria = familia_nueva
+            prod_anclajes.calidad = calidad_nueva
+            prod_anclajes.peso_kg = peso_nuevo
+            prod_anclajes.ultima_edicion_manual_fecha = hora_actual
+            prod_anclajes.ultima_edicion_manual_por = usuario_actual
+
+        prod_importbolts = ProductImportBolts.query.filter_by(sku=sku).first()
+        if prod_importbolts:
+            prod_importbolts.nombre = nombre_nuevo
+            prod_importbolts.categoria = familia_nueva
+            prod_importbolts.calidad = calidad_nueva
+            prod_importbolts.peso_kg = peso_nuevo
+            prod_importbolts.ultima_edicion_manual_fecha = hora_actual
+            prod_importbolts.ultima_edicion_manual_por = usuario_actual
+
+        for campo, anterior, nuevo in logs_nuevos:
+            db.session.add(MaestroCambioLog(
+                fecha=hora_actual, usuario=usuario_actual, lote_id=lote_id, sku=sku,
+                inventario='MAESTRO+AMBOS', campo=campo,
+                valor_anterior=anterior, valor_nuevo=nuevo,
+                familia=familia_nueva, calidad=calidad_nueva,
+            ))
+
+        registrar_log(f"Editó el producto {sku} desde el Maestro ({len(logs_nuevos)} campo(s) actualizados, "
+                      f"repartido a ambos inventarios)", "bi-pencil-fill", "text-warning")
+        db.session.commit()
+
+        return {'status': 'success', 'msg': f'Producto "{sku}" actualizado.',
+                'nombre': nombre_nuevo, 'familia': familia_nueva, 'calidad': calidad_nueva,
+                'peso_nominal_kg': peso_nuevo}
+    except Exception as e:
+        db.session.rollback()
+        return {'status': 'error', 'msg': f'Error al editar: {str(e)}'}, 500
 
 
 # 2. ACTUALIZAR NUEVO PRODUCTO (Para responder JSON y no borrar datos)
@@ -8132,7 +8288,7 @@ def inventario_general():
         for p in q.all():
             resultados.append({
                 'id': p.id, 'sku': p.sku, 'nombre': p.nombre, 'categoria': p.categoria, 'calidad': p.calidad,
-                'ubicacion': p.ubicacion, 'stock': p.stock_actual, 'stock_min': p.stock_minimo,
+                'ubicacion': p.ubicacion, 'stock': p.stock_actual, 'stock_min': p.stock_minimo, 'estado': p.estado,
                 'peso_kg': p.peso_kg or 0, 'origen': 'ANCLAJES', 'activo': p.activo,
                 'ultimo_ajuste_fecha': p.ultimo_ajuste_auditoria_fecha,
                 'ultimo_ajuste_por': p.ultimo_ajuste_auditoria_por,
@@ -8157,7 +8313,7 @@ def inventario_general():
         for p in q2.all():
             resultados.append({
                 'id': p.id, 'sku': p.sku, 'nombre': p.nombre, 'categoria': p.categoria, 'calidad': p.calidad,
-                'ubicacion': p.ubicacion, 'stock': p.stock_actual, 'stock_min': p.stock_minimo,
+                'ubicacion': p.ubicacion, 'stock': p.stock_actual, 'stock_min': p.stock_minimo, 'estado': p.estado,
                 'peso_kg': p.peso_kg or 0, 'origen': 'IMPORTBOLTS', 'activo': p.activo,
                 'ultimo_ajuste_fecha': p.ultimo_ajuste_auditoria_fecha,
                 'ultimo_ajuste_por': p.ultimo_ajuste_auditoria_por,
@@ -9109,7 +9265,10 @@ def auditoria_api_calidades(origen):
 
 @app.route('/api/auditoria/codigos/<origen>', methods=['POST'])
 def auditoria_api_codigos(origen):
-    """CONTEO CIEGO: solo devuelve id, sku, nombre. NUNCA el stock."""
+    """CONTEO CIEGO: solo devuelve id, sku, nombre, estado. NUNCA el stock.
+    'estado' (oxidado, retocar, etc.) SÍ se devuelve porque no revela cantidades,
+    y le sirve al auditor para no confundir productos que comparten familia/calidad/sku
+    parecido pero están en distinto estado físico."""
     if session.get('role') != 'auditor_stock': return {'status': 'error'}, 403
     familia = request.form.get('familia')
     calidad = request.form.get('calidad')
@@ -9121,7 +9280,7 @@ def auditoria_api_codigos(origen):
 
     productos = q.order_by(Modelo.sku).all()
     return {'status': 'success', 'productos': [
-        {'id': p.id, 'sku': p.sku, 'nombre': p.nombre} for p in productos
+        {'id': p.id, 'sku': p.sku, 'nombre': p.nombre, 'estado': p.estado or ''} for p in productos
     ]}
 
 @app.route('/api/catalogo/<tipo>')
@@ -10030,7 +10189,16 @@ def auditoria_editar_form(reg_id):
         return redirect(url_for('auditoria_mis_registros'))
 
     valores_extra = {ve.campo_id: ve.valor for ve in registro.valores_extra}
-    return render_template('auditoria_editar.html', registro=registro, valores_extra=valores_extra)
+
+    # Para poder RE-ELEGIR el producto (si el auditor se equivocó de familia/calidad/código al
+    # contar), reutilizamos el mismo selector en cascada de "Nuevo Conteo" — nunca para crear
+    # códigos nuevos, solo para buscar entre los que ya existen en el catálogo de este inventario.
+    CatModelo = CategoryImportBolts if registro.origen_inventario == 'IMPORTBOLTS' else Category
+    lista_categorias = [c.nombre for c in CatModelo.query.order_by(CatModelo.nombre).all()]
+    producto_actual_id = registro.product_importbolts_id if registro.origen_inventario == 'IMPORTBOLTS' else registro.product_id
+
+    return render_template('auditoria_editar.html', registro=registro, valores_extra=valores_extra,
+                            lista_categorias=lista_categorias, producto_actual_id=producto_actual_id)
 
 
 @app.route('/auditoria/registro/<int:reg_id>/actualizar', methods=['POST'])
@@ -10047,16 +10215,43 @@ def auditoria_actualizar(reg_id):
         nicho_val = request.form.get('nicho', '').strip()
         estado_fisico_val = request.form.get('estado_fisico', '').strip()
         unidad_val = request.form.get('unidad_medida', '').strip()
+        producto_id_val = request.form.get('producto_id', '').strip()
 
         errores = []
         if not anaquel_val: errores.append('Debe indicar el Anaquel.')
         if not nicho_val: errores.append('Debe indicar el Nicho.')
         if not estado_fisico_val: errores.append('Debe seleccionar el Estado Físico.')
         if not unidad_val: errores.append('Debe seleccionar la Unidad de Medida.')
+        if not producto_id_val: errores.append('Debe buscar y seleccionar el producto.')
         if errores:
             return {'status': 'error', 'msg': ' '.join(errores)}
 
-        prod = registro.producto
+        # --- Re-selección del producto: el auditor puede haber elegido el código equivocado al
+        # contar. Aquí solo se permite CAMBIAR a otro producto que YA existe en el catálogo del
+        # mismo inventario (origen_inventario no cambia) — nunca crear uno nuevo. Si el id no
+        # cambió, esto no hace nada más que confirmar que sigue existiendo. ---
+        ModeloProd = ProductImportBolts if registro.origen_inventario == 'IMPORTBOLTS' else Product
+        try:
+            nuevo_prod_id = int(producto_id_val)
+        except ValueError:
+            return {'status': 'error', 'msg': 'Producto inválido.'}
+        nuevo_prod = ModeloProd.query.get(nuevo_prod_id)
+        if not nuevo_prod:
+            return {'status': 'error', 'msg': 'El producto seleccionado ya no existe. Vuelve a buscarlo.'}
+
+        sku_anterior = registro.sku_snapshot
+        producto_cambio = (sku_anterior != nuevo_prod.sku)
+
+        registro.sku_snapshot = nuevo_prod.sku
+        registro.nombre_snapshot = nuevo_prod.nombre
+        registro.familia = nuevo_prod.categoria
+        registro.calidad = nuevo_prod.calidad
+        if registro.origen_inventario == 'IMPORTBOLTS':
+            registro.product_importbolts_id = nuevo_prod.id
+        else:
+            registro.product_id = nuevo_prod.id
+
+        prod = nuevo_prod
 
         registro.anaquel = anaquel_val
         registro.nicho = nicho_val
@@ -10068,7 +10263,7 @@ def auditoria_actualizar(reg_id):
         registro.estado_fisico = estado_fisico_val
         registro.observaciones = request.form.get('observaciones', '').strip()
         if prod:
-            registro.stock_sistema_snapshot = prod.stock_actual  # refrescar la foto del stock al momento de editar
+            registro.stock_sistema_snapshot = prod.stock_actual  # refrescar la foto del stock al momento de editar (o al cambiar de producto)
 
         RegistroAuditoriaValorExtra.query.filter_by(registro_id=registro.id).delete()
         campos_activos = CampoPersonalizado.query.filter_by(activo=True).all()
@@ -10088,8 +10283,13 @@ def auditoria_actualizar(reg_id):
                     etiqueta_snapshot=campo.etiqueta, valor=valor_enviado
                 ))
 
-        registrar_log_auditoria(registro, 'EDITADO_POR_AUDITOR',
-            f"{session.get('nombre')} corrigió su propio conteo antes de la revisión del admin.")
+        if producto_cambio:
+            registrar_log_auditoria(registro, 'EDITADO_POR_AUDITOR',
+                f"{session.get('nombre')} corrigió su propio conteo antes de la revisión del admin "
+                f"(cambió el producto: {sku_anterior} → {nuevo_prod.sku}).")
+        else:
+            registrar_log_auditoria(registro, 'EDITADO_POR_AUDITOR',
+                f"{session.get('nombre')} corrigió su propio conteo antes de la revisión del admin.")
 
         db.session.commit()
         return {'status': 'success', 'msg': 'Registro actualizado correctamente.'}

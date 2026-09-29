@@ -55,6 +55,14 @@
                         <span class="badge bg-success">Creación</span>
                         {% elif c.campo == 'eliminacion' %}
                         <span class="badge bg-danger">Eliminación</span>
+                        {% elif c.campo in ['peso_kg', 'peso_nominal_kg'] %}
+                        <span class="badge bg-info text-dark">Peso</span>
+                        {% elif c.campo == 'descripcion' %}
+                        <span class="badge bg-warning text-dark">Edición · Desc.</span>
+                        {% elif c.campo == 'familia' %}
+                        <span class="badge bg-warning text-dark">Edición · Familia</span>
+                        {% elif c.campo == 'calidad' %}
+                        <span class="badge bg-warning text-dark">Edición · Calidad</span>
                         {% else %}
                         <span class="badge bg-info text-dark">{{ c.campo }}</span>
                         {% endif %}
