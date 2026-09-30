@@ -9489,6 +9489,45 @@ def auditoria_api_codigos(origen):
     ]}
 
 
+@app.route('/api/auditoria/buscar_catalogo/<origen>', methods=['POST'])
+def auditoria_api_buscar_catalogo(origen):
+    """Búsqueda rápida sobre TODO el catálogo de este inventario (sin pasar primero por
+    Familia -> Calidad), para el panel flotante "Buscar en todo el catálogo" de Nuevo Conteo /
+    Corregir Conteo -- pensado para encontrar un producto en el celular en un par de letras
+    cuando la lista de familias es larga. Busca a la vez en familia, calidad, código y
+    descripción (ej. escribir "pern" encuentra la familia "PERNOS" Y cualquier producto cuya
+    descripción contenga "pern"), y devuelve como máximo 40 resultados para no mandar de más
+    al celular. Mismo criterio CONTEO CIEGO que /api/auditoria/codigos: nunca incluye stock."""
+    if session.get('role') != 'auditor_stock': return {'status': 'error'}, 403
+    texto = (request.form.get('q') or '').strip()
+    if len(texto) < 2:
+        return {'status': 'success', 'productos': []}
+
+    Modelo = ProductImportBolts if origen == 'IMPORTBOLTS' else Product
+    like = f'%{texto}%'
+    q = Modelo.query.filter(
+        Modelo.activo == True,
+        or_(
+            Modelo.sku.ilike(like),
+            Modelo.nombre.ilike(like),
+            Modelo.categoria.ilike(like),
+            Modelo.calidad.ilike(like),
+        )
+    )
+    if origen == 'ANCLAJES':
+        q = q.filter(Modelo.es_shadow_importbolts.isnot(True))
+
+    # Se piden 41 para saber si de verdad hay más de 40 (y no marcar "truncado" cuando
+    # justo hay exactamente 40 resultados en total).
+    productos = q.order_by(Modelo.categoria, Modelo.calidad, Modelo.sku).limit(41).all()
+    truncado = len(productos) > 40
+    productos = productos[:40]
+    return {'status': 'success', 'productos': [
+        {'id': p.id, 'sku': p.sku, 'nombre': p.nombre, 'categoria': p.categoria or '',
+         'calidad': p.calidad or '', 'estado': p.estado or ''} for p in productos
+    ], 'truncado': truncado}
+
+
 @app.route('/api/auditoria/verificar_duplicado/<origen>', methods=['POST'])
 def auditoria_api_verificar_duplicado(origen):
     """Avisa al auditor, ANTES de enviar, si el código que eligió ya tiene otro(s) conteo(s)

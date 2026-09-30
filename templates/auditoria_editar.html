@@ -13,6 +13,8 @@
         letter-spacing: .05em; font-size: .9rem; text-transform: uppercase; border-radius: 8px 8px 0 0;
     }
     .card-auditoria-section .card-header { background-color: var(--auditoria-primary) !important; }
+    .btn-auditoria-primary { background-color: var(--auditoria-primary); border-color: var(--auditoria-primary); color: #fff; }
+    .btn-auditoria-primary:hover { filter: brightness(0.9); color: #fff; }
 </style>
 
 <div class="mx-auto" style="max-width: 800px;">
@@ -39,18 +41,24 @@
                 puedes volver a buscar aquí entre los productos que <b>ya existen</b> en el catálogo — esto no
                 crea códigos nuevos, solo cambia a cuál de los que ya existen pertenece este conteo.
             </div>
+            <div class="d-grid mb-3">
+                <button type="button" class="btn btn-auditoria-primary fw-bold" onclick="abrirBuscadorCatalogo()">
+                    <i class="bi bi-search"></i> Buscar en todo el catálogo (rápido)
+                </button>
+            </div>
+            <div class="text-center text-muted small mb-3">— o busca paso a paso —</div>
             <div class="row g-3">
                 <div class="col-12 col-md-6">
                     <label class="form-label small fw-bold">Familia *</label>
-                    <select id="familia" class="form-select" required onchange="cargarCalidades()">
-                        <option value="" selected disabled>-- Seleccione --</option>
+                    <select id="familia" class="form-select" required style="width:100%;">
+                        <option value=""></option>
                         {% for cat in lista_categorias %}<option value="{{ cat }}">{{ cat }}</option>{% endfor %}
                     </select>
                 </div>
                 <div class="col-12 col-md-6">
                     <label class="form-label small fw-bold">Calidad *</label>
-                    <select id="calidad" class="form-select" required disabled onchange="cargarCodigos()">
-                        <option value="" selected disabled>-- Primero seleccione familia --</option>
+                    <select id="calidad" class="form-select" required disabled style="width:100%;">
+                        <option value=""></option>
                     </select>
                 </div>
                 <div class="col-12">
@@ -68,6 +76,19 @@
                     <div id="alerta_duplicado_periodo" class="d-none"></div>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- PANEL FLOTANTE: BUSCADOR DE TODO EL CATÁLOGO (Familia+Calidad+Código+Descripción a la vez) -->
+    <div class="offcanvas offcanvas-bottom" tabindex="-1" id="offcanvasBuscadorCatalogo" style="height:85vh;">
+        <div class="offcanvas-header border-bottom">
+            <h6 class="offcanvas-title"><i class="bi bi-search"></i> Buscar en todo el catálogo</h6>
+            <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Cerrar"></button>
+        </div>
+        <div class="offcanvas-body p-2">
+            <input type="text" id="buscador_catalogo_input" class="form-control mb-2" placeholder="Escribe familia, calidad, código o descripción..." autocomplete="off">
+            <div id="buscador_catalogo_estado" class="text-muted small mb-2">Escribe al menos 2 letras para buscar en todo el catálogo (familia, calidad, código o descripción) sin tener que elegir familia primero.</div>
+            <div id="buscador_catalogo_resultados" class="list-group"></div>
         </div>
     </div>
 
@@ -114,12 +135,25 @@
                     </div>
                     <div class="col-12">
                         <div class="border rounded p-2" style="background:#f8f9fa;">
-                            <div class="d-flex justify-content-between align-items-center mb-1">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
                                 <span class="small fw-bold text-muted"><i class="bi bi-calculator-fill"></i> Suma rápida (opcional)</span>
                                 <span class="small text-muted">Acumulado: <b id="calc_total_acumulado">0</b></span>
                             </div>
-                            <div class="d-flex gap-2">
-                                <input type="number" id="calc_input_parcial" class="form-control form-control-sm" placeholder="Ej: 20" min="0" step="any">
+                            <div class="btn-group btn-group-sm mb-2 w-100" role="group" aria-label="Operación para agregar">
+                                <button type="button" class="btn btn-outline-secondary calc-op-btn active" data-op="suma" onclick="calcCambiarOperacion('suma')">+ Sumar</button>
+                                <button type="button" class="btn btn-outline-secondary calc-op-btn" data-op="mult" onclick="calcCambiarOperacion('mult')">&times; Multiplicar</button>
+                                <button type="button" class="btn btn-outline-secondary calc-op-btn" data-op="div" onclick="calcCambiarOperacion('div')">&divide; Dividir</button>
+                            </div>
+                            <div class="d-flex flex-wrap align-items-center gap-2">
+                                <div id="calc_modo_suma" class="d-flex gap-2 flex-grow-1">
+                                    <input type="number" id="calc_input_parcial" class="form-control form-control-sm" placeholder="Ej: 20" min="0" step="any" style="min-width:90px;">
+                                </div>
+                                <div id="calc_modo_doble" class="d-none flex-grow-1 align-items-center gap-2">
+                                    <input type="number" id="calc_input_a" class="form-control form-control-sm" placeholder="Ej: 5" min="0" step="any" style="min-width:70px;">
+                                    <span id="calc_simbolo_operador" class="fw-bold text-muted">&times;</span>
+                                    <input type="number" id="calc_input_b" class="form-control form-control-sm" placeholder="Ej: 20" min="0" step="any" style="min-width:70px;">
+                                    <span class="text-muted small text-nowrap">= <b id="calc_resultado_preview">0</b></span>
+                                </div>
                                 <button type="button" class="btn btn-sm btn-outline-primary text-nowrap" onclick="calcAgregarParcial()"><i class="bi bi-plus-lg"></i> Agregar</button>
                                 <button type="button" class="btn btn-sm btn-success text-nowrap" onclick="calcUsarTotal()"><i class="bi bi-check-lg"></i> Usar total</button>
                             </div>
@@ -191,6 +225,15 @@ let productosCache = [];
 let camposPersonalizadosCache = [];
 
 document.addEventListener('DOMContentLoaded', () => {
+    // Familia y Calidad ahora son select2: se pueden filtrar escribiendo (ej. escribir "pern"
+    // en Familia muestra solo "PERNOS...") en vez de desplazarse por una lista larga. Se usa
+    // 'select2:select' (solo dispara con una elección real del usuario en el desplegable) en
+    // vez de 'change', para que no se dispare dos veces cuando el buscador de catálogo o la
+    // precarga de la selección actual del registro asignan el valor por código.
+    $('#familia').select2({ placeholder: '-- Seleccione --', width: '100%' })
+        .on('select2:select', cargarCalidades);
+    $('#calidad').select2({ placeholder: '-- Seleccione calidad --', width: '100%' })
+        .on('select2:select', cargarCodigos);
     $('#producto_id').select2({
         placeholder: '-- Busque por código o descripción --', width: '100%',
         templateResult: formatearOpcionProducto, templateSelection: formatearOpcionProducto
@@ -224,19 +267,101 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('calc_input_parcial').addEventListener('keydown', e => {
         if (e.key === 'Enter') { e.preventDefault(); calcAgregarParcial(); }
     });
+    document.getElementById('calc_input_a').addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); calcAgregarParcial(); }
+    });
+    document.getElementById('calc_input_b').addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); calcAgregarParcial(); }
+    });
+    document.getElementById('calc_input_a').addEventListener('input', calcActualizarPreview);
+    document.getElementById('calc_input_b').addEventListener('input', calcActualizarPreview);
+
+    document.getElementById('buscador_catalogo_input').addEventListener('input', function() {
+        clearTimeout(buscadorCatalogoTimer);
+        const texto = this.value.trim();
+        const cont = document.getElementById('buscador_catalogo_resultados');
+        const estado = document.getElementById('buscador_catalogo_estado');
+        if (texto.length < 2) {
+            cont.innerHTML = '';
+            estado.textContent = 'Escribe al menos 2 letras para buscar en todo el catálogo (familia, calidad, código o descripción) sin tener que elegir familia primero.';
+            return;
+        }
+        estado.textContent = 'Buscando...';
+        buscadorCatalogoTimer = setTimeout(() => buscarEnCatalogoCompleto(texto), 300);
+    });
+
+    document.getElementById('buscador_catalogo_resultados').addEventListener('click', function(e) {
+        const btn = e.target.closest('[data-idx]');
+        if (!btn) return;
+        const p = buscadorCatalogoResultadosCache[parseInt(btn.dataset.idx, 10)];
+        if (p) seleccionarDesdeBuscadorCatalogo(p);
+    });
 });
 
 // Suma rápida: el auditor va agregando cantidades parciales mientras revisa el conteo, ve el
-// acumulado, y con "Usar total" lo escribe directo en Cantidad Total Contada.
+// acumulado, y con "Usar total" lo escribe directo en Cantidad Total Contada. Además de sumar
+// valores sueltos, soporta multiplicar (ej. "5 cajas x 20 unidades") y dividir (ej. "150
+// repartidos en 3 grupos") como una sola operación que se agrega ya calculada a la lista
+// acumulada -- cada elemento guarda su valor numérico (para sumar) y una etiqueta legible para
+// el chip (ej. "5×20=100").
 let calcParciales = [];
+let calcOperacionActual = 'suma'; // 'suma' | 'mult' | 'div'
+
+function calcCambiarOperacion(op) {
+    calcOperacionActual = op;
+    document.querySelectorAll('.calc-op-btn').forEach(b => b.classList.toggle('active', b.dataset.op === op));
+    const modoSuma = document.getElementById('calc_modo_suma');
+    const modoDoble = document.getElementById('calc_modo_doble');
+    if (op === 'suma') {
+        modoSuma.classList.remove('d-none'); modoSuma.classList.add('d-flex');
+        modoDoble.classList.remove('d-flex'); modoDoble.classList.add('d-none');
+        document.getElementById('calc_input_parcial').focus();
+    } else {
+        modoSuma.classList.remove('d-flex'); modoSuma.classList.add('d-none');
+        modoDoble.classList.remove('d-none'); modoDoble.classList.add('d-flex');
+        document.getElementById('calc_simbolo_operador').textContent = op === 'mult' ? '×' : '÷';
+        calcActualizarPreview();
+        document.getElementById('calc_input_a').focus();
+    }
+}
+
+function calcRedondear(n) {
+    return Math.round(n * 1000) / 1000; // hasta 3 decimales, evita basura de punto flotante
+}
+
+function calcActualizarPreview() {
+    const a = parseFloat(document.getElementById('calc_input_a').value);
+    const b = parseFloat(document.getElementById('calc_input_b').value);
+    const prev = document.getElementById('calc_resultado_preview');
+    if (isNaN(a) || isNaN(b) || (calcOperacionActual === 'div' && b === 0)) {
+        prev.textContent = '0';
+        return;
+    }
+    prev.textContent = calcRedondear(calcOperacionActual === 'mult' ? a * b : a / b);
+}
 
 function calcAgregarParcial() {
-    const el = document.getElementById('calc_input_parcial');
-    const val = parseFloat(el.value);
-    if (isNaN(val) || val <= 0) return;
-    calcParciales.push(val);
-    el.value = '';
-    el.focus();
+    if (calcOperacionActual === 'suma') {
+        const el = document.getElementById('calc_input_parcial');
+        const val = parseFloat(el.value);
+        if (isNaN(val) || val <= 0) return;
+        calcParciales.push({ valor: val, label: String(val) });
+        el.value = '';
+        el.focus();
+    } else {
+        const elA = document.getElementById('calc_input_a');
+        const elB = document.getElementById('calc_input_b');
+        const a = parseFloat(elA.value);
+        const b = parseFloat(elB.value);
+        if (isNaN(a) || a <= 0 || isNaN(b) || b <= 0) return;
+        const resultado = calcRedondear(calcOperacionActual === 'mult' ? a * b : a / b);
+        if (resultado <= 0) return;
+        const simbolo = calcOperacionActual === 'mult' ? '×' : '÷';
+        calcParciales.push({ valor: resultado, label: `${a}${simbolo}${b}=${resultado}` });
+        elA.value = ''; elB.value = '';
+        document.getElementById('calc_resultado_preview').textContent = '0';
+        elA.focus();
+    }
     calcRenderizar();
 }
 
@@ -246,16 +371,16 @@ function calcQuitarParcial(idx) {
 }
 
 function calcRenderizar() {
-    const total = calcParciales.reduce((a, b) => a + b, 0);
+    const total = calcRedondear(calcParciales.reduce((a, p) => a + p.valor, 0));
     document.getElementById('calc_total_acumulado').textContent = total;
     const cont = document.getElementById('calc_lista_parciales');
-    cont.innerHTML = calcParciales.map((v, i) =>
-        `<span class="badge bg-secondary">${v} <a href="javascript:void(0)" class="text-white ms-1" onclick="calcQuitarParcial(${i})">&times;</a></span>`
+    cont.innerHTML = calcParciales.map((p, i) =>
+        `<span class="badge bg-secondary">${escHtml(p.label)} <a href="javascript:void(0)" class="text-white ms-1" onclick="calcQuitarParcial(${i})">&times;</a></span>`
     ).join('');
 }
 
 function calcUsarTotal() {
-    const total = calcParciales.reduce((a, b) => a + b, 0);
+    const total = calcRedondear(calcParciales.reduce((a, p) => a + p.valor, 0));
     document.getElementById('cantidad_total').value = total;
     Swal.fire({ icon: 'success', title: 'Cantidad actualizada', text: `Se colocó ${total} en Cantidad Total Contada.`, timer: 1400, showConfirmButton: false });
 }
@@ -266,9 +391,8 @@ function calcUsarTotal() {
 // poder encadenarlas al precargar la selección actual del registro.
 function cargarCalidades() {
     const familia = document.getElementById('familia').value;
-    const selCal = document.getElementById('calidad');
-    selCal.innerHTML = '<option value="" selected disabled>Cargando...</option>';
-    selCal.disabled = true;
+    const selCal = $('#calidad');
+    selCal.prop('disabled', true).empty().append('<option value=""></option>').trigger('change');
     $('#producto_id').prop('disabled', true).empty().append('<option value=""></option>').trigger('change');
     document.getElementById('descripcion_mostrar').value = '';
 
@@ -276,9 +400,9 @@ function cargarCalidades() {
         method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'},
         body: `familia=${encodeURIComponent(familia)}`
     }).then(r => r.json()).then(data => {
-        selCal.innerHTML = '<option value="" selected disabled>-- Seleccione --</option>';
-        (data.calidades || []).forEach(c => selCal.innerHTML += `<option value="${c}">${c}</option>`);
-        selCal.disabled = false;
+        selCal.empty().append('<option value=""></option>');
+        (data.calidades || []).forEach(c => selCal.append(new Option(c, c, false, false)));
+        selCal.prop('disabled', false).trigger('change');
     });
 }
 
@@ -296,6 +420,61 @@ function cargarCodigos() {
         sel.empty().append('<option value=""></option>');
         productosCache.forEach(p => sel.append(new Option(`${p.sku} — ${p.nombre}`, p.id, false, false)));
         sel.prop('disabled', false).trigger('change');
+    });
+}
+
+// Panel flotante "Buscar en todo el catálogo": busca a la vez en familia, calidad, código y
+// descripción sobre TODO el inventario (no hace falta elegir familia primero), y al tocar un
+// resultado autocompleta Familia -> Calidad -> Código en cascada (mismos endpoints de arriba)
+// y cierra el panel.
+let buscadorCatalogoTimer = null;
+let buscadorCatalogoOffcanvas = null;
+let buscadorCatalogoResultadosCache = [];
+
+function abrirBuscadorCatalogo() {
+    if (!buscadorCatalogoOffcanvas) {
+        buscadorCatalogoOffcanvas = new bootstrap.Offcanvas(document.getElementById('offcanvasBuscadorCatalogo'));
+    }
+    buscadorCatalogoOffcanvas.show();
+    setTimeout(() => document.getElementById('buscador_catalogo_input').focus(), 300);
+}
+
+function buscarEnCatalogoCompleto(texto) {
+    const cont = document.getElementById('buscador_catalogo_resultados');
+    const estado = document.getElementById('buscador_catalogo_estado');
+    fetch(`/api/auditoria/buscar_catalogo/${ORIGEN}`, {
+        method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: `q=${encodeURIComponent(texto)}`
+    }).then(r => r.json()).then(data => {
+        const productos = data.productos || [];
+        buscadorCatalogoResultadosCache = productos;
+        if (productos.length === 0) {
+            cont.innerHTML = '';
+            estado.textContent = `Sin resultados para "${texto}".`;
+            return;
+        }
+        estado.textContent = `${productos.length}${data.truncado ? '+' : ''} resultado(s)${data.truncado ? ' -- afina la búsqueda para ver más' : ''}.`;
+        cont.innerHTML = productos.map((p, idx) => `
+            <button type="button" class="list-group-item list-group-item-action py-2" data-idx="${idx}">
+                <div class="d-flex justify-content-between align-items-start gap-2">
+                    <div>
+                        <div class="fw-bold">${escHtml(p.sku)} — ${escHtml(p.nombre)}</div>
+                        <div class="small text-muted">${escHtml(p.categoria)} · ${escHtml(p.calidad)}</div>
+                    </div>
+                    ${p.estado ? `<span class="badge bg-danger text-nowrap" style="font-size:.65rem;">${escHtml(p.estado)}</span>` : ''}
+                </div>
+            </button>`).join('');
+    });
+}
+
+function seleccionarDesdeBuscadorCatalogo(p) {
+    buscadorCatalogoOffcanvas.hide();
+    $('#familia').val(p.categoria).trigger('change');
+    cargarCalidades().then(() => {
+        $('#calidad').val(p.calidad).trigger('change');
+        cargarCodigos().then(() => {
+            $('#producto_id').val(p.id).trigger('change');
+        });
     });
 }
 
@@ -370,10 +549,10 @@ function renderAlertaDuplicadoPeriodo() {
 // tenga que tocar algo si de verdad se equivocó de producto.
 function cargarSeleccionInicialProducto() {
     if (!VALOR_FAMILIA_ACTUAL) return;
-    document.getElementById('familia').value = VALOR_FAMILIA_ACTUAL;
+    $('#familia').val(VALOR_FAMILIA_ACTUAL).trigger('change');
     cargarCalidades().then(() => {
         if (!VALOR_CALIDAD_ACTUAL) return;
-        document.getElementById('calidad').value = VALOR_CALIDAD_ACTUAL;
+        $('#calidad').val(VALOR_CALIDAD_ACTUAL).trigger('change');
         cargarCodigos().then(() => {
             if (PRODUCTO_ACTUAL_ID) {
                 $('#producto_id').val(PRODUCTO_ACTUAL_ID).trigger('change');
