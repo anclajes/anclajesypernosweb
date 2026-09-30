@@ -375,6 +375,60 @@ def _subir_foto_auditoria(registro, archivo):
         return None, f'Error al subir "{archivo.filename}": {str(e)}'
 
 
+def _copiar_fotos_auditoria_a_producto(registro, prod, origen, cantidad_actual):
+    """Cuando el admin APLICA un conteo, las fotos que el auditor adjuntó (RegistroAuditoriaFoto)
+    se quedaban SOLO en el historial de esa auditoría -- nunca llegaban a la galería de fotos
+    del producto (ProductImage), así que un usuario que entrara al inventario y mirara las
+    fotos del producto no veía nada, aunque el conteo sí tenía fotos adjuntas. Esta función
+    copia cada foto del conteo hacia la galería del producto.
+
+    Copiamos el ARCHIVO en S3 a una key nueva (no reutilizamos la misma) para que la foto del
+    producto y la foto original de la auditoría queden totalmente independientes: borrar una
+    más adelante no rompe la otra (cada 'eliminar foto' borra su propio objeto de S3).
+
+    Respeta el máximo de 5 fotos por producto: si ya está lleno (o se llena a mitad de camino),
+    deja de copiar el resto y las cuenta como omitidas, para poder avisarle al admin.
+    Devuelve (copiadas, omitidas, nueva_cantidad_actual)."""
+    if not registro.fotos:
+        return 0, 0, cantidad_actual
+
+    carpeta = 'productos/importbolts' if origen == 'IMPORTBOLTS' else 'productos/anclajes'
+    copiadas = 0
+    omitidas = 0
+    for foto in registro.fotos:
+        if cantidad_actual >= 5:
+            omitidas += 1
+            continue
+        try:
+            ext = foto.s3_key.rsplit('.', 1)[-1].lower()
+            nombre_archivo = f"{uuid.uuid4().hex}.{ext}"
+            nueva_key = f"{carpeta}/{prod.sku}/{nombre_archivo}"
+            s3_client.copy_object(
+                Bucket=S3_BUCKET_NAME,
+                CopySource={'Bucket': S3_BUCKET_NAME, 'Key': foto.s3_key},
+                Key=nueva_key,
+            )
+            nueva_foto = ProductImage(
+                origen_inventario=origen,
+                url_s3=f"s3://{S3_BUCKET_NAME}/{nueva_key}",
+                s3_key=nueva_key,
+                subido_por_id=foto.subido_por_id,
+            )
+            if origen == 'IMPORTBOLTS':
+                nueva_foto.product_importbolts_id = prod.id
+            else:
+                nueva_foto.product_id = prod.id
+            db.session.add(nueva_foto)
+            cantidad_actual += 1
+            copiadas += 1
+        except Exception:
+            # Si UNA foto falla al copiarse (por ejemplo, el objeto original ya no existe en
+            # S3), no abortamos la aplicación de todo el conteo por eso -- solo la contamos
+            # como omitida y seguimos con las demás.
+            omitidas += 1
+    return copiadas, omitidas, cantidad_actual
+
+
 def comparar_cambios(dict_antes, dict_despues):
     cambios = []
     for k in dict_despues:
@@ -9968,6 +10022,15 @@ def admin_auditoria_aplicar(reg_id):
         registro.fecha_revision = registro.fecha_revision or hora_peru()
         registro.bloqueado = True
 
+        # Las fotos que el auditor adjuntó al conteo se quedaban SOLO en el historial de la
+        # auditoría -- nunca llegaban a la galería de fotos del producto. Las copiamos ahora
+        # que el conteo se está aplicando de verdad (filtro {'product_importbolts_id': prod.id}
+        # if origen == 'IMPORTBOLTS' else {'product_id': prod.id} para saber cuántas tiene ya).
+        filtro_fotos = {'product_importbolts_id': prod.id} if origen == 'IMPORTBOLTS' else {'product_id': prod.id}
+        cantidad_fotos_prod = ProductImage.query.filter_by(origen_inventario=origen, **filtro_fotos).count()
+        fotos_copiadas, fotos_omitidas, cantidad_fotos_prod = _copiar_fotos_auditoria_a_producto(
+            registro, prod, origen, cantidad_fotos_prod)
+
         detalle = (f"Stock {stock_antes} → {nuevo_stock} (dif {diferencia:+d}). "
                    f"Ubicación: '{nueva_ubicacion}'. Peso: {nuevo_peso}Kg. "
                    f"P.Unit: ${nuevo_precio_unidad}. P.Caja: ${nuevo_precio_caja}. "
@@ -9978,7 +10041,8 @@ def admin_auditoria_aplicar(reg_id):
 
         # Los hermanos ya quedaron reflejados en la ficha (se sumaron en el Stock a Registrar
         # que llegó en el formulario), así que solo falta cerrarlos como APLICADO para que no
-        # se queden pendientes ni alguien intente aplicarlos otra vez por separado.
+        # se queden pendientes ni alguien intente aplicarlos otra vez por separado. Sus fotos
+        # (si tienen) también se copian a la misma galería del producto.
         for h in hermanos:
             h.estado_registro = 'APLICADO'
             h.aplicado_por_id = session['user_id']
@@ -9986,7 +10050,15 @@ def admin_auditoria_aplicar(reg_id):
             h.revisado_por_id = h.revisado_por_id or session['user_id']
             h.fecha_revision = h.fecha_revision or hora_peru()
             h.bloqueado = True
+            c, o, cantidad_fotos_prod = _copiar_fotos_auditoria_a_producto(h, prod, origen, cantidad_fotos_prod)
+            fotos_copiadas += c
+            fotos_omitidas += o
             registrar_log_auditoria(h, 'APLICADO', f"{session.get('nombre')} lo aplicó en conjunto con el registro #{registro.id} (mismo código, misma auditoría). {detalle}")
+
+        if fotos_copiadas:
+            detalle += f" Se copiaron {fotos_copiadas} foto(s) del conteo a la galería del producto."
+        if fotos_omitidas:
+            detalle += f" {fotos_omitidas} foto(s) no se copiaron porque el producto ya tiene el máximo de 5 fotos (bórrale alguna vieja y vuelve a subirlas a mano si hacen falta)."
 
         db.session.commit()
         return {'status': 'success', 'msg': f'Ficha de {prod.sku} actualizada correctamente. {detalle}'}
