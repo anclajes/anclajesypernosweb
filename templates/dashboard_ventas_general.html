@@ -66,6 +66,12 @@
                 <a href="{{ url_for('dashboard_ventas_general') }}" class="btn btn-outline-secondary btn-sm w-100">Últimos 90 días</a>
             </div>
         </form>
+        <div class="text-end mt-2">
+            <a href="{{ url_for('dashboard_ventas_general_pdf', fecha_inicio=fecha_inicio, fecha_fin=fecha_fin) }}"
+               class="btn btn-sm btn-outline-danger">
+                <i class="bi bi-file-earmark-pdf-fill"></i> Descargar PDF del período filtrado
+            </a>
+        </div>
     </div>
 </div>
 

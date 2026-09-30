@@ -11633,29 +11633,27 @@ def _permiso_dashboard_ton():
     return None
 
 
-@app.route('/dashboard/ventas/anclajes')
-def dashboard_ventas_anclajes():
-    redir = _permiso_dashboard_ton()
-    if redir: return redir
-    ctx = _construir_ctx_dashboard_ton('ANCLAJES', request)
-    return render_template('dashboard_ventas_empresa.html', **ctx)
+def _tema_dashboard(empresa):
+    """Paleta de marca (colores, logo, nombres) de una empresa para el dashboard y su reporte
+    en PDF. Debe reflejar exactamente los mismos valores que el bloque {% set tema = ... %}
+    de dashboard_ventas_empresa.html, para que el PDF se vea igual que la pantalla."""
+    if empresa == 'ANCLAJES':
+        return {
+            'primary': '#0B3D91', 'secondary': '#ffc107', 'chart': '#2456B3',
+            'nombre': 'Anclajes y Pernos SAC', 'corto': 'Anclajes',
+            'logo_file': 'logo.png',
+        }
+    return {
+        'primary': '#004b87', 'secondary': '#80c342', 'chart': '#5FA82E',
+        'nombre': 'Import Bolts SAC', 'corto': 'ImportBolts',
+        'logo_file': 'logo_import.png',
+    }
 
 
-@app.route('/dashboard/ventas/importbolts')
-def dashboard_ventas_importbolts():
-    redir = _permiso_dashboard_ton()
-    if redir: return redir
-    ctx = _construir_ctx_dashboard_ton('IMPORTBOLTS', request)
-    return render_template('dashboard_ventas_empresa.html', **ctx)
-
-
-@app.route('/dashboard/ventas/general')
-def dashboard_ventas_general():
-    redir = _permiso_dashboard_ton()
-    if redir: return redir
-    ctx_a = _construir_ctx_dashboard_ton('ANCLAJES', request)
-    ctx_i = _construir_ctx_dashboard_ton('IMPORTBOLTS', request)
-
+def _combinar_ctx_dashboard_general(ctx_a, ctx_i):
+    """A partir del contexto ya calculado de cada empresa (via _construir_ctx_dashboard_ton),
+    arma los totales combinados y rankings mezclados que necesita el Dashboard General (y su
+    reporte en PDF), para no duplicar esta lógica en dos lugares."""
     toneladas_periodo_total = round(ctx_a['toneladas_periodo'] + ctx_i['toneladas_periodo'], 2)
     toneladas_hoy_total = round(ctx_a['toneladas_hoy'] + ctx_i['toneladas_hoy'], 2)
     toneladas_mes_total = round(ctx_a['toneladas_mes_actual'] + ctx_i['toneladas_mes_actual'], 2)
@@ -11700,9 +11698,7 @@ def dashboard_ventas_general():
         ingresos_general.append({**r, 'empresa': 'ImportBolts'})
     ingresos_general = sorted(ingresos_general, key=lambda x: x['toneladas'], reverse=True)[:12]
 
-    return render_template('dashboard_ventas_general.html',
-        fecha_inicio=ctx_a['fecha_inicio'], fecha_fin=ctx_a['fecha_fin'],
-        anclajes=ctx_a, importbolts=ctx_i,
+    return dict(
         toneladas_periodo_total=toneladas_periodo_total,
         toneladas_hoy_total=toneladas_hoy_total,
         toneladas_mes_total=toneladas_mes_total,
@@ -11711,14 +11707,137 @@ def dashboard_ventas_general():
         ton_ingresos_compras_total=ton_ingresos_compras_total,
         unid_ingresos_compras_total=unid_ingresos_compras_total,
         pct_anclajes=pct_anclajes, pct_importbolts=pct_importbolts,
-        labels_meses=ctx_a['labels_meses'],
-        data_meses_anclajes=ctx_a['data_meses_ton'], data_meses_importbolts=ctx_i['data_meses_ton'],
-        labels_dias=ctx_a['labels_dias'], dias_iso=ctx_a['dias_iso'],
-        data_dias_anclajes=ctx_a['data_dias_ton'], data_dias_importbolts=ctx_i['data_dias_ton'],
         top_clientes_general=top_clientes_general,
         productos_general=productos_general,
         ingresos_general=ingresos_general,
     )
+
+
+@app.route('/dashboard/ventas/anclajes')
+def dashboard_ventas_anclajes():
+    redir = _permiso_dashboard_ton()
+    if redir: return redir
+    ctx = _construir_ctx_dashboard_ton('ANCLAJES', request)
+    return render_template('dashboard_ventas_empresa.html', **ctx)
+
+
+@app.route('/dashboard/ventas/importbolts')
+def dashboard_ventas_importbolts():
+    redir = _permiso_dashboard_ton()
+    if redir: return redir
+    ctx = _construir_ctx_dashboard_ton('IMPORTBOLTS', request)
+    return render_template('dashboard_ventas_empresa.html', **ctx)
+
+
+@app.route('/dashboard/ventas/general')
+def dashboard_ventas_general():
+    redir = _permiso_dashboard_ton()
+    if redir: return redir
+    ctx_a = _construir_ctx_dashboard_ton('ANCLAJES', request)
+    ctx_i = _construir_ctx_dashboard_ton('IMPORTBOLTS', request)
+    extra = _combinar_ctx_dashboard_general(ctx_a, ctx_i)
+
+    return render_template('dashboard_ventas_general.html',
+        fecha_inicio=ctx_a['fecha_inicio'], fecha_fin=ctx_a['fecha_fin'],
+        anclajes=ctx_a, importbolts=ctx_i,
+        labels_meses=ctx_a['labels_meses'],
+        data_meses_anclajes=ctx_a['data_meses_ton'], data_meses_importbolts=ctx_i['data_meses_ton'],
+        labels_dias=ctx_a['labels_dias'], dias_iso=ctx_a['dias_iso'],
+        data_dias_anclajes=ctx_a['data_dias_ton'], data_dias_importbolts=ctx_i['data_dias_ton'],
+        **extra,
+    )
+
+
+def _generar_respuesta_pdf(html_renderizado, nombre_archivo, etiqueta_error):
+    """Convierte un HTML ya renderizado en un PDF descargable con xhtml2pdf, siguiendo el mismo
+    patrón usado en /descargar_cotizacion_v2, /descargar_nota_pedido y /admin/maestro/imprimir_codigos."""
+    pdf_buffer = io.BytesIO()
+    resultado = pisa.CreatePDF(src=html_renderizado, dest=pdf_buffer, encoding='utf-8')
+    if resultado.err:
+        return f"<h2>Error generando {etiqueta_error}</h2><pre>{html_renderizado}</pre>", 500
+    pdf_buffer.seek(0)
+    return send_file(pdf_buffer, as_attachment=True, download_name=nombre_archivo, mimetype='application/pdf')
+
+
+def _pdf_dashboard_empresa(empresa, request):
+    ctx = _construir_ctx_dashboard_ton(empresa, request)
+    tema = dict(_tema_dashboard(empresa))
+    tema['logo_path'] = os.path.join(app.root_path, 'static', 'img', tema['logo_file']).replace('\\', '/')
+
+    # --- Barras de "Evolución de Toneladas" (sustituto del gráfico, ancho relativo al mes más alto) ---
+    max_mes = max(ctx['data_meses_ton']) if ctx['data_meses_ton'] else 0
+    meses_barras = [
+        {'label': lbl, 'valor': val, 'pct': round((val / max_mes) * 100, 1) if max_mes > 0 else 0}
+        for lbl, val in zip(ctx['labels_meses'], ctx['data_meses_ton'])
+    ]
+
+    # --- Tabla compacta de "Toneladas por Día" en filas de a 3 (10 filas x 3 columnas = 30 días) ---
+    dias_tabla = list(zip(ctx['labels_dias'], ctx['data_dias_ton']))
+    dias_filas = [dias_tabla[i:i + 3] for i in range(0, len(dias_tabla), 3)]
+
+    html_renderizado = render_template(
+        'pdf_dashboard_ventas_empresa.html',
+        tema=tema, meses_barras=meses_barras, dias_filas=dias_filas,
+        generado_en=hora_peru(), generado_por=session.get('nombre') or session.get('username', 'Sistema'),
+        **ctx
+    )
+    nombre_archivo = f"reporte_ventas_{tema['corto'].lower()}_{ctx['fecha_inicio']}_a_{ctx['fecha_fin']}.pdf"
+    return _generar_respuesta_pdf(html_renderizado, nombre_archivo, f"el PDF del dashboard de {tema['corto']}")
+
+
+@app.route('/dashboard/ventas/anclajes/pdf')
+def dashboard_ventas_anclajes_pdf():
+    redir = _permiso_dashboard_ton()
+    if redir: return redir
+    return _pdf_dashboard_empresa('ANCLAJES', request)
+
+
+@app.route('/dashboard/ventas/importbolts/pdf')
+def dashboard_ventas_importbolts_pdf():
+    redir = _permiso_dashboard_ton()
+    if redir: return redir
+    return _pdf_dashboard_empresa('IMPORTBOLTS', request)
+
+
+@app.route('/dashboard/ventas/general/pdf')
+def dashboard_ventas_general_pdf():
+    redir = _permiso_dashboard_ton()
+    if redir: return redir
+    ctx_a = _construir_ctx_dashboard_ton('ANCLAJES', request)
+    ctx_i = _construir_ctx_dashboard_ton('IMPORTBOLTS', request)
+    extra = _combinar_ctx_dashboard_general(ctx_a, ctx_i)
+
+    logo_anclajes_path = os.path.join(app.root_path, 'static', 'img', 'logo.png').replace('\\', '/')
+    logo_importbolts_path = os.path.join(app.root_path, 'static', 'img', 'logo_import.png').replace('\\', '/')
+
+    # --- Barras comparativas mensuales (ancho relativo al mayor valor entre ambas empresas) ---
+    max_mes_gen = max(ctx_a['data_meses_ton'] + ctx_i['data_meses_ton']) if ctx_a['data_meses_ton'] else 0
+    meses_barras_general = [
+        {
+            'label': lbl, 'val_a': val_a, 'val_i': val_i,
+            'pct_a': round((val_a / max_mes_gen) * 100, 1) if max_mes_gen > 0 else 0,
+            'pct_i': round((val_i / max_mes_gen) * 100, 1) if max_mes_gen > 0 else 0,
+        }
+        for lbl, val_a, val_i in zip(ctx_a['labels_meses'], ctx_a['data_meses_ton'], ctx_i['data_meses_ton'])
+    ]
+
+    # --- Tabla diaria comparativa (últimos 30 días, ambas empresas) ---
+    dias_general = [
+        {'label': lbl, 'val_a': val_a, 'val_i': val_i, 'total': round(val_a + val_i, 3)}
+        for lbl, val_a, val_i in zip(ctx_a['labels_dias'], ctx_a['data_dias_ton'], ctx_i['data_dias_ton'])
+    ]
+
+    html_renderizado = render_template(
+        'pdf_dashboard_ventas_general.html',
+        fecha_inicio=ctx_a['fecha_inicio'], fecha_fin=ctx_a['fecha_fin'],
+        anclajes=ctx_a, importbolts=ctx_i,
+        logo_anclajes_path=logo_anclajes_path, logo_importbolts_path=logo_importbolts_path,
+        meses_barras_general=meses_barras_general, dias_general=dias_general,
+        generado_en=hora_peru(), generado_por=session.get('nombre') or session.get('username', 'Sistema'),
+        **extra,
+    )
+    nombre_archivo = f"reporte_ventas_general_{ctx_a['fecha_inicio']}_a_{ctx_a['fecha_fin']}.pdf"
+    return _generar_respuesta_pdf(html_renderizado, nombre_archivo, "el PDF del dashboard General")
 
 
 # --- ARRANQUE DE LA APLICACIÓN ---

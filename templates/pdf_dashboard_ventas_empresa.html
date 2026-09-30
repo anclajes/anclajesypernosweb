@@ -1,0 +1,320 @@
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+    @page {
+        size: A4;
+        margin: 1.5cm 1.2cm 1.7cm 1.2cm;
+    }
+    body {
+        font-family: Helvetica, Arial, sans-serif;
+        font-size: 8.5pt;
+        color: #222222;
+    }
+    table { border-collapse: collapse; }
+    td, th { vertical-align: top; }
+
+    /* --- ENCABEZADO --- */
+    .barra-marca { background-color: {{ tema.primary }}; height: 5px; width: 100%; font-size: 1px; line-height: 1px; }
+    .tabla-header { width: 100%; margin-top: 8px; margin-bottom: 4px; }
+    .tabla-header td { vertical-align: middle; }
+    .logo-header { width: 56px; height: 56px; }
+    .empresa-nombre { font-size: 13pt; font-weight: bold; color: {{ tema.primary }}; }
+    .empresa-sub { font-size: 8pt; color: #666666; }
+    .reporte-titulo { font-size: 15pt; font-weight: bold; color: #222222; text-align: right; }
+    .reporte-meta { font-size: 8pt; color: #555555; text-align: right; line-height: 1.5; }
+    .reporte-meta b { color: #222222; }
+
+    /* --- BANNER INFORMATIVO / LEYENDA GENERAL --- */
+    .banner-info {
+        background-color: #f4f6f9; border: 1px solid #dde3ea; border-radius: 3px;
+        padding: 7px 10px; margin-top: 10px; margin-bottom: 10px; font-size: 7.5pt; color: #444444; line-height: 1.5;
+    }
+    .tag-fijo, .tag-filtro {
+        padding: 1px 6px; border-radius: 3px; font-weight: bold; font-size: 6.8pt; white-space: nowrap;
+    }
+    .tag-fijo { background-color: #e2e3e5; color: #41464b; }
+    .tag-filtro { background-color: #cfe2ff; color: #084298; }
+
+    /* --- SECCIONES --- */
+    .titulo-seccion {
+        font-size: 10.5pt; font-weight: bold; color: {{ tema.primary }};
+        border-bottom: 1.5px solid {{ tema.primary }}; padding-bottom: 3px;
+        margin-top: 16px; margin-bottom: 6px;
+    }
+    .titulo-seccion-verde {
+        font-size: 10.5pt; font-weight: bold; color: #198754;
+        border-bottom: 1.5px solid #198754; padding-bottom: 3px;
+        margin-top: 16px; margin-bottom: 6px;
+    }
+    .nota-explicativa {
+        font-size: 7.3pt; color: #666666; font-style: italic; margin-bottom: 8px; line-height: 1.4;
+    }
+
+    /* --- KPIs --- */
+    .tabla-kpi { width: 100%; margin-bottom: 4px; }
+    .tabla-kpi td { width: 33.33%; padding: 4px; }
+    .caja-kpi {
+        border: 1px solid #e2e5e9; border-left: 3px solid {{ tema.primary }};
+        background-color: #fafbfc; padding: 7px 9px;
+    }
+    .caja-kpi.verde { border-left: 3px solid #198754; background-color: #f4faf6; }
+    .kpi-label { font-size: 7pt; color: #666666; text-transform: uppercase; font-weight: bold; }
+    .kpi-valor { font-size: 15pt; font-weight: bold; color: {{ tema.primary }}; margin-top: 2px; }
+    .kpi-valor.verde { color: #198754; }
+    .kpi-sub { font-size: 7pt; color: #777777; margin-top: 2px; }
+
+    /* --- TABLAS DE DATOS --- */
+    .tabla-datos { width: 100%; margin-bottom: 4px; }
+    .tabla-datos th {
+        background-color: {{ tema.primary }}; color: #ffffff; font-size: 7.3pt;
+        text-transform: uppercase; padding: 4px 6px; text-align: left;
+    }
+    .tabla-datos.verde th { background-color: #198754; }
+    .tabla-datos td { padding: 3px 6px; font-size: 7.8pt; border-bottom: 1px solid #eeeeee; }
+    .tabla-datos tfoot td { font-weight: bold; background-color: #eef1f4; border-top: 1.5px solid #ccc; }
+    .num { text-align: right; white-space: nowrap; }
+    .sin-datos { text-align: center; color: #999999; padding: 10px; font-style: italic; }
+
+    /* --- BARRAS (sustituto de gráfico) --- */
+    .fila-barra td { padding: 2px 6px; font-size: 7.5pt; border-bottom: 1px solid #f1f1f1; }
+    .barra-etiqueta { width: 70px; font-weight: bold; }
+    .barra-valor { width: 55px; text-align: right; font-weight: bold; color: {{ tema.primary }}; }
+    .barra-track { background-color: #e9ecef; height: 8px; font-size: 1px; line-height: 8px; }
+    .barra-fill { background-color: {{ tema.chart }}; height: 8px; font-size: 1px; line-height: 8px; }
+
+    .pie-pagina { font-size: 6.8pt; color: #999999; text-align: center; margin-top: 14px; }
+</style>
+</head>
+<body>
+
+<div class="barra-marca">&nbsp;</div>
+
+<table class="tabla-header">
+    <tr>
+        <td style="width:60%;">
+            <table style="width:100%;"><tr>
+                <td class="logo-header"><img src="{{ tema.logo_path }}" style="width:52px;height:52px;object-fit:cover;border-radius:50%;"></td>
+                <td style="padding-left:10px;">
+                    <div class="empresa-nombre">{{ tema.nombre }}</div>
+                    <div class="empresa-sub">Reporte generado desde el Dashboard de Ventas del sistema ERP</div>
+                </td>
+            </tr></table>
+        </td>
+        <td style="width:40%;">
+            <div class="reporte-titulo">Reporte de Ventas</div>
+            <div class="reporte-meta">
+                Período analizado: <b>{{ fecha_inicio }}</b> al <b>{{ fecha_fin }}</b><br>
+                Generado: <b>{{ generado_en.strftime('%d/%m/%Y %H:%M') }}</b> hrs (hora Perú)<br>
+                Generado por: <b>{{ generado_por }}</b>
+            </div>
+        </td>
+    </tr>
+</table>
+
+<div class="banner-info">
+    Estas cifras provienen de los movimientos de <b>Kardex</b> registrados manualmente como <b>Salida &rarr; Venta</b>
+    (y Entradas &rarr; Compra) desde "Movimiento de Stock" en el inventario de {{ tema.nombre }}. Aún no incluyen las
+    cotizaciones de Gestión Comercial.
+    &nbsp; <span class="tag-filtro">Según filtro</span> = usa el rango de fechas de este reporte &nbsp;
+    <span class="tag-fijo">Ventana fija</span> = usa una ventana de tiempo fija (hoy / mes en curso / últimos 6 meses /
+    últimos 30 días / últimos 3 meses) y <b>no</b> cambia aunque el período filtrado sea distinto.
+</div>
+
+<!-- KPIs -->
+<div class="titulo-seccion">Indicadores Principales</div>
+<table class="tabla-kpi">
+    <tr>
+        <td>
+            <div class="caja-kpi">
+                <div class="kpi-label">Ton. Hoy <span class="tag-fijo">Fijo</span></div>
+                <div class="kpi-valor">{{ "%.2f"|format(toneladas_hoy) }} t</div>
+                <div class="kpi-sub">vendidas en el día de hoy</div>
+            </div>
+        </td>
+        <td>
+            <div class="caja-kpi">
+                <div class="kpi-label">Ton. Mes Actual <span class="tag-fijo">Fijo</span></div>
+                <div class="kpi-valor">{{ "%.2f"|format(toneladas_mes_actual) }} t</div>
+                <div class="kpi-sub">acumulado del mes en curso</div>
+            </div>
+        </td>
+        <td>
+            <div class="caja-kpi">
+                <div class="kpi-label">Ton. Período <span class="tag-filtro">Filtro</span></div>
+                <div class="kpi-valor">{{ "%.2f"|format(toneladas_periodo) }} t</div>
+                <div class="kpi-sub">{{ "▲" if delta_toneladas >= 0 else "▼" }} {{ delta_toneladas }}% vs. período anterior equivalente</div>
+            </div>
+        </td>
+    </tr>
+    <tr>
+        <td>
+            <div class="caja-kpi">
+                <div class="kpi-label">Unidades <span class="tag-filtro">Filtro</span></div>
+                <div class="kpi-valor">{{ "{:,d}".format(unidades_periodo) }}</div>
+                <div class="kpi-sub">unidades vendidas en el período</div>
+            </div>
+        </td>
+        <td>
+            <div class="caja-kpi">
+                <div class="kpi-label">Movimientos <span class="tag-filtro">Filtro</span></div>
+                <div class="kpi-valor">{{ movimientos_periodo }}</div>
+                <div class="kpi-sub">{{ "%.1f"|format(peso_promedio_mov_kg) }} kg / movimiento</div>
+            </div>
+        </td>
+        <td>
+            <div class="caja-kpi verde">
+                <div class="kpi-label">Ingresos por Compras <span class="tag-filtro">Filtro</span></div>
+                <div class="kpi-valor verde">{{ "%.2f"|format(ton_ingresos_compras) }} t</div>
+                <div class="kpi-sub">{{ count_ingresos_compras }} ingreso(s) en el período</div>
+            </div>
+        </td>
+    </tr>
+</table>
+
+<!-- EVOLUCIÓN MENSUAL -->
+<div class="titulo-seccion">Evolución de Toneladas Vendidas — Últimos 6 Meses <span class="tag-fijo">Ventana fija</span></div>
+<div class="nota-explicativa">Toneladas vendidas por mes calendario (últimos 6 meses). No cambia con el filtro de fecha del reporte.</div>
+<table style="width:100%;">
+    {% for m in meses_barras %}
+    <tr class="fila-barra">
+        <td class="barra-etiqueta">{{ m.label }}</td>
+        <td style="width:60%;">
+            <table style="width:100%;"><tr>
+                <td class="barra-fill" style="width:{{ m.pct }}%;">&nbsp;</td>
+                <td class="barra-track">&nbsp;</td>
+            </tr></table>
+        </td>
+        <td class="barra-valor">{{ "%.2f"|format(m.valor) }} t</td>
+    </tr>
+    {% endfor %}
+</table>
+
+<!-- MIX POR CATEGORÍA -->
+<div class="titulo-seccion">Mix de Ventas por Familia (período) <span class="tag-filtro">Según filtro</span></div>
+<div class="nota-explicativa">Toneladas vendidas del período filtrado, agrupadas por familia de producto (Top 6 + "Otras").</div>
+{% if categoria_labels %}
+<table style="width:100%;">
+    {% for cat in categoria_labels %}
+    <tr class="fila-barra">
+        <td class="barra-etiqueta" style="width:110px;">{{ cat }}</td>
+        <td style="width:50%;">
+            <table style="width:100%;"><tr>
+                <td class="barra-fill" style="width:{{ categoria_pct[loop.index0] }}%;">&nbsp;</td>
+                <td class="barra-track">&nbsp;</td>
+            </tr></table>
+        </td>
+        <td class="barra-valor">{{ "%.2f"|format(categoria_data[loop.index0]) }} t</td>
+        <td style="width:45px;text-align:right;color:#666666;">{{ categoria_pct[loop.index0] }}%</td>
+    </tr>
+    {% endfor %}
+</table>
+{% else %}
+<div class="sin-datos">Sin ventas registradas en el período.</div>
+{% endif %}
+
+<!-- TONELADAS POR DÍA -->
+<div class="titulo-seccion">Toneladas Vendidas por Día — Últimos 30 Días <span class="tag-fijo">Ventana fija</span></div>
+<div class="nota-explicativa">Detalle diario de los últimos 30 días. No cambia con el filtro de fecha del reporte.</div>
+<table class="tabla-datos">
+    <thead>
+        <tr><th>Día</th><th class="num">Ton.</th><th>Día</th><th class="num">Ton.</th><th>Día</th><th class="num">Ton.</th></tr>
+    </thead>
+    <tbody>
+        {% for fila in dias_filas %}
+        <tr>
+            {% for dia, val in fila %}
+            <td>{{ dia }}</td><td class="num">{{ "%.3f"|format(val) }} t</td>
+            {% endfor %}
+            {% for _ in range(3 - fila|length) %}
+            <td></td><td></td>
+            {% endfor %}
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<!-- TOP PRODUCTOS -->
+<div style="page-break-inside: avoid;">
+<div class="titulo-seccion">Productos Más Vendidos — Este Mes <span class="tag-fijo">Ventana fija</span></div>
+<table class="tabla-datos">
+    <thead><tr><th>Producto</th><th>SKU</th><th>Categoría</th><th class="num">Toneladas</th><th class="num">Unidades</th></tr></thead>
+    <tbody>
+        {% for p in top_productos_mes %}
+        <tr><td>{{ p.nombre }}</td><td>{{ p.sku }}</td><td>{{ p.categoria }}</td><td class="num">{{ "%.2f"|format(p.ton) }} t</td><td class="num">{{ "{:,d}".format(p.unid) }}</td></tr>
+        {% else %}
+        <tr><td colspan="5" class="sin-datos">Sin ventas registradas este mes.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+
+<div style="page-break-inside: avoid;">
+<div class="titulo-seccion">Productos Más Vendidos — Últimos 3 Meses <span class="tag-fijo">Ventana fija</span></div>
+<table class="tabla-datos">
+    <thead><tr><th>Producto</th><th>SKU</th><th>Categoría</th><th class="num">Toneladas</th><th class="num">Unidades</th></tr></thead>
+    <tbody>
+        {% for p in top_productos_3m %}
+        <tr><td>{{ p.nombre }}</td><td>{{ p.sku }}</td><td>{{ p.categoria }}</td><td class="num">{{ "%.2f"|format(p.ton) }} t</td><td class="num">{{ "{:,d}".format(p.unid) }}</td></tr>
+        {% else %}
+        <tr><td colspan="5" class="sin-datos">Sin ventas registradas en los últimos 3 meses.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+
+<!-- TOP CLIENTES -->
+<div style="page-break-inside: avoid;">
+<div class="titulo-seccion">Toneladas por Cliente / Destino (período) <span class="tag-filtro">Según filtro</span></div>
+<table class="tabla-datos">
+    <thead><tr><th>Cliente / Destino</th><th class="num">Toneladas</th><th class="num">Unidades</th><th class="num">Movs.</th></tr></thead>
+    <tbody>
+        {% for c in top_clientes %}
+        <tr><td>{{ c.nombre }}</td><td class="num">{{ "%.2f"|format(c.toneladas) }} t</td><td class="num">{{ "{:,d}".format(c.unidades) }}</td><td class="num">{{ c.movimientos }}</td></tr>
+        {% else %}
+        <tr><td colspan="4" class="sin-datos">Sin ventas registradas en el período.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+
+<!-- ÚLTIMAS VENTAS -->
+<div style="page-break-inside: avoid;">
+<div class="titulo-seccion">Últimas Ventas Registradas <span class="tag-filtro">Según filtro</span></div>
+<table class="tabla-datos">
+    <thead><tr><th>Fecha</th><th>Cliente</th><th>Producto</th><th class="num">Ton.</th></tr></thead>
+    <tbody>
+        {% for v in ultimas_ventas %}
+        <tr><td>{{ v.fecha.strftime('%d/%m/%Y') }}</td><td>{{ v.cliente }}</td><td>{{ v.producto }}</td><td class="num">{{ "%.3f"|format(v.toneladas) }} t</td></tr>
+        {% else %}
+        <tr><td colspan="4" class="sin-datos">Sin ventas registradas en el período.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+
+<!-- INGRESOS POR FAMILIA -->
+<div style="page-break-inside: avoid;">
+<div class="titulo-seccion-verde">Nuevos Ingresos por Familia (período) <span class="tag-filtro">Según filtro</span></div>
+<div class="nota-explicativa">Solo se cuentan las <b>Entradas</b> del Kardex cuyo motivo contiene la palabra "Compra" (no incluye devoluciones ni traslados).</div>
+<table class="tabla-datos verde">
+    <thead><tr><th>Familia</th><th class="num">Toneladas Ingresadas</th><th class="num">Unidades</th><th class="num">Peso Nom. Prom. (Kg)</th></tr></thead>
+    <tbody>
+        {% for r in ingresos_por_categoria %}
+        <tr><td>{{ r.categoria }}</td><td class="num">{{ "%.2f"|format(r.toneladas) }} t</td><td class="num">{{ "{:,d}".format(r.unidades) }}</td><td class="num">{{ "%.3f"|format(r.peso_promedio_kg) }}</td></tr>
+        {% else %}
+        <tr><td colspan="4" class="sin-datos">Sin ingresos por compra registrados en el período.</td></tr>
+        {% endfor %}
+    </tbody>
+    {% if ingresos_por_categoria %}
+    <tfoot>
+        <tr><td>Total</td><td class="num">{{ "%.2f"|format(ton_ingresos_compras) }} t</td><td class="num">{{ "{:,d}".format(unid_ingresos_compras) }}</td><td class="num">—</td></tr>
+    </tfoot>
+    {% endif %}
+</table>
+</div>
+
+<div class="pie-pagina">{{ tema.nombre }} &middot; Reporte de Ventas generado automáticamente por el sistema ERP &middot; {{ generado_en.strftime('%d/%m/%Y %H:%M') }}</div>
+
+</body>
+</html>

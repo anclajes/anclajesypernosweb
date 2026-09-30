@@ -83,6 +83,17 @@
                 <a href="{{ url_for('dashboard_ventas_anclajes' if empresa == 'ANCLAJES' else 'dashboard_ventas_importbolts') }}" class="btn btn-outline-secondary btn-sm w-100">Últimos 90 días</a>
             </div>
         </form>
+        <div class="text-end mt-2">
+            {% if empresa == 'ANCLAJES' %}
+            <a href="{{ url_for('dashboard_ventas_anclajes_pdf', fecha_inicio=fecha_inicio, fecha_fin=fecha_fin) }}" class="btn btn-sm btn-outline-danger">
+                <i class="bi bi-file-earmark-pdf-fill"></i> Descargar PDF del período filtrado
+            </a>
+            {% else %}
+            <a href="{{ url_for('dashboard_ventas_importbolts_pdf', fecha_inicio=fecha_inicio, fecha_fin=fecha_fin) }}" class="btn btn-sm btn-outline-danger">
+                <i class="bi bi-file-earmark-pdf-fill"></i> Descargar PDF del período filtrado
+            </a>
+            {% endif %}
+        </div>
     </div>
 </div>
 
