@@ -1626,8 +1626,8 @@ def _restringir_almacen_visor():
 # 1. ACTUALIZAR CONTEXT PROCESSOR (Para la campana inteligente)
 @app.context_processor
 def inject_notifications():
-    if 'user_id' not in session: return dict(alertas_stock=0, historial=[])
-    
+    if 'user_id' not in session: return dict(alertas_stock=0, historial=[], correcciones_pendientes=0)
+
     # AHORA ES DINÁMICO: Compara stock_actual vs stock_minimo de cada producto
     try:
         count_stock_bajo = Product.query.filter(Product.stock_actual <= Product.stock_minimo).count()
@@ -1638,8 +1638,18 @@ def inject_notifications():
         historial = AuditLog.query.order_by(AuditLog.fecha.desc()).limit(6).all()
     except:
         historial = []
-        
-    return dict(alertas_stock=count_stock_bajo, historial=historial)
+
+    # Correcciones de conteos ya aplicados que el auditor reportó y siguen esperando revisión
+    # del administrador (ver /auditoria/registro/<id>/reportar_error).
+    try:
+        if session.get('role') in ['admin', 'administracion', 'almacen']:
+            count_correcciones = RegistroAuditoria.query.filter_by(estado_registro='CORRECCION_SOLICITADA').count()
+        else:
+            count_correcciones = 0
+    except:
+        count_correcciones = 0
+
+    return dict(alertas_stock=count_stock_bajo, historial=historial, correcciones_pendientes=count_correcciones)
 
 # 2. NUEVA RUTA: EXPORTAR A EXCEL
 # --- NUEVA RUTA: EXPORTAR A EXCEL (OPTIMIZADA PARA BAJO CONSUMO DE RAM) ---
@@ -9990,7 +10000,8 @@ def admin_auditoria_aplicar(reg_id):
     if session.get('role') not in ['admin', 'administracion', 'almacen']: return {'status': 'error'}, 403
     registro = RegistroAuditoria.query.get_or_404(reg_id)
 
-    if registro.estado_registro == 'APLICADO':
+    es_correccion = (registro.estado_registro == 'CORRECCION_SOLICITADA')
+    if registro.estado_registro not in ('PENDIENTE', 'APROBADO', 'CORRECCION_SOLICITADA'):
         return {'status': 'error', 'msg': 'Este registro ya fue aplicado anteriormente.'}
 
     # Registros "hermanos" (mismo código, mismo período, distinta ubicación) que el admin
@@ -10065,10 +10076,15 @@ def admin_auditoria_aplicar(reg_id):
         prod.ultimo_ajuste_auditoria_conteo_por = registro.trabajador.nombre_completo
 
         if diferencia != 0:
+            etiqueta_movimiento = (f"Corrección de Conteo Físico #{registro.id} "
+                                    f"(motivo: {registro.correccion_tipo_error}, Auditor: {registro.trabajador.nombre_completo}, "
+                                    f"Período: {registro.periodo.nombre if registro.periodo else 'Sin período'})") if es_correccion else \
+                                   (f"Ajuste por Conteo Físico #{registro.id} (Auditor: {registro.trabajador.nombre_completo}, "
+                                    f"Período: {registro.periodo.nombre if registro.periodo else 'Sin período'})")
             movimiento = ModeloMov(
                 product_id=prod.id, user_id=session['user_id'], tipo=tipo_mov,
                 cantidad=abs(diferencia), stock_anterior=stock_antes, stock_nuevo=nuevo_stock,
-                motivo=f"Ajuste por Conteo Físico #{registro.id} (Auditor: {registro.trabajador.nombre_completo}, Período: {registro.periodo.nombre if registro.periodo else 'Sin período'})"
+                motivo=etiqueta_movimiento
             )
             db.session.add(movimiento)
 
@@ -10078,6 +10094,11 @@ def admin_auditoria_aplicar(reg_id):
         registro.revisado_por_id = registro.revisado_por_id or session['user_id']
         registro.fecha_revision = registro.fecha_revision or hora_peru()
         registro.bloqueado = True
+
+        if es_correccion:
+            registro.correccion_resultado = 'APLICADA'
+            registro.correccion_resuelto_por_id = session['user_id']
+            registro.correccion_fecha_resolucion = hora_peru()
 
         # Las fotos que el auditor adjuntó al conteo se quedaban SOLO en el historial de la
         # auditoría -- nunca llegaban a la galería de fotos del producto. Las copiamos ahora
@@ -10094,7 +10115,10 @@ def admin_auditoria_aplicar(reg_id):
                    f"Estado: '{nuevo_estado}'. Activo: {nuevo_activo}.")
         if hermanos:
             detalle += f" Incluye la suma de {len(hermanos)} conteo(s) más del mismo código: #{', #'.join(str(h.id) for h in hermanos)}."
-        registrar_log_auditoria(registro, 'APLICADO', f"{session.get('nombre')} aplicó: {detalle}")
+        if es_correccion:
+            registrar_log_auditoria(registro, 'CORRECCION_APLICADA', f"{session.get('nombre')} aplicó la corrección reportada por {registro.correccion_solicitada_por.nombre_completo if registro.correccion_solicitada_por else registro.trabajador.nombre_completo}: {detalle}")
+        else:
+            registrar_log_auditoria(registro, 'APLICADO', f"{session.get('nombre')} aplicó: {detalle}")
 
         # Los hermanos ya quedaron reflejados en la ficha (se sumaron en el Stock a Registrar
         # que llegó en el formulario), así que solo falta cerrarlos como APLICADO para que no
@@ -10118,11 +10142,52 @@ def admin_auditoria_aplicar(reg_id):
             detalle += f" {fotos_omitidas} foto(s) no se copiaron porque el producto ya tiene el máximo de 5 fotos (bórrale alguna vieja y vuelve a subirlas a mano si hacen falta)."
 
         db.session.commit()
-        return {'status': 'success', 'msg': f'Ficha de {prod.sku} actualizada correctamente. {detalle}'}
+        msg_final = (f'Corrección aplicada correctamente sobre la ficha de {prod.sku}. {detalle}' if es_correccion
+                     else f'Ficha de {prod.sku} actualizada correctamente. {detalle}')
+        return {'status': 'success', 'msg': msg_final}
 
     except Exception as e:
         db.session.rollback()
         return {'status': 'error', 'msg': str(e)}
+
+
+@app.route('/admin/auditorias/<int:reg_id>/resolver_correccion', methods=['POST'])
+def admin_auditoria_resolver_correccion(reg_id):
+    """Para correcciones que NO se pueden aplicar con el mismo botón de un click (p.ej. 'Producto
+    equivocado', que implicaría revertir stock de un producto y aplicarlo a otro distinto, algo que
+    este sistema no maneja de forma segura): el administrador la rechaza o la marca como resuelta
+    manualmente (p.ej. porque ajustó el inventario a mano) dejando constancia de qué hizo."""
+    if session.get('role') not in ['admin', 'administracion', 'almacen']: return {'status': 'error'}, 403
+    registro = RegistroAuditoria.query.get_or_404(reg_id)
+    if registro.estado_registro != 'CORRECCION_SOLICITADA':
+        return {'status': 'error', 'msg': 'Este registro no tiene una corrección pendiente de revisión.'}
+
+    accion = request.form.get('accion', '').strip().upper()  # RECHAZAR | RESOLVER_MANUAL
+    nota = request.form.get('nota', '').strip()
+    if accion not in ('RECHAZAR', 'RESOLVER_MANUAL'):
+        return {'status': 'error', 'msg': 'Acción inválida.'}
+    if not nota:
+        return {'status': 'error', 'msg': 'Debe explicar cómo se resolvió (o por qué se rechaza) la corrección.'}
+
+    try:
+        registro.correccion_resultado = 'RECHAZADA' if accion == 'RECHAZAR' else 'RESUELTA_MANUAL'
+        registro.correccion_resuelto_por_id = session['user_id']
+        registro.correccion_fecha_resolucion = hora_peru()
+        registro.correccion_nota_resolucion = nota
+        # El registro vuelve a quedar como APLICADO (el conteo original sigue siendo el aplicado;
+        # solo se cierra el trámite de la corrección, con la nota de resolución como constancia).
+        registro.estado_registro = 'APLICADO'
+
+        etiqueta = 'rechazó' if accion == 'RECHAZAR' else 'marcó como resuelta manualmente'
+        registrar_log_auditoria(registro, 'CORRECCION_' + ('RECHAZADA' if accion == 'RECHAZAR' else 'RESUELTA_MANUAL'),
+            f"{session.get('nombre')} {etiqueta} la corrección reportada: {nota}")
+
+        db.session.commit()
+        return {'status': 'success', 'msg': 'Corrección resuelta correctamente.'}
+    except Exception as e:
+        db.session.rollback()
+        return {'status': 'error', 'msg': str(e)}
+
 
 # ============================================
 # Panel de catálogos (SOLO ADMIN)
@@ -10734,6 +10799,74 @@ def auditoria_actualizar(reg_id):
         db.session.rollback()
         return {'status': 'error', 'msg': str(e)}
 
+
+# --- Corrección de un conteo YA APLICADO: solo el mismo auditor que lo contó puede reportar
+# el error (nunca se edita el registro original: eso dejaría sin rastro lo que ya se aplicó al
+# inventario). Queda en estado CORRECCION_SOLICITADA hasta que el administrador lo revise. ---
+
+@app.route('/auditoria/registro/<int:reg_id>/reportar_error', methods=['POST'])
+def auditoria_reportar_error(reg_id):
+    if session.get('role') != 'auditor_stock': return {'status': 'error', 'msg': 'No autorizado'}, 403
+    registro = RegistroAuditoria.query.get_or_404(reg_id)
+    if registro.trabajador_id != session['user_id']:
+        return {'status': 'error', 'msg': 'No autorizado'}, 403
+    if registro.estado_registro != 'APLICADO':
+        return {'status': 'error', 'msg': 'Solo se puede reportar un error sobre un conteo que ya fue aplicado al inventario. Si aún está pendiente, edítalo directamente.'}
+
+    tipo_error = request.form.get('tipo_error', '').strip().upper()
+    comentario = request.form.get('comentario', '').strip()
+
+    if tipo_error not in ('CANTIDAD', 'UBICACION', 'PRODUCTO', 'OTRO'):
+        return {'status': 'error', 'msg': 'Debe seleccionar el tipo de error.'}
+    if not comentario:
+        return {'status': 'error', 'msg': 'Debe explicar en qué consistió el error.'}
+
+    try:
+        cantidad_propuesta = None
+        anaquel_propuesto = None
+        nicho_propuesto = None
+
+        if tipo_error == 'CANTIDAD':
+            cantidad_raw = request.form.get('cantidad_propuesta', '').strip()
+            if not cantidad_raw:
+                return {'status': 'error', 'msg': 'Debe indicar la cantidad correcta que propone.'}
+            try:
+                cantidad_propuesta = int(cantidad_raw)
+            except ValueError:
+                return {'status': 'error', 'msg': 'La cantidad propuesta no es válida.'}
+            if cantidad_propuesta < 0:
+                return {'status': 'error', 'msg': 'La cantidad propuesta no puede ser negativa.'}
+        elif tipo_error == 'UBICACION':
+            anaquel_propuesto = request.form.get('anaquel_propuesto', '').strip()
+            nicho_propuesto = request.form.get('nicho_propuesto', '').strip()
+            if not anaquel_propuesto and not nicho_propuesto:
+                return {'status': 'error', 'msg': 'Debe indicar el Anaquel y/o Nicho correcto que propone.'}
+
+        registro.correccion_tipo_error = tipo_error
+        registro.correccion_cantidad_propuesta = cantidad_propuesta
+        registro.correccion_anaquel_propuesto = anaquel_propuesto
+        registro.correccion_nicho_propuesto = nicho_propuesto
+        registro.correccion_comentario = comentario
+        registro.correccion_solicitada_por_id = session['user_id']
+        registro.correccion_fecha_solicitud = hora_peru()
+        registro.correccion_resultado = None
+        registro.correccion_resuelto_por_id = None
+        registro.correccion_fecha_resolucion = None
+        registro.correccion_nota_resolucion = None
+        registro.estado_registro = 'CORRECCION_SOLICITADA'
+
+        etiquetas_tipo = {'CANTIDAD': 'Cantidad', 'UBICACION': 'Ubicación', 'PRODUCTO': 'Producto equivocado', 'OTRO': 'Otro'}
+        registrar_log_auditoria(registro, 'CORRECCION_SOLICITADA',
+            f"{session.get('nombre')} reportó un error de tipo '{etiquetas_tipo.get(tipo_error, tipo_error)}' en este conteo ya aplicado: {comentario}")
+
+        db.session.commit()
+        return {'status': 'success', 'msg': 'Tu reporte fue enviado. El administrador revisará la corrección antes de aplicarla.'}
+
+    except Exception as e:
+        db.session.rollback()
+        return {'status': 'error', 'msg': str(e)}
+
+
 # --- RUTA SECRETA PARA INICIALIZAR LA BASE DE DATOS EN RENDER ---
 
 
@@ -10792,6 +10925,32 @@ def fix_auditoria_columnas():
             db.session.commit()
 
         return "<h2>✅ Módulo de Auditoría actualizado: columnas de snapshot 'antes de aplicar' agregadas correctamente.</h2>"
+    except Exception as e:
+        db.session.rollback()
+        return f"<h2>Error: {str(e)}</h2>"
+
+
+@app.route('/fix_correccion_auditoria_2026')
+def fix_correccion_auditoria():
+    if session.get('role') != 'admin':
+        return "Acceso denegado", 403
+    try:
+        with db.engine.connect() as conn:
+            # --- Corrección de un conteo ya aplicado (reporte de error del auditor) ---
+            conn.execute(text("ALTER TABLE registro_auditoria ADD COLUMN IF NOT EXISTS correccion_tipo_error VARCHAR(20)"))
+            conn.execute(text("ALTER TABLE registro_auditoria ADD COLUMN IF NOT EXISTS correccion_cantidad_propuesta INTEGER"))
+            conn.execute(text("ALTER TABLE registro_auditoria ADD COLUMN IF NOT EXISTS correccion_anaquel_propuesto VARCHAR(20)"))
+            conn.execute(text("ALTER TABLE registro_auditoria ADD COLUMN IF NOT EXISTS correccion_nicho_propuesto VARCHAR(20)"))
+            conn.execute(text("ALTER TABLE registro_auditoria ADD COLUMN IF NOT EXISTS correccion_comentario TEXT"))
+            conn.execute(text("ALTER TABLE registro_auditoria ADD COLUMN IF NOT EXISTS correccion_solicitada_por_id INTEGER"))
+            conn.execute(text("ALTER TABLE registro_auditoria ADD COLUMN IF NOT EXISTS correccion_fecha_solicitud TIMESTAMP"))
+            conn.execute(text("ALTER TABLE registro_auditoria ADD COLUMN IF NOT EXISTS correccion_resultado VARCHAR(20)"))
+            conn.execute(text("ALTER TABLE registro_auditoria ADD COLUMN IF NOT EXISTS correccion_resuelto_por_id INTEGER"))
+            conn.execute(text("ALTER TABLE registro_auditoria ADD COLUMN IF NOT EXISTS correccion_fecha_resolucion TIMESTAMP"))
+            conn.execute(text("ALTER TABLE registro_auditoria ADD COLUMN IF NOT EXISTS correccion_nota_resolucion TEXT"))
+            conn.commit()
+
+        return "<h2>✅ Módulo de Auditoría actualizado: columnas de corrección de conteos aplicados agregadas correctamente.</h2>"
     except Exception as e:
         db.session.rollback()
         return f"<h2>Error: {str(e)}</h2>"

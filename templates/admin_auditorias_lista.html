@@ -15,6 +15,7 @@
                 <label class="small fw-bold text-muted">Estado</label>
                 <select name="estado" class="form-select form-select-sm" onchange="this.form.submit()">
                     <option value="PENDIENTE" {% if estado_filtro == 'PENDIENTE' %}selected{% endif %}>Pendientes</option>
+                    <option value="CORRECCION_SOLICITADA" {% if estado_filtro == 'CORRECCION_SOLICITADA' %}selected{% endif %}>Corrección Solicitada{% if correcciones_pendientes %} ({{ correcciones_pendientes }}){% endif %}</option>
                     <option value="APLICADO" {% if estado_filtro == 'APLICADO' %}selected{% endif %}>Aplicados</option>
                     <option value="RECHAZADO" {% if estado_filtro == 'RECHAZADO' %}selected{% endif %}>Rechazados</option>
                     <option value="todos" {% if estado_filtro == 'todos' %}selected{% endif %}>Todos</option>
@@ -109,6 +110,7 @@
                         {% if r.estado_registro == 'PENDIENTE' %}<span class="badge bg-warning text-dark">Pendiente</span>
                         {% elif r.estado_registro == 'APLICADO' %}<span class="badge bg-success">Aplicado</span>
                         {% elif r.estado_registro == 'RECHAZADO' %}<span class="badge bg-danger">Rechazado</span>
+                        {% elif r.estado_registro == 'CORRECCION_SOLICITADA' %}<span class="badge text-white" style="background-color:#fd7e14;"><i class="bi bi-exclamation-triangle-fill"></i> Corrección Solicitada</span>
                         {% else %}<span class="badge bg-secondary">{{ r.estado_registro }}</span>{% endif %}
                     </td>
                     <td class="small">

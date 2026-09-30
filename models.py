@@ -654,7 +654,7 @@ class RegistroAuditoria(db.Model):
     # esta funcionalidad quedan sin período asignado).
     periodo_id = db.Column(db.Integer, db.ForeignKey('periodo_auditoria.id'), nullable=True)
 
-    estado_registro = db.Column(db.String(20), default='PENDIENTE')  # PENDIENTE, APROBADO, RECHAZADO, APLICADO
+    estado_registro = db.Column(db.String(20), default='PENDIENTE')  # PENDIENTE, APROBADO, RECHAZADO, APLICADO, CORRECCION_SOLICITADA
     bloqueado = db.Column(db.Boolean, default=True)
     motivo_rechazo = db.Column(db.Text)
 
@@ -675,9 +675,27 @@ class RegistroAuditoria(db.Model):
     snapshot_antes_activo = db.Column(db.Boolean, nullable=True)
     snapshot_antes_fecha = db.Column(db.DateTime, nullable=True)  # cuándo se tomó esta foto
 
+    # --- Corrección de un conteo YA APLICADO: el propio auditor detecta después el error y
+    # reporta lo que envió (queda intacto arriba) vs. lo que ahora propone. El admin revisa la
+    # comparación y decide manualmente cómo resolverlo (nunca se revierte stock automáticamente:
+    # ver admin_auditoria_aplicar, que reutiliza su misma lógica incremental para aplicar la corrección).
+    correccion_tipo_error = db.Column(db.String(20), nullable=True)  # CANTIDAD, UBICACION, PRODUCTO, OTRO
+    correccion_cantidad_propuesta = db.Column(db.Integer, nullable=True)
+    correccion_anaquel_propuesto = db.Column(db.String(20), nullable=True)
+    correccion_nicho_propuesto = db.Column(db.String(20), nullable=True)
+    correccion_comentario = db.Column(db.Text, nullable=True)
+    correccion_solicitada_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    correccion_fecha_solicitud = db.Column(db.DateTime, nullable=True)
+    correccion_resultado = db.Column(db.String(20), nullable=True)  # APLICADA, RECHAZADA, RESUELTA_MANUAL
+    correccion_resuelto_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    correccion_fecha_resolucion = db.Column(db.DateTime, nullable=True)
+    correccion_nota_resolucion = db.Column(db.Text, nullable=True)
+
     trabajador = db.relationship('User', foreign_keys=[trabajador_id])
     revisado_por = db.relationship('User', foreign_keys=[revisado_por_id])
     aplicado_por = db.relationship('User', foreign_keys=[aplicado_por_id])
+    correccion_solicitada_por = db.relationship('User', foreign_keys=[correccion_solicitada_por_id])
+    correccion_resuelto_por = db.relationship('User', foreign_keys=[correccion_resuelto_por_id])
     product = db.relationship('Product')
     product_importbolts = db.relationship('ProductImportBolts')
     periodo = db.relationship('PeriodoAuditoria')

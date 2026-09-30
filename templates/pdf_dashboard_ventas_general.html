@@ -82,11 +82,15 @@
     .sin-datos { text-align: center; color: #999999; padding: 10px; font-style: italic; }
 
     /* --- BARRAS --- */
+    /* Nota: las barras se arman con <div> anidados (nunca con una tabla anidada dentro de una
+       celda) -- una tabla anidada con anchos en % le hace calcular a xhtml2pdf/reportlab un
+       ancho disponible negativo cuando el porcentaje sale en 0 (p.ej. una empresa sin ventas ese
+       mes), y eso tumba la generación del PDF entero con un Internal Server Error. */
     .fila-barra td { padding: 2px 6px; font-size: 7.5pt; border-bottom: 1px solid #f1f1f1; }
     .barra-etiqueta { width: 62px; font-weight: bold; }
-    .barra-track { background-color: #e9ecef; height: 6px; font-size: 1px; line-height: 6px; }
-    .barra-fill-a { background-color: #2456B3; height: 6px; font-size: 1px; line-height: 6px; }
-    .barra-fill-i { background-color: #5FA82E; height: 6px; font-size: 1px; line-height: 6px; }
+    .barra-track { background-color: #e9ecef; height: 6px; width: 100%; }
+    .barra-fill-a { background-color: #2456B3; height: 6px; }
+    .barra-fill-i { background-color: #5FA82E; height: 6px; }
     .barra-doble-valor { width: 150px; text-align: right; font-size: 7pt; }
 
     .pie-pagina { font-size: 6.8pt; color: #999999; text-align: center; margin-top: 14px; }
@@ -188,10 +192,9 @@
         <span class="chip-importbolts">ImportBolts</span> {{ "%.2f"|format(importbolts.toneladas_periodo) }} t ({{ pct_importbolts }}%)
     </td>
     <td>
-        <table style="width:100%;"><tr>
-            <td class="barra-fill-a" style="width:{{ pct_anclajes }}%;">&nbsp;</td>
-            <td class="barra-fill-i" style="width:{{ pct_importbolts }}%;">&nbsp;</td>
-        </tr></table>
+        <div style="width:100%;height:10px;">
+            <div class="barra-fill-a" style="width:{{ pct_anclajes }}%;height:10px;float:left;"></div><div class="barra-fill-i" style="width:{{ pct_importbolts }}%;height:10px;float:left;"></div>
+        </div>
     </td>
 </tr></table>
 
@@ -203,8 +206,8 @@
     <tr class="fila-barra">
         <td class="barra-etiqueta">{{ m.label }}</td>
         <td style="width:45%;">
-            <table style="width:100%;"><tr><td class="barra-fill-a" style="width:{{ m.pct_a }}%;">&nbsp;</td><td class="barra-track">&nbsp;</td></tr></table>
-            <table style="width:100%;margin-top:2px;"><tr><td class="barra-fill-i" style="width:{{ m.pct_i }}%;">&nbsp;</td><td class="barra-track">&nbsp;</td></tr></table>
+            <div class="barra-track"><div class="barra-fill-a" style="width:{{ m.pct_a }}%;"></div></div>
+            <div class="barra-track" style="margin-top:2px;"><div class="barra-fill-i" style="width:{{ m.pct_i }}%;"></div></div>
         </td>
         <td class="barra-doble-valor">
             <span style="color:#2456B3;">Anclajes: {{ "%.2f"|format(m.val_a) }} t</span><br>

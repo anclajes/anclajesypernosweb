@@ -194,6 +194,9 @@
                 <div class="nav-title">Auditoría</div>
                 <a href="{{ url_for('admin_auditorias_lista') }}" class="nav-link {{ 'active' if request.endpoint in ['admin_auditorias_lista', 'admin_auditorias_detalle'] }}">
                     <i class="bi bi-clipboard2-data-fill me-2"></i> <span>Revisión de Conteos</span>
+                    {% if correcciones_pendientes and correcciones_pendientes > 0 %}
+                    <span class="badge rounded-pill ms-1" style="background-color:#fd7e14;" title="Correcciones reportadas esperando revisión">{{ correcciones_pendientes }}</span>
+                    {% endif %}
                 </a>
                 <a href="{{ url_for('admin_periodos_lista') }}" class="nav-link {{ 'active' if request.endpoint == 'admin_periodos_lista' }}">
                     <i class="bi bi-calendar-range me-2"></i> <span>Períodos de Auditoría</span>

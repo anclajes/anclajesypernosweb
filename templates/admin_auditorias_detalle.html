@@ -192,8 +192,140 @@
 </div>
 
 <!-- ACCIONES DE REVISIÓN -->
-<!-- ACCIONES DE REVISIÓN -->
-{% if registro.estado_registro != 'APLICADO' %}
+{% if registro.estado_registro == 'CORRECCION_SOLICITADA' %}
+<!-- CORRECCIÓN REPORTADA POR EL AUDITOR SOBRE UN CONTEO YA APLICADO -->
+<div class="card border-0 shadow-sm mb-3" style="border-left: 4px solid #fd7e14 !important;">
+    <div class="card-header text-white fw-bold" style="background-color:#fd7e14;">
+        <i class="bi bi-exclamation-triangle-fill"></i> Corrección Reportada — Este conteo YA fue aplicado al inventario
+    </div>
+    <div class="card-body">
+        <div class="alert alert-light border small mb-3">
+            <i class="bi bi-person-fill"></i>
+            <b>{{ registro.correccion_solicitada_por.nombre_completo if registro.correccion_solicitada_por else registro.trabajador.nombre_completo }}</b>
+            reportó un error el {{ registro.correccion_fecha_solicitud.strftime('%d/%m/%Y %H:%M') if registro.correccion_fecha_solicitud else '-' }}:
+            <span class="badge bg-dark ms-1">
+                {% if registro.correccion_tipo_error == 'CANTIDAD' %}Error de Cantidad
+                {% elif registro.correccion_tipo_error == 'UBICACION' %}Error de Ubicación
+                {% elif registro.correccion_tipo_error == 'PRODUCTO' %}Producto Equivocado
+                {% else %}Otro Motivo{% endif %}
+            </span>
+            <div class="mt-2"><i class="bi bi-chat-left-quote-fill text-muted"></i> "{{ registro.correccion_comentario }}"</div>
+        </div>
+
+        <div class="row g-3 mb-3">
+            <div class="col-12 col-md-6">
+                <div class="border rounded p-2 h-100">
+                    <div class="small fw-bold text-muted mb-2"><i class="bi bi-clock-history"></i> LO QUE SE CONTÓ Y SE APLICÓ (original)</div>
+                    <table class="table table-sm mb-0">
+                        <tr><td class="text-muted">Producto</td><td class="fw-bold">{{ registro.sku_snapshot }} — {{ registro.nombre_snapshot }}</td></tr>
+                        <tr><td class="text-muted">Cantidad</td><td class="fw-bold">{{ registro.cantidad_total }} {{ registro.unidad_medida }}</td></tr>
+                        <tr><td class="text-muted">Ubicación</td><td>{{ registro.anaquel or '-' }} / {{ registro.nicho or '-' }}</td></tr>
+                    </table>
+                </div>
+            </div>
+            <div class="col-12 col-md-6">
+                <div class="border rounded p-2 h-100" style="background-color:#fff8f0;">
+                    <div class="small fw-bold mb-2" style="color:#fd7e14;"><i class="bi bi-arrow-repeat"></i> LO QUE EL AUDITOR PROPONE AHORA</div>
+                    <table class="table table-sm mb-0">
+                        <tr>
+                            <td class="text-muted">Producto</td>
+                            <td class="fw-bold {% if registro.correccion_tipo_error == 'PRODUCTO' %}text-danger{% endif %}">
+                                {% if registro.correccion_tipo_error == 'PRODUCTO' %}No es {{ registro.sku_snapshot }} — ver comentario{% else %}(sin cambio){% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-muted">Cantidad</td>
+                            <td class="fw-bold {% if registro.correccion_tipo_error == 'CANTIDAD' %}text-danger{% endif %}">
+                                {% if registro.correccion_tipo_error == 'CANTIDAD' %}{{ registro.correccion_cantidad_propuesta }} {{ registro.unidad_medida }}{% else %}(sin cambio){% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="text-muted">Ubicación</td>
+                            <td class="fw-bold {% if registro.correccion_tipo_error == 'UBICACION' %}text-danger{% endif %}">
+                                {% if registro.correccion_tipo_error == 'UBICACION' %}{{ registro.correccion_anaquel_propuesto or '-' }} / {{ registro.correccion_nicho_propuesto or '-' }}{% else %}(sin cambio){% endif %}
+                            </td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        {% if registro.correccion_tipo_error == 'PRODUCTO' %}
+        <div class="alert alert-warning small mb-0">
+            <i class="bi bi-info-circle-fill"></i>
+            Este tipo de error (producto equivocado) <b>no se puede aplicar automáticamente</b> con un solo clic, porque implicaría revertir el stock ya aplicado a <b>{{ registro.sku_snapshot }}</b> y aplicarlo a un producto distinto, algo que el sistema no maneja de forma segura.
+            Ajusta manualmente el inventario de los productos que correspondan desde su ficha si es necesario, y luego cierra este trámite:
+        </div>
+        <div class="d-flex flex-wrap gap-2 mt-3">
+            <button class="btn btn-success" onclick="resolverCorreccion('RESOLVER_MANUAL')"><i class="bi bi-check-circle-fill"></i> Marcar como Resuelta Manualmente</button>
+            <button class="btn btn-outline-danger" onclick="resolverCorreccion('RECHAZAR')"><i class="bi bi-x-circle-fill"></i> Rechazar Corrección</button>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{% if registro.correccion_tipo_error != 'PRODUCTO' and prod_actual %}
+<!-- PANEL DE ACTUALIZACIÓN DEL PRODUCTO REAL (prellenado con la corrección propuesta) -->
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-success text-white fw-bold">
+        <i class="bi bi-database-fill-gear"></i> Aplicar la Corrección a la Ficha del Producto
+    </div>
+    <div class="card-body">
+        <div class="alert alert-light border small mb-3">
+            <i class="bi bi-info-circle-fill text-success"></i>
+            Estos campos vienen prellenados con el <b>dato actual del sistema</b>, ya con el cambio propuesto en la corrección aplicado. Revise y edite lo que corresponda antes de confirmar.
+        </div>
+        <form id="formActualizarProducto">
+            <div class="row g-3">
+                <div class="col-6 col-md-3">
+                    <label class="form-label small fw-bold text-danger">Stock a Registrar *</label>
+                    <input type="number" id="f_stock_actual" class="form-control fw-bold border-danger"
+                           value="{{ registro.correccion_cantidad_propuesta if registro.correccion_tipo_error == 'CANTIDAD' else registro.cantidad_total }}" min="0" required>
+                </div>
+                <div class="col-6 col-md-3">
+                    <label class="form-label small fw-bold">Stock Mínimo</label>
+                    <input type="number" id="f_stock_minimo" class="form-control" value="{{ prod_actual.stock_minimo }}" min="0">
+                </div>
+                <div class="col-12 col-md-6">
+                    <label class="form-label small fw-bold">Ubicación</label>
+                    <input type="text" id="f_ubicacion" class="form-control text-uppercase"
+                           value="{% if registro.correccion_tipo_error == 'UBICACION' %}{{ (registro.correccion_anaquel_propuesto and 'ANAQUEL ' ~ registro.correccion_anaquel_propuesto ~ ' ' or '') ~ (registro.correccion_nicho_propuesto and 'NICHO ' ~ registro.correccion_nicho_propuesto or '') }}{% else %}{{ (registro.anaquel and 'ANAQUEL ' ~ registro.anaquel ~ ' ' or '') ~ (registro.nicho and 'NICHO ' ~ registro.nicho or '') or prod_actual.ubicacion or '' }}{% endif %}">
+                </div>
+                <div class="col-6 col-md-4">
+                    <label class="form-label small fw-bold">Peso Nominal (Kg)</label>
+                    <input type="number" step="0.001" id="f_peso_kg" class="form-control" value="{{ prod_actual.peso_kg or 0 }}" min="0">
+                </div>
+                <div class="col-6 col-md-4">
+                    <label class="form-label small fw-bold">Precio Unitario ($)</label>
+                    <input type="number" step="0.01" id="f_precio_unidad" class="form-control" value="{{ prod_actual.precio_unidad or 0 }}" min="0">
+                </div>
+                <div class="col-6 col-md-4">
+                    <label class="form-label small fw-bold">Precio Caja ($)</label>
+                    <input type="number" step="0.01" id="f_precio_caja" class="form-control" value="{{ prod_actual.precio_caja or 0 }}" min="0">
+                </div>
+                <div class="col-12 col-md-6">
+                    <label class="form-label small fw-bold">Estado Físico</label>
+                    <input type="text" id="f_estado" class="form-control text-uppercase" value="{{ registro.estado_fisico or prod_actual.estado or '' }}" placeholder="Vacío = BUEN ESTADO (OK)">
+                </div>
+                <div class="col-12 col-md-6 d-flex align-items-end">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="f_activo" {% if prod_actual.activo %}checked{% endif %} style="width:2.5em; height:1.3em;">
+                        <label class="form-check-label fw-bold ms-2">Producto Activo</label>
+                    </div>
+                </div>
+            </div>
+            <button type="button" class="btn btn-success fw-bold w-100 mt-3" onclick="confirmarActualizacion()">
+                <i class="bi bi-check-circle-fill"></i> Aplicar Corrección al Inventario
+            </button>
+            <button type="button" class="btn btn-outline-danger w-100 mt-2" onclick="resolverCorreccion('RECHAZAR')">
+                <i class="bi bi-x-circle-fill"></i> Rechazar esta Corrección (no aplicar)
+            </button>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+{% elif registro.estado_registro != 'APLICADO' %}
 <div class="card border-0 shadow-sm mb-3">
     <div class="card-body d-flex flex-wrap gap-2">
         <button class="btn btn-danger" onclick="rechazar()"><i class="bi bi-x-circle-fill"></i> Rechazar Conteo</button>
@@ -282,6 +414,17 @@
 <div class="card border-0 shadow-sm mb-3">
     <div class="card-body">
         <span class="badge bg-success fs-6 p-2"><i class="bi bi-check-circle-fill"></i> Ya fue aplicado al inventario el {{ registro.fecha_aplicacion.strftime('%d/%m/%Y %H:%M') }} por {{ registro.aplicado_por.nombre_completo }}</span>
+        {% if registro.correccion_resultado %}
+        <div class="alert small mt-2 mb-0 {{ 'alert-success' if registro.correccion_resultado == 'APLICADA' else ('alert-secondary' if registro.correccion_resultado == 'RESUELTA_MANUAL' else 'alert-danger') }}">
+            <i class="bi bi-arrow-repeat"></i> Este conteo tuvo una <b>corrección</b> reportada
+            {% if registro.correccion_solicitada_por %}por {{ registro.correccion_solicitada_por.nombre_completo }}{% endif %},
+            resuelta como
+            <b>{% if registro.correccion_resultado == 'APLICADA' %}Aplicada{% elif registro.correccion_resultado == 'RESUELTA_MANUAL' %}Resuelta Manualmente{% else %}Rechazada{% endif %}</b>
+            {% if registro.correccion_resuelto_por %}por {{ registro.correccion_resuelto_por.nombre_completo }}{% endif %}
+            {% if registro.correccion_fecha_resolucion %}el {{ registro.correccion_fecha_resolucion.strftime('%d/%m/%Y %H:%M') }}{% endif %}.
+            {% if registro.correccion_nota_resolucion %}<div class="mt-1"><i class="bi bi-chat-left-quote-fill"></i> "{{ registro.correccion_nota_resolucion }}"</div>{% endif %}
+        </div>
+        {% endif %}
     </div>
 </div>
 {% endif %}
@@ -359,6 +502,33 @@ function rechazar() {
             if (d.status === 'success') { Swal.fire('Rechazado', d.msg, 'success').then(()=>location.reload()); }
             else Swal.fire('Error', d.msg, 'error');
         });
+    });
+}
+
+// Para corrección de un conteo ya aplicado: el admin la rechaza o la marca como resuelta a mano
+// (p.ej. cuando el tipo de error es "Producto equivocado" y tuvo que ajustar el inventario
+// manualmente porque el sistema no revierte stock de forma automática entre dos productos).
+function resolverCorreccion(accion) {
+    const esRechazo = accion === 'RECHAZAR';
+    Swal.fire({
+        title: esRechazo ? 'Motivo del rechazo' : '¿Cómo se resolvió?',
+        input: 'text',
+        inputPlaceholder: esRechazo ? 'Explica por qué se rechaza esta corrección...' : 'Explica qué ajuste se hizo manualmente...',
+        showCancelButton: true,
+        confirmButtonColor: esRechazo ? '#d33' : '#198754',
+        confirmButtonText: esRechazo ? 'Rechazar Corrección' : 'Marcar como Resuelta'
+    }).then(result => {
+        if (!result.isConfirmed || !result.value) return;
+        const fd = new FormData();
+        fd.append('accion', accion);
+        fd.append('nota', result.value);
+        fetch(`/admin/auditorias/${REG_ID}/resolver_correccion`, { method: 'POST', body: fd })
+            .then(r => r.json())
+            .then(d => {
+                if (d.status === 'success') Swal.fire('Listo', d.msg, 'success').then(() => location.reload());
+                else Swal.fire('Error', d.msg, 'error');
+            })
+            .catch(() => Swal.fire('Error', 'No se pudo comunicar con el servidor.', 'error'));
     });
 }
 

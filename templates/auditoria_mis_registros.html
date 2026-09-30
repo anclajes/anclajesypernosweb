@@ -10,7 +10,9 @@
     <i class="bi bi-info-circle-fill text-primary"></i>
     Puedes <b>corregir</b> un conteo mientras esté <span class="badge bg-warning text-dark">Pendiente</span>.
     En cuanto el administrador lo <b>aplique</b> o lo <b>rechace</b>, el registro queda bloqueado y ya no se puede editar.
-    Si necesitas corregir un dato después de eso, <b>crea un nuevo registro</b> para ese producto.
+    Si necesitas corregir un dato después de eso, <b>crea un nuevo registro</b> para ese producto — o, si el conteo ya fue
+    <span class="badge bg-success">Aplicado</span> y te diste cuenta del error después, usa el botón
+    <b>"Reportar un error"</b> para que el administrador lo revise.
 </div>
 
 <div class="card shadow-sm border-0">
@@ -47,11 +49,20 @@
                         {% if r.estado_registro == 'PENDIENTE' %}<span class="badge bg-warning text-dark">Pendiente</span>
                         {% elif r.estado_registro == 'APLICADO' %}<span class="badge bg-success">Aplicado</span>
                         {% elif r.estado_registro == 'RECHAZADO' %}<span class="badge bg-danger">Rechazado</span>
+                        {% elif r.estado_registro == 'CORRECCION_SOLICITADA' %}<span class="badge text-white" style="background-color:#fd7e14;">Corrección Enviada</span>
                         {% else %}<span class="badge bg-secondary">{{ r.estado_registro }}</span>{% endif %}
                     </td>
                     <td class="text-center pe-3">
                         {% if r.estado_registro == 'PENDIENTE' %}
                         <a href="{{ url_for('auditoria_editar_form', reg_id=r.id) }}" class="btn btn-sm btn-outline-warning"><i class="bi bi-pencil-fill"></i> Editar</a>
+                        {% elif r.estado_registro == 'APLICADO' %}
+                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="abrirReportarError({{ r.id }}, {{ r.sku_snapshot|tojson }}, {{ r.nombre_snapshot|tojson }}, {{ r.cantidad_total|tojson }}, {{ r.unidad_medida|tojson }}, {{ (r.anaquel or '')|tojson }}, {{ (r.nicho or '')|tojson }})">
+                            <i class="bi bi-flag-fill"></i> Reportar un error
+                        </button>
+                        {% elif r.estado_registro == 'CORRECCION_SOLICITADA' %}
+                        <span class="text-muted" style="font-size:.75rem;" title="Tu reporte fue enviado y está esperando revisión del administrador.">
+                            <i class="bi bi-hourglass-split"></i> Esperando revisión
+                        </span>
                         {% else %}
                         <span class="text-muted" style="font-size:.75rem;" title="Ya fue revisado por el administrador. Crea un nuevo registro si necesitas corregir algo.">
                             <i class="bi bi-lock-fill"></i> Bloqueado
@@ -66,4 +77,137 @@
         </table>
     </div>
 </div>
+
+<!-- MODAL: REPORTAR UN ERROR EN UN CONTEO YA APLICADO -->
+<div class="modal fade" id="modalReportarError" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg">
+            <form id="formReportarError">
+                <div class="modal-header text-white" style="background-color:#fd7e14;">
+                    <h5 class="modal-title fs-6 fw-bold"><i class="bi bi-flag-fill me-2"></i> Reportar un Error en este Conteo</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-light border small mb-3">
+                        Este conteo <b>ya fue aplicado</b> al inventario, así que no se puede editar directamente.
+                        Cuenta aquí qué estuvo mal; el administrador verá <b>lo que se aplicó</b> y <b>lo que propones ahora</b>, y decidirá cómo corregirlo.
+                    </div>
+
+                    <div class="border rounded p-2 mb-3 bg-light">
+                        <div class="small fw-bold text-muted mb-1"><i class="bi bi-clock-history"></i> Lo que se contó y se aplicó</div>
+                        <div class="small">
+                            <b id="re_sku">-</b> — <span id="re_nombre">-</span><br>
+                            Cantidad: <b id="re_cantidad">-</b> &nbsp;|&nbsp; Ubicación: <b id="re_ubicacion">-</b>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="small text-muted fw-bold mb-1">¿Qué estuvo mal? *</label>
+                        <select id="re_tipo_error" class="form-select form-select-sm shadow-sm" required onchange="cambioTipoErrorReporte()">
+                            <option value="" selected disabled>-- Selecciona el tipo de error --</option>
+                            <option value="CANTIDAD">La cantidad contada</option>
+                            <option value="UBICACION">La ubicación (anaquel / nicho)</option>
+                            <option value="PRODUCTO">Conté el producto equivocado</option>
+                            <option value="OTRO">Otro motivo</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-3 d-none" id="re_campo_cantidad">
+                        <label class="small text-muted fw-bold mb-1">Cantidad correcta que propones</label>
+                        <input type="number" id="re_cantidad_propuesta" class="form-control form-control-sm shadow-sm" min="0">
+                    </div>
+
+                    <div class="row g-2 mb-3 d-none" id="re_campo_ubicacion">
+                        <div class="col-6">
+                            <label class="small text-muted fw-bold mb-1">Anaquel correcto</label>
+                            <input type="text" id="re_anaquel_propuesto" class="form-control form-control-sm shadow-sm text-uppercase">
+                        </div>
+                        <div class="col-6">
+                            <label class="small text-muted fw-bold mb-1">Nicho correcto</label>
+                            <input type="text" id="re_nicho_propuesto" class="form-control form-control-sm shadow-sm text-uppercase">
+                        </div>
+                    </div>
+
+                    <div class="mb-1">
+                        <label class="small text-muted fw-bold mb-1">Explica en qué consistió el error *</label>
+                        <textarea id="re_comentario" class="form-control form-control-sm shadow-sm" rows="3" placeholder="Ej: Conté 45 unidades pero al revisar la foto me di cuenta que eran 54..." required></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-sm text-white" style="background-color:#fd7e14;" onclick="enviarReporteError()">
+                        <i class="bi bi-send-fill"></i> Enviar Reporte al Administrador
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+let REG_ID_REPORTE = null;
+let modalReportarError = null;
+
+document.addEventListener('DOMContentLoaded', function () {
+    modalReportarError = new bootstrap.Modal(document.getElementById('modalReportarError'));
+});
+
+function abrirReportarError(regId, sku, nombre, cantidad, unidad, anaquel, nicho) {
+    REG_ID_REPORTE = regId;
+    document.getElementById('re_sku').textContent = sku;
+    document.getElementById('re_nombre').textContent = nombre;
+    document.getElementById('re_cantidad').textContent = cantidad + ' ' + unidad;
+    const partesUbic = [anaquel ? ('Anaquel ' + anaquel) : null, nicho ? ('Nicho ' + nicho) : null].filter(Boolean);
+    document.getElementById('re_ubicacion').textContent = partesUbic.length ? partesUbic.join(' / ') : '-';
+
+    document.getElementById('re_tipo_error').value = '';
+    document.getElementById('re_cantidad_propuesta').value = '';
+    document.getElementById('re_anaquel_propuesto').value = '';
+    document.getElementById('re_nicho_propuesto').value = '';
+    document.getElementById('re_comentario').value = '';
+    document.getElementById('re_campo_cantidad').classList.add('d-none');
+    document.getElementById('re_campo_ubicacion').classList.add('d-none');
+
+    modalReportarError.show();
+}
+
+function cambioTipoErrorReporte() {
+    const tipo = document.getElementById('re_tipo_error').value;
+    document.getElementById('re_campo_cantidad').classList.toggle('d-none', tipo !== 'CANTIDAD');
+    document.getElementById('re_campo_ubicacion').classList.toggle('d-none', tipo !== 'UBICACION');
+}
+
+function enviarReporteError() {
+    const tipo = document.getElementById('re_tipo_error').value;
+    const comentario = document.getElementById('re_comentario').value.trim();
+
+    if (!tipo) return Swal.fire('Falta un dato', 'Selecciona qué estuvo mal.', 'warning');
+    if (!comentario) return Swal.fire('Falta un dato', 'Explica en qué consistió el error.', 'warning');
+    if (tipo === 'CANTIDAD' && !document.getElementById('re_cantidad_propuesta').value) {
+        return Swal.fire('Falta un dato', 'Indica la cantidad correcta que propones.', 'warning');
+    }
+    if (tipo === 'UBICACION' && !document.getElementById('re_anaquel_propuesto').value.trim() && !document.getElementById('re_nicho_propuesto').value.trim()) {
+        return Swal.fire('Falta un dato', 'Indica el Anaquel y/o Nicho correcto que propones.', 'warning');
+    }
+
+    const fd = new FormData();
+    fd.append('tipo_error', tipo);
+    fd.append('comentario', comentario);
+    fd.append('cantidad_propuesta', document.getElementById('re_cantidad_propuesta').value);
+    fd.append('anaquel_propuesto', document.getElementById('re_anaquel_propuesto').value.trim());
+    fd.append('nicho_propuesto', document.getElementById('re_nicho_propuesto').value.trim());
+
+    fetch(`/auditoria/registro/${REG_ID_REPORTE}/reportar_error`, { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(d => {
+            if (d.status === 'success') {
+                modalReportarError.hide();
+                Swal.fire('Reporte Enviado', d.msg, 'success').then(() => location.reload());
+            } else {
+                Swal.fire('Error', d.msg, 'error');
+            }
+        })
+        .catch(() => Swal.fire('Error', 'No se pudo comunicar con el servidor.', 'error'));
+}
+</script>
 {% endblock %}
