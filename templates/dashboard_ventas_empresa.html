@@ -139,7 +139,7 @@
         </div>
     </div>
     <div class="col-6 col-md-4 col-xl-2">
-        <div class="card border-0 shadow-sm h-100 kpi-compras kpi-clickable" onclick="mostrarInfoDato('Ingresos por Compras', false, '&sum; (cantidad &times; peso nominal) de las <b>Entradas</b> del Kardex cuyo motivo contiene la palabra &quot;Compra&quot; (p.ej. &quot;Compra Nacional&quot;, &quot;Compra Importación&quot;), <b>dentro del rango de fechas filtrado</b>. Es un subconjunto de la tabla &quot;Nuevos Ingresos por Categoría&quot; de más abajo.')">
+        <div class="card border-0 shadow-sm h-100 kpi-compras kpi-clickable" onclick="mostrarInfoDato('Ingresos por Compras', false, '&sum; (cantidad &times; peso nominal) de las <b>Entradas</b> del Kardex cuyo motivo contiene la palabra &quot;Compra&quot; (p.ej. &quot;Compra Nacional&quot;, &quot;Compra Importación&quot;), <b>dentro del rango de fechas filtrado</b>. Es el mismo total que la tabla &quot;Nuevos Ingresos por Familia&quot; de más abajo.')">
             <i class="bi bi-info-circle kpi-info-dot"></i>
             <div class="card-body text-center py-3">
                 <div class="text-success small fw-bold text-uppercase"><i class="bi bi-box-arrow-in-down"></i> Ingresos por Compras</div>
@@ -262,17 +262,18 @@
             <div class="card-body p-0 table-responsive" style="max-height:360px;overflow-y:auto;">
                 <table class="table table-hover table-sm align-middle mb-0 small">
                     <thead class="bg-light text-uppercase text-muted sticky-top">
-                        <tr><th class="ps-3">Cliente / Destino</th><th class="text-end">Toneladas</th><th class="text-end pe-3">Movs.</th></tr>
+                        <tr><th class="ps-3">Cliente / Destino</th><th class="text-end">Toneladas</th><th class="text-end">Unidades</th><th class="text-end pe-3">Movs.</th></tr>
                     </thead>
                     <tbody>
                         {% for c in top_clientes %}
                         <tr>
                             <td class="ps-3 fw-bold">{{ c.nombre }}</td>
                             <td class="text-end fw-bold text-tema">{{ "%.2f"|format(c.toneladas) }} t</td>
+                            <td class="text-end">{{ "{:,d}".format(c.unidades) }}</td>
                             <td class="text-end pe-3">{{ c.movimientos }}</td>
                         </tr>
                         {% else %}
-                        <tr><td colspan="3" class="text-center text-muted py-4">Sin ventas registradas en el período.</td></tr>
+                        <tr><td colspan="4" class="text-center text-muted py-4">Sin ventas registradas en el período.</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>
@@ -308,16 +309,16 @@
     </div>
 </div>
 
-<!-- INGRESOS (ENTRADAS DE KARDEX) POR CATEGORÍA -->
+<!-- INGRESOS (ENTRADAS DE KARDEX) POR FAMILIA -->
 <div class="card border-0 shadow-sm mb-4">
     <div class="card-header bg-white fw-bold text-success card-header-info">
-        <span><i class="bi bi-box-arrow-in-down"></i> Nuevos Ingresos por Categoría (período)</span>
-        <button type="button" class="info-btn" onclick="mostrarInfoDato('Nuevos Ingresos por Categoría', false, 'Agrupa las <b>Entradas</b> del Kardex (cualquier motivo: Compras, Devoluciones, Traslados, etc.) <b>dentro del rango de fechas filtrado</b>, por categoría de producto.<hr class=\'my-2\'><b>Toneladas Ingresadas</b> = &sum; (cantidad &times; peso nominal) de cada línea.<br><b>Peso Nom. Prom.</b> = el peso nominal unitario promedio de los productos de esa categoría que ingresaron (toneladas &times; 1000 &divide; unidades) — referencial, ya que una categoría agrupa productos de distinto peso.<br><b>De las cuales, por Compras</b> = el subconjunto cuyo motivo contiene la palabra &quot;Compra&quot; (se resalta porque son las que más importan para reposición de stock).')"><i class="bi bi-info-circle"></i></button>
+        <span><i class="bi bi-box-arrow-in-down"></i> Nuevos Ingresos por Familia (período)</span>
+        <button type="button" class="info-btn" onclick="mostrarInfoDato('Nuevos Ingresos por Familia', false, 'Agrupa las <b>Entradas</b> del Kardex cuyo motivo contiene la palabra &quot;Compra&quot; (p.ej. &quot;Compra Nacional&quot;, &quot;Compra Importación&quot;) <b>dentro del rango de fechas filtrado</b>, por familia de producto. No suma devoluciones, traslados ni otros motivos: solo reposición real de stock por compra.<hr class=\'my-2\'><b>Toneladas Ingresadas</b> = &sum; (cantidad &times; peso nominal) de cada línea.<br><b>Peso Nom. Prom.</b> = el peso nominal unitario promedio de los productos de esa familia que ingresaron (toneladas &times; 1000 &divide; unidades) — referencial, ya que una familia agrupa productos de distinto peso.')"><i class="bi bi-info-circle"></i></button>
     </div>
     <div class="card-body p-0 table-responsive">
         <table class="table table-hover table-sm align-middle mb-0 small">
             <thead class="bg-light text-uppercase text-muted">
-                <tr><th class="ps-3">Categoría</th><th class="text-end">Toneladas Ingresadas</th><th class="text-end">Unidades</th><th class="text-end">Peso Nom. Prom. (Kg)</th><th class="text-end pe-3">De las cuales, por Compras</th></tr>
+                <tr><th class="ps-3">Familia</th><th class="text-end">Toneladas Ingresadas</th><th class="text-end">Unidades</th><th class="text-end pe-3">Peso Nom. Prom. (Kg)</th></tr>
             </thead>
             <tbody>
                 {% for r in ingresos_por_categoria %}
@@ -325,27 +326,19 @@
                     <td class="ps-3 fw-bold">{{ r.categoria }}</td>
                     <td class="text-end">{{ "%.2f"|format(r.toneladas) }} t</td>
                     <td class="text-end">{{ "{:,d}".format(r.unidades) }}</td>
-                    <td class="text-end text-muted">{{ "%.3f"|format(r.peso_promedio_kg) }}</td>
-                    <td class="text-end pe-3">
-                        {% if r.toneladas_compras > 0 %}
-                        <span class="badge bg-success-subtle text-success border border-success fw-bold">{{ "%.2f"|format(r.toneladas_compras) }} t</span>
-                        {% else %}
-                        <span class="text-muted">-</span>
-                        {% endif %}
-                    </td>
+                    <td class="text-end text-muted pe-3">{{ "%.3f"|format(r.peso_promedio_kg) }}</td>
                 </tr>
                 {% else %}
-                <tr><td colspan="5" class="text-center text-muted py-4">Sin ingresos registrados en el período.</td></tr>
+                <tr><td colspan="4" class="text-center text-muted py-4">Sin ingresos por compra registrados en el período.</td></tr>
                 {% endfor %}
             </tbody>
             {% if ingresos_por_categoria %}
             <tfoot>
                 <tr class="table-light fw-bold">
                     <td class="ps-3">Total</td>
-                    <td class="text-end">{{ "%.2f"|format(ton_ingresos_total) }} t</td>
-                    <td class="text-end">{{ "{:,d}".format(unid_ingresos_total) }}</td>
-                    <td class="text-end text-muted">—</td>
-                    <td class="text-end pe-3 text-success">{{ "%.2f"|format(ton_ingresos_compras) }} t</td>
+                    <td class="text-end">{{ "%.2f"|format(ton_ingresos_compras) }} t</td>
+                    <td class="text-end">{{ "{:,d}".format(unid_ingresos_compras) }}</td>
+                    <td class="text-end text-muted pe-3">—</td>
                 </tr>
             </tfoot>
             {% endif %}

@@ -221,17 +221,18 @@
             <div class="card-body p-0 table-responsive" style="max-height:360px;overflow-y:auto;">
                 <table class="table table-hover table-sm align-middle mb-0 small">
                     <thead class="bg-light text-uppercase text-muted sticky-top">
-                        <tr><th class="ps-3">Producto</th><th>Empresa</th><th class="text-end pe-3">Toneladas</th></tr>
+                        <tr><th class="ps-3">Producto</th><th>Empresa</th><th class="text-end">Toneladas</th><th class="text-end pe-3">Unidades</th></tr>
                     </thead>
                     <tbody>
                         {% for p in productos_general %}
                         <tr>
                             <td class="ps-3 fw-bold" style="white-space:normal;word-break:break-word;min-width:200px;">{{ p.nombre }}</td>
                             <td><span class="badge {% if p.empresa == 'Anclajes' %}bg-anclajes{% else %}bg-importbolts{% endif %}">{{ p.empresa }}</span></td>
-                            <td class="text-end pe-3 fw-bold text-nowrap">{{ "%.2f"|format(p.ton) }} t</td>
+                            <td class="text-end fw-bold text-nowrap">{{ "%.2f"|format(p.ton) }} t</td>
+                            <td class="text-end pe-3">{{ p.unid }}</td>
                         </tr>
                         {% else %}
-                        <tr><td colspan="3" class="text-center text-muted py-4">Sin ventas registradas este mes.</td></tr>
+                        <tr><td colspan="4" class="text-center text-muted py-4">Sin ventas registradas este mes.</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>
@@ -247,17 +248,18 @@
             <div class="card-body p-0 table-responsive" style="max-height:360px;overflow-y:auto;">
                 <table class="table table-hover table-sm align-middle mb-0 small">
                     <thead class="bg-light text-uppercase text-muted sticky-top">
-                        <tr><th class="ps-3">Cliente / Destino</th><th>Empresa(s)</th><th class="text-end pe-3">Toneladas</th></tr>
+                        <tr><th class="ps-3">Cliente / Destino</th><th>Empresa(s)</th><th class="text-end">Toneladas</th><th class="text-end pe-3">Unidades</th></tr>
                     </thead>
                     <tbody>
                         {% for c in top_clientes_general %}
                         <tr>
                             <td class="ps-3 fw-bold text-truncate" style="max-width:140px;" title="{{ c.nombre }}">{{ c.nombre }}</td>
                             <td class="small text-muted">{{ c.empresas }}</td>
-                            <td class="text-end pe-3 fw-bold">{{ "%.2f"|format(c.toneladas) }} t</td>
+                            <td class="text-end fw-bold">{{ "%.2f"|format(c.toneladas) }} t</td>
+                            <td class="text-end pe-3">{{ "{:,d}".format(c.unidades) }}</td>
                         </tr>
                         {% else %}
-                        <tr><td colspan="3" class="text-center text-muted py-4">Sin ventas registradas en el período.</td></tr>
+                        <tr><td colspan="4" class="text-center text-muted py-4">Sin ventas registradas en el período.</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>
@@ -269,13 +271,13 @@
 <!-- INGRESOS COMBINADOS -->
 <div class="card border-0 shadow-sm mb-4">
     <div class="card-header bg-white fw-bold text-success card-header-info">
-        <span><i class="bi bi-box-arrow-in-down"></i> Nuevos Ingresos por Categoría (ambas empresas, período)</span>
-        <button type="button" class="info-btn" onclick="mostrarInfoDato('Nuevos Ingresos por Categoría', false, 'Entradas del Kardex de ambas empresas <b>dentro del rango de fechas filtrado</b>, agrupadas por categoría.<hr class=\'my-2\'><b>Toneladas</b> = &sum; (cantidad &times; peso nominal) de cada línea.<br><b>Peso Nom. Prom.</b> = peso nominal unitario promedio de esa categoría en esa empresa (toneladas &times; 1000 &divide; unidades) — referencial.<br><b>Por Compras</b> = el subconjunto cuyo motivo contiene la palabra &quot;Compra&quot;.')"><i class="bi bi-info-circle"></i></button>
+        <span><i class="bi bi-box-arrow-in-down"></i> Nuevos Ingresos por Familia (ambas empresas, período)</span>
+        <button type="button" class="info-btn" onclick="mostrarInfoDato('Nuevos Ingresos por Familia', false, 'Entradas del Kardex de ambas empresas cuyo motivo contiene la palabra &quot;Compra&quot; (p.ej. &quot;Compra Nacional&quot;, &quot;Compra Importación&quot;) <b>dentro del rango de fechas filtrado</b>, agrupadas por familia de producto. No suma devoluciones, traslados ni otros motivos: solo reposición real de stock por compra.<hr class=\'my-2\'><b>Toneladas</b> = &sum; (cantidad &times; peso nominal) de cada línea.<br><b>Peso Nom. Prom.</b> = peso nominal unitario promedio de esa familia en esa empresa (toneladas &times; 1000 &divide; unidades) — referencial.')"><i class="bi bi-info-circle"></i></button>
     </div>
     <div class="card-body p-0 table-responsive">
         <table class="table table-hover table-sm align-middle mb-0 small">
             <thead class="bg-light text-uppercase text-muted">
-                <tr><th class="ps-3">Categoría</th><th>Empresa</th><th class="text-end">Toneladas</th><th class="text-end">Peso Nom. Prom. (Kg)</th><th class="text-end pe-3">Por Compras</th></tr>
+                <tr><th class="ps-3">Familia</th><th>Empresa</th><th class="text-end">Toneladas</th><th class="text-end">Unidades</th><th class="text-end pe-3">Peso Nom. Prom. (Kg)</th></tr>
             </thead>
             <tbody>
                 {% for r in ingresos_general %}
@@ -283,19 +285,23 @@
                     <td class="ps-3 fw-bold">{{ r.categoria }}</td>
                     <td><span class="badge {% if r.empresa == 'Anclajes' %}bg-anclajes{% else %}bg-importbolts{% endif %}">{{ r.empresa }}</span></td>
                     <td class="text-end">{{ "%.2f"|format(r.toneladas) }} t</td>
-                    <td class="text-end text-muted">{{ "%.3f"|format(r.peso_promedio_kg) }}</td>
-                    <td class="text-end pe-3">
-                        {% if r.toneladas_compras > 0 %}
-                        <span class="badge bg-success-subtle text-success border border-success fw-bold">{{ "%.2f"|format(r.toneladas_compras) }} t</span>
-                        {% else %}
-                        <span class="text-muted">-</span>
-                        {% endif %}
-                    </td>
+                    <td class="text-end">{{ "{:,d}".format(r.unidades) }}</td>
+                    <td class="text-end text-muted pe-3">{{ "%.3f"|format(r.peso_promedio_kg) }}</td>
                 </tr>
                 {% else %}
-                <tr><td colspan="5" class="text-center text-muted py-4">Sin ingresos registrados en el período.</td></tr>
+                <tr><td colspan="5" class="text-center text-muted py-4">Sin ingresos por compra registrados en el período.</td></tr>
                 {% endfor %}
             </tbody>
+            {% if ingresos_general %}
+            <tfoot>
+                <tr class="table-light fw-bold">
+                    <td class="ps-3" colspan="2">Total (ambas empresas)</td>
+                    <td class="text-end">{{ "%.2f"|format(ton_ingresos_compras_total) }} t</td>
+                    <td class="text-end">{{ "{:,d}".format(unid_ingresos_compras_total) }}</td>
+                    <td class="text-end text-muted pe-3">—</td>
+                </tr>
+            </tfoot>
+            {% endif %}
         </table>
     </div>
 </div>

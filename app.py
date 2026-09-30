@@ -5604,10 +5604,23 @@ def producto_info(sku):
     prod_anclajes = Product.query.filter_by(sku=sku).first()
     prod_importbolts = ProductImportBolts.query.filter_by(sku=sku).first()
 
+    # Esta ficha la ve cualquiera que escanee el QR (trabajadores, almacén, etc.), así que
+    # el mini-Kardex solo debe mostrar movimiento REAL de ingreso/salida: se excluyen los
+    # "Saldo Inicial" (carga de datos al importar/crear el producto, no una entrada real) y
+    # los movimientos Inter-Empresa / devoluciones de mercadería entre Anclajes e ImportBolts
+    # (no son ventas ni compras reales de cara al trabajador, son reacomodos internos).
+    def _es_movimiento_real(ModeloMov):
+        return and_(
+            or_(ModeloMov.motivo.is_(None), ~ModeloMov.motivo.ilike('%Inicial%')),
+            or_(ModeloMov.motivo.is_(None), ~ModeloMov.motivo.ilike('%Inter-Empresa%')),
+            or_(ModeloMov.motivo.is_(None), ~ModeloMov.motivo.ilike('%Retorno de mercadería%')),
+        )
+
     kardex_anclajes = []
     if prod_anclajes:
         kardex_anclajes = (ProductMovement.query
                             .filter_by(product_id=prod_anclajes.id)
+                            .filter(_es_movimiento_real(ProductMovement))
                             .order_by(ProductMovement.fecha.desc())
                             .limit(10).all())
 
@@ -5615,6 +5628,7 @@ def producto_info(sku):
     if prod_importbolts:
         kardex_importbolts = (ProductMovementImportBolts.query
                                .filter_by(product_id=prod_importbolts.id)
+                               .filter(_es_movimiento_real(ProductMovementImportBolts))
                                .order_by(ProductMovementImportBolts.fecha.desc())
                                .limit(10).all())
 
@@ -11529,19 +11543,18 @@ def _construir_ctx_dashboard_ton(empresa, request):
     unid_ingresos_compras = sum(l.cantidad for l in entradas_compras)
     count_ingresos_compras = len(entradas_compras)
 
+    # "Nuevos Ingresos por Familia": SOLO entradas cuyo motivo es Compra -- no se suman
+    # devoluciones, traslados ni otros motivos, para que la tabla refleje reposición real
+    # de stock y no cualquier movimiento de entrada del Kardex.
     agg_ing_cat = {}
-    for l in entradas_periodo:
+    for l in entradas_compras:
         cat = l.producto_categoria or 'Sin categoría'
-        reg = agg_ing_cat.setdefault(cat, {'ton': 0.0, 'unid': 0, 'ton_compras': 0.0, 'unid_compras': 0})
+        reg = agg_ing_cat.setdefault(cat, {'ton': 0.0, 'unid': 0})
         reg['ton'] += (l.peso_total or 0) / 1000
         reg['unid'] += l.cantidad
-        if _es_compra(l.motivo_nombre):
-            reg['ton_compras'] += (l.peso_total or 0) / 1000
-            reg['unid_compras'] += l.cantidad
     ingresos_por_categoria = sorted(
         [{
             'categoria': k, 'toneladas': round(v['ton'], 2), 'unidades': v['unid'],
-            'toneladas_compras': round(v['ton_compras'], 2), 'unidades_compras': v['unid_compras'],
             # Peso nominal promedio de esta categoría en el período = toneladas*1000 / unidades
             'peso_promedio_kg': round((v['ton'] * 1000 / v['unid']), 3) if v['unid'] > 0 else 0
         } for k, v in agg_ing_cat.items()],
@@ -11606,6 +11619,7 @@ def dashboard_ventas_general():
     unidades_periodo_total = ctx_a['unidades_periodo'] + ctx_i['unidades_periodo']
     movimientos_periodo_total = ctx_a['movimientos_periodo'] + ctx_i['movimientos_periodo']
     ton_ingresos_compras_total = round(ctx_a['ton_ingresos_compras'] + ctx_i['ton_ingresos_compras'], 2)
+    unid_ingresos_compras_total = ctx_a['unid_ingresos_compras'] + ctx_i['unid_ingresos_compras']
 
     if toneladas_periodo_total > 0:
         pct_anclajes = round((ctx_a['toneladas_periodo'] / toneladas_periodo_total) * 100, 1)
@@ -11652,6 +11666,7 @@ def dashboard_ventas_general():
         unidades_periodo_total=unidades_periodo_total,
         movimientos_periodo_total=movimientos_periodo_total,
         ton_ingresos_compras_total=ton_ingresos_compras_total,
+        unid_ingresos_compras_total=unid_ingresos_compras_total,
         pct_anclajes=pct_anclajes, pct_importbolts=pct_importbolts,
         labels_meses=ctx_a['labels_meses'],
         data_meses_anclajes=ctx_a['data_meses_ton'], data_meses_importbolts=ctx_i['data_meses_ton'],
