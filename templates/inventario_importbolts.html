@@ -845,6 +845,15 @@
                         <input type="number" name="cantidad" class="form-control form-control-sm shadow-sm" min="1" required>
                     </div>
 
+                    <!-- FECHA DEL MOVIMIENTO -->
+                    <div class="mb-3">
+                        <label class="small text-muted fw-bold mb-1"><i class="bi bi-calendar-event"></i> Fecha del Movimiento</label>
+                        <input type="date" name="fecha_movimiento" id="stock_fecha_movimiento" class="form-control form-control-sm shadow-sm" required>
+                        <div class="form-text small" style="font-size:.68rem;">
+                            Si te llegó el registro tarde, cambia la fecha al día real en que ocurrió el movimiento.
+                        </div>
+                    </div>
+
                     <!-- MOTIVO (dinámico según tipo) -->
                     <div class="mb-3">
                         <label class="small text-muted fw-bold mb-1">Motivo *</label>
@@ -1422,6 +1431,16 @@ function evitarDobleEnvioMovimiento(event) {
         });
     }
 
+    function fechaHoyLocalStr() {
+        // Fecha local del navegador en formato YYYY-MM-DD (evita el corrimiento de
+        // un día que da toISOString() por usar UTC).
+        const d = new Date();
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const dd = String(d.getDate()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd}`;
+    }
+
     function abrirAjuste(id, nombre, stockActual) {
         document.getElementById('stock_id').value = id;
         document.getElementById('stock_nombre').innerText = nombre;
@@ -1434,6 +1453,10 @@ function evitarDobleEnvioMovimiento(event) {
         document.getElementById('stock_proveedor_id').value = '';
         document.getElementById('proveedor_msg').innerHTML = '';
         document.getElementById('radioNacional').checked = true;
+        const hoyStr = fechaHoyLocalStr();
+        const inputFecha = document.getElementById('stock_fecha_movimiento');
+        inputFecha.max = hoyStr;
+        inputFecha.value = hoyStr;
         cambioTipoProveedor();
         cambioTipoMovimiento();
         cargarPresentaciones();

@@ -265,6 +265,35 @@ def hora_peru():
     # para que sea 100% compatible con la base de datos (offset-naive)
     return datetime.now(pytz.timezone('America/Lima')).replace(tzinfo=None)
 
+def _resolver_fecha_movimiento(fecha_form):
+    """Resuelve la fecha/hora a usar para un movimiento de Kardex (ajustar_stock).
+
+    - Si el campo viene vacío -> usa el momento actual (comportamiento de siempre).
+    - Si viene una fecha (YYYY-MM-DD, formato de <input type="date">) -> se combina
+      con la HORA actual de Perú (no medianoche), para que varios movimientos
+      registrados el mismo día atrasado conserven un orden sensato entre sí.
+    - Nunca permite fechas futuras (se valida contra el día de hoy en Perú).
+
+    Devuelve una tupla (fecha_resuelta, mensaje_error). Si mensaje_error no es
+    None, fecha_resuelta es None y el llamador debe hacer flash(mensaje_error)
+    y redirigir, siguiendo la misma convención ya usada para los demás errores
+    de validación de esta ruta.
+    """
+    ahora = hora_peru()
+    fecha_form = (fecha_form or '').strip()
+    if not fecha_form:
+        return ahora, None
+
+    try:
+        fecha_elegida = datetime.strptime(fecha_form, '%Y-%m-%d').date()
+    except ValueError:
+        return None, '⛔ La fecha del movimiento no es válida.'
+
+    if fecha_elegida > ahora.date():
+        return None, '⛔ La fecha del movimiento no puede ser una fecha futura.'
+
+    return datetime.combine(fecha_elegida, ahora.time()), None
+
 def registrar_log_auditoria(registro, accion, detalle=''):
     log = RegistroAuditoriaLog(
         registro_id=registro.id, accion=accion, detalle=detalle,
@@ -5939,9 +5968,15 @@ def ajustar_stock():
     precio_unitario = request.form.get('precio_unitario', '').strip()
     presentacion = request.form.get('presentacion', '').strip()
     referencia = request.form.get('referencia', '').strip().upper()[:50]
+    fecha_movimiento_form = request.form.get('fecha_movimiento', '').strip()
 
     if not motivo_texto:
         flash('⛔ Debe seleccionar un motivo.')
+        return redirect(url_origen or url_for('inventario'))
+
+    fecha_movimiento, error_fecha = _resolver_fecha_movimiento(fecha_movimiento_form)
+    if error_fecha:
+        flash(error_fecha)
         return redirect(url_origen or url_for('inventario'))
 
     # ================================================================
@@ -5981,7 +6016,7 @@ def ajustar_stock():
             proveedor_db.pais = pais_proveedor_form
             proveedor_db.last_updated = hora_peru()
             proveedor_db.editado_por_id = session.get('user_id')
-            proveedor_db.editado_en = hora_peru()   
+            proveedor_db.editado_en = hora_peru()
 
         proveedor_final_id = proveedor_db.id
         ruc_proveedor_final = id_fiscal_proveedor_form or None
@@ -6041,7 +6076,8 @@ def ajustar_stock():
         razon_social_proveedor=razon_social_final,
         precio_unitario=float(precio_unitario) if precio_unitario else None,
         presentacion=presentacion or None,
-        referencia=referencia or None
+        referencia=referencia or None,
+        fecha=fecha_movimiento
     )
     db.session.add(kardex)
     db.session.commit()
@@ -7610,9 +7646,15 @@ def ajustar_stock_importbolts():
     precio_unitario = request.form.get('precio_unitario', '').strip()
     presentacion = request.form.get('presentacion', '').strip()
     referencia = request.form.get('referencia', '').strip().upper()[:50]
+    fecha_movimiento_form = request.form.get('fecha_movimiento', '').strip()
 
     if not motivo_texto:
         flash('⛔ Debe seleccionar un motivo.')
+        return redirect(url_origen or url_for('inventario_importbolts'))
+
+    fecha_movimiento, error_fecha = _resolver_fecha_movimiento(fecha_movimiento_form)
+    if error_fecha:
+        flash(error_fecha)
         return redirect(url_origen or url_for('inventario_importbolts'))
 
     # ================================================================
@@ -7709,7 +7751,8 @@ def ajustar_stock_importbolts():
         razon_social_proveedor=razon_social_final,
         precio_unitario=float(precio_unitario) if precio_unitario else None,
         presentacion=presentacion or None,
-        referencia=referencia or None
+        referencia=referencia or None,
+        fecha=fecha_movimiento
     )
     db.session.add(kardex)
     db.session.commit()
@@ -9487,45 +9530,6 @@ def auditoria_api_codigos(origen):
     return {'status': 'success', 'productos': [
         {'id': p.id, 'sku': p.sku, 'nombre': p.nombre, 'estado': p.estado or ''} for p in productos
     ]}
-
-
-@app.route('/api/auditoria/buscar_catalogo/<origen>', methods=['POST'])
-def auditoria_api_buscar_catalogo(origen):
-    """Búsqueda rápida sobre TODO el catálogo de este inventario (sin pasar primero por
-    Familia -> Calidad), para el panel flotante "Buscar en todo el catálogo" de Nuevo Conteo /
-    Corregir Conteo -- pensado para encontrar un producto en el celular en un par de letras
-    cuando la lista de familias es larga. Busca a la vez en familia, calidad, código y
-    descripción (ej. escribir "pern" encuentra la familia "PERNOS" Y cualquier producto cuya
-    descripción contenga "pern"), y devuelve como máximo 40 resultados para no mandar de más
-    al celular. Mismo criterio CONTEO CIEGO que /api/auditoria/codigos: nunca incluye stock."""
-    if session.get('role') != 'auditor_stock': return {'status': 'error'}, 403
-    texto = (request.form.get('q') or '').strip()
-    if len(texto) < 2:
-        return {'status': 'success', 'productos': []}
-
-    Modelo = ProductImportBolts if origen == 'IMPORTBOLTS' else Product
-    like = f'%{texto}%'
-    q = Modelo.query.filter(
-        Modelo.activo == True,
-        or_(
-            Modelo.sku.ilike(like),
-            Modelo.nombre.ilike(like),
-            Modelo.categoria.ilike(like),
-            Modelo.calidad.ilike(like),
-        )
-    )
-    if origen == 'ANCLAJES':
-        q = q.filter(Modelo.es_shadow_importbolts.isnot(True))
-
-    # Se piden 41 para saber si de verdad hay más de 40 (y no marcar "truncado" cuando
-    # justo hay exactamente 40 resultados en total).
-    productos = q.order_by(Modelo.categoria, Modelo.calidad, Modelo.sku).limit(41).all()
-    truncado = len(productos) > 40
-    productos = productos[:40]
-    return {'status': 'success', 'productos': [
-        {'id': p.id, 'sku': p.sku, 'nombre': p.nombre, 'categoria': p.categoria or '',
-         'calidad': p.calidad or '', 'estado': p.estado or ''} for p in productos
-    ], 'truncado': truncado}
 
 
 @app.route('/api/auditoria/verificar_duplicado/<origen>', methods=['POST'])
