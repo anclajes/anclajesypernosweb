@@ -62,6 +62,13 @@
         </div>
     </div>
 
+    <div class="alert alert-info alert-dismissible fade show small mb-3 d-none" id="avisoNovedadesConteo" role="alert">
+        <i class="bi bi-stars"></i> <b>Novedades:</b> ahora puedes <b>escribir en el campo Familia</b> para acortar la lista
+        (ej. escribe "pern" y se filtra a "Pernos..."), y la <b>Suma rápida</b> ya permite <b>Multiplicar (×)</b> y
+        <b>Dividir (÷)</b>, además de sumar.
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar" onclick="marcarAvisoNovedadesVisto()"></button>
+    </div>
+
     <form id="formAuditoria">
         <!-- IDENTIFICACIÓN DEL PRODUCTO -->
         <div class="card border-0 shadow-sm mb-3">
@@ -229,7 +236,23 @@ let productosCache = [];
 let fotosSeleccionadas = [];
 let camposPersonalizadosCache = [];
 
+// --- Aviso de novedades (Familia buscable + Suma rápida con ×/÷): se muestra una sola vez
+// por navegador/dispositivo y no vuelve a aparecer una vez cerrado. Si localStorage no está
+// disponible (modo privado, etc.) simplemente no se muestra, sin romper el resto de la página.
+function marcarAvisoNovedadesVisto() {
+    try { localStorage.setItem('aviso_novedades_conteo_v1', '1'); } catch (e) { /* no-op */ }
+}
+function mostrarAvisoNovedadesSiCorresponde() {
+    try {
+        if (!localStorage.getItem('aviso_novedades_conteo_v1')) {
+            document.getElementById('avisoNovedadesConteo').classList.remove('d-none');
+        }
+    } catch (e) { /* no-op: sin localStorage, el aviso simplemente no se muestra */ }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+    mostrarAvisoNovedadesSiCorresponde();
+
     // Familia y Calidad ahora son select2: se pueden filtrar escribiendo (ej. escribir
     // "pern" en Familia muestra solo "PERNOS...") en vez de desplazarse por una lista larga.
     // Se usa el evento 'select2:select' (solo dispara con una elección real del usuario en el
