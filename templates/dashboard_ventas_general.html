@@ -4,6 +4,18 @@
 {% block subtitle %}Salidas por venta registradas en Kardex — Anclajes y Pernos SAC + Import Bolts SAC{% endblock %}
 
 {% block content %}
+{# Links "Ver registros" al Kardex de CADA empresa, con exactamente la misma regla del dashboard #}
+{% macro links_kardex(desde, tipo, motivo, fi, ff) -%}
+<div class="mt-1">
+<a class="kpi-link kpi-link-anc" onclick="event.stopPropagation()" title="Ver los registros de Anclajes en su Kardex"
+   href="{{ url_for('ver_kardex', tipo=tipo, manual='1', motivo_cat=motivo, fecha_inicio=fi, fecha_fin=ff, desde=desde ~ ' · Anclajes') }}">Anclajes ›</a><a
+   class="kpi-link kpi-link-ib" onclick="event.stopPropagation()" title="Ver los registros de ImportBolts en su Kardex"
+   href="{{ url_for('ver_kardex_importbolts', tipo=tipo, manual='1', motivo_cat=motivo, fecha_inicio=fi, fecha_fin=ff, desde=desde ~ ' · ImportBolts') }}">ImportBolts ›</a>
+</div>
+{%- endmacro %}
+{% macro celda_dif(dif, decimales=2, sufijo=' t') -%}
+<span class="{{ 'text-success' if dif > 0 else ('text-danger' if dif < 0 else 'text-muted') }} fw-bold">{{ '+' if dif > 0 else '' }}{{ ("%." ~ decimales ~ "f")|format(dif) }}{{ sufijo }}</span>
+{%- endmacro %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 
 <style>
@@ -21,6 +33,12 @@
     .info-btn:hover { color: #0F172A; }
     .card-header-info { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
     .chart-click-hint { font-size: .72rem; color: #868e96; text-align: center; margin-top: 6px; }
+    .kpi-link { display: inline-block; margin-top: 4px; font-size: .68rem; font-weight: 600; text-decoration: none;
+                border: 1px solid #dee2e6; border-radius: 20px; padding: 1px 7px; background: #fff; }
+    .kpi-link + .kpi-link { margin-left: 3px; }
+    .kpi-link-anc { color: #2456B3; } .kpi-link-anc:hover { background: #2456B3; color: #fff; }
+    .kpi-link-ib { color: #4a8a22; } .kpi-link-ib:hover { background: #5FA82E; color: #fff; }
+    .kpi-link-cmp { color: #0F172A; } .kpi-link-cmp:hover { background: #0F172A; color: #fff; }
 </style>
 
 <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-3 gap-2">
@@ -90,6 +108,7 @@
             <div class="card-body text-center py-3">
                 <div class="text-muted small fw-bold text-uppercase">Ton. Hoy</div>
                 <div class="fs-4 fs-kpi fw-bold" style="color:#0F172A;">{{ "%.2f"|format(toneladas_hoy_total) }} t</div>
+                {{ links_kardex('Ton. Hoy', 'SALIDA', 'venta', anclajes.hoy_iso, anclajes.hoy_iso) }}
             </div>
         </div>
     </div>
@@ -99,15 +118,25 @@
             <div class="card-body text-center py-3">
                 <div class="text-muted small fw-bold text-uppercase">Ton. Mes Actual</div>
                 <div class="fs-4 fs-kpi fw-bold" style="color:#0F172A;">{{ "%.2f"|format(toneladas_mes_total) }} t</div>
+                {{ links_kardex('Ton. Mes Actual', 'SALIDA', 'venta', anclajes.inicio_mes_iso, anclajes.hoy_iso) }}
             </div>
         </div>
     </div>
     <div class="col-6 col-md-4 col-xl-2">
-        <div class="card border-0 shadow-sm h-100 kpi-gen kpi-clickable" onclick="mostrarInfoDato('Ton. Período', false, '&sum; de las toneladas <b>dentro del rango de fechas filtrado</b> ({{ fecha_inicio }} a {{ fecha_fin }}) de ambas empresas. Cada empresa compara contra un tramo de la misma duración justo antes de tu rango (ejemplo: si filtras 3 meses, compara contra los 3 meses anteriores). Si ese período previo tuvo 0 t (dato nuevo), esa empresa muestra 100% por convención — ver la tabla &quot;Resumen Comparativo&quot; más abajo para el detalle por empresa.')">
+        <div class="card border-0 shadow-sm h-100 kpi-gen kpi-clickable" onclick="mostrarInfoDato('Ton. Período', false, '&sum; de las toneladas <b>dentro del rango de fechas filtrado</b> ({{ fecha_inicio }} a {{ fecha_fin }}) de ambas empresas. Cada empresa compara contra un tramo de la misma duración justo antes de tu rango (ejemplo: si filtras 3 meses, compara contra los 3 meses anteriores). Si eliges meses calendario completos compara contra los mismos meses completos anteriores (septiembre &rarr; agosto); si no, contra la misma cantidad de días anteriores (hoy &rarr; ayer). Si el período anterior no tuvo ventas, se indica &quot;sin ventas en el período anterior&quot; en vez de un %. Botón <b>Comparar períodos</b>: ve ambos lado a lado, por empresa y por familia, con sus registros.')">
             <i class="bi bi-info-circle kpi-info-dot"></i>
             <div class="card-body text-center py-3">
                 <div class="text-muted small fw-bold text-uppercase">Ton. Período</div>
                 <div class="fs-4 fs-kpi fw-bold" style="color:#0F172A;">{{ "%.2f"|format(toneladas_periodo_total) }} t</div>
+                {% if delta_sin_base_total %}
+                <div class="small text-muted fw-bold">sin ventas en el período anterior</div>
+                {% else %}
+                <div class="small {% if delta_total >= 0 %}text-success{% else %}text-danger{% endif %} fw-bold">
+                    <i class="bi bi-arrow-{% if delta_total >= 0 %}up{% else %}down{% endif %}"></i> {{ delta_total }}% vs anterior
+                </div>
+                {% endif %}
+                {{ links_kardex('Ton. Período', 'SALIDA', 'venta', fecha_inicio, fecha_fin) }}
+                <a class="kpi-link kpi-link-cmp" href="#" onclick="event.stopPropagation(); event.preventDefault(); new bootstrap.Modal(document.getElementById('modalCompararPeriodos')).show();"><i class="bi bi-arrow-left-right"></i> Comparar períodos</a>
             </div>
         </div>
     </div>
@@ -117,6 +146,7 @@
             <div class="card-body text-center py-3">
                 <div class="text-muted small fw-bold text-uppercase">Unidades</div>
                 <div class="fs-4 fs-kpi fw-bold text-dark">{{ "{:,d}".format(unidades_periodo_total) }}</div>
+                {{ links_kardex('Unidades del período', 'SALIDA', 'venta', fecha_inicio, fecha_fin) }}
             </div>
         </div>
     </div>
@@ -126,6 +156,7 @@
             <div class="card-body text-center py-3">
                 <div class="text-muted small fw-bold text-uppercase">Movimientos</div>
                 <div class="fs-4 fs-kpi fw-bold text-dark">{{ movimientos_periodo_total }}</div>
+                {{ links_kardex('Movimientos del período', 'SALIDA', 'venta', fecha_inicio, fecha_fin) }}
             </div>
         </div>
     </div>
@@ -135,6 +166,8 @@
             <div class="card-body text-center py-3">
                 <div class="text-success small fw-bold text-uppercase"><i class="bi bi-box-arrow-in-down"></i> Ingresos (Compras)</div>
                 <div class="fs-4 fs-kpi fw-bold text-success">{{ "%.2f"|format(ton_ingresos_compras_total) }} t</div>
+                <div class="small text-muted">{{ anclajes.count_ingresos_compras + importbolts.count_ingresos_compras }} ingreso(s) en el período</div>
+                {{ links_kardex('Ingresos por Compras', 'ENTRADA', 'compra', fecha_inicio, fecha_fin) }}
             </div>
         </div>
     </div>
@@ -190,7 +223,7 @@
 <div class="card border-0 shadow-sm mb-3">
     <div class="card-header bg-white fw-bold card-header-info">
         <span><i class="bi bi-table"></i> Resumen Comparativo por Empresa (período)</span>
-        <button type="button" class="info-btn" onclick="mostrarInfoDato('Resumen Comparativo por Empresa', false, 'Toneladas, unidades, movimientos e ingresos por compras de cada empresa <b>dentro del rango de fechas filtrado</b>.<hr class=\'my-2\'><b>Var. vs período anterior</b>: por cada empresa, toma el mismo número de días de tu rango filtrado y compara contra el tramo inmediatamente anterior (ejemplo: si filtras 3 meses, compara contra los 3 meses justo antes). Si ese período previo tuvo 0 t (dato nuevo del Kardex), se muestra 100% por convención en vez de un porcentaje real.')"><i class="bi bi-info-circle"></i></button>
+        <button type="button" class="info-btn" onclick="mostrarInfoDato('Resumen Comparativo por Empresa', false, 'Toneladas, unidades, movimientos e ingresos por compras de cada empresa <b>dentro del rango de fechas filtrado</b>.<hr class=\'my-2\'><b>Var. vs período anterior</b>: por cada empresa, toma el mismo número de días de tu rango filtrado y compara contra el tramo inmediatamente anterior (ejemplo: si filtras 3 meses, compara contra los 3 meses justo antes). Si son meses calendario completos, compara contra los mismos meses completos anteriores. Si ese período no tuvo ventas, se indica en vez de mostrar un %.')"><i class="bi bi-info-circle"></i></button>
     </div>
     <div class="card-body p-0 table-responsive">
         <table class="table table-hover align-middle mb-0 small">
@@ -204,9 +237,13 @@
                     <td class="text-end">{{ "{:,d}".format(anclajes.unidades_periodo) }}</td>
                     <td class="text-end">{{ anclajes.movimientos_periodo }}</td>
                     <td class="text-end text-success fw-bold">{{ "%.2f"|format(anclajes.ton_ingresos_compras) }} t</td>
+                    {% if anclajes.delta_sin_base %}
+                    <td class="text-end pe-3 text-muted small">sin ventas en el período anterior</td>
+                    {% else %}
                     <td class="text-end pe-3 {% if anclajes.delta_toneladas >= 0 %}text-success{% else %}text-danger{% endif %} fw-bold">
                         <i class="bi bi-arrow-{% if anclajes.delta_toneladas >= 0 %}up{% else %}down{% endif %}"></i> {{ anclajes.delta_toneladas }}%
                     </td>
+                    {% endif %}
                 </tr>
                 <tr>
                     <td class="ps-3 fw-bold color-importbolts"><i class="bi bi-square-fill"></i> Import Bolts SAC</td>
@@ -214,12 +251,84 @@
                     <td class="text-end">{{ "{:,d}".format(importbolts.unidades_periodo) }}</td>
                     <td class="text-end">{{ importbolts.movimientos_periodo }}</td>
                     <td class="text-end text-success fw-bold">{{ "%.2f"|format(importbolts.ton_ingresos_compras) }} t</td>
+                    {% if importbolts.delta_sin_base %}
+                    <td class="text-end pe-3 text-muted small">sin ventas en el período anterior</td>
+                    {% else %}
                     <td class="text-end pe-3 {% if importbolts.delta_toneladas >= 0 %}text-success{% else %}text-danger{% endif %} fw-bold">
                         <i class="bi bi-arrow-{% if importbolts.delta_toneladas >= 0 %}up{% else %}down{% endif %}"></i> {{ importbolts.delta_toneladas }}%
                     </td>
+                    {% endif %}
                 </tr>
             </tbody>
         </table>
+    </div>
+</div>
+
+<!-- MODAL: COMPARAR PERÍODOS (ambas empresas) -->
+<div class="modal fade" id="modalCompararPeriodos" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header text-white" style="background-color:#0F172A;">
+                <h5 class="modal-title fw-bold"><i class="bi bi-arrow-left-right"></i> Comparar períodos — ambas empresas</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body small">
+                <p class="text-muted mb-2">
+                    Período actual: <b>{{ fecha_inicio }} a {{ fecha_fin }}</b> &nbsp;vs&nbsp; período anterior:
+                    <b>{{ anclajes.fecha_inicio_prev }} a {{ anclajes.fecha_fin_prev }}</b> ({{ anclajes.periodo_prev_desc }}).
+                    Solo Salidas por Venta registradas manualmente en el Kardex.
+                </p>
+                <div class="table-responsive">
+                <table class="table table-sm align-middle mb-3">
+                    <thead class="table-light">
+                        <tr><th>Empresa</th><th class="text-end">Actual</th><th class="text-end">Anterior</th><th class="text-end">Diferencia</th><th class="text-end">Var. %</th><th class="text-center">Registros</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for e, nombre, ep in [(anclajes, 'Anclajes', 'ver_kardex'), (importbolts, 'ImportBolts', 'ver_kardex_importbolts')] %}
+                        <tr>
+                            <td class="fw-bold {{ 'color-anclajes' if nombre == 'Anclajes' else 'color-importbolts' }}"><i class="bi bi-square-fill"></i> {{ nombre }}</td>
+                            <td class="text-end">{{ "%.2f"|format(e.toneladas_periodo) }} t<div class="text-muted">{{ e.movimientos_periodo }} movs.</div></td>
+                            <td class="text-end">{{ "%.2f"|format(e.toneladas_prev) }} t<div class="text-muted">{{ e.movimientos_prev }} movs.</div></td>
+                            <td class="text-end">{{ celda_dif(e.toneladas_periodo - e.toneladas_prev) }}</td>
+                            <td class="text-end">{% if e.delta_sin_base %}<span class="text-muted">sin base</span>{% else %}{{ '%+.1f'|format(e.delta_toneladas) }}%{% endif %}</td>
+                            <td class="text-center text-nowrap">
+                                <a class="kpi-link kpi-link-cmp" href="{{ url_for(ep, tipo='SALIDA', manual='1', motivo_cat='venta', fecha_inicio=fecha_inicio, fecha_fin=fecha_fin, desde='Comparar: período actual · ' ~ nombre) }}">Actual ›</a><a
+                                   class="kpi-link kpi-link-cmp" href="{{ url_for(ep, tipo='SALIDA', manual='1', motivo_cat='venta', fecha_inicio=e.fecha_inicio_prev, fecha_fin=e.fecha_fin_prev, desde='Comparar: período anterior · ' ~ nombre) }}">Anterior ›</a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                        <tr class="table-light fw-bold">
+                            <td>Total</td>
+                            <td class="text-end">{{ "%.2f"|format(toneladas_periodo_total) }} t<div class="text-muted fw-normal">{{ movimientos_periodo_total }} movs. · {{ "{:,d}".format(unidades_periodo_total) }} unid.</div></td>
+                            <td class="text-end">{{ "%.2f"|format(toneladas_prev_total) }} t<div class="text-muted fw-normal">{{ movimientos_prev_total }} movs. · {{ "{:,d}".format(unidades_prev_total) }} unid.</div></td>
+                            <td class="text-end">{{ celda_dif(toneladas_periodo_total - toneladas_prev_total) }}</td>
+                            <td class="text-end">{% if delta_sin_base_total %}<span class="text-muted fw-normal">sin base</span>{% else %}{{ '%+.1f'|format(delta_total) }}%{% endif %}</td>
+                            <td></td>
+                        </tr>
+                    </tbody>
+                </table>
+                </div>
+                <div class="fw-bold mb-1"><i class="bi bi-diagram-3"></i> ¿Dónde está la diferencia? — Toneladas por familia (ambas empresas)</div>
+                <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle mb-0">
+                    <thead class="table-light"><tr><th>Familia</th><th class="text-end">Actual</th><th class="text-end">Anterior</th><th class="text-end">Diferencia</th><th class="text-end">Var. %</th></tr></thead>
+                    <tbody>
+                        {% for f in comparativo_familias_general %}
+                        <tr>
+                            <td>{{ f.familia }}</td>
+                            <td class="text-end">{{ "%.2f"|format(f.actual) }} t</td>
+                            <td class="text-end">{{ "%.2f"|format(f.anterior) }} t</td>
+                            <td class="text-end">{{ celda_dif(f.diferencia) }}</td>
+                            <td class="text-end">{% if f.var_pct is none %}<span class="text-muted">{{ 'nueva' if f.actual > 0 else '—' }}</span>{% else %}{{ '%+.1f'|format(f.var_pct) }}%{% endif %}</td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="5" class="text-center text-muted py-3">Sin ventas en ninguno de los dos períodos.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -361,7 +470,7 @@ function cambiarMesTop(valor) {
 
 function irAKardexPorDia(fechaIso, empresa) {
     const base = empresa === 'Anclajes' ? kardexUrlAnclajes : kardexUrlImportBolts;
-    const params = new URLSearchParams({ tipo: 'SALIDA', motivo: 'venta', manual: '1', fecha_inicio: fechaIso, fecha_fin: fechaIso });
+    const params = new URLSearchParams({ tipo: 'SALIDA', motivo_cat: 'venta', manual: '1', fecha_inicio: fechaIso, fecha_fin: fechaIso, desde: 'Toneladas por Día: ' + fechaIso });
     window.location.href = base + '?' + params.toString();
 }
 

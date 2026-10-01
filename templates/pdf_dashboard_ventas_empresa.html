@@ -173,7 +173,7 @@
             <div class="caja-kpi">
                 <div class="kpi-label">Ton. Período <span class="tag-filtro">Filtro</span></div>
                 <div class="kpi-valor">{{ "%.2f"|format(toneladas_periodo) }} t</div>
-                <div class="kpi-sub">{{ "▲" if delta_toneladas >= 0 else "▼" }} {{ delta_toneladas }}% vs. anterior</div>
+                <div class="kpi-sub">{% if delta_sin_base %}sin ventas en período anterior{% else %}{{ "%+.1f"|format(delta_toneladas) }}% vs. anterior{% endif %}</div>
             </div>
         </td>
         <td>

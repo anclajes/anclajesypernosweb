@@ -54,6 +54,10 @@
 <div class="card shadow-sm border-0 kardex-filtros-card mb-3">
     <div class="card-body">
         <form method="GET" id="formFiltroKardex" class="row g-3">
+            {# Filtros que llegan desde los Dashboards (no tienen campo visible): se conservan al re-filtrar #}
+            {% if request.args.get('motivo') %}<input type="hidden" name="motivo" value="{{ request.args.get('motivo') }}">{% endif %}
+            {% if request.args.get('motivo_cat') %}<input type="hidden" name="motivo_cat" value="{{ request.args.get('motivo_cat') }}">{% endif %}
+            {% if request.args.get('desde') %}<input type="hidden" name="desde" value="{{ request.args.get('desde') }}">{% endif %}
 
             <!-- BÚSQUEDA LIBRE -->
             <div class="col-12 col-lg-4">
@@ -198,6 +202,34 @@
     </div>
 </div>
 
+{% set _motivo_activo = request.args.get('motivo_cat') or request.args.get('motivo') %}
+{% if request.args.get('desde') %}
+<div class="alert alert-primary d-flex justify-content-between align-items-center flex-wrap gap-2 py-2 mb-2 shadow-sm">
+    <div class="small">
+        <i class="bi bi-box-arrow-in-right"></i>
+        Vienes del <strong>Dashboard de Ventas</strong> — <strong>{{ request.args.get('desde') }}</strong>.
+        Estos son los registros que alimentan ese número: el total de abajo debe coincidir con el del dashboard.
+    </div>
+    <a href="javascript:history.back()" class="btn btn-sm btn-outline-primary"><i class="bi bi-arrow-left"></i> Volver al dashboard</a>
+</div>
+{% endif %}
+{% if resumen_filtro is defined %}
+<div class="d-flex flex-wrap align-items-center gap-2 mb-2 small">
+    {% if _motivo_activo %}
+    <span class="badge rounded-pill text-bg-light border px-3 py-2">
+        <i class="bi bi-funnel-fill text-primary"></i> Motivo contiene: <strong>"{{ _motivo_activo }}"</strong>
+        {% if request.args.get('motivo_cat') %}(catálogo){% endif %}
+        {% set _args_sin_motivo = request.args.to_dict() %}{% set _ = _args_sin_motivo.pop('motivo', None) %}{% set _ = _args_sin_motivo.pop('motivo_cat', None) %}{% set _ = _args_sin_motivo.pop('desde', None) %}{% set _ = _args_sin_motivo.pop('page', None) %}
+        <a href="{{ url_for(request.endpoint, **_args_sin_motivo) }}" class="text-danger ms-1" title="Quitar este filtro"><i class="bi bi-x-circle-fill"></i></a>
+    </span>
+    {% endif %}
+    <span class="badge rounded-pill text-bg-dark px-3 py-2" title="Totales de TODOS los registros del filtro (no solo de esta página). Toneladas = cantidad × peso nominal, igual que en los dashboards.">
+        <i class="bi bi-calculator"></i> Resultado del filtro:
+        {{ resumen_filtro.movimientos }} movimiento(s) · {{ "{:,d}".format(resumen_filtro.unidades) }} unid. · <strong>{{ "%.3f"|format(resumen_filtro.toneladas) }} t</strong>
+    </span>
+</div>
+{% endif %}
+
 <div class="card shadow-sm border-0">
     <div class="card-body p-0 table-responsive" style="min-height: 400px;">
         <table class="table table-hover mb-0 align-middle small">
@@ -298,7 +330,7 @@
         <nav aria-label="Navegación">
             <ul class="pagination justify-content-center mb-0 pagination-sm">
                 <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
-                    <a class="page-link" href="{{ url_for('ver_kardex_importbolts', page=pagination.prev_num, busqueda=request.args.get('busqueda',''), categoria=cat_filtro, calidad=calidad_filtro, proveedor=request.args.get('proveedor','todos'), tipo=request.args.get('tipo',''), fecha_inicio=request.args.get('fecha_inicio',''), fecha_fin=request.args.get('fecha_fin',''), ocultar_iniciales=request.args.get('ocultar_iniciales',''), solo_interempresa=request.args.get('solo_interempresa',''), motivo=request.args.get('motivo',''), motivo_id=request.args.get('motivo_id',''), manual=request.args.get('manual','')) }}">Anterior</a>
+                    <a class="page-link" href="{{ url_for('ver_kardex_importbolts', page=pagination.prev_num, busqueda=request.args.get('busqueda',''), categoria=cat_filtro, calidad=calidad_filtro, proveedor=request.args.get('proveedor','todos'), tipo=request.args.get('tipo',''), fecha_inicio=request.args.get('fecha_inicio',''), fecha_fin=request.args.get('fecha_fin',''), ocultar_iniciales=request.args.get('ocultar_iniciales',''), solo_interempresa=request.args.get('solo_interempresa',''), motivo=request.args.get('motivo',''), motivo_id=request.args.get('motivo_id',''), manual=request.args.get('manual',''), motivo_cat=request.args.get('motivo_cat',''), desde=request.args.get('desde','')) }}">Anterior</a>
                 </li>
                 <li class="page-item disabled">
                     <span class="page-link text-muted">
@@ -307,7 +339,7 @@
                     </span>
                 </li>
                 <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
-                    <a class="page-link" href="{{ url_for('ver_kardex_importbolts', page=pagination.next_num, busqueda=request.args.get('busqueda',''), categoria=cat_filtro, calidad=calidad_filtro, proveedor=request.args.get('proveedor','todos'), tipo=request.args.get('tipo',''), fecha_inicio=request.args.get('fecha_inicio',''), fecha_fin=request.args.get('fecha_fin',''), ocultar_iniciales=request.args.get('ocultar_iniciales',''), solo_interempresa=request.args.get('solo_interempresa',''), motivo=request.args.get('motivo',''), motivo_id=request.args.get('motivo_id',''), manual=request.args.get('manual','')) }}">Siguiente</a>
+                    <a class="page-link" href="{{ url_for('ver_kardex_importbolts', page=pagination.next_num, busqueda=request.args.get('busqueda',''), categoria=cat_filtro, calidad=calidad_filtro, proveedor=request.args.get('proveedor','todos'), tipo=request.args.get('tipo',''), fecha_inicio=request.args.get('fecha_inicio',''), fecha_fin=request.args.get('fecha_fin',''), ocultar_iniciales=request.args.get('ocultar_iniciales',''), solo_interempresa=request.args.get('solo_interempresa',''), motivo=request.args.get('motivo',''), motivo_id=request.args.get('motivo_id',''), manual=request.args.get('manual',''), motivo_cat=request.args.get('motivo_cat',''), desde=request.args.get('desde','')) }}">Siguiente</a>
                 </li>
             </ul>
         </nav>

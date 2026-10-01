@@ -6299,6 +6299,24 @@ def ver_kardex():
     if solo_manual == '1':
         query = query.filter(ProductMovement.motivo_id.isnot(None))
 
+    # 11. Filtro por motivo del CATÁLOGO (nombre de MotivoMovimiento contiene el texto). Es EXACTAMENTE
+    #     la misma regla que usan los Dashboards de toneladas (ventas = motivo del catálogo que
+    #     contiene "venta"; compras = "compra"), para que los links "Ver registros" cuadren al 100%.
+    motivo_cat_filtro = request.args.get('motivo_cat', '').strip()
+    if motivo_cat_filtro:
+        query = query.join(MotivoMovimiento, ProductMovement.motivo_id == MotivoMovimiento.id) \
+                     .filter(MotivoMovimiento.nombre.ilike(f"%{motivo_cat_filtro}%"))
+
+    # Totales de TODO el filtro (no solo de la página): movimientos, unidades y toneladas
+    # (cantidad x peso nominal, igual que los dashboards) para poder cuadrar contra el KPI.
+    tot_movs, tot_unid, tot_kg = query.with_entities(
+        func.count(ProductMovement.id),
+        func.coalesce(func.sum(ProductMovement.cantidad), 0),
+        func.coalesce(func.sum(ProductMovement.cantidad * Product.peso_kg), 0),
+    ).first()
+    resumen_filtro = {'movimientos': tot_movs or 0, 'unidades': int(tot_unid or 0),
+                      'toneladas': round(float(tot_kg or 0) / 1000, 3)}
+
     query = query.order_by(ProductMovement.fecha.desc())
 
     page = request.args.get('page', 1, type=int)
@@ -6329,6 +6347,7 @@ def ver_kardex():
     catalogo_motivos = motivos_query_cat.order_by(MotivoMovimiento.tipo, MotivoMovimiento.nombre).all()
 
     return render_template('kardex.html',
+                           resumen_filtro=resumen_filtro,
                            movimientos=movimientos,
                            categorias=categorias,
                            pagination=pagination,
@@ -8278,6 +8297,24 @@ def ver_kardex_importbolts():
     if solo_manual == '1':
         query = query.filter(ProductMovementImportBolts.motivo_id.isnot(None))
 
+    # 11. Filtro por motivo del CATÁLOGO (nombre de MotivoMovimiento contiene el texto). Es EXACTAMENTE
+    #     la misma regla que usan los Dashboards de toneladas (ventas = motivo del catálogo que
+    #     contiene "venta"; compras = "compra"), para que los links "Ver registros" cuadren al 100%.
+    motivo_cat_filtro = request.args.get('motivo_cat', '').strip()
+    if motivo_cat_filtro:
+        query = query.join(MotivoMovimiento, ProductMovementImportBolts.motivo_id == MotivoMovimiento.id) \
+                     .filter(MotivoMovimiento.nombre.ilike(f"%{motivo_cat_filtro}%"))
+
+    # Totales de TODO el filtro (no solo de la página): movimientos, unidades y toneladas
+    # (cantidad x peso nominal, igual que los dashboards) para poder cuadrar contra el KPI.
+    tot_movs, tot_unid, tot_kg = query.with_entities(
+        func.count(ProductMovementImportBolts.id),
+        func.coalesce(func.sum(ProductMovementImportBolts.cantidad), 0),
+        func.coalesce(func.sum(ProductMovementImportBolts.cantidad * ProductImportBolts.peso_kg), 0),
+    ).first()
+    resumen_filtro = {'movimientos': tot_movs or 0, 'unidades': int(tot_unid or 0),
+                      'toneladas': round(float(tot_kg or 0) / 1000, 3)}
+
     query = query.order_by(ProductMovementImportBolts.fecha.desc())
 
     page = request.args.get('page', 1, type=int)
@@ -8307,6 +8344,7 @@ def ver_kardex_importbolts():
     catalogo_motivos = motivos_query_cat.order_by(MotivoMovimiento.tipo, MotivoMovimiento.nombre).all()
 
     return render_template('kardex_importbolts.html',
+                           resumen_filtro=resumen_filtro,
                            movimientos=movimientos,
                            categorias=categorias,
                            pagination=pagination,
@@ -11758,6 +11796,27 @@ def _es_compra(motivo_nombre):
     return bool(motivo_nombre) and 'compra' in motivo_nombre.lower()
 
 
+def _periodo_anterior(f_ini, f_fin):
+    """Período de comparación ("vs anterior") del mismo largo, inmediatamente antes del filtrado:
+      - Si el filtro son MESES CALENDARIO COMPLETOS (del día 1 al último día), compara contra la
+        misma cantidad de meses completos anteriores: Sep 1-30 -> Ago 1-31; Jul-Sep -> Abr-Jun.
+      - Si no, compara contra la misma cantidad de DÍAS completos anteriores:
+        3 días -> los 3 días previos; hoy -> ayer; 90 días -> los 90 días previos.
+    Devuelve (inicio_prev, fin_prev, descripcion) con fin_prev = 1 segundo antes de f_ini (sin solaparse)."""
+    d_ini, d_fin = f_ini.date(), f_fin.date()
+    es_meses_completos = d_ini.day == 1 and (d_fin + timedelta(days=1)).day == 1
+    if es_meses_completos:
+        n_meses = (d_fin.year - d_ini.year) * 12 + (d_fin.month - d_ini.month) + 1
+        ini_prev = datetime.combine(restar_meses(d_ini, n_meses), datetime.min.time())
+        desc = f"{n_meses} mes(es) calendario anterior(es)"
+    else:
+        n_dias = (d_fin - d_ini).days + 1
+        ini_prev = datetime.combine(d_ini - timedelta(days=n_dias), datetime.min.time())
+        desc = f"{n_dias} día(s) anterior(es)"
+    fin_prev = datetime.combine(d_ini, datetime.min.time()) - timedelta(seconds=1)
+    return ini_prev, fin_prev, desc
+
+
 def _construir_ctx_dashboard_ton(empresa, request):
     """Arma todo el contexto (KPIs, series de gráficos y tablas) del dashboard de
     toneladas de una empresa ('ANCLAJES' o 'IMPORTBOLTS'), a partir del Kardex
@@ -11772,14 +11831,18 @@ def _construir_ctx_dashboard_ton(empresa, request):
         f_ini = datetime.strptime(fecha_inicio_str, '%Y-%m-%d')
         f_fin = datetime.strptime(fecha_fin_str + " 23:59:59", '%Y-%m-%d %H:%M:%S')
     else:
-        f_fin = ahora
-        f_ini = f_fin - timedelta(days=90)
+        # Últimos 90 días COMPLETOS (hoy incluido), alineados a días enteros: así el link al
+        # Kardex (que filtra por días completos) suma exactamente lo mismo que el dashboard.
+        f_ini = datetime.combine(hoy - timedelta(days=89), datetime.min.time())
+        f_fin = datetime.combine(hoy, datetime.min.time()) + timedelta(hours=23, minutes=59, seconds=59)
         fecha_inicio_str = f_ini.strftime('%Y-%m-%d')
         fecha_fin_str = f_fin.strftime('%Y-%m-%d')
+    if f_fin < f_ini:
+        f_ini, f_fin = (datetime.combine(f_fin.date(), datetime.min.time()),
+                        datetime.combine(f_ini.date(), datetime.min.time()) + timedelta(hours=23, minutes=59, seconds=59))
+        fecha_inicio_str, fecha_fin_str = f_ini.strftime('%Y-%m-%d'), f_fin.strftime('%Y-%m-%d')
 
-    duracion = f_fin - f_ini
-    f_ini_prev = f_ini - duracion
-    f_fin_prev = f_ini
+    f_ini_prev, f_fin_prev, periodo_prev_desc = _periodo_anterior(f_ini, f_fin)
 
     # --- Ventana fija de 6 meses calendario (para tendencia mensual y tops de producto) ---
     meses_ventana = []
@@ -11789,7 +11852,7 @@ def _construir_ctx_dashboard_ton(empresa, request):
         cursor_mes = date(cursor_mes.year + 1, 1, 1) if cursor_mes.month == 12 else date(cursor_mes.year, cursor_mes.month + 1, 1)
     primer_anio, primer_mes = meses_ventana[0]
     inicio_6m = datetime.combine(date(primer_anio, primer_mes, 1), datetime.min.time())
-    fin_6m = ahora
+    fin_6m = datetime.combine(hoy, datetime.min.time()) + timedelta(hours=23, minutes=59, seconds=59)
 
     lineas_periodo = _query_salidas_venta_ton(empresa, f_ini, f_fin).all()
     lineas_prev = _query_salidas_venta_ton(empresa, f_ini_prev, f_fin_prev).all()
@@ -11804,10 +11867,31 @@ def _construir_ctx_dashboard_ton(empresa, request):
     movimientos_periodo = len(lineas_periodo)
     peso_promedio_mov_kg = round((kg(lineas_periodo) / movimientos_periodo), 1) if movimientos_periodo > 0 else 0
 
-    if toneladas_prev > 0:
+    # Si el período anterior no tuvo ventas no hay base para un % (antes se mostraba "100%", que
+    # confundía): se marca delta_sin_base y las plantillas muestran "sin ventas en el período anterior".
+    delta_sin_base = toneladas_prev <= 0
+    if not delta_sin_base:
         delta_toneladas = round(((toneladas_periodo - toneladas_prev) / toneladas_prev) * 100, 1)
     else:
-        delta_toneladas = 100.0 if toneladas_periodo > 0 else 0.0
+        delta_toneladas = 0.0
+    unidades_prev = sum(l.cantidad for l in lineas_prev)
+    movimientos_prev = len(lineas_prev)
+
+    # --- Comparativa de períodos por FAMILIA (para el modal "Comparar períodos") ---
+    def _ton_por_familia(lineas):
+        agg = {}
+        for l in lineas:
+            fam = l.producto_categoria or 'Sin categoría'
+            agg[fam] = agg.get(fam, 0) + (l.peso_total or 0) / 1000
+        return agg
+    fam_act, fam_ant = _ton_por_familia(lineas_periodo), _ton_por_familia(lineas_prev)
+    comparativo_familias = sorted([{
+        'familia': f, 'actual': round(fam_act.get(f, 0), 3), 'anterior': round(fam_ant.get(f, 0), 3),
+        'diferencia': round(fam_act.get(f, 0) - fam_ant.get(f, 0), 3),
+        'var_pct': _variacion_pct(fam_act.get(f, 0), fam_ant.get(f, 0)),
+    } for f in set(fam_act) | set(fam_ant)], key=lambda x: max(x['actual'], x['anterior']), reverse=True)
+    clientes_periodo = len({(l.destino or '').strip() or 'Sin especificar' for l in lineas_periodo})
+    clientes_prev = len({(l.destino or '').strip() or 'Sin especificar' for l in lineas_prev})
 
     toneladas_hoy = round(sum((l.peso_total or 0) for l in lineas_6m if l.fecha.date() == hoy) / 1000, 2)
     toneladas_mes_actual = round(sum((l.peso_total or 0) for l in lineas_6m if l.fecha.year == hoy.year and l.fecha.month == hoy.month) / 1000, 2)
@@ -12013,6 +12097,13 @@ def _construir_ctx_dashboard_ton(empresa, request):
     return dict(
         empresa=empresa,
         fecha_inicio=fecha_inicio_str, fecha_fin=fecha_fin_str,
+        # Para los links "Ver registros en el Kardex" y el modal "Comparar períodos"
+        hoy_iso=hoy.isoformat(), inicio_mes_iso=hoy.replace(day=1).isoformat(),
+        fecha_inicio_prev=f_ini_prev.strftime('%Y-%m-%d'), fecha_fin_prev=f_fin_prev.strftime('%Y-%m-%d'),
+        periodo_prev_desc=periodo_prev_desc, delta_sin_base=delta_sin_base,
+        toneladas_prev=toneladas_prev, unidades_prev=unidades_prev, movimientos_prev=movimientos_prev,
+        clientes_periodo=clientes_periodo, clientes_prev=clientes_prev,
+        comparativo_familias=comparativo_familias,
         toneladas_periodo=toneladas_periodo, delta_toneladas=delta_toneladas,
         toneladas_hoy=toneladas_hoy, toneladas_mes_actual=toneladas_mes_actual,
         unidades_periodo=unidades_periodo, movimientos_periodo=movimientos_periodo,
@@ -12284,7 +12375,31 @@ def _combinar_ctx_dashboard_general(ctx_a, ctx_i):
         r['total'] = round(r['ton_a'] + r['ton_i'], 3)
         detalle_diario_general.append(r)
 
+    # --- Comparativa de períodos (ambas empresas) para el modal "Comparar períodos" ---
+    toneladas_prev_total = round(ctx_a['toneladas_prev'] + ctx_i['toneladas_prev'], 2)
+    delta_sin_base_total = toneladas_prev_total <= 0
+    delta_total = (0.0 if delta_sin_base_total else
+                   round(((toneladas_periodo_total - toneladas_prev_total) / toneladas_prev_total) * 100, 1))
+    fams = {}
+    for ctx in (ctx_a, ctx_i):
+        for r in ctx['comparativo_familias']:
+            reg = fams.setdefault(r['familia'], {'familia': r['familia'], 'actual': 0.0, 'anterior': 0.0})
+            reg['actual'] += r['actual']
+            reg['anterior'] += r['anterior']
+    comparativo_familias_general = []
+    for r in fams.values():
+        r['actual'], r['anterior'] = round(r['actual'], 3), round(r['anterior'], 3)
+        r['diferencia'] = round(r['actual'] - r['anterior'], 3)
+        r['var_pct'] = _variacion_pct(r['actual'], r['anterior'])
+        comparativo_familias_general.append(r)
+    comparativo_familias_general.sort(key=lambda x: max(x['actual'], x['anterior']), reverse=True)
+
     return dict(
+        toneladas_prev_total=toneladas_prev_total, delta_total=delta_total,
+        delta_sin_base_total=delta_sin_base_total,
+        unidades_prev_total=ctx_a['unidades_prev'] + ctx_i['unidades_prev'],
+        movimientos_prev_total=ctx_a['movimientos_prev'] + ctx_i['movimientos_prev'],
+        comparativo_familias_general=comparativo_familias_general,
         top_sel_total_ton_general=top_sel_total_ton_general,
         top_sel_total_unid_general=top_sel_total_unid_general,
         peso_promedio_ingresos_general_kg=peso_promedio_ingresos_general_kg,

@@ -207,7 +207,7 @@
 <div style="page-break-inside: avoid;">
 <div class="titulo-seccion">2. Resumen Comparativo por Empresa (período) <span class="tag-filtro">Según filtro</span></div>
 <table class="tabla-datos" repeat="1">
-    <thead><tr><th>Empresa</th><th class="num">Toneladas vendidas</th><th class="num">Unidades</th><th class="num">Movs.</th><th class="num">Kg prom. / mov.</th><th class="num">Ingresos (Compras)</th><th class="num">Var. vs. período anterior</th></tr></thead>
+    <thead><tr><th>Empresa</th><th class="num">Toneladas vendidas</th><th class="num">Unidades</th><th class="num">Movs.</th><th class="num">Kg prom. / mov.</th><th class="num">Ingresos (Compras)</th><th class="num">Var. vs. período anterior ({{ anclajes.fecha_inicio_prev }} a {{ anclajes.fecha_fin_prev }})</th></tr></thead>
     <tbody>
         {% for e, chip, nombre in [(anclajes, 'chip-anclajes', 'Anclajes y Pernos SAC'), (importbolts, 'chip-importbolts', 'Import Bolts SAC')] %}
         <tr>
@@ -217,7 +217,7 @@
             <td class="num">{{ e.movimientos_periodo }}</td>
             <td class="num">{{ "%.1f"|format(e.peso_promedio_mov_kg) }} kg</td>
             <td class="num">{{ "%.2f"|format(e.ton_ingresos_compras) }} t</td>
-            <td class="num">{{ "▲" if e.delta_toneladas >= 0 else "▼" }} {{ e.delta_toneladas }}%</td>
+            <td class="num">{% if e.delta_sin_base %}sin ventas en período ant.{% else %}{{ "%+.1f"|format(e.delta_toneladas) }}%{% endif %}</td>
         </tr>
         {% endfor %}
     </tbody>

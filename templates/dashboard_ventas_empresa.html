@@ -13,6 +13,13 @@
 {% block subtitle %}Salidas por venta e ingresos registrados en el Kardex ({{ tema.nombre }}){% endblock %}
 
 {% block content %}
+{# Colores del gráfico "Mix por Categoría": UNA sola lista para el gráfico (JS) y los cuadrados de la leyenda #}
+{% set colores_cat = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#4a3aa7'] %}
+{# Link "Ver registros" al Kardex con EXACTAMENTE la misma regla del dashboard (catálogo de motivos + manual) #}
+{% macro link_kardex(texto, desde, tipo, motivo, fi, ff, clase='kpi-link') -%}
+<a class="{{ clase }}" onclick="event.stopPropagation()"
+   href="{{ url_for(tema.kardex_endpoint, tipo=tipo, manual='1', motivo_cat=motivo, fecha_inicio=fi, fecha_fin=ff, desde=desde ~ ' · ' ~ tema.corto) }}">{{ texto }}</a>
+{%- endmacro %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 
 <style>
@@ -41,6 +48,11 @@
     .cat-item-clickable:hover { background-color: #f1f3f5; }
     .chart-click-hint { font-size: .72rem; color: #868e96; text-align: center; margin-top: 6px; }
     .chart-click-hint i { color: {{ tema.chart }}; }
+    .kpi-link { display: inline-block; margin-top: 6px; font-size: .72rem; font-weight: 600; color: {{ tema.primary }};
+                text-decoration: none; border: 1px solid #dee2e6; border-radius: 20px; padding: 1px 9px; background: #fff; }
+    .kpi-link:hover { background: {{ tema.primary }}; color: #fff; border-color: {{ tema.primary }}; }
+    .kpi-link + .kpi-link { margin-left: 3px; }
+    .cuadro-color { display: inline-block; width: 11px; height: 11px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; flex-shrink: 0; }
 </style>
 
 <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-3 gap-2">
@@ -112,6 +124,7 @@
             <div class="card-body text-center py-3">
                 <div class="text-muted small fw-bold text-uppercase">Ton. Hoy</div>
                 <div class="fs-4 fs-kpi fw-bold text-tema">{{ "%.2f"|format(toneladas_hoy) }} t</div>
+                {{ link_kardex('Ver ventas de hoy ›', 'Ton. Hoy', 'SALIDA', 'venta', hoy_iso, hoy_iso) }}
             </div>
         </div>
     </div>
@@ -121,18 +134,24 @@
             <div class="card-body text-center py-3">
                 <div class="text-muted small fw-bold text-uppercase">Ton. Mes Actual</div>
                 <div class="fs-4 fs-kpi fw-bold text-tema">{{ "%.2f"|format(toneladas_mes_actual) }} t</div>
+                {{ link_kardex('Ver ventas del mes ›', 'Ton. Mes Actual', 'SALIDA', 'venta', inicio_mes_iso, hoy_iso) }}
             </div>
         </div>
     </div>
     <div class="col-6 col-md-4 col-xl-2">
-        <div class="card border-0 shadow-sm h-100 kpi-ton kpi-clickable" onclick="mostrarInfoDato('Ton. Período', false, '&sum; (cantidad &times; peso nominal) de todas las Salidas por Venta <b>dentro del rango de fechas filtrado</b> ({{ fecha_inicio }} a {{ fecha_fin }}).<hr class=\'my-2\'><b>% vs anterior</b>: toma el mismo número de días de tu rango y compara contra el tramo inmediatamente anterior. Ejemplo: si filtras 3 meses, compara contra los 3 meses justo antes de esos. Si ese período previo tuvo <b>0 t</b> (como ahora, por ser datos nuevos del Kardex), el sistema muestra <b>100%</b> por convención en vez de un porcentaje real, ya que no hay base de comparación.')">
+        <div class="card border-0 shadow-sm h-100 kpi-ton kpi-clickable" onclick="mostrarInfoDato('Ton. Período', false, '&sum; (cantidad &times; peso nominal) de todas las Salidas por Venta <b>dentro del rango de fechas filtrado</b> ({{ fecha_inicio }} a {{ fecha_fin }}).<hr class=\'my-2\'><b>% vs anterior</b>: compara contra un tramo igual inmediatamente antes de tu rango. Si eliges <b>meses calendario completos</b> (del 1 al último día), compara contra los mismos meses completos anteriores (septiembre &rarr; agosto). Si no, contra la misma cantidad de <b>días</b> anteriores (3 días &rarr; los 3 días previos; hoy &rarr; ayer). Ahora: {{ fecha_inicio_prev }} a {{ fecha_fin_prev }}. Si ese período no tuvo ventas no hay base para un %, y se indica así.<hr class=\'my-2\'>Botón <b>Comparar</b>: ve los dos períodos lado a lado, por familia, con sus registros.')">
             <i class="bi bi-info-circle kpi-info-dot"></i>
             <div class="card-body text-center py-3">
                 <div class="text-muted small fw-bold text-uppercase">Ton. Período</div>
                 <div class="fs-4 fs-kpi fw-bold text-tema">{{ "%.2f"|format(toneladas_periodo) }} t</div>
+                {% if delta_sin_base %}
+                <div class="small text-muted fw-bold">sin ventas en el período anterior</div>
+                {% else %}
                 <div class="small {% if delta_toneladas >= 0 %}text-success{% else %}text-danger{% endif %} fw-bold">
                     <i class="bi bi-arrow-{% if delta_toneladas >= 0 %}up{% else %}down{% endif %}"></i> {{ delta_toneladas }}% vs anterior
                 </div>
+                {% endif %}
+                {{ link_kardex('Ver registros ›', 'Ton. Período', 'SALIDA', 'venta', fecha_inicio, fecha_fin) }}<a class="kpi-link" href="#" onclick="event.stopPropagation(); event.preventDefault(); new bootstrap.Modal(document.getElementById('modalCompararPeriodos')).show();"><i class="bi bi-arrow-left-right"></i> Comparar</a>
             </div>
         </div>
     </div>
@@ -143,6 +162,7 @@
                 <div class="text-muted small fw-bold text-uppercase">Unidades</div>
                 <div class="fs-4 fs-kpi fw-bold text-dark">{{ "{:,d}".format(unidades_periodo) }}</div>
                 <div class="small text-muted">vendidas en el período</div>
+                {{ link_kardex('Ver registros ›', 'Unidades del período', 'SALIDA', 'venta', fecha_inicio, fecha_fin) }}
             </div>
         </div>
     </div>
@@ -153,6 +173,7 @@
                 <div class="text-muted small fw-bold text-uppercase">Movimientos</div>
                 <div class="fs-4 fs-kpi fw-bold text-dark">{{ movimientos_periodo }}</div>
                 <div class="small text-muted">{{ "%.1f"|format(peso_promedio_mov_kg) }} kg / movimiento</div>
+                {{ link_kardex('Ver registros ›', 'Movimientos del período', 'SALIDA', 'venta', fecha_inicio, fecha_fin) }}
             </div>
         </div>
     </div>
@@ -163,6 +184,71 @@
                 <div class="text-success small fw-bold text-uppercase"><i class="bi bi-box-arrow-in-down"></i> Ingresos por Compras</div>
                 <div class="fs-4 fs-kpi fw-bold text-success">{{ "%.2f"|format(ton_ingresos_compras) }} t</div>
                 <div class="small text-muted">{{ count_ingresos_compras }} ingreso(s) en el período</div>
+                {{ link_kardex('Ver ingresos ›', 'Ingresos por Compras', 'ENTRADA', 'compra', fecha_inicio, fecha_fin) }}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL: COMPARAR PERÍODOS (actual vs anterior), con los datos que lo alimentan -->
+{% macro celda_dif(dif, decimales=2, sufijo=' t') -%}
+<span class="{{ 'text-success' if dif > 0 else ('text-danger' if dif < 0 else 'text-muted') }} fw-bold">{{ '+' if dif > 0 else '' }}{{ ("%." ~ decimales ~ "f")|format(dif) }}{{ sufijo }}</span>
+{%- endmacro %}
+<div class="modal fade" id="modalCompararPeriodos" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header" style="background-color: {{ tema.primary }}; color: #fff;">
+                <h5 class="modal-title fw-bold"><i class="bi bi-arrow-left-right"></i> Comparar períodos — {{ tema.corto }}</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body small">
+                <p class="text-muted mb-2">
+                    Se compara tu rango filtrado contra los <b>{{ periodo_prev_desc }}</b>.
+                    Solo cuentan las <b>Salidas por Venta</b> registradas manualmente en el Kardex.
+                </p>
+                <div class="table-responsive">
+                <table class="table table-sm align-middle mb-3">
+                    <thead class="table-light">
+                        <tr>
+                            <th></th>
+                            <th class="text-end">Período actual<br><span class="fw-normal text-muted">{{ fecha_inicio }} a {{ fecha_fin }}</span></th>
+                            <th class="text-end">Período anterior<br><span class="fw-normal text-muted">{{ fecha_inicio_prev }} a {{ fecha_fin_prev }}</span></th>
+                            <th class="text-end">Diferencia</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr class="fw-bold"><td>Toneladas</td><td class="text-end">{{ "%.2f"|format(toneladas_periodo) }} t</td><td class="text-end">{{ "%.2f"|format(toneladas_prev) }} t</td>
+                            <td class="text-end">{{ celda_dif(toneladas_periodo - toneladas_prev) }}
+                                {% if delta_sin_base %}<div class="text-muted fw-normal">sin base para %</div>{% else %}<div class="fw-normal">({{ '%+.1f'|format(delta_toneladas) }}%)</div>{% endif %}</td></tr>
+                        <tr><td>Unidades</td><td class="text-end">{{ "{:,d}".format(unidades_periodo) }}</td><td class="text-end">{{ "{:,d}".format(unidades_prev) }}</td><td class="text-end">{{ celda_dif(unidades_periodo - unidades_prev, 0, '') }}</td></tr>
+                        <tr><td>Movimientos</td><td class="text-end">{{ movimientos_periodo }}</td><td class="text-end">{{ movimientos_prev }}</td><td class="text-end">{{ celda_dif(movimientos_periodo - movimientos_prev, 0, '') }}</td></tr>
+                        <tr><td>Clientes distintos</td><td class="text-end">{{ clientes_periodo }}</td><td class="text-end">{{ clientes_prev }}</td><td class="text-end">{{ celda_dif(clientes_periodo - clientes_prev, 0, '') }}</td></tr>
+                        <tr class="table-light"><td>Registros que lo alimentan</td>
+                            <td class="text-end">{{ link_kardex('Ver en Kardex ›', 'Comparar: período actual', 'SALIDA', 'venta', fecha_inicio, fecha_fin, 'btn btn-sm btn-outline-secondary') }}</td>
+                            <td class="text-end">{{ link_kardex('Ver en Kardex ›', 'Comparar: período anterior', 'SALIDA', 'venta', fecha_inicio_prev, fecha_fin_prev, 'btn btn-sm btn-outline-secondary') }}</td>
+                            <td></td></tr>
+                    </tbody>
+                </table>
+                </div>
+                <div class="fw-bold mb-1"><i class="bi bi-diagram-3"></i> ¿Dónde está la diferencia? — Toneladas por familia</div>
+                <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle mb-0">
+                    <thead class="table-light"><tr><th>Familia</th><th class="text-end">Actual</th><th class="text-end">Anterior</th><th class="text-end">Diferencia</th><th class="text-end">Var. %</th></tr></thead>
+                    <tbody>
+                        {% for f in comparativo_familias %}
+                        <tr>
+                            <td>{{ f.familia }}</td>
+                            <td class="text-end">{{ "%.2f"|format(f.actual) }} t</td>
+                            <td class="text-end">{{ "%.2f"|format(f.anterior) }} t</td>
+                            <td class="text-end">{{ celda_dif(f.diferencia) }}</td>
+                            <td class="text-end">{% if f.var_pct is none %}<span class="text-muted">{{ 'nueva' if f.actual > 0 else '—' }}</span>{% else %}{{ '%+.1f'|format(f.var_pct) }}%{% endif %}</td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="5" class="text-center text-muted py-3">Sin ventas en ninguno de los dos períodos.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                </div>
             </div>
         </div>
     </div>
@@ -190,7 +276,7 @@
                 <ul class="list-unstyled small mt-2 mb-0" id="listaCategoriaTon">
                     {% for cat in categoria_labels %}
                     <li class="d-flex justify-content-between border-bottom py-1 cat-item-clickable" onclick="irAKardexPorCategoria('{{ cat|e }}')" title="Ver en el Kardex">
-                        <span>{{ cat }}</span>
+                        <span class="d-flex align-items-center"><span class="cuadro-color" style="background-color: {{ colores_cat[loop.index0 % colores_cat|length] }};"></span>{{ cat }}</span>
                         <span class="fw-bold">{{ "%.2f"|format(categoria_data[loop.index0]) }} t <span class="text-muted">({{ categoria_pct[loop.index0] }}%)</span></span>
                     </li>
                     {% else %}
@@ -406,11 +492,18 @@ function cambiarMesTop(valor) {
 
 // --- Deep-links al Kardex (Salida + Venta + registrados manualmente) ---
 function irAKardexPorCategoria(categoria) {
-    const params = new URLSearchParams({ tipo: 'SALIDA', motivo: 'venta', manual: '1', categoria: categoria });
+    // "Otras" agrupa varias familias (fuera del Top 6): no existe como categoría en el Kardex
+    if (categoria === 'Otras') {
+        Swal.fire({ icon: 'info', title: 'Otras', text: '"Otras" agrupa varias familias pequeñas. Abre el Kardex con "Ver registros" de Ton. Período y filtra por la familia que quieras.', confirmButtonColor: colorTema });
+        return;
+    }
+    // Con el MISMO rango de fechas del filtro (el Mix es "según filtro"), para que el Kardex sume lo mismo
+    const params = new URLSearchParams({ tipo: 'SALIDA', motivo_cat: 'venta', manual: '1', categoria: categoria,
+                                         fecha_inicio: "{{ fecha_inicio }}", fecha_fin: "{{ fecha_fin }}", desde: 'Mix por Categoría: ' + categoria });
     window.location.href = kardexUrlBase + '?' + params.toString();
 }
 function irAKardexPorDia(fechaIso) {
-    const params = new URLSearchParams({ tipo: 'SALIDA', motivo: 'venta', manual: '1', fecha_inicio: fechaIso, fecha_fin: fechaIso });
+    const params = new URLSearchParams({ tipo: 'SALIDA', motivo_cat: 'venta', manual: '1', fecha_inicio: fechaIso, fecha_fin: fechaIso, desde: 'Toneladas por Día: ' + fechaIso });
     window.location.href = kardexUrlBase + '?' + params.toString();
 }
 
@@ -433,7 +526,7 @@ new Chart(document.getElementById('chartTonMes'), {
 });
 
 // --- Mix categoría ---
-const coloresCategoricos = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#4a3aa7'];
+const coloresCategoricos = {{ colores_cat | tojson }};  // misma lista que los cuadrados de la leyenda
 const categoriaLabelsChart = {{ categoria_labels | tojson }};
 new Chart(document.getElementById('chartCategoriaTon'), {
     type: 'doughnut',
