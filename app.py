@@ -12236,6 +12236,11 @@ def dashboard_ventas_general():
 def _generar_respuesta_pdf(html_renderizado, nombre_archivo, etiqueta_error):
     """Convierte un HTML ya renderizado en un PDF descargable con xhtml2pdf, siguiendo el mismo
     patrón usado en /descargar_cotizacion_v2, /descargar_nota_pedido y /admin/maestro/imprimir_codigos."""
+    # IMPORTANTE (bug de xhtml2pdf): una celda <td></td> o <th></th> SIN contenido hace que xhtml2pdf
+    # fije el ancho de toda esa columna en solo el padding (~9pt). El resto de celdas de esa columna
+    # queda sin espacio y el PDF se cae con "flowable given negative availWidth". Por seguridad se
+    # rellena cualquier celda vacía con &nbsp; antes de generar el PDF.
+    html_renderizado = re.sub(r'(<t[dh]\b[^>]*>)(</t[dh]>)', r'\1&nbsp;\2', html_renderizado)
     pdf_buffer = io.BytesIO()
     try:
         resultado = pisa.CreatePDF(src=html_renderizado, dest=pdf_buffer, encoding='utf-8')

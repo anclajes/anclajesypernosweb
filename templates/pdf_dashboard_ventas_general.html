@@ -109,6 +109,8 @@
     .fr-sub { font-size: 6.5pt; color: #777777; }
     .alerta-datos { background-color: #fff3cd; border: 1px solid #ffe69c; color: #664d03; padding: 5px 9px; font-size: 7.3pt; margin-bottom: 8px; }
     .titulo-anexo { font-size: 12pt; font-weight: bold; color: #0F172A; border-bottom: 2px solid #0F172A; padding-bottom: 3px; margin-bottom: 4px; }
+    /* Mantener cada título y su nota pegados al gráfico/tabla que sigue (sin títulos huérfanos al pie de hoja) */
+    .titulo-seccion, .titulo-seccion-verde, .nota-explicativa, .titulo-anexo { -pdf-keep-with-next: true; }
     .pie-pagina { font-size: 6.8pt; color: #999999; text-align: center; margin-top: 12px; }
 </style>
 </head>
@@ -204,7 +206,7 @@
 <!-- RESUMEN COMPARATIVO -->
 <div style="page-break-inside: avoid;">
 <div class="titulo-seccion">2. Resumen Comparativo por Empresa (período) <span class="tag-filtro">Según filtro</span></div>
-<table class="tabla-datos">
+<table class="tabla-datos" repeat="1">
     <thead><tr><th>Empresa</th><th class="num">Toneladas vendidas</th><th class="num">Unidades</th><th class="num">Movs.</th><th class="num">Kg prom. / mov.</th><th class="num">Ingresos (Compras)</th><th class="num">Var. vs. período anterior</th></tr></thead>
     <tbody>
         {% for e, chip, nombre in [(anclajes, 'chip-anclajes', 'Anclajes y Pernos SAC'), (importbolts, 'chip-importbolts', 'Import Bolts SAC')] %}
@@ -227,12 +229,13 @@
             <td class="num">{{ movimientos_periodo_total }}</td>
             <td class="num">{{ "%.1f"|format((toneladas_periodo_total * 1000 / movimientos_periodo_total) if movimientos_periodo_total else 0) }} kg</td>
             <td class="num">{{ "%.2f"|format(ton_ingresos_compras_total) }} t</td>
-            <td class="num"></td>
+            <td class="num">&nbsp;</td>
         </tr>
     </tfoot>
 </table>
 </div>
 
+<pdf:nextpage />
 <!-- Secciones 3 y 4 + tabla mensual: se mantienen juntas en la misma hoja -->
 <div style="page-break-inside: avoid;">
 <!-- PARTICIPACIÓN + EVOLUCIÓN MENSUAL, lado a lado -->
@@ -266,12 +269,13 @@
                 <tr><td class="izq">ImportBolts</td>{% for m in meses_general %}<td>{{ "%.2f"|format(m.ton_i) }}</td>{% endfor %}<td><b>{{ "%.2f"|format(meses_general|sum(attribute='ton_i')) }}</b></td></tr>
                 <tr><td class="izq"><b>Total</b></td>{% for m in meses_general %}<td><b>{{ "%.2f"|format(m.total) }}</b></td>{% endfor %}<td><b>{{ "%.2f"|format(meses_general|sum(attribute='total')) }}</b></td></tr>
                 <tr><td class="izq">Unidades</td>{% for m in meses_general %}<td>{{ "{:,d}".format(m.unid) }}</td>{% endfor %}<td>{{ "{:,d}".format(meses_general|sum(attribute='unid')) }}</td></tr>
-                <tr><td class="izq">Var. vs mes ant.</td>{% for m in meses_general %}<td>{% if m.var_pct is none %}—{% elif m.en_curso %}<i>parcial</i>{% else %}<span class="{{ 'sube' if m.var_pct >= 0 else 'baja' }}">{{ "%+.1f"|format(m.var_pct) }}%</span>{% endif %}</td>{% endfor %}<td></td></tr>
+                <tr><td class="izq">Var. vs mes ant.</td>{% for m in meses_general %}<td>{% if m.var_pct is none %}—{% elif m.en_curso %}<i>parcial</i>{% else %}<span class="{{ 'sube' if m.var_pct >= 0 else 'baja' }}">{{ "%+.1f"|format(m.var_pct) }}%</span>{% endif %}</td>{% endfor %}<td>&nbsp;</td></tr>
             </tbody>
         </table>
         <div class="nota-explicativa" style="margin-top:3px;">Valores en toneladas (t). * Mes en curso: dato parcial (del día 1 a hoy), por eso no se compara contra el mes anterior.</div>
 </div>
 
+<pdf:nextpage />
 <!-- TONELADAS POR DÍA COMPARATIVO -->
 <div style="page-break-inside: avoid;">
 <div class="titulo-seccion">5. Toneladas Vendidas por Día — Últimos 30 Días <span class="tag-fijo">Ventana fija</span></div>
@@ -318,12 +322,13 @@
 </table>
 </div>
 
+<pdf:nextpage />
 <!-- TOP PRODUCTOS (ancho completo). REGLA DE ESTE PDF: ninguna tabla de datos va dentro de otra
      tabla; xhtml2pdf no sabe repartir el ancho de una tabla anidada y se cae con "negative availWidth". -->
 <div style="page-break-inside: avoid;">
 <div class="titulo-seccion">6. Top Productos (ambas empresas) {% if mes_top == 'periodo' %}<span class="tag-filtro">Según filtro</span>{% else %}<span class="tag-fijo">Mes elegido</span>{% endif %}</div>
 <div class="nota-explicativa">{{ mes_top_label }} &middot; total vendido: <b>{{ "%.2f"|format(top_sel_total_ton_general) }} t</b> ({{ "{:,d}".format(top_sel_total_unid_general) }} unid.). El % es sobre ese total.</div>
-<table class="tabla-datos">
+<table class="tabla-datos" repeat="1">
     <thead><tr><th>#</th><th>Producto</th><th>Empresa</th><th class="num">Toneladas</th><th class="num">% del total</th><th class="num">Unidades</th></tr></thead>
     <tbody>
         {% for p in productos_general %}
@@ -346,7 +351,7 @@
 <div style="page-break-inside: avoid;">
 <div class="titulo-seccion">7. Top Clientes por Toneladas (ambas empresas) <span class="tag-filtro">Según filtro</span></div>
 <div class="nota-explicativa">Clientes/destinos con más toneladas compradas entre el {{ fecha_inicio }} y el {{ fecha_fin }}.</div>
-<table class="tabla-datos">
+<table class="tabla-datos" repeat="1">
     <thead><tr><th>#</th><th>Cliente / Destino</th><th>Empresa(s)</th><th class="num">Toneladas</th><th class="num">Unidades</th><th class="num">Movs.</th></tr></thead>
     <tbody>
         {% for c in top_clientes_general %}
@@ -358,6 +363,7 @@
 </table>
 </div>
 
+<pdf:nextpage />
 <!-- INGRESOS COMBINADOS -->
 <div style="page-break-inside: avoid;">
 <div class="titulo-seccion-verde">8. Nuevos Ingresos por Compras, por Familia (ambas empresas) <span class="tag-filtro">Según filtro</span></div>
@@ -367,7 +373,7 @@
     <b>Peso unit. prom.</b> = esas toneladas &times; 1000 &divide; unidades con peso, es decir, el promedio del peso nominal del inventario
     ponderado por las unidades que ingresaron. <b>Rango</b> = peso nominal del producto más liviano y más pesado de la familia.
 </div>
-<table class="tabla-datos verde">
+<table class="tabla-datos verde" repeat="1">
     <thead><tr><th>Familia</th><th>Empresa</th><th class="num">Toneladas</th><th class="num">Unidades</th><th class="num">Peso unit. prom. (kg/u)</th><th class="num">Rango (kg/u)</th></tr></thead>
     <tbody>
         {% for r in ingresos_general %}
@@ -385,7 +391,7 @@
     </tbody>
     {% if ingresos_general %}
     <tfoot>
-        <tr><td colspan="2">Total (ambas empresas)</td><td class="num">{{ "%.2f"|format(ton_ingresos_compras_total) }} t</td><td class="num">{{ "{:,d}".format(unid_ingresos_compras_total) }}</td><td class="num">{{ "%.3f"|format(peso_promedio_ingresos_general_kg) }}</td><td class="num"></td></tr>
+        <tr><td colspan="2">Total (ambas empresas)</td><td class="num">{{ "%.2f"|format(ton_ingresos_compras_total) }} t</td><td class="num">{{ "{:,d}".format(unid_ingresos_compras_total) }}</td><td class="num">{{ "%.3f"|format(peso_promedio_ingresos_general_kg) }}</td><td class="num">&nbsp;</td></tr>
     </tfoot>
     {% endif %}
 </table>
