@@ -116,16 +116,12 @@
 
 <table class="tabla-header">
     <tr>
-        <td style="width:55%;">
-            <table style="width:100%;"><tr>
-                <td class="logo-header"><img src="{{ tema.logo_path }}" style="width:52px;height:52px;object-fit:cover;border-radius:50%;"></td>
-                <td style="padding-left:10px;">
-                    <div class="empresa-nombre">{{ tema.nombre }}</div>
-                    <div class="empresa-sub">Reporte generado desde el Dashboard de Ventas del sistema ERP</div>
-                </td>
-            </tr></table>
+        <td style="width:62px;"><img src="{{ tema.logo_path }}" style="width:52px;height:52px;"></td>
+        <td style="width:48%;">
+            <div class="empresa-nombre">{{ tema.nombre }}</div>
+            <div class="empresa-sub">Reporte generado desde el Dashboard de Ventas del sistema ERP</div>
         </td>
-        <td style="width:45%;">
+        <td>
             <div class="reporte-titulo">Reporte de Ventas</div>
             <div class="reporte-meta">
                 Período analizado: <b>{{ fecha_inicio }}</b> al <b>{{ fecha_fin }}</b><br>
@@ -154,7 +150,7 @@
 {% endif %}
 
 <!-- KPIs -->
-<div class="titulo-seccion">Indicadores Principales</div>
+<div class="titulo-seccion">1. Indicadores Principales</div>
 <table class="tabla-kpi">
     <tr>
         <td>
@@ -202,38 +198,29 @@
     </tr>
 </table>
 
-<!-- EVOLUCIÓN MENSUAL + MIX POR FAMILIA, lado a lado -->
+<!-- REGLA DE ESTE PDF: ninguna tabla de datos va dentro de otra tabla (xhtml2pdf no sabe repartir
+     el ancho de una tabla anidada y se cae con "negative availWidth"). Las filas de 2 columnas solo
+     llevan imágenes y texto; todas las tablas van a ancho completo. -->
+
+<!-- 2. EVOLUCIÓN MENSUAL + 3. MIX POR FAMILIA (solo gráficos, lado a lado) -->
 <table class="fila-dos-col"><tr>
     <td style="width:58%;">
-        <div class="titulo-seccion">Evolución de Toneladas Vendidas — 6 Meses <span class="tag-fijo">Ventana fija</span></div>
+        <div class="titulo-seccion">2. Evolución de Toneladas Vendidas — 6 Meses <span class="tag-fijo">Ventana fija</span></div>
         <div class="nota-explicativa">Toneladas vendidas por mes calendario (últimos 6 meses). No cambia con el filtro de fecha del reporte.</div>
         <div class="grafico-wrap"><img class="grafico-img" src="{{ grafico_meses }}"></div>
     </td>
     <td class="ultima" style="width:42%;">
-        <div class="titulo-seccion">Mix de Ventas por Familia <span class="tag-filtro">Según filtro</span></div>
-        <div class="nota-explicativa">Toneladas del período filtrado, agrupadas por familia de producto (Top 6 + "Otras").</div>
+        <div class="titulo-seccion">3. Mix de Ventas por Familia <span class="tag-filtro">Según filtro</span></div>
+        <div class="nota-explicativa">Toneladas del período filtrado por familia de producto (Top 6 + "Otras"). Detalle en la tabla de abajo.</div>
         {% if categoria_labels %}
-        <table style="width:100%;"><tr>
-            <td style="width:40%;"><div class="grafico-wrap"><img class="grafico-img" src="{{ grafico_categoria }}" style="width:130px;height:130px;"></div></td>
-            <td style="width:56%;">
-                <table class="tabla-datos">
-                    <thead><tr><th>Familia</th><th class="num">Ton.</th><th class="num">%</th></tr></thead>
-                    <tbody>
-                        {% for cat in categoria_labels %}
-                        <tr><td>{{ cat }}</td><td class="num">{{ "%.2f"|format(categoria_data[loop.index0]) }} t</td><td class="num">{{ categoria_pct[loop.index0] }}%</td></tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </td>
-        </tr></table>
-
+        <div class="grafico-wrap"><img class="grafico-img" src="{{ grafico_categoria }}" style="max-height:150px;"></div>
         {% else %}
         <div class="sin-datos">Sin ventas registradas en el período.</div>
         {% endif %}
     </td>
 </tr></table>
-<!-- Detalle numérico de la evolución mensual: a ANCHO COMPLETO (xhtml2pdf falla si una
-     tabla de 8 columnas va anidada dentro de una celda angosta) -->
+
+<!-- Detalle numérico de la evolución mensual (ancho completo) -->
         <table class="tabla-mini" style="margin-top:6px;">
             <thead><tr>
                 <th class="izq" width="16%">Mes</th>
@@ -249,9 +236,25 @@
         </table>
         <div class="nota-explicativa" style="margin-top:3px;">Toneladas en t. * Mes en curso: dato parcial (del día 1 a hoy), por eso no se compara contra el mes anterior.</div>
 
+
+<!-- Mix por familia en números (horizontal, ancho completo) -->
+{% if categoria_labels %}
+<table class="tabla-mini" style="margin-top:4px;">
+    <thead><tr>
+        <th class="izq">Mix por familia</th>
+        {% for cat in categoria_labels %}<th>{{ cat }}</th>{% endfor %}
+        <th>Total</th>
+    </tr></thead>
+    <tbody>
+        <tr><td class="izq"><b>Toneladas</b></td>{% for v in categoria_data %}<td><b>{{ "%.2f"|format(v) }}</b></td>{% endfor %}<td><b>{{ "%.2f"|format(categoria_data|sum) }}</b></td></tr>
+        <tr><td class="izq">% del período</td>{% for v in categoria_pct %}<td>{{ v }}%</td>{% endfor %}<td>100%</td></tr>
+    </tbody>
+</table>
+{% endif %}
+
 <!-- TONELADAS POR DÍA -->
 <div style="page-break-inside: avoid;">
-<div class="titulo-seccion">Toneladas Vendidas por Día — Últimos 30 Días <span class="tag-fijo">Ventana fija</span></div>
+<div class="titulo-seccion">4. Toneladas Vendidas por Día — Últimos 30 Días <span class="tag-fijo">Ventana fija</span></div>
 <div class="nota-explicativa">Cada barra es el total vendido ese día (número encima). No cambia con el filtro de fecha del reporte; el detalle diario del período filtrado está en el Anexo al final.</div>
 <div class="grafico-wrap"><img class="grafico-img" src="{{ grafico_dias }}"></div>
 {% set r30 = resumen_30d %}
@@ -268,75 +271,73 @@
 </table>
 </div>
 
-<!-- TOP PRODUCTOS, lado a lado -->
+<!-- 5. PRODUCTOS MÁS VENDIDOS — MES ELEGIDO (ancho completo) -->
 <div style="page-break-inside: avoid;">
-<table class="fila-dos-col"><tr>
-    <td>
-        <div class="titulo-seccion">Productos Más Vendidos {% if mes_top == 'periodo' %}<span class="tag-filtro">Según filtro</span>{% else %}<span class="tag-fijo">Mes elegido</span>{% endif %}</div>
-        <div class="nota-explicativa">{{ mes_top_label }} &middot; total vendido: <b>{{ "%.2f"|format(top_sel_total_ton) }} t</b> ({{ "{:,d}".format(top_sel_total_unid) }} unid.).</div>
-        <table class="tabla-datos">
-            <thead><tr><th width="37%">Producto</th><th width="13%">SKU</th><th width="19%">Familia</th><th class="num" width="12%">Ton.</th><th class="num" width="8%">%</th><th class="num" width="11%">Unid.</th></tr></thead>
-            <tbody>
-                {% for p in top_productos_sel[:10] %}
-                <tr><td>{{ p.nombre }}</td><td>{{ p.sku }}</td><td>{{ p.categoria }}</td><td class="num">{{ "%.2f"|format(p.ton) }} t</td><td class="num">{{ p.pct }}%</td><td class="num">{{ "{:,d}".format(p.unid) }}</td></tr>
-                {% else %}
-                <tr><td colspan="6" class="sin-datos">Sin ventas registradas en {{ mes_top_label }}.</td></tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </td>
-    <td class="ultima">
-        <div class="titulo-seccion">Productos Más Vendidos — Últimos 3 Meses <span class="tag-fijo">Ventana fija</span></div>
-        <div class="nota-explicativa">Mes en curso + los 2 meses calendario anteriores.</div>
-        <table class="tabla-datos">
-            <thead><tr><th width="37%">Producto</th><th width="13%">SKU</th><th width="19%">Familia</th><th class="num" width="12%">Ton.</th><th class="num" width="8%">%</th><th class="num" width="11%">Unid.</th></tr></thead>
-            <tbody>
-                {% for p in top_productos_3m %}
-                <tr><td>{{ p.nombre }}</td><td>{{ p.sku }}</td><td>{{ p.categoria }}</td><td class="num">{{ "%.2f"|format(p.ton) }} t</td><td class="num">{{ p.pct }}%</td><td class="num">{{ "{:,d}".format(p.unid) }}</td></tr>
-                {% else %}
-                <tr><td colspan="6" class="sin-datos">Sin ventas registradas en los últimos 3 meses.</td></tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </td>
-</tr></table>
+<div class="titulo-seccion">5. Productos Más Vendidos {% if mes_top == 'periodo' %}<span class="tag-filtro">Según filtro</span>{% else %}<span class="tag-fijo">Mes elegido</span>{% endif %}</div>
+<div class="nota-explicativa">{{ mes_top_label }} &middot; total vendido: <b>{{ "%.2f"|format(top_sel_total_ton) }} t</b> ({{ "{:,d}".format(top_sel_total_unid) }} unid.). El % es sobre ese total.</div>
+<table class="tabla-datos">
+    <thead><tr><th>#</th><th>Producto</th><th>SKU</th><th>Familia</th><th class="num">Toneladas</th><th class="num">% del total</th><th class="num">Unidades</th></tr></thead>
+    <tbody>
+        {% for p in top_productos_sel[:10] %}
+        <tr><td>{{ loop.index }}</td><td>{{ p.nombre }}</td><td>{{ p.sku }}</td><td>{{ p.categoria }}</td><td class="num">{{ "%.2f"|format(p.ton) }} t</td><td class="num">{{ p.pct }}%</td><td class="num">{{ "{:,d}".format(p.unid) }}</td></tr>
+        {% else %}
+        <tr><td colspan="7" class="sin-datos">Sin ventas registradas en {{ mes_top_label }}.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
 </div>
 
-<!-- TOP CLIENTES + ÚLTIMAS VENTAS, lado a lado -->
+<!-- 6. PRODUCTOS MÁS VENDIDOS — ÚLTIMOS 3 MESES (ancho completo) -->
 <div style="page-break-inside: avoid;">
-<table class="fila-dos-col"><tr>
-    <td>
-        <div class="titulo-seccion">Toneladas por Cliente / Destino <span class="tag-filtro">Según filtro</span></div>
-        <table class="tabla-datos">
-            <thead><tr><th>Cliente / Destino</th><th class="num">Ton.</th><th class="num">Unid.</th><th class="num">Movs.</th></tr></thead>
-            <tbody>
-                {% for c in top_clientes %}
-                <tr><td>{{ c.nombre }}</td><td class="num">{{ "%.2f"|format(c.toneladas) }} t</td><td class="num">{{ "{:,d}".format(c.unidades) }}</td><td class="num">{{ c.movimientos }}</td></tr>
-                {% else %}
-                <tr><td colspan="4" class="sin-datos">Sin ventas registradas en el período.</td></tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </td>
-    <td class="ultima">
-        <div class="titulo-seccion">Últimas Ventas Registradas <span class="tag-filtro">Según filtro</span></div>
-        <table class="tabla-datos">
-            <thead><tr><th>Fecha</th><th>Cliente</th><th>Producto</th><th class="num">Ton.</th></tr></thead>
-            <tbody>
-                {% for v in ultimas_ventas %}
-                <tr><td>{{ v.fecha.strftime('%d/%m/%Y') }}</td><td>{{ v.cliente }}</td><td>{{ v.producto }}</td><td class="num">{{ "%.3f"|format(v.toneladas) }} t</td></tr>
-                {% else %}
-                <tr><td colspan="4" class="sin-datos">Sin ventas registradas en el período.</td></tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </td>
-</tr></table>
+<div class="titulo-seccion">6. Productos Más Vendidos — Últimos 3 Meses <span class="tag-fijo">Ventana fija</span></div>
+<div class="nota-explicativa">Mes en curso + los 2 meses calendario anteriores.</div>
+<table class="tabla-datos">
+    <thead><tr><th>#</th><th>Producto</th><th>SKU</th><th>Familia</th><th class="num">Toneladas</th><th class="num">% del total</th><th class="num">Unidades</th></tr></thead>
+    <tbody>
+        {% for p in top_productos_3m %}
+        <tr><td>{{ loop.index }}</td><td>{{ p.nombre }}</td><td>{{ p.sku }}</td><td>{{ p.categoria }}</td><td class="num">{{ "%.2f"|format(p.ton) }} t</td><td class="num">{{ p.pct }}%</td><td class="num">{{ "{:,d}".format(p.unid) }}</td></tr>
+        {% else %}
+        <tr><td colspan="7" class="sin-datos">Sin ventas registradas en los últimos 3 meses.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+
+<!-- 7. TONELADAS POR CLIENTE (ancho completo) -->
+<div style="page-break-inside: avoid;">
+<div class="titulo-seccion">7. Toneladas por Cliente / Destino <span class="tag-filtro">Según filtro</span></div>
+<div class="nota-explicativa">Top 10 clientes/destinos entre el {{ fecha_inicio }} y el {{ fecha_fin }}.</div>
+<table class="tabla-datos">
+    <thead><tr><th>#</th><th>Cliente / Destino</th><th class="num">Toneladas</th><th class="num">Unidades</th><th class="num">Movs.</th></tr></thead>
+    <tbody>
+        {% for c in top_clientes %}
+        <tr><td>{{ loop.index }}</td><td>{{ c.nombre }}</td><td class="num">{{ "%.2f"|format(c.toneladas) }} t</td><td class="num">{{ "{:,d}".format(c.unidades) }}</td><td class="num">{{ c.movimientos }}</td></tr>
+        {% else %}
+        <tr><td colspan="5" class="sin-datos">Sin ventas registradas en el período.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+
+<!-- 8. ÚLTIMAS VENTAS (ancho completo) -->
+<div style="page-break-inside: avoid;">
+<div class="titulo-seccion">8. Últimas Ventas Registradas <span class="tag-filtro">Según filtro</span></div>
+<div class="nota-explicativa">Las 10 salidas por venta más recientes del período.</div>
+<table class="tabla-datos">
+    <thead><tr><th>Fecha</th><th>Cliente</th><th>Producto</th><th class="num">Unidades</th><th class="num">Toneladas</th></tr></thead>
+    <tbody>
+        {% for v in ultimas_ventas %}
+        <tr><td>{{ v.fecha.strftime('%d/%m/%Y') }}</td><td>{{ v.cliente }}</td><td>{{ v.producto }}</td><td class="num">{{ "{:,d}".format(v.unidades) }}</td><td class="num">{{ "%.3f"|format(v.toneladas) }} t</td></tr>
+        {% else %}
+        <tr><td colspan="5" class="sin-datos">Sin ventas registradas en el período.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
 </div>
 
 <!-- INGRESOS POR FAMILIA -->
 <div style="page-break-inside: avoid;">
-<div class="titulo-seccion-verde">Nuevos Ingresos por Familia (período) <span class="tag-filtro">Según filtro</span></div>
+<div class="titulo-seccion-verde">9. Nuevos Ingresos por Compras, por Familia <span class="tag-filtro">Según filtro</span></div>
 <div class="nota-explicativa">
     Solo se cuentan las <b>Entradas</b> del Kardex cuyo motivo contiene la palabra "Compra" (no incluye devoluciones ni traslados).
     <b>Toneladas</b> = suma de (cantidad &times; peso nominal del producto en el inventario).

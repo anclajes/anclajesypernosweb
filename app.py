@@ -12268,7 +12268,7 @@ def _pdf_dashboard_empresa(empresa, request):
         labels_meses_pdf, [{'label': 'Toneladas', 'valores': ctx['data_meses_ton'], 'color': tema['chart']}], alto=2.1)
     grafico_categoria = _grafico_donut(
         ctx['categoria_labels'], ctx['categoria_data'], COLORES_CATEGORIAS_CHART[:len(ctx['categoria_labels'])],
-        ancho=2.6, alto=2.6, con_leyenda=False)
+        ancho=3.6, alto=2.4)  # con leyenda (nombre + t + %) para que cada color se identifique
     grafico_dias = _grafico_barras(ctx['labels_dias'], ctx['data_dias_ton'], tema['chart'])
 
     html_renderizado = render_template(
