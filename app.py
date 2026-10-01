@@ -37,6 +37,7 @@ from botocore.exceptions import ClientError
 from werkzeug.security import generate_password_hash, check_password_hash
 from xhtml2pdf import pisa
 import base64
+import math
 import qrcode
 import matplotlib
 matplotlib.use('Agg')  # backend sin pantalla: necesario en un servidor (sin esto, matplotlib
@@ -11543,6 +11544,46 @@ def backup_automatico_cron():
 # NO se usa Order/OrderDetail (cotizaciones) por ahora, a pedido explícito.
 # ======================================================
 MESES_CORTOS_TON = ['', 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
+MESES_LARGOS_TON = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto',
+                    'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+
+
+def _variacion_pct(actual, anterior):
+    """% de variación de 'actual' contra 'anterior'. None si no hay base de comparación (anterior 0/None)."""
+    if not anterior:
+        return None
+    return round(((actual - anterior) / anterior) * 100, 1)
+
+
+def _resumen_serie_diaria(labels, valores):
+    """Resumen numérico de una serie diaria de toneladas (los 30 días del gráfico de barras), para
+    imprimirlo debajo del gráfico en el PDF: total, días con venta, promedios, día pico y semanas."""
+    total = round(sum(valores), 3)
+    dias_con_venta = sum(1 for v in valores if v > 0)
+    pico_val = max(valores) if valores else 0
+    pico_idx = valores.index(pico_val) if valores and pico_val > 0 else None
+    ult7 = round(sum(valores[-7:]), 3)
+    prev7 = round(sum(valores[-14:-7]), 3)
+    # Bloques de 7 días contados desde HOY hacia atrás (el primero puede quedar de 2 días: 30 = 2 + 4×7)
+    bloques = []
+    fin = len(valores)
+    while fin > 0:
+        ini = max(0, fin - 7)
+        bloques.append({'desde': labels[ini], 'hasta': labels[fin - 1],
+                        'ton': round(sum(valores[ini:fin]), 3), 'dias': fin - ini})
+        fin = ini
+    bloques.reverse()
+    return {
+        'total': total,
+        'dias_con_venta': dias_con_venta,
+        'dias': len(valores),
+        'prom_dia_con_venta': round(total / dias_con_venta, 3) if dias_con_venta else 0,
+        'prom_diario': round(total / len(valores), 3) if valores else 0,
+        'pico_label': labels[pico_idx] if pico_idx is not None else '—',
+        'pico_ton': round(pico_val, 3),
+        'ult7': ult7, 'prev7': prev7, 'var7': _variacion_pct(ult7, prev7),
+        'bloques': bloques,
+    }
 
 
 def _modelo_movimiento_ton(empresa):
@@ -11662,12 +11703,28 @@ def _construir_ctx_dashboard_ton(empresa, request):
 
     # --- Evolución mensual (6 meses fijos, con ceros donde no hubo ventas registradas) ---
     por_mes = {k: 0.0 for k in meses_ventana}
+    unid_mes = {k: 0 for k in meses_ventana}
+    movs_mes = {k: 0 for k in meses_ventana}
     for l in lineas_6m:
         key = (l.fecha.year, l.fecha.month)
         if key in por_mes:
             por_mes[key] += (l.peso_total or 0)
+            unid_mes[key] += (l.cantidad or 0)
+            movs_mes[key] += 1
     labels_meses = [f"{MESES_CORTOS_TON[m]} {a}" for (a, m) in meses_ventana]
     data_meses_ton = [round(por_mes[k] / 1000, 2) for k in meses_ventana]
+
+    # Tabla numérica bajo el gráfico mensual (para no tener que "estimar" el valor mirando la curva).
+    # La variación se calcula contra el mes anterior; el mes en curso se marca como parcial.
+    meses_tabla = []
+    for i, k in enumerate(meses_ventana):
+        ton = data_meses_ton[i]
+        prev = data_meses_ton[i - 1] if i > 0 else None
+        meses_tabla.append({
+            'label': labels_meses[i], 'ton': ton, 'unid': unid_mes[k], 'movs': movs_mes[k],
+            'var_pct': _variacion_pct(ton, prev),
+            'en_curso': (k == (hoy.year, hoy.month)),
+        })
 
     # --- Toneladas por día (últimos 30 días, con ceros) ---
     inicio_30d = hoy - timedelta(days=29)
@@ -11681,8 +11738,23 @@ def _construir_ctx_dashboard_ton(empresa, request):
     data_dias_ton = [round(por_dia.get(d, 0) / 1000, 3) for d in dias_ordenados]
     # Fecha ISO de cada barra del gráfico de días, para el click-through al Kardex
     dias_iso = [d.isoformat() for d in dias_ordenados]
+    resumen_30d = _resumen_serie_diaria(labels_dias, data_dias_ton)
 
-    # --- Top productos: MES ACTUAL vs ÚLTIMOS 3 MESES ---
+    # --- Detalle diario del PERÍODO FILTRADO (anexo del PDF): solo días con ventas ---
+    agg_dia = {}
+    for l in lineas_periodo:
+        d = l.fecha.date()
+        reg = agg_dia.setdefault(d, {'kg': 0.0, 'unid': 0, 'movs': 0, 'clientes': set()})
+        reg['kg'] += (l.peso_total or 0)
+        reg['unid'] += (l.cantidad or 0)
+        reg['movs'] += 1
+        reg['clientes'].add((l.destino or '').strip() or 'Sin especificar')
+    detalle_diario = [{
+        'fecha': d, 'ton': round(v['kg'] / 1000, 3), 'unid': v['unid'], 'movs': v['movs'],
+        'clientes': len(v['clientes']),
+    } for d, v in sorted(agg_dia.items())]
+
+    # --- Top productos: MES ELEGIDO (selector) vs ÚLTIMOS 3 MESES ---
     def top_productos(lineas_filtradas, limite=8):
         agg = {}
         for l in lineas_filtradas:
@@ -11691,17 +11763,55 @@ def _construir_ctx_dashboard_ton(empresa, request):
                 agg[pid] = {'nombre': l.producto_nombre, 'sku': l.producto_sku, 'categoria': l.producto_categoria, 'ton': 0.0, 'unid': 0}
             agg[pid]['ton'] += (l.peso_total or 0) / 1000
             agg[pid]['unid'] += l.cantidad
+        total_ton = sum(r['ton'] for r in agg.values())
         ordenado = sorted(agg.values(), key=lambda x: x['ton'], reverse=True)[:limite]
         for r in ordenado:
+            r['pct'] = round((r['ton'] / total_ton) * 100, 1) if total_ton > 0 else 0
             r['ton'] = round(r['ton'], 2)
         return ordenado
 
-    lineas_mes_actual = [l for l in lineas_6m if l.fecha.year == hoy.year and l.fecha.month == hoy.month]
     inicio_3m = restar_meses(hoy.replace(day=1), 2)
     lineas_3meses = [l for l in lineas_6m if l.fecha.date() >= inicio_3m]
-
-    top_productos_mes = top_productos(lineas_mes_actual)
     top_productos_3m = top_productos(lineas_3meses)
+
+    # Selector "mes_top": mes actual (por defecto), cualquiera de los 11 meses anteriores, o
+    # "periodo" (= el mismo rango del filtro de fechas). Valor en formato YYYY-MM.
+    opciones_mes_top = []
+    cur = hoy.replace(day=1)
+    for i in range(12):
+        etiqueta = f"{MESES_LARGOS_TON[cur.month]} {cur.year}" + (" (en curso)" if i == 0 else "")
+        opciones_mes_top.append({'valor': cur.strftime('%Y-%m'), 'etiqueta': etiqueta})
+        cur = restar_meses(cur, 1)
+    opciones_mes_top.append({'valor': 'periodo', 'etiqueta': 'Todo el período filtrado'})
+    mes_top = request.args.get('mes_top') or hoy.strftime('%Y-%m')
+    if mes_top not in {o['valor'] for o in opciones_mes_top}:
+        mes_top = hoy.strftime('%Y-%m')
+
+    if mes_top == 'periodo':
+        lineas_top = lineas_periodo
+        mes_top_label = f"Período filtrado ({f_ini.strftime('%d/%m/%Y')} al {f_fin.strftime('%d/%m/%Y')})"
+        mes_top_es_actual = False
+    else:
+        anio_top, num_mes_top = int(mes_top[:4]), int(mes_top[5:7])
+        mes_top_es_actual = (anio_top, num_mes_top) == (hoy.year, hoy.month)
+        if (anio_top, num_mes_top) in por_mes:
+            # Ya está dentro de la ventana de 6 meses: no hace falta otra consulta
+            lineas_top = [l for l in lineas_6m if (l.fecha.year, l.fecha.month) == (anio_top, num_mes_top)]
+        else:
+            ini_top = datetime(anio_top, num_mes_top, 1)
+            sig = date(anio_top + 1, 1, 1) if num_mes_top == 12 else date(anio_top, num_mes_top + 1, 1)
+            fin_top = datetime.combine(sig, datetime.min.time()) - timedelta(seconds=1)
+            lineas_top = _query_salidas_venta_ton(empresa, ini_top, fin_top).all()
+        nombre_mes = f"{MESES_LARGOS_TON[num_mes_top]} {anio_top}"
+        mes_top_label = (f"{nombre_mes} — en curso, del 01/{num_mes_top:02d} al {hoy.strftime('%d/%m')}"
+                         if mes_top_es_actual else f"{nombre_mes} (mes completo)")
+    # Se pide un top más largo (15) para que el ranking combinado del Dashboard General no
+    # pierda productos que en una empresa quedan 9° y en la otra no aparecen.
+    top_productos_sel = top_productos(lineas_top, limite=15)
+    top_sel_total_ton = round(kg(lineas_top) / 1000, 2)
+    top_sel_total_unid = sum(l.cantidad for l in lineas_top)
+    # Compatibilidad: "top_productos_mes" ahora es el del mes elegido en el selector
+    top_productos_mes = top_productos_sel[:8]
 
     # --- Top clientes/destinos por toneladas (período filtrado) ---
     agg_cli = {}
@@ -11711,10 +11821,19 @@ def _construir_ctx_dashboard_ton(empresa, request):
         reg['ton'] += (l.peso_total or 0) / 1000
         reg['unid'] += l.cantidad
         reg['movs'] += 1
-    top_clientes = sorted(
+    # Lista COMPLETA (sin recortar): el Dashboard General la usa para combinar ambas empresas
+    # sin perder clientes que quedan fuera del top-10 de una de ellas.
+    clientes_todos = sorted(
         [{'nombre': k, 'toneladas': round(v['ton'], 2), 'unidades': v['unid'], 'movimientos': v['movs']} for k, v in agg_cli.items()],
         key=lambda x: x['toneladas'], reverse=True
-    )[:10]
+    )
+    top_clientes = clientes_todos[:10]
+
+    # --- Calidad de datos: ventas cuyo producto NO tiene peso nominal en el inventario
+    # (aportan unidades pero 0 toneladas, así que las toneladas quedan subestimadas) ---
+    ventas_sin_peso = [l for l in lineas_periodo if (l.cantidad or 0) > 0 and not (l.peso_total or 0)]
+    ventas_sin_peso_movs = len(ventas_sin_peso)
+    ventas_sin_peso_unid = sum(l.cantidad for l in ventas_sin_peso)
 
     # --- Mix por categoría (período filtrado) ---
     agg_cat = {}
@@ -11752,20 +11871,33 @@ def _construir_ctx_dashboard_ton(empresa, request):
     # "Nuevos Ingresos por Familia": SOLO entradas cuyo motivo es Compra -- no se suman
     # devoluciones, traslados ni otros motivos, para que la tabla refleje reposición real
     # de stock y no cualquier movimiento de entrada del Kardex.
+    # Peso Nom. Prom. (kg/unid) = Σ(cantidad × peso_kg del inventario) ÷ Σ(cantidad con peso).
+    # Es decir: el peso nominal ACTUAL de cada producto en el inventario, promediado y ponderado
+    # por las unidades que ingresaron. Las unidades de productos SIN peso nominal se excluyen del
+    # promedio (si no, lo "jalarían" hacia abajo) y se reportan aparte como dato a corregir.
     agg_ing_cat = {}
     for l in entradas_compras:
         cat = l.producto_categoria or 'Sin categoría'
-        reg = agg_ing_cat.setdefault(cat, {'ton': 0.0, 'unid': 0})
-        reg['ton'] += (l.peso_total or 0) / 1000
-        reg['unid'] += l.cantidad
+        reg = agg_ing_cat.setdefault(cat, {'kg': 0.0, 'unid': 0, 'unid_con_peso': 0, 'pesos': []})
+        cant = l.cantidad or 0
+        peso_linea = l.peso_total or 0
+        reg['kg'] += peso_linea
+        reg['unid'] += cant
+        if cant > 0 and peso_linea > 0:
+            reg['unid_con_peso'] += cant
+            reg['pesos'].append(peso_linea / cant)
     ingresos_por_categoria = sorted(
         [{
-            'categoria': k, 'toneladas': round(v['ton'], 2), 'unidades': v['unid'],
-            # Peso nominal promedio de esta categoría en el período = toneladas*1000 / unidades
-            'peso_promedio_kg': round((v['ton'] * 1000 / v['unid']), 3) if v['unid'] > 0 else 0
+            'categoria': k, 'toneladas': round(v['kg'] / 1000, 2), 'unidades': v['unid'],
+            'peso_promedio_kg': round(v['kg'] / v['unid_con_peso'], 3) if v['unid_con_peso'] > 0 else 0,
+            'peso_min_kg': round(min(v['pesos']), 3) if v['pesos'] else 0,
+            'peso_max_kg': round(max(v['pesos']), 3) if v['pesos'] else 0,
+            'unid_sin_peso': v['unid'] - v['unid_con_peso'],
         } for k, v in agg_ing_cat.items()],
         key=lambda x: x['toneladas'], reverse=True
     )
+    unid_ingresos_compras_con_peso = sum(r['unidades'] - r['unid_sin_peso'] for r in ingresos_por_categoria)
+    peso_promedio_ingresos_kg = round(kg(entradas_compras) / unid_ingresos_compras_con_peso, 3) if unid_ingresos_compras_con_peso else 0
 
     return dict(
         empresa=empresa,
@@ -11774,10 +11906,17 @@ def _construir_ctx_dashboard_ton(empresa, request):
         toneladas_hoy=toneladas_hoy, toneladas_mes_actual=toneladas_mes_actual,
         unidades_periodo=unidades_periodo, movimientos_periodo=movimientos_periodo,
         peso_promedio_mov_kg=peso_promedio_mov_kg,
-        labels_meses=labels_meses, data_meses_ton=data_meses_ton,
+        labels_meses=labels_meses, data_meses_ton=data_meses_ton, meses_tabla=meses_tabla,
         labels_dias=labels_dias, data_dias_ton=data_dias_ton, dias_iso=dias_iso,
+        resumen_30d=resumen_30d, detalle_diario=detalle_diario,
         top_productos_mes=top_productos_mes, top_productos_3m=top_productos_3m,
-        top_clientes=top_clientes,
+        top_productos_sel=top_productos_sel, top_sel_total_ton=top_sel_total_ton,
+        top_sel_total_unid=top_sel_total_unid,
+        mes_top=mes_top, mes_top_label=mes_top_label, mes_top_es_actual=mes_top_es_actual,
+        opciones_mes_top=opciones_mes_top,
+        top_clientes=top_clientes, clientes_todos=clientes_todos,
+        ventas_sin_peso_movs=ventas_sin_peso_movs, ventas_sin_peso_unid=ventas_sin_peso_unid,
+        peso_promedio_ingresos_kg=peso_promedio_ingresos_kg,
         categoria_labels=categoria_labels, categoria_data=categoria_data, categoria_pct=categoria_pct,
         ultimas_ventas=ultimas_ventas,
         ton_ingresos_total=ton_ingresos_total, unid_ingresos_total=unid_ingresos_total,
@@ -11853,13 +11992,22 @@ def _grafico_linea_area(labels, series, ancho=7.4, alto=2.5):
                  markerfacecolor=s['color'], markeredgecolor='white', markeredgewidth=0.9,
                  label=s['label'], zorder=3)
         ax.fill_between(x, s['valores'], color=s['color'], alpha=0.14, zorder=2)
-        if len(series) == 1:
-            for xi, v in zip(x, s['valores']):
-                ax.annotate(f'{v:.2f} t', (xi, v), textcoords="offset points", xytext=(0, 8),
-                            ha='center', fontsize=7.8, color='#444444')
+    # Etiqueta numérica en CADA punto (también en el comparativo de 2 series, para no tener que
+    # estimar el valor a ojo). Con 2 series, la mayor va arriba del punto y la menor debajo.
+    for xi in x:
+        orden = sorted(range(len(series)), key=lambda k: series[k]['valores'][xi], reverse=True)
+        for pos, k in enumerate(orden):
+            v = series[k]['valores'][xi]
+            if v <= 0:
+                continue  # sin venta: no se rotula (evita "0.00" encimados sobre el eje)
+            arriba = (pos == 0) or len(series) == 1
+            ax.annotate(f'{v:.2f}', (xi, v), textcoords="offset points", xytext=(0, 7 if arriba else -12),
+                        ha='center', fontsize=7.3, fontweight='bold',
+                        color=(series[k]['color'] if len(series) > 1 else '#444444'), zorder=4)
     ax.set_xticks(x)
     ax.set_xticklabels(labels, fontsize=8.5)
-    ax.set_ylim(bottom=0)
+    ax.set_xlim(-0.35, len(labels) - 0.65)  # margen lateral para que no se corten etiquetas del 1er/último mes
+    ax.set_ylim(bottom=0, top=(max([max(s['valores']) for s in series] + [0]) * 1.22) or 1)
     ax.set_ylabel('Toneladas (t)', fontsize=8.5, color='#555555')
     _grafico_estilo_ejes(ax)
     if len(series) > 1:
@@ -11874,13 +12022,24 @@ def _grafico_barras(labels, valores, color, ancho=9.5, alto=2.5, rotacion=90):
     fig, ax = plt.subplots(figsize=(ancho, alto))
     x = list(range(len(labels)))
     ax.bar(x, valores, color=color, width=0.7, zorder=3)
+    _etiquetar_barras(ax, x, valores)
     ax.set_xticks(x)
     ax.set_xticklabels(labels, fontsize=6.5, rotation=rotacion)
     ax.set_ylabel('Toneladas (t)', fontsize=8.5, color='#555555')
-    ax.set_ylim(bottom=0)
     _grafico_estilo_ejes(ax)
     fig.tight_layout()
     return _fig_a_datauri(fig)
+
+
+def _etiquetar_barras(ax, x, totales):
+    """Escribe el valor (t) encima de cada barra con venta (> 0), en vertical para que quepa en
+    30 barras, y deja aire arriba para que la etiqueta de la barra más alta no se corte."""
+    tope = max(totales) if totales else 0
+    for xi, v in zip(x, totales):
+        if v > 0:
+            ax.annotate(f'{v:.2f}', (xi, v), textcoords="offset points", xytext=(0, 3),
+                        ha='center', va='bottom', rotation=90, fontsize=6.3, color='#333333', zorder=4)
+    ax.set_ylim(bottom=0, top=(tope * 1.3) or 1)
 
 
 def _grafico_barras_apiladas(labels, series, ancho=10.2, alto=2.7, rotacion=90):
@@ -11891,17 +12050,17 @@ def _grafico_barras_apiladas(labels, series, ancho=10.2, alto=2.7, rotacion=90):
     for s in series:
         ax.bar(x, s['valores'], bottom=base, color=s['color'], width=0.7, label=s['label'], zorder=3)
         base = [b + v for b, v in zip(base, s['valores'])]
+    _etiquetar_barras(ax, x, base)  # total del día encima de cada barra apilada
     ax.set_xticks(x)
     ax.set_xticklabels(labels, fontsize=6.5, rotation=rotacion)
     ax.set_ylabel('Toneladas (t)', fontsize=8.5, color='#555555')
-    ax.set_ylim(bottom=0)
     _grafico_estilo_ejes(ax)
     ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.22), ncol=len(series), frameon=False, fontsize=9)
     fig.tight_layout()
     return _fig_a_datauri(fig)
 
 
-def _grafico_donut(labels, valores, colores, ancho=3.6, alto=3.0):
+def _grafico_donut(labels, valores, colores, ancho=3.6, alto=3.0, con_leyenda=True):
     """Gráfico de dona (como el 'Mix por Familia' / 'Participación' de pantalla), con su propia
     leyenda al costado (nombre + valor + %), ya que un PDF no tiene tooltip al pasar el mouse."""
     fig, ax = plt.subplots(figsize=(ancho, alto))
@@ -11913,8 +12072,16 @@ def _grafico_donut(labels, valores, colores, ancho=3.6, alto=3.0):
     wedges, _ = ax.pie(valores, colors=colores, startangle=90, counterclock=False,
                         wedgeprops=dict(width=0.38, edgecolor='white', linewidth=1.6))
     ax.set(aspect='equal')
-    etiquetas = [f'{l}  {v:.2f} t ({v / total * 100:.1f}%)' for l, v in zip(labels, valores)]
-    ax.legend(wedges, etiquetas, loc='center left', bbox_to_anchor=(1.05, 0.5), fontsize=8.3, frameon=False)
+    if con_leyenda:
+        etiquetas = [f'{l}  {v:.2f} t ({v / total * 100:.1f}%)' for l, v in zip(labels, valores)]
+        ax.legend(wedges, etiquetas, loc='center left', bbox_to_anchor=(1.05, 0.5), fontsize=8.3, frameon=False)
+    else:
+        # Sin leyenda (la tabla de al lado ya trae nombre, t y %): el % va dentro de cada tajada grande
+        for w, v in zip(wedges, valores):
+            if v / total >= 0.08:
+                ang = math.radians((w.theta2 + w.theta1) / 2)
+                ax.text(0.81 * math.cos(ang), 0.81 * math.sin(ang), f'{v / total * 100:.0f}%', ha='center', va='center',
+                        fontsize=8, color='white', fontweight='bold')
     fig.tight_layout()
     return _fig_a_datauri(fig)
 
@@ -11937,9 +12104,10 @@ def _combinar_ctx_dashboard_general(ctx_a, ctx_i):
     else:
         pct_anclajes = pct_importbolts = 0
 
-    # --- Top clientes/destinos combinados (mezcla los top-10 de cada empresa y re-ordena) ---
+    # --- Top clientes/destinos combinados (mezcla la lista COMPLETA de cada empresa y re-ordena;
+    #     antes se mezclaban solo los top-10, y un cliente 11° en una empresa se perdía) ---
     combinados_cliente = {}
-    for lst, emp in [(ctx_a['top_clientes'], 'Anclajes'), (ctx_i['top_clientes'], 'ImportBolts')]:
+    for lst, emp in [(ctx_a['clientes_todos'], 'Anclajes'), (ctx_i['clientes_todos'], 'ImportBolts')]:
         for c in lst:
             reg = combinados_cliente.setdefault(c['nombre'], {'nombre': c['nombre'], 'toneladas': 0.0, 'unidades': 0, 'movimientos': 0, 'empresas': set()})
             reg['toneladas'] += c['toneladas']
@@ -11951,13 +12119,18 @@ def _combinar_ctx_dashboard_general(ctx_a, ctx_i):
         c['toneladas'] = round(c['toneladas'], 2)
         c['empresas'] = ' + '.join(sorted(c['empresas']))
 
-    # --- Top productos combinados (top del mes actual de cada empresa) ---
+    # --- Top productos combinados (mes elegido en el selector "mes_top", ambas empresas) ---
+    top_sel_total_ton_general = round(ctx_a['top_sel_total_ton'] + ctx_i['top_sel_total_ton'], 2)
+    top_sel_total_unid_general = ctx_a['top_sel_total_unid'] + ctx_i['top_sel_total_unid']
     productos_general = []
-    for p in ctx_a['top_productos_mes']:
+    for p in ctx_a['top_productos_sel']:
         productos_general.append({**p, 'empresa': 'Anclajes'})
-    for p in ctx_i['top_productos_mes']:
+    for p in ctx_i['top_productos_sel']:
         productos_general.append({**p, 'empresa': 'ImportBolts'})
     productos_general = sorted(productos_general, key=lambda x: x['ton'], reverse=True)[:10]
+    for p in productos_general:
+        # % sobre el total combinado del mes elegido (no sobre el de su empresa)
+        p['pct'] = round((p['ton'] / top_sel_total_ton_general) * 100, 1) if top_sel_total_ton_general > 0 else 0
 
     # --- Ingresos por categoría combinados (ambas empresas, etiquetados) ---
     ingresos_general = []
@@ -11966,8 +12139,51 @@ def _combinar_ctx_dashboard_general(ctx_a, ctx_i):
     for r in ctx_i['ingresos_por_categoria']:
         ingresos_general.append({**r, 'empresa': 'ImportBolts'})
     ingresos_general = sorted(ingresos_general, key=lambda x: x['toneladas'], reverse=True)[:12]
+    unid_con_peso_general = sum(r['unidades'] - r['unid_sin_peso'] for r in ctx_a['ingresos_por_categoria'] + ctx_i['ingresos_por_categoria'])
+    peso_promedio_ingresos_general_kg = round(ton_ingresos_compras_total * 1000 / unid_con_peso_general, 3) if unid_con_peso_general else 0
+
+    # --- Evolución mensual comparativa: tabla numérica (Anclajes / ImportBolts / Total / Var.) ---
+    meses_general = []
+    for i, (ma, mi) in enumerate(zip(ctx_a['meses_tabla'], ctx_i['meses_tabla'])):
+        total = round(ma['ton'] + mi['ton'], 2)
+        prev_total = round(ctx_a['meses_tabla'][i - 1]['ton'] + ctx_i['meses_tabla'][i - 1]['ton'], 2) if i > 0 else None
+        meses_general.append({
+            'label': ma['label'], 'ton_a': ma['ton'], 'ton_i': mi['ton'], 'total': total,
+            'unid': ma['unid'] + mi['unid'], 'movs': ma['movs'] + mi['movs'],
+            'var_pct': _variacion_pct(total, prev_total), 'en_curso': ma['en_curso'],
+        })
+
+    # --- Resumen de los 30 días del gráfico de barras (total combinado + por empresa) ---
+    data_dias_total = [round(a + b, 3) for a, b in zip(ctx_a['data_dias_ton'], ctx_i['data_dias_ton'])]
+    resumen_30d_general = _resumen_serie_diaria(ctx_a['labels_dias'], data_dias_total)
+
+    # --- Anexo: detalle diario del PERÍODO FILTRADO, ambas empresas (solo días con ventas) ---
+    por_fecha = {}
+    for lst, clave in [(ctx_a['detalle_diario'], 'a'), (ctx_i['detalle_diario'], 'i')]:
+        for d in lst:
+            reg = por_fecha.setdefault(d['fecha'], {'fecha': d['fecha'], 'ton_a': 0.0, 'ton_i': 0.0, 'unid': 0, 'movs': 0})
+            reg['ton_' + clave] += d['ton']
+            reg['unid'] += d['unid']
+            reg['movs'] += d['movs']
+    detalle_diario_general = []
+    for f in sorted(por_fecha):
+        r = por_fecha[f]
+        r['ton_a'] = round(r['ton_a'], 3)
+        r['ton_i'] = round(r['ton_i'], 3)
+        r['total'] = round(r['ton_a'] + r['ton_i'], 3)
+        detalle_diario_general.append(r)
 
     return dict(
+        top_sel_total_ton_general=top_sel_total_ton_general,
+        top_sel_total_unid_general=top_sel_total_unid_general,
+        peso_promedio_ingresos_general_kg=peso_promedio_ingresos_general_kg,
+        meses_general=meses_general,
+        resumen_30d_general=resumen_30d_general,
+        detalle_diario_general=detalle_diario_general,
+        ventas_sin_peso_movs_total=ctx_a['ventas_sin_peso_movs'] + ctx_i['ventas_sin_peso_movs'],
+        ventas_sin_peso_unid_total=ctx_a['ventas_sin_peso_unid'] + ctx_i['ventas_sin_peso_unid'],
+        mes_top=ctx_a['mes_top'], mes_top_label=ctx_a['mes_top_label'],
+        mes_top_es_actual=ctx_a['mes_top_es_actual'], opciones_mes_top=ctx_a['opciones_mes_top'],
         toneladas_periodo_total=toneladas_periodo_total,
         toneladas_hoy_total=toneladas_hoy_total,
         toneladas_mes_total=toneladas_mes_total,
@@ -12036,22 +12252,20 @@ def _pdf_dashboard_empresa(empresa, request):
     tema = dict(_tema_dashboard(empresa))
     tema['logo_path'] = os.path.join(app.root_path, 'static', 'img', tema['logo_file']).replace('\\', '/')
 
+    # Etiquetas de mes para el PDF: el mes en curso se marca con "*" (dato parcial, aún no cierra)
+    labels_meses_pdf = [m['label'] + ('*' if m['en_curso'] else '') for m in ctx['meses_tabla']]
+
     # --- Gráficos reales (matplotlib), los mismos tipos que se ven en pantalla ---
     grafico_meses = _grafico_linea_area(
-        ctx['labels_meses'], [{'label': 'Toneladas', 'valores': ctx['data_meses_ton'], 'color': tema['chart']}])
+        labels_meses_pdf, [{'label': 'Toneladas', 'valores': ctx['data_meses_ton'], 'color': tema['chart']}], alto=2.1)
     grafico_categoria = _grafico_donut(
-        ctx['categoria_labels'], ctx['categoria_data'], COLORES_CATEGORIAS_CHART[:len(ctx['categoria_labels'])])
+        ctx['categoria_labels'], ctx['categoria_data'], COLORES_CATEGORIAS_CHART[:len(ctx['categoria_labels'])],
+        ancho=2.6, alto=2.6, con_leyenda=False)
     grafico_dias = _grafico_barras(ctx['labels_dias'], ctx['data_dias_ton'], tema['chart'])
-
-    # --- Tabla compacta de "Toneladas por Día" en filas de a 5 (6 filas x 5 columnas = 30 días),
-    # como detalle numérico exacto complementario al gráfico de barras ---
-    dias_tabla = list(zip(ctx['labels_dias'], ctx['data_dias_ton']))
-    dias_filas = [dias_tabla[i:i + 5] for i in range(0, len(dias_tabla), 5)]
 
     html_renderizado = render_template(
         'pdf_dashboard_ventas_empresa.html',
         tema=tema, grafico_meses=grafico_meses, grafico_categoria=grafico_categoria, grafico_dias=grafico_dias,
-        dias_filas=dias_filas,
         generado_en=hora_peru(), generado_por=session.get('nombre') or session.get('username', 'Sistema'),
         **ctx
     )
@@ -12086,21 +12300,17 @@ def dashboard_ventas_general_pdf():
     color_anclajes = _tema_dashboard('ANCLAJES')['chart']
     color_importbolts = _tema_dashboard('IMPORTBOLTS')['chart']
 
-    # --- Tabla diaria comparativa (últimos 30 días, ambas empresas) ---
-    dias_general = [
-        {'label': lbl, 'val_a': val_a, 'val_i': val_i, 'total': round(val_a + val_i, 3)}
-        for lbl, val_a, val_i in zip(ctx_a['labels_dias'], ctx_a['data_dias_ton'], ctx_i['data_dias_ton'])
-    ]
+    labels_meses_pdf = [m['label'] + ('*' if m['en_curso'] else '') for m in extra['meses_general']]
 
     # --- Gráficos reales (matplotlib), los mismos tipos que se ven en pantalla ---
     grafico_participacion = _grafico_donut(
         ['Anclajes', 'ImportBolts'], [ctx_a['toneladas_periodo'], ctx_i['toneladas_periodo']],
         [color_anclajes, color_importbolts])
     grafico_meses_general = _grafico_linea_area(
-        ctx_a['labels_meses'], [
+        labels_meses_pdf, [
             {'label': 'Anclajes', 'valores': ctx_a['data_meses_ton'], 'color': color_anclajes},
             {'label': 'ImportBolts', 'valores': ctx_i['data_meses_ton'], 'color': color_importbolts},
-        ])
+        ], alto=2.1)
     grafico_dias_general = _grafico_barras_apiladas(
         ctx_a['labels_dias'], [
             {'label': 'Anclajes', 'valores': ctx_a['data_dias_ton'], 'color': color_anclajes},
@@ -12113,7 +12323,7 @@ def dashboard_ventas_general_pdf():
         anclajes=ctx_a, importbolts=ctx_i,
         logo_anclajes_path=logo_anclajes_path, logo_importbolts_path=logo_importbolts_path,
         grafico_participacion=grafico_participacion, grafico_meses_general=grafico_meses_general,
-        grafico_dias_general=grafico_dias_general, dias_general=dias_general,
+        grafico_dias_general=grafico_dias_general,
         generado_en=hora_peru(), generado_por=session.get('nombre') or session.get('username', 'Sistema'),
         **extra,
     )

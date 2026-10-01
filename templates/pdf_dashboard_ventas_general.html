@@ -81,6 +81,7 @@
     .tabla-datos td { padding: 3px 6px; font-size: 7.8pt; border-bottom: 1px solid #eeeeee; }
     .tabla-datos tfoot td { font-weight: bold; background-color: #eef1f4; border-top: 1.5px solid #ccc; }
     .num { text-align: right; white-space: nowrap; }
+    .tabla-datos th.num { text-align: right; }
     .sin-datos { text-align: center; color: #999999; padding: 10px; font-style: italic; }
 
     /* --- GRÁFICOS REALES (imágenes generadas con matplotlib, no divs ni tablas simuladas) --- */
@@ -94,6 +95,20 @@
     .fila-dos-col > td { width: 50%; padding-right: 10px; vertical-align: top; }
     .fila-dos-col > td.ultima { padding-right: 0; padding-left: 10px; }
 
+    .tabla-mini { width: 100%; margin-top: 4px; }
+    .tabla-mini th { background-color: #eef1f4; color: #333333; font-size: 6.8pt; text-transform: uppercase; padding: 2px 4px; text-align: right; border-bottom: 1px solid #cfd4da; }
+    .tabla-mini th.izq, .tabla-mini td.izq { text-align: left; }
+    .tabla-mini td { font-size: 7.3pt; padding: 2px 4px; text-align: right; border-bottom: 1px solid #f0f0f0; white-space: nowrap; }
+    .tabla-mini tr.parcial td { color: #777777; font-style: italic; }
+    .sube { color: #198754; font-weight: bold; }
+    .baja { color: #dc3545; font-weight: bold; }
+    .franja-resumen { width: 100%; margin-top: 4px; }
+    .franja-resumen td { border: 1px solid #e2e5e9; background-color: #fafbfc; padding: 4px 6px; width: 16.66%; }
+    .fr-label { font-size: 6.5pt; color: #666666; text-transform: uppercase; font-weight: bold; }
+    .fr-valor { font-size: 9.5pt; font-weight: bold; color: #0F172A; }
+    .fr-sub { font-size: 6.5pt; color: #777777; }
+    .alerta-datos { background-color: #fff3cd; border: 1px solid #ffe69c; color: #664d03; padding: 5px 9px; font-size: 7.3pt; margin-bottom: 8px; }
+    .titulo-anexo { font-size: 12pt; font-weight: bold; color: #0F172A; border-bottom: 2px solid #0F172A; padding-bottom: 3px; margin-bottom: 4px; }
     .pie-pagina { font-size: 6.8pt; color: #999999; text-align: center; margin-top: 12px; }
 </style>
 </head>
@@ -133,6 +148,14 @@
     <span class="tag-fijo">Ventana fija</span> = usa una ventana de tiempo fija y <b>no</b> cambia con el período filtrado.
 </div>
 
+{% if ventas_sin_peso_movs_total > 0 %}
+<div class="alerta-datos">
+    <b>Atención — calidad de datos:</b> {{ ventas_sin_peso_movs_total }} línea(s) de venta del período
+    ({{ "{:,d}".format(ventas_sin_peso_unid_total) }} unid.) son de productos <b>sin peso nominal</b> en el inventario:
+    cuentan en Unidades pero suman 0 t, por lo que las toneladas del reporte están subestimadas. Corrige el peso en el inventario.
+</div>
+{% endif %}
+
 <!-- KPIs -->
 <div class="titulo-seccion">Indicadores Principales (ambas empresas)</div>
 <table class="tabla-kpi">
@@ -155,7 +178,7 @@
             <div class="caja-kpi">
                 <div class="kpi-label">Ton. Período <span class="tag-filtro">Filtro</span></div>
                 <div class="kpi-valor">{{ "%.2f"|format(toneladas_periodo_total) }} t</div>
-                <div class="kpi-sub">ver detalle abajo</div>
+                <div class="kpi-sub">{{ fecha_inicio }} a {{ fecha_fin }}</div>
             </div>
         </td>
         <td>
@@ -184,111 +207,150 @@
 
 <!-- PARTICIPACIÓN + EVOLUCIÓN MENSUAL, lado a lado -->
 <table class="fila-dos-col"><tr>
-    <td>
+    <td style="width:36%;">
         <div class="titulo-seccion">Participación por Toneladas <span class="tag-filtro">Según filtro</span></div>
-        <div class="nota-explicativa">Compara las toneladas de cada empresa dentro del rango filtrado.</div>
+        <div class="nota-explicativa">Compara las toneladas vendidas de cada empresa dentro del rango filtrado.</div>
         <div class="grafico-wrap"><img class="grafico-img" src="{{ grafico_participacion }}" style="max-height:140px;"></div>
         <div class="grafico-leyenda">
             <span class="chip-anclajes">Anclajes</span> {{ "%.2f"|format(anclajes.toneladas_periodo) }} t ({{ pct_anclajes }}%) &nbsp;·&nbsp;
-            <span class="chip-importbolts">ImportBolts</span> {{ "%.2f"|format(importbolts.toneladas_periodo) }} t ({{ pct_importbolts }}%)
+            <span class="chip-importbolts">ImportBolts</span> {{ "%.2f"|format(importbolts.toneladas_periodo) }} t ({{ pct_importbolts }}%)<br>
+            Total del período: <b>{{ "%.2f"|format(toneladas_periodo_total) }} t</b>
         </div>
     </td>
-    <td class="ultima">
+    <td class="ultima" style="width:64%;">
         <div class="titulo-seccion">Evolución Mensual Comparativa — 6 Meses <span class="tag-fijo">Ventana fija</span></div>
-        <div class="nota-explicativa">Toneladas de cada mes calendario, por empresa. No cambia con el filtro de fecha.</div>
+        <div class="nota-explicativa">Toneladas vendidas en cada mes calendario, por empresa. No cambia con el filtro de fecha.</div>
         <div class="grafico-wrap"><img class="grafico-img" src="{{ grafico_meses_general }}"></div>
+        <table class="tabla-mini">
+            <thead><tr>
+                <th class="izq">Toneladas</th>
+                {% for m in meses_general %}<th>{{ m.label }}{% if m.en_curso %}*{% endif %}</th>{% endfor %}
+                <th>Total 6 m</th>
+            </tr></thead>
+            <tbody>
+                <tr><td class="izq">Anclajes</td>{% for m in meses_general %}<td>{{ "%.2f"|format(m.ton_a) }}</td>{% endfor %}<td><b>{{ "%.2f"|format(meses_general|sum(attribute='ton_a')) }}</b></td></tr>
+                <tr><td class="izq">ImportBolts</td>{% for m in meses_general %}<td>{{ "%.2f"|format(m.ton_i) }}</td>{% endfor %}<td><b>{{ "%.2f"|format(meses_general|sum(attribute='ton_i')) }}</b></td></tr>
+                <tr><td class="izq"><b>Total</b></td>{% for m in meses_general %}<td><b>{{ "%.2f"|format(m.total) }}</b></td>{% endfor %}<td><b>{{ "%.2f"|format(meses_general|sum(attribute='total')) }}</b></td></tr>
+                <tr><td class="izq">Unidades</td>{% for m in meses_general %}<td>{{ "{:,d}".format(m.unid) }}</td>{% endfor %}<td>{{ "{:,d}".format(meses_general|sum(attribute='unid')) }}</td></tr>
+                <tr><td class="izq">Var. vs mes ant.</td>{% for m in meses_general %}<td>{% if m.var_pct is none %}—{% elif m.en_curso %}<i>parcial</i>{% else %}<span class="{{ 'sube' if m.var_pct >= 0 else 'baja' }}">{{ "%+.1f"|format(m.var_pct) }}%</span>{% endif %}</td>{% endfor %}<td></td></tr>
+            </tbody>
+        </table>
+        <div class="nota-explicativa" style="margin-top:3px;">Valores en toneladas (t). * Mes en curso: dato parcial (del día 1 a hoy), por eso no se compara contra el mes anterior.</div>
     </td>
 </tr></table>
 
 <!-- TONELADAS POR DÍA COMPARATIVO -->
+<div style="page-break-inside: avoid;">
 <div class="titulo-seccion">Toneladas Vendidas por Día — Últimos 30 Días <span class="tag-fijo">Ventana fija</span></div>
-<div class="nota-explicativa">Barras apiladas: cada barra es el total del día, dividido entre Anclajes (abajo) e ImportBolts (arriba). No cambia con el filtro de fecha.</div>
+<div class="nota-explicativa">Barras apiladas: cada barra es el total vendido del día (número encima), dividido entre Anclajes (abajo) e ImportBolts (arriba). No cambia con el filtro de fecha.</div>
 <div class="grafico-wrap"><img class="grafico-img" src="{{ grafico_dias_general }}"></div>
+{% set r30 = resumen_30d_general %}
+<table class="franja-resumen"><tr>
+    <td>
+        <div class="fr-label">Total 30 días</div>
+        <div class="fr-valor">{{ "%.2f"|format(r30.total) }} t</div>
+        <div class="fr-sub">Anc. {{ "%.2f"|format(anclajes.resumen_30d.total) }} t · IB {{ "%.2f"|format(importbolts.resumen_30d.total) }} t</div>
+    </td>
+    <td>
+        <div class="fr-label">Días con venta</div>
+        <div class="fr-valor">{{ r30.dias_con_venta }} de {{ r30.dias }}</div>
+        <div class="fr-sub">Anc. {{ anclajes.resumen_30d.dias_con_venta }} · IB {{ importbolts.resumen_30d.dias_con_venta }}</div>
+    </td>
+    <td>
+        <div class="fr-label">Prom. por día con venta</div>
+        <div class="fr-valor">{{ "%.2f"|format(r30.prom_dia_con_venta) }} t</div>
+        <div class="fr-sub">prom. calendario: {{ "%.2f"|format(r30.prom_diario) }} t/día</div>
+    </td>
+    <td>
+        <div class="fr-label">Día pico</div>
+        <div class="fr-valor">{{ r30.pico_label }}</div>
+        <div class="fr-sub">{{ "%.2f"|format(r30.pico_ton) }} t vendidas</div>
+    </td>
+    <td>
+        <div class="fr-label">Últimos 7 días</div>
+        <div class="fr-valor">{{ "%.2f"|format(r30.ult7) }} t</div>
+        <div class="fr-sub">7 días previos: {{ "%.2f"|format(r30.prev7) }} t{% if r30.var7 is not none %} ({{ "%+.1f"|format(r30.var7) }}%){% endif %}</div>
+    </td>
+</tr></table>
+<table class="tabla-mini">
+    <thead><tr>
+        <th class="izq">Tramo (7 días)</th>
+        {% for b in r30.bloques %}<th>{{ b.desde }} – {{ b.hasta }}</th>{% endfor %}
+    </tr></thead>
+    <tbody>
+        <tr><td class="izq">Anclajes</td>{% for b in anclajes.resumen_30d.bloques %}<td>{{ "%.2f"|format(b.ton) }} t</td>{% endfor %}</tr>
+        <tr><td class="izq">ImportBolts</td>{% for b in importbolts.resumen_30d.bloques %}<td>{{ "%.2f"|format(b.ton) }} t</td>{% endfor %}</tr>
+        <tr><td class="izq"><b>Total</b></td>{% for b in r30.bloques %}<td><b>{{ "%.2f"|format(b.ton) }} t</b></td>{% endfor %}</tr>
+    </tbody>
+</table>
+</div>
 
 <!-- RESUMEN COMPARATIVO -->
 <div style="page-break-inside: avoid;">
 <div class="titulo-seccion">Resumen Comparativo por Empresa (período) <span class="tag-filtro">Según filtro</span></div>
 <table class="tabla-datos">
-    <thead><tr><th>Empresa</th><th class="num">Toneladas</th><th class="num">Unidades</th><th class="num">Movs.</th><th class="num">Ingresos (Compras)</th><th class="num">Var. vs. período anterior</th></tr></thead>
+    <thead><tr><th>Empresa</th><th class="num">Toneladas vendidas</th><th class="num">Unidades</th><th class="num">Movs.</th><th class="num">Kg prom. / mov.</th><th class="num">Ingresos (Compras)</th><th class="num">Var. vs. período anterior</th></tr></thead>
     <tbody>
+        {% for e, chip, nombre in [(anclajes, 'chip-anclajes', 'Anclajes y Pernos SAC'), (importbolts, 'chip-importbolts', 'Import Bolts SAC')] %}
         <tr>
-            <td><span class="chip-anclajes">Anclajes y Pernos SAC</span></td>
-            <td class="num">{{ "%.2f"|format(anclajes.toneladas_periodo) }} t</td>
-            <td class="num">{{ "{:,d}".format(anclajes.unidades_periodo) }}</td>
-            <td class="num">{{ anclajes.movimientos_periodo }}</td>
-            <td class="num">{{ "%.2f"|format(anclajes.ton_ingresos_compras) }} t</td>
-            <td class="num">{{ "▲" if anclajes.delta_toneladas >= 0 else "▼" }} {{ anclajes.delta_toneladas }}%</td>
+            <td><span class="{{ chip }}">{{ nombre }}</span></td>
+            <td class="num">{{ "%.2f"|format(e.toneladas_periodo) }} t</td>
+            <td class="num">{{ "{:,d}".format(e.unidades_periodo) }}</td>
+            <td class="num">{{ e.movimientos_periodo }}</td>
+            <td class="num">{{ "%.1f"|format(e.peso_promedio_mov_kg) }} kg</td>
+            <td class="num">{{ "%.2f"|format(e.ton_ingresos_compras) }} t</td>
+            <td class="num">{{ "▲" if e.delta_toneladas >= 0 else "▼" }} {{ e.delta_toneladas }}%</td>
         </tr>
-        <tr>
-            <td><span class="chip-importbolts">Import Bolts SAC</span></td>
-            <td class="num">{{ "%.2f"|format(importbolts.toneladas_periodo) }} t</td>
-            <td class="num">{{ "{:,d}".format(importbolts.unidades_periodo) }}</td>
-            <td class="num">{{ importbolts.movimientos_periodo }}</td>
-            <td class="num">{{ "%.2f"|format(importbolts.ton_ingresos_compras) }} t</td>
-            <td class="num">{{ "▲" if importbolts.delta_toneladas >= 0 else "▼" }} {{ importbolts.delta_toneladas }}%</td>
-        </tr>
+        {% endfor %}
     </tbody>
+    <tfoot>
+        <tr>
+            <td>Total</td>
+            <td class="num">{{ "%.2f"|format(toneladas_periodo_total) }} t</td>
+            <td class="num">{{ "{:,d}".format(unidades_periodo_total) }}</td>
+            <td class="num">{{ movimientos_periodo_total }}</td>
+            <td class="num">{{ "%.1f"|format((toneladas_periodo_total * 1000 / movimientos_periodo_total) if movimientos_periodo_total else 0) }} kg</td>
+            <td class="num">{{ "%.2f"|format(ton_ingresos_compras_total) }} t</td>
+            <td class="num"></td>
+        </tr>
+    </tfoot>
 </table>
-</div>
-
-<!-- DETALLE DIARIO EXACTO (en 2 tablas lado a lado -- una sola tabla angosta de 4 columnas
-     estirada a todo el ancho de la hoja horizontal se veía con espacios en blanco enormes) -->
-<div style="page-break-inside: avoid;">
-<div class="subtitulo-mini" style="font-size:8.3pt;font-weight:bold;color:#444444;margin-top:8px;margin-bottom:4px;">Detalle numérico exacto por día (últimos 30 días):</div>
-<table class="fila-dos-col"><tr>
-    <td>
-        <table class="tabla-datos">
-            <thead><tr><th>Día</th><th class="num">Anclajes</th><th class="num">ImportBolts</th><th class="num">Total</th></tr></thead>
-            <tbody>
-                {% for d in dias_general[:15] %}
-                <tr><td>{{ d.label }}</td><td class="num">{{ "%.3f"|format(d.val_a) }} t</td><td class="num">{{ "%.3f"|format(d.val_i) }} t</td><td class="num">{{ "%.3f"|format(d.total) }} t</td></tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </td>
-    <td class="ultima">
-        <table class="tabla-datos">
-            <thead><tr><th>Día</th><th class="num">Anclajes</th><th class="num">ImportBolts</th><th class="num">Total</th></tr></thead>
-            <tbody>
-                {% for d in dias_general[15:] %}
-                <tr><td>{{ d.label }}</td><td class="num">{{ "%.3f"|format(d.val_a) }} t</td><td class="num">{{ "%.3f"|format(d.val_i) }} t</td><td class="num">{{ "%.3f"|format(d.total) }} t</td></tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </td>
-</tr></table>
 </div>
 
 <!-- TOP PRODUCTOS + TOP CLIENTES, lado a lado -->
 <div style="page-break-inside: avoid;">
 <table class="fila-dos-col"><tr>
     <td>
-        <div class="titulo-seccion">Top Productos del Mes (ambas empresas) <span class="tag-fijo">Ventana fija</span></div>
+        <div class="titulo-seccion">Top Productos (ambas empresas) {% if mes_top == 'periodo' %}<span class="tag-filtro">Según filtro</span>{% else %}<span class="tag-fijo">Mes elegido</span>{% endif %}</div>
+        <div class="nota-explicativa">{{ mes_top_label }} &middot; total vendido: <b>{{ "%.2f"|format(top_sel_total_ton_general) }} t</b> ({{ "{:,d}".format(top_sel_total_unid_general) }} unid.). El % es sobre ese total.</div>
         <table class="tabla-datos">
-            <thead><tr><th>Producto</th><th>Empresa</th><th class="num">Ton.</th><th class="num">Unid.</th></tr></thead>
+            <thead><tr><th>#</th><th>Producto</th><th>Empresa</th><th class="num">Ton.</th><th class="num">%</th><th class="num">Unid.</th></tr></thead>
             <tbody>
                 {% for p in productos_general %}
                 <tr>
+                    <td>{{ loop.index }}</td>
                     <td>{{ p.nombre }}</td>
                     <td>{% if p.empresa == 'Anclajes' %}<span class="chip-anclajes">Anclajes</span>{% else %}<span class="chip-importbolts">ImportBolts</span>{% endif %}</td>
                     <td class="num">{{ "%.2f"|format(p.ton) }} t</td>
+                    <td class="num">{{ p.pct }}%</td>
                     <td class="num">{{ "{:,d}".format(p.unid) }}</td>
                 </tr>
                 {% else %}
-                <tr><td colspan="4" class="sin-datos">Sin ventas registradas este mes.</td></tr>
+                <tr><td colspan="6" class="sin-datos">Sin ventas registradas en {{ mes_top_label }}.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
     </td>
     <td class="ultima">
         <div class="titulo-seccion">Top Clientes por Toneladas (ambas empresas) <span class="tag-filtro">Según filtro</span></div>
+        <div class="nota-explicativa">Clientes/destinos con más toneladas compradas en el período filtrado.</div>
         <table class="tabla-datos">
-            <thead><tr><th>Cliente / Destino</th><th>Empresa(s)</th><th class="num">Ton.</th><th class="num">Unid.</th></tr></thead>
+            <thead><tr><th>#</th><th>Cliente / Destino</th><th>Empresa(s)</th><th class="num">Ton.</th><th class="num">Unid.</th></tr></thead>
             <tbody>
                 {% for c in top_clientes_general %}
-                <tr><td>{{ c.nombre }}</td><td>{{ c.empresas }}</td><td class="num">{{ "%.2f"|format(c.toneladas) }} t</td><td class="num">{{ "{:,d}".format(c.unidades) }}</td></tr>
+                <tr><td>{{ loop.index }}</td><td>{{ c.nombre }}</td><td>{{ c.empresas }}</td><td class="num">{{ "%.2f"|format(c.toneladas) }} t</td><td class="num">{{ "{:,d}".format(c.unidades) }}</td></tr>
                 {% else %}
-                <tr><td colspan="4" class="sin-datos">Sin ventas registradas en el período.</td></tr>
+                <tr><td colspan="5" class="sin-datos">Sin ventas registradas en el período.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -299,29 +361,73 @@
 <!-- INGRESOS COMBINADOS -->
 <div style="page-break-inside: avoid;">
 <div class="titulo-seccion-verde">Nuevos Ingresos por Familia (ambas empresas, período) <span class="tag-filtro">Según filtro</span></div>
-<div class="nota-explicativa">Solo se cuentan las <b>Entradas</b> del Kardex cuyo motivo contiene la palabra "Compra" (no incluye devoluciones ni traslados).</div>
+<div class="nota-explicativa">
+    Solo se cuentan las <b>Entradas</b> del Kardex cuyo motivo contiene la palabra "Compra" (no incluye devoluciones ni traslados).
+    <b>Toneladas</b> = suma de (cantidad &times; peso nominal del producto en el inventario).
+    <b>Peso unit. prom.</b> = esas toneladas &times; 1000 &divide; unidades con peso, es decir, el promedio del peso nominal del inventario
+    ponderado por las unidades que ingresaron. <b>Rango</b> = peso nominal del producto más liviano y más pesado de la familia.
+</div>
 <table class="tabla-datos verde">
-    <thead><tr><th>Familia</th><th>Empresa</th><th class="num">Toneladas</th><th class="num">Unidades</th><th class="num">Peso Nom. Prom. (Kg)</th></tr></thead>
+    <thead><tr><th>Familia</th><th>Empresa</th><th class="num">Toneladas</th><th class="num">Unidades</th><th class="num">Peso unit. prom. (kg/u)</th><th class="num">Rango (kg/u)</th></tr></thead>
     <tbody>
         {% for r in ingresos_general %}
         <tr>
-            <td>{{ r.categoria }}</td>
+            <td>{{ r.categoria }}{% if r.unid_sin_peso %} <span style="color:#b02a37;">({{ "{:,d}".format(r.unid_sin_peso) }} u. sin peso)</span>{% endif %}</td>
             <td>{% if r.empresa == 'Anclajes' %}<span class="chip-anclajes">Anclajes</span>{% else %}<span class="chip-importbolts">ImportBolts</span>{% endif %}</td>
             <td class="num">{{ "%.2f"|format(r.toneladas) }} t</td>
             <td class="num">{{ "{:,d}".format(r.unidades) }}</td>
             <td class="num">{{ "%.3f"|format(r.peso_promedio_kg) }}</td>
+            <td class="num">{% if r.peso_min_kg == r.peso_max_kg %}{{ "%.3f"|format(r.peso_min_kg) }}{% else %}{{ "%.3f"|format(r.peso_min_kg) }} – {{ "%.3f"|format(r.peso_max_kg) }}{% endif %}</td>
         </tr>
         {% else %}
-        <tr><td colspan="5" class="sin-datos">Sin ingresos por compra registrados en el período.</td></tr>
+        <tr><td colspan="6" class="sin-datos">Sin ingresos por compra registrados en el período.</td></tr>
         {% endfor %}
     </tbody>
     {% if ingresos_general %}
     <tfoot>
-        <tr><td colspan="2">Total (ambas empresas)</td><td class="num">{{ "%.2f"|format(ton_ingresos_compras_total) }} t</td><td class="num">{{ "{:,d}".format(unid_ingresos_compras_total) }}</td><td class="num">—</td></tr>
+        <tr><td colspan="2">Total (ambas empresas)</td><td class="num">{{ "%.2f"|format(ton_ingresos_compras_total) }} t</td><td class="num">{{ "{:,d}".format(unid_ingresos_compras_total) }}</td><td class="num">{{ "%.3f"|format(peso_promedio_ingresos_general_kg) }}</td><td class="num"></td></tr>
     </tfoot>
     {% endif %}
 </table>
 </div>
+
+<!-- ANEXO: DETALLE DIARIO DEL PERÍODO FILTRADO -->
+{% set dias_sem = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'] %}
+<div class="titulo-anexo" style="page-break-before: always;">Anexo — Detalle Diario de Ventas del Período <span class="tag-filtro">Según filtro</span></div>
+<div class="nota-explicativa">
+    Del <b>{{ fecha_inicio }}</b> al <b>{{ fecha_fin }}</b>. Son <b>VENTAS</b> (Salidas por Venta del Kardex), no compras.
+    Solo se listan los días con al menos una venta ({{ detalle_diario_general|length }} día(s)); los días sin ventas se omiten.
+</div>
+<table class="tabla-datos" repeat="1">
+    <thead><tr><th>Fecha</th><th>Día</th><th class="num">Anclajes</th><th class="num">ImportBolts</th><th class="num">Total</th><th class="num">Unidades</th><th class="num">Movs.</th></tr></thead>
+    <tbody>
+        {% for d in detalle_diario_general %}
+        <tr>
+            <td>{{ d.fecha.strftime('%d/%m/%Y') }}</td>
+            <td>{{ dias_sem[d.fecha.weekday()] }}</td>
+            <td class="num">{{ "%.3f"|format(d.ton_a) }} t</td>
+            <td class="num">{{ "%.3f"|format(d.ton_i) }} t</td>
+            <td class="num"><b>{{ "%.3f"|format(d.total) }} t</b></td>
+            <td class="num">{{ "{:,d}".format(d.unid) }}</td>
+            <td class="num">{{ d.movs }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="sin-datos">Sin ventas registradas en el período.</td></tr>
+        {% endfor %}
+    </tbody>
+    {% if detalle_diario_general %}
+    <tfoot>
+        <tr>
+            <td colspan="2">Total período</td>
+            <td class="num">{{ "%.3f"|format(detalle_diario_general|sum(attribute='ton_a')) }} t</td>
+            <td class="num">{{ "%.3f"|format(detalle_diario_general|sum(attribute='ton_i')) }} t</td>
+            <td class="num">{{ "%.3f"|format(detalle_diario_general|sum(attribute='total')) }} t</td>
+            <td class="num">{{ "{:,d}".format(detalle_diario_general|sum(attribute='unid')) }}</td>
+            <td class="num">{{ detalle_diario_general|sum(attribute='movs') }}</td>
+        </tr>
+    </tfoot>
+    {% endif %}
+</table>
 
 <div class="pie-pagina">Anclajes y Pernos SAC + Import Bolts SAC &middot; Reporte de Ventas generado automáticamente por el sistema ERP &middot; {{ generado_en.strftime('%d/%m/%Y %H:%M') }}</div>
 

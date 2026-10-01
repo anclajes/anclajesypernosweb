@@ -47,10 +47,17 @@
     No todas las tarjetas cambian con el filtro de fecha: haz clic en cualquier tarjeta, gráfico o tabla <i class="bi bi-info-circle text-primary"></i> para ver exactamente cómo se calcula y si usa el filtro o una ventana fija.</span>
 </div>
 
+{% if ventas_sin_peso_movs_total > 0 %}
+<div class="alert alert-warning small py-2 mb-3">
+    <i class="bi bi-exclamation-triangle-fill"></i> <b>Calidad de datos:</b> {{ ventas_sin_peso_movs_total }} línea(s) de venta del período ({{ "{:,d}".format(ventas_sin_peso_unid_total) }} unid.) son de productos <b>sin peso nominal</b> en el inventario: suman 0 t, así que las toneladas están subestimadas.
+</div>
+{% endif %}
+
 <!-- FILTRO DE FECHAS -->
 <div class="card border-0 shadow-sm mb-3">
     <div class="card-body py-2">
         <form method="GET" class="row g-2 align-items-end">
+            <input type="hidden" name="mes_top" value="{{ mes_top }}">
             <div class="col-6 col-md-3">
                 <label class="small fw-bold text-muted mb-1">Desde</label>
                 <input type="date" name="fecha_inicio" class="form-control form-control-sm" value="{{ fecha_inicio }}">
@@ -67,7 +74,7 @@
             </div>
         </form>
         <div class="text-end mt-2">
-            <a href="{{ url_for('dashboard_ventas_general_pdf', fecha_inicio=fecha_inicio, fecha_fin=fecha_fin) }}"
+            <a href="{{ url_for('dashboard_ventas_general_pdf', fecha_inicio=fecha_inicio, fecha_fin=fecha_fin, mes_top=mes_top) }}"
                class="btn btn-sm btn-outline-danger">
                 <i class="bi bi-file-earmark-pdf-fill"></i> Descargar PDF del período filtrado
             </a>
@@ -221,13 +228,23 @@
     <div class="col-12 col-lg-6">
         <div class="card border-0 shadow-sm h-100">
             <div class="card-header bg-white fw-bold card-header-info">
-                <span><i class="bi bi-box-seam"></i> Top Productos del Mes (ambas empresas)</span>
-                <button type="button" class="info-btn" onclick="mostrarInfoDato('Top Productos del Mes', true, 'Productos con más toneladas vendidas en el <b>mes calendario en curso</b>, de ambas empresas. Es una <b>ventana fija</b>: no cambia con el filtro de fecha de arriba.')"><i class="bi bi-info-circle"></i></button>
+                <span><i class="bi bi-box-seam"></i> Top Productos (ambas empresas)</span>
+                <span class="d-flex align-items-center gap-1">
+                    <select class="form-select form-select-sm fw-normal" style="width:auto;" onchange="cambiarMesTop(this.value)" title="Elige el mes del ranking (también se usa en el PDF)">
+                        {% for o in opciones_mes_top %}
+                        <option value="{{ o.valor }}" {% if o.valor == mes_top %}selected{% endif %}>{{ o.etiqueta }}</option>
+                        {% endfor %}
+                    </select>
+                    <button type="button" class="info-btn" onclick="mostrarInfoDato('Top Productos', {{ 'false' if mes_top == 'periodo' else 'true' }}, 'Productos con más toneladas vendidas en el <b>mes elegido</b> en el selector (por defecto, el mes en curso), de ambas empresas. Puedes elegir cualquiera de los últimos 12 meses o &quot;Todo el período filtrado&quot;. El <b>%</b> es la participación de cada producto sobre el total vendido en ese mes por ambas empresas. El PDF usa el mismo mes elegido aquí.')"><i class="bi bi-info-circle"></i></button>
+                </span>
+            </div>
+            <div class="px-3 py-1 small text-muted border-bottom">
+                {{ mes_top_label }} &middot; total vendido: <b>{{ "%.2f"|format(top_sel_total_ton_general) }} t</b> ({{ "{:,d}".format(top_sel_total_unid_general) }} unid.)
             </div>
             <div class="card-body p-0 table-responsive" style="max-height:360px;overflow-y:auto;">
                 <table class="table table-hover table-sm align-middle mb-0 small">
                     <thead class="bg-light text-uppercase text-muted sticky-top">
-                        <tr><th class="ps-3">Producto</th><th>Empresa</th><th class="text-end">Toneladas</th><th class="text-end pe-3">Unidades</th></tr>
+                        <tr><th class="ps-3">Producto</th><th>Empresa</th><th class="text-end">Toneladas</th><th class="text-end">%</th><th class="text-end pe-3">Unidades</th></tr>
                     </thead>
                     <tbody>
                         {% for p in productos_general %}
@@ -235,10 +252,11 @@
                             <td class="ps-3 fw-bold" style="white-space:normal;word-break:break-word;min-width:200px;">{{ p.nombre }}</td>
                             <td><span class="badge {% if p.empresa == 'Anclajes' %}bg-anclajes{% else %}bg-importbolts{% endif %}">{{ p.empresa }}</span></td>
                             <td class="text-end fw-bold text-nowrap">{{ "%.2f"|format(p.ton) }} t</td>
-                            <td class="text-end pe-3">{{ p.unid }}</td>
+                            <td class="text-end text-muted">{{ p.pct }}%</td>
+                            <td class="text-end pe-3">{{ "{:,d}".format(p.unid) }}</td>
                         </tr>
                         {% else %}
-                        <tr><td colspan="4" class="text-center text-muted py-4">Sin ventas registradas este mes.</td></tr>
+                        <tr><td colspan="5" class="text-center text-muted py-4">Sin ventas registradas en {{ mes_top_label }}.</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>
@@ -278,24 +296,25 @@
 <div class="card border-0 shadow-sm mb-4">
     <div class="card-header bg-white fw-bold text-success card-header-info">
         <span><i class="bi bi-box-arrow-in-down"></i> Nuevos Ingresos por Familia (ambas empresas, período)</span>
-        <button type="button" class="info-btn" onclick="mostrarInfoDato('Nuevos Ingresos por Familia', false, 'Entradas del Kardex de ambas empresas cuyo motivo contiene la palabra &quot;Compra&quot; (p.ej. &quot;Compra Nacional&quot;, &quot;Compra Importación&quot;) <b>dentro del rango de fechas filtrado</b>, agrupadas por familia de producto. No suma devoluciones, traslados ni otros motivos: solo reposición real de stock por compra.<hr class=\'my-2\'><b>Toneladas</b> = &sum; (cantidad &times; peso nominal) de cada línea.<br><b>Peso Nom. Prom.</b> = peso nominal unitario promedio de esa familia en esa empresa (toneladas &times; 1000 &divide; unidades) — referencial.')"><i class="bi bi-info-circle"></i></button>
+        <button type="button" class="info-btn" onclick="mostrarInfoDato('Nuevos Ingresos por Familia', false, 'Entradas del Kardex de ambas empresas cuyo motivo contiene la palabra &quot;Compra&quot; (p.ej. &quot;Compra Nacional&quot;, &quot;Compra Importación&quot;) <b>dentro del rango de fechas filtrado</b>, agrupadas por familia de producto. No suma devoluciones, traslados ni otros motivos: solo reposición real de stock por compra.<hr class=\'my-2\'><b>Toneladas</b> = &sum; (cantidad &times; peso nominal) de cada línea.<br><b>Peso unit. prom.</b> = toneladas &times; 1000 &divide; unidades: es el <b>peso nominal del inventario</b> de cada producto, promediado y ponderado por las unidades que ingresaron (las unidades de productos sin peso nominal no entran al promedio y se marcan en rojo).<br><b>Rango</b> = peso nominal del producto más liviano y más pesado de esa familia.')"><i class="bi bi-info-circle"></i></button>
     </div>
     <div class="card-body p-0 table-responsive">
         <table class="table table-hover table-sm align-middle mb-0 small">
             <thead class="bg-light text-uppercase text-muted">
-                <tr><th class="ps-3">Familia</th><th>Empresa</th><th class="text-end">Toneladas</th><th class="text-end">Unidades</th><th class="text-end pe-3">Peso Nom. Prom. (Kg)</th></tr>
+                <tr><th class="ps-3">Familia</th><th>Empresa</th><th class="text-end">Toneladas</th><th class="text-end">Unidades</th><th class="text-end">Peso unit. prom. (kg/u)</th><th class="text-end pe-3">Rango (kg/u)</th></tr>
             </thead>
             <tbody>
                 {% for r in ingresos_general %}
                 <tr>
-                    <td class="ps-3 fw-bold">{{ r.categoria }}</td>
+                    <td class="ps-3 fw-bold">{{ r.categoria }}{% if r.unid_sin_peso %} <span class="badge bg-danger-subtle text-danger border" title="Unidades de productos sin peso nominal en el inventario">{{ r.unid_sin_peso }} u. sin peso</span>{% endif %}</td>
                     <td><span class="badge {% if r.empresa == 'Anclajes' %}bg-anclajes{% else %}bg-importbolts{% endif %}">{{ r.empresa }}</span></td>
                     <td class="text-end">{{ "%.2f"|format(r.toneladas) }} t</td>
                     <td class="text-end">{{ "{:,d}".format(r.unidades) }}</td>
-                    <td class="text-end text-muted pe-3">{{ "%.3f"|format(r.peso_promedio_kg) }}</td>
+                    <td class="text-end text-muted">{{ "%.3f"|format(r.peso_promedio_kg) }}</td>
+                    <td class="text-end text-muted pe-3 text-nowrap">{% if r.peso_min_kg == r.peso_max_kg %}{{ "%.3f"|format(r.peso_min_kg) }}{% else %}{{ "%.3f"|format(r.peso_min_kg) }} – {{ "%.3f"|format(r.peso_max_kg) }}{% endif %}</td>
                 </tr>
                 {% else %}
-                <tr><td colspan="5" class="text-center text-muted py-4">Sin ingresos por compra registrados en el período.</td></tr>
+                <tr><td colspan="6" class="text-center text-muted py-4">Sin ingresos por compra registrados en el período.</td></tr>
                 {% endfor %}
             </tbody>
             {% if ingresos_general %}
@@ -304,7 +323,8 @@
                     <td class="ps-3" colspan="2">Total (ambas empresas)</td>
                     <td class="text-end">{{ "%.2f"|format(ton_ingresos_compras_total) }} t</td>
                     <td class="text-end">{{ "{:,d}".format(unid_ingresos_compras_total) }}</td>
-                    <td class="text-end text-muted pe-3">—</td>
+                    <td class="text-end text-muted">{{ "%.3f"|format(peso_promedio_ingresos_general_kg) }}</td>
+                    <td class="pe-3"></td>
                 </tr>
             </tfoot>
             {% endif %}
@@ -331,6 +351,12 @@ function mostrarInfoDato(titulo, esFijo, htmlExplicacion) {
         confirmButtonColor: '#0F172A',
         width: 500
     });
+}
+
+// --- Selector de mes del Top Productos (mantiene el filtro de fechas actual) ---
+function cambiarMesTop(valor) {
+    const params = new URLSearchParams({ fecha_inicio: "{{ fecha_inicio }}", fecha_fin: "{{ fecha_fin }}", mes_top: valor });
+    window.location.href = window.location.pathname + '?' + params.toString();
 }
 
 function irAKardexPorDia(fechaIso, empresa) {
