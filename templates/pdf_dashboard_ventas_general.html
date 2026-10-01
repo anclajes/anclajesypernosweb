@@ -2,9 +2,11 @@
 <head>
 <meta charset="utf-8">
 <style>
+    /* Hoja en HORIZONTAL: con gráficos reales (imágenes) y varias tablas en dos columnas,
+       una hoja vertical A4 se quedaba corta de ancho y todo se veía apretado/cortado. */
     @page {
-        size: A4;
-        margin: 1.5cm 1.2cm 1.7cm 1.2cm;
+        size: A4 landscape;
+        margin: 1.3cm 1.2cm 1.5cm 1.2cm;
     }
     body {
         font-family: Helvetica, Arial, sans-serif;
@@ -45,12 +47,12 @@
     .titulo-seccion {
         font-size: 10.5pt; font-weight: bold; color: #0F172A;
         border-bottom: 1.5px solid #0F172A; padding-bottom: 3px;
-        margin-top: 16px; margin-bottom: 6px;
+        margin-top: 14px; margin-bottom: 6px;
     }
     .titulo-seccion-verde {
         font-size: 10.5pt; font-weight: bold; color: #198754;
         border-bottom: 1.5px solid #198754; padding-bottom: 3px;
-        margin-top: 16px; margin-bottom: 6px;
+        margin-top: 14px; margin-bottom: 6px;
     }
     .nota-explicativa {
         font-size: 7.3pt; color: #666666; font-style: italic; margin-bottom: 8px; line-height: 1.4;
@@ -58,16 +60,16 @@
 
     /* --- KPIs --- */
     .tabla-kpi { width: 100%; margin-bottom: 4px; }
-    .tabla-kpi td { width: 33.33%; padding: 4px; }
+    .tabla-kpi td { width: 16.66%; padding: 4px; }
     .caja-kpi {
         border: 1px solid #e2e5e9; border-left: 3px solid #0F172A;
         background-color: #fafbfc; padding: 7px 9px;
     }
     .caja-kpi.verde { border-left: 3px solid #198754; background-color: #f4faf6; }
-    .kpi-label { font-size: 7pt; color: #666666; text-transform: uppercase; font-weight: bold; }
-    .kpi-valor { font-size: 15pt; font-weight: bold; color: #0F172A; margin-top: 2px; }
+    .kpi-label { font-size: 6.8pt; color: #666666; text-transform: uppercase; font-weight: bold; }
+    .kpi-valor { font-size: 13.5pt; font-weight: bold; color: #0F172A; margin-top: 2px; }
     .kpi-valor.verde { color: #198754; }
-    .kpi-sub { font-size: 7pt; color: #777777; margin-top: 2px; }
+    .kpi-sub { font-size: 6.8pt; color: #777777; margin-top: 2px; }
 
     /* --- TABLAS --- */
     .tabla-datos { width: 100%; margin-bottom: 4px; }
@@ -81,19 +83,18 @@
     .num { text-align: right; white-space: nowrap; }
     .sin-datos { text-align: center; color: #999999; padding: 10px; font-style: italic; }
 
-    /* --- BARRAS --- */
-    /* Nota: las barras se arman con <div> anidados (nunca con una tabla anidada dentro de una
-       celda) -- una tabla anidada con anchos en % le hace calcular a xhtml2pdf/reportlab un
-       ancho disponible negativo cuando el porcentaje sale en 0 (p.ej. una empresa sin ventas ese
-       mes), y eso tumba la generación del PDF entero con un Internal Server Error. */
-    .fila-barra td { padding: 2px 6px; font-size: 7.5pt; border-bottom: 1px solid #f1f1f1; }
-    .barra-etiqueta { width: 62px; font-weight: bold; }
-    .barra-track { background-color: #e9ecef; height: 6px; width: 100%; }
-    .barra-fill-a { background-color: #2456B3; height: 6px; }
-    .barra-fill-i { background-color: #5FA82E; height: 6px; }
-    .barra-doble-valor { width: 150px; text-align: right; font-size: 7pt; }
+    /* --- GRÁFICOS REALES (imágenes generadas con matplotlib, no divs ni tablas simuladas) --- */
+    .grafico-wrap { text-align: center; padding: 4px 0 2px 0; }
+    .grafico-img { max-width: 100%; }
+    .grafico-leyenda {
+        font-size: 7.3pt; color: #555555; line-height: 1.5; padding: 6px 10px;
+        background-color: #fafbfc; border: 1px solid #eeeeee; border-radius: 3px;
+    }
+    .fila-dos-col { width: 100%; }
+    .fila-dos-col > td { width: 50%; padding-right: 10px; vertical-align: top; }
+    .fila-dos-col > td.ultima { padding-right: 0; padding-left: 10px; }
 
-    .pie-pagina { font-size: 6.8pt; color: #999999; text-align: center; margin-top: 14px; }
+    .pie-pagina { font-size: 6.8pt; color: #999999; text-align: center; margin-top: 12px; }
 </style>
 </head>
 <body>
@@ -102,7 +103,7 @@
 
 <table class="tabla-header">
     <tr>
-        <td style="width:58%;">
+        <td style="width:55%;">
             <table style="width:100%;"><tr>
                 <td class="logo-header"><img src="{{ logo_anclajes_path }}" style="width:36px;height:36px;object-fit:cover;border-radius:50%;"></td>
                 <td class="logo-header" style="padding-left:4px;"><img src="{{ logo_importbolts_path }}" style="width:36px;height:36px;object-fit:cover;border-radius:50%;"></td>
@@ -112,7 +113,7 @@
                 </td>
             </tr></table>
         </td>
-        <td style="width:42%;">
+        <td style="width:45%;">
             <div class="reporte-titulo">Reporte de Ventas</div>
             <div class="reporte-meta">
                 Período analizado: <b>{{ fecha_inicio }}</b> al <b>{{ fecha_fin }}</b><br>
@@ -140,94 +141,69 @@
             <div class="caja-kpi">
                 <div class="kpi-label">Ton. Hoy <span class="tag-fijo">Fijo</span></div>
                 <div class="kpi-valor">{{ "%.2f"|format(toneladas_hoy_total) }} t</div>
-                <div class="kpi-sub">vendidas hoy, ambas empresas</div>
+                <div class="kpi-sub">ambas empresas</div>
             </div>
         </td>
         <td>
             <div class="caja-kpi">
                 <div class="kpi-label">Ton. Mes Actual <span class="tag-fijo">Fijo</span></div>
                 <div class="kpi-valor">{{ "%.2f"|format(toneladas_mes_total) }} t</div>
-                <div class="kpi-sub">acumulado del mes en curso</div>
+                <div class="kpi-sub">acum. mes en curso</div>
             </div>
         </td>
         <td>
             <div class="caja-kpi">
                 <div class="kpi-label">Ton. Período <span class="tag-filtro">Filtro</span></div>
                 <div class="kpi-valor">{{ "%.2f"|format(toneladas_periodo_total) }} t</div>
-                <div class="kpi-sub">ver detalle por empresa más abajo</div>
+                <div class="kpi-sub">ver detalle abajo</div>
             </div>
         </td>
-    </tr>
-    <tr>
         <td>
             <div class="caja-kpi">
                 <div class="kpi-label">Unidades <span class="tag-filtro">Filtro</span></div>
                 <div class="kpi-valor">{{ "{:,d}".format(unidades_periodo_total) }}</div>
-                <div class="kpi-sub">unidades vendidas en el período</div>
+                <div class="kpi-sub">unidades del período</div>
             </div>
         </td>
         <td>
             <div class="caja-kpi">
                 <div class="kpi-label">Movimientos <span class="tag-filtro">Filtro</span></div>
                 <div class="kpi-valor">{{ movimientos_periodo_total }}</div>
-                <div class="kpi-sub">líneas de Kardex en el período</div>
+                <div class="kpi-sub">líneas de Kardex</div>
             </div>
         </td>
         <td>
             <div class="caja-kpi verde">
-                <div class="kpi-label">Ingresos por Compras <span class="tag-filtro">Filtro</span></div>
+                <div class="kpi-label">Ingresos Compras <span class="tag-filtro">Filtro</span></div>
                 <div class="kpi-valor verde">{{ "%.2f"|format(ton_ingresos_compras_total) }} t</div>
-                <div class="kpi-sub">{{ "{:,d}".format(unid_ingresos_compras_total) }} unidades ingresadas</div>
+                <div class="kpi-sub">{{ "{:,d}".format(unid_ingresos_compras_total) }} unid.</div>
             </div>
         </td>
     </tr>
 </table>
 
-<!-- PARTICIPACIÓN -->
-<div class="titulo-seccion">Participación por Toneladas Vendidas (período) <span class="tag-filtro">Según filtro</span></div>
-<div class="nota-explicativa">Compara las toneladas de cada empresa dentro del rango filtrado y calcula el % de participación de cada una sobre el total combinado.</div>
-<table style="width:100%;"><tr>
-    <td style="width:200px;">
-        <span class="chip-anclajes">Anclajes</span> {{ "%.2f"|format(anclajes.toneladas_periodo) }} t ({{ pct_anclajes }}%)<br>
-        <span class="chip-importbolts">ImportBolts</span> {{ "%.2f"|format(importbolts.toneladas_periodo) }} t ({{ pct_importbolts }}%)
-    </td>
+<!-- PARTICIPACIÓN + EVOLUCIÓN MENSUAL, lado a lado -->
+<table class="fila-dos-col"><tr>
     <td>
-        <div style="width:100%;height:10px;">
-            <div class="barra-fill-a" style="width:{{ pct_anclajes }}%;height:10px;float:left;"></div><div class="barra-fill-i" style="width:{{ pct_importbolts }}%;height:10px;float:left;"></div>
+        <div class="titulo-seccion">Participación por Toneladas <span class="tag-filtro">Según filtro</span></div>
+        <div class="nota-explicativa">Compara las toneladas de cada empresa dentro del rango filtrado.</div>
+        <div class="grafico-wrap"><img class="grafico-img" src="{{ grafico_participacion }}" style="max-height:140px;"></div>
+        <div class="grafico-leyenda">
+            <span class="chip-anclajes">Anclajes</span> {{ "%.2f"|format(anclajes.toneladas_periodo) }} t ({{ pct_anclajes }}%) &nbsp;·&nbsp;
+            <span class="chip-importbolts">ImportBolts</span> {{ "%.2f"|format(importbolts.toneladas_periodo) }} t ({{ pct_importbolts }}%)
         </div>
+    </td>
+    <td class="ultima">
+        <div class="titulo-seccion">Evolución Mensual Comparativa — 6 Meses <span class="tag-fijo">Ventana fija</span></div>
+        <div class="nota-explicativa">Toneladas de cada mes calendario, por empresa. No cambia con el filtro de fecha.</div>
+        <div class="grafico-wrap"><img class="grafico-img" src="{{ grafico_meses_general }}"></div>
     </td>
 </tr></table>
 
-<!-- EVOLUCIÓN MENSUAL COMPARATIVA -->
-<div class="titulo-seccion">Evolución Mensual Comparativa — Últimos 6 Meses <span class="tag-fijo">Ventana fija</span></div>
-<div class="nota-explicativa">Toneladas de cada mes calendario, por empresa. No cambia con el filtro de fecha del reporte.</div>
-<table style="width:100%;">
-    {% for m in meses_barras_general %}
-    <tr class="fila-barra">
-        <td class="barra-etiqueta">{{ m.label }}</td>
-        <td style="width:45%;">
-            <div class="barra-track"><div class="barra-fill-a" style="width:{{ m.pct_a }}%;"></div></div>
-            <div class="barra-track" style="margin-top:2px;"><div class="barra-fill-i" style="width:{{ m.pct_i }}%;"></div></div>
-        </td>
-        <td class="barra-doble-valor">
-            <span style="color:#2456B3;">Anclajes: {{ "%.2f"|format(m.val_a) }} t</span><br>
-            <span style="color:#5FA82E;">ImportBolts: {{ "%.2f"|format(m.val_i) }} t</span>
-        </td>
-    </tr>
-    {% endfor %}
-</table>
-
 <!-- TONELADAS POR DÍA COMPARATIVO -->
 <div class="titulo-seccion">Toneladas Vendidas por Día — Últimos 30 Días <span class="tag-fijo">Ventana fija</span></div>
-<div class="nota-explicativa">Detalle diario de los últimos 30 días, por empresa. No cambia con el filtro de fecha del reporte.</div>
-<table class="tabla-datos">
-    <thead><tr><th>Día</th><th class="num">Anclajes</th><th class="num">ImportBolts</th><th class="num">Total</th></tr></thead>
-    <tbody>
-        {% for d in dias_general %}
-        <tr><td>{{ d.label }}</td><td class="num">{{ "%.3f"|format(d.val_a) }} t</td><td class="num">{{ "%.3f"|format(d.val_i) }} t</td><td class="num">{{ "%.3f"|format(d.total) }} t</td></tr>
-        {% endfor %}
-    </tbody>
-</table>
+<div class="nota-explicativa">Barras apiladas: cada barra es el total del día, dividido entre Anclajes (abajo) e ImportBolts (arriba). No cambia con el filtro de fecha.</div>
+<div class="grafico-wrap"><img class="grafico-img" src="{{ grafico_dias_general }}"></div>
 
 <!-- RESUMEN COMPARATIVO -->
 <div style="page-break-inside: avoid;">
@@ -255,39 +231,69 @@
 </table>
 </div>
 
-<!-- TOP PRODUCTOS -->
+<!-- DETALLE DIARIO EXACTO (en 2 tablas lado a lado -- una sola tabla angosta de 4 columnas
+     estirada a todo el ancho de la hoja horizontal se veía con espacios en blanco enormes) -->
 <div style="page-break-inside: avoid;">
-<div class="titulo-seccion">Top Productos del Mes (ambas empresas) <span class="tag-fijo">Ventana fija</span></div>
-<table class="tabla-datos">
-    <thead><tr><th>Producto</th><th>Empresa</th><th class="num">Toneladas</th><th class="num">Unidades</th></tr></thead>
-    <tbody>
-        {% for p in productos_general %}
-        <tr>
-            <td>{{ p.nombre }}</td>
-            <td>{% if p.empresa == 'Anclajes' %}<span class="chip-anclajes">Anclajes</span>{% else %}<span class="chip-importbolts">ImportBolts</span>{% endif %}</td>
-            <td class="num">{{ "%.2f"|format(p.ton) }} t</td>
-            <td class="num">{{ "{:,d}".format(p.unid) }}</td>
-        </tr>
-        {% else %}
-        <tr><td colspan="4" class="sin-datos">Sin ventas registradas este mes.</td></tr>
-        {% endfor %}
-    </tbody>
-</table>
+<div class="subtitulo-mini" style="font-size:8.3pt;font-weight:bold;color:#444444;margin-top:8px;margin-bottom:4px;">Detalle numérico exacto por día (últimos 30 días):</div>
+<table class="fila-dos-col"><tr>
+    <td>
+        <table class="tabla-datos">
+            <thead><tr><th>Día</th><th class="num">Anclajes</th><th class="num">ImportBolts</th><th class="num">Total</th></tr></thead>
+            <tbody>
+                {% for d in dias_general[:15] %}
+                <tr><td>{{ d.label }}</td><td class="num">{{ "%.3f"|format(d.val_a) }} t</td><td class="num">{{ "%.3f"|format(d.val_i) }} t</td><td class="num">{{ "%.3f"|format(d.total) }} t</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </td>
+    <td class="ultima">
+        <table class="tabla-datos">
+            <thead><tr><th>Día</th><th class="num">Anclajes</th><th class="num">ImportBolts</th><th class="num">Total</th></tr></thead>
+            <tbody>
+                {% for d in dias_general[15:] %}
+                <tr><td>{{ d.label }}</td><td class="num">{{ "%.3f"|format(d.val_a) }} t</td><td class="num">{{ "%.3f"|format(d.val_i) }} t</td><td class="num">{{ "%.3f"|format(d.total) }} t</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </td>
+</tr></table>
 </div>
 
-<!-- TOP CLIENTES -->
+<!-- TOP PRODUCTOS + TOP CLIENTES, lado a lado -->
 <div style="page-break-inside: avoid;">
-<div class="titulo-seccion">Top Clientes por Toneladas (ambas empresas) <span class="tag-filtro">Según filtro</span></div>
-<table class="tabla-datos">
-    <thead><tr><th>Cliente / Destino</th><th>Empresa(s)</th><th class="num">Toneladas</th><th class="num">Unidades</th></tr></thead>
-    <tbody>
-        {% for c in top_clientes_general %}
-        <tr><td>{{ c.nombre }}</td><td>{{ c.empresas }}</td><td class="num">{{ "%.2f"|format(c.toneladas) }} t</td><td class="num">{{ "{:,d}".format(c.unidades) }}</td></tr>
-        {% else %}
-        <tr><td colspan="4" class="sin-datos">Sin ventas registradas en el período.</td></tr>
-        {% endfor %}
-    </tbody>
-</table>
+<table class="fila-dos-col"><tr>
+    <td>
+        <div class="titulo-seccion">Top Productos del Mes (ambas empresas) <span class="tag-fijo">Ventana fija</span></div>
+        <table class="tabla-datos">
+            <thead><tr><th>Producto</th><th>Empresa</th><th class="num">Ton.</th><th class="num">Unid.</th></tr></thead>
+            <tbody>
+                {% for p in productos_general %}
+                <tr>
+                    <td>{{ p.nombre }}</td>
+                    <td>{% if p.empresa == 'Anclajes' %}<span class="chip-anclajes">Anclajes</span>{% else %}<span class="chip-importbolts">ImportBolts</span>{% endif %}</td>
+                    <td class="num">{{ "%.2f"|format(p.ton) }} t</td>
+                    <td class="num">{{ "{:,d}".format(p.unid) }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="4" class="sin-datos">Sin ventas registradas este mes.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </td>
+    <td class="ultima">
+        <div class="titulo-seccion">Top Clientes por Toneladas (ambas empresas) <span class="tag-filtro">Según filtro</span></div>
+        <table class="tabla-datos">
+            <thead><tr><th>Cliente / Destino</th><th>Empresa(s)</th><th class="num">Ton.</th><th class="num">Unid.</th></tr></thead>
+            <tbody>
+                {% for c in top_clientes_general %}
+                <tr><td>{{ c.nombre }}</td><td>{{ c.empresas }}</td><td class="num">{{ "%.2f"|format(c.toneladas) }} t</td><td class="num">{{ "{:,d}".format(c.unidades) }}</td></tr>
+                {% else %}
+                <tr><td colspan="4" class="sin-datos">Sin ventas registradas en el período.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </td>
+</tr></table>
 </div>
 
 <!-- INGRESOS COMBINADOS -->

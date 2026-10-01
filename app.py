@@ -38,6 +38,10 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from xhtml2pdf import pisa
 import base64
 import qrcode
+import matplotlib
+matplotlib.use('Agg')  # backend sin pantalla: necesario en un servidor (sin esto, matplotlib
+                        # intenta abrir una ventana gráfica y falla en Render/Linux headless)
+import matplotlib.pyplot as plt
 
 
 ROLE_LABELS = {
@@ -11809,6 +11813,112 @@ def _tema_dashboard(empresa):
     }
 
 
+# ============================================
+# GRÁFICOS REALES (matplotlib) PARA LOS PDF DE DASHBOARD
+# ============================================
+# xhtml2pdf/reportlab no puede ejecutar Chart.js (es JavaScript, y el PDF no tiene motor de
+# navegador), así que los gráficos de pantalla no se pueden "copiar" tal cual al PDF. En vez de
+# simularlos con <div> (que se ven como barras planas, sin curvas ni leyenda real), se generan acá
+# como IMÁGENES de verdad con matplotlib -- el mismo tipo de gráfico que en pantalla (línea de
+# área, dona, barras) -- y se insertan en el PDF como <img> con un data URI base64. Así el PDF
+# muestra gráficos reales, no una tabla disfrazada de gráfico.
+
+def _fig_a_datauri(fig):
+    """Convierte una figura de matplotlib ya armada en un data URI PNG listo para <img src="...">."""
+    buf = io.BytesIO()
+    fig.savefig(buf, format='png', dpi=160, bbox_inches='tight', facecolor='white')
+    plt.close(fig)
+    buf.seek(0)
+    return "data:image/png;base64," + base64.b64encode(buf.read()).decode('ascii')
+
+
+def _grafico_estilo_ejes(ax):
+    """Estilo común (sobrio, sin bordes de más) para todos los gráficos del reporte."""
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['left'].set_color('#cccccc')
+    ax.spines['bottom'].set_color('#cccccc')
+    ax.tick_params(axis='both', labelsize=8.5, colors='#555555', length=0)
+    ax.grid(axis='y', color='#e9ecef', linewidth=0.8, zorder=0)
+    ax.set_axisbelow(True)
+
+
+def _grafico_linea_area(labels, series, ancho=7.4, alto=2.5):
+    """Gráfico de línea con área rellena (como el 'Evolución Mensual' de pantalla).
+    series: lista de {'label', 'valores', 'color'} -- una sola serie o varias (comparativo)."""
+    fig, ax = plt.subplots(figsize=(ancho, alto))
+    x = list(range(len(labels)))
+    for s in series:
+        ax.plot(x, s['valores'], color=s['color'], linewidth=2.2, marker='o', markersize=5,
+                 markerfacecolor=s['color'], markeredgecolor='white', markeredgewidth=0.9,
+                 label=s['label'], zorder=3)
+        ax.fill_between(x, s['valores'], color=s['color'], alpha=0.14, zorder=2)
+        if len(series) == 1:
+            for xi, v in zip(x, s['valores']):
+                ax.annotate(f'{v:.2f} t', (xi, v), textcoords="offset points", xytext=(0, 8),
+                            ha='center', fontsize=7.8, color='#444444')
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels, fontsize=8.5)
+    ax.set_ylim(bottom=0)
+    ax.set_ylabel('Toneladas (t)', fontsize=8.5, color='#555555')
+    _grafico_estilo_ejes(ax)
+    if len(series) > 1:
+        ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.18), ncol=len(series),
+                   frameon=False, fontsize=9)
+    fig.tight_layout()
+    return _fig_a_datauri(fig)
+
+
+def _grafico_barras(labels, valores, color, ancho=9.5, alto=2.5, rotacion=90):
+    """Gráfico de barras verticales de una sola serie (como 'Toneladas por Día' de pantalla)."""
+    fig, ax = plt.subplots(figsize=(ancho, alto))
+    x = list(range(len(labels)))
+    ax.bar(x, valores, color=color, width=0.7, zorder=3)
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels, fontsize=6.5, rotation=rotacion)
+    ax.set_ylabel('Toneladas (t)', fontsize=8.5, color='#555555')
+    ax.set_ylim(bottom=0)
+    _grafico_estilo_ejes(ax)
+    fig.tight_layout()
+    return _fig_a_datauri(fig)
+
+
+def _grafico_barras_apiladas(labels, series, ancho=10.2, alto=2.7, rotacion=90):
+    """Gráfico de barras apiladas de 2+ series (como 'Toneladas por Día' comparativo, stacked)."""
+    fig, ax = plt.subplots(figsize=(ancho, alto))
+    x = list(range(len(labels)))
+    base = [0.0] * len(labels)
+    for s in series:
+        ax.bar(x, s['valores'], bottom=base, color=s['color'], width=0.7, label=s['label'], zorder=3)
+        base = [b + v for b, v in zip(base, s['valores'])]
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels, fontsize=6.5, rotation=rotacion)
+    ax.set_ylabel('Toneladas (t)', fontsize=8.5, color='#555555')
+    ax.set_ylim(bottom=0)
+    _grafico_estilo_ejes(ax)
+    ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.22), ncol=len(series), frameon=False, fontsize=9)
+    fig.tight_layout()
+    return _fig_a_datauri(fig)
+
+
+def _grafico_donut(labels, valores, colores, ancho=3.6, alto=3.0):
+    """Gráfico de dona (como el 'Mix por Familia' / 'Participación' de pantalla), con su propia
+    leyenda al costado (nombre + valor + %), ya que un PDF no tiene tooltip al pasar el mouse."""
+    fig, ax = plt.subplots(figsize=(ancho, alto))
+    total = sum(valores) or 1
+    if total <= 0 or not any(valores):
+        ax.axis('off')
+        ax.text(0.5, 0.5, 'Sin datos\nen el período', ha='center', va='center', fontsize=9, color='#999999')
+        return _fig_a_datauri(fig)
+    wedges, _ = ax.pie(valores, colors=colores, startangle=90, counterclock=False,
+                        wedgeprops=dict(width=0.38, edgecolor='white', linewidth=1.6))
+    ax.set(aspect='equal')
+    etiquetas = [f'{l}  {v:.2f} t ({v / total * 100:.1f}%)' for l, v in zip(labels, valores)]
+    ax.legend(wedges, etiquetas, loc='center left', bbox_to_anchor=(1.05, 0.5), fontsize=8.3, frameon=False)
+    fig.tight_layout()
+    return _fig_a_datauri(fig)
+
+
 def _combinar_ctx_dashboard_general(ctx_a, ctx_i):
     """A partir del contexto ya calculado de cada empresa (via _construir_ctx_dashboard_ton),
     arma los totales combinados y rankings mezclados que necesita el Dashboard General (y su
@@ -11918,25 +12028,30 @@ def _generar_respuesta_pdf(html_renderizado, nombre_archivo, etiqueta_error):
     return send_file(pdf_buffer, as_attachment=True, download_name=nombre_archivo, mimetype='application/pdf')
 
 
+COLORES_CATEGORIAS_CHART = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#4a3aa7']
+
+
 def _pdf_dashboard_empresa(empresa, request):
     ctx = _construir_ctx_dashboard_ton(empresa, request)
     tema = dict(_tema_dashboard(empresa))
     tema['logo_path'] = os.path.join(app.root_path, 'static', 'img', tema['logo_file']).replace('\\', '/')
 
-    # --- Barras de "Evolución de Toneladas" (sustituto del gráfico, ancho relativo al mes más alto) ---
-    max_mes = max(ctx['data_meses_ton']) if ctx['data_meses_ton'] else 0
-    meses_barras = [
-        {'label': lbl, 'valor': val, 'pct': round((val / max_mes) * 100, 1) if max_mes > 0 else 0}
-        for lbl, val in zip(ctx['labels_meses'], ctx['data_meses_ton'])
-    ]
+    # --- Gráficos reales (matplotlib), los mismos tipos que se ven en pantalla ---
+    grafico_meses = _grafico_linea_area(
+        ctx['labels_meses'], [{'label': 'Toneladas', 'valores': ctx['data_meses_ton'], 'color': tema['chart']}])
+    grafico_categoria = _grafico_donut(
+        ctx['categoria_labels'], ctx['categoria_data'], COLORES_CATEGORIAS_CHART[:len(ctx['categoria_labels'])])
+    grafico_dias = _grafico_barras(ctx['labels_dias'], ctx['data_dias_ton'], tema['chart'])
 
-    # --- Tabla compacta de "Toneladas por Día" en filas de a 3 (10 filas x 3 columnas = 30 días) ---
+    # --- Tabla compacta de "Toneladas por Día" en filas de a 5 (6 filas x 5 columnas = 30 días),
+    # como detalle numérico exacto complementario al gráfico de barras ---
     dias_tabla = list(zip(ctx['labels_dias'], ctx['data_dias_ton']))
-    dias_filas = [dias_tabla[i:i + 3] for i in range(0, len(dias_tabla), 3)]
+    dias_filas = [dias_tabla[i:i + 5] for i in range(0, len(dias_tabla), 5)]
 
     html_renderizado = render_template(
         'pdf_dashboard_ventas_empresa.html',
-        tema=tema, meses_barras=meses_barras, dias_filas=dias_filas,
+        tema=tema, grafico_meses=grafico_meses, grafico_categoria=grafico_categoria, grafico_dias=grafico_dias,
+        dias_filas=dias_filas,
         generado_en=hora_peru(), generado_por=session.get('nombre') or session.get('username', 'Sistema'),
         **ctx
     )
@@ -11968,17 +12083,8 @@ def dashboard_ventas_general_pdf():
 
     logo_anclajes_path = os.path.join(app.root_path, 'static', 'img', 'logo.png').replace('\\', '/')
     logo_importbolts_path = os.path.join(app.root_path, 'static', 'img', 'logo_import.png').replace('\\', '/')
-
-    # --- Barras comparativas mensuales (ancho relativo al mayor valor entre ambas empresas) ---
-    max_mes_gen = max(ctx_a['data_meses_ton'] + ctx_i['data_meses_ton']) if ctx_a['data_meses_ton'] else 0
-    meses_barras_general = [
-        {
-            'label': lbl, 'val_a': val_a, 'val_i': val_i,
-            'pct_a': round((val_a / max_mes_gen) * 100, 1) if max_mes_gen > 0 else 0,
-            'pct_i': round((val_i / max_mes_gen) * 100, 1) if max_mes_gen > 0 else 0,
-        }
-        for lbl, val_a, val_i in zip(ctx_a['labels_meses'], ctx_a['data_meses_ton'], ctx_i['data_meses_ton'])
-    ]
+    color_anclajes = _tema_dashboard('ANCLAJES')['chart']
+    color_importbolts = _tema_dashboard('IMPORTBOLTS')['chart']
 
     # --- Tabla diaria comparativa (últimos 30 días, ambas empresas) ---
     dias_general = [
@@ -11986,12 +12092,28 @@ def dashboard_ventas_general_pdf():
         for lbl, val_a, val_i in zip(ctx_a['labels_dias'], ctx_a['data_dias_ton'], ctx_i['data_dias_ton'])
     ]
 
+    # --- Gráficos reales (matplotlib), los mismos tipos que se ven en pantalla ---
+    grafico_participacion = _grafico_donut(
+        ['Anclajes', 'ImportBolts'], [ctx_a['toneladas_periodo'], ctx_i['toneladas_periodo']],
+        [color_anclajes, color_importbolts])
+    grafico_meses_general = _grafico_linea_area(
+        ctx_a['labels_meses'], [
+            {'label': 'Anclajes', 'valores': ctx_a['data_meses_ton'], 'color': color_anclajes},
+            {'label': 'ImportBolts', 'valores': ctx_i['data_meses_ton'], 'color': color_importbolts},
+        ])
+    grafico_dias_general = _grafico_barras_apiladas(
+        ctx_a['labels_dias'], [
+            {'label': 'Anclajes', 'valores': ctx_a['data_dias_ton'], 'color': color_anclajes},
+            {'label': 'ImportBolts', 'valores': ctx_i['data_dias_ton'], 'color': color_importbolts},
+        ])
+
     html_renderizado = render_template(
         'pdf_dashboard_ventas_general.html',
         fecha_inicio=ctx_a['fecha_inicio'], fecha_fin=ctx_a['fecha_fin'],
         anclajes=ctx_a, importbolts=ctx_i,
         logo_anclajes_path=logo_anclajes_path, logo_importbolts_path=logo_importbolts_path,
-        meses_barras_general=meses_barras_general, dias_general=dias_general,
+        grafico_participacion=grafico_participacion, grafico_meses_general=grafico_meses_general,
+        grafico_dias_general=grafico_dias_general, dias_general=dias_general,
         generado_en=hora_peru(), generado_por=session.get('nombre') or session.get('username', 'Sistema'),
         **extra,
     )
