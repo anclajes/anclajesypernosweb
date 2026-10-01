@@ -96,7 +96,7 @@
     .tabla-mini { width: 100%; margin-top: 4px; }
     .tabla-mini th { background-color: #eef1f4; color: #333333; font-size: 6.8pt; text-transform: uppercase; padding: 2px 4px; text-align: right; border-bottom: 1px solid #cfd4da; }
     .tabla-mini th.izq, .tabla-mini td.izq { text-align: left; }
-    .tabla-mini td { font-size: 7.3pt; padding: 2px 4px; text-align: right; border-bottom: 1px solid #f0f0f0; white-space: nowrap; }
+    .tabla-mini td { font-size: 7.3pt; padding: 2px 4px; text-align: right; border-bottom: 1px solid #f0f0f0; }
     .tabla-mini tr.parcial td { color: #777777; font-style: italic; }
     .sube { color: #198754; font-weight: bold; }
     .baja { color: #dc3545; font-weight: bold; }
@@ -208,20 +208,6 @@
         <div class="titulo-seccion">Evolución de Toneladas Vendidas — 6 Meses <span class="tag-fijo">Ventana fija</span></div>
         <div class="nota-explicativa">Toneladas vendidas por mes calendario (últimos 6 meses). No cambia con el filtro de fecha del reporte.</div>
         <div class="grafico-wrap"><img class="grafico-img" src="{{ grafico_meses }}"></div>
-        <table class="tabla-mini">
-            <thead><tr>
-                <th class="izq">Mes</th>
-                {% for m in meses_tabla %}<th>{{ m.label }}{% if m.en_curso %}*{% endif %}</th>{% endfor %}
-                <th>Total 6 m</th>
-            </tr></thead>
-            <tbody>
-                <tr><td class="izq"><b>Toneladas</b></td>{% for m in meses_tabla %}<td><b>{{ "%.2f"|format(m.ton) }}</b></td>{% endfor %}<td><b>{{ "%.2f"|format(meses_tabla|sum(attribute='ton')) }}</b></td></tr>
-                <tr><td class="izq">Unidades</td>{% for m in meses_tabla %}<td>{{ "{:,d}".format(m.unid) }}</td>{% endfor %}<td>{{ "{:,d}".format(meses_tabla|sum(attribute='unid')) }}</td></tr>
-                <tr><td class="izq">Movimientos</td>{% for m in meses_tabla %}<td>{{ m.movs }}</td>{% endfor %}<td>{{ meses_tabla|sum(attribute='movs') }}</td></tr>
-                <tr><td class="izq">Var. vs mes ant.</td>{% for m in meses_tabla %}<td>{% if m.var_pct is none %}—{% elif m.en_curso %}<i>parcial</i>{% else %}<span class="{{ 'sube' if m.var_pct >= 0 else 'baja' }}">{{ "%+.1f"|format(m.var_pct) }}%</span>{% endif %}</td>{% endfor %}<td></td></tr>
-            </tbody>
-        </table>
-        <div class="nota-explicativa" style="margin-top:3px;">Toneladas en t. * Mes en curso: dato parcial (del día 1 a hoy), por eso no se compara contra el mes anterior.</div>
     </td>
     <td class="ultima" style="width:42%;">
         <div class="titulo-seccion">Mix de Ventas por Familia <span class="tag-filtro">Según filtro</span></div>
@@ -240,11 +226,28 @@
                 </table>
             </td>
         </tr></table>
+
         {% else %}
         <div class="sin-datos">Sin ventas registradas en el período.</div>
         {% endif %}
     </td>
 </tr></table>
+<!-- Detalle numérico de la evolución mensual: a ANCHO COMPLETO (xhtml2pdf falla si una
+     tabla de 8 columnas va anidada dentro de una celda angosta) -->
+        <table class="tabla-mini" style="margin-top:6px;">
+            <thead><tr>
+                <th class="izq" width="16%">Mes</th>
+                {% for m in meses_tabla %}<th width="12%">{{ m.label }}{% if m.en_curso %}*{% endif %}</th>{% endfor %}
+                <th width="12%">Total 6 m</th>
+            </tr></thead>
+            <tbody>
+                <tr><td class="izq"><b>Toneladas</b></td>{% for m in meses_tabla %}<td><b>{{ "%.2f"|format(m.ton) }}</b></td>{% endfor %}<td><b>{{ "%.2f"|format(meses_tabla|sum(attribute='ton')) }}</b></td></tr>
+                <tr><td class="izq">Unidades</td>{% for m in meses_tabla %}<td>{{ "{:,d}".format(m.unid) }}</td>{% endfor %}<td>{{ "{:,d}".format(meses_tabla|sum(attribute='unid')) }}</td></tr>
+                <tr><td class="izq">Movimientos</td>{% for m in meses_tabla %}<td>{{ m.movs }}</td>{% endfor %}<td>{{ meses_tabla|sum(attribute='movs') }}</td></tr>
+                <tr><td class="izq">Var. vs mes ant.</td>{% for m in meses_tabla %}<td>{% if m.var_pct is none %}—{% elif m.en_curso %}<i>parcial</i>{% else %}<span class="{{ 'sube' if m.var_pct >= 0 else 'baja' }}">{{ "%+.1f"|format(m.var_pct) }}%</span>{% endif %}</td>{% endfor %}<td></td></tr>
+            </tbody>
+        </table>
+        <div class="nota-explicativa" style="margin-top:3px;">Toneladas en t. * Mes en curso: dato parcial (del día 1 a hoy), por eso no se compara contra el mes anterior.</div>
 
 <!-- TONELADAS POR DÍA -->
 <div style="page-break-inside: avoid;">
@@ -260,7 +263,7 @@
     <td><div class="fr-label">Últimos 7 días</div><div class="fr-valor">{{ "%.2f"|format(r30.ult7) }} t</div><div class="fr-sub">7 días previos: {{ "%.2f"|format(r30.prev7) }} t{% if r30.var7 is not none %} ({{ "%+.1f"|format(r30.var7) }}%){% endif %}</div></td>
 </tr></table>
 <table class="tabla-mini">
-    <thead><tr><th class="izq">Tramo (7 días)</th>{% for b in r30.bloques %}<th>{{ b.desde }} – {{ b.hasta }}</th>{% endfor %}</tr></thead>
+    <thead><tr><th class="izq" width="15%">Tramo (7 días)</th>{% for b in r30.bloques %}<th width="{{ (85 / r30.bloques|length)|round(1) }}%">{{ b.desde }} – {{ b.hasta }}</th>{% endfor %}</tr></thead>
     <tbody><tr><td class="izq"><b>Toneladas</b></td>{% for b in r30.bloques %}<td><b>{{ "%.2f"|format(b.ton) }} t</b></td>{% endfor %}</tr></tbody>
 </table>
 </div>
@@ -272,7 +275,7 @@
         <div class="titulo-seccion">Productos Más Vendidos {% if mes_top == 'periodo' %}<span class="tag-filtro">Según filtro</span>{% else %}<span class="tag-fijo">Mes elegido</span>{% endif %}</div>
         <div class="nota-explicativa">{{ mes_top_label }} &middot; total vendido: <b>{{ "%.2f"|format(top_sel_total_ton) }} t</b> ({{ "{:,d}".format(top_sel_total_unid) }} unid.).</div>
         <table class="tabla-datos">
-            <thead><tr><th>Producto</th><th>SKU</th><th>Familia</th><th class="num">Ton.</th><th class="num">%</th><th class="num">Unid.</th></tr></thead>
+            <thead><tr><th width="37%">Producto</th><th width="13%">SKU</th><th width="19%">Familia</th><th class="num" width="12%">Ton.</th><th class="num" width="8%">%</th><th class="num" width="11%">Unid.</th></tr></thead>
             <tbody>
                 {% for p in top_productos_sel[:10] %}
                 <tr><td>{{ p.nombre }}</td><td>{{ p.sku }}</td><td>{{ p.categoria }}</td><td class="num">{{ "%.2f"|format(p.ton) }} t</td><td class="num">{{ p.pct }}%</td><td class="num">{{ "{:,d}".format(p.unid) }}</td></tr>
@@ -286,7 +289,7 @@
         <div class="titulo-seccion">Productos Más Vendidos — Últimos 3 Meses <span class="tag-fijo">Ventana fija</span></div>
         <div class="nota-explicativa">Mes en curso + los 2 meses calendario anteriores.</div>
         <table class="tabla-datos">
-            <thead><tr><th>Producto</th><th>SKU</th><th>Familia</th><th class="num">Ton.</th><th class="num">%</th><th class="num">Unid.</th></tr></thead>
+            <thead><tr><th width="37%">Producto</th><th width="13%">SKU</th><th width="19%">Familia</th><th class="num" width="12%">Ton.</th><th class="num" width="8%">%</th><th class="num" width="11%">Unid.</th></tr></thead>
             <tbody>
                 {% for p in top_productos_3m %}
                 <tr><td>{{ p.nombre }}</td><td>{{ p.sku }}</td><td>{{ p.categoria }}</td><td class="num">{{ "%.2f"|format(p.ton) }} t</td><td class="num">{{ p.pct }}%</td><td class="num">{{ "{:,d}".format(p.unid) }}</td></tr>

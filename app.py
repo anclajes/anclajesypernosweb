@@ -12237,7 +12237,15 @@ def _generar_respuesta_pdf(html_renderizado, nombre_archivo, etiqueta_error):
     """Convierte un HTML ya renderizado en un PDF descargable con xhtml2pdf, siguiendo el mismo
     patrón usado en /descargar_cotizacion_v2, /descargar_nota_pedido y /admin/maestro/imprimir_codigos."""
     pdf_buffer = io.BytesIO()
-    resultado = pisa.CreatePDF(src=html_renderizado, dest=pdf_buffer, encoding='utf-8')
+    try:
+        resultado = pisa.CreatePDF(src=html_renderizado, dest=pdf_buffer, encoding='utf-8')
+    except Exception as e:
+        # xhtml2pdf/reportlab puede fallar al maquetar (p.ej. una tabla sin espacio para sus columnas).
+        # En vez de un "Internal Server Error" genérico, se muestra el motivo y queda en el log de Render.
+        app.logger.exception("Error maquetando %s", etiqueta_error)
+        return (f"<h2>No se pudo generar {etiqueta_error}</h2>"
+                f"<p>Error de maquetación del PDF: <code>{html.escape(str(e))[:500]}</code></p>"
+                f"<p><a href='javascript:history.back()'>Volver</a></p>"), 500
     if resultado.err:
         return f"<h2>Error generando {etiqueta_error}</h2><pre>{html_renderizado}</pre>", 500
     pdf_buffer.seek(0)

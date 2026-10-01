@@ -98,7 +98,7 @@
     .tabla-mini { width: 100%; margin-top: 4px; }
     .tabla-mini th { background-color: #eef1f4; color: #333333; font-size: 6.8pt; text-transform: uppercase; padding: 2px 4px; text-align: right; border-bottom: 1px solid #cfd4da; }
     .tabla-mini th.izq, .tabla-mini td.izq { text-align: left; }
-    .tabla-mini td { font-size: 7.3pt; padding: 2px 4px; text-align: right; border-bottom: 1px solid #f0f0f0; white-space: nowrap; }
+    .tabla-mini td { font-size: 7.3pt; padding: 2px 4px; text-align: right; border-bottom: 1px solid #f0f0f0; }
     .tabla-mini tr.parcial td { color: #777777; font-style: italic; }
     .sube { color: #198754; font-weight: bold; }
     .baja { color: #dc3545; font-weight: bold; }
@@ -221,11 +221,15 @@
         <div class="titulo-seccion">Evolución Mensual Comparativa — 6 Meses <span class="tag-fijo">Ventana fija</span></div>
         <div class="nota-explicativa">Toneladas vendidas en cada mes calendario, por empresa. No cambia con el filtro de fecha.</div>
         <div class="grafico-wrap"><img class="grafico-img" src="{{ grafico_meses_general }}"></div>
-        <table class="tabla-mini">
+    </td>
+</tr></table>
+<!-- Detalle numérico de la evolución mensual: a ANCHO COMPLETO (xhtml2pdf falla si una
+     tabla de 8 columnas va anidada dentro de una celda angosta) -->
+        <table class="tabla-mini" style="margin-top:6px;">
             <thead><tr>
-                <th class="izq">Toneladas</th>
-                {% for m in meses_general %}<th>{{ m.label }}{% if m.en_curso %}*{% endif %}</th>{% endfor %}
-                <th>Total 6 m</th>
+                <th class="izq" width="16%">Toneladas (t)</th>
+                {% for m in meses_general %}<th width="12%">{{ m.label }}{% if m.en_curso %}*{% endif %}</th>{% endfor %}
+                <th width="12%">Total 6 m</th>
             </tr></thead>
             <tbody>
                 <tr><td class="izq">Anclajes</td>{% for m in meses_general %}<td>{{ "%.2f"|format(m.ton_a) }}</td>{% endfor %}<td><b>{{ "%.2f"|format(meses_general|sum(attribute='ton_a')) }}</b></td></tr>
@@ -236,8 +240,7 @@
             </tbody>
         </table>
         <div class="nota-explicativa" style="margin-top:3px;">Valores en toneladas (t). * Mes en curso: dato parcial (del día 1 a hoy), por eso no se compara contra el mes anterior.</div>
-    </td>
-</tr></table>
+
 
 <!-- TONELADAS POR DÍA COMPARATIVO -->
 <div style="page-break-inside: avoid;">
@@ -274,8 +277,8 @@
 </tr></table>
 <table class="tabla-mini">
     <thead><tr>
-        <th class="izq">Tramo (7 días)</th>
-        {% for b in r30.bloques %}<th>{{ b.desde }} – {{ b.hasta }}</th>{% endfor %}
+        <th class="izq" width="15%">Tramo (7 días)</th>
+        {% for b in r30.bloques %}<th width="{{ (85 / r30.bloques|length)|round(1) }}%">{{ b.desde }} – {{ b.hasta }}</th>{% endfor %}
     </tr></thead>
     <tbody>
         <tr><td class="izq">Anclajes</td>{% for b in anclajes.resumen_30d.bloques %}<td>{{ "%.2f"|format(b.ton) }} t</td>{% endfor %}</tr>
@@ -324,7 +327,7 @@
         <div class="titulo-seccion">Top Productos (ambas empresas) {% if mes_top == 'periodo' %}<span class="tag-filtro">Según filtro</span>{% else %}<span class="tag-fijo">Mes elegido</span>{% endif %}</div>
         <div class="nota-explicativa">{{ mes_top_label }} &middot; total vendido: <b>{{ "%.2f"|format(top_sel_total_ton_general) }} t</b> ({{ "{:,d}".format(top_sel_total_unid_general) }} unid.). El % es sobre ese total.</div>
         <table class="tabla-datos">
-            <thead><tr><th>#</th><th>Producto</th><th>Empresa</th><th class="num">Ton.</th><th class="num">%</th><th class="num">Unid.</th></tr></thead>
+            <thead><tr><th width="5%">#</th><th width="45%">Producto</th><th width="18%">Empresa</th><th class="num" width="12%">Ton.</th><th class="num" width="9%">%</th><th class="num" width="11%">Unid.</th></tr></thead>
             <tbody>
                 {% for p in productos_general %}
                 <tr>
@@ -345,7 +348,7 @@
         <div class="titulo-seccion">Top Clientes por Toneladas (ambas empresas) <span class="tag-filtro">Según filtro</span></div>
         <div class="nota-explicativa">Clientes/destinos con más toneladas compradas en el período filtrado.</div>
         <table class="tabla-datos">
-            <thead><tr><th>#</th><th>Cliente / Destino</th><th>Empresa(s)</th><th class="num">Ton.</th><th class="num">Unid.</th></tr></thead>
+            <thead><tr><th width="5%">#</th><th width="43%">Cliente / Destino</th><th width="24%">Empresa(s)</th><th class="num" width="14%">Ton.</th><th class="num" width="14%">Unid.</th></tr></thead>
             <tbody>
                 {% for c in top_clientes_general %}
                 <tr><td>{{ loop.index }}</td><td>{{ c.nombre }}</td><td>{{ c.empresas }}</td><td class="num">{{ "%.2f"|format(c.toneladas) }} t</td><td class="num">{{ "{:,d}".format(c.unidades) }}</td></tr>
