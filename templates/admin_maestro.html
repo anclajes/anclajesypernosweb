@@ -3,6 +3,7 @@
 {% block subtitle %}Sincroniza el Peso Nominal de Anclajes e ImportBolts desde el Excel Maestro{% endblock %}
 
 {% block content %}
+{% import "_maestro_historial.html" as hist %}
 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
     <h2 class="mb-0"><i class="bi bi-file-earmark-spreadsheet text-primary"></i> Maestro de Productos</h2>
     <a href="{{ url_for('admin_maestro_nuevo') }}" class="btn btn-brand shadow-sm fw-bold">
@@ -21,17 +22,55 @@
    el valor EXACTO (comillas ", apóstrofes ', barras \\). Antes se usaba |replace('"','&quot;') y, como
    Jinja ya escapa todo, quedaba doble-escapado: el modal mostraba 2&quot; y al guardar CUALQUIER campo
    (p.ej. solo el peso) se grababa así la descripción. No volver a usar |replace para esto. #}
-{% if textos_con_entidades %}
-<div class="alert alert-warning shadow-sm d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-    <div>
-        <i class="bi bi-exclamation-triangle-fill"></i>
-        <strong>{{ textos_con_entidades }} producto(s)</strong> tienen texto dañado por un error ya corregido del editor
-        (por ejemplo <code>2&amp;quot;</code> en vez de <code>2"</code> en la descripción o la calidad).
+{% if textos_danados %}
+<div class="card border-warning shadow-sm mb-3">
+    <div class="card-header bg-warning-subtle fw-bold d-flex justify-content-between align-items-center flex-wrap gap-2"
+         data-bs-toggle="collapse" data-bs-target="#panelTextosDanados" style="cursor:pointer;">
+        <span>
+            <i class="bi bi-exclamation-triangle-fill text-warning"></i>
+            {{ textos_danados|length }} código(s) con texto dañado
+            <span class="fw-normal small text-muted">(comillas guardadas como <code>&amp;quot;</code> por un error ya corregido del editor)</span>
+        </span>
+        <span class="small fw-normal">Ver detalle <i class="bi bi-chevron-down"></i></span>
     </div>
-    <form method="POST" action="{{ url_for('admin_maestro_reparar_textos') }}" class="m-0"
-          onsubmit="return confirm('Se corregirán los textos dañados en el Maestro, Anclajes e ImportBolts (las comillas vuelven a ser normales). Cada cambio queda auditado. ¿Continuar?');">
-        <button type="submit" class="btn btn-sm btn-success fw-bold"><i class="bi bi-wrench"></i> Reparar ahora</button>
-    </form>
+    <div id="panelTextosDanados" class="collapse show">
+        <div class="card-body p-0 table-responsive">
+            <table class="table table-sm align-middle mb-0 small">
+                <thead class="table-light">
+                    <tr><th class="ps-3">Código</th><th>Campo</th><th>Dónde</th><th>Texto actual (dañado)</th><th>Debería decir</th><th class="pe-3"></th></tr>
+                </thead>
+                <tbody>
+                    {% for item in textos_danados %}
+                    {% for d in item.detalles %}
+                    <tr>
+                        {% if loop.first %}<td class="ps-3 fw-bold text-primary" rowspan="{{ item.detalles|length }}">{{ item.sku }}</td>{% endif %}
+                        <td>{{ d.campo }}</td>
+                        <td><span class="badge bg-light text-dark border">{{ d.lugares }}</span></td>
+                        <td class="text-danger">{{ d.actual }}</td>
+                        <td class="text-success fw-bold">{{ d.sugerido }}</td>
+                        {% if loop.first %}
+                        <td class="pe-3" rowspan="{{ item.detalles|length }}">
+                            {% if item.maestro %}
+                            <button type="button" class="btn btn-sm btn-outline-warning" title="Abrir Editar para corregirlo"
+                                    onclick="abrirEditarMaestro({{ item.maestro.sku|tojson|forceescape }}, {{ item.maestro.nombre|tojson|forceescape }}, {{ item.maestro.familia|tojson|forceescape }}, {{ (item.maestro.calidad or '')|tojson|forceescape }}, {{ item.maestro.peso_nominal_kg|default(0, true)|tojson|forceescape }})">
+                                <i class="bi bi-pencil"></i> Corregir
+                            </button>
+                            {% else %}
+                            <span class="text-muted small">Solo en inventario: corrígelo con "Editar" en {{ d.lugares }}</span>
+                            {% endif %}
+                        </td>
+                        {% endif %}
+                    </tr>
+                    {% endfor %}
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="card-footer bg-white small text-muted">
+            Se agrupa por código: un mismo código suele estar dañado en el Maestro, Anclajes e ImportBolts a la vez,
+            y al corregirlo con "Editar" en el Maestro se arregla en los tres lugares. Esta lista desaparece cuando ya no queda ninguno.
+        </div>
+    </div>
 </div>
 {% endif %}
 
@@ -255,9 +294,9 @@
                             <td><span class="badge bg-light text-dark border">{{ c.inventario }}</span></td>
                             <td style="max-width: 260px;">
                                 {% if c.campo == 'creacion' %}
-                                <span class="text-muted">{{ c.valor_nuevo }}</span>
+                                {{ hist.detalle_creacion(c, productos_log) }}
                                 {% elif c.campo == 'eliminacion' %}
-                                <span class="text-danger">{{ c.valor_anterior }}</span>
+                                {{ hist.detalle_eliminacion(c) }}
                                 {% else %}
                                 {% if c.campo == 'descripcion' %}<span class="text-muted small">Desc.:</span> {% elif c.campo == 'familia' %}<span class="text-muted small">Familia:</span> {% elif c.campo == 'calidad' %}<span class="text-muted small">Calidad:</span> {% endif %}
                                 {{ c.valor_anterior }} <i class="bi bi-arrow-right mx-1"></i> <span class="fw-bold">{{ c.valor_nuevo }}</span>
@@ -460,8 +499,8 @@ function mantenerMayusYCursor(el) {
                             </select>
                         </div>
                         <div class="col-12 col-md-6">
-                            <label class="form-label small fw-bold">Calidad</label>
-                            <input type="text" id="editMaestroCalidad" class="form-control form-control-sm text-uppercase" list="listCalidadesEditarMaestro" oninput="mantenerMayusYCursor(this)">
+                            <label class="form-label small fw-bold">Calidad *</label>
+                            <input type="text" id="editMaestroCalidad" class="form-control form-control-sm text-uppercase" list="listCalidadesEditarMaestro" required oninput="mantenerMayusYCursor(this)">
                             <datalist id="listCalidadesEditarMaestro">{% for c in calidades_catalogo %}<option value="{{ c }}">{% endfor %}</datalist>
                         </div>
                     </div>

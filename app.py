@@ -4956,7 +4956,8 @@ def _procesar_excel_maestro(filepath, usuario_actual, user_id_actual):
         registros_log.append(MaestroCambioLog(
             fecha=hora_actual, usuario=usuario_actual, lote_id=lote_id, sku=c['sku'],
             inventario='MAESTRO+AMBOS', campo='creacion',
-            valor_anterior='', valor_nuevo='Producto nuevo creado por importación de Excel Maestro (repartido a ambos inventarios).',
+            # valor_anterior = peso con el que se creó; valor_nuevo = descripción (recortada a 100)
+            valor_anterior=f"Peso: {c['peso']} kg", valor_nuevo=_recortar_para_log(c['nombre']),
             familia=c['familia'], calidad=c['calidad'],
         ))
     if registros_log:
@@ -5066,9 +5067,9 @@ def admin_maestro():
                            .filter(MaestroProducto.calidad.isnot(None), MaestroProducto.calidad != '')
                            .distinct().order_by(MaestroProducto.calidad).all()]
 
-    textos_con_entidades = _contar_textos_con_entidades() if session.get('role') == 'admin' else 0
+    textos_danados = _detalle_textos_con_entidades() if session.get('role') in ['admin', 'almacen'] else []
     return render_template('admin_maestro.html', info_maestro=info_maestro, ultimos_cambios=ultimos_cambios,
-                            textos_con_entidades=textos_con_entidades,
+                            textos_danados=textos_danados, productos_log=_detalle_productos_log(ultimos_cambios),
                             pagination=pagination, productos=pagination.items, search=search,
                             familia_filtro=familia_filtro, calidad_filtro=calidad_filtro, orden=orden,
                             lista_familias=lista_familias, lista_calidades=lista_calidades,
@@ -5106,50 +5107,49 @@ def _registros_con_entidades():
     return encontrados
 
 
-def _contar_textos_con_entidades():
-    try:
-        return len({(m.__name__, r.id) for m, r, _, _, _ in _registros_con_entidades()})
-    except Exception:
-        app.logger.exception("No se pudo contar textos con entidades HTML")
-        return 0
+_NOMBRE_LUGAR = {'MaestroProducto': 'Maestro', 'Product': 'Anclajes', 'ProductImportBolts': 'ImportBolts'}
+_NOMBRE_CAMPO = {'nombre': 'Descripción', 'familia': 'Familia', 'categoria': 'Familia',
+                 'calidad': 'Calidad', 'ubicacion': 'Ubicación'}
 
 
-@app.route('/admin/maestro/reparar_textos', methods=['POST'])
-def admin_maestro_reparar_textos():
-    """Corrige (solo admin) las descripciones/familias/calidades/ubicaciones guardadas con
-    entidades HTML (&quot; -> "), en el Maestro y en ambos inventarios, dejando auditoría."""
-    if session.get('role') != 'admin':
-        flash('No autorizado.', 'danger')
-        return redirect(url_for('admin_maestro'))
+def _detalle_textos_con_entidades():
+    """Lista (agrupada por CÓDIGO) de los textos de producto con entidades HTML (&quot; etc.),
+    para MOSTRARLOS en el Maestro y que el usuario los corrija a mano con "Editar".
+    Un mismo código suele estar dañado en 3 lugares a la vez (Maestro + Anclajes + ImportBolts),
+    por eso se agrupa por código: 2 productos dañados = 2 filas, no 6."""
     try:
-        encontrados = _registros_con_entidades()
-        if not encontrados:
-            flash('No hay textos con caracteres dañados (&quot;, &#39;, ...). Todo está correcto.', 'info')
-            return redirect(url_for('admin_maestro'))
-        usuario_actual = session.get('username', 'Sistema')
-        hora_actual = hora_peru()
-        lote_id = f"REPARA-{hora_actual.strftime('%Y%m%d%H%M%S')}"
-        productos = set()
-        for modelo, reg, campo, actual, corregido in encontrados:
-            setattr(reg, campo, corregido)
-            productos.add((modelo.__name__, reg.id))
+        por_sku = {}
+        for modelo, reg, campo, actual, sugerido in _registros_con_entidades():
+            item = por_sku.setdefault(reg.sku, {'sku': reg.sku, 'maestro': None, 'detalles': []})
             if modelo is MaestroProducto:
-                db.session.add(MaestroCambioLog(
-                    fecha=hora_actual, usuario=usuario_actual, lote_id=lote_id, sku=reg.sku,
-                    inventario='MAESTRO', campo=_CAMPO_LOG_MAESTRO[campo],
-                    valor_anterior=_recortar_para_log(actual), valor_nuevo=_recortar_para_log(corregido),
-                    familia=reg.familia, calidad=reg.calidad,
-                ))
-        registrar_log(f"Reparó {len(encontrados)} texto(s) con entidades HTML (&quot; etc.) en "
-                      f"{len(productos)} registro(s) de Maestro/Anclajes/ImportBolts", "bi-wrench", "text-success")
-        db.session.commit()
-        flash(f'Listo: se corrigieron {len(encontrados)} texto(s) en {len(productos)} registro(s) '
-              f'(Maestro, Anclajes e ImportBolts). Ej.: 2&quot; volvió a ser 2".', 'success')
-    except Exception as e:
-        db.session.rollback()
-        app.logger.exception("Error reparando textos con entidades")
-        flash(f'No se pudo completar la reparación: {e}', 'danger')
-    return redirect(url_for('admin_maestro'))
+                item['maestro'] = reg
+            item['detalles'].append({'lugar': _NOMBRE_LUGAR[modelo.__name__],
+                                     'campo': _NOMBRE_CAMPO.get(campo, campo),
+                                     'actual': actual, 'sugerido': sugerido})
+        for item in por_sku.values():
+            if item['maestro'] is None:
+                item['maestro'] = MaestroProducto.query.filter_by(sku=item['sku']).first()
+            # Una fila por (campo, valor) mostrando en qué lugares está igual de dañado
+            agrupado = {}
+            for d in item['detalles']:
+                k = (d['campo'], d['actual'], d['sugerido'])
+                agrupado.setdefault(k, []).append(d['lugar'])
+            item['detalles'] = [{'campo': c, 'actual': a, 'sugerido': sg, 'lugares': ', '.join(l)}
+                                for (c, a, sg), l in agrupado.items()]
+        return sorted(por_sku.values(), key=lambda x: x['sku'])
+    except Exception:
+        app.logger.exception("No se pudo revisar textos con entidades HTML")
+        return []
+
+
+def _detalle_productos_log(cambios):
+    """Para el historial del Maestro: {sku: MaestroProducto} de los códigos con fila de 'creación',
+    para poder mostrar la descripción COMPLETA y el peso del producto creado (las filas antiguas
+    solo guardaban un texto genérico 'Producto nuevo creado...')."""
+    skus = {c.sku for c in cambios if c.campo == 'creacion'}
+    if not skus:
+        return {}
+    return {m.sku: m for m in MaestroProducto.query.filter(MaestroProducto.sku.in_(skus)).all()}
 
 
 @app.route('/admin/maestro/importar', methods=['POST'])
@@ -5277,6 +5277,7 @@ def admin_maestro_auditoria():
 
     pagination = query.paginate(page=page, per_page=50, error_out=False)
     return render_template('admin_maestro_auditoria.html', pagination=pagination,
+                           productos_log=_detalle_productos_log(pagination.items),
                             sku_filtro=sku_filtro, lote_filtro=lote_filtro)
 
 
@@ -5385,11 +5386,21 @@ def admin_maestro_nuevo():
         familia_preseleccion = request.args.get('familia', '')
         calidad_preseleccion = request.args.get('calidad', '')
         return render_template('admin_maestro_nuevo.html', familias=familias, calidades=calidades,
-                                familia_preseleccion=familia_preseleccion, calidad_preseleccion=calidad_preseleccion)
+                                familia_preseleccion=familia_preseleccion, calidad_preseleccion=calidad_preseleccion,
+                                previo={})
+
+    def _error_formulario(msg):
+        """Si algo no valida, se vuelve a mostrar el formulario CON lo que el usuario ya había
+        tipeado (antes se redirigía y se perdían código, descripción y peso)."""
+        flash(msg, 'error')
+        return render_template('admin_maestro_nuevo.html', familias=familias, calidades=calidades,
+                                familia_preseleccion=request.form.get('familia', ''),
+                                calidad_preseleccion=request.form.get('calidad', ''),
+                                previo=request.form), 400
 
     try:
         codigo = request.form.get('sku', '').strip().upper()
-        nombre = _texto_limpio(request.form.get('nombre', ''))
+        nombre = _texto_limpio(request.form.get('nombre', '')).upper()
         familia_sel = _texto_limpio(request.form.get('familia', ''))
         calidad_sel = _texto_limpio(request.form.get('calidad', ''))
         familia_nueva = _texto_limpio(request.form.get('familia_nueva', '')).upper()
@@ -5397,71 +5408,62 @@ def admin_maestro_nuevo():
         peso_raw = request.form.get('peso_nominal_kg', '0').strip()
 
         if not codigo:
-            flash('⛔ El código es obligatorio.', 'error')
-            return redirect(url_for('admin_maestro_nuevo', familia=familia_sel, calidad=calidad_sel))
+            return _error_formulario('⛔ El código es obligatorio.')
+        if re.search(r'\s', codigo):
+            return _error_formulario(f'⛔ El código "{codigo}" no puede tener espacios.')
         if not nombre:
-            flash('⛔ La descripción es obligatoria.', 'error')
-            return redirect(url_for('admin_maestro_nuevo', familia=familia_sel, calidad=calidad_sel))
+            return _error_formulario('⛔ La descripción es obligatoria.')
         if not familia_sel:
-            flash('⛔ La familia es obligatoria.', 'error')
-            return redirect(url_for('admin_maestro_nuevo'))
+            return _error_formulario('⛔ La familia es obligatoria.')
+        if not calidad_sel or (calidad_sel == '__nueva__' and not calidad_nueva):
+            return _error_formulario('⛔ La calidad es obligatoria: elige una de la lista o escribe una nueva '
+                                     'con "+ Agregar calidad nueva".')
 
         # Familia: se elige de lo que ya existe, o se crea una nueva con "+ Agregar familia
         # nueva" — validando primero (sin importar mayúsculas/minúsculas) que no exista ya.
         familia_es_nueva = False
         if familia_sel == '__nueva__':
             if not familia_nueva:
-                flash('⛔ Escribe el nombre de la familia nueva.', 'error')
-                return redirect(url_for('admin_maestro_nuevo'))
+                return _error_formulario('⛔ Escribe el nombre de la familia nueva.')
             coincide = next((f for f in familias if f.upper() == familia_nueva), None)
             if coincide:
-                flash(f'⛔ La familia "{familia_nueva}" ya existe como "{coincide}". Selecciónala de la lista en '
-                      f'vez de crear una nueva.', 'error')
-                return redirect(url_for('admin_maestro_nuevo'))
+                return _error_formulario(f'⛔ La familia "{familia_nueva}" ya existe como "{coincide}". '
+                                         f'Selecciónala de la lista en vez de crear una nueva.')
             familia = familia_nueva
             familia_es_nueva = True
         else:
             familia = familia_sel
             if familia not in familias:
-                flash(f'⛔ "{familia}" no es una familia reconocida. Elige una de la lista o usa '
-                      f'"+ Agregar familia nueva".', 'error')
-                return redirect(url_for('admin_maestro_nuevo'))
+                return _error_formulario(f'⛔ "{familia}" no es una familia reconocida. Elige una de la '
+                                         f'lista o usa "+ Agregar familia nueva".')
 
-        # Calidad: igual — de la lista, "+ Agregar calidad nueva" (validada), o en blanco.
+        # Calidad (OBLIGATORIA): de la lista, o "+ Agregar calidad nueva" (validada contra duplicados).
         calidad_es_nueva = False
         if calidad_sel == '__nueva__':
-            if calidad_nueva:
-                coincide_cal = next((c for c in calidades if c.upper() == calidad_nueva), None)
-                if coincide_cal:
-                    flash(f'⛔ La calidad "{calidad_nueva}" ya existe como "{coincide_cal}". Selecciónala de la '
-                          f'lista en vez de crear una nueva.', 'error')
-                    return redirect(url_for('admin_maestro_nuevo', familia=familia))
-                calidad = calidad_nueva
-                calidad_es_nueva = True
-            else:
-                calidad = ''
+            coincide_cal = next((c for c in calidades if c.upper() == calidad_nueva), None)
+            if coincide_cal:
+                return _error_formulario(f'⛔ La calidad "{calidad_nueva}" ya existe como "{coincide_cal}". '
+                                         f'Selecciónala de la lista en vez de crear una nueva.')
+            calidad = calidad_nueva
+            calidad_es_nueva = True
         else:
             calidad = calidad_sel
-            if calidad and calidad not in calidades:
-                flash(f'⛔ "{calidad}" no es una calidad reconocida. Elige una de la lista, usa '
-                      f'"+ Agregar calidad nueva", o déjala en blanco.', 'error')
-                return redirect(url_for('admin_maestro_nuevo', familia=familia))
+            if calidad not in calidades:
+                return _error_formulario(f'⛔ "{calidad}" no es una calidad reconocida. Elige una de la lista '
+                                         f'o usa "+ Agregar calidad nueva".')
 
         if MaestroProducto.query.filter_by(sku=codigo).first():
-            flash(f'⛔ El código "{codigo}" ya existe en el Maestro.', 'error')
-            return redirect(url_for('admin_maestro_nuevo', familia=familia, calidad=calidad))
+            return _error_formulario(f'⛔ El código "{codigo}" ya existe en el Maestro.')
         if Product.query.filter_by(sku=codigo).first() or ProductImportBolts.query.filter_by(sku=codigo).first():
-            flash(f'⛔ El código "{codigo}" ya existe en algún inventario (aunque no estaba en el Maestro). '
-                  f'Usa "{codigo}" con cuidado o elige otro código — avísale al admin para revisar este caso.', 'error')
-            return redirect(url_for('admin_maestro_nuevo', familia=familia, calidad=calidad))
+            return _error_formulario(f'⛔ El código "{codigo}" ya existe en algún inventario (aunque no estaba en el '
+                                     f'Maestro). Elige otro código — avísale al admin para revisar este caso.')
 
         try:
             peso = round(float(peso_raw.replace(',', '.')) if peso_raw else 0.0, 4)
             if peso < 0:
                 raise ValueError()
         except ValueError:
-            flash('⛔ El peso nominal debe ser un número válido (hasta 4 decimales).', 'error')
-            return redirect(url_for('admin_maestro_nuevo', familia=familia, calidad=calidad))
+            return _error_formulario('⛔ El peso nominal debe ser un número válido (hasta 4 decimales).')
 
         usuario_actual = session.get('username', 'Sistema')
         hora_actual = hora_peru()
@@ -5495,7 +5497,8 @@ def admin_maestro_nuevo():
         db.session.add(MaestroCambioLog(
             fecha=hora_actual, usuario=usuario_actual, lote_id=f"MANUAL-{hora_actual.strftime('%Y%m%d%H%M%S')}",
             sku=codigo, inventario='MAESTRO+AMBOS', campo='creacion',
-            valor_anterior='', valor_nuevo='Producto nuevo creado manualmente desde el Maestro (repartido a ambos inventarios).',
+            # valor_anterior = peso con el que se creó; valor_nuevo = descripción (recortada a 100)
+            valor_anterior=f"Peso: {peso} kg", valor_nuevo=_recortar_para_log(nombre),
             familia=familia, calidad=calidad,
         ))
 
@@ -5505,6 +5508,9 @@ def admin_maestro_nuevo():
 
         flash(f'✅ Producto "{codigo}" creado y repartido a Anclajes e ImportBolts con stock en 0. '
               f'Entra a cada inventario para completar Stock Mínimo, Precio y Fotos.')
+        if not peso:
+            flash(f'⚠️ "{codigo}" se creó SIN peso nominal: sus ventas sumarán 0 t en los dashboards de toneladas '
+                  f'hasta que le pongas el peso (Maestro → Editar).', 'warning')
         # Se queda en la misma página, con la misma Familia/Calidad ya elegidas, listo para
         # seguir cargando el siguiente código de la secuencia sin tener que ir y volver.
         return redirect(url_for('admin_maestro_nuevo', familia=familia, calidad=calidad))
@@ -5580,6 +5586,7 @@ def admin_maestro_eliminar(sku):
                 db.session.delete(foto)
 
         familia_log, calidad_log = maestro.familia, maestro.calidad
+        detalle_eliminado = _recortar_para_log(f"{maestro.nombre} | Peso: {maestro.peso_nominal_kg or 0} kg")
 
         if prod_anclajes:
             db.session.delete(prod_anclajes)
@@ -5590,8 +5597,8 @@ def admin_maestro_eliminar(sku):
         db.session.add(MaestroCambioLog(
             fecha=hora_actual, usuario=usuario_actual, lote_id=f"ELIM-{hora_actual.strftime('%Y%m%d%H%M%S')}",
             sku=sku, inventario='MAESTRO+AMBOS', campo='eliminacion',
-            valor_anterior='Producto eliminado del Maestro y de ambos inventarios (sin movimientos ni ventas).',
-            valor_nuevo='', familia=familia_log, calidad=calidad_log,
+            valor_anterior=detalle_eliminado,
+            valor_nuevo='Eliminado del Maestro y de ambos inventarios', familia=familia_log, calidad=calidad_log,
         ))
 
         registrar_log(f"Eliminó el producto {sku} del Maestro (sin movimientos ni ventas) y de ambos inventarios",
@@ -5642,6 +5649,22 @@ def admin_maestro_editar(sku):
         return {'status': 'error', 'msg': f'"{familia_nueva}" no es una familia reconocida. '
                                            f'Elige una de la lista (para crear una familia nueva, usa '
                                            f'"Nuevo Producto").'}
+
+    # Calidad OBLIGATORIA y del catálogo (igual que en "Nuevo Producto"): evita dejarla vacía o crear
+    # variantes por error de tipeo ("GALVANIZADO" vs "GALVANISADO"). Si coincide ignorando
+    # mayúsculas/minúsculas, se guarda con la escritura oficial del catálogo.
+    if not calidad_nueva:
+        return {'status': 'error', 'msg': 'La calidad es obligatoria.'}
+    calidades_validas = [c[0] for c in db.session.query(MaestroProducto.calidad)
+                         .filter(MaestroProducto.calidad.isnot(None), MaestroProducto.calidad != '')
+                         .distinct().all()]
+    coincide_cal = next((c for c in calidades_validas if c.upper() == calidad_nueva.upper()), None)
+    if not coincide_cal:
+        return {'status': 'error', 'msg': f'"{calidad_nueva}" no es una calidad reconocida. Elige una de la lista '
+                                           f'(para crear una calidad nueva, usa "Nuevo Producto" → '
+                                           f'"+ Agregar calidad nueva").'}
+    calidad_nueva = coincide_cal
+    nombre_nuevo = nombre_nuevo.upper()
 
     try:
         peso_nuevo = round(float(peso_raw.replace(',', '.')) if peso_raw else 0.0, 4)

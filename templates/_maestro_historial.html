@@ -1,0 +1,27 @@
+{# Macros compartidas por admin_maestro.html y admin_maestro_auditoria.html para mostrar QUÉ
+   producto se creó o eliminó (descripción + peso), no solo un texto genérico.
+   - Filas nuevas de creación: valor_nuevo = descripción, valor_anterior = "Peso: X kg".
+   - Filas antiguas ("Producto nuevo creado ..."): se completa con los datos actuales del Maestro
+     (productos_log = {sku: MaestroProducto}). #}
+
+{% macro detalle_creacion(c, productos_log) -%}
+{%- set m = productos_log.get(c.sku) -%}
+{%- set es_antiguo = (c.valor_nuevo or '').startswith('Producto nuevo creado') -%}
+{%- set origen = 'Excel Maestro' if (c.lote_id and not c.lote_id.startswith('MANUAL')) else 'Manual' -%}
+<div><span class="text-muted small">Creado ({{ origen }}):</span>
+    <span class="fw-bold">{% if es_antiguo %}{{ m.nombre if m else 'producto ya no existe en el Maestro' }}{% else %}{{ c.valor_nuevo }}{% endif %}</span>
+</div>
+<div class="small text-muted">
+    {% if not es_antiguo and c.valor_anterior %}{{ c.valor_anterior }}{% elif m %}Peso: {{ m.peso_nominal_kg or 0 }} kg (actual){% endif %}
+    {% if m and not es_antiguo and m.nombre != c.valor_nuevo and not c.valor_nuevo.endswith('...') %}&middot; hoy: {{ m.nombre }}{% endif %}
+</div>
+{%- endmacro %}
+
+{% macro detalle_eliminacion(c) -%}
+{%- if (c.valor_anterior or '').startswith('Producto eliminado') -%}
+<span class="text-danger">{{ c.valor_anterior }}</span>
+{%- else -%}
+<div><span class="text-muted small">Eliminado:</span> <span class="text-danger fw-bold">{{ c.valor_anterior }}</span></div>
+<div class="small text-muted">{{ c.valor_nuevo }}</div>
+{%- endif -%}
+{%- endmacro %}

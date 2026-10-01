@@ -17,30 +17,30 @@
                         <div class="col-6">
                             <label class="form-label fw-bold small text-muted">Familia <span class="text-danger">*</span></label>
                             <select name="familia" id="selectFamilia" class="form-select" required onchange="onFamiliaChange()">
-                                <option value="" selected disabled>-- Seleccione --</option>
-                                <option value="__nueva__">+ Agregar familia nueva...</option>
+                                <option value="" disabled {% if not familia_preseleccion %}selected{% endif %}>-- Seleccione --</option>
+                                <option value="__nueva__" {% if familia_preseleccion == '__nueva__' %}selected{% endif %}>+ Agregar familia nueva...</option>
                                 {% for f in familias %}
                                 <option value="{{ f }}" {% if f == familia_preseleccion %}selected{% endif %}>{{ f }}</option>
                                 {% endfor %}
                             </select>
                             <div id="cajaFamiliaNueva" class="mt-2 d-none">
-                                <input type="text" name="familia_nueva" id="inputFamiliaNueva" class="form-control"
+                                <input type="text" name="familia_nueva" id="inputFamiliaNueva" class="form-control" value="{{ previo.get('familia_nueva', '') }}"
                                        placeholder="Nombre de la familia nueva" oninput="this.value = this.value.toUpperCase(); validarFamiliaNueva(); buscarProductosSimilares();">
                                 <div id="familiaNuevaMsg" class="form-text small mt-1"></div>
                             </div>
                             <div class="form-text">Elige una existente, o "+ Agregar familia nueva" — se valida que no sea igual a una que ya existe.</div>
                         </div>
                         <div class="col-6">
-                            <label class="form-label fw-bold small text-muted">Calidad</label>
-                            <select name="calidad" id="selectCalidad" class="form-select" onchange="onCalidadChange()">
-                                <option value="" {% if not calidad_preseleccion %}selected{% endif %}>-- Sin especificar --</option>
-                                <option value="__nueva__">+ Agregar calidad nueva...</option>
+                            <label class="form-label fw-bold small text-muted">Calidad <span class="text-danger">*</span></label>
+                            <select name="calidad" id="selectCalidad" class="form-select" required onchange="onCalidadChange()">
+                                <option value="" disabled {% if not calidad_preseleccion %}selected{% endif %}>-- Seleccione --</option>
+                                <option value="__nueva__" {% if calidad_preseleccion == '__nueva__' %}selected{% endif %}>+ Agregar calidad nueva...</option>
                                 {% for c in calidades %}
                                 <option value="{{ c }}" {% if c == calidad_preseleccion %}selected{% endif %}>{{ c }}</option>
                                 {% endfor %}
                             </select>
                             <div id="cajaCalidadNueva" class="mt-2 d-none">
-                                <input type="text" name="calidad_nueva" id="inputCalidadNueva" class="form-control"
+                                <input type="text" name="calidad_nueva" id="inputCalidadNueva" class="form-control" value="{{ previo.get('calidad_nueva', '') }}"
                                        placeholder="Nombre de la calidad nueva" oninput="this.value = this.value.toUpperCase(); validarCalidadNueva(); buscarProductosSimilares();">
                                 <div id="calidadNuevaMsg" class="form-text small mt-1"></div>
                             </div>
@@ -49,8 +49,8 @@
 
                     <div class="mb-3">
                         <label class="form-label fw-bold small text-muted">Descripción <span class="text-danger">*</span></label>
-                        <input type="text" name="nombre" id="inputNombre" class="form-control" placeholder="Ej: PERNO HEX. INOX. 304 1/2&quot; x 2&quot;" required
-                               oninput="buscarProductosSimilares()">
+                        <input type="text" name="nombre" id="inputNombre" class="form-control text-uppercase" placeholder="Ej: PERNO HEX. INOX. 304 1/2&quot; X 2&quot;" required
+                               value="{{ previo.get('nombre', '') }}" oninput="mayusConservandoCursor(this); buscarProductosSimilares()">
                     </div>
 
                     <div class="col-12 mb-3">
@@ -72,13 +72,14 @@
 
                     <div class="mb-3">
                         <label class="form-label fw-bold small text-muted">Peso Nominal (Kg)</label>
-                        <input type="number" step="0.0001" min="0" name="peso_nominal_kg" class="form-control" placeholder="0.0000">
-                        <div class="form-text">Hasta 4 decimales. Es el mismo peso para Anclajes e ImportBolts.</div>
+                        <input type="number" step="0.0001" min="0" name="peso_nominal_kg" id="inputPeso" class="form-control" placeholder="0.0000" value="{{ previo.get('peso_nominal_kg', '') }}">
+                        <div class="form-text">Hasta 4 decimales. Es el mismo peso para Anclajes e ImportBolts.
+                            <span class="text-warning-emphasis">Si lo dejas en 0, sus ventas sumarán 0 t en los dashboards de toneladas.</span></div>
                     </div>
 
                     <div class="mb-3 position-relative">
                         <label class="form-label fw-bold small text-danger">Código <span class="text-danger">*</span></label>
-                        <input type="text" name="sku" id="inputCodigo" class="form-control fw-bold border-danger" placeholder="Ej: PER-005" required
+                        <input type="text" name="sku" id="inputCodigo" class="form-control fw-bold border-danger" placeholder="Ej: PER-005" required value="{{ previo.get('sku', '') }}"
                                oninput="this.value = this.value.toUpperCase(); onCodigoInput();" style="text-transform:uppercase;">
                         <div id="codigosSimilares" class="list-group position-absolute w-100 shadow-sm" style="z-index: 20; max-height: 220px; overflow-y:auto; display:none;"></div>
                         <div id="codigoValidacionMsg" class="form-text small mt-1"></div>
@@ -106,7 +107,8 @@
                     <li>Se crea el mismo producto en <strong>Anclajes</strong> y en <strong>ImportBolts</strong>, con <strong>stock en 0</strong>.</li>
                     <li>Stock Mínimo, Precio Unidad, Precio Caja, Ubicación y Fotos <strong>no se piden aquí</strong> porque pueden ser distintos en cada empresa — se completan después entrando a "Editar" el producto en cada inventario.</li>
                     <li>Si el código ya existe (en el Maestro o en algún inventario), el sistema no deja crearlo de nuevo.</li>
-                    <li>Puedes elegir una Familia/Calidad ya existente, o escribir una nueva con "+ Agregar... nueva" — se valida en vivo que no sea igual (sin importar mayúsculas/minúsculas) a una que ya existe, para no crear duplicados por accidente.</li>
+                    <li><strong>Familia y Calidad son obligatorias.</strong> Puedes elegir una ya existente, o escribir una nueva con "+ Agregar... nueva" — se valida en vivo que no sea igual (sin importar mayúsculas/minúsculas) a una que ya existe, para no crear duplicados por accidente.</li>
+                    <li>El <strong>Peso Nominal</strong> no es obligatorio, pero si lo dejas en 0 el sistema te pide confirmar: sin peso, las ventas de ese producto suman 0 t en los dashboards.</li>
                     <li>Al guardar, la página se queda aquí mismo (con la misma Familia/Calidad) para que sigas cargando el siguiente código de la secuencia.</li>
                 </ul>
             </div>
@@ -118,11 +120,25 @@
 const FAMILIAS_EXISTENTES = {{ familias | tojson }};
 const CALIDADES_EXISTENTES = {{ calidades | tojson }};
 
+// Escapa texto antes de insertarlo con innerHTML (una descripción con < o & no rompe la tabla)
+function esc(t) {
+    return String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// Mayúsculas sin mandar el cursor al final (mismo comportamiento que el modal Editar del Maestro)
+function mayusConservandoCursor(el) {
+    const ini = el.selectionStart, fin = el.selectionEnd, nuevo = el.value.toUpperCase();
+    if (nuevo !== el.value) {
+        el.value = nuevo;
+        if (ini !== null && fin !== null) el.setSelectionRange(ini, fin);
+    }
+}
+
 let timeoutBusquedaCodigo = null;
 let timeoutBusquedaSimilares = null;
 let codigoValido = false;
 let familiaNuevaValida = false;
-let calidadNuevaValida = true; // la calidad nueva es opcional: vacía se considera válida
+let calidadNuevaValida = false; // la calidad es OBLIGATORIA: una calidad nueva vacía no es válida
 
 function onFamiliaChange() {
     const select = document.getElementById('selectFamilia');
@@ -151,7 +167,7 @@ function onCalidadChange() {
         caja.classList.add('d-none');
         document.getElementById('inputCalidadNueva').value = '';
         document.getElementById('calidadNuevaMsg').innerHTML = '';
-        calidadNuevaValida = true;
+        calidadNuevaValida = false; // se revalida solo si vuelve a elegir "nueva"
     }
     buscarProductosSimilares();
 }
@@ -178,8 +194,8 @@ function validarCalidadNueva() {
     const valor = document.getElementById('inputCalidadNueva').value.trim();
     const msg = document.getElementById('calidadNuevaMsg');
     if (!valor) {
-        msg.innerHTML = '';
-        calidadNuevaValida = true; // vacío es válido (calidad es opcional)
+        msg.innerHTML = '<span class="text-muted">Escribe el nombre de la calidad nueva.</span>';
+        calidadNuevaValida = false; // la calidad es obligatoria
         return;
     }
     const existente = CALIDADES_EXISTENTES.find(c => c.toUpperCase() === valor.toUpperCase());
@@ -218,8 +234,8 @@ function buscarCodigosSimilares() {
                 }
                 cont.innerHTML = codigos.map(c =>
                     `<div class="list-group-item list-group-item-action small py-1">
-                        <span class="fw-bold text-primary">${c.sku}</span> — ${c.nombre}
-                        <span class="text-muted">(${c.familia}${c.calidad ? ' · ' + c.calidad : ''})</span>
+                        <span class="fw-bold text-primary">${esc(c.sku)}</span> — ${esc(c.nombre)}
+                        <span class="text-muted">(${esc(c.familia)}${c.calidad ? ' · ' + esc(c.calidad) : ''})</span>
                     </div>`
                 ).join('');
                 cont.style.display = 'block';
@@ -249,7 +265,7 @@ function verificarCodigoExacto() {
             .then(data => {
                 if (document.getElementById('inputCodigo').value.trim() !== sku) return;
                 if (data.existe) {
-                    msg.innerHTML = `<span class="text-danger fw-bold"><i class="bi bi-x-circle-fill"></i> Este código YA EXISTE en ${data.origen}: "${data.nombre}". Use uno diferente.</span>`;
+                    msg.innerHTML = `<span class="text-danger fw-bold"><i class="bi bi-x-circle-fill"></i> Este código YA EXISTE en ${esc(data.origen)}: "${esc(data.nombre)}". Use uno diferente.</span>`;
                     codigoValido = false;
                 } else {
                     msg.innerHTML = `<span class="text-success fw-bold"><i class="bi bi-check-circle-fill"></i> Código disponible.</span>`;
@@ -297,9 +313,9 @@ function buscarProductosSimilares() {
                     data.productos.forEach(p => {
                         tbody.innerHTML += `
                             <tr>
-                                <td class="fw-bold text-primary">${p.sku}</td>
-                                <td>${p.nombre}</td>
-                                <td>${p.calidad || '-'}</td>
+                                <td class="fw-bold text-primary">${esc(p.sku)}</td>
+                                <td>${esc(p.nombre)}</td>
+                                <td>${esc(p.calidad || '-')}</td>
                             </tr>`;
                     });
                     panel.classList.remove('d-none');
@@ -317,6 +333,11 @@ function validarAntesDeEnviar(e) {
         alert('El código es obligatorio.');
         return false;
     }
+    if (/\s/.test(sku)) {
+        e.preventDefault();
+        alert('El código no puede tener espacios.');
+        return false;
+    }
     if (!codigoValido) {
         e.preventDefault();
         alert('Verifica el código: espera a que confirme "Código disponible" o corrígelo — ya existe o todavía no se ha verificado.');
@@ -330,11 +351,26 @@ function validarAntesDeEnviar(e) {
             return false;
         }
     }
-    if (document.getElementById('selectCalidad').value === '__nueva__') {
+    const selCalidad = document.getElementById('selectCalidad').value;
+    if (!selCalidad) {
+        e.preventDefault();
+        alert('La calidad es obligatoria: elige una de la lista o "+ Agregar calidad nueva".');
+        return false;
+    }
+    if (selCalidad === '__nueva__') {
         validarCalidadNueva();
         if (!calidadNuevaValida) {
             e.preventDefault();
-            alert('Revisa la calidad nueva: ya existe una igual — selecciónala de la lista en vez de crear otra.');
+            alert('Revisa la calidad nueva: falta escribirla o ya existe una igual — en ese caso selecciónala de la lista.');
+            return false;
+        }
+    }
+    // Peso: no es obligatorio, pero si queda vacío o en 0 se pide confirmar (afecta los dashboards de toneladas)
+    const peso = parseFloat((document.getElementById('inputPeso').value || '0').replace(',', '.'));
+    if (!(peso > 0)) {
+        if (!confirm('El producto se va a crear SIN peso nominal (0 kg).\n\nSus ventas sumarán 0 toneladas en los dashboards hasta que le pongas el peso.\n\n¿Crearlo así de todas formas?')) {
+            e.preventDefault();
+            document.getElementById('inputPeso').focus();
             return false;
         }
     }
@@ -350,6 +386,17 @@ document.addEventListener('click', function(e) {
 // Si venimos con Familia/Calidad ya preseleccionadas (después de crear el producto
 // anterior), disparamos también la búsqueda de similares por si acaso.
 document.addEventListener('DOMContentLoaded', function() {
+    if (document.getElementById('selectFamilia').value === '__nueva__') {
+        document.getElementById('cajaFamiliaNueva').classList.remove('d-none');
+        validarFamiliaNueva();
+    }
+    if (document.getElementById('selectCalidad').value === '__nueva__') {
+        document.getElementById('cajaCalidadNueva').classList.remove('d-none');
+        validarCalidadNueva();
+    }
+    if (document.getElementById('inputCodigo').value.trim()) {
+        verificarCodigoExacto();
+    }
     if (document.getElementById('selectFamilia').value) {
         buscarProductosSimilares();
     }
