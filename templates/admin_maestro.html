@@ -17,6 +17,24 @@
     precio, fotos, ubicación). Un producto creado aquí se reparte automáticamente a ambos inventarios con stock en 0.
 </div>
 
+{# NOTA (bug corregido): los textos se pasan al modal "Editar" con |tojson|forceescape, que entrega
+   el valor EXACTO (comillas ", apóstrofes ', barras \\). Antes se usaba |replace('"','&quot;') y, como
+   Jinja ya escapa todo, quedaba doble-escapado: el modal mostraba 2&quot; y al guardar CUALQUIER campo
+   (p.ej. solo el peso) se grababa así la descripción. No volver a usar |replace para esto. #}
+{% if textos_con_entidades %}
+<div class="alert alert-warning shadow-sm d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+    <div>
+        <i class="bi bi-exclamation-triangle-fill"></i>
+        <strong>{{ textos_con_entidades }} producto(s)</strong> tienen texto dañado por un error ya corregido del editor
+        (por ejemplo <code>2&amp;quot;</code> en vez de <code>2"</code> en la descripción o la calidad).
+    </div>
+    <form method="POST" action="{{ url_for('admin_maestro_reparar_textos') }}" class="m-0"
+          onsubmit="return confirm('Se corregirán los textos dañados en el Maestro, Anclajes e ImportBolts (las comillas vuelven a ser normales). Cada cambio queda auditado. ¿Continuar?');">
+        <button type="submit" class="btn btn-sm btn-success fw-bold"><i class="bi bi-wrench"></i> Reparar ahora</button>
+    </form>
+</div>
+{% endif %}
+
 <div class="card border-0 shadow-sm mb-3">
     <div class="card-header bg-white fw-bold d-flex justify-content-between align-items-center flex-wrap gap-2">
         <span><i class="bi bi-collection"></i> Catálogo Maestro <span class="badge bg-light text-dark border">{{ total_maestro }}</span></span>
@@ -104,7 +122,7 @@
                                 <i class="bi bi-qr-code"></i>
                             </a>
                             <button class="btn btn-sm btn-outline-warning" title="Editar"
-                                    onclick="abrirEditarMaestro('{{ m.sku }}', '{{ m.nombre|replace("'", "\\'")|replace('"', '&quot;') }}', '{{ m.familia|replace("'", "\\'")|replace('"', '&quot;') }}', '{{ (m.calidad or '')|replace("'", "\\'")|replace('"', '&quot;') }}', '{{ m.peso_nominal_kg|default(0, true) }}')">
+                                    onclick="abrirEditarMaestro({{ m.sku|tojson|forceescape }}, {{ m.nombre|tojson|forceescape }}, {{ m.familia|tojson|forceescape }}, {{ (m.calidad or '')|tojson|forceescape }}, {{ m.peso_nominal_kg|default(0, true)|tojson|forceescape }})">
                                 <i class="bi bi-pencil"></i>
                             </button>
                             {% if session.get('role') == 'admin' %}

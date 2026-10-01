@@ -390,11 +390,11 @@
                         <span class="ms-1 align-middle">
                             {% if p.ultimo_ajuste_auditoria_fecha %}
                             <i class="bi bi-clipboard2-check-fill" style="font-size:0.8rem;color:#6f42c1;cursor:pointer;" title="Ver historial de auditoría"
-                               onclick="mostrarHistorialProducto('auditoria', '{{ p.ultimo_ajuste_auditoria_fecha.strftime('%d/%m/%Y %H:%M') }}', '{{ (p.ultimo_ajuste_auditoria_conteo_por or '-')|replace("'", "\\'")|replace('"', '&quot;') }}', '{{ (p.ultimo_ajuste_auditoria_por or '-')|replace("'", "\\'")|replace('"', '&quot;') }}')"></i>
+                               onclick="mostrarHistorialProducto('auditoria', {{ (p.ultimo_ajuste_auditoria_fecha.strftime('%d/%m/%Y %H:%M'))|string|tojson|forceescape }}, {{ ((p.ultimo_ajuste_auditoria_conteo_por or '-'))|string|tojson|forceescape }}, {{ ((p.ultimo_ajuste_auditoria_por or '-'))|string|tojson|forceescape }})"></i>
                             {% endif %}
                             {% if p.ultima_edicion_manual_fecha %}
                             <i class="bi bi-pencil-fill" style="font-size:0.8rem;color:#b8860b;cursor:pointer;" title="Ver historial de edición manual"
-                               onclick="mostrarHistorialProducto('edicion', '{{ p.ultima_edicion_manual_fecha.strftime('%d/%m/%Y %H:%M') }}', '{{ (p.ultima_edicion_manual_por or '-')|replace("'", "\\'")|replace('"', '&quot;') }}', '')"></i>
+                               onclick="mostrarHistorialProducto('edicion', {{ (p.ultima_edicion_manual_fecha.strftime('%d/%m/%Y %H:%M'))|string|tojson|forceescape }}, {{ ((p.ultima_edicion_manual_por or '-'))|string|tojson|forceescape }}, '')"></i>
                             {% endif %}
                         </span>
                         {% endif %}
@@ -426,7 +426,7 @@
                         <div class="btn-group shadow-sm">
                             {% if session.get('role') == 'admin' %}
                             <button class="btn btn-sm btn-outline-primary py-0" 
-                                    onclick="abrirEditar('{{p.id}}', '{{p.nombre|replace("'", "\\'")|replace('"', '&quot;')}}', '{{p.stock_actual}}', '{{p.precio_unidad}}', '{{p.precio_caja}}', '{{p.ubicacion|default('', true)}}', '{{p.categoria}}', '{{p.calidad|default('', true)}}', '{{p.stock_minimo}}', '{{p.estado|default('', true)}}', '{{p.peso_kg|default(0, true)}}', '{{p.activo|lower}}')">
+                                    onclick="abrirEditar({{ (p.id)|string|tojson|forceescape }}, {{ (p.nombre)|string|tojson|forceescape }}, {{ (p.stock_actual)|string|tojson|forceescape }}, {{ (p.precio_unidad)|string|tojson|forceescape }}, {{ (p.precio_caja)|string|tojson|forceescape }}, {{ (p.ubicacion|default('', true))|string|tojson|forceescape }}, {{ (p.categoria)|string|tojson|forceescape }}, {{ (p.calidad|default('', true))|string|tojson|forceescape }}, {{ (p.stock_minimo)|string|tojson|forceescape }}, {{ (p.estado|default('', true))|string|tojson|forceescape }}, {{ (p.peso_kg|default(0, true))|string|tojson|forceescape }}, {{ (p.activo|lower)|string|tojson|forceescape }})">
                                 <i class="bi bi-pencil-fill"></i>
                             </button>
                             {% endif %}

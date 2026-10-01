@@ -280,11 +280,11 @@
                         <span class="ms-1 align-middle">
                             {% if p.ultimo_ajuste_fecha %}
                             <i class="bi bi-clipboard2-check-fill" style="font-size:0.8rem;color:#6f42c1;cursor:pointer;" title="Ver historial de auditoría"
-                               onclick="mostrarHistorialProducto('auditoria', '{{ p.ultimo_ajuste_fecha.strftime('%d/%m/%Y %H:%M') }}', '{{ (p.ultimo_ajuste_conteo_por or '-')|replace("'", "\\'")|replace('"', '&quot;') }}', '{{ (p.ultimo_ajuste_por or '-')|replace("'", "\\'")|replace('"', '&quot;') }}')"></i>
+                               onclick="mostrarHistorialProducto('auditoria', {{ (p.ultimo_ajuste_fecha.strftime('%d/%m/%Y %H:%M'))|string|tojson|forceescape }}, {{ ((p.ultimo_ajuste_conteo_por or '-'))|string|tojson|forceescape }}, {{ ((p.ultimo_ajuste_por or '-'))|string|tojson|forceescape }})"></i>
                             {% endif %}
                             {% if p.edicion_manual_fecha %}
                             <i class="bi bi-pencil-fill" style="font-size:0.8rem;color:#b8860b;cursor:pointer;" title="Ver historial de edición manual"
-                               onclick="mostrarHistorialProducto('edicion', '{{ p.edicion_manual_fecha.strftime('%d/%m/%Y %H:%M') }}', '{{ (p.edicion_manual_por or '-')|replace("'", "\\'")|replace('"', '&quot;') }}', '')"></i>
+                               onclick="mostrarHistorialProducto('edicion', {{ (p.edicion_manual_fecha.strftime('%d/%m/%Y %H:%M'))|string|tojson|forceescape }}, {{ ((p.edicion_manual_por or '-'))|string|tojson|forceescape }}, '')"></i>
                             {% endif %}
                         </span>
                         {% endif %}

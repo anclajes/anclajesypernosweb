@@ -77,6 +77,16 @@ def orden_natural_ubicacion(valor):
         return (letras.upper(), int(numeros) if numeros else 0)
     return (valor.upper(), 0)
 
+def _texto_limpio(valor):
+    """Normaliza un texto que llega de un formulario ANTES de guardarlo: convierte entidades HTML
+    (&quot; &#39; &#34; &amp; ...) a sus caracteres reales y quita espacios de los extremos.
+    Evita que un bug de escape en alguna plantilla (como el que guardaba 2&quot; en vez de 2")
+    termine grabado en la base de datos. Se aplica 2 veces por si llegó doblemente escapado."""
+    if valor is None:
+        return ''
+    return html.unescape(html.unescape(str(valor))).strip()
+
+
 def restar_meses(fecha, n):
     """Resta n meses a una fecha, devolviendo el primer día de ese mes."""
     mes = fecha.month - n
@@ -5056,12 +5066,90 @@ def admin_maestro():
                            .filter(MaestroProducto.calidad.isnot(None), MaestroProducto.calidad != '')
                            .distinct().order_by(MaestroProducto.calidad).all()]
 
+    textos_con_entidades = _contar_textos_con_entidades() if session.get('role') == 'admin' else 0
     return render_template('admin_maestro.html', info_maestro=info_maestro, ultimos_cambios=ultimos_cambios,
+                            textos_con_entidades=textos_con_entidades,
                             pagination=pagination, productos=pagination.items, search=search,
                             familia_filtro=familia_filtro, calidad_filtro=calidad_filtro, orden=orden,
                             lista_familias=lista_familias, lista_calidades=lista_calidades,
                             familias_catalogo=familias_catalogo, calidades_catalogo=calidades_catalogo,
                             total_maestro=total_maestro)
+
+
+# ------------------------------------------------------------------------------------------
+# REPARACIÓN DE TEXTOS CON ENTIDADES HTML (&quot; &#39; &amp; ...)
+# Un bug del modal "Editar" del Maestro (ya corregido) guardaba p.ej. 2&quot; en vez de 2" en la
+# Descripción/Calidad/Familia al editar cualquier campo. Esto detecta y corrige esos registros.
+# ------------------------------------------------------------------------------------------
+_CAMPOS_TEXTO_REPARAR = [
+    (MaestroProducto, ['nombre', 'familia', 'calidad']),
+    (Product, ['nombre', 'categoria', 'calidad', 'ubicacion']),
+    (ProductImportBolts, ['nombre', 'categoria', 'calidad', 'ubicacion']),
+]
+_CAMPO_LOG_MAESTRO = {'nombre': 'descripcion', 'familia': 'familia', 'calidad': 'calidad'}
+
+
+def _registros_con_entidades():
+    """Devuelve [(modelo, registro, campo, valor_actual, valor_corregido)] de todos los textos de
+    producto que contienen entidades HTML. Primero filtra en SQL por '&' y luego confirma en Python
+    que html.unescape realmente cambia el texto."""
+    encontrados = []
+    for modelo, campos in _CAMPOS_TEXTO_REPARAR:
+        condicion = or_(*[getattr(modelo, c).contains('&') for c in campos])
+        for reg in modelo.query.filter(condicion).all():
+            for c in campos:
+                actual = getattr(reg, c)
+                if actual and '&' in actual:
+                    corregido = _texto_limpio(actual)
+                    if corregido != actual:
+                        encontrados.append((modelo, reg, c, actual, corregido))
+    return encontrados
+
+
+def _contar_textos_con_entidades():
+    try:
+        return len({(m.__name__, r.id) for m, r, _, _, _ in _registros_con_entidades()})
+    except Exception:
+        app.logger.exception("No se pudo contar textos con entidades HTML")
+        return 0
+
+
+@app.route('/admin/maestro/reparar_textos', methods=['POST'])
+def admin_maestro_reparar_textos():
+    """Corrige (solo admin) las descripciones/familias/calidades/ubicaciones guardadas con
+    entidades HTML (&quot; -> "), en el Maestro y en ambos inventarios, dejando auditoría."""
+    if session.get('role') != 'admin':
+        flash('No autorizado.', 'danger')
+        return redirect(url_for('admin_maestro'))
+    try:
+        encontrados = _registros_con_entidades()
+        if not encontrados:
+            flash('No hay textos con caracteres dañados (&quot;, &#39;, ...). Todo está correcto.', 'info')
+            return redirect(url_for('admin_maestro'))
+        usuario_actual = session.get('username', 'Sistema')
+        hora_actual = hora_peru()
+        lote_id = f"REPARA-{hora_actual.strftime('%Y%m%d%H%M%S')}"
+        productos = set()
+        for modelo, reg, campo, actual, corregido in encontrados:
+            setattr(reg, campo, corregido)
+            productos.add((modelo.__name__, reg.id))
+            if modelo is MaestroProducto:
+                db.session.add(MaestroCambioLog(
+                    fecha=hora_actual, usuario=usuario_actual, lote_id=lote_id, sku=reg.sku,
+                    inventario='MAESTRO', campo=_CAMPO_LOG_MAESTRO[campo],
+                    valor_anterior=_recortar_para_log(actual), valor_nuevo=_recortar_para_log(corregido),
+                    familia=reg.familia, calidad=reg.calidad,
+                ))
+        registrar_log(f"Reparó {len(encontrados)} texto(s) con entidades HTML (&quot; etc.) en "
+                      f"{len(productos)} registro(s) de Maestro/Anclajes/ImportBolts", "bi-wrench", "text-success")
+        db.session.commit()
+        flash(f'Listo: se corrigieron {len(encontrados)} texto(s) en {len(productos)} registro(s) '
+              f'(Maestro, Anclajes e ImportBolts). Ej.: 2&quot; volvió a ser 2".', 'success')
+    except Exception as e:
+        db.session.rollback()
+        app.logger.exception("Error reparando textos con entidades")
+        flash(f'No se pudo completar la reparación: {e}', 'danger')
+    return redirect(url_for('admin_maestro'))
 
 
 @app.route('/admin/maestro/importar', methods=['POST'])
@@ -5301,11 +5389,11 @@ def admin_maestro_nuevo():
 
     try:
         codigo = request.form.get('sku', '').strip().upper()
-        nombre = request.form.get('nombre', '').strip()
-        familia_sel = request.form.get('familia', '').strip()
-        calidad_sel = request.form.get('calidad', '').strip()
-        familia_nueva = request.form.get('familia_nueva', '').strip().upper()
-        calidad_nueva = request.form.get('calidad_nueva', '').strip().upper()
+        nombre = _texto_limpio(request.form.get('nombre', ''))
+        familia_sel = _texto_limpio(request.form.get('familia', ''))
+        calidad_sel = _texto_limpio(request.form.get('calidad', ''))
+        familia_nueva = _texto_limpio(request.form.get('familia_nueva', '')).upper()
+        calidad_nueva = _texto_limpio(request.form.get('calidad_nueva', '')).upper()
         peso_raw = request.form.get('peso_nominal_kg', '0').strip()
 
         if not codigo:
@@ -5539,9 +5627,9 @@ def admin_maestro_editar(sku):
     if not maestro:
         return {'status': 'error', 'msg': f'"{sku}" no existe en el Maestro.'}, 404
 
-    nombre_nuevo = request.form.get('nombre', '').strip()
-    familia_nueva = request.form.get('familia', '').strip()
-    calidad_nueva = request.form.get('calidad', '').strip()
+    nombre_nuevo = _texto_limpio(request.form.get('nombre', ''))
+    familia_nueva = _texto_limpio(request.form.get('familia', ''))
+    calidad_nueva = _texto_limpio(request.form.get('calidad', ''))
     peso_raw = request.form.get('peso_nominal_kg', '0').strip()
 
     if not nombre_nuevo:
@@ -5824,9 +5912,9 @@ def editar_producto():
             flash('Producto no encontrado')
             return redirect(url_for('inventario'))
 
-        nombre = request.form['nombre'].strip()
-        nueva_familia = request.form.get('categoria', '').strip()
-        nueva_calidad = request.form.get('calidad', '').strip()
+        nombre = _texto_limpio(request.form['nombre'])
+        nueva_familia = _texto_limpio(request.form.get('categoria', ''))
+        nueva_calidad = _texto_limpio(request.form.get('calidad', ''))
         estado_val = request.form.get('estado', '').strip().upper()
         if estado_val == 'OK': estado_val = ""
         
@@ -5843,7 +5931,7 @@ def editar_producto():
         prod.stock_minimo = int(request.form.get('stock_minimo', 10))
         prod.precio_unidad = float(request.form['p_unidad'])
         prod.precio_caja = float(request.form['p_caja'])
-        prod.ubicacion = request.form.get('ubicacion', '').strip()
+        prod.ubicacion = _texto_limpio(request.form.get('ubicacion', ''))
         prod.categoria = nueva_familia
         prod.calidad = nueva_calidad
         prod.estado = estado_val
@@ -7851,9 +7939,9 @@ def editar_producto_importbolts():
             flash('Producto no encontrado')
             return redirect(url_for('inventario_importbolts'))
 
-        nombre = request.form['nombre'].strip()
-        nueva_familia = request.form.get('categoria', '').strip()
-        nueva_calidad = request.form.get('calidad', '').strip()
+        nombre = _texto_limpio(request.form['nombre'])
+        nueva_familia = _texto_limpio(request.form.get('categoria', ''))
+        nueva_calidad = _texto_limpio(request.form.get('calidad', ''))
         estado_val = request.form.get('estado', '').strip().upper()
         if estado_val == 'OK': estado_val = ""
         
@@ -7865,7 +7953,7 @@ def editar_producto_importbolts():
         prod.stock_minimo = int(request.form.get('stock_minimo', 10))
         prod.precio_unidad = float(request.form['p_unidad'])
         prod.precio_caja = float(request.form['p_caja'])
-        prod.ubicacion = request.form.get('ubicacion', '').strip()
+        prod.ubicacion = _texto_limpio(request.form.get('ubicacion', ''))
         prod.categoria = nueva_familia
         prod.calidad = nueva_calidad
         prod.estado = estado_val
