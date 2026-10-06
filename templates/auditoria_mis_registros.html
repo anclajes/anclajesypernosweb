@@ -282,7 +282,9 @@ function toggleTipo(chk, sinResumen) {
 }
 
 // ---- Buscador en cascada Familia -> Calidad -> Código (mismo que el formulario de conteo) ----
-const FAMILIAS_POR_ORIGEN = {{ familias_por_origen | tojson }};
+// "or {}": si por algún motivo la ruta no envía las familias, la página igual carga (el buscador
+// queda vacío) en vez de caerse con un error 500.
+const FAMILIAS_POR_ORIGEN = {{ (familias_por_origen or {}) | tojson }};
 let PRODUCTOS_CACHE = [];
 let cascadaCargadaPara = null;   // id del registro para el que ya se precargó la cascada
 

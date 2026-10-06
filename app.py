@@ -9893,8 +9893,15 @@ def auditoria_mis_registros():
                 ultima_correccion[c.registro_id] = c
     except Exception:
         app.logger.exception("No se pudieron cargar las correcciones del auditor")
+    # Familias de cada inventario, para el buscador "Familia -> Calidad -> Código" del reporte de
+    # error (mismo buscador en cascada que el formulario de conteo)
+    familias_por_origen = {
+        'ANCLAJES': [c.nombre for c in Category.query.order_by(Category.nombre).all()],
+        'IMPORTBOLTS': [c.nombre for c in CategoryImportBolts.query.order_by(CategoryImportBolts.nombre).all()],
+    }
     return render_template('auditoria_mis_registros.html', registros=registros,
-                           ultima_correccion=ultima_correccion, tipos_correccion=TIPOS_CORRECCION)
+                           ultima_correccion=ultima_correccion, tipos_correccion=TIPOS_CORRECCION,
+                           familias_por_origen=familias_por_origen)
 
 
 # ============================================
@@ -11138,28 +11145,6 @@ def _calculo_correccion(registro, corr):
                                  if 'UBICACION' in tipos else ubic_base)
     calc['destino_estado'] = estado_sugerido(prop.get('estado_fisico')) if 'ESTADO' in tipos else estado_base
     return calc
-
-
-@app.route('/api/auditoria/buscar_producto/<origen>', methods=['POST'])
-def auditoria_api_buscar_producto(origen):
-    """Búsqueda libre (código o descripción) para que el auditor elija el producto CORRECTO al
-    reportar que contó uno equivocado. CONTEO CIEGO: nunca devuelve stock."""
-    if session.get('role') not in ['auditor_stock', 'admin', 'administracion', 'almacen']:
-        return {'status': 'error', 'productos': []}, 403
-    if origen not in ['ANCLAJES', 'IMPORTBOLTS']:
-        return {'status': 'error', 'productos': []}
-    texto = request.form.get('q', '').strip()
-    if len(texto) < 2:
-        return {'status': 'success', 'productos': []}
-    Modelo, _ = _modelos_auditoria(origen)
-    q = Modelo.query.filter(or_(Modelo.sku.ilike(f"%{texto}%"), Modelo.nombre.ilike(f"%{texto}%")))
-    if origen == 'ANCLAJES':
-        q = q.filter(Modelo.es_shadow_importbolts.isnot(True))
-    productos = q.order_by(Modelo.activo.desc(), Modelo.sku).limit(15).all()
-    return {'status': 'success', 'productos': [
-        {'id': p.id, 'sku': p.sku, 'nombre': p.nombre, 'familia': p.categoria, 'calidad': p.calidad or '',
-         'estado': p.estado or '', 'activo': bool(p.activo)} for p in productos
-    ]}
 
 
 @app.route('/auditoria/registro/<int:reg_id>/reportar_error', methods=['POST'])
