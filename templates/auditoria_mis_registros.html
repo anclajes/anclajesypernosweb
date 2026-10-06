@@ -169,11 +169,10 @@
                     </div>
                     <div class="row g-2 d-none mt-1 ps-4" id="re_panel_UBICACION">
                         <div class="col-6"><label class="text-muted fw-bold mb-1">Anaquel correcto</label>
-                            <input type="text" id="re_anaquel" class="form-control form-control-sm text-uppercase" list="re_lista_anaquel" oninput="actualizarResumen()">
-                            <datalist id="re_lista_anaquel"></datalist></div>
+                            <select id="re_anaquel" style="width:100%;"><option value=""></option></select></div>
                         <div class="col-6"><label class="text-muted fw-bold mb-1">Nicho correcto</label>
-                            <input type="text" id="re_nicho" class="form-control form-control-sm text-uppercase" list="re_lista_nicho" oninput="actualizarResumen()">
-                            <datalist id="re_lista_nicho"></datalist></div>
+                            <select id="re_nicho" style="width:100%;"><option value=""></option></select></div>
+                        <div class="col-12 text-muted" style="font-size:.75rem;">Solo se puede elegir de las ubicaciones registradas en el sistema (puedes escribir para buscar).</div>
                     </div>
                 </div>
 
@@ -235,7 +234,7 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 
 function cargarCatalogo(tipo) {
-    if (CATALOGOS[tipo]) return Promise.resolve(CATALOGOS[tipo]);
+    // Siempre se consulta al servidor (sin caché): si se agregaron ubicaciones/estados nuevos, aparecen
     return fetch(`/api/catalogo/${tipo}`).then(r => r.json()).then(d => (CATALOGOS[tipo] = d.valores || [])).catch(() => []);
 }
 function llenarSelect(id, valores, actual) {
@@ -243,8 +242,15 @@ function llenarSelect(id, valores, actual) {
     const lista = valores.includes(actual) || !actual ? valores : [actual, ...valores];
     sel.innerHTML = lista.map(v => `<option value="${esc(v)}" ${v === actual ? 'selected' : ''}>${esc(v)}</option>`).join('');
 }
-function llenarDatalist(id, valores) {
-    document.getElementById(id).innerHTML = valores.map(v => `<option value="${esc(v)}">`).join('');
+// Lista de solo elegir (select2): opción vacía + catálogo completo; preselecciona el valor enviado
+// (si ese valor ya no está en el catálogo, se muestra igual, marcado, para que se vea qué se envió)
+function llenarSelect2(id, valores, actual) {
+    const sel = $('#' + id);
+    sel.empty().append('<option value=""></option>');
+    if (actual && !valores.includes(actual)) sel.append(new Option(actual + ' (ya no está en el catálogo)', actual, false, false));
+    valores.forEach(v => sel.append(new Option(v, v, false, v === actual)));
+    if (actual) sel.val(actual);
+    sel.trigger('change');
 }
 
 function abrirReportarError(datos) {
@@ -260,16 +266,14 @@ function abrirReportarError(datos) {
     // Todo desmarcado y los campos prellenados con lo que envió (solo cambia lo que estuvo mal)
     document.querySelectorAll('.re-tipo').forEach(c => { c.checked = false; toggleTipo(c, true); });
     document.getElementById('re_cantidad').value = datos.cantidad;
-    document.getElementById('re_anaquel').value = datos.anaquel;
-    document.getElementById('re_nicho').value = datos.nicho;
     document.getElementById('re_comentario').value = '';
     cascadaCargadaPara = null;
     document.getElementById('re_elegido').classList.add('d-none');
 
     cargarCatalogo('UNIDAD_MEDIDA').then(v => llenarSelect('re_unidad', v, datos.unidad));
     cargarCatalogo('ESTADO_FISICO').then(v => llenarSelect('re_estado', v, datos.estado));
-    cargarCatalogo('ANAQUEL').then(v => llenarDatalist('re_lista_anaquel', v));
-    cargarCatalogo('NICHO').then(v => llenarDatalist('re_lista_nicho', v));
+    cargarCatalogo('ANAQUEL').then(v => { llenarSelect2('re_anaquel', v, datos.anaquel); actualizarResumen(); });
+    cargarCatalogo('NICHO').then(v => { llenarSelect2('re_nicho', v, datos.nicho); actualizarResumen(); });
     actualizarResumen();
     modalReportarError.show();
 }
@@ -357,6 +361,10 @@ function prepararCascada() {
 document.addEventListener('DOMContentLoaded', function () {
     // dropdownParent: sin esto, el cuadro de búsqueda de select2 no recibe el teclado dentro del modal
     const padre = $('#modalReportarError');
+    $('#re_anaquel').select2({ placeholder: '-- Elige el anaquel --', width: '100%', dropdownParent: padre })
+        .on('change', actualizarResumen);
+    $('#re_nicho').select2({ placeholder: '-- Elige el nicho --', width: '100%', dropdownParent: padre })
+        .on('change', actualizarResumen);
     $('#re_familia').select2({ placeholder: '-- Escribe o elige la familia --', width: '100%', dropdownParent: padre })
         .on('select2:select', () => reCargarCalidades());
     $('#re_calidad').select2({ placeholder: '-- Elige la calidad --', width: '100%', dropdownParent: padre })
@@ -387,7 +395,7 @@ function actualizarResumen() {
         ? `Producto: <s>${esc(REG.sku)}</s> → <b>${esc(PRODUCTO_ELEGIDO.sku)}</b> (${esc(PRODUCTO_ELEGIDO.nombre)})`
         : '<span class="text-danger">Producto: falta elegir el producto correcto</span>');
     if (marcado('CANTIDAD')) items.push(`Cantidad: <s>${esc(REG.cantidad)} ${esc(REG.unidad)}</s> → <b>${esc(document.getElementById('re_cantidad').value || '?')} ${esc(document.getElementById('re_unidad').value)}</b>`);
-    if (marcado('UBICACION')) items.push(`Ubicación: <s>${esc(ubicTexto(REG.anaquel, REG.nicho))}</s> → <b>${esc(ubicTexto(document.getElementById('re_anaquel').value.trim().toUpperCase(), document.getElementById('re_nicho').value.trim().toUpperCase()))}</b>`);
+    if (marcado('UBICACION')) items.push(`Ubicación: <s>${esc(ubicTexto(REG.anaquel, REG.nicho))}</s> → <b>${esc(ubicTexto(document.getElementById('re_anaquel').value, document.getElementById('re_nicho').value))}</b>`);
     if (marcado('ESTADO')) items.push(`Estado físico: <s>${esc(REG.estado || '-')}</s> → <b>${esc(document.getElementById('re_estado').value)}</b>`);
     if (marcado('OTRO')) items.push('Otro motivo (ver explicación)');
     document.getElementById('re_resumen').innerHTML = items.length ? items.map(i => `<li>${i}</li>`).join('') : '<li class="text-muted">Marca qué estuvo mal.</li>';
@@ -399,8 +407,8 @@ function enviarReporteError() {
     if (!tipos.length) return Swal.fire('Falta un dato', 'Marca qué estuvo mal.', 'warning');
     if (tipos.includes('PRODUCTO') && !PRODUCTO_ELEGIDO) return Swal.fire('Falta un dato', 'Busca y elige el producto correcto que contaste.', 'warning');
     if (tipos.includes('CANTIDAD') && document.getElementById('re_cantidad').value === '') return Swal.fire('Falta un dato', 'Indica la cantidad correcta.', 'warning');
-    if (tipos.includes('UBICACION') && !document.getElementById('re_anaquel').value.trim() && !document.getElementById('re_nicho').value.trim())
-        return Swal.fire('Falta un dato', 'Indica el Anaquel y/o Nicho correcto.', 'warning');
+    if (tipos.includes('UBICACION') && (!document.getElementById('re_anaquel').value || !document.getElementById('re_nicho').value))
+        return Swal.fire('Falta un dato', 'Elige el Anaquel y el Nicho correctos de la lista.', 'warning');
     if (!comentario) return Swal.fire('Falta un dato', 'Explica en qué consistió el error.', 'warning');
 
     const fd = new FormData();
@@ -409,8 +417,8 @@ function enviarReporteError() {
     if (PRODUCTO_ELEGIDO) fd.append('producto_id_nuevo', PRODUCTO_ELEGIDO.id);
     fd.append('cantidad', document.getElementById('re_cantidad').value);
     fd.append('unidad', document.getElementById('re_unidad').value);
-    fd.append('anaquel', document.getElementById('re_anaquel').value.trim());
-    fd.append('nicho', document.getElementById('re_nicho').value.trim());
+    fd.append('anaquel', document.getElementById('re_anaquel').value);
+    fd.append('nicho', document.getElementById('re_nicho').value);
     fd.append('estado_fisico', document.getElementById('re_estado').value);
 
     const btn = document.getElementById('re_btn_enviar');

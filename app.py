@@ -11082,6 +11082,11 @@ def _ubicacion_texto(anaquel, nicho):
     return ' '.join(p for p in [f"ANAQUEL {anaquel}" if anaquel else '', f"NICHO {nicho}" if nicho else ''] if p)
 
 
+def _valores_catalogo(tipo):
+    """Valores ACTIVOS de un catálogo de auditoría (ANAQUEL, NICHO, ESTADO_FISICO, UNIDAD_MEDIDA)."""
+    return {v.valor for v in CatalogoValor.query.filter_by(tipo=tipo, activo=True).all()}
+
+
 def _ficha_producto(prod):
     if not prod:
         return None
@@ -11214,16 +11219,23 @@ def auditoria_reportar_error(reg_id):
             if cant < 0:
                 return {'status': 'error', 'msg': 'La cantidad correcta no puede ser negativa.'}
             unidad = request.form.get('unidad', '').strip() or original['unidad']
+            if unidad != original['unidad'] and unidad not in _valores_catalogo('UNIDAD_MEDIDA'):
+                return {'status': 'error', 'msg': f'La unidad "{unidad}" no está en el catálogo. Elige una de la lista.'}
             if cant == original['cantidad'] and unidad == original['unidad']:
                 return {'status': 'error', 'msg': 'Marcaste "Cantidad" pero dejaste la misma cantidad que habías enviado.'}
             propuesta['cantidad'], propuesta['unidad'] = cant, unidad
             cambios.append(f"Cantidad: {original['cantidad']} {original['unidad']} → {cant} {unidad}")
 
         if 'UBICACION' in tipos:
-            anaquel = request.form.get('anaquel', '').strip().upper()
-            nicho = request.form.get('nicho', '').strip().upper()
-            if not anaquel and not nicho:
-                return {'status': 'error', 'msg': 'Indica el Anaquel y/o Nicho correcto.'}
+            # Solo valores del catálogo (igual que el formulario de conteo): no se aceptan textos libres
+            anaquel = request.form.get('anaquel', '').strip()
+            nicho = request.form.get('nicho', '').strip()
+            if not anaquel or not nicho:
+                return {'status': 'error', 'msg': 'Elige el Anaquel y el Nicho correctos de la lista.'}
+            if anaquel != original['anaquel'] and anaquel not in _valores_catalogo('ANAQUEL'):
+                return {'status': 'error', 'msg': f'El anaquel "{anaquel}" no está registrado en el sistema. Elige uno de la lista.'}
+            if nicho != original['nicho'] and nicho not in _valores_catalogo('NICHO'):
+                return {'status': 'error', 'msg': f'El nicho "{nicho}" no está registrado en el sistema. Elige uno de la lista.'}
             if anaquel == original['anaquel'] and nicho == original['nicho']:
                 return {'status': 'error', 'msg': 'Marcaste "Ubicación" pero dejaste la misma ubicación que habías enviado.'}
             propuesta['anaquel'], propuesta['nicho'] = anaquel, nicho
@@ -11233,6 +11245,8 @@ def auditoria_reportar_error(reg_id):
             estado = request.form.get('estado_fisico', '').strip()
             if not estado:
                 return {'status': 'error', 'msg': 'Elige el estado físico correcto.'}
+            if estado != original['estado_fisico'] and estado not in _valores_catalogo('ESTADO_FISICO'):
+                return {'status': 'error', 'msg': f'El estado "{estado}" no está en el catálogo. Elige uno de la lista.'}
             if estado == original['estado_fisico']:
                 return {'status': 'error', 'msg': 'Marcaste "Estado físico" pero dejaste el mismo estado que habías enviado.'}
             propuesta['estado_fisico'] = estado
