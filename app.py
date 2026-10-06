@@ -2,6 +2,7 @@ from flask import Flask, render_template, request, redirect, url_for, flash, ses
 from models import db, User, Product, Category, Client, Order, OrderDetail, ProductMovement, AuditLog, SystemConfig,OrderKitComponent, ClientContact, ClientContactLog, ClientRubroVendedor, IntercompanyTransfer, MetaVendedor, ProductImage, MotivoMovimiento, Proveedor, Presentacion, RegistroAuditoria, RegistroAuditoriaLog, RegistroAuditoriaValorExtra, CatalogoValor, CampoPersonalizado, CampoPersonalizadoOpcion, PeriodoAuditoria, RegistroAuditoriaFoto
 from models import ProductImportBolts, CategoryImportBolts, ProductMovementImportBolts
 from models import MaestroCambioLog, MaestroProducto
+from models import CorreccionAuditoria
 from models import ProductMovement
 from models import Payment
 from models import Category
@@ -9881,7 +9882,19 @@ def auditoria_mis_registros():
     if session.get('role') != 'auditor_stock': return "Acceso denegado", 403
     registros = RegistroAuditoria.query.filter_by(trabajador_id=session['user_id'])\
         .order_by(RegistroAuditoria.fecha_registro.desc()).limit(100).all()
-    return render_template('auditoria_mis_registros.html', registros=registros)
+    # Última corrección de cada registro (para mostrar "Corrección aplicada / rechazada" y su nota)
+    ultima_correccion = {}
+    try:
+        _asegurar_tabla_correcciones()
+        ids = [r.id for r in registros]
+        if ids:
+            for c in CorreccionAuditoria.query.filter(CorreccionAuditoria.registro_id.in_(ids)) \
+                    .order_by(CorreccionAuditoria.id).all():
+                ultima_correccion[c.registro_id] = c
+    except Exception:
+        app.logger.exception("No se pudieron cargar las correcciones del auditor")
+    return render_template('auditoria_mis_registros.html', registros=registros,
+                           ultima_correccion=ultima_correccion, tipos_correccion=TIPOS_CORRECCION)
 
 
 # ============================================
@@ -10124,9 +10137,23 @@ def admin_auditorias_detalle(reg_id):
             partes_ubicacion.append(f"{ubic} ({r.cantidad_total} {r.unidad_medida})")
     ubicacion_combinada = ' + '.join(partes_ubicacion) if len(grupo_conteos) > 1 else None
 
+    correccion, calc_correccion, historial_correcciones = None, None, []
+    try:
+        _asegurar_tabla_correcciones()
+        historial_correcciones = CorreccionAuditoria.query.filter_by(registro_id=registro.id) \
+            .order_by(CorreccionAuditoria.id.desc()).all()
+        if registro.estado_registro == 'CORRECCION_SOLICITADA':
+            correccion = next((c for c in historial_correcciones if c.estado == 'PENDIENTE'), None)
+            if correccion:
+                calc_correccion = _calculo_correccion(registro, correccion)
+    except Exception:
+        app.logger.exception("No se pudo cargar la corrección del registro %s", registro.id)
+
     return render_template('admin_auditorias_detalle.html', registro=registro, prod_actual=prod_actual,
                            hermanos=hermanos, misma_unidad=misma_unidad, mismo_estado=mismo_estado,
-                           suma_sugerida=suma_sugerida, ubicacion_combinada=ubicacion_combinada)
+                           suma_sugerida=suma_sugerida, ubicacion_combinada=ubicacion_combinada,
+                           correccion=correccion, calc=calc_correccion,
+                           historial_correcciones=historial_correcciones, tipos_correccion=TIPOS_CORRECCION)
 
 
 @app.route('/admin/auditorias/<int:reg_id>/rechazar', methods=['POST'])
@@ -10204,16 +10231,19 @@ def admin_auditoria_aplicar(reg_id):
         diferencia = nuevo_stock - stock_antes
         tipo_mov = 'ENTRADA' if diferencia >= 0 else 'SALIDA'
 
-        # Guardamos la FOTO del producto justo antes de modificarlo (queda congelada para siempre)
-        registro.snapshot_antes_ubicacion = prod.ubicacion
-        registro.snapshot_antes_stock = prod.stock_actual
-        registro.snapshot_antes_stock_minimo = prod.stock_minimo
-        registro.snapshot_antes_peso_kg = prod.peso_kg
-        registro.snapshot_antes_precio_unidad = prod.precio_unidad
-        registro.snapshot_antes_precio_caja = prod.precio_caja
-        registro.snapshot_antes_estado = prod.estado
-        registro.snapshot_antes_activo = prod.activo
-        registro.snapshot_antes_fecha = hora_peru()
+        # Guardamos la FOTO del producto justo antes de modificarlo (queda congelada para siempre).
+        # En una CORRECCIÓN no se vuelve a tomar: el "antes" que importa es el de la primera
+        # aplicación (antes se pisaba aquí y se perdía cómo estaba el producto antes de la auditoría).
+        if not es_correccion or registro.snapshot_antes_fecha is None:
+            registro.snapshot_antes_ubicacion = prod.ubicacion
+            registro.snapshot_antes_stock = prod.stock_actual
+            registro.snapshot_antes_stock_minimo = prod.stock_minimo
+            registro.snapshot_antes_peso_kg = prod.peso_kg
+            registro.snapshot_antes_precio_unidad = prod.precio_unidad
+            registro.snapshot_antes_precio_caja = prod.precio_caja
+            registro.snapshot_antes_estado = prod.estado
+            registro.snapshot_antes_activo = prod.activo
+            registro.snapshot_antes_fecha = hora_peru()
 
         prod.stock_actual = nuevo_stock
         prod.stock_minimo = nuevo_stock_minimo
@@ -10331,6 +10361,16 @@ def admin_auditoria_resolver_correccion(reg_id):
         # El registro vuelve a quedar como APLICADO (el conteo original sigue siendo el aplicado;
         # solo se cierra el trámite de la corrección, con la nota de resolución como constancia).
         registro.estado_registro = 'APLICADO'
+        try:
+            _asegurar_tabla_correcciones()
+            corr = CorreccionAuditoria.query.filter_by(registro_id=registro.id, estado='PENDIENTE').first()
+            if corr:
+                corr.estado = registro.correccion_resultado
+                corr.resuelta_por_id = session['user_id']
+                corr.fecha_resolucion = hora_peru()
+                corr.nota_resolucion = nota
+        except Exception:
+            app.logger.exception("No se pudo cerrar la CorreccionAuditoria del registro %s", registro.id)
 
         etiqueta = 'rechazó' if accion == 'RECHAZAR' else 'marcó como resuelta manualmente'
         registrar_log_auditoria(registro, 'CORRECCION_' + ('RECHAZADA' if accion == 'RECHAZAR' else 'RESUELTA_MANUAL'),
@@ -10958,48 +10998,273 @@ def auditoria_actualizar(reg_id):
 # el error (nunca se edita el registro original: eso dejaría sin rastro lo que ya se aplicó al
 # inventario). Queda en estado CORRECCION_SOLICITADA hasta que el administrador lo revise. ---
 
+# ======================================================================================
+# CORRECCIÓN DE UN CONTEO YA APLICADO (reporte de error del auditor -> revisión del admin)
+# ======================================================================================
+# Flujo:
+#   1) El auditor, en "Mis registros", marca QUÉ estuvo mal (producto equivocado, cantidad,
+#      ubicación, estado físico u otro), vuelve a ingresar esos datos correctos y explica el error.
+#   2) Se guarda una CorreccionAuditoria con 3 bloques: lo ORIGINAL (lo que envió y se aplicó, el
+#      "antes de aplicar" del sistema y el ajuste neto que esa auditoría hizo en el Kardex), la
+#      PROPUESTA del auditor y, al final, el RESULTADO que aplicó el admin.
+#   3) El admin compara los bloques y aplica con un clic (todo editable antes de confirmar):
+#        - Mismo producto: el stock se corrige POR DIFERENCIA (stock de hoy + (conteo nuevo -
+#          conteo original)), así se respetan las ventas/movimientos hechos después de la auditoría.
+#        - Producto equivocado (se aplicó a B pero era A): a B se le deshace el ajuste neto que hizo
+#          la auditoría (según su Kardex) y a A se le aplica el conteo, también respetando los
+#          movimientos de A posteriores al conteo. Movimientos de Kardex en ambos productos.
+# ======================================================================================
+TIPOS_CORRECCION = {
+    'PRODUCTO': 'Producto equivocado',
+    'CANTIDAD': 'Cantidad',
+    'UBICACION': 'Ubicación',
+    'ESTADO': 'Estado físico',
+    'OTRO': 'Otro motivo',
+}
+_tabla_correcciones_ok = False
+
+
+def _asegurar_tabla_correcciones():
+    """Crea la tabla correccion_auditoria si todavía no existe (seguro en Postgres y SQLite: con
+    checkfirst no toca nada si ya existe). Así no hace falta correr ninguna ruta /fix_ manual."""
+    global _tabla_correcciones_ok
+    if _tabla_correcciones_ok:
+        return
+    CorreccionAuditoria.__table__.create(bind=db.engine, checkfirst=True)
+    _tabla_correcciones_ok = True
+
+
+# Crear la tabla al arrancar la app (si la base no está disponible en ese instante, se vuelve a
+# intentar sola la primera vez que se use la funcionalidad).
+try:
+    with app.app_context():
+        _asegurar_tabla_correcciones()
+except Exception as _e_tabla_corr:
+    print(f"Aviso: no se pudo verificar la tabla correccion_auditoria al arrancar: {_e_tabla_corr}")
+
+
+def _modelos_auditoria(origen):
+    if origen == 'IMPORTBOLTS':
+        return ProductImportBolts, ProductMovementImportBolts
+    return Product, ProductMovement
+
+
+def _signo_mov(m):
+    return (m.cantidad or 0) if m.tipo == 'ENTRADA' else -(m.cantidad or 0)
+
+
+def _ajuste_kardex_de_registro(registro, product_id):
+    """Ajuste NETO que este conteo (y sus correcciones ya aplicadas) hizo en el stock de un producto,
+    leído del Kardex: movimientos cuyo motivo dice 'Conteo Físico #<id> (' (ajuste, corrección o
+    reversión). El ' (' final evita que #12 se confunda con #123."""
+    _, ModeloMov = _modelos_auditoria(registro.origen_inventario)
+    movs = ModeloMov.query.filter(ModeloMov.product_id == product_id,
+                                  ModeloMov.motivo.like(f"%Conteo Físico #{registro.id} (%")).all()
+    return sum(_signo_mov(m) for m in movs)
+
+
+def _movimiento_neto_desde(origen, product_id, desde):
+    """Suma con signo de TODOS los movimientos de Kardex del producto posteriores a 'desde'."""
+    _, ModeloMov = _modelos_auditoria(origen)
+    movs = ModeloMov.query.filter(ModeloMov.product_id == product_id, ModeloMov.fecha > desde).all()
+    return sum(_signo_mov(m) for m in movs)
+
+
+def _ubicacion_texto(anaquel, nicho):
+    """Mismo formato de ubicación que usa el panel de aplicar del admin: 'ANAQUEL X NICHO Y'."""
+    return ' '.join(p for p in [f"ANAQUEL {anaquel}" if anaquel else '', f"NICHO {nicho}" if nicho else ''] if p)
+
+
+def _ficha_producto(prod):
+    if not prod:
+        return None
+    return {'id': prod.id, 'sku': prod.sku, 'nombre': prod.nombre,
+            'familia': prod.categoria, 'calidad': prod.calidad or ''}
+
+
+def _calculo_correccion(registro, corr):
+    """Arma TODO lo que el admin necesita para decidir: productos involucrados con su estado de hoy,
+    y los valores sugeridos (con su explicación) para aplicar la corrección. Se recalcula cada vez
+    que se abre la pantalla, para usar siempre el stock real de ese momento."""
+    Modelo, _ = _modelos_auditoria(registro.origen_inventario)
+    orig, prop, tipos = corr.original, corr.propuesta, corr.lista_tipos
+    prod_b = Modelo.query.get(orig.get('producto', {}).get('id')) if orig.get('producto') else registro.producto
+    id_a = (prop.get('producto') or {}).get('id')
+    cambia_producto = 'PRODUCTO' in tipos and id_a and prod_b and id_a != prod_b.id
+    prod_a = Modelo.query.get(id_a) if cambia_producto else prod_b
+
+    def estado_sugerido(valor):
+        v = (valor or '').strip()
+        return '' if v.upper() == 'BUEN ESTADO (OK)' else v
+
+    calc = {'cambia_producto': bool(cambia_producto), 'prod_origen': prod_b, 'prod_destino': prod_a,
+            'error': None}
+    if not prod_a or (cambia_producto and not prod_b):
+        calc['error'] = 'Alguno de los productos de esta corrección ya no existe en el inventario.'
+        return calc
+
+    cant_orig, cant_prop = orig.get('cantidad') or 0, prop.get('cantidad') or 0
+    if not cambia_producto:
+        delta = cant_prop - cant_orig
+        calc['destino_stock'] = max(0, prod_a.stock_actual + delta)
+        calc['destino_explicacion'] = (
+            f"Stock de hoy {prod_a.stock_actual} {'+' if delta >= 0 else '−'} {abs(delta)} "
+            f"(conteo corregido {cant_prop} − conteo original {cant_orig}) = {calc['destino_stock']}. "
+            f"Se corrige por diferencia, así se respetan las ventas y movimientos posteriores a la auditoría.")
+        ubic_base = prod_a.ubicacion or ''
+        estado_base = prod_a.estado or ''
+    else:
+        ajuste_b = _ajuste_kardex_de_registro(registro, prod_b.id)
+        calc['ajuste_b'] = ajuste_b
+        calc['origen_stock'] = max(0, prod_b.stock_actual - ajuste_b)
+        calc['origen_explicacion'] = (
+            f"Stock de hoy {prod_b.stock_actual} {'−' if ajuste_b >= 0 else '+'} {abs(ajuste_b)} "
+            f"(ajuste que esta auditoría le hizo por error, según su Kardex) = {calc['origen_stock']}.")
+        calc['origen_ubicacion'] = registro.snapshot_antes_ubicacion if registro.snapshot_antes_ubicacion is not None else (prod_b.ubicacion or '')
+        calc['origen_estado'] = registro.snapshot_antes_estado if registro.snapshot_antes_estado is not None else (prod_b.estado or '')
+        mov_a = _movimiento_neto_desde(registro.origen_inventario, prod_a.id, registro.fecha_registro)
+        calc['mov_a'] = mov_a
+        calc['stock_a_al_conteo'] = prod_a.stock_actual - mov_a
+        calc['destino_stock'] = max(0, cant_prop + mov_a)
+        calc['destino_explicacion'] = (
+            f"Conteo físico {cant_prop} {'+' if mov_a >= 0 else '−'} {abs(mov_a)} (movimientos de "
+            f"{prod_a.sku} en su Kardex desde el conteo del {registro.fecha_registro.strftime('%d/%m/%Y %H:%M')}) "
+            f"= {calc['destino_stock']}. Hoy tiene {prod_a.stock_actual}.")
+        # La ubicación y el estado del conteo eran de A (es donde estaba físicamente lo contado)
+        ubic_base = _ubicacion_texto(orig.get('anaquel'), orig.get('nicho')) or (prod_a.ubicacion or '')
+        estado_base = estado_sugerido(orig.get('estado_fisico')) or (prod_a.estado or '')
+
+    calc['destino_ubicacion'] = (_ubicacion_texto(prop.get('anaquel'), prop.get('nicho'))
+                                 if 'UBICACION' in tipos else ubic_base)
+    calc['destino_estado'] = estado_sugerido(prop.get('estado_fisico')) if 'ESTADO' in tipos else estado_base
+    return calc
+
+
+@app.route('/api/auditoria/buscar_producto/<origen>', methods=['POST'])
+def auditoria_api_buscar_producto(origen):
+    """Búsqueda libre (código o descripción) para que el auditor elija el producto CORRECTO al
+    reportar que contó uno equivocado. CONTEO CIEGO: nunca devuelve stock."""
+    if session.get('role') not in ['auditor_stock', 'admin', 'administracion', 'almacen']:
+        return {'status': 'error', 'productos': []}, 403
+    if origen not in ['ANCLAJES', 'IMPORTBOLTS']:
+        return {'status': 'error', 'productos': []}
+    texto = request.form.get('q', '').strip()
+    if len(texto) < 2:
+        return {'status': 'success', 'productos': []}
+    Modelo, _ = _modelos_auditoria(origen)
+    q = Modelo.query.filter(or_(Modelo.sku.ilike(f"%{texto}%"), Modelo.nombre.ilike(f"%{texto}%")))
+    if origen == 'ANCLAJES':
+        q = q.filter(Modelo.es_shadow_importbolts.isnot(True))
+    productos = q.order_by(Modelo.activo.desc(), Modelo.sku).limit(15).all()
+    return {'status': 'success', 'productos': [
+        {'id': p.id, 'sku': p.sku, 'nombre': p.nombre, 'familia': p.categoria, 'calidad': p.calidad or '',
+         'estado': p.estado or '', 'activo': bool(p.activo)} for p in productos
+    ]}
+
+
 @app.route('/auditoria/registro/<int:reg_id>/reportar_error', methods=['POST'])
 def auditoria_reportar_error(reg_id):
     if session.get('role') != 'auditor_stock': return {'status': 'error', 'msg': 'No autorizado'}, 403
     registro = RegistroAuditoria.query.get_or_404(reg_id)
     if registro.trabajador_id != session['user_id']:
         return {'status': 'error', 'msg': 'No autorizado'}, 403
+    if registro.estado_registro == 'CORRECCION_SOLICITADA':
+        return {'status': 'error', 'msg': 'Ya enviaste un reporte de error para este conteo y está esperando la revisión del administrador.'}
     if registro.estado_registro != 'APLICADO':
         return {'status': 'error', 'msg': 'Solo se puede reportar un error sobre un conteo que ya fue aplicado al inventario. Si aún está pendiente, edítalo directamente.'}
 
-    tipo_error = request.form.get('tipo_error', '').strip().upper()
+    tipos = [t for t in dict.fromkeys(x.strip().upper() for x in request.form.getlist('tipos')) if t in TIPOS_CORRECCION]
     comentario = request.form.get('comentario', '').strip()
-
-    if tipo_error not in ('CANTIDAD', 'UBICACION', 'PRODUCTO', 'OTRO'):
-        return {'status': 'error', 'msg': 'Debe seleccionar el tipo de error.'}
+    if not tipos:
+        return {'status': 'error', 'msg': 'Marca al menos una opción en "¿Qué estuvo mal?".'}
     if not comentario:
-        return {'status': 'error', 'msg': 'Debe explicar en qué consistió el error.'}
+        return {'status': 'error', 'msg': 'Explica en qué consistió el error.'}
 
     try:
-        cantidad_propuesta = None
-        anaquel_propuesto = None
-        nicho_propuesto = None
+        _asegurar_tabla_correcciones()
+        Modelo, _ = _modelos_auditoria(registro.origen_inventario)
+        prod_orig = registro.producto
+        ficha_orig = _ficha_producto(prod_orig) or {
+            'id': registro.product_importbolts_id or registro.product_id, 'sku': registro.sku_snapshot,
+            'nombre': registro.nombre_snapshot, 'familia': registro.familia, 'calidad': registro.calidad or ''}
+        # Lo que el auditor envió es lo que quedó en el registro (familia/calidad/descripción del
+        # producto que eligió en ese momento), no la ficha de hoy (que pudo editarse después).
+        ficha_orig.update({'sku': registro.sku_snapshot, 'nombre': registro.nombre_snapshot,
+                           'familia': registro.familia, 'calidad': registro.calidad or ''})
+        original = {
+            'producto': ficha_orig,
+            'cantidad': registro.cantidad_total, 'unidad': registro.unidad_medida,
+            'anaquel': registro.anaquel or '', 'nicho': registro.nicho or '',
+            'estado_fisico': registro.estado_fisico or '',
+            'fecha_conteo': registro.fecha_registro.isoformat() if registro.fecha_registro else None,
+            'fecha_aplicacion': registro.fecha_aplicacion.isoformat() if registro.fecha_aplicacion else None,
+            'antes_aplicar': {
+                'stock': registro.snapshot_antes_stock, 'ubicacion': registro.snapshot_antes_ubicacion,
+                'estado': registro.snapshot_antes_estado,
+                'fecha': registro.snapshot_antes_fecha.isoformat() if registro.snapshot_antes_fecha else None,
+            },
+            'ajuste_kardex': _ajuste_kardex_de_registro(registro, ficha_orig['id']) if ficha_orig.get('id') else None,
+        }
+        propuesta = {k: original[k] for k in ('producto', 'cantidad', 'unidad', 'anaquel', 'nicho', 'estado_fisico')}
+        cambios = []
 
-        if tipo_error == 'CANTIDAD':
-            cantidad_raw = request.form.get('cantidad_propuesta', '').strip()
-            if not cantidad_raw:
-                return {'status': 'error', 'msg': 'Debe indicar la cantidad correcta que propone.'}
+        if 'PRODUCTO' in tipos:
             try:
-                cantidad_propuesta = int(cantidad_raw)
+                nuevo_id = int(request.form.get('producto_id_nuevo') or 0)
             except ValueError:
-                return {'status': 'error', 'msg': 'La cantidad propuesta no es válida.'}
-            if cantidad_propuesta < 0:
-                return {'status': 'error', 'msg': 'La cantidad propuesta no puede ser negativa.'}
-        elif tipo_error == 'UBICACION':
-            anaquel_propuesto = request.form.get('anaquel_propuesto', '').strip()
-            nicho_propuesto = request.form.get('nicho_propuesto', '').strip()
-            if not anaquel_propuesto and not nicho_propuesto:
-                return {'status': 'error', 'msg': 'Debe indicar el Anaquel y/o Nicho correcto que propone.'}
+                nuevo_id = 0
+            prod_nuevo = Modelo.query.get(nuevo_id) if nuevo_id else None
+            if not prod_nuevo:
+                return {'status': 'error', 'msg': 'Busca y elige el producto CORRECTO que contaste.'}
+            if prod_nuevo.id == ficha_orig.get('id'):
+                return {'status': 'error', 'msg': 'Elegiste el mismo producto que ya habías enviado. Elige el producto correcto o desmarca "Producto equivocado".'}
+            propuesta['producto'] = _ficha_producto(prod_nuevo)
+            cambios.append(f"Producto: {ficha_orig['sku']} → {prod_nuevo.sku}")
 
-        registro.correccion_tipo_error = tipo_error
-        registro.correccion_cantidad_propuesta = cantidad_propuesta
-        registro.correccion_anaquel_propuesto = anaquel_propuesto
-        registro.correccion_nicho_propuesto = nicho_propuesto
+        if 'CANTIDAD' in tipos:
+            try:
+                cant = int(request.form.get('cantidad', ''))
+            except ValueError:
+                return {'status': 'error', 'msg': 'La cantidad correcta no es válida.'}
+            if cant < 0:
+                return {'status': 'error', 'msg': 'La cantidad correcta no puede ser negativa.'}
+            unidad = request.form.get('unidad', '').strip() or original['unidad']
+            if cant == original['cantidad'] and unidad == original['unidad']:
+                return {'status': 'error', 'msg': 'Marcaste "Cantidad" pero dejaste la misma cantidad que habías enviado.'}
+            propuesta['cantidad'], propuesta['unidad'] = cant, unidad
+            cambios.append(f"Cantidad: {original['cantidad']} {original['unidad']} → {cant} {unidad}")
+
+        if 'UBICACION' in tipos:
+            anaquel = request.form.get('anaquel', '').strip().upper()
+            nicho = request.form.get('nicho', '').strip().upper()
+            if not anaquel and not nicho:
+                return {'status': 'error', 'msg': 'Indica el Anaquel y/o Nicho correcto.'}
+            if anaquel == original['anaquel'] and nicho == original['nicho']:
+                return {'status': 'error', 'msg': 'Marcaste "Ubicación" pero dejaste la misma ubicación que habías enviado.'}
+            propuesta['anaquel'], propuesta['nicho'] = anaquel, nicho
+            cambios.append(f"Ubicación: {_ubicacion_texto(original['anaquel'], original['nicho']) or '-'} → {_ubicacion_texto(anaquel, nicho)}")
+
+        if 'ESTADO' in tipos:
+            estado = request.form.get('estado_fisico', '').strip()
+            if not estado:
+                return {'status': 'error', 'msg': 'Elige el estado físico correcto.'}
+            if estado == original['estado_fisico']:
+                return {'status': 'error', 'msg': 'Marcaste "Estado físico" pero dejaste el mismo estado que habías enviado.'}
+            propuesta['estado_fisico'] = estado
+            cambios.append(f"Estado: {original['estado_fisico'] or '-'} → {estado}")
+
+        corr = CorreccionAuditoria(
+            registro_id=registro.id, estado='PENDIENTE', tipos=','.join(tipos), comentario=comentario,
+            original_json=json.dumps(original, ensure_ascii=False), propuesta_json=json.dumps(propuesta, ensure_ascii=False),
+            solicitada_por_id=session['user_id'], fecha_solicitud=hora_peru(),
+        )
+        db.session.add(corr)
+
+        # Campos "resumen" en el propio registro (los usan la campana de avisos y los listados)
+        registro.correccion_tipo_error = 'PRODUCTO' if 'PRODUCTO' in tipos else (tipos[0] if len(tipos) == 1 else 'VARIOS')
+        registro.correccion_cantidad_propuesta = propuesta['cantidad'] if 'CANTIDAD' in tipos else None
+        registro.correccion_anaquel_propuesto = propuesta['anaquel'] if 'UBICACION' in tipos else None
+        registro.correccion_nicho_propuesto = propuesta['nicho'] if 'UBICACION' in tipos else None
         registro.correccion_comentario = comentario
         registro.correccion_solicitada_por_id = session['user_id']
         registro.correccion_fecha_solicitud = hora_peru()
@@ -11009,13 +11274,109 @@ def auditoria_reportar_error(reg_id):
         registro.correccion_nota_resolucion = None
         registro.estado_registro = 'CORRECCION_SOLICITADA'
 
-        etiquetas_tipo = {'CANTIDAD': 'Cantidad', 'UBICACION': 'Ubicación', 'PRODUCTO': 'Producto equivocado', 'OTRO': 'Otro'}
         registrar_log_auditoria(registro, 'CORRECCION_SOLICITADA',
-            f"{session.get('nombre')} reportó un error de tipo '{etiquetas_tipo.get(tipo_error, tipo_error)}' en este conteo ya aplicado: {comentario}")
-
+            f"{session.get('nombre')} reportó un error ({', '.join(TIPOS_CORRECCION[t] for t in tipos)}) en este conteo ya aplicado. "
+            f"{'; '.join(cambios) + '. ' if cambios else ''}Explicación: {comentario}")
         db.session.commit()
-        return {'status': 'success', 'msg': 'Tu reporte fue enviado. El administrador revisará la corrección antes de aplicarla.'}
+        return {'status': 'success', 'msg': 'Tu reporte fue enviado. El administrador verá lo que enviaste, lo que corriges ahora y cómo estaba el sistema, y decidirá cómo aplicarlo.'}
+    except Exception as e:
+        db.session.rollback()
+        return {'status': 'error', 'msg': str(e)}
 
+
+@app.route('/admin/auditorias/<int:reg_id>/aplicar_correccion', methods=['POST'])
+def admin_auditoria_aplicar_correccion(reg_id):
+    """Aplica una CorreccionAuditoria pendiente con los valores que el admin confirmó en pantalla
+    (prellenados con _calculo_correccion). Deja movimientos en el Kardex de cada producto tocado."""
+    if session.get('role') not in ['admin', 'administracion', 'almacen']: return {'status': 'error'}, 403
+    _asegurar_tabla_correcciones()
+    registro = RegistroAuditoria.query.get_or_404(reg_id)
+    corr = CorreccionAuditoria.query.filter_by(registro_id=reg_id, estado='PENDIENTE').order_by(CorreccionAuditoria.id.desc()).first()
+    if registro.estado_registro != 'CORRECCION_SOLICITADA' or not corr:
+        return {'status': 'error', 'msg': 'Esta corrección ya fue resuelta (quizás por otra persona). Actualiza la página.'}
+
+    calc = _calculo_correccion(registro, corr)
+    if calc['error']:
+        return {'status': 'error', 'msg': calc['error']}
+    _, ModeloMov = _modelos_auditoria(registro.origen_inventario)
+    auditor = registro.trabajador.nombre_completo if registro.trabajador else '-'
+    nota = request.form.get('nota', '').strip()
+
+    def _entero(nombre):
+        valor = int(request.form.get(nombre, ''))
+        if valor < 0:
+            raise ValueError
+        return valor
+
+    try:
+        destino_stock = _entero('destino_stock')
+        origen_stock = _entero('origen_stock') if calc['cambia_producto'] else None
+    except ValueError:
+        return {'status': 'error', 'msg': 'Revisa los stocks a registrar: deben ser números enteros mayores o iguales a 0.'}
+
+    def _normalizar_estado(v):
+        v = (v or '').strip()
+        return '' if v.upper() == 'BUEN ESTADO (OK)' else v
+
+    try:
+        ahora = hora_peru()
+        resultado = {'productos': [], 'aplicado_por': session.get('nombre'), 'fecha': ahora.isoformat()}
+
+        def _aplicar(prod, nuevo_stock, nueva_ubic, nuevo_estado, rol, motivo, marcar_auditoria):
+            antes = {'stock': prod.stock_actual, 'ubicacion': prod.ubicacion or '', 'estado': prod.estado or ''}
+            dif = nuevo_stock - prod.stock_actual
+            if dif != 0:
+                db.session.add(ModeloMov(product_id=prod.id, user_id=session['user_id'],
+                                         tipo='ENTRADA' if dif > 0 else 'SALIDA', cantidad=abs(dif),
+                                         stock_anterior=prod.stock_actual, stock_nuevo=nuevo_stock, motivo=motivo))
+            prod.stock_actual = nuevo_stock
+            prod.ubicacion = nueva_ubic
+            prod.estado = nuevo_estado
+            prod.fecha_actualizacion = ahora
+            prod.actualizado_por = session.get('nombre')
+            if marcar_auditoria:
+                prod.ultimo_ajuste_auditoria_fecha = ahora
+                prod.ultimo_ajuste_auditoria_por = session.get('nombre')
+                prod.ultimo_ajuste_auditoria_conteo_por = auditor
+            resultado['productos'].append({'rol': rol, 'sku': prod.sku, 'nombre': prod.nombre,
+                                           'stock_antes': antes['stock'], 'stock_despues': nuevo_stock, 'diferencia': dif,
+                                           'ubicacion_antes': antes['ubicacion'], 'ubicacion_despues': nueva_ubic,
+                                           'estado_antes': antes['estado'], 'estado_despues': nuevo_estado})
+
+        prod_a, prod_b = calc['prod_destino'], calc['prod_origen']
+        if calc['cambia_producto']:
+            _aplicar(prod_b, origen_stock, request.form.get('origen_ubicacion', '').strip().upper(),
+                     _normalizar_estado(request.form.get('origen_estado')), 'origen',
+                     f"Reversión por corrección de Conteo Físico #{registro.id} (el conteo era de {prod_a.sku}, "
+                     f"no de este producto; Auditor: {auditor})", False)
+            _aplicar(prod_a, destino_stock, request.form.get('destino_ubicacion', '').strip().upper(),
+                     _normalizar_estado(request.form.get('destino_estado')), 'destino',
+                     f"Corrección de Conteo Físico #{registro.id} reasignado desde {prod_b.sku} (Auditor: {auditor})", True)
+        else:
+            _aplicar(prod_a, destino_stock, request.form.get('destino_ubicacion', '').strip().upper(),
+                     _normalizar_estado(request.form.get('destino_estado')), 'destino',
+                     f"Corrección de Conteo Físico #{registro.id} ({', '.join(TIPOS_CORRECCION[t] for t in corr.lista_tipos)}; "
+                     f"Auditor: {auditor})", True)
+
+        corr.estado = 'APLICADA'
+        corr.resultado_json = json.dumps(resultado, ensure_ascii=False)
+        corr.resuelta_por_id = session['user_id']
+        corr.fecha_resolucion = ahora
+        corr.nota_resolucion = nota or None
+        registro.estado_registro = 'APLICADO'
+        registro.correccion_resultado = 'APLICADA'
+        registro.correccion_resuelto_por_id = session['user_id']
+        registro.correccion_fecha_resolucion = ahora
+        registro.correccion_nota_resolucion = nota or None
+
+        resumen = '; '.join(f"{p['sku']}: stock {p['stock_antes']} → {p['stock_despues']} ({p['diferencia']:+d})"
+                            for p in resultado['productos'])
+        registrar_log_auditoria(registro, 'CORRECCION_APLICADA',
+            f"{session.get('nombre')} aplicó la corrección reportada por "
+            f"{corr.solicitada_por.nombre_completo if corr.solicitada_por else auditor}: {resumen}."
+            + (f" Nota: {nota}" if nota else ''))
+        db.session.commit()
+        return {'status': 'success', 'msg': f'Corrección aplicada. {resumen}.'}
     except Exception as e:
         db.session.rollback()
         return {'status': 'error', 'msg': str(e)}

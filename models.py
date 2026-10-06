@@ -748,6 +748,60 @@ class RegistroAuditoriaLog(db.Model):
 
 
 # --- MAESTRO DE PRODUCTOS (Excel maestro compartido entre Anclajes e ImportBolts) ---
+
+class CorreccionAuditoria(db.Model):
+    """Reporte de error del auditor sobre un conteo YA APLICADO al inventario (uno por cada vez que
+    reporta; un mismo registro puede tener varios a lo largo del tiempo).
+
+    Guarda los TRES bloques que el administrador compara antes de decidir:
+      - original_json : lo que el auditor envió y se aplicó (producto, cantidad, ubicación, estado),
+                        el "antes de aplicar" del sistema (snapshot) y el ajuste neto que hizo la
+                        auditoría en el Kardex de ese producto.
+      - propuesta_json: lo que el auditor dice ahora que era lo correcto (puede ser OTRO producto).
+      - resultado_json: lo que el administrador aplicó finalmente (stocks antes/después por producto).
+    Se crea automáticamente la primera vez que se usa (ver _asegurar_tabla_correcciones en app.py)."""
+    __tablename__ = 'correccion_auditoria'
+    id = db.Column(db.Integer, primary_key=True)
+    registro_id = db.Column(db.Integer, db.ForeignKey('registro_auditoria.id'), nullable=False, index=True)
+    estado = db.Column(db.String(20), nullable=False, default='PENDIENTE')  # PENDIENTE, APLICADA, RECHAZADA, RESUELTA_MANUAL
+    tipos = db.Column(db.String(120))           # PRODUCTO,CANTIDAD,UBICACION,ESTADO,OTRO (separados por coma)
+    comentario = db.Column(db.Text)
+    original_json = db.Column(db.Text)
+    propuesta_json = db.Column(db.Text)
+    resultado_json = db.Column(db.Text)
+    solicitada_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    fecha_solicitud = db.Column(db.DateTime, default=hora_peru)
+    resuelta_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    fecha_resolucion = db.Column(db.DateTime, nullable=True)
+    nota_resolucion = db.Column(db.Text)
+
+    registro = db.relationship('RegistroAuditoria', backref=db.backref('correcciones', order_by='CorreccionAuditoria.id'))
+    solicitada_por = db.relationship('User', foreign_keys=[solicitada_por_id])
+    resuelta_por = db.relationship('User', foreign_keys=[resuelta_por_id])
+
+    def _json(self, campo):
+        import json
+        try:
+            return json.loads(getattr(self, campo) or '{}')
+        except (ValueError, TypeError):
+            return {}
+
+    @property
+    def original(self):
+        return self._json('original_json')
+
+    @property
+    def propuesta(self):
+        return self._json('propuesta_json')
+
+    @property
+    def resultado(self):
+        return self._json('resultado_json')
+
+    @property
+    def lista_tipos(self):
+        return [t for t in (self.tipos or '').split(',') if t]
+
 class MaestroCambioLog(db.Model):
     """Auditoría de cada cambio que hace la importación del Excel Maestro (hoja MAESTROV2).
     Por ahora el Maestro solo actualiza PESO NOMINAL, pero el campo 'campo' ya queda listo

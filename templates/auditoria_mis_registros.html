@@ -51,12 +51,25 @@
                         {% elif r.estado_registro == 'RECHAZADO' %}<span class="badge bg-danger">Rechazado</span>
                         {% elif r.estado_registro == 'CORRECCION_SOLICITADA' %}<span class="badge text-white" style="background-color:#fd7e14;">Corrección Enviada</span>
                         {% else %}<span class="badge bg-secondary">{{ r.estado_registro }}</span>{% endif %}
+                        {% set uc = ultima_correccion.get(r.id) %}
+                        {% if uc and uc.estado != 'PENDIENTE' %}
+                        <div class="mt-1" style="font-size:.7rem;" title="{{ uc.nota_resolucion or '' }}">
+                            {% if uc.estado == 'APLICADA' %}<span class="text-success"><i class="bi bi-check-circle-fill"></i> Corrección aplicada</span>
+                            {% elif uc.estado == 'RECHAZADA' %}<span class="text-danger"><i class="bi bi-x-circle-fill"></i> Corrección rechazada</span>
+                            {% else %}<span class="text-secondary"><i class="bi bi-check2-all"></i> Corrección resuelta</span>{% endif %}
+                            {% if uc.nota_resolucion %}<div class="text-muted text-truncate" style="max-width:160px;">"{{ uc.nota_resolucion }}"</div>{% endif %}
+                        </div>
+                        {% endif %}
                     </td>
                     <td class="text-center pe-3">
                         {% if r.estado_registro == 'PENDIENTE' %}
                         <a href="{{ url_for('auditoria_editar_form', reg_id=r.id) }}" class="btn btn-sm btn-outline-warning"><i class="bi bi-pencil-fill"></i> Editar</a>
                         {% elif r.estado_registro == 'APLICADO' %}
-                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="abrirReportarError({{ r.id }}, {{ r.sku_snapshot|tojson }}, {{ r.nombre_snapshot|tojson }}, {{ r.cantidad_total|tojson }}, {{ r.unidad_medida|tojson }}, {{ (r.anaquel or '')|tojson }}, {{ (r.nicho or '')|tojson }})">
+                        {% set datos_reporte = {'id': r.id, 'origen': r.origen_inventario, 'sku': r.sku_snapshot, 'nombre': r.nombre_snapshot,
+                                                 'familia': r.familia or '', 'calidad': r.calidad or '', 'cantidad': r.cantidad_total,
+                                                 'unidad': r.unidad_medida or '', 'anaquel': r.anaquel or '', 'nicho': r.nicho or '',
+                                                 'estado': r.estado_fisico or ''} %}
+                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="abrirReportarError({{ datos_reporte|tojson|forceescape }})">
                             <i class="bi bi-flag-fill"></i> Reportar un error
                         </button>
                         {% elif r.estado_registro == 'CORRECCION_SOLICITADA' %}
@@ -80,134 +93,265 @@
 
 <!-- MODAL: REPORTAR UN ERROR EN UN CONTEO YA APLICADO -->
 <div class="modal fade" id="modalReportarError" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content border-0 shadow-lg">
-            <form id="formReportarError">
-                <div class="modal-header text-white" style="background-color:#fd7e14;">
-                    <h5 class="modal-title fs-6 fw-bold"><i class="bi bi-flag-fill me-2"></i> Reportar un Error en este Conteo</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            <div class="modal-header text-white" style="background-color:#fd7e14;">
+                <h5 class="modal-title fs-6 fw-bold"><i class="bi bi-flag-fill me-2"></i> Reportar un error en este conteo</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body small">
+                <div class="alert alert-light border mb-3">
+                    Este conteo <b>ya fue aplicado</b> al inventario, por eso no se edita directamente.
+                    Marca <b>qué estuvo mal</b>, vuelve a ingresar esos datos <b>correctos</b> y explica qué pasó.
+                    El administrador verá lado a lado lo que enviaste, tu corrección y cómo estaba el sistema, y decidirá cómo aplicarlo.
                 </div>
-                <div class="modal-body">
-                    <div class="alert alert-light border small mb-3">
-                        Este conteo <b>ya fue aplicado</b> al inventario, así que no se puede editar directamente.
-                        Cuenta aquí qué estuvo mal; el administrador verá <b>lo que se aplicó</b> y <b>lo que propones ahora</b>, y decidirá cómo corregirlo.
-                    </div>
 
-                    <div class="border rounded p-2 mb-3 bg-light">
-                        <div class="small fw-bold text-muted mb-1"><i class="bi bi-clock-history"></i> Lo que se contó y se aplicó</div>
-                        <div class="small">
-                            <b id="re_sku">-</b> — <span id="re_nombre">-</span><br>
-                            Cantidad: <b id="re_cantidad">-</b> &nbsp;|&nbsp; Ubicación: <b id="re_ubicacion">-</b>
-                        </div>
-                    </div>
+                <!-- 1. LO QUE ENVIÓ -->
+                <div class="border rounded p-2 mb-3 bg-light">
+                    <div class="fw-bold text-muted mb-1"><i class="bi bi-clock-history"></i> Lo que enviaste (ya aplicado)</div>
+                    <table class="table table-sm table-borderless mb-0">
+                        <tr><td class="text-muted" style="width:120px;">Producto</td><td><b id="re_o_sku"></b> — <span id="re_o_nombre"></span></td></tr>
+                        <tr><td class="text-muted">Familia / Calidad</td><td id="re_o_famcal"></td></tr>
+                        <tr><td class="text-muted">Cantidad</td><td id="re_o_cantidad" class="fw-bold"></td></tr>
+                        <tr><td class="text-muted">Ubicación</td><td id="re_o_ubicacion"></td></tr>
+                        <tr><td class="text-muted">Estado físico</td><td id="re_o_estado"></td></tr>
+                    </table>
+                </div>
 
-                    <div class="mb-3">
-                        <label class="small text-muted fw-bold mb-1">¿Qué estuvo mal? *</label>
-                        <select id="re_tipo_error" class="form-select form-select-sm shadow-sm" required onchange="cambioTipoErrorReporte()">
-                            <option value="" selected disabled>-- Selecciona el tipo de error --</option>
-                            <option value="CANTIDAD">La cantidad contada</option>
-                            <option value="UBICACION">La ubicación (anaquel / nicho)</option>
-                            <option value="PRODUCTO">Conté el producto equivocado</option>
-                            <option value="OTRO">Otro motivo</option>
-                        </select>
-                    </div>
+                <!-- 2. QUÉ ESTUVO MAL -->
+                <div class="fw-bold mb-2">¿Qué estuvo mal? <span class="text-muted fw-normal">(marca todo lo que aplique)</span> *</div>
 
-                    <div class="mb-3 d-none" id="re_campo_cantidad">
-                        <label class="small text-muted fw-bold mb-1">Cantidad correcta que propones</label>
-                        <input type="number" id="re_cantidad_propuesta" class="form-control form-control-sm shadow-sm" min="0">
+                <div class="border rounded p-2 mb-2">
+                    <div class="form-check">
+                        <input class="form-check-input re-tipo" type="checkbox" value="PRODUCTO" id="re_chk_PRODUCTO" onchange="toggleTipo(this)">
+                        <label class="form-check-label fw-bold" for="re_chk_PRODUCTO">Elegí el producto equivocado</label>
+                        <div class="text-muted">El código, la descripción, la familia o la calidad no son las del producto que realmente conté.</div>
                     </div>
-
-                    <div class="row g-2 mb-3 d-none" id="re_campo_ubicacion">
-                        <div class="col-6">
-                            <label class="small text-muted fw-bold mb-1">Anaquel correcto</label>
-                            <input type="text" id="re_anaquel_propuesto" class="form-control form-control-sm shadow-sm text-uppercase">
-                        </div>
-                        <div class="col-6">
-                            <label class="small text-muted fw-bold mb-1">Nicho correcto</label>
-                            <input type="text" id="re_nicho_propuesto" class="form-control form-control-sm shadow-sm text-uppercase">
-                        </div>
-                    </div>
-
-                    <div class="mb-1">
-                        <label class="small text-muted fw-bold mb-1">Explica en qué consistió el error *</label>
-                        <textarea id="re_comentario" class="form-control form-control-sm shadow-sm" rows="3" placeholder="Ej: Conté 45 unidades pero al revisar la foto me di cuenta que eran 54..." required></textarea>
+                    <div class="d-none mt-2 ps-4" id="re_panel_PRODUCTO">
+                        <label class="text-muted fw-bold mb-1">Busca el producto correcto (código o descripción)</label>
+                        <input type="text" id="re_buscar" class="form-control form-control-sm" placeholder="Ej: P09073 o PERNO HEX 1/2" oninput="buscarProductoCorrecto()">
+                        <div id="re_resultados" class="list-group mt-1" style="max-height:200px; overflow-y:auto;"></div>
+                        <div id="re_elegido" class="alert alert-success py-2 mt-2 mb-0 d-none"></div>
+                        <div class="text-muted mt-1">La cantidad, ubicación y estado se mantienen como los enviaste. Si alguno también estaba mal, márcalo abajo.</div>
                     </div>
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="button" class="btn btn-sm text-white" style="background-color:#fd7e14;" onclick="enviarReporteError()">
-                        <i class="bi bi-send-fill"></i> Enviar Reporte al Administrador
-                    </button>
+
+                <div class="border rounded p-2 mb-2">
+                    <div class="form-check">
+                        <input class="form-check-input re-tipo" type="checkbox" value="CANTIDAD" id="re_chk_CANTIDAD" onchange="toggleTipo(this)">
+                        <label class="form-check-label fw-bold" for="re_chk_CANTIDAD">La cantidad</label>
+                    </div>
+                    <div class="row g-2 d-none mt-1 ps-4" id="re_panel_CANTIDAD">
+                        <div class="col-6"><label class="text-muted fw-bold mb-1">Cantidad correcta</label>
+                            <input type="number" id="re_cantidad" class="form-control form-control-sm" min="0" oninput="actualizarResumen()"></div>
+                        <div class="col-6"><label class="text-muted fw-bold mb-1">Unidad</label>
+                            <select id="re_unidad" class="form-select form-select-sm" onchange="actualizarResumen()"></select></div>
+                    </div>
                 </div>
-            </form>
+
+                <div class="border rounded p-2 mb-2">
+                    <div class="form-check">
+                        <input class="form-check-input re-tipo" type="checkbox" value="UBICACION" id="re_chk_UBICACION" onchange="toggleTipo(this)">
+                        <label class="form-check-label fw-bold" for="re_chk_UBICACION">La ubicación (anaquel / nicho)</label>
+                    </div>
+                    <div class="row g-2 d-none mt-1 ps-4" id="re_panel_UBICACION">
+                        <div class="col-6"><label class="text-muted fw-bold mb-1">Anaquel correcto</label>
+                            <input type="text" id="re_anaquel" class="form-control form-control-sm text-uppercase" list="re_lista_anaquel" oninput="actualizarResumen()">
+                            <datalist id="re_lista_anaquel"></datalist></div>
+                        <div class="col-6"><label class="text-muted fw-bold mb-1">Nicho correcto</label>
+                            <input type="text" id="re_nicho" class="form-control form-control-sm text-uppercase" list="re_lista_nicho" oninput="actualizarResumen()">
+                            <datalist id="re_lista_nicho"></datalist></div>
+                    </div>
+                </div>
+
+                <div class="border rounded p-2 mb-2">
+                    <div class="form-check">
+                        <input class="form-check-input re-tipo" type="checkbox" value="ESTADO" id="re_chk_ESTADO" onchange="toggleTipo(this)">
+                        <label class="form-check-label fw-bold" for="re_chk_ESTADO">El estado físico</label>
+                    </div>
+                    <div class="d-none mt-1 ps-4" id="re_panel_ESTADO">
+                        <label class="text-muted fw-bold mb-1">Estado físico correcto</label>
+                        <select id="re_estado" class="form-select form-select-sm" onchange="actualizarResumen()"></select>
+                    </div>
+                </div>
+
+                <div class="border rounded p-2 mb-3">
+                    <div class="form-check">
+                        <input class="form-check-input re-tipo" type="checkbox" value="OTRO" id="re_chk_OTRO" onchange="toggleTipo(this)">
+                        <label class="form-check-label fw-bold" for="re_chk_OTRO">Otro motivo</label>
+                        <div class="text-muted">Algo distinto a lo anterior: solo explícalo abajo.</div>
+                    </div>
+                </div>
+
+                <!-- 3. EXPLICACIÓN -->
+                <label class="fw-bold mb-1">Explica en qué consistió el error *</label>
+                <textarea id="re_comentario" class="form-control form-control-sm mb-3" rows="3"
+                          placeholder="Ej: Conté el PERNO 1/2 x 2 pero lo registré con el código del 1/2 x 2 1/2 porque estaban en el mismo nicho..."></textarea>
+
+                <!-- 4. RESUMEN -->
+                <div class="border rounded p-2" style="background:#fff8f0;">
+                    <div class="fw-bold mb-1" style="color:#fd7e14;"><i class="bi bi-list-check"></i> Así se enviará tu corrección</div>
+                    <ul id="re_resumen" class="mb-0 ps-3"><li class="text-muted">Marca qué estuvo mal.</li></ul>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-sm text-white" style="background-color:#fd7e14;" id="re_btn_enviar" onclick="enviarReporteError()">
+                    <i class="bi bi-send-fill"></i> Enviar reporte al administrador
+                </button>
+            </div>
         </div>
     </div>
 </div>
 
 <script>
-let REG_ID_REPORTE = null;
+let REG = null;               // datos del conteo que se está reportando
+let PRODUCTO_ELEGIDO = null;  // producto correcto elegido (si marcó "producto equivocado")
 let modalReportarError = null;
+let timerBusqueda = null;
+const CATALOGOS = {};
+
+function esc(t) {
+    return String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function ubicTexto(a, n) {
+    return [a ? 'Anaquel ' + a : '', n ? 'Nicho ' + n : ''].filter(Boolean).join(' / ') || '-';
+}
 
 document.addEventListener('DOMContentLoaded', function () {
     modalReportarError = new bootstrap.Modal(document.getElementById('modalReportarError'));
 });
 
-function abrirReportarError(regId, sku, nombre, cantidad, unidad, anaquel, nicho) {
-    REG_ID_REPORTE = regId;
-    document.getElementById('re_sku').textContent = sku;
-    document.getElementById('re_nombre').textContent = nombre;
-    document.getElementById('re_cantidad').textContent = cantidad + ' ' + unidad;
-    const partesUbic = [anaquel ? ('Anaquel ' + anaquel) : null, nicho ? ('Nicho ' + nicho) : null].filter(Boolean);
-    document.getElementById('re_ubicacion').textContent = partesUbic.length ? partesUbic.join(' / ') : '-';
+function cargarCatalogo(tipo) {
+    if (CATALOGOS[tipo]) return Promise.resolve(CATALOGOS[tipo]);
+    return fetch(`/api/catalogo/${tipo}`).then(r => r.json()).then(d => (CATALOGOS[tipo] = d.valores || [])).catch(() => []);
+}
+function llenarSelect(id, valores, actual) {
+    const sel = document.getElementById(id);
+    const lista = valores.includes(actual) || !actual ? valores : [actual, ...valores];
+    sel.innerHTML = lista.map(v => `<option value="${esc(v)}" ${v === actual ? 'selected' : ''}>${esc(v)}</option>`).join('');
+}
+function llenarDatalist(id, valores) {
+    document.getElementById(id).innerHTML = valores.map(v => `<option value="${esc(v)}">`).join('');
+}
 
-    document.getElementById('re_tipo_error').value = '';
-    document.getElementById('re_cantidad_propuesta').value = '';
-    document.getElementById('re_anaquel_propuesto').value = '';
-    document.getElementById('re_nicho_propuesto').value = '';
+function abrirReportarError(datos) {
+    REG = datos;
+    PRODUCTO_ELEGIDO = null;
+    document.getElementById('re_o_sku').textContent = datos.sku;
+    document.getElementById('re_o_nombre').textContent = datos.nombre;
+    document.getElementById('re_o_famcal').textContent = (datos.familia || '-') + ' / ' + (datos.calidad || '-');
+    document.getElementById('re_o_cantidad').textContent = datos.cantidad + ' ' + datos.unidad;
+    document.getElementById('re_o_ubicacion').textContent = ubicTexto(datos.anaquel, datos.nicho);
+    document.getElementById('re_o_estado').textContent = datos.estado || '-';
+
+    // Todo desmarcado y los campos prellenados con lo que envió (solo cambia lo que estuvo mal)
+    document.querySelectorAll('.re-tipo').forEach(c => { c.checked = false; toggleTipo(c, true); });
+    document.getElementById('re_cantidad').value = datos.cantidad;
+    document.getElementById('re_anaquel').value = datos.anaquel;
+    document.getElementById('re_nicho').value = datos.nicho;
     document.getElementById('re_comentario').value = '';
-    document.getElementById('re_campo_cantidad').classList.add('d-none');
-    document.getElementById('re_campo_ubicacion').classList.add('d-none');
+    document.getElementById('re_buscar').value = '';
+    document.getElementById('re_resultados').innerHTML = '';
+    document.getElementById('re_elegido').classList.add('d-none');
 
+    cargarCatalogo('UNIDAD_MEDIDA').then(v => llenarSelect('re_unidad', v, datos.unidad));
+    cargarCatalogo('ESTADO_FISICO').then(v => llenarSelect('re_estado', v, datos.estado));
+    cargarCatalogo('ANAQUEL').then(v => llenarDatalist('re_lista_anaquel', v));
+    cargarCatalogo('NICHO').then(v => llenarDatalist('re_lista_nicho', v));
+    actualizarResumen();
     modalReportarError.show();
 }
 
-function cambioTipoErrorReporte() {
-    const tipo = document.getElementById('re_tipo_error').value;
-    document.getElementById('re_campo_cantidad').classList.toggle('d-none', tipo !== 'CANTIDAD');
-    document.getElementById('re_campo_ubicacion').classList.toggle('d-none', tipo !== 'UBICACION');
+function toggleTipo(chk, sinResumen) {
+    const panel = document.getElementById('re_panel_' + chk.value);
+    if (panel) panel.classList.toggle('d-none', !chk.checked);
+    if (chk.checked && chk.value === 'PRODUCTO') setTimeout(() => document.getElementById('re_buscar').focus(), 50);
+    if (!sinResumen) actualizarResumen();
+}
+
+function buscarProductoCorrecto() {
+    clearTimeout(timerBusqueda);
+    const texto = document.getElementById('re_buscar').value.trim();
+    const cont = document.getElementById('re_resultados');
+    if (texto.length < 2) { cont.innerHTML = ''; return; }
+    timerBusqueda = setTimeout(() => {
+        const fd = new FormData();
+        fd.append('q', texto);
+        fetch(`/api/auditoria/buscar_producto/${REG.origen}`, { method: 'POST', body: fd })
+            .then(r => r.json())
+            .then(d => {
+                const prods = (d.productos || []).filter(p => p.sku !== REG.sku);
+                if (!prods.length) { cont.innerHTML = '<div class="list-group-item text-muted">Sin resultados.</div>'; return; }
+                cont.innerHTML = prods.map((p, i) => `
+                    <button type="button" class="list-group-item list-group-item-action py-1" data-i="${i}">
+                        <b class="text-primary">${esc(p.sku)}</b> — ${esc(p.nombre)}
+                        <div class="text-muted" style="font-size:.75rem;">${esc(p.familia)} · ${esc(p.calidad || '-')}${p.estado ? ' · ' + esc(p.estado) : ''}${p.activo ? '' : ' · <span class="text-danger">INACTIVO</span>'}</div>
+                    </button>`).join('');
+                cont.querySelectorAll('button').forEach(b => b.addEventListener('click', () => elegirProducto(prods[+b.dataset.i])));
+            });
+    }, 300);
+}
+
+function elegirProducto(p) {
+    PRODUCTO_ELEGIDO = p;
+    document.getElementById('re_resultados').innerHTML = '';
+    const caja = document.getElementById('re_elegido');
+    caja.innerHTML = `<i class="bi bi-check-circle-fill"></i> Producto correcto: <b>${esc(p.sku)}</b> — ${esc(p.nombre)}
+                      <div style="font-size:.75rem;">Familia: ${esc(p.familia)} · Calidad: ${esc(p.calidad || '-')}</div>`;
+    caja.classList.remove('d-none');
+    actualizarResumen();
+}
+
+function marcado(tipo) { return document.getElementById('re_chk_' + tipo).checked; }
+
+function actualizarResumen() {
+    if (!REG) return;
+    const items = [];
+    if (marcado('PRODUCTO')) items.push(PRODUCTO_ELEGIDO
+        ? `Producto: <s>${esc(REG.sku)}</s> → <b>${esc(PRODUCTO_ELEGIDO.sku)}</b> (${esc(PRODUCTO_ELEGIDO.nombre)})`
+        : '<span class="text-danger">Producto: falta elegir el producto correcto</span>');
+    if (marcado('CANTIDAD')) items.push(`Cantidad: <s>${esc(REG.cantidad)} ${esc(REG.unidad)}</s> → <b>${esc(document.getElementById('re_cantidad').value || '?')} ${esc(document.getElementById('re_unidad').value)}</b>`);
+    if (marcado('UBICACION')) items.push(`Ubicación: <s>${esc(ubicTexto(REG.anaquel, REG.nicho))}</s> → <b>${esc(ubicTexto(document.getElementById('re_anaquel').value.trim().toUpperCase(), document.getElementById('re_nicho').value.trim().toUpperCase()))}</b>`);
+    if (marcado('ESTADO')) items.push(`Estado físico: <s>${esc(REG.estado || '-')}</s> → <b>${esc(document.getElementById('re_estado').value)}</b>`);
+    if (marcado('OTRO')) items.push('Otro motivo (ver explicación)');
+    document.getElementById('re_resumen').innerHTML = items.length ? items.map(i => `<li>${i}</li>`).join('') : '<li class="text-muted">Marca qué estuvo mal.</li>';
 }
 
 function enviarReporteError() {
-    const tipo = document.getElementById('re_tipo_error').value;
+    const tipos = [...document.querySelectorAll('.re-tipo:checked')].map(c => c.value);
     const comentario = document.getElementById('re_comentario').value.trim();
-
-    if (!tipo) return Swal.fire('Falta un dato', 'Selecciona qué estuvo mal.', 'warning');
+    if (!tipos.length) return Swal.fire('Falta un dato', 'Marca qué estuvo mal.', 'warning');
+    if (tipos.includes('PRODUCTO') && !PRODUCTO_ELEGIDO) return Swal.fire('Falta un dato', 'Busca y elige el producto correcto que contaste.', 'warning');
+    if (tipos.includes('CANTIDAD') && document.getElementById('re_cantidad').value === '') return Swal.fire('Falta un dato', 'Indica la cantidad correcta.', 'warning');
+    if (tipos.includes('UBICACION') && !document.getElementById('re_anaquel').value.trim() && !document.getElementById('re_nicho').value.trim())
+        return Swal.fire('Falta un dato', 'Indica el Anaquel y/o Nicho correcto.', 'warning');
     if (!comentario) return Swal.fire('Falta un dato', 'Explica en qué consistió el error.', 'warning');
-    if (tipo === 'CANTIDAD' && !document.getElementById('re_cantidad_propuesta').value) {
-        return Swal.fire('Falta un dato', 'Indica la cantidad correcta que propones.', 'warning');
-    }
-    if (tipo === 'UBICACION' && !document.getElementById('re_anaquel_propuesto').value.trim() && !document.getElementById('re_nicho_propuesto').value.trim()) {
-        return Swal.fire('Falta un dato', 'Indica el Anaquel y/o Nicho correcto que propones.', 'warning');
-    }
 
     const fd = new FormData();
-    fd.append('tipo_error', tipo);
+    tipos.forEach(t => fd.append('tipos', t));
     fd.append('comentario', comentario);
-    fd.append('cantidad_propuesta', document.getElementById('re_cantidad_propuesta').value);
-    fd.append('anaquel_propuesto', document.getElementById('re_anaquel_propuesto').value.trim());
-    fd.append('nicho_propuesto', document.getElementById('re_nicho_propuesto').value.trim());
+    if (PRODUCTO_ELEGIDO) fd.append('producto_id_nuevo', PRODUCTO_ELEGIDO.id);
+    fd.append('cantidad', document.getElementById('re_cantidad').value);
+    fd.append('unidad', document.getElementById('re_unidad').value);
+    fd.append('anaquel', document.getElementById('re_anaquel').value.trim());
+    fd.append('nicho', document.getElementById('re_nicho').value.trim());
+    fd.append('estado_fisico', document.getElementById('re_estado').value);
 
-    fetch(`/auditoria/registro/${REG_ID_REPORTE}/reportar_error`, { method: 'POST', body: fd })
+    const btn = document.getElementById('re_btn_enviar');
+    btn.disabled = true;
+    fetch(`/auditoria/registro/${REG.id}/reportar_error`, { method: 'POST', body: fd })
         .then(r => r.json())
         .then(d => {
+            btn.disabled = false;
             if (d.status === 'success') {
                 modalReportarError.hide();
-                Swal.fire('Reporte Enviado', d.msg, 'success').then(() => location.reload());
+                Swal.fire('Reporte enviado', d.msg, 'success').then(() => location.reload());
             } else {
-                Swal.fire('Error', d.msg, 'error');
+                Swal.fire('No se pudo enviar', d.msg, 'error');
             }
         })
-        .catch(() => Swal.fire('Error', 'No se pudo comunicar con el servidor.', 'error'));
+        .catch(() => { btn.disabled = false; Swal.fire('Error', 'No se pudo comunicar con el servidor.', 'error'); });
 }
 </script>
 {% endblock %}

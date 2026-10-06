@@ -192,7 +192,149 @@
 </div>
 
 <!-- ACCIONES DE REVISIÓN -->
-{% if registro.estado_registro == 'CORRECCION_SOLICITADA' %}
+{% if registro.estado_registro == 'CORRECCION_SOLICITADA' and correccion %}
+{# ===================== CORRECCIÓN REPORTADA (flujo nuevo con comparación en bloques) ===================== #}
+{% set O = correccion.original %}{% set P = correccion.propuesta %}
+{% set OP = O.producto or {} %}{% set PP = P.producto or {} %}
+{% macro fila_cmp(etiqueta, a, b) -%}
+<tr class="{{ 'table-warning' if a != b else '' }}">
+    <td class="text-muted">{{ etiqueta }}</td>
+    <td>{% if a != b %}<span class="text-danger text-decoration-line-through">{{ a if a not in [None, ''] else '-' }}</span>{% else %}{{ a if a not in [None, ''] else '-' }}{% endif %}</td>
+    <td class="{{ 'fw-bold text-success' if a != b else 'text-muted' }}">{{ b if b not in [None, ''] else '-' }}{% if a == b %} <span class="small">(igual)</span>{% endif %}</td>
+</tr>
+{%- endmacro %}
+{% macro ubic(a, n) -%}{{ ((a and 'ANAQUEL ' ~ a ~ ' ') or '') ~ ((n and 'NICHO ' ~ n) or '') }}{%- endmacro %}
+
+<div class="card border-0 shadow-sm mb-3" style="border-left: 4px solid #fd7e14 !important;">
+    <div class="card-header text-white fw-bold" style="background-color:#fd7e14;">
+        <i class="bi bi-exclamation-triangle-fill"></i> Corrección reportada — este conteo YA fue aplicado al inventario
+    </div>
+    <div class="card-body">
+        <div class="alert alert-light border small mb-3">
+            <i class="bi bi-person-fill"></i>
+            <b>{{ correccion.solicitada_por.nombre_completo if correccion.solicitada_por else registro.trabajador.nombre_completo }}</b>
+            reportó el {{ correccion.fecha_solicitud.strftime('%d/%m/%Y %H:%M') if correccion.fecha_solicitud else '-' }} que estuvo mal:
+            {% for t in correccion.lista_tipos %}<span class="badge bg-dark ms-1">{{ tipos_correccion.get(t, t) }}</span>{% endfor %}
+            <div class="mt-2"><i class="bi bi-chat-left-quote-fill text-muted"></i> "{{ correccion.comentario }}"</div>
+        </div>
+
+        <!-- BLOQUE 1: lo que envió vs. lo que corrige -->
+        <div class="fw-bold small mb-1"><span class="badge bg-secondary">1</span> ¿Qué cambió en el conteo?</div>
+        <div class="table-responsive mb-3">
+            <table class="table table-sm table-bordered align-middle small mb-0">
+                <thead class="table-light">
+                    <tr><th style="width:130px;"></th>
+                        <th><i class="bi bi-clock-history"></i> Lo que envió el auditor <span class="fw-normal text-muted">(se aplicó)</span></th>
+                        <th style="background:#fff3e6;"><i class="bi bi-arrow-repeat"></i> Corrección del auditor <span class="fw-normal text-muted">(lo correcto según él)</span></th></tr>
+                </thead>
+                <tbody>
+                    {{ fila_cmp('Código', OP.sku, PP.sku) }}
+                    {{ fila_cmp('Descripción', OP.nombre, PP.nombre) }}
+                    {{ fila_cmp('Familia', OP.familia, PP.familia) }}
+                    {{ fila_cmp('Calidad', OP.calidad, PP.calidad) }}
+                    {{ fila_cmp('Cantidad', (O.cantidad ~ ' ' ~ O.unidad), (P.cantidad ~ ' ' ~ P.unidad)) }}
+                    {{ fila_cmp('Ubicación', ubic(O.anaquel, O.nicho), ubic(P.anaquel, P.nicho)) }}
+                    {{ fila_cmp('Estado físico', O.estado_fisico, P.estado_fisico) }}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- BLOQUE 2: cómo estaba y cómo está el sistema -->
+        <div class="fw-bold small mb-1"><span class="badge bg-secondary">2</span> ¿Cómo estaba y cómo está el sistema?</div>
+        {% set AA = O.antes_aplicar or {} %}
+        <div class="row g-2 mb-3 small">
+            <div class="col-12 {{ 'col-lg-6' if calc and calc.cambia_producto else '' }}">
+                <div class="border rounded p-2 h-100">
+                    <div class="fw-bold mb-1">
+                        {{ OP.sku }} <span class="text-muted fw-normal">— producto al que se aplicó el conteo{% if calc and calc.cambia_producto %} <span class="text-danger fw-bold">(equivocado)</span>{% endif %}</span>
+                    </div>
+                    <table class="table table-sm mb-0">
+                        <thead class="table-light"><tr><th></th><th class="text-end">Antes de aplicar la auditoría</th><th class="text-end">Hoy</th></tr></thead>
+                        <tr><td class="text-muted">Stock</td>
+                            <td class="text-end">{{ AA.stock if AA.stock is not none else '-' }}</td>
+                            <td class="text-end fw-bold">{{ calc.prod_origen.stock_actual if calc and calc.prod_origen else '-' }}</td></tr>
+                        <tr><td class="text-muted">Ubicación</td><td class="text-end">{{ AA.ubicacion or '-' }}</td><td class="text-end">{{ (calc.prod_origen.ubicacion if calc and calc.prod_origen else '') or '-' }}</td></tr>
+                        <tr><td class="text-muted">Estado</td><td class="text-end">{{ AA.estado or 'BUEN ESTADO' }}</td><td class="text-end">{{ (calc.prod_origen.estado if calc and calc.prod_origen else '') or 'BUEN ESTADO' }}</td></tr>
+                    </table>
+                    <div class="text-muted mt-1">
+                        {% if AA.fecha %}Foto del sistema tomada al aplicar ({{ AA.fecha[:16]|replace('T', ' ') }}). {% endif %}
+                        {% if O.ajuste_kardex is not none %}Ajuste que hizo la auditoría en su Kardex: <b>{{ '%+d'|format(O.ajuste_kardex) }}</b>.{% endif %}
+                    </div>
+                </div>
+            </div>
+            {% if calc and calc.cambia_producto and calc.prod_destino %}
+            <div class="col-12 col-lg-6">
+                <div class="border rounded p-2 h-100" style="background:#f3fbf5;">
+                    <div class="fw-bold mb-1">{{ calc.prod_destino.sku }} <span class="text-muted fw-normal">— producto CORRECTO según el auditor</span></div>
+                    <table class="table table-sm mb-0">
+                        <thead class="table-light"><tr><th></th><th class="text-end">Al momento del conteo (calc.)</th><th class="text-end">Hoy</th></tr></thead>
+                        <tr><td class="text-muted">Stock</td><td class="text-end">{{ calc.stock_a_al_conteo }}</td><td class="text-end fw-bold">{{ calc.prod_destino.stock_actual }}</td></tr>
+                        <tr><td class="text-muted">Ubicación</td><td class="text-end" colspan="2">{{ calc.prod_destino.ubicacion or '-' }}</td></tr>
+                        <tr><td class="text-muted">Estado</td><td class="text-end" colspan="2">{{ calc.prod_destino.estado or 'BUEN ESTADO' }}</td></tr>
+                    </table>
+                    <div class="text-muted mt-1">Movimientos de su Kardex desde el conteo: <b>{{ '%+d'|format(calc.mov_a) }}</b>. Esta auditoría nunca lo tocó.</div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+
+        {% if calc and calc.error %}
+        <div class="alert alert-danger small">{{ calc.error }} Resuelve el caso a mano y márcalo como resuelto.</div>
+        {% elif calc %}
+        <!-- BLOQUE 3: aplicar (todo editable) -->
+        <div class="fw-bold small mb-1"><span class="badge bg-secondary">3</span> Aplicar la corrección <span class="fw-normal text-muted">(valores sugeridos, puedes editarlos)</span></div>
+        <form id="formCorreccion" onsubmit="return false;">
+            {% if calc.cambia_producto %}
+            <div class="border rounded p-2 mb-2">
+                <div class="fw-bold text-danger mb-1"><i class="bi bi-arrow-counterclockwise"></i> Deshacer en {{ calc.prod_origen.sku }} (producto equivocado)</div>
+                <div class="row g-2">
+                    <div class="col-12 col-md-3"><label class="small fw-bold">Stock a dejar</label>
+                        <input type="number" min="0" name="origen_stock" class="form-control form-control-sm fw-bold" value="{{ calc.origen_stock }}"
+                               data-hoy="{{ calc.prod_origen.stock_actual }}" oninput="difStock(this)">
+                        <div class="small dif-stock"></div></div>
+                    <div class="col-12 col-md-5"><label class="small fw-bold">Ubicación</label>
+                        <input type="text" name="origen_ubicacion" class="form-control form-control-sm text-uppercase" value="{{ calc.origen_ubicacion }}"></div>
+                    <div class="col-12 col-md-4"><label class="small fw-bold">Estado físico</label>
+                        <input type="text" name="origen_estado" class="form-control form-control-sm text-uppercase" value="{{ calc.origen_estado }}" placeholder="Vacío = BUEN ESTADO"></div>
+                </div>
+                <div class="small text-muted mt-1"><i class="bi bi-calculator"></i> {{ calc.origen_explicacion }} Ubicación y estado: como estaban antes de la auditoría.</div>
+            </div>
+            {% endif %}
+            <div class="border rounded p-2 mb-2" style="background:#f3fbf5;">
+                <div class="fw-bold text-success mb-1"><i class="bi bi-check2-circle"></i> {{ 'Aplicar el conteo en' if calc.cambia_producto else 'Corregir' }} {{ calc.prod_destino.sku }}</div>
+                <div class="row g-2">
+                    <div class="col-12 col-md-3"><label class="small fw-bold">Stock a registrar</label>
+                        <input type="number" min="0" name="destino_stock" class="form-control form-control-sm fw-bold border-success" value="{{ calc.destino_stock }}"
+                               data-hoy="{{ calc.prod_destino.stock_actual }}" oninput="difStock(this)">
+                        <div class="small dif-stock"></div></div>
+                    <div class="col-12 col-md-5"><label class="small fw-bold">Ubicación</label>
+                        <input type="text" name="destino_ubicacion" class="form-control form-control-sm text-uppercase" value="{{ calc.destino_ubicacion }}"></div>
+                    <div class="col-12 col-md-4"><label class="small fw-bold">Estado físico</label>
+                        <input type="text" name="destino_estado" class="form-control form-control-sm text-uppercase" value="{{ calc.destino_estado }}" placeholder="Vacío = BUEN ESTADO"></div>
+                </div>
+                <div class="small text-muted mt-1"><i class="bi bi-calculator"></i> {{ calc.destino_explicacion }}</div>
+            </div>
+            <label class="small fw-bold">Nota para el auditor / historial <span class="text-muted fw-normal">(opcional)</span></label>
+            <textarea name="nota" class="form-control form-control-sm mb-2" rows="2" placeholder="Ej: Verificado con la foto del conteo."></textarea>
+            <div class="d-flex flex-wrap gap-2">
+                <button type="button" class="btn btn-success fw-bold" onclick="aplicarCorreccion()"><i class="bi bi-check-circle-fill"></i> Aplicar corrección</button>
+                <button type="button" class="btn btn-outline-danger" onclick="resolverCorreccion('RECHAZAR')"><i class="bi bi-x-circle-fill"></i> Rechazar</button>
+                <button type="button" class="btn btn-outline-secondary" onclick="resolverCorreccion('RESOLVER_MANUAL')"><i class="bi bi-check2-all"></i> Ya lo resolví a mano</button>
+            </div>
+            <div class="small text-muted mt-2">Cada cambio de stock queda como movimiento en el Kardex de su producto, con el número de este conteo.</div>
+        </form>
+        {% endif %}
+        {% if calc and calc.error %}
+        <div class="d-flex flex-wrap gap-2">
+            <button type="button" class="btn btn-outline-secondary" onclick="resolverCorreccion('RESOLVER_MANUAL')"><i class="bi bi-check2-all"></i> Ya lo resolví a mano</button>
+            <button type="button" class="btn btn-outline-danger" onclick="resolverCorreccion('RECHAZAR')"><i class="bi bi-x-circle-fill"></i> Rechazar</button>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{% elif registro.estado_registro == 'CORRECCION_SOLICITADA' %}
+{# ===== Corrección antigua (reportada antes de este cambio, sin comparación en bloques) ===== #}
 <!-- CORRECCIÓN REPORTADA POR EL AUDITOR SOBRE UN CONTEO YA APLICADO -->
 <div class="card border-0 shadow-sm mb-3" style="border-left: 4px solid #fd7e14 !important;">
     <div class="card-header text-white fw-bold" style="background-color:#fd7e14;">
@@ -451,6 +593,30 @@
     </div>
 </div>
 
+{% set resueltas = (historial_correcciones or [])|rejectattr('estado', 'equalto', 'PENDIENTE')|list %}
+{% if resueltas %}
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-white fw-bold"><i class="bi bi-journal-check"></i> Historial de correcciones de este conteo</div>
+    <div class="card-body p-0 table-responsive">
+        <table class="table table-sm align-middle small mb-0">
+            <thead class="table-light"><tr><th class="ps-3">Reportada</th><th>Qué estuvo mal</th><th>Resultado</th><th>Cambios aplicados</th><th class="pe-3">Nota</th></tr></thead>
+            <tbody>
+                {% for c in resueltas %}
+                <tr>
+                    <td class="ps-3">{{ c.fecha_solicitud.strftime('%d/%m/%Y %H:%M') if c.fecha_solicitud else '-' }}<div class="text-muted">{{ c.solicitada_por.nombre_completo if c.solicitada_por else '' }}</div></td>
+                    <td>{% for t in c.lista_tipos %}<span class="badge bg-light text-dark border">{{ tipos_correccion.get(t, t) }}</span> {% endfor %}<div class="text-muted">"{{ c.comentario }}"</div></td>
+                    <td>{% if c.estado == 'APLICADA' %}<span class="badge bg-success">Aplicada</span>{% elif c.estado == 'RECHAZADA' %}<span class="badge bg-danger">Rechazada</span>{% else %}<span class="badge bg-secondary">Resuelta a mano</span>{% endif %}
+                        <div class="text-muted">{{ c.resuelta_por.nombre_completo if c.resuelta_por else '' }} {{ c.fecha_resolucion.strftime('%d/%m/%Y %H:%M') if c.fecha_resolucion else '' }}</div></td>
+                    <td>{% for pr in c.resultado.get('productos', []) %}<div><b>{{ pr.sku }}</b>: stock {{ pr.stock_antes }} → {{ pr.stock_despues }} ({{ '%+d'|format(pr.diferencia) }})</div>{% else %}-{% endfor %}</td>
+                    <td class="pe-3">{{ c.nota_resolucion or '-' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
 <script>
 const REG_ID = {{ registro.id }};
 
@@ -508,6 +674,44 @@ function rechazar() {
 // Para corrección de un conteo ya aplicado: el admin la rechaza o la marca como resuelta a mano
 // (p.ej. cuando el tipo de error es "Producto equivocado" y tuvo que ajustar el inventario
 // manualmente porque el sistema no revierte stock de forma automática entre dos productos).
+// Muestra al lado de cada "stock a registrar" cuánto se sumará/restará al stock de hoy
+function difStock(input) {
+    const hoy = parseInt(input.dataset.hoy || '0', 10), nuevo = parseInt(input.value || '0', 10);
+    const dif = nuevo - hoy, el = input.parentElement.querySelector('.dif-stock');
+    if (!el) return;
+    el.innerHTML = isNaN(nuevo) ? '' : (dif === 0 ? '<span class="text-muted">Sin cambio (hoy ' + hoy + ')</span>'
+        : `<span class="${dif > 0 ? 'text-success' : 'text-danger'} fw-bold">${dif > 0 ? '+' : ''}${dif}</span> <span class="text-muted">vs hoy (${hoy})</span>`);
+}
+document.querySelectorAll('#formCorreccion input[data-hoy]').forEach(difStock);
+
+function aplicarCorreccion() {
+    const form = document.getElementById('formCorreccion');
+    const fd = new FormData(form);
+    for (const campo of ['destino_stock', 'origen_stock']) {
+        if (form.elements[campo] && (form.elements[campo].value === '' || +form.elements[campo].value < 0)) {
+            return Swal.fire('Revisa los datos', 'El stock a registrar debe ser un número mayor o igual a 0.', 'warning');
+        }
+    }
+    const resumen = [...form.querySelectorAll('input[data-hoy]')].map(i => {
+        const titulo = i.closest('.border').querySelector('.fw-bold').innerText.trim();
+        return `<li>${titulo}: ${i.dataset.hoy} → <b>${i.value}</b></li>`;
+    }).join('');
+    Swal.fire({
+        title: '¿Aplicar la corrección?', icon: 'question', showCancelButton: true,
+        html: `<ul class="text-start small">${resumen}</ul><div class="small text-muted">Se registrarán los movimientos en el Kardex.</div>`,
+        confirmButtonText: 'Sí, aplicar', confirmButtonColor: '#198754', cancelButtonText: 'Cancelar'
+    }).then(r => {
+        if (!r.isConfirmed) return;
+        fetch(`/admin/auditorias/${REG_ID}/aplicar_correccion`, { method: 'POST', body: fd })
+            .then(x => x.json())
+            .then(d => {
+                if (d.status === 'success') Swal.fire('Listo', d.msg, 'success').then(() => location.reload());
+                else Swal.fire('No se pudo aplicar', d.msg, 'error');
+            })
+            .catch(() => Swal.fire('Error', 'No se pudo comunicar con el servidor.', 'error'));
+    });
+}
+
 function resolverCorreccion(accion) {
     const esRechazo = accion === 'RECHAZAR';
     Swal.fire({
