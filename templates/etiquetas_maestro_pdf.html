@@ -2,8 +2,8 @@
 <head>
 <meta charset="utf-8">
 <style>
-    /* Una etiqueta por fila, centrada y un poco más ancha que media hoja (62% del ancho),
-       con letras grandes para leerla de lejos en el almacén.
+    /* Una etiqueta por fila, centrada y más larga que alta (78% del ancho de la hoja),
+       código y descripción grandes; los datos de auditoría más chicos.
        Notas de xhtml2pdf:
        - ninguna celda puede quedar vacía (sin nada adentro la columna se queda sin ancho y el
          PDF falla con "negative availWidth"): las columnas de los costados llevan &nbsp;
@@ -22,11 +22,11 @@
         margin-bottom: 0.4cm;
     }
     td.lado {
-        width: 18%;
+        width: 11%;
         font-size: 2pt;
     }
     td.etiqueta {
-        width: 64%;
+        width: 78%;
         border: 1px dashed #8a96a3;
         padding: 6px 8px 4px 6px;
     }
@@ -34,34 +34,34 @@
         padding: 0;
     }
     td.qr {
-        width: 3.9cm;
+        width: 3.5cm;
         text-align: center;
         vertical-align: middle;
     }
     td.qr img {
-        width: 3.6cm;
-        height: 3.6cm;
+        width: 3.3cm;
+        height: 3.3cm;
     }
     table.interna td.datos {
         padding-left: 8px;
         vertical-align: middle;
     }
     .sku {
-        font-size: 20pt;
+        font-size: 23pt;
         font-weight: bold;
         color: #0F172A;
         line-height: 1.1;
         margin: 0;
     }
     .nombre {
-        font-size: 12.5pt;
+        font-size: 14.5pt;
         font-weight: bold;
         color: #222222;
         line-height: 1.15;
         margin: 2px 0 0 0;
     }
     .calidad {
-        font-size: 10.5pt;
+        font-size: 12pt;
         color: #555555;
         line-height: 1.15;
         margin: 1px 0 0 0;
@@ -75,23 +75,23 @@
         line-height: 1;
     }
     table.auditoria td.etq, table.auditoria td.val {
-        padding-top: 2px;
+        padding-top: 1px;
         line-height: 1.15;
     }
     td.etq {
-        width: 1.95cm;
-        font-size: 10pt;
+        width: 1.7cm;
+        font-size: 8.5pt;
         font-weight: bold;
         color: #475569;
         vertical-align: top;
     }
     td.val {
-        font-size: 10.5pt;
+        font-size: 8.5pt;
         color: #111111;
         vertical-align: top;
     }
     .sin-auditoria {
-        font-size: 10pt;
+        font-size: 8.5pt;
         color: #64748b;
     }
 </style>
