@@ -206,6 +206,10 @@
             <i class="bi bi-info-circle-fill"></i> Estos motivos son <strong>compartidos entre Anclajes e ImportBolts</strong> —
             se usan al registrar un movimiento en el Kardex de cualquiera de los dos inventarios. Renombrar o desactivar uno
             aquí no cambia el historial ya registrado, solo las opciones que se ofrecen de ahora en adelante.
+            <div class="mt-1"><i class="bi bi-arrow-left-right"></i> Para <b>dejar de usar un motivo y llevar su historial a otro</b>
+            (ej. TRANSFORMACIÓN → REQUERIMIENTO DE MAESTRANZA) usa <b>"Pasar movimientos"</b>: cambia el motivo de todos sus
+            movimientos en los dos Kardex (las cantidades y el stock no cambian) y, si marcas la opción, después lo elimina,
+            aunque sea predeterminado (solo Gerencia).</div>
         </div>
         <div class="row g-3">
             {% for tipo, titulo, lista in [('ENTRADA', 'Motivos de Entrada', motivos_entrada), ('SALIDA', 'Motivos de Salida', motivos_salida)] %}
@@ -221,11 +225,13 @@
                         </div>
                         <div class="table-responsive">
                             <table class="table table-sm table-hover mb-0" id="tabla_motivo_{{ tipo }}">
-                                <thead><tr><th>Nombre</th><th class="text-center">Estado</th><th class="text-end">Acciones</th></tr></thead>
+                                <thead><tr><th>Nombre</th><th class="text-center" title="Movimientos en el Kardex (Anclajes + Import Bolts)">Movim.</th><th class="text-center">Estado</th><th class="text-end">Acciones</th></tr></thead>
                                 <tbody>
                                     {% for m in lista %}
                                     <tr id="fila-motivo-{{ m.id }}">
                                         <td id="nombre-motivo-{{ m.id }}">{{ m.nombre }} {% if m.es_predeterminado %}<span class="badge bg-light text-muted border ms-1" style="font-size:.65rem;">predeterminado</span>{% endif %}</td>
+                                        {% set um = (usos_motivos or {}).get(m.id, {'total': 0, 'ANCLAJES': 0, 'IMPORTBOLTS': 0}) %}
+                                        <td class="text-center"><span class="badge {{ 'bg-dark' if um.total else 'bg-light text-muted border' }}" title="Anclajes {{ um.ANCLAJES }} · Import Bolts {{ um.IMPORTBOLTS }}">{{ um.total }}</span></td>
                                         <td class="text-center" id="estado-motivo-{{ m.id }}">
                                             {% if m.activo %}<span class="badge bg-success">Activo</span>{% else %}<span class="badge bg-secondary">Inactivo</span>{% endif %}
                                         </td>
@@ -234,13 +240,19 @@
                                             <button class="btn btn-sm btn-outline-secondary" onclick="toggleMotivo({{ m.id }})" title="Activar/Desactivar">
                                                 <i class="bi {{ 'bi-toggle-on' if m.activo else 'bi-toggle-off' }}" id="icono-motivo-{{ m.id }}"></i>
                                             </button>
-                                            {% if not m.es_predeterminado %}
-                                            <button class="btn btn-sm btn-outline-danger" onclick="eliminarMotivo({{ m.id }})" title="Eliminar"><i class="bi bi-trash"></i></button>
+                                            {% if um.total %}
+                                            <button class="btn btn-sm btn-outline-warning" title="Pasar sus movimientos del Kardex a otro motivo"
+                                                    onclick="reasignarMotivo({{ m.id }}, {{ m.nombre|tojson|forceescape }}, '{{ m.tipo }}', {{ um.total }}, {{ um.ANCLAJES }}, {{ um.IMPORTBOLTS }}, {{ 'true' if m.es_predeterminado else 'false' }})">
+                                                <i class="bi bi-arrow-left-right"></i>
+                                            </button>
+                                            {% endif %}
+                                            {% if not m.es_predeterminado or (session.get('role') == 'admin' and not um.total) %}
+                                            <button class="btn btn-sm btn-outline-danger" onclick="eliminarMotivo({{ m.id }}, {{ 'true' if m.es_predeterminado else 'false' }})" title="Eliminar"><i class="bi bi-trash"></i></button>
                                             {% endif %}
                                         </td>
                                     </tr>
                                     {% else %}
-                                    <tr id="fila-vacia-motivo-{{ tipo }}"><td colspan="3" class="text-center text-muted py-3">Sin motivos aún.</td></tr>
+                                    <tr id="fila-vacia-motivo-{{ tipo }}"><td colspan="4" class="text-center text-muted py-3">Sin motivos aún.</td></tr>
                                     {% endfor %}
                                 </tbody>
                             </table>
@@ -711,9 +723,64 @@ function toggleMotivo(id) {
         });
 }
 
-function eliminarMotivo(id) {
+// Lista de motivos para elegir el destino al "Pasar movimientos" (mismo tipo, distinto del de origen)
+{% set lista_motivos = [] %}{% for m in (motivos_entrada or []) + (motivos_salida or []) %}{% set _ = lista_motivos.append({'id': m.id, 'nombre': m.nombre, 'tipo': m.tipo, 'activo': m.activo}) %}{% endfor %}
+const MOTIVOS_INFO = {{ lista_motivos|tojson }};
+const ES_GERENCIA = {{ 'true' if session.get('role') == 'admin' else 'false' }};
+
+// Al recargar después de pasar movimientos, volver a la pestaña de Motivos
+document.addEventListener('DOMContentLoaded', function () {
+    if (location.hash === '#tab-motivos') {
+        const btn = document.querySelector('[data-bs-target="#tab-motivos"]');
+        if (btn && window.bootstrap) bootstrap.Tab.getOrCreateInstance(btn).show();
+    }
+});
+
+function reasignarMotivo(id, nombre, tipo, total, enAnclajes, enImport, predeterminado) {
+    const opciones = MOTIVOS_INFO.filter(m => m.tipo === tipo && m.id !== id)
+        .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
+        .map(m => `<option value="${m.id}">${escHtml(m.nombre)}${m.activo ? '' : ' (inactivo)'}</option>`).join('');
+    if (!opciones) {
+        return Swal.fire('No hay a dónde pasarlos', `No hay otro motivo de ${tipo.toLowerCase()}. Créalo primero arriba.`, 'info');
+    }
+    const puedeEliminar = !predeterminado || ES_GERENCIA;
     Swal.fire({
-        title: '¿Eliminar este motivo?', text: 'Esta acción no se puede deshacer.',
+        title: 'Pasar movimientos a otro motivo',
+        icon: 'question', showCancelButton: true, confirmButtonText: 'Pasar movimientos', cancelButtonText: 'Cancelar', width: 560,
+        html: `<div class="text-start small">
+                 <p class="mb-2"><b>${escHtml(nombre)}</b> (${tipo.toLowerCase()}) tiene <b>${total}</b> movimiento(s):
+                    Anclajes ${enAnclajes} · Import Bolts ${enImport}.</p>
+                 <label class="fw-bold mb-1">Pasarlos a:</label>
+                 <select id="sw_destino_motivo" class="form-select form-select-sm mb-2"><option value="">-- Elige el motivo --</option>${opciones}</select>
+                 ${puedeEliminar ? `<div class="form-check"><input class="form-check-input" type="checkbox" id="sw_eliminar_motivo" checked>
+                    <label class="form-check-label" for="sw_eliminar_motivo">Después, <b>eliminar "${escHtml(nombre)}"</b>${predeterminado ? ' (es predeterminado)' : ''}</label></div>`
+                    : '<div class="text-muted">Es predeterminado: solo Gerencia puede eliminarlo. Puedes desactivarlo después.</div>'}
+                 <div class="text-muted mt-2">Solo cambia el nombre del motivo en el historial del Kardex: cantidades, stock y fechas no cambian. Queda registrado quién lo hizo.</div>
+               </div>`,
+        preConfirm: () => {
+            const destino = document.getElementById('sw_destino_motivo').value;
+            if (!destino) { Swal.showValidationMessage('Elige el motivo de destino'); return false; }
+            const chk = document.getElementById('sw_eliminar_motivo');
+            return { destino, eliminar: !!(chk && chk.checked) };
+        }
+    }).then(r => {
+        if (!r.isConfirmed) return;
+        const fd = new FormData();
+        fd.append('destino_id', r.value.destino);
+        if (r.value.eliminar) fd.append('eliminar_origen', '1');
+        fetch(`/admin/motivos/${id}/reasignar`, { method: 'POST', body: fd })
+            .then(x => x.json())
+            .then(d => {
+                if (d.status === 'success') Swal.fire('Listo', d.msg, 'success').then(() => { location.hash = 'tab-motivos'; location.reload(); });
+                else Swal.fire('No se pudo', d.msg, 'error');
+            })
+            .catch(() => Swal.fire('Error', 'No se pudo comunicar con el servidor.', 'error'));
+    });
+}
+
+function eliminarMotivo(id, predeterminado) {
+    Swal.fire({
+        title: '¿Eliminar este motivo?', text: predeterminado ? 'Es un motivo PREDETERMINADO del sistema. Esta acción no se puede deshacer.' : 'Esta acción no se puede deshacer.',
         icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Sí, eliminar'
     }).then(result => {
         if (!result.isConfirmed) return;

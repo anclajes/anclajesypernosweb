@@ -10644,6 +10644,11 @@ def admin_catalogos():
     campos = CampoPersonalizado.query.order_by(CampoPersonalizado.orden, CampoPersonalizado.id).all()
     motivos_entrada = MotivoMovimiento.query.filter_by(tipo='ENTRADA').order_by(MotivoMovimiento.nombre).all()
     motivos_salida = MotivoMovimiento.query.filter_by(tipo='SALIDA').order_by(MotivoMovimiento.nombre).all()
+    usos_motivos = {}
+    try:
+        usos_motivos = {m.id: _usos_motivo(m) for m in motivos_entrada + motivos_salida}
+    except Exception:
+        app.logger.exception("No se pudieron contar los usos de los motivos")
     presentaciones = Presentacion.query.order_by(Presentacion.nombre).all()
     # Estado Físico: cuántos productos usan cada estado y cuáles están escritos a mano (fuera del catálogo)
     uso_estados = _uso_estados_productos()
@@ -10656,7 +10661,82 @@ def admin_catalogos():
                            fotos_obligatorias=_fotos_auditoria_obligatorias(),
                            uso_estados=uso_estados, estados_fuera=estados_fuera,
                            estado_ok=ESTADO_OK, normalizar_estado=_normalizar_estado_producto,
-                           catalogo_estados=_estados_catalogo())
+                           catalogo_estados=_estados_catalogo(),
+                           usos_motivos=usos_motivos)
+
+
+# ============================================
+# MOTIVOS DE MOVIMIENTO: pasar todos los movimientos del Kardex de un motivo a otro (del mismo
+# tipo) y, si se quiere, eliminar el de origen — aunque sea predeterminado (solo Gerencia).
+# Solo cambia la ETIQUETA del motivo en el historial: cantidades, stock y fechas no se tocan.
+# Incluye los movimientos antiguos que guardaron solo el texto del motivo (sin motivo_id).
+# ============================================
+def _movs_de_motivo(Modelo, m):
+    """(vinculados por motivo_id, solo-texto sin motivo_id) de un motivo en un Kardex."""
+    vinculados = Modelo.query.filter(Modelo.motivo_id == m.id)
+    solo_texto = Modelo.query.filter(Modelo.motivo_id.is_(None), Modelo.tipo == m.tipo,
+                                     func.upper(func.trim(Modelo.motivo)) == (m.nombre or '').strip().upper())
+    return vinculados, solo_texto
+
+
+def _usos_motivo(m):
+    total = {'ANCLAJES': 0, 'IMPORTBOLTS': 0}
+    for origen, Modelo in [('ANCLAJES', ProductMovement), ('IMPORTBOLTS', ProductMovementImportBolts)]:
+        vinculados, solo_texto = _movs_de_motivo(Modelo, m)
+        total[origen] = vinculados.count() + solo_texto.count()
+    total['total'] = total['ANCLAJES'] + total['IMPORTBOLTS']
+    return total
+
+
+def _texto_motivo_nuevo(texto, origen, destino):
+    """'TRANSFORMACIÓN' -> 'REQUERIMIENTO DE MAESTRANZA'; si el texto traía algo más después del
+    nombre ('TRANSFORMACIÓN | detalle'), se conserva ese detalle."""
+    t = (texto or '').strip()
+    if t.upper().startswith((origen.nombre or '').strip().upper()):
+        return (destino.nombre + t[len((origen.nombre or '').strip()):])[:200]
+    return t or destino.nombre
+
+
+@app.route('/admin/motivos/<int:motivo_id>/reasignar', methods=['POST'])
+def admin_motivo_reasignar(motivo_id):
+    if session.get('role') not in ['admin', 'almacen']: return {'status': 'error', 'msg': 'No autorizado'}, 403
+    origen = MotivoMovimiento.query.get_or_404(motivo_id)
+    destino = MotivoMovimiento.query.get(request.form.get('destino_id', type=int) or 0)
+    eliminar = request.form.get('eliminar_origen') == '1'
+    if not destino or destino.id == origen.id:
+        return {'status': 'error', 'msg': 'Elige el motivo al que quieres pasar los movimientos.'}
+    if destino.tipo != origen.tipo:
+        return {'status': 'error', 'msg': f'"{origen.nombre}" es de {origen.tipo.lower()} y "{destino.nombre}" de '
+                                          f'{destino.tipo.lower()}: solo se puede pasar a un motivo del mismo tipo.'}
+    if eliminar and origen.es_predeterminado and session.get('role') != 'admin':
+        return {'status': 'error', 'msg': 'Solo Gerencia puede eliminar un motivo predeterminado.'}
+    try:
+        cuenta = {'ANCLAJES': 0, 'IMPORTBOLTS': 0}
+        for nombre_inv, Modelo in [('ANCLAJES', ProductMovement), ('IMPORTBOLTS', ProductMovementImportBolts)]:
+            vinculados, solo_texto = _movs_de_motivo(Modelo, origen)
+            for mov in vinculados.all() + solo_texto.all():
+                mov.motivo = _texto_motivo_nuevo(mov.motivo, origen, destino)
+                mov.motivo_id = destino.id
+                cuenta[nombre_inv] += 1
+        total = cuenta['ANCLAJES'] + cuenta['IMPORTBOLTS']
+        texto = (f"Pasó {total} movimiento(s) del Kardex del motivo '{origen.nombre}' a '{destino.nombre}' "
+                 f"({origen.tipo}; Anclajes {cuenta['ANCLAJES']}, Import Bolts {cuenta['IMPORTBOLTS']})")
+        registrar_log(texto[:255], "bi-arrow-left-right", "text-warning")
+        eliminado = False
+        if eliminar:
+            db.session.flush()
+            if _usos_motivo(origen)['total'] == 0:
+                registrar_log(f"Eliminó el motivo '{origen.nombre}' ({origen.tipo})"
+                              f"{' — era predeterminado' if origen.es_predeterminado else ''}; "
+                              f"sus movimientos quedaron en '{destino.nombre}'"[:255], "bi-trash-fill", "text-danger")
+                db.session.delete(origen)
+                eliminado = True
+        db.session.commit()
+        return {'status': 'success', 'movidos': total, 'eliminado': eliminado,
+                'msg': texto + ('. El motivo de origen se eliminó.' if eliminado else '.')}
+    except Exception as e:
+        db.session.rollback()
+        return {'status': 'error', 'msg': str(e)}
 
 
 # ============================================
@@ -10915,15 +10995,15 @@ def admin_motivo_toggle(motivo_id):
 def admin_motivo_eliminar(motivo_id):
     if session.get('role') not in ['admin', 'almacen']: return {'status': 'error', 'msg': 'No autorizado'}, 403
     m = MotivoMovimiento.query.get_or_404(motivo_id)
-    if m.es_predeterminado:
-        return {'status': 'error', 'msg': 'Este motivo es predeterminado del sistema y no se puede eliminar. Puede desactivarlo en su lugar.'}
-    usos = (ProductMovement.query.filter_by(motivo_id=m.id).count()
-            + ProductMovementImportBolts.query.filter_by(motivo_id=m.id).count())
+    if m.es_predeterminado and session.get('role') != 'admin':
+        return {'status': 'error', 'msg': 'Este motivo es predeterminado del sistema: solo Gerencia puede eliminarlo. Puede desactivarlo en su lugar.'}
+    usos = _usos_motivo(m)['total']
     if usos > 0:
-        return {'status': 'error', 'msg': f'Este motivo ya se usó en {usos} movimiento(s) del Kardex — no se puede '
-                                           f'eliminar sin perder esa referencia. Desactívalo en su lugar (deja de '
-                                           f'aparecer para movimientos nuevos, pero el historial no se toca).'}
-    registrar_log(f"Eliminó el motivo '{m.nombre}' ({m.tipo})", "bi-trash-fill", "text-danger")
+        return {'status': 'error', 'msg': f'Este motivo tiene {usos} movimiento(s) en el Kardex. Primero usa "Pasar '
+                                           f'movimientos a otro motivo" (ahí mismo puedes eliminarlo), o desactívalo '
+                                           f'para que deje de aparecer en movimientos nuevos.'}
+    registrar_log(f"Eliminó el motivo '{m.nombre}' ({m.tipo}){' — era predeterminado' if m.es_predeterminado else ''}",
+                  "bi-trash-fill", "text-danger")
     db.session.delete(m)
     db.session.commit()
     return {'status': 'success'}
