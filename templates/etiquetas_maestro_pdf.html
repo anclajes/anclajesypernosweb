@@ -2,90 +2,132 @@
 <head>
 <meta charset="utf-8">
 <style>
+    /* Una etiqueta por fila, centrada y un poco más ancha que media hoja (62% del ancho),
+       con letras grandes para leerla de lejos en el almacén.
+       Notas de xhtml2pdf:
+       - ninguna celda puede quedar vacía (sin nada adentro la columna se queda sin ancho y el
+         PDF falla con "negative availWidth"): las columnas de los costados llevan &nbsp;
+       - el borde se pone en la celda del medio (si se pone en la tabla, lo dibuja en todas). */
     @page {
         size: letter;
-        margin: 1cm;
+        margin: 1.2cm 1cm 1cm 1cm;
     }
     body {
         font-family: Helvetica, Arial, sans-serif;
-        font-size: 9pt;
+        font-size: 10pt;
         color: #1a1a1a;
     }
-    table.hoja {
+    table.fila {
         width: 100%;
-        border-collapse: collapse;
+        margin-bottom: 0.4cm;
     }
-    /* Sin líneas divisorias: el espacio en blanco entre etiquetas ya las separa bien, y así
-       se evita también el problema de la línea pisando las letras en xhtml2pdf. */
-    table.hoja td.celda {
-        width: 50%;
-        padding: 9px;
-        vertical-align: top;
+    td.lado {
+        width: 18%;
+        font-size: 2pt;
     }
-    div.etiqueta {
-        padding: 4px;
-        page-break-inside: avoid;
+    td.etiqueta {
+        width: 64%;
+        border: 1px dashed #8a96a3;
+        padding: 6px 8px 4px 6px;
     }
-    table.interna {
-        width: 100%;
-        table-layout: fixed;
+    table.interna td, table.auditoria td {
+        padding: 0;
     }
-    table.interna td.qr {
-        width: 165px;
+    td.qr {
+        width: 3.9cm;
         text-align: center;
         vertical-align: middle;
     }
-    table.interna td.qr img {
-        width: 150px;
-        height: 150px;
+    td.qr img {
+        width: 3.6cm;
+        height: 3.6cm;
     }
     table.interna td.datos {
+        padding-left: 8px;
         vertical-align: middle;
-        padding-left: 12px;
     }
     .sku {
-        font-size: 18pt;
+        font-size: 20pt;
         font-weight: bold;
         color: #0F172A;
+        line-height: 1.1;
+        margin: 0;
     }
     .nombre {
-        font-size: 13pt;
-        color: #333333;
-        margin-top: 2px;
-        line-height: 1.1;
+        font-size: 12.5pt;
+        font-weight: bold;
+        color: #222222;
+        line-height: 1.15;
+        margin: 2px 0 0 0;
     }
     .calidad {
-        font-size: 11pt;
+        font-size: 10.5pt;
         color: #555555;
-        margin-top: 3px;
+        line-height: 1.15;
+        margin: 1px 0 0 0;
+    }
+    table.auditoria {
+        margin-top: 4px;
+    }
+    table.auditoria td.sep {
+        border-top: 1px solid #c3ccd6;
+        font-size: 2pt;
+        line-height: 1;
+    }
+    table.auditoria td.etq, table.auditoria td.val {
+        padding-top: 2px;
+        line-height: 1.15;
+    }
+    td.etq {
+        width: 1.95cm;
+        font-size: 10pt;
+        font-weight: bold;
+        color: #475569;
+        vertical-align: top;
+    }
+    td.val {
+        font-size: 10.5pt;
+        color: #111111;
+        vertical-align: top;
+    }
+    .sin-auditoria {
+        font-size: 10pt;
+        color: #64748b;
     }
 </style>
 </head>
 <body>
-    <table class="hoja">
-        {% for fila in etiquetas|batch(2) %}
+    {% for e in etiquetas %}
+    <div style="page-break-inside: avoid;">
+    <table class="fila">
         <tr>
-            {% for e in fila %}
-            <td class="celda">
-                <div class="etiqueta">
-                    <table class="interna">
-                        <tr>
-                            <td class="qr"><img src="{{ e.qr_data_uri }}" /></td>
-                            <td class="datos">
-                                <div class="sku">{{ e.sku }}</div>
-                                <div class="nombre">{{ e.nombre[:100] }}{% if e.nombre|length > 100 %}...{% endif %}</div>
-                                {% if e.calidad %}<div class="calidad">{{ e.calidad }}</div>{% endif %}
-                            </td>
-                        </tr>
-                    </table>
-                </div>
+            <td class="lado">&nbsp;</td>
+            <td class="etiqueta">
+                <table class="interna">
+                    <tr>
+                        <td class="qr"><img src="{{ e.qr_data_uri }}" /></td>
+                        <td class="datos">
+                            <div class="sku">{{ e.sku }}</div>
+                            <div class="nombre">{{ e.nombre[:110] }}{% if e.nombre|length > 110 %}...{% endif %}</div>
+                            {% if e.calidad %}<div class="calidad">{{ e.calidad }}</div>{% endif %}
+                            <table class="auditoria">
+                                <tr><td class="sep" colspan="2">&nbsp;</td></tr>
+                                {% if e.auditoria %}
+                                <tr><td class="etq">{{ e.auditoria.etiqueta_fecha }}</td><td class="val">{{ e.auditoria.fecha }}</td></tr>
+                                <tr><td class="etq">Auditoría:</td><td class="val">{{ e.auditoria.periodo }}</td></tr>
+                                <tr><td class="etq">Auditor:</td><td class="val">{{ e.auditoria.auditor }}</td></tr>
+                                {% else %}
+                                <tr><td class="sin-auditoria" colspan="2">Sin auditoría aplicada todavía.</td></tr>
+                                {% endif %}
+                            </table>
+                        </td>
+                    </tr>
+                </table>
             </td>
-            {% endfor %}
-            {% for _ in range(2 - fila|length) %}
-            <td class="celda"></td>
-            {% endfor %}
+            <td class="lado">&nbsp;</td>
         </tr>
-        {% endfor %}
     </table>
+    </div>
+    {% endfor %}
 </body>
 </html>

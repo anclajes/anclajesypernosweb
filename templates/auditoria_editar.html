@@ -81,7 +81,7 @@
                         <select id="anaquel" class="form-select" style="width:100%;"></select>
                     </div>
                     <div class="col-12 col-md-6">
-                        <label class="form-label small fw-bold">Nicho <span class="text-danger">*</span></label>
+                        <label class="form-label small fw-bold">Casillero <span class="text-danger">*</span></label>
                         <select id="nicho" class="form-select" style="width:100%;"></select>
                     </div>
                 </div>
@@ -634,7 +634,7 @@ function construirResumenEdicionHtml() {
 
     html += '<div class="text-uppercase small fw-bold mt-3 mb-1" style="color:var(--auditoria-primary);"><i class="bi bi-geo-alt-fill"></i> Ubicación</div>';
     html += construirFilaResumen('Anaquel', anaquelVal);
-    html += construirFilaResumen('Nicho', nichoVal);
+    html += construirFilaResumen('Casillero', nichoVal);
 
     html += '<div class="text-uppercase small fw-bold mt-3 mb-1" style="color:var(--auditoria-primary);"><i class="bi bi-calculator-fill"></i> Cantidades</div>';
     html += construirFilaResumen('# Cajas', numCajas);
@@ -667,7 +667,7 @@ function guardarCorreccion() {
 
     if (!productoId) return Swal.fire('Falta producto', 'Busque y seleccione el producto.', 'warning');
     if (!anaquelVal) return Swal.fire('Falta Anaquel', 'Debe seleccionar el Anaquel.', 'warning');
-    if (!nichoVal) return Swal.fire('Falta Nicho', 'Debe seleccionar el Nicho.', 'warning');
+    if (!nichoVal) return Swal.fire('Falta Casillero', 'Debe seleccionar el Casillero.', 'warning');
     if (cantidad === '' || cantidad === null) return Swal.fire('Falta cantidad', 'Ingrese la cantidad total contada.', 'warning');
     if (!unidad) return Swal.fire('Falta Unidad', 'Debe seleccionar la Unidad de Medida.', 'warning');
     if (!estado) return Swal.fire('Falta Estado Físico', 'Debe seleccionar el Estado Físico.', 'warning');

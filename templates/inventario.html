@@ -424,8 +424,8 @@
                     
                     <td class="text-center pe-3">
                         <div class="btn-group shadow-sm">
-                            {% if session.get('role') == 'admin' %}
-                            <button class="btn btn-sm btn-outline-primary py-0" 
+                            {% if session.get('role') in ['admin', 'almacen'] %}
+                            <button class="btn btn-sm btn-outline-primary py-0" title="Editar producto" 
                                     onclick="abrirEditar({{ (p.id)|string|tojson|forceescape }}, {{ (p.nombre)|string|tojson|forceescape }}, {{ (p.stock_actual)|string|tojson|forceescape }}, {{ (p.precio_unidad)|string|tojson|forceescape }}, {{ (p.precio_caja)|string|tojson|forceescape }}, {{ (p.ubicacion|default('', true))|string|tojson|forceescape }}, {{ (p.categoria)|string|tojson|forceescape }}, {{ (p.calidad|default('', true))|string|tojson|forceescape }}, {{ (p.stock_minimo)|string|tojson|forceescape }}, {{ (p.estado|default('', true))|string|tojson|forceescape }}, {{ (p.peso_kg|default(0, true))|string|tojson|forceescape }}, {{ (p.activo|lower)|string|tojson|forceescape }})">
                                 <i class="bi bi-pencil-fill"></i>
                             </button>
@@ -435,10 +435,12 @@
                                 <i class="bi bi-images"></i>
                             </button>
                             {% if session.get('role') == 'admin' %}
-                            <button type="button" class="btn btn-sm btn-outline-danger py-0" 
+                            <button type="button" class="btn btn-sm btn-outline-danger py-0" title="Eliminar producto"
                                     onclick="confirmarEliminarProducto({{ p.id }}, '{{ p.sku }}', 'ANCLAJES')">
                                 <i class="bi bi-trash-fill"></i>
                             </button>
+                            {% endif %}
+                            {% if session.get('role') in ['admin', 'almacen'] %}
                             <button type="button" class="btn btn-sm py-0 {{ 'btn-outline-success' if not p.activo else 'btn-outline-secondary' }}" 
                                     title="{{ 'Activar producto' if not p.activo else 'Desactivar producto' }}"
                                     onclick="toggleActivoProducto({{ p.id }}, 'ANCLAJES')">

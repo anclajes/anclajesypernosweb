@@ -29,7 +29,7 @@
                     </tr>
                     {% endif %}
                     <tr><td class="text-muted">Anaquel</td><td>{{ registro.anaquel or '-' }}</td></tr>
-                    <tr><td class="text-muted">Nicho</td><td>{{ registro.nicho or '-' }}</td></tr>
+                    <tr><td class="text-muted">Casillero</td><td>{{ registro.nicho or '-' }}</td></tr>
                     <tr><td class="text-muted"># Cajas</td><td>{{ registro.num_cajas }}</td></tr>
                     <tr><td class="text-muted">Peso prom. 20u</td><td>{{ registro.peso_promedio_20u }} Kg</td></tr>
                     <tr><td class="text-muted"># Bolsas</td><td>{{ registro.num_bolsas }}</td></tr>
@@ -203,7 +203,7 @@
     <td class="{{ 'fw-bold text-success' if a != b else 'text-muted' }}">{{ b if b not in [None, ''] else '-' }}{% if a == b %} <span class="small">(igual)</span>{% endif %}</td>
 </tr>
 {%- endmacro %}
-{% macro ubic(a, n) -%}{{ ((a and 'ANAQUEL ' ~ a ~ ' ') or '') ~ ((n and 'NICHO ' ~ n) or '') }}{%- endmacro %}
+{% macro ubic(a, n) -%}{{ ((a and 'ANAQUEL ' ~ a ~ ' ') or '') ~ ((n and 'CASILLERO ' ~ n) or '') }}{%- endmacro %}
 
 <div class="card border-0 shadow-sm mb-3" style="border-left: 4px solid #fd7e14 !important;">
     <div class="card-header text-white fw-bold" style="background-color:#fd7e14;">
@@ -496,7 +496,7 @@
                 <div class="col-12 col-md-6">
                     <label class="form-label small fw-bold">Ubicación</label>
                     <input type="text" id="f_ubicacion" class="form-control text-uppercase"
-                           value="{% if registro.correccion_tipo_error == 'UBICACION' %}{{ (registro.correccion_anaquel_propuesto and 'ANAQUEL ' ~ registro.correccion_anaquel_propuesto ~ ' ' or '') ~ (registro.correccion_nicho_propuesto and 'NICHO ' ~ registro.correccion_nicho_propuesto or '') }}{% else %}{{ (registro.anaquel and 'ANAQUEL ' ~ registro.anaquel ~ ' ' or '') ~ (registro.nicho and 'NICHO ' ~ registro.nicho or '') or prod_actual.ubicacion or '' }}{% endif %}">
+                           value="{% if registro.correccion_tipo_error == 'UBICACION' %}{{ (registro.correccion_anaquel_propuesto and 'ANAQUEL ' ~ registro.correccion_anaquel_propuesto ~ ' ' or '') ~ (registro.correccion_nicho_propuesto and 'CASILLERO ' ~ registro.correccion_nicho_propuesto or '') }}{% else %}{{ (registro.anaquel and 'ANAQUEL ' ~ registro.anaquel ~ ' ' or '') ~ (registro.nicho and 'CASILLERO ' ~ registro.nicho or '') or prod_actual.ubicacion or '' }}{% endif %}">
                 </div>
                 <div class="col-6 col-md-4">
                     <label class="form-label small fw-bold">Peso Nominal (Kg)</label>
@@ -585,7 +585,7 @@
                 <div class="col-12 col-md-6">
                     <label class="form-label small fw-bold">Ubicación</label>
                     <input type="text" id="f_ubicacion" class="form-control text-uppercase"
-                           value="{{ ubicacion_combinada if (hermanos and misma_unidad and mismo_estado and ubicacion_combinada) else ((registro.anaquel and 'ANAQUEL ' ~ registro.anaquel ~ ' ' or '') ~ (registro.nicho and 'NICHO ' ~ registro.nicho or '') or prod_actual.ubicacion or '') }}">
+                           value="{{ ubicacion_combinada if (hermanos and misma_unidad and mismo_estado and ubicacion_combinada) else ((registro.anaquel and 'ANAQUEL ' ~ registro.anaquel ~ ' ' or '') ~ (registro.nicho and 'CASILLERO ' ~ registro.nicho or '') or prod_actual.ubicacion or '') }}">
                 </div>
                 <div class="col-6 col-md-4">
                     <label class="form-label small fw-bold">Peso Nominal (Kg)</label>

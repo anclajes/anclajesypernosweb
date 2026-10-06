@@ -41,7 +41,7 @@
                     <td>{{ r.nombre_snapshot }}</td>
                     <td>
                         {% if r.anaquel %}<span class="badge bg-light text-dark border">Anaquel {{ r.anaquel }}</span>{% endif %}
-                        {% if r.nicho %}<span class="badge bg-light text-dark border">Nicho {{ r.nicho }}</span>{% endif %}
+                        {% if r.nicho %}<span class="badge bg-light text-dark border">Casillero {{ r.nicho }}</span>{% endif %}
                         {% if not r.anaquel and not r.nicho %}-{% endif %}
                     </td>
                     <td class="text-center">{{ r.cantidad_total }} {{ r.unidad_medida }}</td>
@@ -166,12 +166,12 @@
                 <div class="border rounded p-2 mb-2">
                     <div class="form-check">
                         <input class="form-check-input re-tipo" type="checkbox" value="UBICACION" id="re_chk_UBICACION" onchange="toggleTipo(this)">
-                        <label class="form-check-label fw-bold" for="re_chk_UBICACION">La ubicación (anaquel / nicho)</label>
+                        <label class="form-check-label fw-bold" for="re_chk_UBICACION">La ubicación (anaquel / casillero)</label>
                     </div>
                     <div class="row g-2 d-none mt-1 ps-4" id="re_panel_UBICACION">
                         <div class="col-6"><label class="text-muted fw-bold mb-1">Anaquel correcto</label>
                             <select id="re_anaquel" style="width:100%;"><option value=""></option></select></div>
-                        <div class="col-6"><label class="text-muted fw-bold mb-1">Nicho correcto</label>
+                        <div class="col-6"><label class="text-muted fw-bold mb-1">Casillero correcto</label>
                             <select id="re_nicho" style="width:100%;"><option value=""></option></select></div>
                         <div class="col-12 text-muted" style="font-size:.75rem;">Solo se puede elegir de las ubicaciones registradas en el sistema (puedes escribir para buscar).</div>
                     </div>
@@ -222,7 +222,7 @@
                 <!-- 4. EXPLICACIÓN -->
                 <label class="fw-bold mb-1">Explica en qué consistió el error *</label>
                 <textarea id="re_comentario" class="form-control form-control-sm mb-3" rows="3"
-                          placeholder="Ej: Conté el PERNO 1/2 x 2 pero lo registré con el código del 1/2 x 2 1/2 porque estaban en el mismo nicho..."></textarea>
+                          placeholder="Ej: Conté el PERNO 1/2 x 2 pero lo registré con el código del 1/2 x 2 1/2 porque estaban en el mismo casillero..."></textarea>
 
                 <!-- 5. RESUMEN -->
                 <div class="border rounded p-2" style="background:#fff8f0;">
@@ -252,7 +252,7 @@ function esc(t) {
     return String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 function ubicTexto(a, n) {
-    return [a ? 'Anaquel ' + a : '', n ? 'Nicho ' + n : ''].filter(Boolean).join(' / ') || '-';
+    return [a ? 'Anaquel ' + a : '', n ? 'Casillero ' + n : ''].filter(Boolean).join(' / ') || '-';
 }
 
 document.addEventListener('DOMContentLoaded', function () {
@@ -395,7 +395,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const padre = $('#modalReportarError');
     $('#re_anaquel').select2({ placeholder: '-- Elige el anaquel --', width: '100%', dropdownParent: padre })
         .on('change', actualizarResumen);
-    $('#re_nicho').select2({ placeholder: '-- Elige el nicho --', width: '100%', dropdownParent: padre })
+    $('#re_nicho').select2({ placeholder: '-- Elige el casillero --', width: '100%', dropdownParent: padre })
         .on('change', actualizarResumen);
     $('#re_familia').select2({ placeholder: '-- Escribe o elige la familia --', width: '100%', dropdownParent: padre })
         .on('select2:select', () => reCargarCalidades());
@@ -522,7 +522,7 @@ function enviarReporteError() {
     if (tipos.includes('PRODUCTO') && !PRODUCTO_ELEGIDO) return Swal.fire('Falta un dato', 'Busca y elige el producto correcto que contaste.', 'warning');
     if (tipos.includes('CANTIDAD') && document.getElementById('re_cantidad').value === '') return Swal.fire('Falta un dato', 'Indica la cantidad correcta.', 'warning');
     if (tipos.includes('UBICACION') && (!document.getElementById('re_anaquel').value || !document.getElementById('re_nicho').value))
-        return Swal.fire('Falta un dato', 'Elige el Anaquel y el Nicho correctos de la lista.', 'warning');
+        return Swal.fire('Falta un dato', 'Elige el Anaquel y el Casillero correctos de la lista.', 'warning');
     if (!comentario) return Swal.fire('Falta un dato', 'Explica en qué consistió el error.', 'warning');
     if (!FOTOS_REPORTE.length) return Swal.fire('Falta la foto', 'Toma o adjunta al menos una foto del producto correcto (el que contaste de verdad).', 'warning');
     enviarConFotos(tipos, comentario);

@@ -1,5 +1,5 @@
 :root {
-    --sidebar-width: 260px;
+    --sidebar-width: 270px;
     --sidebar-collapsed-width: 70px;
     --header-height: 60px;
     --primary-color: #0F172A;
@@ -219,4 +219,108 @@ body {
         margin-right: 0.5rem !important;
         font-size: 1.1rem !important;
     }
+}
+
+/* =========================================================
+   MENÚ LATERAL — ajustes 2026-10
+   - Usa el alto REAL de la pantalla (en celular la barra del navegador ya no tapa el final).
+   - Solo la lista de opciones hace scroll; el logo y el usuario quedan fijos.
+   - Los textos largos bajan de línea en vez de cortarse.
+   - Borde izquierdo reservado: al pasar el mouse el texto ya no "salta".
+   ========================================================= */
+.sidebar {
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
+}
+#sidebarScroll {
+    min-height: 0;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,0.25) transparent;
+}
+#sidebarScroll::-webkit-scrollbar { width: 6px; }
+#sidebarScroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.25); border-radius: 3px; }
+
+.sidebar .nav-link {
+    border-left: 4px solid transparent;
+    border-radius: 6px;
+    padding: 0.6rem 1rem;
+    margin: 1px 0;
+}
+.sidebar .nav-link span {
+    white-space: normal;
+    line-height: 1.25;
+}
+.sidebar .nav-link i { min-width: 26px; }
+.sidebar .nav-link:hover,
+.sidebar .nav-link.active {
+    border-left-color: #3b82f6;
+}
+.sidebar .nav-link.grupo-activo { color: #fff; }
+.sidebar .collapse .nav-link {
+    padding: 0.45rem 0.75rem;
+    font-size: 0.92rem;
+}
+.sidebar .nav-link .bi-chevron-down { transition: transform 0.2s ease; }
+.sidebar .nav-link[aria-expanded="true"] .bi-chevron-down { transform: rotate(180deg); }
+.sidebar .nav-title { padding: 0.9rem 1rem 0.35rem; }
+
+/* Pantallas bajas (laptops pequeñas, ventanas reducidas): opciones más compactas */
+@media (max-height: 720px) {
+    .sidebar .nav-link { padding-top: 0.42rem; padding-bottom: 0.42rem; }
+    .sidebar .collapse .nav-link { padding-top: 0.32rem; padding-bottom: 0.32rem; }
+    .sidebar .nav-title { padding-top: 0.6rem; padding-bottom: 0.2rem; }
+    .sidebar-brand { height: 52px; }
+}
+
+/* Menú compacto (solo íconos) en computadora */
+@media (min-width: 769px) {
+    body.sidebar-toggled .sidebar .nav-link,
+    body.sidebar-toggled .sidebar .collapse .nav-link {
+        justify-content: center;
+        padding: 0.6rem 0;
+    }
+    body.sidebar-toggled .sidebar .collapse ul { margin-left: 0 !important; border-left: 0 !important; }
+    body.sidebar-toggled #sidebarScroll { padding-left: 0.25rem !important; padding-right: 0.25rem !important; }
+}
+
+/* Celular: menú tipo cajón, barra superior fija y título que no se desborda */
+@media (max-width: 768px) {
+    .sidebar {
+        width: min(86vw, 300px) !important;
+        min-width: 0 !important;
+        max-width: none !important;
+        transition: transform 0.25s ease;
+        box-shadow: 0 0 28px rgba(0,0,0,0.35);
+    }
+    .sidebar .nav-link,
+    body.sidebar-toggled .sidebar .nav-link {
+        padding: 0.65rem 1rem !important;
+    }
+    body.sidebar-toggled .sidebar .collapse .nav-link {
+        padding: 0.5rem 0.75rem !important;
+    }
+    .topbar {
+        position: sticky;
+        top: 0;
+        z-index: 1030;
+        padding: 0 0.75rem;
+        border-radius: 0 0 0.5rem 0.5rem;
+    }
+    .topbar-title {
+        font-size: 1rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 58vw;
+    }
+}
+
+/* Sin animaciones mientras carga la página (evita movimientos raros al entrar) */
+html.erp-cargando .sidebar,
+html.erp-cargando .sidebar *,
+html.erp-cargando .main-content {
+    transition: none !important;
 }

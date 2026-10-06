@@ -3,10 +3,21 @@
 {% block content %}
 <h4 class="fw-bold mb-3"><i class="bi bi-clipboard2-data-fill"></i> Revisión de Conteos Físicos</h4>
 
-<div class="mb-3 d-flex gap-2 flex-wrap">
+<div class="mb-3 d-flex gap-2 flex-wrap align-items-center">
     <a href="{{ url_for('admin_auditorias_historial') }}" class="btn btn-outline-dark btn-sm"><i class="bi bi-journal-text"></i> Ver Kardex Completo</a>
     <a href="{{ url_for('admin_periodos_lista') }}" class="btn btn-outline-primary btn-sm"><i class="bi bi-calendar-range"></i> Períodos de Auditoría</a>
+    <div class="ms-md-auto d-flex gap-2 flex-wrap">
+        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="limpiarSeleccionConteos()" title="Vaciar toda la selección (de todos los filtros)">
+            <i class="bi bi-x-circle"></i> Limpiar selección
+        </button>
+        <button type="button" class="btn btn-dark btn-sm" id="btnImprimirConteos" disabled onclick="imprimirConteosSeleccionados()">
+            <i class="bi bi-printer-fill"></i> Imprimir QR seleccionados (<span id="contadorConteos">0</span>)
+        </button>
+    </div>
 </div>
+<form id="formImprimirConteos" method="POST" action="{{ url_for('admin_auditorias_imprimir_codigos') }}" target="_blank" class="d-none">
+    <input type="hidden" name="ids" id="inputIdsConteos">
+</form>
 
 <div class="card border-0 shadow-sm mb-3">
     <div class="card-body py-2">
@@ -57,7 +68,8 @@
         <table class="table table-hover align-middle mb-0 small">
             <thead class="table-dark">
                 <tr>
-                    <th class="ps-3">Enviado</th>
+                    <th class="ps-3" style="width:28px;"><input type="checkbox" class="form-check-input" id="chkTodosConteos" onchange="toggleTodosConteos(this)" title="Marcar todos los de esta lista"></th>
+                    <th>Enviado</th>
                     <th>Última Edición</th>
                     <th>Auditor</th>
                     <th>Auditoría</th>
@@ -74,7 +86,8 @@
                 {% for r in registros %}
                 {% set info = info_por_registro.get(r.id) %}
                 <tr{% if info and info.total > 1 %} class="border-start border-3 border-info-subtle"{% endif %}>
-                    <td class="ps-3">{{ r.fecha_registro.strftime('%d/%m/%y %H:%M') }}</td>
+                    <td class="ps-3"><input type="checkbox" class="form-check-input chk-conteo" value="{{ r.id }}" onchange="alCambiarConteo(this)" title="Marcar para imprimir su QR"></td>
+                    <td>{{ r.fecha_registro.strftime('%d/%m/%y %H:%M') }}</td>
                     <td>
                         {% if r.id in ultimas_ediciones %}
                             {{ ultimas_ediciones[r.id].strftime('%d/%m/%y %H:%M') }}
@@ -122,14 +135,75 @@
                         {% endif %}
                     </td>
                     <td class="text-center pe-3">
-                        <a href="{{ url_for('admin_auditorias_detalle', reg_id=r.id) }}" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye-fill"></i> Ver</a>
+                        <div class="d-flex gap-1 justify-content-center">
+                            <a href="{{ url_for('admin_auditorias_detalle', reg_id=r.id) }}" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye-fill"></i> Ver</a>
+                            <button type="button" class="btn btn-sm btn-outline-dark" title="Imprimir solo el QR de este conteo" onclick="imprimirConteos([{{ r.id }}])"><i class="bi bi-qr-code"></i></button>
+                        </div>
                     </td>
                 </tr>
                 {% else %}
-                <tr><td colspan="10" class="text-center py-4 text-muted">No hay registros con este filtro.</td></tr>
+                <tr><td colspan="12" class="text-center py-4 text-muted">No hay registros con este filtro.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
 </div>
+<script>
+// --- Selección de conteos para imprimir su etiqueta QR (igual que en el Maestro de Productos).
+// La selección se guarda en este navegador y se mantiene al cambiar de filtro, así se pueden
+// juntar conteos de distintos estados/auditores en una sola impresión.
+const CONTEOS_QR_CLAVE = 'auditoria_qr_ids_seleccionados';
+const CONTEOS_QR_MAX = 300;   // debe coincidir con MAX_ETIQUETAS_IMPRESION en app.py
+
+function idsSeleccionados() {
+    try { return JSON.parse(localStorage.getItem(CONTEOS_QR_CLAVE) || '[]').map(String); } catch (e) { return []; }
+}
+function guardarIds(lista) {
+    try { localStorage.setItem(CONTEOS_QR_CLAVE, JSON.stringify(lista)); } catch (e) {}
+}
+function refrescarSeleccionConteos() {
+    const sel = new Set(idsSeleccionados());
+    const chks = document.querySelectorAll('.chk-conteo');
+    chks.forEach(c => { c.checked = sel.has(c.value); });
+    const marcados = document.querySelectorAll('.chk-conteo:checked').length;
+    const todo = document.getElementById('chkTodosConteos');
+    if (todo) {
+        todo.checked = chks.length > 0 && marcados === chks.length;
+        todo.indeterminate = marcados > 0 && marcados < chks.length;
+    }
+    document.getElementById('contadorConteos').textContent = sel.size;
+    document.getElementById('btnImprimirConteos').disabled = sel.size === 0;
+}
+function alCambiarConteo(chk) {
+    const sel = new Set(idsSeleccionados());
+    chk.checked ? sel.add(chk.value) : sel.delete(chk.value);
+    guardarIds([...sel]);
+    refrescarSeleccionConteos();
+}
+function toggleTodosConteos(todo) {
+    const sel = new Set(idsSeleccionados());
+    document.querySelectorAll('.chk-conteo').forEach(c => { todo.checked ? sel.add(c.value) : sel.delete(c.value); });
+    guardarIds([...sel]);
+    refrescarSeleccionConteos();
+}
+function limpiarSeleccionConteos() {
+    guardarIds([]);
+    refrescarSeleccionConteos();
+}
+function imprimirConteos(ids) {
+    document.getElementById('inputIdsConteos').value = ids.join(',');
+    document.getElementById('formImprimirConteos').submit();
+}
+function imprimirConteosSeleccionados() {
+    const ids = idsSeleccionados();
+    if (!ids.length) return;
+    if (ids.length > CONTEOS_QR_MAX) {
+        return Swal.fire({ icon: 'warning', title: 'Demasiados conteos',
+            html: `Tienes <b>${ids.length}</b> conteos marcados y el máximo por impresión es <b>${CONTEOS_QR_MAX}</b>. ` +
+                  'Imprime en varias tandas: imprime este grupo, usa "Limpiar selección" y arma el siguiente.' });
+    }
+    imprimirConteos(ids);
+}
+document.addEventListener('DOMContentLoaded', refrescarSeleccionConteos);
+</script>
 {% endblock %}

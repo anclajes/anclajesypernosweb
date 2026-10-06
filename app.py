@@ -474,6 +474,39 @@ def _copiar_fotos_auditoria_a_producto(registro, prod, origen, cantidad_actual):
     return copiadas, omitidas, cantidad_actual
 
 
+ROLES_EDITAN_PRODUCTO = ['admin', 'almacen']   # Gerencia y Jefe de Almacén
+
+ETIQUETAS_CAMPOS_PRODUCTO = {
+    'nombre': 'Descripción', 'categoria': 'Familia', 'calidad': 'Calidad', 'ubicacion': 'Ubicación',
+    'estado': 'Estado', 'stock_minimo': 'Stock mín.', 'precio_unidad': 'P.Unit', 'precio_caja': 'P.Caja',
+    'peso_kg': 'Peso', 'activo': 'Activo',
+}
+
+
+def _foto_campos_producto(prod):
+    return {k: getattr(prod, k, None) for k in ETIQUETAS_CAMPOS_PRODUCTO}
+
+
+def _log_edicion_producto(prod, antes, etiqueta_inv=''):
+    """Deja en el historial (AuditLog) QUÉ cambió exactamente y QUIÉN lo hizo, con su rol.
+    La columna admite 255 caracteres: si no entra todo, se corta con '…'."""
+    despues = _foto_campos_producto(prod)
+    cambios = []
+    for k, etq in ETIQUETAS_CAMPOS_PRODUCTO.items():
+        a, d = antes.get(k), despues.get(k)
+        if isinstance(a, float) or isinstance(d, float):
+            iguales = round(float(a or 0), 4) == round(float(d or 0), 4)
+        else:
+            iguales = (a if a is not None else '') == (d if d is not None else '')
+        if not iguales:
+            if k == 'activo':
+                a, d = ('Sí' if a else 'No'), ('Sí' if d else 'No')
+            cambios.append(f"{etq}: {a if a not in (None, '') else '-'} → {d if d not in (None, '') else '-'}")
+    rol = {'admin': 'Gerencia', 'almacen': 'Jefe de Almacén'}.get(session.get('role'), session.get('role') or '')
+    texto = f"Editó producto {etiqueta_inv}{prod.sku} ({rol}): " + ('; '.join(cambios) if cambios else 'sin cambios')
+    registrar_log(texto if len(texto) <= 255 else texto[:254] + '…', "bi-pencil-fill", "text-warning")
+
+
 def comparar_cambios(dict_antes, dict_despues):
     cambios = []
     for k in dict_despues:
@@ -2290,7 +2323,94 @@ def _orden_productos_lista(resultados, orden):
         resultados.sort(key=lambda x: (x['sku'] or '').upper())
 
 
-MAX_ETIQUETAS_IMPRESION = 300  # debe coincidir con MAESTRO_QR_MAX_ETIQUETAS en admin_maestro.html
+MAX_ETIQUETAS_IMPRESION = 300  # debe coincidir con MAESTRO_QR_MAX_ETIQUETAS en admin_maestro.html y admin_auditorias_lista.html
+
+ORIGEN_TEXTO = {'ANCLAJES': 'Anclajes', 'IMPORTBOLTS': 'Import Bolts'}
+
+
+def _correcciones_aplicadas_por_registro():
+    """{registro_id: [CorreccionAuditoria APLICADA, ...]} (en orden). Sirve para saber a qué
+    producto quedó asignado de verdad un conteo (si se corrigió 'producto equivocado') y cuándo se
+    aplicó por última vez. La tabla es chica: se lee completa."""
+    try:
+        _asegurar_tabla_correcciones()
+        filas = CorreccionAuditoria.query.filter_by(estado='APLICADA').order_by(CorreccionAuditoria.id).all()
+    except Exception:
+        app.logger.exception("No se pudieron leer las correcciones aplicadas")
+        return {}
+    por_registro = {}
+    for c in filas:
+        por_registro.setdefault(c.registro_id, []).append(c)
+    return por_registro
+
+
+def _datos_efectivos_registro(r, correcciones):
+    """(sku, nombre, calidad, fecha_aplicacion) con que quedó el conteo después de sus correcciones."""
+    sku, nombre, calidad, fecha = r.sku_snapshot, r.nombre_snapshot, r.calidad or '', r.fecha_aplicacion
+    for c in correcciones or []:
+        prod = (c.propuesta or {}).get('producto') or {}
+        if 'PRODUCTO' in c.lista_tipos and prod.get('sku'):
+            sku, nombre, calidad = prod['sku'], prod.get('nombre') or nombre, prod.get('calidad') or ''
+        if c.fecha_resolucion and (fecha is None or c.fecha_resolucion > fecha):
+            fecha = c.fecha_resolucion
+    return (sku or '').upper(), nombre or '', calidad, fecha
+
+
+def _auditoria_para_etiqueta(r, fecha, mostrar_origen=False):
+    """Las 3 líneas que van debajo de la descripción en la etiqueta QR."""
+    periodo = r.periodo.nombre if r.periodo else 'Sin período'
+    if mostrar_origen:
+        periodo += f" ({ORIGEN_TEXTO.get(r.origen_inventario, r.origen_inventario)})"
+    aplicado = r.estado_registro in ('APLICADO', 'CORRECCION_SOLICITADA')
+    return {
+        'etiqueta_fecha': 'Aplicado:' if aplicado else 'Contado:',
+        'fecha': (fecha.strftime('%d/%m/%Y %H:%M') if fecha else '-') + ('' if aplicado else ' (aún no aplicado)'),
+        'periodo': periodo,
+        'auditor': r.trabajador.nombre_completo if r.trabajador else '-',
+    }
+
+
+def _ultimas_auditorias_aplicadas(skus):
+    """Para cada SKU, el último conteo de auditoría APLICADO al inventario (de cualquiera de los dos
+    inventarios), ya considerando las correcciones de 'producto equivocado'.
+    Devuelve {sku: {'registro', 'fecha', 'por_origen': {origen: (registro, fecha)}}}."""
+    skus = {s.strip().upper() for s in skus if s}
+    if not skus:
+        return {}
+    corr = _correcciones_aplicadas_por_registro()
+    candidatos = {r.id: r for r in RegistroAuditoria.query.filter(
+        RegistroAuditoria.estado_registro.in_(['APLICADO', 'CORRECCION_SOLICITADA']),
+        func.upper(RegistroAuditoria.sku_snapshot).in_(skus)).all()}
+    # Conteos de OTRO código que, por una corrección, quedaron asignados a uno de estos
+    reasignados = [rid for rid, cs in corr.items() if rid not in candidatos and any(
+        ((c.propuesta or {}).get('producto') or {}).get('sku', '').upper() in skus for c in cs)]
+    if reasignados:
+        for r in RegistroAuditoria.query.filter(RegistroAuditoria.id.in_(reasignados)).all():
+            if r.estado_registro in ('APLICADO', 'CORRECCION_SOLICITADA'):
+                candidatos[r.id] = r
+    resultado = {}
+    for r in candidatos.values():
+        sku, _, _, fecha = _datos_efectivos_registro(r, corr.get(r.id))
+        if sku not in skus or not fecha:
+            continue
+        item = resultado.setdefault(sku, {'registro': None, 'fecha': None, 'por_origen': {}})
+        previo = item['por_origen'].get(r.origen_inventario)
+        if not previo or fecha > previo[1]:
+            item['por_origen'][r.origen_inventario] = (r, fecha)
+        if item['fecha'] is None or fecha > item['fecha']:
+            item['registro'], item['fecha'] = r, fecha
+    return resultado
+
+
+def _respuesta_pdf_etiquetas(etiquetas, prefijo):
+    html_renderizado = render_template('etiquetas_maestro_pdf.html', etiquetas=etiquetas)
+    pdf_buffer = io.BytesIO()
+    resultado = pisa.CreatePDF(src=html_renderizado, dest=pdf_buffer, encoding='utf-8')
+    if resultado.err:
+        return f"<h2>Error generando PDF de etiquetas</h2><pre>{html.escape(html_renderizado[:5000])}</pre>", 500
+    pdf_buffer.seek(0)
+    return send_file(pdf_buffer, as_attachment=True, mimetype='application/pdf',
+                     download_name=f"{prefijo}_{hora_peru().strftime('%Y%m%d_%H%M')}.pdf")
 
 
 def _generar_qr_data_uri(texto):
@@ -5794,7 +5914,18 @@ def producto_info(sku):
     url_actual = url_for('producto_info', sku=sku, _external=True)
     qr_data_uri = _generar_qr_data_uri(url_actual)
 
+    # Última auditoría aplicada en cada inventario (fecha, período y auditor), igual que en la etiqueta
+    auditoria_por_origen = {}
+    try:
+        ult = _ultimas_auditorias_aplicadas([sku]).get(sku)
+        for origen, (reg, fecha) in (ult['por_origen'].items() if ult else []):
+            auditoria_por_origen[origen] = _auditoria_para_etiqueta(reg, fecha)
+    except Exception:
+        app.logger.exception("No se pudo leer la última auditoría de %s", sku)
+
     return render_template('producto_info.html',
+                            auditoria_anclajes=auditoria_por_origen.get('ANCLAJES'),
+                            auditoria_importbolts=auditoria_por_origen.get('IMPORTBOLTS'),
                             maestro=maestro,
                             prod_anclajes=prod_anclajes,
                             prod_importbolts=prod_importbolts,
@@ -5808,8 +5939,8 @@ def producto_info(sku):
 def admin_maestro_imprimir_codigos():
     """Genera un PDF descargable con una hoja de etiquetas (código QR + SKU + descripción)
     para los productos del Maestro que el admin/almacén seleccionó con los checkboxes de la
-    tabla, en una cuadrícula genérica pensada para hoja carta, lista para imprimir y recortar
-    y pegar junto a cada producto físico en el almacén."""
+    tabla: una etiqueta por fila, centrada (algo más de media hoja de ancho, ~4 por hoja carta),
+    lista para imprimir, recortar y pegar junto a cada producto físico en el almacén."""
     if session.get('role') not in ['admin', 'almacen']:
         return "Acceso denegado", 403
 
@@ -5835,30 +5966,55 @@ def admin_maestro_imprimir_codigos():
         flash('No se encontraron los productos seleccionados.', 'error')
         return redirect(url_for('admin_maestro'))
 
+    # Debajo de la descripción va la última auditoría APLICADA de ese código: fecha y hora de
+    # aplicación, período y el auditor que contó (de cualquiera de los dos inventarios).
+    auditorias = _ultimas_auditorias_aplicadas([p.sku for p in productos])
     etiquetas = []
     for p in productos:
         url_p = url_for('producto_info', sku=p.sku, _external=True)
+        ult = auditorias.get(p.sku.upper())
         etiquetas.append({
             'sku': p.sku,
             'nombre': p.nombre,
             'calidad': p.calidad or '',
             'qr_data_uri': _generar_qr_data_uri(url_p),
+            'auditoria': _auditoria_para_etiqueta(ult['registro'], ult['fecha'], mostrar_origen=True) if ult else None,
         })
+    return _respuesta_pdf_etiquetas(etiquetas, 'etiquetas_maestro')
 
-    html_renderizado = render_template('etiquetas_maestro_pdf.html', etiquetas=etiquetas)
 
-    pdf_buffer = io.BytesIO()
-    resultado = pisa.CreatePDF(src=html_renderizado, dest=pdf_buffer, encoding='utf-8')
-    if resultado.err:
-        return f"<h2>Error generando PDF de etiquetas</h2><pre>{html_renderizado}</pre>", 500
-    pdf_buffer.seek(0)
-
-    return send_file(
-        pdf_buffer,
-        as_attachment=True,
-        download_name=f"etiquetas_maestro_{hora_peru().strftime('%Y%m%d_%H%M')}.pdf",
-        mimetype='application/pdf'
-    )
+@app.route('/admin/auditorias/imprimir_codigos', methods=['POST'])
+def admin_auditorias_imprimir_codigos():
+    """Etiquetas QR de los conteos marcados en Revisión de Conteos: una por conteo, con el
+    producto con que quedó (si se corrigió 'producto equivocado', el correcto) y debajo la fecha
+    y hora de aplicación, el período de auditoría y el auditor que envió el conteo."""
+    if session.get('role') not in ['admin', 'administracion', 'almacen']:
+        return "Acceso denegado", 403
+    ids = sorted({int(x) for x in request.form.get('ids', '').split(',') if x.strip().isdigit()})
+    if not ids:
+        flash('No seleccionaste ningún conteo para imprimir.', 'error')
+        return redirect(url_for('admin_auditorias_lista'))
+    if len(ids) > MAX_ETIQUETAS_IMPRESION:
+        flash(f'Seleccionaste {len(ids)} conteos y el máximo por impresión es {MAX_ETIQUETAS_IMPRESION}. '
+              'Imprime en varias tandas.', 'error')
+        return redirect(url_for('admin_auditorias_lista'))
+    registros = RegistroAuditoria.query.filter(RegistroAuditoria.id.in_(ids)).all()
+    if not registros:
+        flash('No se encontraron los conteos seleccionados.', 'error')
+        return redirect(url_for('admin_auditorias_lista'))
+    corr = _correcciones_aplicadas_por_registro()
+    etiquetas = []
+    for r in registros:
+        sku, nombre, calidad, fecha = _datos_efectivos_registro(r, corr.get(r.id))
+        if r.estado_registro not in ('APLICADO', 'CORRECCION_SOLICITADA'):
+            fecha = r.fecha_registro
+        etiquetas.append({
+            'sku': sku, 'nombre': nombre, 'calidad': calidad,
+            'qr_data_uri': _generar_qr_data_uri(url_for('producto_info', sku=sku, _external=True)),
+            'auditoria': _auditoria_para_etiqueta(r, fecha),
+        })
+    etiquetas.sort(key=lambda e: (e['sku'], e['auditoria']['fecha']))
+    return _respuesta_pdf_etiquetas(etiquetas, 'etiquetas_conteos')
 
 
 # 2. ACTUALIZAR NUEVO PRODUCTO (Para responder JSON y no borrar datos)
@@ -5928,7 +6084,7 @@ def nuevo_producto():
 # --- FUNCIÓN EDITAR PRODUCTO (Actualizada) ---
 @app.route('/producto/editar', methods=['POST'])
 def editar_producto():
-    if session.get('role') != 'admin': return "Acceso denegado", 403
+    if session.get('role') not in ROLES_EDITAN_PRODUCTO: return "Acceso denegado", 403
     
     try:
         prod_id = request.form['prod_id']
@@ -5952,6 +6108,7 @@ def editar_producto():
             flash('⛔ Error: Familia y Calidad son obligatorias.')
             return redirect(url_for('inventario'))
 
+        antes = _foto_campos_producto(prod)
         prod.nombre = nombre
         # El stock actual NO se edita aquí, solo el mínimo
         # NUEVO: Actualizar Stock Mínimo
@@ -5967,7 +6124,7 @@ def editar_producto():
         prod.ultima_edicion_manual_fecha = hora_peru()
         prod.ultima_edicion_manual_por = session.get('nombre', 'Sistema')
 
-        registrar_log(f"Editó producto {prod.sku}", "bi-pencil-fill", "text-warning")
+        _log_edicion_producto(prod, antes)
         
         db.session.commit()
         flash('✅ Producto actualizado correctamente.')
@@ -7974,7 +8131,7 @@ def nuevo_producto_importbolts():
 
 @app.route('/producto_importbolts/editar', methods=['POST'])
 def editar_producto_importbolts():
-    if session.get('role') != 'admin': return "Acceso denegado", 403
+    if session.get('role') not in ROLES_EDITAN_PRODUCTO: return "Acceso denegado", 403
     
     try:
         prod_id = request.form['prod_id']
@@ -7995,6 +8152,7 @@ def editar_producto_importbolts():
             flash('⛔ Error: Faltan datos obligatorios.')
             return redirect(url_for('inventario_importbolts'))
 
+        antes = _foto_campos_producto(prod)
         prod.nombre = nombre
         prod.stock_minimo = int(request.form.get('stock_minimo', 10))
         prod.precio_unidad = float(request.form['p_unidad'])
@@ -8008,7 +8166,7 @@ def editar_producto_importbolts():
         prod.ultima_edicion_manual_fecha = hora_peru()
         prod.ultima_edicion_manual_por = session.get('nombre', 'Sistema')
 
-        registrar_log(f"Editó producto ImportBolts {prod.sku}", "bi-pencil-fill", "text-warning")
+        _log_edicion_producto(prod, antes, 'ImportBolts ')
         db.session.commit()
         flash('✅ Producto actualizado correctamente.')
         
@@ -9216,6 +9374,8 @@ def subir_foto_producto(product_id):
             nueva_foto.product_id = product_id
 
         db.session.add(nueva_foto)
+        registrar_log(f"Subió una foto al producto {'ImportBolts ' if origen == 'IMPORTBOLTS' else ''}{prod.sku}",
+                      "bi-camera-fill", "text-info")
         db.session.commit()
 
         return {
@@ -9240,6 +9400,10 @@ def eliminar_foto_producto(foto_id):
     except Exception as e:
         print(f"Aviso: no se pudo borrar de S3 ({e}), se elimina igual el registro.")
 
+    Modelo = ProductImportBolts if foto.origen_inventario == 'IMPORTBOLTS' else Product
+    prod = Modelo.query.get(foto.product_importbolts_id if foto.origen_inventario == 'IMPORTBOLTS' else foto.product_id)
+    registrar_log(f"Eliminó una foto del producto {'ImportBolts ' if foto.origen_inventario == 'IMPORTBOLTS' else ''}"
+                  f"{prod.sku if prod else '#' + str(foto.id)}", "bi-trash", "text-danger")
     db.session.delete(foto)
     db.session.commit()
     return {'status': 'success', 'msg': 'Foto eliminada.'}
@@ -9796,7 +9960,7 @@ def auditoria_guardar(origen):
         if not anaquel_val:
             errores.append('Debe indicar el Anaquel.')
         if not nicho_val:
-            errores.append('Debe indicar el Nicho.')
+            errores.append('Debe indicar el Casillero.')
         if not estado_fisico_val:
             errores.append('Debe seleccionar el Estado Físico.')
         if not unidad_val:
@@ -10162,7 +10326,7 @@ def admin_auditorias_detalle(reg_id):
     for r in grupo_conteos:
         ubic = ' '.join(filter(None, [
             f"ANAQUEL {r.anaquel}" if r.anaquel else '',
-            f"NICHO {r.nicho}" if r.nicho else '',
+            f"CASILLERO {r.nicho}" if r.nicho else '',
         ])).strip()
         if ubic:
             partes_ubicacion.append(f"{ubic} ({r.cantidad_total} {r.unidad_medida})")
@@ -10979,7 +11143,7 @@ def auditoria_actualizar(reg_id):
 
         errores = []
         if not anaquel_val: errores.append('Debe indicar el Anaquel.')
-        if not nicho_val: errores.append('Debe indicar el Nicho.')
+        if not nicho_val: errores.append('Debe indicar el Casillero.')
         if not estado_fisico_val: errores.append('Debe seleccionar el Estado Físico.')
         if not unidad_val: errores.append('Debe seleccionar la Unidad de Medida.')
         if not producto_id_val: errores.append('Debe buscar y seleccionar el producto.')
@@ -11172,8 +11336,9 @@ def _movimiento_neto_desde(origen, product_id, desde):
 
 
 def _ubicacion_texto(anaquel, nicho):
-    """Mismo formato de ubicación que usa el panel de aplicar del admin: 'ANAQUEL X NICHO Y'."""
-    return ' '.join(p for p in [f"ANAQUEL {anaquel}" if anaquel else '', f"NICHO {nicho}" if nicho else ''] if p)
+    """Mismo formato de ubicación que usa el panel de aplicar del admin: 'ANAQUEL X CASILLERO Y'
+    (el 'nicho' se muestra como CASILLERO; internamente el catálogo y la columna siguen llamándose NICHO)."""
+    return ' '.join(p for p in [f"ANAQUEL {anaquel}" if anaquel else '', f"CASILLERO {nicho}" if nicho else ''] if p)
 
 
 def _valores_catalogo(tipo):
@@ -11503,11 +11668,11 @@ def auditoria_reportar_error(reg_id):
             anaquel = request.form.get('anaquel', '').strip()
             nicho = request.form.get('nicho', '').strip()
             if not anaquel or not nicho:
-                return {'status': 'error', 'msg': 'Elige el Anaquel y el Nicho correctos de la lista.'}
+                return {'status': 'error', 'msg': 'Elige el Anaquel y el Casillero correctos de la lista.'}
             if anaquel != original['anaquel'] and anaquel not in _valores_catalogo('ANAQUEL'):
                 return {'status': 'error', 'msg': f'El anaquel "{anaquel}" no está registrado en el sistema. Elige uno de la lista.'}
             if nicho != original['nicho'] and nicho not in _valores_catalogo('NICHO'):
-                return {'status': 'error', 'msg': f'El nicho "{nicho}" no está registrado en el sistema. Elige uno de la lista.'}
+                return {'status': 'error', 'msg': f'El casillero "{nicho}" no está registrado en el sistema. Elige uno de la lista.'}
             if anaquel == original['anaquel'] and nicho == original['nicho']:
                 return {'status': 'error', 'msg': 'Marcaste "Ubicación" pero dejaste la misma ubicación que habías enviado.'}
             propuesta['anaquel'], propuesta['nicho'] = anaquel, nicho

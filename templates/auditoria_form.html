@@ -108,7 +108,7 @@
             </div>
         </div>
 
-        <!-- UBICACIÓN: ANAQUEL Y NICHO INDEPENDIENTES -->
+        <!-- UBICACIÓN: ANAQUEL Y CASILLERO INDEPENDIENTES -->
     <div class="card card-auditoria-section border-0 shadow-sm mb-3">
         <div class="card-header text-white fw-bold"><i class="bi bi-geo-alt-fill"></i> Ubicación Física</div>
             <div class="card-body">
@@ -118,7 +118,7 @@
                         <select id="anaquel" class="form-select" style="width:100%;"></select>
                     </div>
                     <div class="col-12 col-md-6">
-                        <label class="form-label small fw-bold">Nicho <span class="text-danger">*</span></label>
+                        <label class="form-label small fw-bold">Casillero <span class="text-danger">*</span></label>
                         <select id="nicho" class="form-select" style="width:100%;"></select>
                     </div>
                 </div>
@@ -629,7 +629,7 @@ function construirResumenHtml() {
 
     html += '<div class="text-uppercase small fw-bold mt-3 mb-1" style="color:var(--auditoria-primary);"><i class="bi bi-geo-alt-fill"></i> Ubicación</div>';
     html += construirFilaResumen('Anaquel', anaquelVal);
-    html += construirFilaResumen('Nicho', nichoVal);
+    html += construirFilaResumen('Casillero', nichoVal);
 
     html += '<div class="text-uppercase small fw-bold mt-3 mb-1" style="color:var(--auditoria-primary);"><i class="bi bi-calculator-fill"></i> Cantidades</div>';
     html += construirFilaResumen('# Cajas', numCajas);
@@ -663,7 +663,7 @@ function enviarConteo() {
     if (!productoId) return Swal.fire('Falta producto', 'Busque y seleccione el producto.', 'warning');
     if (cantidad === '' || cantidad === null) return Swal.fire('Falta cantidad', 'Ingrese la cantidad total contada.', 'warning');
     if (!anaquelVal) return Swal.fire('Falta Anaquel', 'Debe seleccionar el Anaquel.', 'warning');
-    if (!nichoVal) return Swal.fire('Falta Nicho', 'Debe seleccionar el Nicho.', 'warning');
+    if (!nichoVal) return Swal.fire('Falta Casillero', 'Debe seleccionar el Casillero.', 'warning');
     if (!estadoFisico) return Swal.fire('Falta Estado Físico', 'Debe seleccionar el Estado Físico.', 'warning');
     if (!unidad) return Swal.fire('Falta Unidad', 'Debe seleccionar la Unidad de Medida.', 'warning');
     if (FOTOS_OBLIGATORIAS && fotosSeleccionadas.length === 0) {

@@ -44,14 +44,14 @@
     <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-ESTADO_FISICO">Estado Físico</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-UNIDAD_MEDIDA">Unidades</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-ANAQUEL">Anaqueles</button></li>
-    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-NICHO">Nichos</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-NICHO">Casilleros</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-motivos">Motivos de Movimiento (Kardex)</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-presentaciones">Presentaciones (Kardex)</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-campos">Campos Personalizados</button></li>
 </ul>
 
 <div class="tab-content">
-    {% for tipo, titulo in [('ESTADO_FISICO','Estado Físico'), ('UNIDAD_MEDIDA','Unidad de Medida'), ('ANAQUEL','Anaquel'), ('NICHO','Nicho')] %}
+    {% for tipo, titulo in [('ESTADO_FISICO','Estado Físico'), ('UNIDAD_MEDIDA','Unidad de Medida'), ('ANAQUEL','Anaquel'), ('NICHO','Casillero')] %}
     <div class="tab-pane fade {{ 'show active' if tipo == 'ESTADO_FISICO' }}" id="tab-{{ tipo }}">
         <div class="card border-0 shadow-sm">
             <div class="card-body">
@@ -301,7 +301,7 @@ function toggleOpcionesCampo() {
 }
 
 // ============================================
-// VALORES DE CATÁLOGO (Estado Físico, Unidades, Anaquel, Nicho)
+// VALORES DE CATÁLOGO (Estado Físico, Unidades, Anaquel, Casillero)
 // ============================================
 
 function agregarValor(tipo) {

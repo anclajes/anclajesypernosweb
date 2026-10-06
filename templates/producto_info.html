@@ -58,12 +58,72 @@
         opacity: .55;
     }
     .pi-sin-datos .pi-logo-empresa { filter: grayscale(70%); }
+
+    /* --- STOCK: el dato principal de la ficha, grande y fácil de leer desde el celular --- */
+    .pi-stock {
+        border-radius: 12px;
+        padding: 14px 16px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+    .card-anclajes .pi-stock { background: #eaf1fd; border: 2px solid #1d5fd6; color: #123e91; }
+    .card-importbolts .pi-stock { background: #eef7e4; border: 2px solid #6fae2e; color: #3f6e14; }
+    .pi-stock.pi-stock-bajo { background: #fdecec !important; border-color: #dc3545 !important; color: #b02a37 !important; }
+    .pi-stock-label { font-size: .8rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; opacity: .85; }
+    .pi-stock-num { font-size: clamp(2.8rem, 11vw, 4.2rem); font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+    .pi-stock-uni { font-size: 1rem; font-weight: 600; opacity: .8; margin-left: 4px; }
+    .pi-stock-aviso { font-size: .9rem; font-weight: 600; }
+    .pi-hero-stock { background: rgba(255,255,255,.1); border-radius: 10px; padding: 6px 12px; text-align: center; min-width: 110px; }
+    .pi-hero-stock .num { font-size: 1.9rem; font-weight: 800; line-height: 1.1; }
+    .pi-hero-stock .lbl { font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: #cbd5e1; }
+    .pi-hero-stock.bajo .num { color: #ff8a8a; }
+    .pi-auditoria { font-size: .85rem; }
 </style>
+
+{% macro bloque_stock(p) -%}
+{% set bajo = p.stock_actual <= (p.stock_minimo or 0) %}
+<div class="pi-stock mb-3 {{ 'pi-stock-bajo' if bajo else '' }}">
+    <div>
+        <div class="pi-stock-label"><i class="bi bi-box-seam-fill"></i> Stock actual</div>
+        <div><span class="pi-stock-num">{{ p.stock_actual }}</span><span class="pi-stock-uni">unid.</span></div>
+    </div>
+    <div class="text-end pi-stock-aviso">
+        {% if bajo %}<i class="bi bi-exclamation-triangle-fill"></i> Stock bajo<br><span class="fw-normal">Mínimo: {{ p.stock_minimo }}</span>
+        {% else %}<i class="bi bi-check-circle-fill"></i> Stock OK<br><span class="fw-normal">Mínimo: {{ p.stock_minimo }}</span>{% endif %}
+    </div>
+</div>
+{%- endmacro %}
+
+{% macro bloque_auditoria(a) -%}
+<div class="dato-box p-2 mb-3 pi-auditoria">
+    <div class="small fw-bold text-muted mb-1"><i class="bi bi-clipboard2-check"></i> Última auditoría aplicada</div>
+    {% if a %}
+    <div><b>{{ a.etiqueta_fecha }}</b> {{ a.fecha }}</div>
+    <div><b>Auditoría:</b> {{ a.periodo }}</div>
+    <div><b>Auditor:</b> {{ a.auditor }}</div>
+    {% else %}
+    <div class="text-muted">Sin auditoría aplicada todavía.</div>
+    {% endif %}
+</div>
+{%- endmacro %}
 
 <div class="pi-hero d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
     <div>
         <h2 class="mb-1"><i class="bi bi-qr-code-scan"></i> {{ maestro.sku }}</h2>
         <div class="text-muted">{{ maestro.nombre }}</div>
+        {% if prod_anclajes or prod_importbolts %}
+        <div class="d-flex gap-2 flex-wrap mt-2">
+            {% for etq, p in [('Anclajes', prod_anclajes), ('Import Bolts', prod_importbolts)] if p %}
+            <div class="pi-hero-stock {{ 'bajo' if p.stock_actual <= (p.stock_minimo or 0) else '' }}">
+                <div class="num">{{ p.stock_actual }}</div>
+                <div class="lbl">Stock {{ etq }}</div>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
     </div>
     <div class="text-center">
         <div class="pi-qr-box">
@@ -106,12 +166,10 @@
         <div class="card border-0 shadow-sm h-100 card-anclajes {{ '' if prod_anclajes else 'pi-sin-datos' }}">
             <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <img src="{{ url_for('static', filename='img/logo.png') }}" alt="Anclajes y Pernos" class="pi-logo-empresa">
-                {% if prod_anclajes %}
-                    <span class="badge stock-pill fw-bold">Stock: {{ prod_anclajes.stock_actual }}</span>
-                {% endif %}
             </div>
             <div class="card-body">
                 {% if prod_anclajes %}
+                {{ bloque_stock(prod_anclajes) }}
                 <div class="row g-2 mb-3">
                     <div class="col-6">
                         <div class="dato-box p-2">
@@ -144,6 +202,8 @@
                         </div>
                     </div>
                 </div>
+
+                {{ bloque_auditoria(auditoria_anclajes) }}
 
                 <div class="small fw-bold text-muted mb-1"><i class="bi bi-journal-text"></i> Últimos movimientos (Kardex)</div>
                 {% if kardex_anclajes %}
@@ -185,12 +245,10 @@
         <div class="card border-0 shadow-sm h-100 card-importbolts {{ '' if prod_importbolts else 'pi-sin-datos' }}">
             <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <img src="{{ url_for('static', filename='img/logo_import.png') }}" alt="Import Bolts" class="pi-logo-empresa">
-                {% if prod_importbolts %}
-                    <span class="badge stock-pill fw-bold">Stock: {{ prod_importbolts.stock_actual }}</span>
-                {% endif %}
             </div>
             <div class="card-body">
                 {% if prod_importbolts %}
+                {{ bloque_stock(prod_importbolts) }}
                 <div class="row g-2 mb-3">
                     <div class="col-6">
                         <div class="dato-box p-2">
@@ -223,6 +281,8 @@
                         </div>
                     </div>
                 </div>
+
+                {{ bloque_auditoria(auditoria_importbolts) }}
 
                 <div class="small fw-bold text-muted mb-1"><i class="bi bi-journal-text"></i> Últimos movimientos (Kardex)</div>
                 {% if kardex_importbolts %}
