@@ -2,7 +2,7 @@ from flask import Flask, render_template, request, redirect, url_for, flash, ses
 from models import db, User, Product, Category, Client, Order, OrderDetail, ProductMovement, AuditLog, SystemConfig,OrderKitComponent, ClientContact, ClientContactLog, ClientRubroVendedor, IntercompanyTransfer, MetaVendedor, ProductImage, MotivoMovimiento, Proveedor, Presentacion, RegistroAuditoria, RegistroAuditoriaLog, RegistroAuditoriaValorExtra, CatalogoValor, CampoPersonalizado, CampoPersonalizadoOpcion, PeriodoAuditoria, RegistroAuditoriaFoto
 from models import ProductImportBolts, CategoryImportBolts, ProductMovementImportBolts
 from models import MaestroCambioLog, MaestroProducto
-from models import CorreccionAuditoria
+from models import CorreccionAuditoria, CorreccionAuditoriaFoto
 from models import ProductMovement
 from models import Payment
 from models import Category
@@ -522,6 +522,9 @@ def _archivo_demasiado_grande(e):
         flash('El archivo es demasiado grande (máximo 200MB). Si tu respaldo pesa más que '
               'eso, avísame para subir aún más el límite.', 'error')
         return redirect(url_for('admin_reset_sistema_restaurar'))
+    if request.path.endswith('/reportar_error'):
+        return {'status': 'error', 'msg': 'Las fotos pesan demasiado en total (máximo 5MB entre todas). '
+                                          'Quita alguna foto o envía menos fotos.'}, 413
     flash('El archivo que intentaste subir es demasiado grande (máximo 5MB).', 'error')
     return redirect(request.referrer or url_for('index'))
 
@@ -9958,6 +9961,27 @@ def ver_foto_auditoria(foto_id):
         return f"<h3>No se pudo recuperar la imagen</h3><p>{str(e)}</p>", 404
 
 
+@app.route('/api/auditoria/correccion_foto/<int:foto_id>/ver')
+def ver_foto_correccion(foto_id):
+    """Foto nueva adjuntada en un reporte de error (mismos permisos que las fotos del conteo)."""
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    _asegurar_tabla_correcciones()
+    foto = CorreccionAuditoriaFoto.query.get_or_404(foto_id)
+    if not _puede_ver_fotos_auditoria(foto.correccion.registro):
+        return "No autorizado", 403
+    try:
+        archivo_s3 = s3_client.get_object(Bucket=S3_BUCKET_NAME, Key=foto.s3_key)
+        extension = foto.s3_key.rsplit('.', 1)[-1].lower()
+        tipo_mime = {'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'png': 'image/png',
+                     'webp': 'image/webp'}.get(extension, 'application/octet-stream')
+        return send_file(io.BytesIO(archivo_s3['Body'].read()), mimetype=tipo_mime,
+                         as_attachment=request.args.get('download') == '1',
+                         download_name=f"reporte_{foto.correccion.registro_id}_foto_{foto.id}.{extension}")
+    except Exception as e:
+        return f"<h3>No se pudo recuperar la imagen</h3><p>{str(e)}</p>", 404
+
+
 @app.route('/api/auditoria/registro/<int:reg_id>/subir_foto', methods=['POST'])
 def subir_foto_auditoria_registro(reg_id):
     """Solo el auditor dueño del registro puede AGREGAR fotos, y solo mientras esté PENDIENTE
@@ -10155,11 +10179,21 @@ def admin_auditorias_detalle(reg_id):
                 calc_correccion = _calculo_correccion(registro, correccion)
     except Exception:
         app.logger.exception("No se pudo cargar la corrección del registro %s", registro.id)
+    # Fotos del reporte: galería del producto al que se aplicó el conteo, con las copias de este
+    # conteo identificadas (para que el admin decida qué quitar)
+    galeria_correccion, prod_galeria_corr = [], None
+    if correccion:
+        try:
+            prod_galeria_corr = (calc_correccion or {}).get('prod_origen') or registro.producto
+            galeria_correccion = _galeria_con_copias_del_conteo(registro, prod_galeria_corr)
+        except Exception:
+            app.logger.exception("No se pudo cargar la galería del producto del registro %s", registro.id)
 
     return render_template('admin_auditorias_detalle.html', registro=registro, prod_actual=prod_actual,
                            hermanos=hermanos, misma_unidad=misma_unidad, mismo_estado=mismo_estado,
                            suma_sugerida=suma_sugerida, ubicacion_combinada=ubicacion_combinada,
                            correccion=correccion, calc=calc_correccion,
+                           galeria_correccion=galeria_correccion, prod_galeria_corr=prod_galeria_corr,
                            historial_correcciones=historial_correcciones, tipos_correccion=TIPOS_CORRECCION)
 
 
@@ -10360,6 +10394,7 @@ def admin_auditoria_resolver_correccion(reg_id):
     if not nota:
         return {'status': 'error', 'msg': 'Debe explicar cómo se resolvió (o por qué se rechaza) la corrección.'}
 
+    claves_creadas, claves_borrar = [], []
     try:
         registro.correccion_resultado = 'RECHAZADA' if accion == 'RECHAZAR' else 'RESUELTA_MANUAL'
         registro.correccion_resuelto_por_id = session['user_id']
@@ -10368,25 +10403,48 @@ def admin_auditoria_resolver_correccion(reg_id):
         # El registro vuelve a quedar como APLICADO (el conteo original sigue siendo el aplicado;
         # solo se cierra el trámite de la corrección, con la nota de resolución como constancia).
         registro.estado_registro = 'APLICADO'
+        corr = None
         try:
             _asegurar_tabla_correcciones()
             corr = CorreccionAuditoria.query.filter_by(registro_id=registro.id, estado='PENDIENTE').first()
-            if corr:
-                corr.estado = registro.correccion_resultado
-                corr.resuelta_por_id = session['user_id']
-                corr.fecha_resolucion = hora_peru()
-                corr.nota_resolucion = nota
         except Exception:
-            app.logger.exception("No se pudo cerrar la CorreccionAuditoria del registro %s", registro.id)
+            app.logger.exception("No se pudo leer la CorreccionAuditoria del registro %s", registro.id)
+        texto_fotos = ''
+        if corr:
+            corr.estado = registro.correccion_resultado
+            corr.resuelta_por_id = session['user_id']
+            corr.fecha_resolucion = hora_peru()
+            corr.nota_resolucion = nota
+            # Fotos: si se rechaza, las nuevas se eliminan (el conteo original era el correcto). Si se
+            # resolvió a mano, se respeta lo que el admin eligió en el bloque de fotos.
+            if accion == 'RECHAZAR':
+                accion_fotos, ids_galeria, prod_galeria, prod_destino = 'DESCARTAR', [], None, None
+            else:
+                accion_fotos = request.form.get('fotos_accion', 'REEMPLAZAR').strip().upper()
+                if accion_fotos not in ('REEMPLAZAR', 'DESCARTAR'):
+                    accion_fotos = 'REEMPLAZAR'
+                ids_galeria = [int(x) for x in request.form.getlist('quitar_galeria') if str(x).isdigit()]
+                try:
+                    calc = _calculo_correccion(registro, corr)
+                except Exception:
+                    calc = {'error': 'sin cálculo'}
+                prod_galeria = calc.get('prod_origen') or registro.producto
+                prod_destino = None if calc.get('error') else calc.get('prod_destino')
+            info_fotos, claves_borrar = _resolver_fotos_correccion(registro, corr, accion_fotos, ids_galeria,
+                                                                   prod_galeria, prod_destino, claves_creadas)
+            corr.resultado_json = json.dumps({'fotos': info_fotos, 'aplicado_por': session.get('nombre')}, ensure_ascii=False)
+            texto_fotos = _texto_fotos_correccion(info_fotos)
 
         etiqueta = 'rechazó' if accion == 'RECHAZAR' else 'marcó como resuelta manualmente'
         registrar_log_auditoria(registro, 'CORRECCION_' + ('RECHAZADA' if accion == 'RECHAZAR' else 'RESUELTA_MANUAL'),
-            f"{session.get('nombre')} {etiqueta} la corrección reportada: {nota}")
+            f"{session.get('nombre')} {etiqueta} la corrección reportada: {nota}" + (f" {texto_fotos}" if texto_fotos else ''))
 
         db.session.commit()
-        return {'status': 'success', 'msg': 'Corrección resuelta correctamente.'}
+        _borrar_de_s3(claves_borrar)
+        return {'status': 'success', 'msg': 'Corrección resuelta correctamente.' + (f' {texto_fotos}' if texto_fotos else '')}
     except Exception as e:
         db.session.rollback()
+        _borrar_de_s3(claves_creadas)
         return {'status': 'error', 'msg': str(e)}
 
 
@@ -11038,6 +11096,7 @@ def _asegurar_tabla_correcciones():
     if _tabla_correcciones_ok:
         return
     CorreccionAuditoria.__table__.create(bind=db.engine, checkfirst=True)
+    CorreccionAuditoriaFoto.__table__.create(bind=db.engine, checkfirst=True)
     _tabla_correcciones_ok = True
 
 
@@ -11129,6 +11188,168 @@ def _ficha_producto(prod):
             'familia': prod.categoria, 'calidad': prod.calidad or ''}
 
 
+# --- FOTOS DEL REPORTE DE ERROR ---------------------------------------------------------------
+# El auditor DEBE adjuntar foto(s) nuevas del producto correcto al reportar el error. Mientras el
+# reporte está pendiente viven en CorreccionAuditoriaFoto. Al aplicarlo el admin elige:
+#   REEMPLAZAR: las nuevas pasan a ser las fotos del conteo, las anteriores se eliminan, y las
+#               nuevas se copian a la galería del producto correcto.
+#   DESCARTAR:  se quedan las fotos del conteo y las nuevas se eliminan.
+# Además puede quitar de la galería del producto al que se aplicó el conteo las fotos que se
+# copiaron de este conteo (vienen marcadas). Si rechaza el reporte, las fotos nuevas se eliminan.
+MAX_FOTOS_CORRECCION = 5
+
+
+def _fotos_corr_enviadas():
+    """Archivos de foto que llegaron en el formulario del reporte (ignora campos vacíos)."""
+    return [a for a in request.files.getlist('fotos') if a and a.filename]
+
+
+def _subir_foto_correccion(registro, corr, archivo, claves_subidas):
+    """Sube a S3 una foto del reporte de error (ya validada con _validar_archivo_imagen) y crea su
+    CorreccionAuditoriaFoto. Anota la clave en claves_subidas para poder borrarla si algo falla."""
+    ok, ext = _validar_archivo_imagen(archivo)
+    if not ok:
+        raise ValueError(ext)
+    carpeta = 'auditorias/importbolts' if registro.origen_inventario == 'IMPORTBOLTS' else 'auditorias/anclajes'
+    s3_key = f"{carpeta}/{registro.id}/correccion_{corr.id}/{uuid.uuid4().hex}.{ext}"
+    s3_client.upload_fileobj(archivo, S3_BUCKET_NAME, s3_key, ExtraArgs={'ContentType': archivo.content_type})
+    claves_subidas.append(s3_key)
+    foto = CorreccionAuditoriaFoto(url_s3=f"s3://{S3_BUCKET_NAME}/{s3_key}", s3_key=s3_key,
+                                   subido_por_id=session.get('user_id'), fecha_subida=hora_peru())
+    corr.fotos.append(foto)
+    return foto
+
+
+def _borrar_de_s3(claves):
+    """Borra objetos de S3 sin detenerse si alguno falla. Se llama DESPUÉS del commit (si la base de
+    datos fallara, las fotos no se habrían perdido) o para limpiar lo subido si el commit falló."""
+    for k in claves:
+        try:
+            s3_client.delete_object(Bucket=S3_BUCKET_NAME, Key=k)
+        except Exception as e:
+            print(f"Aviso: no se pudo borrar de S3 {k} ({e})")
+
+
+def _etag_s3(clave):
+    try:
+        return (s3_client.head_object(Bucket=S3_BUCKET_NAME, Key=clave).get('ETag') or '').strip('"') or None
+    except Exception:
+        return None
+
+
+def _filtro_galeria(origen, prod):
+    return {'product_importbolts_id': prod.id} if origen == 'IMPORTBOLTS' else {'product_id': prod.id}
+
+
+def _galeria_con_copias_del_conteo(registro, prod):
+    """Fotos de la galería del producto (ProductImage), marcando cuáles son copia de las fotos de
+    este conteo (al aplicarlo, _copiar_fotos_auditoria_a_producto las copió con otro nombre). Se
+    reconocen por el ETag de S3 (huella del contenido: el original y su copia tienen la misma).
+    Si S3 no lo da, se usa quién la subió y que se haya copiado en el momento en que se aplicó el
+    conteo. El admin igual puede marcar/desmarcar cualquiera antes de aplicar."""
+    if not prod:
+        return []
+    origen = registro.origen_inventario
+    galeria = ProductImage.query.filter_by(origen_inventario=origen, **_filtro_galeria(origen, prod)) \
+        .order_by(ProductImage.id).all()
+    if not galeria:
+        return []
+    etags_conteo = {e for e in (_etag_s3(f.s3_key) for f in registro.fotos) if e}
+    subidores = {f.subido_por_id for f in registro.fotos} or {registro.trabajador_id}
+    resultado = []
+    for img in galeria:
+        etag = _etag_s3(img.s3_key) if etags_conteo else None
+        if etag and etags_conteo:
+            es_copia = etag in etags_conteo
+        else:
+            es_copia = bool(registro.fecha_aplicacion and img.fecha_subida and img.subido_por_id in subidores
+                            and abs((img.fecha_subida - registro.fecha_aplicacion).total_seconds()) <= 180)
+        resultado.append({'foto': img, 'es_copia': es_copia})
+    return resultado
+
+
+def _resolver_fotos_correccion(registro, corr, accion, ids_galeria, prod_galeria, prod_destino, claves_creadas):
+    """Aplica la decisión del admin sobre las fotos (ver comentario de arriba). No hace commit ni
+    borra nada de S3: devuelve (info, claves_a_borrar) para borrarlas DESPUÉS del commit. Las copias
+    nuevas que crea en S3 se anotan en claves_creadas (para limpiarlas si el commit falla)."""
+    origen = registro.origen_inventario
+    info = {'accion': accion, 'anteriores': 0, 'nuevas': 0, 'descartadas': 0, 'galeria_quitadas': 0,
+            'galeria_sku': prod_galeria.sku if prod_galeria else None, 'galeria_copiadas': 0,
+            'galeria_omitidas': 0, 'destino_sku': prod_destino.sku if prod_destino else None}
+    claves_borrar = []
+    nuevas = list(corr.fotos)
+
+    if accion == 'REEMPLAZAR' and nuevas:
+        for f in list(registro.fotos):
+            claves_borrar.append(f.s3_key)
+            registro.fotos.remove(f)
+            info['anteriores'] += 1
+        for f in nuevas:
+            registro.fotos.append(RegistroAuditoriaFoto(url_s3=f.url_s3, s3_key=f.s3_key,
+                                                        subido_por_id=f.subido_por_id, fecha_subida=f.fecha_subida))
+            corr.fotos.remove(f)   # el archivo de S3 ahora es del conteo: NO se borra
+            info['nuevas'] += 1
+    else:
+        for f in nuevas:
+            claves_borrar.append(f.s3_key)
+            corr.fotos.remove(f)
+            info['descartadas'] += 1
+
+    if ids_galeria and prod_galeria:
+        quitar = ProductImage.query.filter(ProductImage.id.in_(ids_galeria)) \
+            .filter_by(origen_inventario=origen, **_filtro_galeria(origen, prod_galeria)).all()
+        for img in quitar:
+            claves_borrar.append(img.s3_key)
+            db.session.delete(img)
+            info['galeria_quitadas'] += 1
+
+    if accion == 'REEMPLAZAR' and nuevas and prod_destino:
+        db.session.flush()   # para que las que se quitaron arriba ya no cuenten en el máximo de 5
+        cantidad = ProductImage.query.filter_by(origen_inventario=origen, **_filtro_galeria(origen, prod_destino)).count()
+        carpeta = 'productos/importbolts' if origen == 'IMPORTBOLTS' else 'productos/anclajes'
+        for f in nuevas:
+            if cantidad >= 5:
+                info['galeria_omitidas'] += 1
+                continue
+            try:
+                nueva_key = f"{carpeta}/{prod_destino.sku}/{uuid.uuid4().hex}.{f.s3_key.rsplit('.', 1)[-1].lower()}"
+                s3_client.copy_object(Bucket=S3_BUCKET_NAME, Key=nueva_key,
+                                      CopySource={'Bucket': S3_BUCKET_NAME, 'Key': f.s3_key})
+                claves_creadas.append(nueva_key)
+                img = ProductImage(origen_inventario=origen, url_s3=f"s3://{S3_BUCKET_NAME}/{nueva_key}",
+                                   s3_key=nueva_key, subido_por_id=f.subido_por_id)
+                if origen == 'IMPORTBOLTS':
+                    img.product_importbolts_id = prod_destino.id
+                else:
+                    img.product_id = prod_destino.id
+                db.session.add(img)
+                cantidad += 1
+                info['galeria_copiadas'] += 1
+            except Exception:
+                info['galeria_omitidas'] += 1
+    return info, claves_borrar
+
+
+def _texto_fotos_correccion(info):
+    if not info:
+        return ''
+    partes = []
+    if info.get('nuevas'):
+        partes.append(f"Fotos del conteo: se reemplazaron {info['anteriores']} anterior(es) por {info['nuevas']} nueva(s)")
+    if info.get('descartadas'):
+        partes.append(f"se descartaron {info['descartadas']} foto(s) nueva(s) del reporte")
+    if info.get('galeria_quitadas'):
+        partes.append(f"se quitaron {info['galeria_quitadas']} foto(s) de la galería de {info['galeria_sku']}")
+    if info.get('galeria_copiadas'):
+        partes.append(f"se agregaron {info['galeria_copiadas']} a la galería de {info['destino_sku']}")
+    if info.get('galeria_omitidas'):
+        partes.append(f"{info['galeria_omitidas']} no se agregaron a la galería de {info['destino_sku']} porque ya tiene 5 fotos")
+    if not partes:
+        return ''
+    texto = '; '.join(partes) + '.'
+    return texto[0].upper() + texto[1:]
+
+
 def _calculo_correccion(registro, corr):
     """Arma TODO lo que el admin necesita para decidir: productos involucrados con su estado de hoy,
     y los valores sugeridos (con su explicación) para aplicar la corrección. Se recalcula cada vez
@@ -11209,6 +11430,18 @@ def auditoria_reportar_error(reg_id):
     if not comentario:
         return {'status': 'error', 'msg': 'Explica en qué consistió el error.'}
 
+    # Foto obligatoria del producto correcto (mismas reglas que en el formulario de conteo)
+    archivos_fotos = _fotos_corr_enviadas()
+    if not archivos_fotos:
+        return {'status': 'error', 'msg': 'Falta la foto: toma o adjunta al menos una foto del producto correcto (el que contaste de verdad).'}
+    if len(archivos_fotos) > MAX_FOTOS_CORRECCION:
+        return {'status': 'error', 'msg': f'Máximo {MAX_FOTOS_CORRECCION} fotos por reporte.'}
+    for archivo in archivos_fotos:
+        ok, error = _validar_archivo_imagen(archivo)
+        if not ok:
+            return {'status': 'error', 'msg': error}
+
+    claves_subidas = []
     try:
         _asegurar_tabla_correcciones()
         Modelo, _ = _modelos_auditoria(registro.origen_inventario)
@@ -11297,6 +11530,9 @@ def auditoria_reportar_error(reg_id):
             solicitada_por_id=session['user_id'], fecha_solicitud=hora_peru(),
         )
         db.session.add(corr)
+        db.session.flush()   # para tener corr.id (va en la carpeta de S3 de las fotos)
+        for archivo in archivos_fotos:
+            _subir_foto_correccion(registro, corr, archivo, claves_subidas)
 
         # Campos "resumen" en el propio registro (los usan la campana de avisos y los listados)
         registro.correccion_tipo_error = 'PRODUCTO' if 'PRODUCTO' in tipos else (tipos[0] if len(tipos) == 1 else 'VARIOS')
@@ -11314,11 +11550,14 @@ def auditoria_reportar_error(reg_id):
 
         registrar_log_auditoria(registro, 'CORRECCION_SOLICITADA',
             f"{session.get('nombre')} reportó un error ({', '.join(TIPOS_CORRECCION[t] for t in tipos)}) en este conteo ya aplicado. "
-            f"{'; '.join(cambios) + '. ' if cambios else ''}Explicación: {comentario}")
+            f"{'; '.join(cambios) + '. ' if cambios else ''}Explicación: {comentario} "
+            f"Adjuntó {len(archivos_fotos)} foto(s) nueva(s).")
         db.session.commit()
-        return {'status': 'success', 'msg': 'Tu reporte fue enviado. El administrador verá lo que enviaste, lo que corriges ahora y cómo estaba el sistema, y decidirá cómo aplicarlo.'}
+        return {'status': 'success', 'msg': f'Tu reporte fue enviado con {len(archivos_fotos)} foto(s). El administrador verá lo que enviaste, '
+                                            'lo que corriges ahora y cómo estaba el sistema, y decidirá cómo aplicarlo.'}
     except Exception as e:
         db.session.rollback()
+        _borrar_de_s3(claves_subidas)   # que no queden fotos huérfanas en S3
         return {'status': 'error', 'msg': str(e)}
 
 
@@ -11355,6 +11594,12 @@ def admin_auditoria_aplicar_correccion(reg_id):
     def _normalizar_estado(v):
         v = (v or '').strip()
         return '' if v.upper() == 'BUEN ESTADO (OK)' else v
+
+    accion_fotos = request.form.get('fotos_accion', 'REEMPLAZAR').strip().upper()
+    if accion_fotos not in ('REEMPLAZAR', 'DESCARTAR'):
+        accion_fotos = 'REEMPLAZAR'
+    ids_galeria = [int(x) for x in request.form.getlist('quitar_galeria') if str(x).isdigit()]
+    claves_creadas = []
 
     try:
         ahora = hora_peru()
@@ -11396,6 +11641,10 @@ def admin_auditoria_aplicar_correccion(reg_id):
                      f"Corrección de Conteo Físico #{registro.id} ({', '.join(TIPOS_CORRECCION[t] for t in corr.lista_tipos)}; "
                      f"Auditor: {auditor})", True)
 
+        info_fotos, claves_borrar = _resolver_fotos_correccion(registro, corr, accion_fotos, ids_galeria,
+                                                               prod_b, prod_a, claves_creadas)
+        resultado['fotos'] = info_fotos
+
         corr.estado = 'APLICADA'
         corr.resultado_json = json.dumps(resultado, ensure_ascii=False)
         corr.resuelta_por_id = session['user_id']
@@ -11409,14 +11658,17 @@ def admin_auditoria_aplicar_correccion(reg_id):
 
         resumen = '; '.join(f"{p['sku']}: stock {p['stock_antes']} → {p['stock_despues']} ({p['diferencia']:+d})"
                             for p in resultado['productos'])
+        texto_fotos = _texto_fotos_correccion(info_fotos)
         registrar_log_auditoria(registro, 'CORRECCION_APLICADA',
             f"{session.get('nombre')} aplicó la corrección reportada por "
             f"{corr.solicitada_por.nombre_completo if corr.solicitada_por else auditor}: {resumen}."
-            + (f" Nota: {nota}" if nota else ''))
+            + (f" {texto_fotos}" if texto_fotos else '') + (f" Nota: {nota}" if nota else ''))
         db.session.commit()
-        return {'status': 'success', 'msg': f'Corrección aplicada. {resumen}.'}
+        _borrar_de_s3(claves_borrar)
+        return {'status': 'success', 'msg': f'Corrección aplicada. {resumen}.' + (f' {texto_fotos}' if texto_fotos else '')}
     except Exception as e:
         db.session.rollback()
+        _borrar_de_s3(claves_creadas)
         return {'status': 'error', 'msg': str(e)}
 
 
@@ -11719,6 +11971,8 @@ def _es_superadmin():
 # Los catálogos de configuración (motivo_movimiento, presentacion, catalogo_valor,
 # campo_personalizado/opcion, system_config) NO están aquí a propósito: no se borran.
 TABLAS_RESET_ORDEN = [
+    ('correccion_auditoria_foto', CorreccionAuditoriaFoto),   # hijas de correccion_auditoria
+    ('correccion_auditoria', CorreccionAuditoria),             # hija de registro_auditoria
     ('registro_auditoria_foto', RegistroAuditoriaFoto),
     ('registro_auditoria_valor_extra', RegistroAuditoriaValorExtra),
     ('registro_auditoria_log', RegistroAuditoriaLog),
@@ -11779,7 +12033,18 @@ TABLAS_TODAS_ORDEN = [
     ('registro_auditoria_foto', RegistroAuditoriaFoto),
     ('registro_auditoria_valor_extra', RegistroAuditoriaValorExtra),
     ('registro_auditoria_log', RegistroAuditoriaLog),
+    ('correccion_auditoria', CorreccionAuditoria),
+    ('correccion_auditoria_foto', CorreccionAuditoriaFoto),
 ]
+
+
+def _asegurar_tablas_correccion_seguro():
+    """Las tablas de correcciones se crean solas al arrancar; esto cubre el caso raro de que en ese
+    momento la base no estuviera disponible (así el reset/respaldo no falla por una tabla faltante)."""
+    try:
+        _asegurar_tabla_correcciones()
+    except Exception:
+        app.logger.exception("No se pudieron verificar las tablas de correcciones")
 
 
 def _fila_a_dict(obj):
@@ -11796,6 +12061,7 @@ def _fila_a_dict(obj):
 def _contar_datos_reset():
     """Cuenta cuántos registros hay hoy en cada tabla que el RESET va a borrar."""
     admin_id_actual = session.get('user_id')
+    _asegurar_tablas_correccion_seguro()
     conteos = [{'tabla': nombre, 'cantidad': modelo.query.count()} for nombre, modelo in TABLAS_RESET_ORDEN]
     otros_usuarios = User.query.filter(User.id != admin_id_actual).count()
     conteos.append({'tabla': 'user (otras cuentas — la tuya se conserva)', 'cantidad': otros_usuarios})
@@ -11813,6 +12079,7 @@ def _generar_backup_completo_json():
         'generado_por_user_id': session.get('user_id'),
         'tablas': {}
     }
+    _asegurar_tablas_correccion_seguro()
     for nombre, modelo in TABLAS_TODAS_ORDEN:
         backup['tablas'][nombre] = [_fila_a_dict(obj) for obj in modelo.query.all()]
     return backup
@@ -11858,6 +12125,7 @@ def _restaurar_backup(datos_backup):
     una fila que ya está ahí) — así se puede usar tanto después de un reset (para traer de
     vuelta todo) como, sin ningún riesgo, para 'completar' datos que ya existen."""
     tablas_backup = datos_backup.get('tablas')
+    _asegurar_tablas_correccion_seguro()
     if not isinstance(tablas_backup, dict):
         raise ValueError("El archivo no tiene el formato esperado (falta la clave 'tablas').")
 

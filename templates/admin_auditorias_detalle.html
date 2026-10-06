@@ -278,11 +278,76 @@
             {% endif %}
         </div>
 
+        <!-- BLOQUE 3: fotos (las anteriores del conteo vs. las nuevas del reporte, y la galería del producto) -->
+        {% set nuevas = correccion.fotos %}
+        {% set cambia = calc and calc.cambia_producto %}
+        {% set destino = calc.prod_destino if calc and not calc.error else none %}
+        <div class="fw-bold small mb-1"><span class="badge bg-secondary">3</span> Fotos <span class="fw-normal text-muted">(el auditor debe enviar foto del producto correcto)</span></div>
+        <div id="bloqueFotosCorreccion" class="border rounded p-2 mb-3 small" data-cambia="{{ '1' if cambia else '0' }}">
+            <div class="row g-2">
+                <div class="col-12 col-md-6">
+                    <div class="fw-bold mb-1"><i class="bi bi-clock-history"></i> Fotos que envió en el conteo <span class="text-muted fw-normal">({{ registro.fotos|length }})</span></div>
+                    <div class="d-flex flex-wrap gap-2">
+                        {% for f in registro.fotos %}
+                        <a href="{{ url_for('ver_foto_auditoria', foto_id=f.id) }}" target="_blank"><img src="{{ url_for('ver_foto_auditoria', foto_id=f.id) }}" style="width:90px; height:90px; object-fit:cover; border-radius:8px; border:2px solid #dc3545;"></a>
+                        {% else %}<span class="text-muted">Este conteo no tenía fotos.</span>{% endfor %}
+                    </div>
+                </div>
+                <div class="col-12 col-md-6">
+                    <div class="fw-bold mb-1 text-success"><i class="bi bi-camera-fill"></i> Fotos nuevas del reporte <span class="text-muted fw-normal">({{ nuevas|length }})</span></div>
+                    <div class="d-flex flex-wrap gap-2">
+                        {% for f in nuevas %}
+                        <a href="{{ url_for('ver_foto_correccion', foto_id=f.id) }}" target="_blank"><img class="foto-nueva" src="{{ url_for('ver_foto_correccion', foto_id=f.id) }}" style="width:90px; height:90px; object-fit:cover; border-radius:8px; border:2px solid #198754;"></a>
+                        {% else %}<span class="text-muted">Este reporte no trae fotos nuevas (se envió antes de que la foto fuera obligatoria).</span>{% endfor %}
+                    </div>
+                </div>
+            </div>
+
+            {% if nuevas %}
+            <div class="fw-bold mt-3 mb-1">¿Qué hacer con las fotos?</div>
+            <div class="form-check">
+                <input class="form-check-input" type="radio" name="fotos_accion" id="fotos_reemplazar" value="REEMPLAZAR" checked onchange="cambioAccionFotos()">
+                <label class="form-check-label" for="fotos_reemplazar"><b>Reemplazar</b> <span class="badge bg-success">recomendado</span>:
+                    {% if nuevas|length == 1 %}la foto nueva pasa a ser la foto del conteo{% else %}las {{ nuevas|length }} fotos nuevas pasan a ser las fotos del conteo{% endif %}{% if registro.fotos|length == 1 %} y la anterior se elimina{% elif registro.fotos %} y las {{ registro.fotos|length }} anteriores se eliminan{% endif %}.
+                    {% if destino %}También se agregan a la galería de <b>{{ destino.sku }}</b>{% if cambia %} (el producto correcto){% endif %}, respetando el máximo de 5 fotos.{% endif %}</label>
+            </div>
+            <div class="form-check">
+                <input class="form-check-input" type="radio" name="fotos_accion" id="fotos_descartar" value="DESCARTAR" onchange="cambioAccionFotos()">
+                <label class="form-check-label" for="fotos_descartar"><b>Mantener las fotos del conteo</b> y eliminar las nuevas (por ejemplo, si la foto nueva está borrosa o no es del producto).</label>
+            </div>
+            {% else %}
+            <input type="hidden" name="fotos_accion" value="DESCARTAR">
+            {% endif %}
+
+            {% if prod_galeria_corr %}
+            <div class="fw-bold mt-3 mb-1"><i class="bi bi-images"></i> Galería de fotos de {{ prod_galeria_corr.sku }}
+                <span class="text-muted fw-normal">(lo que ve quien consulta este producto en el inventario)</span></div>
+            {% if galeria_correccion %}
+            <div class="text-muted mb-2">
+                {% if cambia %}Este NO era el producto contado: vienen marcadas para quitarse las fotos que se copiaron aquí desde este conteo.
+                {% else %}Vienen marcadas las fotos que se copiaron aquí desde este conteo al aplicarlo: si las reemplazas, conviene quitarlas para que no queden fotos equivocadas.{% endif %}
+                Puedes marcar o desmarcar cualquiera.
+            </div>
+            <div class="d-flex flex-wrap gap-3">
+                {% for g in galeria_correccion %}
+                <label class="text-center" style="cursor:pointer; width:100px;">
+                    <img src="{{ url_for('ver_foto_producto', foto_id=g.foto.id) }}" style="width:90px; height:90px; object-fit:cover; border-radius:8px; border:2px solid {{ '#fd7e14' if g.es_copia else '#dee2e6' }};">
+                    <div><input type="checkbox" class="form-check-input" name="quitar_galeria" value="{{ g.foto.id }}" data-copia="{{ '1' if g.es_copia else '0' }}" {{ 'checked' if g.es_copia else '' }}> Quitar</div>
+                    {% if g.es_copia %}<div class="badge text-white" style="background:#fd7e14; font-size:.6rem; white-space:normal;">copiada de este conteo</div>{% endif %}
+                </label>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="text-muted">Este producto no tiene fotos en su galería.</div>
+            {% endif %}
+            {% endif %}
+        </div>
+
         {% if calc and calc.error %}
         <div class="alert alert-danger small">{{ calc.error }} Resuelve el caso a mano y márcalo como resuelto.</div>
         {% elif calc %}
-        <!-- BLOQUE 3: aplicar (todo editable) -->
-        <div class="fw-bold small mb-1"><span class="badge bg-secondary">3</span> Aplicar la corrección <span class="fw-normal text-muted">(valores sugeridos, puedes editarlos)</span></div>
+        <!-- BLOQUE 4: aplicar (todo editable) -->
+        <div class="fw-bold small mb-1"><span class="badge bg-secondary">4</span> Aplicar la corrección <span class="fw-normal text-muted">(valores sugeridos, puedes editarlos)</span></div>
         <form id="formCorreccion" onsubmit="return false;">
             {% if calc.cambia_producto %}
             <div class="border rounded p-2 mb-2">
@@ -607,7 +672,15 @@
                     <td>{% for t in c.lista_tipos %}<span class="badge bg-light text-dark border">{{ tipos_correccion.get(t, t) }}</span> {% endfor %}<div class="text-muted">"{{ c.comentario }}"</div></td>
                     <td>{% if c.estado == 'APLICADA' %}<span class="badge bg-success">Aplicada</span>{% elif c.estado == 'RECHAZADA' %}<span class="badge bg-danger">Rechazada</span>{% else %}<span class="badge bg-secondary">Resuelta a mano</span>{% endif %}
                         <div class="text-muted">{{ c.resuelta_por.nombre_completo if c.resuelta_por else '' }} {{ c.fecha_resolucion.strftime('%d/%m/%Y %H:%M') if c.fecha_resolucion else '' }}</div></td>
-                    <td>{% for pr in c.resultado.get('productos', []) %}<div><b>{{ pr.sku }}</b>: stock {{ pr.stock_antes }} → {{ pr.stock_despues }} ({{ '%+d'|format(pr.diferencia) }})</div>{% else %}-{% endfor %}</td>
+                    <td>{% for pr in c.resultado.get('productos', []) %}<div><b>{{ pr.sku }}</b>: stock {{ pr.stock_antes }} → {{ pr.stock_despues }} ({{ '%+d'|format(pr.diferencia) }})</div>{% else %}{% if not c.resultado.get('fotos') %}-{% endif %}{% endfor %}
+                        {% set fi = c.resultado.get('fotos') %}
+                        {% if fi %}<div class="text-muted"><i class="bi bi-camera"></i>
+                            {% if fi.nuevas %}Fotos del conteo reemplazadas ({{ fi.anteriores }} → {{ fi.nuevas }}). {% endif %}
+                            {% if fi.descartadas %}{{ fi.descartadas }} foto(s) nueva(s) descartada(s). {% endif %}
+                            {% if fi.galeria_quitadas %}Quitadas de la galería de {{ fi.galeria_sku }}: {{ fi.galeria_quitadas }}. {% endif %}
+                            {% if fi.galeria_copiadas %}Agregadas a la galería de {{ fi.destino_sku }}: {{ fi.galeria_copiadas }}. {% endif %}
+                            {% if fi.galeria_omitidas %}{{ fi.galeria_omitidas }} no entraron a la galería (ya tenía 5).{% endif %}
+                        </div>{% endif %}</td>
                     <td class="pe-3">{{ c.nota_resolucion or '-' }}</td>
                 </tr>
                 {% endfor %}
@@ -684,6 +757,32 @@ function difStock(input) {
 }
 document.querySelectorAll('#formCorreccion input[data-hoy]').forEach(difStock);
 
+// ---- Fotos de la corrección ----
+// Si el producto era el mismo y el admin decide MANTENER las fotos del conteo, sus copias en la
+// galería también son correctas: se desmarcan. Si el producto era otro, siguen marcadas (están en
+// el producto equivocado de todas formas).
+function cambioAccionFotos() {
+    const b = document.getElementById('bloqueFotosCorreccion');
+    if (!b || b.dataset.cambia === '1') return;
+    const reemplazar = (b.querySelector('[name=fotos_accion]:checked') || {}).value === 'REEMPLAZAR';
+    b.querySelectorAll('[name=quitar_galeria][data-copia="1"]').forEach(c => { c.checked = reemplazar; });
+}
+// Agrega al FormData la decisión sobre las fotos y devuelve líneas para el resumen de confirmación
+function agregarDatosFotos(fd) {
+    const b = document.getElementById('bloqueFotosCorreccion');
+    if (!b) return '';
+    const acc = b.querySelector('[name=fotos_accion]:checked') || b.querySelector('[name=fotos_accion]');
+    const nNuevas = b.querySelectorAll('img.foto-nueva').length;
+    if (acc) fd.append('fotos_accion', acc.value);
+    const quitar = [...b.querySelectorAll('[name=quitar_galeria]:checked')];
+    quitar.forEach(c => fd.append('quitar_galeria', c.value));
+    const lineas = [];
+    if (nNuevas) lineas.push(acc && acc.value === 'REEMPLAZAR' ? `<li>Fotos: se usa${nNuevas > 1 ? 'n las ' + nNuevas + ' fotos nuevas' : ' la foto nueva'} y se eliminan las anteriores del conteo</li>`
+                                                            : `<li>Fotos: se mantienen las del conteo y se elimina${nNuevas > 1 ? 'n las ' + nNuevas + ' fotos nuevas' : ' la foto nueva'}</li>`);
+    if (quitar.length) lineas.push(`<li>Se quitan <b>${quitar.length}</b> foto(s) de la galería del producto</li>`);
+    return lineas.join('');
+}
+
 function aplicarCorreccion() {
     const form = document.getElementById('formCorreccion');
     const fd = new FormData(form);
@@ -695,7 +794,7 @@ function aplicarCorreccion() {
     const resumen = [...form.querySelectorAll('input[data-hoy]')].map(i => {
         const titulo = i.closest('.border').querySelector('.fw-bold').innerText.trim();
         return `<li>${titulo}: ${i.dataset.hoy} → <b>${i.value}</b></li>`;
-    }).join('');
+    }).join('') + agregarDatosFotos(fd);
     Swal.fire({
         title: '¿Aplicar la corrección?', icon: 'question', showCancelButton: true,
         html: `<ul class="text-start small">${resumen}</ul><div class="small text-muted">Se registrarán los movimientos en el Kardex.</div>`,
@@ -716,6 +815,10 @@ function resolverCorreccion(accion) {
     const esRechazo = accion === 'RECHAZAR';
     Swal.fire({
         title: esRechazo ? 'Motivo del rechazo' : '¿Cómo se resolvió?',
+        html: document.getElementById('bloqueFotosCorreccion')
+            ? (esRechazo ? '<div class="small text-muted">Se mantienen las fotos del conteo y se eliminan las fotos nuevas del reporte.</div>'
+                         : '<div class="small text-muted">Con las fotos se hará lo que elegiste en el bloque 3.</div>')
+            : undefined,
         input: 'text',
         inputPlaceholder: esRechazo ? 'Explica por qué se rechaza esta corrección...' : 'Explica qué ajuste se hizo manualmente...',
         showCancelButton: true,
@@ -726,6 +829,7 @@ function resolverCorreccion(accion) {
         const fd = new FormData();
         fd.append('accion', accion);
         fd.append('nota', result.value);
+        if (!esRechazo) agregarDatosFotos(fd);   // al rechazar, las fotos nuevas siempre se eliminan
         fetch(`/admin/auditorias/${REG_ID}/resolver_correccion`, { method: 'POST', body: fd })
             .then(r => r.json())
             .then(d => {

@@ -802,6 +802,25 @@ class CorreccionAuditoria(db.Model):
     def lista_tipos(self):
         return [t for t in (self.tipos or '').split(',') if t]
 
+
+class CorreccionAuditoriaFoto(db.Model):
+    """Fotos NUEVAS que el auditor toma al reportar un error (obligatorias, mismas reglas que las
+    del conteo: máx. 5, máx. 5MB, solo imágenes). Mientras el reporte está pendiente viven aquí;
+    si el admin lo aplica pasan a ser las fotos del conteo (reemplazan a las anteriores) y si lo
+    rechaza se eliminan. Así no se acumulan fotos equivocadas."""
+    __tablename__ = 'correccion_auditoria_foto'
+    id = db.Column(db.Integer, primary_key=True)
+    correccion_id = db.Column(db.Integer, db.ForeignKey('correccion_auditoria.id'), nullable=False, index=True)
+    url_s3 = db.Column(db.String(500), nullable=False)
+    s3_key = db.Column(db.String(500), nullable=False)
+    subido_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    fecha_subida = db.Column(db.DateTime, default=hora_peru)
+
+    correccion = db.relationship('CorreccionAuditoria', backref=db.backref(
+        'fotos', cascade="all, delete-orphan", order_by='CorreccionAuditoriaFoto.id'))
+    subido_por = db.relationship('User')
+
+
 class MaestroCambioLog(db.Model):
     """Auditoría de cada cambio que hace la importación del Excel Maestro (hoja MAESTROV2).
     Por ahora el Maestro solo actualiza PESO NOMINAL, pero el campo 'campo' ya queda listo

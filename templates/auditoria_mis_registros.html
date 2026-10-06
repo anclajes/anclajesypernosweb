@@ -65,10 +65,11 @@
                         {% if r.estado_registro == 'PENDIENTE' %}
                         <a href="{{ url_for('auditoria_editar_form', reg_id=r.id) }}" class="btn btn-sm btn-outline-warning"><i class="bi bi-pencil-fill"></i> Editar</a>
                         {% elif r.estado_registro == 'APLICADO' %}
+                        {% set nf = namespace(urls=[]) %}{% for f in r.fotos %}{% set nf.urls = nf.urls + [url_for('ver_foto_auditoria', foto_id=f.id)] %}{% endfor %}
                         {% set datos_reporte = {'id': r.id, 'origen': r.origen_inventario, 'sku': r.sku_snapshot, 'nombre': r.nombre_snapshot,
                                                  'familia': r.familia or '', 'calidad': r.calidad or '', 'cantidad': r.cantidad_total,
                                                  'unidad': r.unidad_medida or '', 'anaquel': r.anaquel or '', 'nicho': r.nicho or '',
-                                                 'estado': r.estado_fisico or ''} %}
+                                                 'estado': r.estado_fisico or '', 'fotos': nf.urls} %}
                         <button type="button" class="btn btn-sm btn-outline-danger" onclick="abrirReportarError({{ datos_reporte|tojson|forceescape }})">
                             <i class="bi bi-flag-fill"></i> Reportar un error
                         </button>
@@ -195,12 +196,35 @@
                     </div>
                 </div>
 
-                <!-- 3. EXPLICACIÓN -->
+                <!-- 3. FOTO OBLIGATORIA DEL PRODUCTO CORRECTO -->
+                <div class="border rounded p-2 mb-3" style="border-color:#fd7e14 !important; background:#fffaf5;">
+                    <div class="fw-bold mb-1"><i class="bi bi-camera-fill" style="color:#fd7e14;"></i> Foto del producto correcto
+                        <span class="badge bg-danger ms-1">Obligatorio</span></div>
+                    <div class="mb-2">
+                        Tómale la foto al producto que <b>realmente contaste</b>, donde se vea bien su etiqueta, medida o caja.
+                        <span id="re_fotos_aviso"></span>
+                    </div>
+                    <div id="re_fotos_anteriores_box" class="mb-2">
+                        <div class="text-muted fw-bold mb-1" style="font-size:.75rem;">Fotos que enviaste en este conteo</div>
+                        <div id="re_fotos_anteriores" class="d-flex flex-wrap gap-2"></div>
+                    </div>
+                    <div class="text-muted mb-1" style="font-size:.75rem;">Mínimo 1 y máximo 5 fotos, hasta 5MB cada una (JPG, PNG o WEBP).</div>
+                    <div class="d-flex gap-2 flex-wrap">
+                        <input type="file" id="re_input_fotos" accept="image/jpeg,image/png,image/webp" multiple class="form-control form-control-sm" style="max-width:220px;">
+                        <input type="file" id="re_input_camara" accept="image/*" capture="environment" class="d-none">
+                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="document.getElementById('re_input_camara').click()">
+                            <i class="bi bi-camera-fill"></i> Tomar Foto
+                        </button>
+                    </div>
+                    <div id="re_preview_fotos" class="d-flex flex-wrap gap-2 mt-2"></div>
+                </div>
+
+                <!-- 4. EXPLICACIÓN -->
                 <label class="fw-bold mb-1">Explica en qué consistió el error *</label>
                 <textarea id="re_comentario" class="form-control form-control-sm mb-3" rows="3"
                           placeholder="Ej: Conté el PERNO 1/2 x 2 pero lo registré con el código del 1/2 x 2 1/2 porque estaban en el mismo nicho..."></textarea>
 
-                <!-- 4. RESUMEN -->
+                <!-- 5. RESUMEN -->
                 <div class="border rounded p-2" style="background:#fff8f0;">
                     <div class="fw-bold mb-1" style="color:#fd7e14;"><i class="bi bi-list-check"></i> Así se enviará tu corrección</div>
                     <ul id="re_resumen" class="mb-0 ps-3"><li class="text-muted">Marca qué estuvo mal.</li></ul>
@@ -221,6 +245,8 @@ let REG = null;               // datos del conteo que se está reportando
 let PRODUCTO_ELEGIDO = null;  // producto correcto elegido (si marcó "producto equivocado")
 let modalReportarError = null;
 const CATALOGOS = {};
+let FOTOS_REPORTE = [];       // fotos nuevas elegidas (mismas validaciones que el formulario de conteo)
+const MAX_FOTOS = 5;
 
 function esc(t) {
     return String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -267,6 +293,12 @@ function abrirReportarError(datos) {
     document.querySelectorAll('.re-tipo').forEach(c => { c.checked = false; toggleTipo(c, true); });
     document.getElementById('re_cantidad').value = datos.cantidad;
     document.getElementById('re_comentario').value = '';
+    FOTOS_REPORTE = [];
+    renderFotosReporte();
+    const ant = datos.fotos || [];
+    document.getElementById('re_fotos_anteriores').innerHTML = ant.length
+        ? ant.map(u => `<a href="${esc(u)}" target="_blank"><img src="${esc(u)}" style="width:64px; height:64px; object-fit:cover; border-radius:8px; border:1px solid #dee2e6; opacity:.85;"></a>`).join('')
+        : '<span class="text-muted" style="font-size:.75rem;">No enviaste fotos en este conteo.</span>';
     cascadaCargadaPara = null;
     document.getElementById('re_elegido').classList.add('d-none');
 
@@ -388,6 +420,81 @@ function elegirProducto(p) {
 
 function marcado(tipo) { return document.getElementById('re_chk_' + tipo).checked; }
 
+// ---- Fotos del reporte (mismas validaciones y compresión que el formulario de conteo) ----
+function agregarFotoReporte(archivo) {
+    if (FOTOS_REPORTE.length >= MAX_FOTOS) {
+        Swal.fire({ icon: 'warning', title: 'Máximo 5 fotos', timer: 1800, showConfirmButton: false });
+        return;
+    }
+    if (archivo.size > 5 * 1024 * 1024) {
+        Swal.fire({ icon: 'warning', title: 'Foto muy pesada', text: `"${archivo.name}" supera los 5MB.` });
+        return;
+    }
+    if (!archivo.type || !archivo.type.startsWith('image/')) {
+        Swal.fire({ icon: 'warning', title: 'Formato no permitido', text: `"${archivo.name || 'archivo'}" no es una imagen.` });
+        return;
+    }
+    FOTOS_REPORTE.push(archivo);
+}
+function quitarFotoReporte(idx) {
+    FOTOS_REPORTE.splice(idx, 1);
+    renderFotosReporte();
+}
+function renderFotosReporte() {
+    const cont = document.getElementById('re_preview_fotos');
+    cont.innerHTML = '';
+    FOTOS_REPORTE.forEach((archivo, idx) => {
+        const div = document.createElement('div');
+        div.style.position = 'relative';
+        div.innerHTML = `
+            <img src="${URL.createObjectURL(archivo)}" style="width:80px; height:80px; object-fit:cover; border-radius:8px; border:2px solid #198754;">
+            <button type="button" class="btn btn-sm btn-danger" style="position:absolute; top:-8px; right:-8px; border-radius:50%; padding:0; width:22px; height:22px; line-height:1;" onclick="quitarFotoReporte(${idx})">&times;</button>`;
+        cont.appendChild(div);
+    });
+    actualizarResumen();
+}
+function comprimirImagen(archivo, maxWidth = 1200, calidad = 0.8) {
+    return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                let w = img.width, h = img.height;
+                if (w > maxWidth) { h = h * (maxWidth / w); w = maxWidth; }
+                canvas.width = w; canvas.height = h;
+                canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                canvas.toBlob((blob) => resolve(blob || archivo), 'image/jpeg', calidad);
+            };
+            img.onerror = () => resolve(archivo);
+            img.src = e.target.result;
+        };
+        reader.onerror = () => resolve(archivo);
+        reader.readAsDataURL(archivo);
+    });
+}
+document.addEventListener('DOMContentLoaded', function () {
+    ['re_input_fotos', 're_input_camara'].forEach(id => document.getElementById(id).addEventListener('change', function (e) {
+        Array.from(e.target.files).forEach(agregarFotoReporte);
+        e.target.value = '';
+        renderFotosReporte();
+    }));
+});
+
+// Explica qué pasará con las fotos según si el producto era otro o el mismo
+function actualizarAvisoFotos() {
+    const aviso = document.getElementById('re_fotos_aviso');
+    const tieneAnteriores = (REG.fotos || []).length > 0;
+    if (marcado('PRODUCTO')) {
+        const correcto = PRODUCTO_ELEGIDO ? `<b>${esc(PRODUCTO_ELEGIDO.sku)}</b>` : 'el producto correcto';
+        aviso.innerHTML = `Como el producto era otro, cuando el administrador lo apruebe ${tieneAnteriores ? `las fotos que enviaste <b>se eliminarán</b> (también de las fotos de <b>${esc(REG.sku)}</b>) y ` : ''}las nuevas se guardarán en ${correcto}.`;
+    } else {
+        aviso.innerHTML = tieneAnteriores
+            ? 'Cuando el administrador apruebe tu reporte, estas fotos <b>reemplazarán</b> a las que enviaste en este conteo (las anteriores se eliminarán).'
+            : 'Cuando el administrador apruebe tu reporte, estas fotos quedarán guardadas en este conteo.';
+    }
+}
+
 function actualizarResumen() {
     if (!REG) return;
     const items = [];
@@ -398,6 +505,13 @@ function actualizarResumen() {
     if (marcado('UBICACION')) items.push(`Ubicación: <s>${esc(ubicTexto(REG.anaquel, REG.nicho))}</s> → <b>${esc(ubicTexto(document.getElementById('re_anaquel').value, document.getElementById('re_nicho').value))}</b>`);
     if (marcado('ESTADO')) items.push(`Estado físico: <s>${esc(REG.estado || '-')}</s> → <b>${esc(document.getElementById('re_estado').value)}</b>`);
     if (marcado('OTRO')) items.push('Otro motivo (ver explicación)');
+    if (items.length) {
+        const nAnt = (REG.fotos || []).length;
+        items.push(FOTOS_REPORTE.length
+            ? `Fotos: <b>${FOTOS_REPORTE.length} nueva(s)</b>${nAnt ? ` (reemplazarán a ${nAnt} anterior(es))` : ''}`
+            : '<span class="text-danger">Fotos: falta tomar o adjuntar al menos una foto del producto correcto</span>');
+    }
+    actualizarAvisoFotos();
     document.getElementById('re_resumen').innerHTML = items.length ? items.map(i => `<li>${i}</li>`).join('') : '<li class="text-muted">Marca qué estuvo mal.</li>';
 }
 
@@ -410,6 +524,21 @@ function enviarReporteError() {
     if (tipos.includes('UBICACION') && (!document.getElementById('re_anaquel').value || !document.getElementById('re_nicho').value))
         return Swal.fire('Falta un dato', 'Elige el Anaquel y el Nicho correctos de la lista.', 'warning');
     if (!comentario) return Swal.fire('Falta un dato', 'Explica en qué consistió el error.', 'warning');
+    if (!FOTOS_REPORTE.length) return Swal.fire('Falta la foto', 'Toma o adjunta al menos una foto del producto correcto (el que contaste de verdad).', 'warning');
+    enviarConFotos(tipos, comentario);
+}
+
+async function enviarConFotos(tipos, comentario) {
+    const btn = document.getElementById('re_btn_enviar');
+    btn.disabled = true;
+    Swal.fire({ title: 'Preparando fotos...', didOpen: () => Swal.showLoading(), allowOutsideClick: false });
+    const comprimidas = [];
+    for (const archivo of FOTOS_REPORTE) comprimidas.push(await comprimirImagen(archivo));
+    const total = comprimidas.reduce((a, b) => a + b.size, 0);
+    if (total > 4.8 * 1024 * 1024) {
+        btn.disabled = false;
+        return Swal.fire('Fotos muy pesadas', 'Entre todas las fotos superan los 5MB que se pueden enviar. Quita alguna y vuelve a intentar.', 'warning');
+    }
 
     const fd = new FormData();
     tipos.forEach(t => fd.append('tipos', t));
@@ -420,9 +549,8 @@ function enviarReporteError() {
     fd.append('anaquel', document.getElementById('re_anaquel').value);
     fd.append('nicho', document.getElementById('re_nicho').value);
     fd.append('estado_fisico', document.getElementById('re_estado').value);
+    comprimidas.forEach(b => fd.append('fotos', b, 'foto.jpg'));
 
-    const btn = document.getElementById('re_btn_enviar');
-    btn.disabled = true;
     fetch(`/auditoria/registro/${REG.id}/reportar_error`, { method: 'POST', body: fd })
         .then(r => r.json())
         .then(d => {
