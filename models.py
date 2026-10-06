@@ -654,7 +654,7 @@ class RegistroAuditoria(db.Model):
     # esta funcionalidad quedan sin período asignado).
     periodo_id = db.Column(db.Integer, db.ForeignKey('periodo_auditoria.id'), nullable=True)
 
-    estado_registro = db.Column(db.String(20), default='PENDIENTE')  # PENDIENTE, APROBADO, RECHAZADO, APLICADO, CORRECCION_SOLICITADA
+    estado_registro = db.Column(db.String(30), default='PENDIENTE')  # PENDIENTE, APROBADO, RECHAZADO, APLICADO, CORRECCION_SOLICITADA
     bloqueado = db.Column(db.Boolean, default=True)
     motivo_rechazo = db.Column(db.Text)
 
@@ -681,8 +681,8 @@ class RegistroAuditoria(db.Model):
     # ver admin_auditoria_aplicar, que reutiliza su misma lógica incremental para aplicar la corrección).
     correccion_tipo_error = db.Column(db.String(20), nullable=True)  # CANTIDAD, UBICACION, PRODUCTO, OTRO
     correccion_cantidad_propuesta = db.Column(db.Integer, nullable=True)
-    correccion_anaquel_propuesto = db.Column(db.String(20), nullable=True)
-    correccion_nicho_propuesto = db.Column(db.String(20), nullable=True)
+    correccion_anaquel_propuesto = db.Column(db.String(100), nullable=True)
+    correccion_nicho_propuesto = db.Column(db.String(100), nullable=True)
     correccion_comentario = db.Column(db.Text, nullable=True)
     correccion_solicitada_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     correccion_fecha_solicitud = db.Column(db.DateTime, nullable=True)

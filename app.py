@@ -11041,11 +11041,46 @@ def _asegurar_tabla_correcciones():
     _tabla_correcciones_ok = True
 
 
+# Columnas de registro_auditoria que se quedaron cortas: 'CORRECCION_SOLICITADA' tiene 21 letras y
+# estado_registro era VARCHAR(20) -> Postgres rechazaba el reporte de error ("value too long").
+# Ampliar un VARCHAR en Postgres es instantáneo y no toca los datos; solo se hace si hace falta.
+_COLUMNAS_A_AMPLIAR = {'estado_registro': 30, 'correccion_anaquel_propuesto': 100, 'correccion_nicho_propuesto': 100}
+
+
+_columnas_auditoria_ok = False
+
+
+def _ampliar_columnas_auditoria():
+    """Se llama al arrancar y al inicio de auditoria_reportar_error ANTES de cualquier consulta
+    (si la sesión ya hubiera leído registro_auditoria, el ALTER desde otra conexión se quedaría
+    esperando su propio bloqueo). lock_timeout evita que la petición se cuelgue si otro proceso
+    tiene la tabla ocupada: en ese caso se reintenta en la siguiente llamada."""
+    global _columnas_auditoria_ok
+    if _columnas_auditoria_ok:
+        return
+    if db.engine.dialect.name != 'postgresql':
+        _columnas_auditoria_ok = True
+        return  # SQLite no limita el largo de VARCHAR
+    with db.engine.begin() as conn:
+        conn.execute(text("SET LOCAL lock_timeout = '5s'"))
+        filas = conn.execute(text(
+            "SELECT column_name, character_maximum_length FROM information_schema.columns "
+            "WHERE table_name = 'registro_auditoria' AND column_name IN "
+            "('estado_registro', 'correccion_anaquel_propuesto', 'correccion_nicho_propuesto')"
+        )).fetchall()
+        for columna, largo in filas:
+            nuevo = _COLUMNAS_A_AMPLIAR[columna]
+            if largo is not None and largo < nuevo:
+                conn.execute(text(f"ALTER TABLE registro_auditoria ALTER COLUMN {columna} TYPE VARCHAR({nuevo})"))
+    _columnas_auditoria_ok = True
+
+
 # Crear la tabla al arrancar la app (si la base no está disponible en ese instante, se vuelve a
 # intentar sola la primera vez que se use la funcionalidad).
 try:
     with app.app_context():
         _asegurar_tabla_correcciones()
+        _ampliar_columnas_auditoria()
 except Exception as _e_tabla_corr:
     print(f"Aviso: no se pudo verificar la tabla correccion_auditoria al arrancar: {_e_tabla_corr}")
 
@@ -11155,6 +11190,10 @@ def _calculo_correccion(registro, corr):
 @app.route('/auditoria/registro/<int:reg_id>/reportar_error', methods=['POST'])
 def auditoria_reportar_error(reg_id):
     if session.get('role') != 'auditor_stock': return {'status': 'error', 'msg': 'No autorizado'}, 403
+    try:
+        _ampliar_columnas_auditoria()  # antes de leer el registro (ver la función)
+    except Exception as e:
+        return {'status': 'error', 'msg': f'No se pudo preparar la base de datos para el reporte, intenta de nuevo en un momento. ({e})'}
     registro = RegistroAuditoria.query.get_or_404(reg_id)
     if registro.trabajador_id != session['user_id']:
         return {'status': 'error', 'msg': 'No autorizado'}, 403
