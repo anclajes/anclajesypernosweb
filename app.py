@@ -10649,7 +10649,7 @@ def admin_catalogos():
     uso_estados = _uso_estados_productos()
     en_catalogo = {_normalizar_estado_producto(v.valor) for v in catalogos['ESTADO_FISICO']}
     estados_fuera = sorted(((k, u) for k, u in uso_estados.items() if k and k not in en_catalogo),
-                           key=lambda x: -(x[1]['ANCLAJES'] + x[1]['IMPORTBOLTS']))
+                           key=lambda x: _clave_alfabetica(x[0]))   # A→Z (sin importar tildes)
     return render_template('admin_catalogos.html', catalogos=catalogos, campos=campos,
                            motivos_entrada=motivos_entrada, motivos_salida=motivos_salida,
                            presentaciones=presentaciones,
@@ -10664,6 +10664,13 @@ def admin_catalogos():
 # escritos: ROTO / ROTOS / ROTAS -> ROTO) en los DOS inventarios. Solo cambia la ficha de los
 # productos; los conteos de auditoría ya enviados conservan lo que se escribió en su momento.
 # ============================================
+def _clave_alfabetica(texto):
+    """Orden alfabético 'humano': sin distinguir tildes ni mayúsculas (Á = A, Ñ va después de N)."""
+    import unicodedata
+    t = (texto or '').upper().replace('Ñ', 'N~')
+    return ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
+
+
 def _grupos_estado():
     """{estado_normalizado: {'ANCLAJES': [valores tal cual están guardados], 'IMPORTBOLTS': [...]}}"""
     grupos = {}
