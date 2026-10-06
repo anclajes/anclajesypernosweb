@@ -128,9 +128,22 @@
                         <div class="text-muted">El código, la descripción, la familia o la calidad no son las del producto que realmente conté.</div>
                     </div>
                     <div class="d-none mt-2 ps-4" id="re_panel_PRODUCTO">
-                        <label class="text-muted fw-bold mb-1">Busca el producto correcto (código o descripción)</label>
-                        <input type="text" id="re_buscar" class="form-control form-control-sm" placeholder="Ej: P09073 o PERNO HEX 1/2" oninput="buscarProductoCorrecto()">
-                        <div id="re_resultados" class="list-group mt-1" style="max-height:200px; overflow-y:auto;"></div>
+                        <div class="text-muted mb-2">Búscalo igual que al contar: <b>Familia → Calidad → Código</b>. Ya vienen elegidas la familia y la calidad que enviaste; cámbialas si el producto correcto es de otra.</div>
+                        <div class="row g-2">
+                            <div class="col-12 col-md-6">
+                                <label class="text-muted fw-bold mb-1">Familia</label>
+                                <select id="re_familia" style="width:100%;"><option value=""></option></select>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <label class="text-muted fw-bold mb-1">Calidad</label>
+                                <select id="re_calidad" disabled style="width:100%;"><option value=""></option></select>
+                            </div>
+                            <div class="col-12">
+                                <label class="text-muted fw-bold mb-1">Código o descripción</label>
+                                <select id="re_producto" disabled style="width:100%;"><option value=""></option></select>
+                                <div class="text-muted" style="font-size:.75rem;">Puedes escribir el código o parte de la descripción para filtrar.</div>
+                            </div>
+                        </div>
                         <div id="re_elegido" class="alert alert-success py-2 mt-2 mb-0 d-none"></div>
                         <div class="text-muted mt-1">La cantidad, ubicación y estado se mantienen como los enviaste. Si alguno también estaba mal, márcalo abajo.</div>
                     </div>
@@ -208,7 +221,6 @@
 let REG = null;               // datos del conteo que se está reportando
 let PRODUCTO_ELEGIDO = null;  // producto correcto elegido (si marcó "producto equivocado")
 let modalReportarError = null;
-let timerBusqueda = null;
 const CATALOGOS = {};
 
 function esc(t) {
@@ -251,8 +263,7 @@ function abrirReportarError(datos) {
     document.getElementById('re_anaquel').value = datos.anaquel;
     document.getElementById('re_nicho').value = datos.nicho;
     document.getElementById('re_comentario').value = '';
-    document.getElementById('re_buscar').value = '';
-    document.getElementById('re_resultados').innerHTML = '';
+    cascadaCargadaPara = null;
     document.getElementById('re_elegido').classList.add('d-none');
 
     cargarCatalogo('UNIDAD_MEDIDA').then(v => llenarSelect('re_unidad', v, datos.unidad));
@@ -266,36 +277,98 @@ function abrirReportarError(datos) {
 function toggleTipo(chk, sinResumen) {
     const panel = document.getElementById('re_panel_' + chk.value);
     if (panel) panel.classList.toggle('d-none', !chk.checked);
-    if (chk.checked && chk.value === 'PRODUCTO') setTimeout(() => document.getElementById('re_buscar').focus(), 50);
+    if (chk.checked && chk.value === 'PRODUCTO') prepararCascada();
     if (!sinResumen) actualizarResumen();
 }
 
-function buscarProductoCorrecto() {
-    clearTimeout(timerBusqueda);
-    const texto = document.getElementById('re_buscar').value.trim();
-    const cont = document.getElementById('re_resultados');
-    if (texto.length < 2) { cont.innerHTML = ''; return; }
-    timerBusqueda = setTimeout(() => {
-        const fd = new FormData();
-        fd.append('q', texto);
-        fetch(`/api/auditoria/buscar_producto/${REG.origen}`, { method: 'POST', body: fd })
-            .then(r => r.json())
-            .then(d => {
-                const prods = (d.productos || []).filter(p => p.sku !== REG.sku);
-                if (!prods.length) { cont.innerHTML = '<div class="list-group-item text-muted">Sin resultados.</div>'; return; }
-                cont.innerHTML = prods.map((p, i) => `
-                    <button type="button" class="list-group-item list-group-item-action py-1" data-i="${i}">
-                        <b class="text-primary">${esc(p.sku)}</b> — ${esc(p.nombre)}
-                        <div class="text-muted" style="font-size:.75rem;">${esc(p.familia)} · ${esc(p.calidad || '-')}${p.estado ? ' · ' + esc(p.estado) : ''}${p.activo ? '' : ' · <span class="text-danger">INACTIVO</span>'}</div>
-                    </button>`).join('');
-                cont.querySelectorAll('button').forEach(b => b.addEventListener('click', () => elegirProducto(prods[+b.dataset.i])));
-            });
-    }, 300);
+// ---- Buscador en cascada Familia -> Calidad -> Código (mismo que el formulario de conteo) ----
+const FAMILIAS_POR_ORIGEN = {{ familias_por_origen | tojson }};
+let PRODUCTOS_CACHE = [];
+let cascadaCargadaPara = null;   // id del registro para el que ya se precargó la cascada
+
+function opcionProducto(op) {
+    if (!op.id) return op.text;
+    const p = PRODUCTOS_CACHE.find(x => String(x.id) === String(op.id));
+    if (!p) return op.text;
+    let html = `<span>${esc(p.sku)} — ${esc(p.nombre)}</span>`;
+    if (p.estado) html += ` <span class="badge bg-danger ms-1" style="font-size:.65rem;">${esc(p.estado)}</span>`;
+    if (p.sku === REG.sku) html += ` <span class="badge bg-secondary ms-1" style="font-size:.65rem;">el que enviaste</span>`;
+    return $(html);
 }
+
+function limpiarProductoElegido() {
+    PRODUCTO_ELEGIDO = null;
+    document.getElementById('re_elegido').classList.add('d-none');
+    actualizarResumen();
+}
+
+function reCargarCalidades(calidadPreseleccion) {
+    const familia = $('#re_familia').val();
+    const selCal = $('#re_calidad'), selProd = $('#re_producto');
+    selCal.prop('disabled', true).empty().append('<option value=""></option>').trigger('change');
+    selProd.prop('disabled', true).empty().append('<option value=""></option>').trigger('change');
+    limpiarProductoElegido();
+    if (!familia) return Promise.resolve();
+    return fetch(`/api/auditoria/calidades/${REG.origen}`, {
+        method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: `familia=${encodeURIComponent(familia)}`
+    }).then(r => r.json()).then(d => {
+        (d.calidades || []).forEach(c => selCal.append(new Option(c, c, false, c === calidadPreseleccion)));
+        selCal.prop('disabled', false).trigger('change');
+        if (calidadPreseleccion && selCal.val() === calidadPreseleccion) return reCargarCodigos();
+    });
+}
+
+function reCargarCodigos() {
+    const familia = $('#re_familia').val(), calidad = $('#re_calidad').val();
+    const selProd = $('#re_producto');
+    selProd.prop('disabled', true).empty().append('<option value=""></option>').trigger('change');
+    limpiarProductoElegido();
+    if (!familia || !calidad) return Promise.resolve();
+    return fetch(`/api/auditoria/codigos/${REG.origen}`, {
+        method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: `familia=${encodeURIComponent(familia)}&calidad=${encodeURIComponent(calidad)}`
+    }).then(r => r.json()).then(d => {
+        PRODUCTOS_CACHE = d.productos || [];
+        PRODUCTOS_CACHE.forEach(p => {
+            const op = new Option(`${p.sku} — ${p.nombre}`, p.id, false, false);
+            if (p.sku === REG.sku) op.disabled = true;   // no puede elegir el mismo que envió
+            selProd.append(op);
+        });
+        selProd.prop('disabled', false).trigger('change');
+    });
+}
+
+// Precarga la cascada con la familia y calidad que el auditor envió (lo más probable es que el
+// producto correcto sea de la misma familia/calidad), solo la primera vez que marca la casilla.
+function prepararCascada() {
+    if (cascadaCargadaPara === REG.id) return;
+    cascadaCargadaPara = REG.id;
+    const selFam = $('#re_familia');
+    selFam.empty().append('<option value=""></option>');
+    (FAMILIAS_POR_ORIGEN[REG.origen] || []).forEach(f => selFam.append(new Option(f, f, false, f === REG.familia)));
+    selFam.trigger('change');
+    if (selFam.val()) reCargarCalidades(REG.calidad);
+    else { $('#re_calidad, #re_producto').prop('disabled', true).empty().append('<option value=""></option>').trigger('change'); }
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+    // dropdownParent: sin esto, el cuadro de búsqueda de select2 no recibe el teclado dentro del modal
+    const padre = $('#modalReportarError');
+    $('#re_familia').select2({ placeholder: '-- Escribe o elige la familia --', width: '100%', dropdownParent: padre })
+        .on('select2:select', () => reCargarCalidades());
+    $('#re_calidad').select2({ placeholder: '-- Elige la calidad --', width: '100%', dropdownParent: padre })
+        .on('select2:select', () => reCargarCodigos());
+    $('#re_producto').select2({ placeholder: '-- Escribe el código o la descripción --', width: '100%', dropdownParent: padre,
+                                templateResult: opcionProducto, templateSelection: opcionProducto })
+        .on('select2:select', function () {
+            const p = PRODUCTOS_CACHE.find(x => String(x.id) === String($(this).val()));
+            if (p) elegirProducto(Object.assign({}, p, { familia: $('#re_familia').val(), calidad: $('#re_calidad').val() }));
+        });
+});
 
 function elegirProducto(p) {
     PRODUCTO_ELEGIDO = p;
-    document.getElementById('re_resultados').innerHTML = '';
     const caja = document.getElementById('re_elegido');
     caja.innerHTML = `<i class="bi bi-check-circle-fill"></i> Producto correcto: <b>${esc(p.sku)}</b> — ${esc(p.nombre)}
                       <div style="font-size:.75rem;">Familia: ${esc(p.familia)} · Calidad: ${esc(p.calidad || '-')}</div>`;

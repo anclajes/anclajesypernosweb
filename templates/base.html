@@ -28,7 +28,7 @@
             <span class="fw-bold fs-6 brand-text">ANCLAJES SAC</span>
         </div>
 
-        <div class="overflow-auto flex-grow-1 px-2">
+        <div class="overflow-auto flex-grow-1 px-2" id="sidebarScroll">
             <div class="nav flex-column py-3">
 
             {% if session.get('role') == 'auditor_stock' %}
@@ -237,6 +237,44 @@
             </div>
         </div>
     </nav>
+    <script>
+    /* Mantener la posición del menú lateral al cambiar de página.
+       Cada página es una carga completa, así que el navegador redibuja el menú desde arriba.
+       Se guarda el desplazamiento (en esta pestaña) y se restaura ANTES de que se pinte la página,
+       para que no se vea el salto. Se guardan los dos posibles contenedores con scroll
+       (#sidebar y #sidebarScroll), porque según el alto de la pantalla puede desplazarse uno u otro. */
+    (function () {
+        var CLAVE = 'erp_sidebar_scroll';
+        var cajas = [document.getElementById('sidebar'), document.getElementById('sidebarScroll')].filter(Boolean);
+        if (!cajas.length) return;
+        function guardar() {
+            try { sessionStorage.setItem(CLAVE, JSON.stringify(cajas.map(function (c) { return c.scrollTop; }))); } catch (e) {}
+        }
+        var restaurado = false;
+        try {
+            var guardado = JSON.parse(sessionStorage.getItem(CLAVE) || 'null');
+            if (guardado && guardado.length === cajas.length) {
+                cajas.forEach(function (c, i) { c.scrollTop = guardado[i] || 0; });
+                restaurado = guardado.some(function (v) { return v > 0; });
+            }
+        } catch (e) {}
+        // Primera visita (sin posición guardada): si la opción activa queda fuera de la vista, se la muestra
+        if (!restaurado) {
+            var activo = document.querySelector('#sidebar .nav-link.active');
+            if (activo) {
+                var caja = activo.getBoundingClientRect(), alto = window.innerHeight || document.documentElement.clientHeight;
+                if (caja.bottom > alto || caja.top < 0) activo.scrollIntoView({ block: 'center' });
+            }
+        }
+        cajas.forEach(function (c) {
+            var t = null;
+            c.addEventListener('scroll', function () { clearTimeout(t); t = setTimeout(guardar, 120); }, { passive: true });
+        });
+        // Guardar justo al hacer clic en una opción (antes de salir de la página) y al abandonarla
+        document.getElementById('sidebar').addEventListener('click', function (e) { if (e.target.closest('a')) guardar(); });
+        window.addEventListener('pagehide', guardar);
+    })();
+    </script>
 
     <main class="main-content">
         <header class="topbar rounded-bottom shadow-sm">
