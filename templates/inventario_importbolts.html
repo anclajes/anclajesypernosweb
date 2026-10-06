@@ -443,7 +443,7 @@
                         <div class="btn-group shadow-sm">
                             {% if session.get('role') in ['admin', 'almacen'] %}
                             <button class="btn btn-sm btn-outline-primary py-0" title="Editar producto" 
-                                    onclick="abrirEditar({{ (p.id)|string|tojson|forceescape }}, {{ (p.nombre)|string|tojson|forceescape }}, {{ (p.stock_actual)|string|tojson|forceescape }}, {{ (p.precio_unidad)|string|tojson|forceescape }}, {{ (p.precio_caja)|string|tojson|forceescape }}, {{ (p.ubicacion|default('', true))|string|tojson|forceescape }}, {{ (p.categoria)|string|tojson|forceescape }}, {{ (p.calidad|default('', true))|string|tojson|forceescape }}, {{ (p.stock_minimo)|string|tojson|forceescape }}, {{ (p.estado|default('', true))|string|tojson|forceescape }}, {{ (p.peso_kg|default(0, true))|string|tojson|forceescape }}, {{ (p.activo|lower)|string|tojson|forceescape }})">
+                                    onclick="abrirEditar({{ (p.id)|string|tojson|forceescape }}, {{ (p.nombre)|string|tojson|forceescape }}, {{ (p.stock_actual)|string|tojson|forceescape }}, {{ (p.precio_unidad)|string|tojson|forceescape }}, {{ (p.precio_caja)|string|tojson|forceescape }}, {{ (p.ubicacion|default('', true))|string|tojson|forceescape }}, {{ (p.categoria)|string|tojson|forceescape }}, {{ (p.calidad|default('', true))|string|tojson|forceescape }}, {{ (p.stock_minimo)|string|tojson|forceescape }}, {{ (p.estado|default('', true))|string|tojson|forceescape }}, {{ (p.peso_kg|default(0, true))|string|tojson|forceescape }}, {{ (p.activo|lower)|string|tojson|forceescape }}, {{ (p.sku)|string|tojson|forceescape }})">
                                 <i class="bi bi-pencil-fill"></i>
                             </button>
                             {% endif %}
@@ -689,27 +689,42 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
+                    <div class="alert alert-secondary d-flex flex-wrap align-items-center justify-content-between gap-2 py-2 small mb-3" style="border-left:4px solid #0F172A;">
+                        <div><i class="bi bi-lock-fill"></i> <b>Descripción, Familia, Calidad y Peso</b> se editan solo en el <b>Maestro de Productos</b>,
+                            así Anclajes e Import Bolts tienen siempre los mismos datos.</div>
+                        <a id="edit_link_maestro" href="{{ url_for('admin_maestro') }}" class="btn btn-sm btn-dark flex-shrink-0">
+                            <i class="bi bi-box-arrow-up-right"></i> Editar en el Maestro
+                        </a>
+                    </div>
                     <div class="mb-2">
-                        <label class="form-label small fw-bold">Descripción *</label>
-                        <input id="edit_nombre" name="nombre" class="form-control text-uppercase" required oninput="mantenerMayusYCursor(this)">
+                        <label class="form-label small fw-bold text-muted"><i class="bi bi-lock-fill"></i> Código / Descripción</label>
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text fw-bold" id="edit_sku_txt"></span>
+                            <input id="edit_nombre" class="form-control bg-light" readonly tabindex="-1">
+                        </div>
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-12 col-sm-5">
+                            <label class="form-label small fw-bold text-muted"><i class="bi bi-lock-fill"></i> Familia</label>
+                            <input id="edit_categoria" class="form-control form-control-sm bg-light" readonly tabindex="-1">
+                        </div>
+                        <div class="col-6 col-sm-4">
+                            <label class="form-label small fw-bold text-muted"><i class="bi bi-lock-fill"></i> Calidad</label>
+                            <input id="edit_calidad" class="form-control form-control-sm bg-light" readonly tabindex="-1">
+                        </div>
+                        <div class="col-6 col-sm-3">
+                            <label class="form-label small fw-bold text-muted"><i class="bi bi-lock-fill"></i> Peso (Kg)</label>
+                            <input id="edit_peso_kg" class="form-control form-control-sm bg-light" readonly tabindex="-1">
+                        </div>
                     </div>
                     <div class="row g-2 mb-2">
                         <div class="col-12 col-sm-6">
-                            <label class="form-label small fw-bold">Familia *</label>
-                            <select name="categoria" id="edit_categoria" class="form-select form-select-sm" required>
-                                {% for cat in lista_categorias %}<option value="{{ cat }}">{{ cat }}</option>{% endfor %}
-                            </select>
-                        </div>
-                        <div class="col-12 col-sm-6">
-                            <label class="form-label small fw-bold">Calidad *</label>
-                            <input type="text" name="calidad" id="edit_calidad" class="form-control form-control-sm text-uppercase" list="listCalidadesEdit" required oninput="mantenerMayusYCursor(this)">
-                            <datalist id="listCalidadesEdit">{% for cal in lista_calidades %} <option value="{{ cal }}"> {% endfor %}</datalist>
-                        </div>
-                        <div class="col-12 col-sm-6">
                             <label class="form-label small fw-bold text-warning">Estado Físico</label>
-                            <input type="text" name="estado" id="edit_estado" class="form-control form-control-sm text-uppercase border-warning" 
-                                list="listEstadosEdit" placeholder="Dejar vacío si está OK">
-                            <datalist id="listEstadosEdit">{% for est in lista_estados %} <option value="{{ est }}"> {% endfor %}</datalist>
+                            <select name="estado" id="edit_estado" class="form-select form-select-sm border-warning">
+                                <option value="">BUEN ESTADO (OK)</option>
+                                {% for est in catalogo_estados %}<option value="{{ est }}">{{ est }}</option>{% endfor %}
+                            </select>
+                            <div class="form-text" style="font-size:.7rem;">Solo de la lista. Para agregar o corregir estados: Catálogos &gt; Estado Físico.</div>
                         </div>
                         <div class="col-12 col-sm-6">
                             <label class="form-label small fw-bold">Ubicación</label>
@@ -728,15 +743,6 @@
                         </div>
                         <div class="col-6 col-md-3"><label class="form-label small">P. Unidad ($)</label><input id="edit_punidad" type="number" step="0.01" name="p_unidad" class="form-control"></div>
                         <div class="col-6 col-md-3"><label class="form-label small">P. Caja</label><input id="edit_pcaja" type="number" step="0.01" name="p_caja" class="form-control"></div>
-                    </div>
-                    <div class="row g-2 mt-1">
-                        <div class="col-12 col-sm-6">
-                            <label class="form-label small fw-bold text-muted">Peso Unitario (Kg)</label>
-                            <div class="input-group input-group-sm">
-                                <input id="edit_peso_kg" type="number" step="0.001" name="peso_kg" class="form-control" min="0">
-                                <span class="input-group-text">Kg</span>
-                            </div>
-                        </div>
                     </div>
 
                     <div class="mt-3 p-3 rounded border" id="edit_activo_box" style="background:#f8f9fa;">
@@ -1241,68 +1247,71 @@ function evitarDobleEnvioMovimiento(event) {
         }
     }
 
-    function abrirEditar(id, nombre, stock, punidad, pcaja, ubicacion, categoria, calidad, stockMin, estado, pesoKg, activo) {
+    function abrirEditar(id, nombre, stock, punidad, pcaja, ubicacion, categoria, calidad, stockMin, estado, pesoKg, activo, sku) {
         document.getElementById('edit_id').value = id;
-        
-        // AQUÍ ESTÁ LA MAGIA: decodificamos el nombre antes de asignarlo
+        // Descripción, Familia, Calidad y Peso: solo lectura (se editan en el Maestro)
         document.getElementById('edit_nombre').value = decodificarHTML(nombre);
-        
+        document.getElementById('edit_sku_txt').textContent = sku || '';
+        document.getElementById('edit_categoria').value = categoria || '';
+        document.getElementById('edit_calidad').value = (calidad && calidad !== 'None') ? calidad : '';
+        document.getElementById('edit_peso_kg').value = parseFloat(pesoKg) || 0;
+        document.getElementById('edit_link_maestro').href =
+            MAESTRO_URL + '?busqueda=' + encodeURIComponent(sku || '') + '&editar=' + encodeURIComponent(sku || '');
+
         document.getElementById('edit_stock').value = stock;
-        document.getElementById('edit_stock_min').value = stockMin; 
+        document.getElementById('edit_stock_min').value = stockMin;
         document.getElementById('edit_punidad').value = punidad;
         document.getElementById('edit_pcaja').value = pcaja;
-        document.getElementById('edit_peso_kg').value = pesoKg || 0;   // <-- NUEVO 
         document.getElementById('edit_activo').checked = (activo === true || activo === 'true' || activo === 1 || activo === '1');
         document.getElementById('edit_ubicacion').value = (ubicacion && ubicacion !== 'None') ? ubicacion : '';
-        document.getElementById('edit_estado').value = estado;
-        document.getElementById('edit_categoria').value = categoria;
-        document.getElementById('edit_calidad').value = (calidad && calidad !== 'None') ? calidad : '';
         document.getElementById('edit_url_origen').value = window.location.href;
 
+        // Estado: solo de la lista. Si el producto tiene uno viejo que ya no está, se muestra marcado.
+        const selEstado = document.getElementById('edit_estado');
+        selEstado.querySelectorAll('.opt-temporal').forEach(o => o.remove());
+        const estadoNorm = normalizarEstado(estado);
+        if (estadoNorm && ![...selEstado.options].some(o => o.value === estadoNorm)) {
+            const op = new Option(estadoNorm + ' (no está en el catálogo)', estadoNorm);
+            op.className = 'opt-temporal';
+            selEstado.add(op);
+        }
+        selEstado.value = estadoNorm;
+
         originalData = {
-            nombre: decodificarHTML(nombre), // También lo guardamos decodificado aquí
             ubicacion: (ubicacion && ubicacion !== 'None') ? ubicacion : '',
-            categoria: categoria,
-            calidad: (calidad && calidad !== 'None') ? calidad : '',
             punidad: parseFloat(punidad),
             pcaja: parseFloat(pcaja),
             stock_min: stockMin,
-            peso_kg: parseFloat(pesoKg) || 0
+            estado: estadoNorm
         };
-        originalData.estado = estado;
+
         actualizarEstiloActivo();
         new bootstrap.Modal(document.getElementById('modalEditar')).show();
+    }
+
+    const MAESTRO_URL = "{{ url_for('admin_maestro') }}";
+    function normalizarEstado(v) {
+        v = (v || '').replace(/\s+/g, ' ').trim().toUpperCase();
+        return (v === 'OK' || v === 'BUEN ESTADO (OK)' || v === 'NONE') ? '' : v;
     }
 
     // CAMBIO 3: CONFIRMACIÓN DETALLADA (RECUPERADO)
     function confirmarEdicion(event) {
         event.preventDefault();
         const form = event.target;
-        const nuevoNombre = document.getElementById('edit_nombre').value.trim();
         const nuevaUbicacion = document.getElementById('edit_ubicacion').value.trim();
-        const nuevaCat = document.getElementById('edit_categoria').value;
-        const nuevaCalidad = document.getElementById('edit_calidad').value;
+        const nuevoEstado = document.getElementById('edit_estado').value;
         const nuevoPUni = parseFloat(document.getElementById('edit_punidad').value);
         const nuevoPCaja = parseFloat(document.getElementById('edit_pcaja').value);
         const nuevoStockMin = parseInt(document.getElementById('edit_stock_min').value);
-        const nuevoPesoKgRaw = document.getElementById('edit_peso_kg').value;
-        const nuevoPesoKg = parseFloat(nuevoPesoKgRaw);
-
-        if (nuevoPesoKgRaw !== '' && (isNaN(nuevoPesoKg) || nuevoPesoKg < 0)) {
-            Swal.fire({ icon: 'error', title: 'Peso Unitario inválido', text: 'Ingrese un peso en Kg válido (0 o mayor), o déjelo vacío.' });
-            return;
-        }
 
         let cambios = [];
 
-        if (nuevoNombre !== originalData.nombre) cambios.push(`Descripción: <b>${originalData.nombre}</b> → <b>${nuevoNombre}</b>`);
         if (nuevaUbicacion !== originalData.ubicacion) cambios.push(`Ubicación: <b>${originalData.ubicacion}</b> → <b>${nuevaUbicacion}</b>`);
-        if (nuevaCat !== originalData.categoria) cambios.push(`Familia: <b>${originalData.categoria}</b> → <b>${nuevaCat}</b>`);
-        if (nuevaCalidad !== originalData.calidad) cambios.push(`Calidad: <b>${originalData.calidad}</b> → <b>${nuevaCalidad}</b>`);
+        if (nuevoEstado !== originalData.estado) cambios.push(`Estado: <b>${originalData.estado || 'BUEN ESTADO (OK)'}</b> → <b>${nuevoEstado || 'BUEN ESTADO (OK)'}</b>`);
         if (nuevoPUni !== originalData.punidad) cambios.push(`P. Unidad: <b>${originalData.punidad}</b> → <b>${nuevoPUni}</b>`);
         if (nuevoPCaja !== originalData.pcaja) cambios.push(`P. Caja: <b>${originalData.pcaja}</b> → <b>${nuevoPCaja}</b>`);
         if (nuevoStockMin != originalData.stock_min) cambios.push(`Stock Mínimo: <b>${originalData.stock_min}</b> → <b>${nuevoStockMin}</b>`);
-        if ((parseFloat(nuevoPesoKg) || 0) !== originalData.peso_kg) cambios.push(`Peso Unitario: <b>${originalData.peso_kg} Kg</b> → <b>${(parseFloat(nuevoPesoKg) || 0)} Kg</b>`);
 
         if (cambios.length === 0) {
             form.submit();

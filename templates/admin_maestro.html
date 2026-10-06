@@ -161,6 +161,7 @@
                                 <i class="bi bi-qr-code"></i>
                             </a>
                             <button class="btn btn-sm btn-outline-warning" title="Editar"
+                                    data-editar-sku="{{ m.sku }}"
                                     onclick="abrirEditarMaestro({{ m.sku|tojson|forceescape }}, {{ m.nombre|tojson|forceescape }}, {{ m.familia|tojson|forceescape }}, {{ (m.calidad or '')|tojson|forceescape }}, {{ m.peso_nominal_kg|default(0, true)|tojson|forceescape }})">
                                 <i class="bi bi-pencil"></i>
                             </button>
@@ -462,6 +463,23 @@ function imprimirCodigosSeleccionados() {
 }
 
 document.addEventListener('DOMContentLoaded', sincronizarCheckboxesConSeleccionGlobal);
+
+// Llegada desde "Editar en el Maestro" de un inventario (?editar=SKU): se abre directo la edición
+document.addEventListener('DOMContentLoaded', function () {
+    const params = new URLSearchParams(window.location.search);
+    const sku = params.get('editar');
+    if (!sku) return;
+    // Se quita ?editar= de la dirección: así, al guardar y recargar, no se vuelve a abrir
+    params.delete('editar');
+    history.replaceState(null, '', window.location.pathname + (params.toString() ? '?' + params.toString() : ''));
+    const boton = [...document.querySelectorAll('[data-editar-sku]')].find(b => b.dataset.editarSku.toUpperCase() === sku.toUpperCase());
+    if (boton) {
+        boton.closest('tr') && boton.closest('tr').classList.add('table-warning');
+        boton.click();
+    } else {
+        Swal.fire({ icon: 'info', title: 'Producto no encontrado', text: `El código ${sku} no está en el Maestro con estos filtros.` });
+    }
+});
 
 // Convierte a mayúsculas SIN mandar el cursor al final del texto (ver inventario.html/
 // inventario_importbolts.html, mismo arreglo aplicado aquí para el modal de Editar).

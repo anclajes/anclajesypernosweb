@@ -476,6 +476,29 @@ def _copiar_fotos_auditoria_a_producto(registro, prod, origen, cantidad_actual):
 
 ROLES_EDITAN_PRODUCTO = ['admin', 'almacen']   # Gerencia y Jefe de Almacén
 
+# --- ESTADO FÍSICO: lista única (Catálogos > Estado Físico). "BUEN ESTADO (OK)" es la primera
+# opción y en la ficha del producto se guarda VACÍO (así estaba ya en todo el sistema).
+ESTADO_OK = 'BUEN ESTADO (OK)'
+
+
+def _normalizar_estado_producto(valor):
+    v = ' '.join((valor or '').split()).upper()
+    return '' if v in ('', 'OK', ESTADO_OK) else v
+
+
+def _estados_catalogo(incluir_inactivos=False):
+    """Estados del catálogo (sin BUEN ESTADO (OK), que siempre va primero aparte), ordenados."""
+    q = CatalogoValor.query.filter_by(tipo='ESTADO_FISICO')
+    if not incluir_inactivos:
+        q = q.filter_by(activo=True)
+    return sorted({_normalizar_estado_producto(v.valor) for v in q.all()} - {''})
+
+
+def _estado_elegido_valido(estado_val, estado_actual):
+    """El estado debe venir de la lista (o quedar igual al que ya tenía, aunque sea uno viejo)."""
+    return (estado_val == '' or estado_val in _estados_catalogo()
+            or estado_val == _normalizar_estado_producto(estado_actual))
+
 ETIQUETAS_CAMPOS_PRODUCTO = {
     'nombre': 'Descripción', 'categoria': 'Familia', 'calidad': 'Calidad', 'ubicacion': 'Ubicación',
     'estado': 'Estado', 'stock_minimo': 'Stock mín.', 'precio_unidad': 'P.Unit', 'precio_caja': 'P.Caja',
@@ -2586,6 +2609,7 @@ def inventario():
                            stock_bajo=stock_bajo,
                            limit=per_page,
                            lista_estados=lista_estados,
+                           catalogo_estados=_estados_catalogo(),
                            info_importacion=info_importacion,
                            estado_activo=estado_activo,
                            orden=orden)
@@ -5511,7 +5535,7 @@ def admin_maestro_nuevo():
         calidad_preseleccion = request.args.get('calidad', '')
         return render_template('admin_maestro_nuevo.html', familias=familias, calidades=calidades,
                                 familia_preseleccion=familia_preseleccion, calidad_preseleccion=calidad_preseleccion,
-                                previo={})
+                                previo={}, catalogo_estados=_estados_catalogo())
 
     def _error_formulario(msg):
         """Si algo no valida, se vuelve a mostrar el formulario CON lo que el usuario ya había
@@ -5520,7 +5544,7 @@ def admin_maestro_nuevo():
         return render_template('admin_maestro_nuevo.html', familias=familias, calidades=calidades,
                                 familia_preseleccion=request.form.get('familia', ''),
                                 calidad_preseleccion=request.form.get('calidad', ''),
-                                previo=request.form), 400
+                                previo=request.form, catalogo_estados=_estados_catalogo()), 400
 
     try:
         codigo = request.form.get('sku', '').strip().upper()
@@ -5530,6 +5554,7 @@ def admin_maestro_nuevo():
         familia_nueva = _texto_limpio(request.form.get('familia_nueva', '')).upper()
         calidad_nueva = _texto_limpio(request.form.get('calidad_nueva', '')).upper()
         peso_raw = request.form.get('peso_nominal_kg', '0').strip()
+        estado_inicial = _normalizar_estado_producto(request.form.get('estado', ''))
 
         if not codigo:
             return _error_formulario('⛔ El código es obligatorio.')
@@ -5588,6 +5613,8 @@ def admin_maestro_nuevo():
                 raise ValueError()
         except ValueError:
             return _error_formulario('⛔ El peso nominal debe ser un número válido (hasta 4 decimales).')
+        if estado_inicial and estado_inicial not in _estados_catalogo():
+            return _error_formulario(f'⛔ El estado "{estado_inicial}" no está en el catálogo. Elígelo de la lista.')
 
         usuario_actual = session.get('username', 'Sistema')
         hora_actual = hora_peru()
@@ -5606,13 +5633,13 @@ def admin_maestro_nuevo():
         db.session.add(nuevo_maestro)
 
         db.session.add(Product(
-            sku=codigo, nombre=nombre, categoria=familia, calidad=calidad,
+            sku=codigo, nombre=nombre, categoria=familia, calidad=calidad, estado=estado_inicial,
             peso_kg=peso, stock_actual=0, stock_minimo=10,
             precio_unidad=0.0, precio_docena=0.0, precio_caja=0.0, costo_referencial=0.0,
             fecha_actualizacion=hora_actual, actualizado_por=usuario_actual,
         ))
         db.session.add(ProductImportBolts(
-            sku=codigo, nombre=nombre, categoria=familia, calidad=calidad,
+            sku=codigo, nombre=nombre, categoria=familia, calidad=calidad, estado=estado_inicial,
             peso_kg=peso, stock_actual=0, stock_minimo=10,
             precio_unidad=0.0, precio_docena=0.0, precio_caja=0.0, costo_referencial=0.0,
             fecha_actualizacion=hora_actual, actualizado_por=usuario_actual,
@@ -5626,7 +5653,8 @@ def admin_maestro_nuevo():
             familia=familia, calidad=calidad,
         ))
 
-        registrar_log(f"Creó producto {codigo} desde el Maestro (repartido a Anclajes e ImportBolts)",
+        registrar_log(f"Creó producto {codigo} desde el Maestro (repartido a Anclajes e ImportBolts"
+                      f"{', estado ' + estado_inicial if estado_inicial else ''})",
                        "bi-plus-circle-fill", "text-success")
         db.session.commit()
 
@@ -6095,31 +6123,21 @@ def editar_producto():
             flash('Producto no encontrado')
             return redirect(url_for('inventario'))
 
-        nombre = _texto_limpio(request.form['nombre'])
-        nueva_familia = _texto_limpio(request.form.get('categoria', ''))
-        nueva_calidad = _texto_limpio(request.form.get('calidad', ''))
-        estado_val = request.form.get('estado', '').strip().upper()
-        if estado_val == 'OK': estado_val = ""
-        
-        if not nombre:
-            flash('⛔ Error: La descripción no puede estar vacía.')
-            return redirect(url_for('inventario'))
-        if not nueva_familia or not nueva_calidad:
-            flash('⛔ Error: Familia y Calidad son obligatorias.')
-            return redirect(url_for('inventario'))
+        # Descripción, Familia, Calidad y Peso NO se cambian aquí: se editan solo en el Maestro
+        # (que los reparte a los dos inventarios). Aunque llegaran en el formulario, se ignoran.
+        estado_val = _normalizar_estado_producto(request.form.get('estado', ''))
+        if not _estado_elegido_valido(estado_val, prod.estado):
+            flash(f'⛔ Error: el estado "{estado_val}" no está en el catálogo. Elígelo de la lista '
+                  f'(o agrégalo primero en Catálogos > Estado Físico).')
+            return redirect(url_origen or url_for('inventario'))
 
         antes = _foto_campos_producto(prod)
-        prod.nombre = nombre
         # El stock actual NO se edita aquí, solo el mínimo
-        # NUEVO: Actualizar Stock Mínimo
         prod.stock_minimo = int(request.form.get('stock_minimo', 10))
         prod.precio_unidad = float(request.form['p_unidad'])
         prod.precio_caja = float(request.form['p_caja'])
         prod.ubicacion = _texto_limpio(request.form.get('ubicacion', ''))
-        prod.categoria = nueva_familia
-        prod.calidad = nueva_calidad
         prod.estado = estado_val
-        prod.peso_kg = float(request.form.get('peso_kg', 0) or 0)
         prod.activo = request.form.get('activo') == '1'
         prod.ultima_edicion_manual_fecha = hora_peru()
         prod.ultima_edicion_manual_por = session.get('nombre', 'Sistema')
@@ -7913,6 +7931,7 @@ def inventario_importbolts():
                            stock_bajo=stock_bajo,
                            limit=per_page,
                            lista_estados=lista_estados,
+                           catalogo_estados=_estados_catalogo(),
                            info_importacion=info_importacion,
                            estado_activo=estado_activo,
                            orden=orden)
@@ -8142,26 +8161,19 @@ def editar_producto_importbolts():
             flash('Producto no encontrado')
             return redirect(url_for('inventario_importbolts'))
 
-        nombre = _texto_limpio(request.form['nombre'])
-        nueva_familia = _texto_limpio(request.form.get('categoria', ''))
-        nueva_calidad = _texto_limpio(request.form.get('calidad', ''))
-        estado_val = request.form.get('estado', '').strip().upper()
-        if estado_val == 'OK': estado_val = ""
-        
-        if not nombre or not nueva_familia or not nueva_calidad:
-            flash('⛔ Error: Faltan datos obligatorios.')
-            return redirect(url_for('inventario_importbolts'))
+        # Descripción, Familia, Calidad y Peso: solo en el Maestro (ver editar_producto)
+        estado_val = _normalizar_estado_producto(request.form.get('estado', ''))
+        if not _estado_elegido_valido(estado_val, prod.estado):
+            flash(f'⛔ Error: el estado "{estado_val}" no está en el catálogo. Elígelo de la lista '
+                  f'(o agrégalo primero en Catálogos > Estado Físico).')
+            return redirect(url_origen or url_for('inventario_importbolts'))
 
         antes = _foto_campos_producto(prod)
-        prod.nombre = nombre
         prod.stock_minimo = int(request.form.get('stock_minimo', 10))
         prod.precio_unidad = float(request.form['p_unidad'])
         prod.precio_caja = float(request.form['p_caja'])
         prod.ubicacion = _texto_limpio(request.form.get('ubicacion', ''))
-        prod.categoria = nueva_familia
-        prod.calidad = nueva_calidad
         prod.estado = estado_val
-        prod.peso_kg = float(request.form.get('peso_kg', 0) or 0)
         prod.activo = request.form.get('activo') == '1'
         prod.ultima_edicion_manual_fecha = hora_peru()
         prod.ultima_edicion_manual_por = session.get('nombre', 'Sistema')
@@ -10358,6 +10370,8 @@ def admin_auditorias_detalle(reg_id):
                            suma_sugerida=suma_sugerida, ubicacion_combinada=ubicacion_combinada,
                            correccion=correccion, calc=calc_correccion,
                            galeria_correccion=galeria_correccion, prod_galeria_corr=prod_galeria_corr,
+                           catalogo_estados=_estados_catalogo(),
+                           normalizar_estado=_normalizar_estado_producto,
                            historial_correcciones=historial_correcciones, tipos_correccion=TIPOS_CORRECCION)
 
 
@@ -10631,10 +10645,157 @@ def admin_catalogos():
     motivos_entrada = MotivoMovimiento.query.filter_by(tipo='ENTRADA').order_by(MotivoMovimiento.nombre).all()
     motivos_salida = MotivoMovimiento.query.filter_by(tipo='SALIDA').order_by(MotivoMovimiento.nombre).all()
     presentaciones = Presentacion.query.order_by(Presentacion.nombre).all()
+    # Estado Físico: cuántos productos usan cada estado y cuáles están escritos a mano (fuera del catálogo)
+    uso_estados = _uso_estados_productos()
+    en_catalogo = {_normalizar_estado_producto(v.valor) for v in catalogos['ESTADO_FISICO']}
+    estados_fuera = sorted(((k, u) for k, u in uso_estados.items() if k and k not in en_catalogo),
+                           key=lambda x: -(x[1]['ANCLAJES'] + x[1]['IMPORTBOLTS']))
     return render_template('admin_catalogos.html', catalogos=catalogos, campos=campos,
                            motivos_entrada=motivos_entrada, motivos_salida=motivos_salida,
                            presentaciones=presentaciones,
-                           fotos_obligatorias=_fotos_auditoria_obligatorias())
+                           fotos_obligatorias=_fotos_auditoria_obligatorias(),
+                           uso_estados=uso_estados, estados_fuera=estados_fuera,
+                           estado_ok=ESTADO_OK, normalizar_estado=_normalizar_estado_producto,
+                           catalogo_estados=_estados_catalogo())
+
+
+# ============================================
+# ESTADO FÍSICO: ver qué productos tienen cada estado y pasarlos a otro (para unificar los mal
+# escritos: ROTO / ROTOS / ROTAS -> ROTO) en los DOS inventarios. Solo cambia la ficha de los
+# productos; los conteos de auditoría ya enviados conservan lo que se escribió en su momento.
+# ============================================
+def _grupos_estado():
+    """{estado_normalizado: {'ANCLAJES': [valores tal cual están guardados], 'IMPORTBOLTS': [...]}}"""
+    grupos = {}
+    for origen, Modelo in [('ANCLAJES', Product), ('IMPORTBOLTS', ProductImportBolts)]:
+        for (crudo,) in db.session.query(Modelo.estado).distinct().all():
+            grupos.setdefault(_normalizar_estado_producto(crudo), {'ANCLAJES': [], 'IMPORTBOLTS': []})[origen].append(crudo)
+    return grupos
+
+
+def _filtro_estado(Modelo, crudos):
+    conds = [Modelo.estado.in_([c for c in crudos if c is not None])] if any(c is not None for c in crudos) else []
+    if None in crudos:
+        conds.append(Modelo.estado.is_(None))
+    return or_(*conds) if conds else (Modelo.id < 0)
+
+
+def _uso_estados_productos():
+    uso = {}
+    for clave, por_origen in _grupos_estado().items():
+        u = uso.setdefault(clave, {'ANCLAJES': 0, 'IMPORTBOLTS': 0})
+        for origen, Modelo in [('ANCLAJES', Product), ('IMPORTBOLTS', ProductImportBolts)]:
+            if por_origen[origen]:
+                u[origen] += Modelo.query.filter(_filtro_estado(Modelo, por_origen[origen])).count()
+    return uso
+
+
+def _productos_con_estado(clave):
+    """[(origen, Modelo, producto)] de los dos inventarios con ese estado (ya normalizado)."""
+    grupo = _grupos_estado().get(clave)
+    if not grupo:
+        return []
+    salida = []
+    for origen, Modelo in [('ANCLAJES', Product), ('IMPORTBOLTS', ProductImportBolts)]:
+        if grupo[origen]:
+            for p in Modelo.query.filter(_filtro_estado(Modelo, grupo[origen])).order_by(Modelo.sku).all():
+                salida.append((origen, Modelo, p))
+    return salida
+
+
+@app.route('/admin/catalogos/estado/productos')
+def admin_catalogo_estado_productos():
+    if session.get('role') not in ['admin', 'almacen']: return {'status': 'error', 'msg': 'No autorizado'}, 403
+    clave = _normalizar_estado_producto(request.args.get('valor', ''))
+    if not clave:
+        return {'status': 'error', 'msg': 'Para BUEN ESTADO (OK) no se listan productos (son la mayoría).'}
+    filas = _productos_con_estado(clave)
+    return {'status': 'success', 'valor': clave, 'total': len(filas), 'productos': [
+        {'clave': f"{'A' if o == 'ANCLAJES' else 'I'}-{p.id}", 'inventario': 'Anclajes' if o == 'ANCLAJES' else 'Import Bolts',
+         'sku': p.sku, 'nombre': p.nombre, 'calidad': p.calidad or '', 'stock': p.stock_actual, 'activo': bool(p.activo),
+         'escrito': p.estado or ''} for o, _, p in filas[:1500]]}
+
+
+@app.route('/admin/catalogos/estado/reasignar', methods=['POST'])
+def admin_catalogo_estado_reasignar():
+    """Pasa productos de un estado a otro de la lista. Sin 'claves' pasa TODOS los de ese estado.
+    Con eliminar_origen=1, después borra ese estado del catálogo (si ya nadie lo usa)."""
+    if session.get('role') not in ['admin', 'almacen']: return {'status': 'error', 'msg': 'No autorizado'}, 403
+    origen = _normalizar_estado_producto(request.form.get('origen', ''))
+    destino = _normalizar_estado_producto(request.form.get('destino', ''))
+    claves = set(request.form.getlist('claves'))
+    if not origen:
+        return {'status': 'error', 'msg': 'Elige el estado que quieres corregir.'}
+    if destino == origen:
+        return {'status': 'error', 'msg': 'El estado de destino es el mismo que el de origen.'}
+    if destino and destino not in _estados_catalogo():
+        return {'status': 'error', 'msg': f'"{destino}" no está activo en el catálogo. Elige uno de la lista.'}
+    try:
+        ahora, quien = hora_peru(), session.get('nombre', 'Sistema')
+        cuenta = {'ANCLAJES': 0, 'IMPORTBOLTS': 0}
+        for o, _, p in _productos_con_estado(origen):
+            if claves and f"{'A' if o == 'ANCLAJES' else 'I'}-{p.id}" not in claves:
+                continue
+            p.estado = destino
+            p.ultima_edicion_manual_fecha = ahora
+            p.ultima_edicion_manual_por = quien
+            cuenta[o] += 1
+        total = cuenta['ANCLAJES'] + cuenta['IMPORTBOLTS']
+        if not total:
+            return {'status': 'error', 'msg': 'No hay productos para cambiar (quizás ya se cambiaron).'}
+        texto = (f"Pasó {total} producto(s) del estado '{origen}' a '{destino or ESTADO_OK}' "
+                 f"(Anclajes {cuenta['ANCLAJES']}, Import Bolts {cuenta['IMPORTBOLTS']})")
+        registrar_log(texto[:255], "bi-arrow-left-right", "text-warning")
+        eliminado = False
+        if request.form.get('eliminar_origen') == '1':
+            db.session.flush()
+            if not _productos_con_estado(origen):
+                for v in CatalogoValor.query.filter_by(tipo='ESTADO_FISICO').all():
+                    if _normalizar_estado_producto(v.valor) == origen and not v.es_predeterminado:
+                        db.session.delete(v)
+                        eliminado = True
+                if eliminado:
+                    registrar_log(f"Eliminó '{origen}' del catálogo ESTADO_FISICO (unificado en '{destino or ESTADO_OK}')"[:255],
+                                  "bi-trash-fill", "text-danger")
+        db.session.commit()
+        return {'status': 'success', 'cambiados': total, 'eliminado': eliminado,
+                'msg': texto + ('. Se eliminó del catálogo.' if eliminado else '.')}
+    except Exception as e:
+        db.session.rollback()
+        return {'status': 'error', 'msg': str(e)}
+
+
+@app.route('/admin/catalogos/estado/<int:val_id>/renombrar', methods=['POST'])
+def admin_catalogo_estado_renombrar(val_id):
+    """Corrige cómo está escrito un estado del catálogo y lo cambia también en los productos que lo usan."""
+    if session.get('role') not in ['admin', 'almacen']: return {'status': 'error', 'msg': 'No autorizado'}, 403
+    v = CatalogoValor.query.get_or_404(val_id)
+    if v.tipo != 'ESTADO_FISICO':
+        return {'status': 'error', 'msg': 'Solo se pueden renombrar estados físicos.'}
+    if v.es_predeterminado:
+        return {'status': 'error', 'msg': 'Este estado es predeterminado del sistema y no se puede renombrar.'}
+    viejo = _normalizar_estado_producto(v.valor)
+    nuevo = _normalizar_estado_producto(request.form.get('nuevo', ''))
+    if not nuevo:
+        return {'status': 'error', 'msg': 'Escribe el nuevo nombre.'}
+    if nuevo == viejo:
+        return {'status': 'error', 'msg': 'Es el mismo nombre.'}
+    if any(_normalizar_estado_producto(x.valor) == nuevo for x in CatalogoValor.query.filter_by(tipo='ESTADO_FISICO').all()):
+        return {'status': 'error', 'msg': f'"{nuevo}" ya existe en el catálogo. Usa "Pasar a otro estado" para unificarlos.'}
+    try:
+        afectados = _productos_con_estado(viejo)
+        for _, _, p in afectados:
+            p.estado = nuevo
+            p.ultima_edicion_manual_fecha = hora_peru()
+            p.ultima_edicion_manual_por = session.get('nombre', 'Sistema')
+        v.valor = nuevo
+        registrar_log(f"Renombró el estado '{viejo}' a '{nuevo}' (catálogo y {len(afectados)} producto(s))"[:255],
+                      "bi-pencil-fill", "text-warning")
+        db.session.commit()
+        return {'status': 'success', 'msg': f'Renombrado a "{nuevo}". Se actualizaron {len(afectados)} producto(s).'}
+    except Exception as e:
+        db.session.rollback()
+        return {'status': 'error', 'msg': str(e)}
 
 
 @app.route('/admin/catalogos/fotos_auditoria/toggle', methods=['POST'])
@@ -10656,14 +10817,16 @@ def admin_catalogos_fotos_toggle():
 def admin_catalogo_valor_nuevo():
     if session.get('role') not in ['admin', 'almacen']: return {'status': 'error', 'msg': 'No autorizado'}, 403
     tipo = request.form.get('tipo', '').strip().upper()
-    valor = request.form.get('valor', '').strip().upper()
+    valor = ' '.join(request.form.get('valor', '').split()).upper()
 
     if tipo not in ['ESTADO_FISICO', 'UNIDAD_MEDIDA', 'ANAQUEL', 'NICHO']:
         return {'status': 'error', 'msg': 'Tipo de catálogo inválido'}
     if not valor:
         return {'status': 'error', 'msg': 'Debe escribir un valor antes de agregar.'}
-    if CatalogoValor.query.filter_by(tipo=tipo, valor=valor).first():
+    if any(' '.join((x.valor or '').split()).upper() == valor for x in CatalogoValor.query.filter_by(tipo=tipo).all()):
         return {'status': 'error', 'msg': f'"{valor}" ya existe en este catálogo.'}
+    if tipo == 'ESTADO_FISICO' and _normalizar_estado_producto(valor) == '':
+        return {'status': 'error', 'msg': f'"{valor}" equivale a {ESTADO_OK}, que ya está en la lista.'}
 
     nuevo = CatalogoValor(tipo=tipo, valor=valor, creado_por_id=session['user_id'], es_predeterminado=False)
     db.session.add(nuevo)
@@ -10689,6 +10852,11 @@ def admin_catalogo_valor_eliminar(val_id):
 
     if v.es_predeterminado:
         return {'status': 'error', 'msg': 'Este valor es predeterminado del sistema y no se puede eliminar. Puede desactivarlo en su lugar.'}
+    if v.tipo == 'ESTADO_FISICO':
+        en_uso = len(_productos_con_estado(_normalizar_estado_producto(v.valor)))
+        if en_uso:
+            return {'status': 'error', 'msg': f'{en_uso} producto(s) tienen el estado "{v.valor}". Primero usa '
+                                              f'"Pasar a otro estado" para cambiarlos; ahí mismo puedes eliminarlo.'}
 
     registrar_log(f"Eliminó '{v.valor}' del catálogo {v.tipo}", "bi-trash-fill", "text-danger")
     db.session.delete(v)

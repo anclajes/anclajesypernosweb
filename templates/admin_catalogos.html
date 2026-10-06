@@ -50,6 +50,54 @@
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-campos">Campos Personalizados</button></li>
 </ul>
 
+<!-- MODAL: productos con un estado y pasarlos a otro -->
+<div class="modal fade" id="modalEstadoProductos" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable modal-fullscreen-sm-down">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title fs-6 fw-bold"><i class="bi bi-list-check"></i> Productos con estado "<span id="ep_titulo"></span>"</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body small">
+                <div class="border rounded p-2 mb-2" style="background:#f8fafc;">
+                    <div class="row g-2 align-items-end">
+                        <div class="col-12 col-md-6">
+                            <label class="fw-bold mb-1">Pasar a este estado (de la lista):</label>
+                            <select id="ep_destino" class="form-select form-select-sm">
+                                <option value="__" disabled selected>-- Elige el estado correcto --</option>
+                                <option value="">{{ estado_ok }}</option>
+                                {% for est in catalogo_estados %}<option value="{{ est }}">{{ est }}</option>{% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-12 col-md-6" id="ep_box_eliminar">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="ep_eliminar" checked>
+                                <label class="form-check-label" for="ep_eliminar">Al pasar <b>todos</b>, eliminar "<span class="ep_nombre"></span>" del catálogo</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <div><b id="ep_total">0</b> producto(s). <span class="text-muted">Marca algunos para pasar solo esos.</span></div>
+                    <div class="form-check m-0"><input class="form-check-input" type="checkbox" id="ep_todos" onchange="document.querySelectorAll('.ep-chk').forEach(c => c.checked = this.checked); epContar();">
+                        <label class="form-check-label" for="ep_todos">Marcar todos</label></div>
+                </div>
+                <div class="table-responsive" style="max-height:50vh;">
+                    <table class="table table-sm table-hover align-middle mb-0">
+                        <thead class="table-light" style="position:sticky; top:0;"><tr><th></th><th>Inventario</th><th>Código</th><th>Descripción</th><th class="text-end">Stock</th><th>Escrito</th></tr></thead>
+                        <tbody id="ep_lista"><tr><td colspan="6" class="text-center text-muted py-3">Cargando...</td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cerrar</button>
+                <button type="button" class="btn btn-outline-primary btn-sm" id="ep_btn_marcados" disabled onclick="pasarEstado(true)">Pasar marcados (<span id="ep_n_marcados">0</span>)</button>
+                <button type="button" class="btn btn-primary btn-sm fw-bold" onclick="pasarEstado(false)"><i class="bi bi-arrow-left-right"></i> Pasar TODOS</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="tab-content">
     {% for tipo, titulo in [('ESTADO_FISICO','Estado Físico'), ('UNIDAD_MEDIDA','Unidad de Medida'), ('ANAQUEL','Anaquel'), ('NICHO','Casillero')] %}
     <div class="tab-pane fade {{ 'show active' if tipo == 'ESTADO_FISICO' }}" id="tab-{{ tipo }}">
@@ -63,11 +111,18 @@
                 </div>
                 <div class="table-responsive">
                     <table class="table table-sm table-hover mb-0" id="tabla_{{ tipo }}">
-                        <thead><tr><th>Valor</th><th class="text-center">Estado</th><th class="text-end">Acciones</th></tr></thead>
+                        <thead><tr><th>Valor</th>{% if tipo == 'ESTADO_FISICO' %}<th class="text-center">Productos con este estado</th>{% endif %}<th class="text-center">Estado</th><th class="text-end">Acciones</th></tr></thead>
                         <tbody>
                             {% for v in catalogos[tipo] %}
                             <tr id="fila-valor-{{ v.id }}">
                                 <td>{{ v.valor }} {% if v.es_predeterminado %}<span class="badge bg-light text-muted border ms-1" style="font-size:.65rem;">predeterminado</span>{% endif %}</td>
+                                {% if tipo == 'ESTADO_FISICO' %}
+                                {% set clave = normalizar_estado(v.valor) %}{% set u = uso_estados.get(clave, {'ANCLAJES': 0, 'IMPORTBOLTS': 0}) %}
+                                <td class="text-center small">
+                                    <span class="badge bg-primary-subtle text-primary-emphasis border" title="Anclajes">Anclajes {{ u.ANCLAJES }}</span>
+                                    <span class="badge bg-success-subtle text-success-emphasis border" title="Import Bolts">Import Bolts {{ u.IMPORTBOLTS }}</span>
+                                </td>
+                                {% endif %}
                                 <td class="text-center" id="estado-valor-{{ v.id }}">
                                     {% if v.activo %}<span class="badge bg-success">Activo</span>{% else %}<span class="badge bg-secondary">Inactivo</span>{% endif %}
                                 </td>
@@ -75,6 +130,16 @@
                                     <button class="btn btn-sm btn-outline-secondary" onclick="toggleValor({{ v.id }})" title="Activar/Desactivar">
                                         <i class="bi {{ 'bi-toggle-on' if v.activo else 'bi-toggle-off' }}" id="icono-valor-{{ v.id }}"></i>
                                     </button>
+                                    {% if tipo == 'ESTADO_FISICO' and normalizar_estado(v.valor) %}
+                                    <button class="btn btn-sm btn-outline-primary" onclick="verProductosEstado({{ v.valor|tojson|forceescape }}, {{ 'true' if not v.es_predeterminado else 'false' }})" title="Ver los productos con este estado y pasarlos a otro">
+                                        <i class="bi bi-list-check"></i> Ver / pasar
+                                    </button>
+                                    {% if not v.es_predeterminado %}
+                                    <button class="btn btn-sm btn-outline-secondary" onclick="renombrarEstado({{ v.id }}, {{ v.valor|tojson|forceescape }})" title="Corregir cómo está escrito (también en los productos)">
+                                        <i class="bi bi-pencil"></i>
+                                    </button>
+                                    {% endif %}
+                                    {% endif %}
                                     {% if not v.es_predeterminado %}
                                     <button class="btn btn-sm btn-outline-danger" onclick="eliminarValor({{ v.id }})" title="Eliminar">
                                         <i class="bi bi-trash"></i>
@@ -83,11 +148,54 @@
                                 </td>
                             </tr>
                             {% else %}
-                            <tr id="fila-vacia-{{ tipo }}"><td colspan="3" class="text-center text-muted py-3">Sin valores aún.</td></tr>
+                            <tr id="fila-vacia-{{ tipo }}"><td colspan="{{ 4 if tipo == 'ESTADO_FISICO' else 3 }}" class="text-center text-muted py-3">Sin valores aún.</td></tr>
                             {% endfor %}
                         </tbody>
                     </table>
                 </div>
+                {% if tipo == 'ESTADO_FISICO' %}
+                <div class="alert alert-light border small mt-3 mb-2">
+                    <i class="bi bi-info-circle-fill text-primary"></i> Esta es la <b>única lista de estados</b> del sistema: la usan el conteo físico,
+                    Nuevo Producto del Maestro y "Editar" en los dos inventarios. Para unificar estados mal escritos (ej. <i>ROTOS</i>, <i>ROTAS</i> → <b>ROTO</b>):
+                    toca <b>Ver / pasar</b>, elige el estado correcto y, si quieres, marca "eliminar del catálogo". Los conteos ya enviados no se modifican.
+                </div>
+                <div class="card border-warning mt-2">
+                    <div class="card-header bg-warning-subtle fw-bold small">
+                        <i class="bi bi-exclamation-triangle-fill text-warning"></i> Estados escritos a mano que NO están en la lista
+                        <span class="badge bg-warning text-dark ms-1">{{ estados_fuera|length }}</span>
+                    </div>
+                    <div class="card-body p-0">
+                        {% if estados_fuera %}
+                        <div class="table-responsive">
+                            <table class="table table-sm align-middle mb-0 small">
+                                <thead class="table-light"><tr><th class="ps-3">Escrito así</th><th class="text-center">Productos</th><th class="text-end pe-3">¿Qué hacer?</th></tr></thead>
+                                <tbody>
+                                    {% for valor, u in estados_fuera %}
+                                    <tr>
+                                        <td class="ps-3 fw-bold">{{ valor }}</td>
+                                        <td class="text-center">
+                                            <span class="badge bg-primary-subtle text-primary-emphasis border">Anclajes {{ u.ANCLAJES }}</span>
+                                            <span class="badge bg-success-subtle text-success-emphasis border">Import Bolts {{ u.IMPORTBOLTS }}</span>
+                                        </td>
+                                        <td class="text-end pe-3">
+                                            <button class="btn btn-sm btn-primary" onclick="verProductosEstado({{ valor|tojson|forceescape }}, false)">
+                                                <i class="bi bi-arrow-left-right"></i> Pasar a un estado de la lista
+                                            </button>
+                                            <button class="btn btn-sm btn-outline-success" onclick="agregarEstadoEscrito({{ valor|tojson|forceescape }})" title="Está bien escrito: agregarlo a la lista tal cual">
+                                                <i class="bi bi-plus-lg"></i> Agregar a la lista
+                                            </button>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <div class="text-muted small p-3"><i class="bi bi-check-circle-fill text-success"></i> Todos los productos usan estados de la lista.</div>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -304,6 +412,116 @@ function toggleOpcionesCampo() {
 // VALORES DE CATÁLOGO (Estado Físico, Unidades, Anaquel, Casillero)
 // ============================================
 
+// ============================================
+// ESTADO FÍSICO: ver productos de un estado, pasarlos a otro, renombrar, agregar los escritos a mano
+// ============================================
+let EP_VALOR = null;
+let modalEP = null;
+
+function escHtml(t) {
+    return String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function epContar() {
+    const n = document.querySelectorAll('.ep-chk:checked').length;
+    document.getElementById('ep_n_marcados').textContent = n;
+    document.getElementById('ep_btn_marcados').disabled = n === 0;
+}
+function verProductosEstado(valor, puedeEliminar) {
+    EP_VALOR = valor;
+    document.getElementById('ep_titulo').textContent = valor;
+    document.querySelectorAll('.ep_nombre').forEach(e => e.textContent = valor);
+    document.getElementById('ep_box_eliminar').style.display = puedeEliminar ? '' : 'none';
+    document.getElementById('ep_eliminar').checked = !!puedeEliminar;
+    document.getElementById('ep_todos').checked = false;
+    // el propio estado no puede ser el destino
+    const sel = document.getElementById('ep_destino');
+    sel.value = '__';
+    [...sel.options].forEach(o => { o.hidden = (o.value === valor); });
+    document.getElementById('ep_lista').innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3">Cargando...</td></tr>';
+    epContar();
+    modalEP = modalEP || new bootstrap.Modal(document.getElementById('modalEstadoProductos'));
+    modalEP.show();
+    fetch('/admin/catalogos/estado/productos?valor=' + encodeURIComponent(valor))
+        .then(r => r.json())
+        .then(d => {
+            if (d.status !== 'success') {
+                document.getElementById('ep_lista').innerHTML = `<tr><td colspan="6" class="text-center text-danger py-3">${escHtml(d.msg)}</td></tr>`;
+                return;
+            }
+            document.getElementById('ep_total').textContent = d.total;
+            document.getElementById('ep_lista').innerHTML = d.productos.length ? d.productos.map(p => `
+                <tr>
+                    <td><input type="checkbox" class="form-check-input ep-chk" value="${escHtml(p.clave)}" onchange="epContar()"></td>
+                    <td><span class="badge ${p.inventario === 'Anclajes' ? 'bg-primary-subtle text-primary-emphasis' : 'bg-success-subtle text-success-emphasis'} border">${escHtml(p.inventario)}</span></td>
+                    <td class="fw-bold">${escHtml(p.sku)}${p.activo ? '' : ' <span class="badge bg-secondary">inactivo</span>'}</td>
+                    <td>${escHtml(p.nombre)} <span class="text-muted">${escHtml(p.calidad)}</span></td>
+                    <td class="text-end">${p.stock}</td>
+                    <td class="text-muted">${escHtml(p.escrito)}</td>
+                </tr>`).join('') : '<tr><td colspan="6" class="text-center text-muted py-3">Ningún producto tiene este estado.</td></tr>';
+        })
+        .catch(() => { document.getElementById('ep_lista').innerHTML = '<tr><td colspan="6" class="text-center text-danger py-3">No se pudo cargar.</td></tr>'; });
+}
+function pasarEstado(soloMarcados) {
+    const destino = document.getElementById('ep_destino').value;
+    if (destino === '__') return Swal.fire('Falta elegir', 'Elige el estado correcto de la lista.', 'warning');
+    const claves = soloMarcados ? [...document.querySelectorAll('.ep-chk:checked')].map(c => c.value) : [];
+    const total = soloMarcados ? claves.length : parseInt(document.getElementById('ep_total').textContent || '0', 10);
+    const eliminar = !soloMarcados && document.getElementById('ep_box_eliminar').style.display !== 'none' && document.getElementById('ep_eliminar').checked;
+    const nombreDestino = destino || 'BUEN ESTADO (OK)';
+    Swal.fire({
+        icon: 'question', showCancelButton: true, confirmButtonText: 'Sí, cambiar', cancelButtonText: 'Cancelar',
+        title: '¿Cambiar el estado?',
+        html: `Se pasarán <b>${total}</b> producto(s) de <b>${escHtml(EP_VALOR)}</b> a <b>${escHtml(nombreDestino)}</b> en los dos inventarios.` +
+              (eliminar ? `<br>Después se eliminará <b>${escHtml(EP_VALOR)}</b> del catálogo.` : '') +
+              '<div class="small text-muted mt-2">Los conteos de auditoría ya enviados no se modifican.</div>'
+    }).then(r => {
+        if (!r.isConfirmed) return;
+        const fd = new FormData();
+        fd.append('origen', EP_VALOR);
+        fd.append('destino', destino);
+        claves.forEach(c => fd.append('claves', c));
+        if (eliminar) fd.append('eliminar_origen', '1');
+        fetch('/admin/catalogos/estado/reasignar', { method: 'POST', body: fd })
+            .then(x => x.json())
+            .then(d => {
+                if (d.status === 'success') Swal.fire('Listo', d.msg, 'success').then(() => location.reload());
+                else Swal.fire('No se pudo cambiar', d.msg, 'error');
+            })
+            .catch(() => Swal.fire('Error', 'No se pudo comunicar con el servidor.', 'error'));
+    });
+}
+function renombrarEstado(id, valor) {
+    Swal.fire({
+        title: 'Corregir cómo está escrito', input: 'text', inputValue: valor, showCancelButton: true,
+        confirmButtonText: 'Guardar', cancelButtonText: 'Cancelar',
+        html: '<div class="small text-muted">Se cambia en la lista y en todos los productos que lo tienen.</div>',
+        inputValidator: v => (!v || !v.trim()) ? 'Escribe el nombre' : undefined
+    }).then(r => {
+        if (!r.isConfirmed) return;
+        const fd = new FormData();
+        fd.append('nuevo', r.value.trim().toUpperCase());
+        fetch(`/admin/catalogos/estado/${id}/renombrar`, { method: 'POST', body: fd })
+            .then(x => x.json())
+            .then(d => {
+                if (d.status === 'success') Swal.fire('Listo', d.msg, 'success').then(() => location.reload());
+                else Swal.fire('No se pudo renombrar', d.msg, 'error');
+            })
+            .catch(() => Swal.fire('Error', 'No se pudo comunicar con el servidor.', 'error'));
+    });
+}
+function agregarEstadoEscrito(valor) {
+    const fd = new FormData();
+    fd.append('tipo', 'ESTADO_FISICO');
+    fd.append('valor', valor);
+    fetch('/admin/catalogos/valor/nuevo', { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(d => {
+            if (d.status === 'success') Swal.fire({ icon: 'success', title: `"${valor}" agregado a la lista`, timer: 1200, showConfirmButton: false }).then(() => location.reload());
+            else Swal.fire('No se pudo agregar', d.msg, 'error');
+        })
+        .catch(() => Swal.fire('Error', 'No se pudo comunicar con el servidor.', 'error'));
+}
+
 function agregarValor(tipo) {
     const input = document.getElementById(`nuevo_${tipo}`);
     const valor = input.value.trim();
@@ -323,6 +541,9 @@ function agregarValor(tipo) {
                 return;
             }
 
+            if (tipo === 'ESTADO_FISICO') {
+                return Swal.fire({ icon: 'success', title: 'Agregado', timer: 1000, showConfirmButton: false }).then(() => location.reload());
+            }
             const filaVacia = document.getElementById(`fila-vacia-${tipo}`);
             if (filaVacia) filaVacia.remove();
 

@@ -77,6 +77,18 @@
                             <span class="text-warning-emphasis">Si lo dejas en 0, sus ventas sumarán 0 t en los dashboards de toneladas.</span></div>
                     </div>
 
+                    <div class="mb-3">
+                        <label class="form-label fw-bold small text-muted">Estado Físico</label>
+                        <select name="estado" id="selectEstado" class="form-select">
+                            <option value="">BUEN ESTADO (OK)</option>
+                            {% for est in catalogo_estados %}
+                            <option value="{{ est }}" {% if previo.get('estado') == est %}selected{% endif %}>{{ est }}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">Se pone igual en Anclajes e ImportBolts. Después cada inventario (y sus auditorías) lo
+                            actualiza por su cuenta, siempre eligiendo de esta lista (Catálogos &gt; Estado Físico).</div>
+                    </div>
+
                     <div class="mb-3 position-relative">
                         <label class="form-label fw-bold small text-danger">Código <span class="text-danger">*</span></label>
                         <input type="text" name="sku" id="inputCodigo" class="form-control fw-bold border-danger" placeholder="Ej: PER-005" required value="{{ previo.get('sku', '') }}"
@@ -109,6 +121,7 @@
                     <li>Si el código ya existe (en el Maestro o en algún inventario), el sistema no deja crearlo de nuevo.</li>
                     <li><strong>Familia y Calidad son obligatorias.</strong> Puedes elegir una ya existente, o escribir una nueva con "+ Agregar... nueva" — se valida en vivo que no sea igual (sin importar mayúsculas/minúsculas) a una que ya existe, para no crear duplicados por accidente.</li>
                     <li>El <strong>Peso Nominal</strong> no es obligatorio, pero si lo dejas en 0 el sistema te pide confirmar: sin peso, las ventas de ese producto suman 0 t en los dashboards.</li>
+                    <li>El <strong>Estado Físico</strong> se elige de la lista (primera opción: BUEN ESTADO (OK)). Si falta uno o hay alguno mal escrito, se arregla en <strong>Catálogos &gt; Estado Físico</strong>.</li>
                     <li>Al guardar, la página se queda aquí mismo (con la misma Familia/Calidad) para que sigas cargando el siguiente código de la secuencia.</li>
                 </ul>
             </div>

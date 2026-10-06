@@ -1,6 +1,15 @@
 {% extends "base.html" %}
 {% block title %}Detalle Conteo #{{ registro.id }}{% endblock %}
 {% block content %}
+{# Estado físico: siempre se elige de la lista del catálogo (BUEN ESTADO (OK) = vacío en la ficha) #}
+{% macro sel_estado(atributos, actual, clase='form-select') -%}
+{% set act = normalizar_estado(actual) if normalizar_estado is defined else (actual or '') %}
+<select {{ atributos|safe }} class="{{ clase }}">
+    <option value="" {{ 'selected' if not act }}>BUEN ESTADO (OK)</option>
+    {% for est in (catalogo_estados or []) %}<option value="{{ est }}" {{ 'selected' if est == act }}>{{ est }}</option>{% endfor %}
+    {% if act and act not in (catalogo_estados or []) %}<option value="{{ act }}" selected>{{ act }} (no está en el catálogo)</option>{% endif %}
+</select>
+{%- endmacro %}
 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
     <h4 class="fw-bold mb-0">
         Conteo #{{ registro.id }} — {{ registro.sku_snapshot }}
@@ -360,7 +369,7 @@
                     <div class="col-12 col-md-5"><label class="small fw-bold">Ubicación</label>
                         <input type="text" name="origen_ubicacion" class="form-control form-control-sm text-uppercase" value="{{ calc.origen_ubicacion }}"></div>
                     <div class="col-12 col-md-4"><label class="small fw-bold">Estado físico</label>
-                        <input type="text" name="origen_estado" class="form-control form-control-sm text-uppercase" value="{{ calc.origen_estado }}" placeholder="Vacío = BUEN ESTADO"></div>
+                        {{ sel_estado('name="origen_estado"', calc.origen_estado, 'form-select form-select-sm') }}</div>
                 </div>
                 <div class="small text-muted mt-1"><i class="bi bi-calculator"></i> {{ calc.origen_explicacion }} Ubicación y estado: como estaban antes de la auditoría.</div>
             </div>
@@ -375,7 +384,7 @@
                     <div class="col-12 col-md-5"><label class="small fw-bold">Ubicación</label>
                         <input type="text" name="destino_ubicacion" class="form-control form-control-sm text-uppercase" value="{{ calc.destino_ubicacion }}"></div>
                     <div class="col-12 col-md-4"><label class="small fw-bold">Estado físico</label>
-                        <input type="text" name="destino_estado" class="form-control form-control-sm text-uppercase" value="{{ calc.destino_estado }}" placeholder="Vacío = BUEN ESTADO"></div>
+                        {{ sel_estado('name="destino_estado"', calc.destino_estado, 'form-select form-select-sm') }}</div>
                 </div>
                 <div class="small text-muted mt-1"><i class="bi bi-calculator"></i> {{ calc.destino_explicacion }}</div>
             </div>
@@ -512,7 +521,7 @@
                 </div>
                 <div class="col-12 col-md-6">
                     <label class="form-label small fw-bold">Estado Físico</label>
-                    <input type="text" id="f_estado" class="form-control text-uppercase" value="{{ registro.estado_fisico or prod_actual.estado or '' }}" placeholder="Vacío = BUEN ESTADO (OK)">
+                    {{ sel_estado('id="f_estado"', registro.estado_fisico or prod_actual.estado or '') }}
                 </div>
                 <div class="col-12 col-md-6 d-flex align-items-end">
                     <div class="form-check form-switch">
@@ -601,7 +610,7 @@
                 </div>
                 <div class="col-12 col-md-6">
                     <label class="form-label small fw-bold">Estado Físico</label>
-                    <input type="text" id="f_estado" class="form-control text-uppercase" value="{{ registro.estado_fisico or prod_actual.estado or '' }}" placeholder="Vacío = BUEN ESTADO (OK)">
+                    {{ sel_estado('id="f_estado"', registro.estado_fisico or prod_actual.estado or '') }}
                 </div>
                 <div class="col-12 col-md-6 d-flex align-items-end">
                     <div class="form-check form-switch">
