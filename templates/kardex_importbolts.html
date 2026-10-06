@@ -230,93 +230,96 @@
 </div>
 {% endif %}
 
+<style>
+    /* Kardex compacto: Categoría/Calidad van debajo del producto, Tipo va con la cantidad, Precio y
+       Presentación juntos, Peso total y unitario juntos. El espacio que sobra va al Motivo. */
+    .kardex-tabla th { white-space: nowrap; vertical-align: middle; font-size: .78rem; }
+    .kardex-tabla td { padding-top: .45rem; padding-bottom: .45rem; }
+    .kardex-tabla .kx-producto { min-width: 210px; max-width: 290px; line-height: 1.25; }
+    .kardex-tabla .kx-familia { font-size: .68rem; color: #64748b; text-transform: uppercase; margin-top: 2px; }
+    .kardex-tabla .kx-cant { font-size: 1.05rem; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.1; }
+    .kardex-tabla .kx-saldo { display: inline-block; min-width: 3.2rem; padding: 3px 8px; border-radius: 6px; background: #f1f5f9;
+                              border: 1px solid #e2e8f0; font-weight: 800; font-size: .95rem; font-variant-numeric: tabular-nums; color: #0f172a; }
+    .kardex-tabla .kx-motivo { min-width: 220px; max-width: 360px; white-space: normal; word-break: break-word; font-size: .8rem; line-height: 1.3; }
+    .kardex-tabla .kx-proveedor { min-width: 150px; max-width: 220px; font-size: .75rem; line-height: 1.25; }
+</style>
 <div class="card shadow-sm border-0">
     <div class="card-body p-0 table-responsive" style="min-height: 400px;">
-        <table class="table table-hover mb-0 align-middle small">
+        <table class="table table-hover mb-0 align-middle small kardex-tabla">
             <thead style="background-color:#002e52;" class="text-white text-nowrap sticky-top">
                 <tr>
-                    <th class="ps-3">Fecha / Hora</th>
+                    <th class="ps-3">Fecha</th>
                     <th>Producto</th>
-                    <th>Categoría</th>
-                    <th>Calidad</th>
-                    <th class="text-center">Tipo</th>
+                    <th class="text-center">Cant.</th>
+                    <th class="text-center">Saldo</th>
                     <th>Motivo / Referencia</th>
                     <th>Proveedor / RUC</th>
-                    <th class="text-end">Precio</th>
-                    <th>Presentación</th>
-                    <th class="text-end">Peso Unit. (Kg)</th>
-                    <th class="text-end">Peso Total (Kg)</th>
-                    <th>Usuario</th>
-                    <th class="text-center">Cant.</th>
-                    <th class="text-center pe-3">Saldo Final</th>
+                    <th class="text-end">Precio<br><span class="fw-normal opacity-75">Present.</span></th>
+                    <th class="text-end">Peso kg<br><span class="fw-normal opacity-75">Total / Unit.</span></th>
+                    <th class="pe-3">Usuario</th>
                 </tr>
             </thead>
             <tbody>
                 {% for m in movimientos %}
                 <tr>
-                    <td class="text-muted ps-3">{{ m.fecha.strftime('%d/%m/%y %H:%M') }}</td>
-                    
-                    <td>
+                    <td class="ps-3 text-nowrap">
+                        <div class="fw-semibold text-dark">{{ m.fecha.strftime('%d/%m/%y') }}</div>
+                        <div class="text-muted">{{ m.fecha.strftime('%H:%M') }}</div>
+                    </td>
+
+                    <td class="kx-producto">
                         <strong class="d-block text-dark">{{ m.product.sku }}</strong>
                         <span class="text-secondary">{{ m.product.nombre }}</span>
+                        <div class="kx-familia">{{ m.product.categoria }}{% if m.product.calidad %} · {{ m.product.calidad }}{% endif %}</div>
                     </td>
-                    
-                    <td><span class="badge bg-light text-dark border">{{ m.product.categoria }}</span></td>
-                    <td><span class="badge bg-light text-dark border">{{ m.product.calidad or '-' }}</span></td> 
-                    
-                    <td class="text-center">
-                        {% if m.tipo == 'ENTRADA' %}
-                            <span class="badge bg-success-subtle text-success border border-success px-3">ENTRADA</span>
-                        {% else %}
-                            <span class="badge bg-danger-subtle text-danger border border-danger px-3">SALIDA</span>
-                        {% endif %}
-                        {% if 'Inter-Empresa' in m.motivo or 'Retorno de mercadería' in m.motivo %}
-                            <br>
-                            <span class="badge mt-1" style="background-color:#6f42c1; color:white; font-size:0.6rem;" title="Movimiento por traslado/venta entre Anclajes e ImportBolts">
+
+                    <td class="text-center text-nowrap">
+                        <div class="kx-cant {% if m.tipo == 'ENTRADA' %}text-success{% else %}text-danger{% endif %}">
+                            {% if m.tipo == 'ENTRADA' %}+{% else %}-{% endif %}{{ "{:,}".format(m.cantidad) }}
+                        </div>
+                        <span class="badge {% if m.tipo == 'ENTRADA' %}bg-success-subtle text-success border border-success{% else %}bg-danger-subtle text-danger border border-danger{% endif %}" style="font-size:.6rem;">{{ m.tipo }}</span>
+                        {% if 'Inter-Empresa' in (m.motivo or '') or 'Retorno de mercadería' in (m.motivo or '') %}
+                            <br><span class="badge mt-1" style="background-color:#6f42c1; color:white; font-size:0.58rem;" title="Movimiento por traslado/venta entre Anclajes e ImportBolts">
                                 <i class="bi bi-arrow-left-right"></i> INTER-EMPRESA
                             </span>
                         {% endif %}
                     </td>
-                    
-                    <td class="fst-italic" style="max-width: 280px; white-space: normal; word-break: break-word; font-size: 0.85rem;">
+
+                    <td class="text-center text-nowrap">
+                        <span class="kx-saldo">{{ "{:,}".format(m.stock_nuevo) if m.stock_nuevo is not none else '-' }}</span>
+                    </td>
+
+                    <td class="kx-motivo">
                         {{ m.motivo }}
-                        {% if m.referencia %}
-                        <span class="fst-normal fw-bold text-dark">/ {{ m.referencia }}</span>
-                        {% endif %}
+                        {% if m.referencia %}<span class="fw-bold text-dark">/ {{ m.referencia }}</span>{% endif %}
                     </td>
 
-                    <td class="small">
+                    <td class="kx-proveedor">
                         {% if m.razon_social_proveedor %}
-                            <span class="fw-bold">{{ m.razon_social_proveedor }}</span><br>
-                            <span class="text-muted">{{ m.ruc_proveedor or 'S/N' }}</span>
-                            {% if m.tipo_proveedor == 'INTERNACIONAL' %}<span class="badge bg-info ms-1">INT'L</span>{% endif %}
-                        {% else %}-{% endif %}
-                    </td>
-                    <td class="text-end small">{% if m.precio_unitario %}{{ "%.2f"|format(m.precio_unitario) }}{% else %}-{% endif %}</td>
-                    <td class="small">{{ m.presentacion or '-' }}</td>
-
-                    <td class="text-end small text-muted">
-                        {% if m.product.peso_kg %}{{ "%.3f"|format(m.product.peso_kg) }}{% else %}-{% endif %}
-                    </td>
-                    <td class="text-end small fw-bold">
-                        {% if m.product.peso_kg %}{{ "%.2f"|format(m.product.peso_kg * m.cantidad) }}{% else %}-{% endif %}
+                            <span class="fw-semibold">{{ m.razon_social_proveedor }}</span>
+                            <div class="text-muted">{{ m.ruc_proveedor or 'S/N' }}{% if m.tipo_proveedor == 'INTERNACIONAL' %} <span class="badge bg-info">INT'L</span>{% endif %}</div>
+                        {% else %}<span class="text-muted">-</span>{% endif %}
                     </td>
 
-                    <td>
-                        <i class="bi bi-person-fill text-secondary"></i> {{ m.user.username }}
+                    <td class="text-end text-nowrap">
+                        <div>{% if m.precio_unitario %}{{ "%.2f"|format(m.precio_unitario) }}{% else %}-{% endif %}</div>
+                        <div class="text-muted" style="font-size:.7rem;">{{ m.presentacion or '' }}</div>
                     </td>
-                    
-                    <td class="text-center fw-bold fs-6 {% if m.tipo == 'ENTRADA' %}text-success{% else %}text-danger{% endif %}">
-                        {% if m.tipo == 'ENTRADA' %}+{% else %}-{% endif %}{{ m.cantidad }}
+
+                    <td class="text-end text-nowrap">
+                        {% if m.product.peso_kg %}
+                            <div class="fw-bold">{{ "{:,.2f}".format(m.product.peso_kg * m.cantidad) }}</div>
+                            <div class="text-muted" style="font-size:.7rem;">{{ "%.3f"|format(m.product.peso_kg) }} c/u</div>
+                        {% else %}<span class="text-muted">-</span>{% endif %}
                     </td>
-                    
-                    <td class="text-center bg-light fw-bold text-dark border-start pe-3">
-                        {{ m.stock_nuevo }}
+
+                    <td class="pe-3 text-nowrap text-muted">
+                        <i class="bi bi-person-fill"></i> {{ m.user.username }}
                     </td>
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="14" class="text-center py-5 text-muted">
+                    <td colspan="9" class="text-center py-5 text-muted">
                         <i class="bi bi-search display-4 opacity-25"></i>
                         <p class="mt-2">No se encontraron movimientos con estos filtros.</p>
                     </td>

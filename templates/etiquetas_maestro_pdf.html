@@ -109,7 +109,7 @@
                         <td class="datos">
                             <div class="sku">{{ e.sku }}</div>
                             <div class="nombre">{{ e.nombre[:110] }}{% if e.nombre|length > 110 %}...{% endif %}</div>
-                            {% if e.calidad %}<div class="calidad">{{ e.calidad }}</div>{% endif %}
+                            {# La calidad no se imprime: ya viene dentro de la descripción #}
                             <table class="auditoria">
                                 <tr><td class="sep" colspan="2">&nbsp;</td></tr>
                                 {% if e.auditoria %}

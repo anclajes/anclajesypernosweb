@@ -239,6 +239,12 @@
     #tabsListaProveedores .nav-link:hover:not(.active) {
         background-color: #e9ecef;
     }
+
+    /* STOCK: número grande y notorio (verde OK / rojo stock bajo), soporta cifras grandes */
+    .stock-num { display: inline-block; min-width: 3.6rem; padding: 3px 10px; border-radius: 8px; font-weight: 800;
+                 font-size: 1.08rem; line-height: 1.25; font-variant-numeric: tabular-nums; white-space: nowrap;
+                 background: #e8f5ee; color: #146c43; border: 1px solid #a3d9b8; }
+    .stock-num.bajo { background: #fdecec; color: #b02a37; border-color: #f1aeb5; }
 </style>
 
 <!-- BANNER IDENTIFICATIVO DE LA EMPRESA IMPORT BOLTS (RESPONSIVE) -->
@@ -378,7 +384,7 @@
                     <th class="table-brand-header">FAMILIA</th>
                     <th class="table-brand-header">UBICACIÓN</th>
                     <th class="table-brand-header">CALIDAD</th>
-                    <th class="text-center table-brand-header">PESO NOMINAL (Kg)</th>
+                    <th class="text-center table-brand-header" title="Peso nominal por unidad, en kilogramos">PESO NOM. (kg)</th>
                     <th class="text-center table-brand-header">STOCK</th> 
                     <th class="text-end table-brand-header">P. UNIT</th>
                     <th class="text-end table-brand-header">P. CAJA</th>
@@ -422,11 +428,8 @@
                     <td class="text-center text-muted">{{ "%.3f"|format(p.peso_kg) if p.peso_kg else '-' }}</td>
                     
                     <td class="text-center">
-                        {% if p.stock_actual <= p.stock_minimo %}
-                            <span class="badge bg-danger-subtle text-danger border border-danger fw-bold">{{ p.stock_actual }}</span>
-                        {% else %}
-                            <span class="badge bg-success-subtle text-success border border-success">{{ p.stock_actual }}</span>
-                        {% endif %}
+                        <span class="stock-num {{ 'bajo' if p.stock_actual <= p.stock_minimo else '' }}"
+                              title="{{ 'Stock bajo' if p.stock_actual <= p.stock_minimo else 'Stock OK' }} (mínimo {{ p.stock_minimo }})">{{ "{:,}".format(p.stock_actual or 0) }}</span>
                         
                         {% if session.get('role') in ['admin', 'almacen'] %}
                         <button class="btn btn-sm btn-light border ms-1" style="color: var(--theme-primary);" title="Registrar Ingreso/Salida"

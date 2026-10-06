@@ -99,8 +99,8 @@
     <div class="pi-stock-label"><i class="bi bi-box-seam-fill"></i> Stock actual</div>
     <div><span class="pi-stock-num {{ 'd1' if texto|length <= 5 else ('d2' if texto|length <= 9 else 'd3') }}">{{ texto }}</span><span class="pi-stock-uni">unid.</span></div>
     <div class="pi-stock-aviso">
-        {% if bajo %}<i class="bi bi-exclamation-triangle-fill"></i> Stock bajo · mín. {{ p.stock_minimo }}
-        {% else %}<i class="bi bi-check-circle-fill"></i> Stock OK · mín. {{ p.stock_minimo }}{% endif %}
+        {% if bajo %}<i class="bi bi-exclamation-triangle-fill"></i> Stock bajo
+        {% else %}<i class="bi bi-check-circle-fill"></i> Stock OK{% endif %}
     </div>
 </div>
 {%- endmacro %}

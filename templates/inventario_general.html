@@ -150,6 +150,12 @@
         #lightboxOverlay .lightbox-next { right: 4px; }
         #lightboxOverlay .lightbox-nav { width: 36px; height: 36px; }
     }
+
+    /* STOCK: número grande y notorio (verde OK / rojo stock bajo), soporta cifras grandes */
+    .stock-num { display: inline-block; min-width: 3.6rem; padding: 3px 10px; border-radius: 8px; font-weight: 800;
+                 font-size: 1.08rem; line-height: 1.25; font-variant-numeric: tabular-nums; white-space: nowrap;
+                 background: #e8f5ee; color: #146c43; border: 1px solid #a3d9b8; }
+    .stock-num.bajo { background: #fdecec; color: #b02a37; border-color: #f1aeb5; }
 </style>
 
 <div class="d-flex justify-content-between align-items-center mb-3">
@@ -252,7 +258,7 @@
                     <th>Familia</th>
                     <th>Calidad</th>
                     <th>Ubicación</th>
-                    <th class="text-center">Peso (Kg)</th>
+                    <th class="text-center" title="Peso nominal por unidad, en kilogramos">Peso Nom. (kg)</th>
                     <th class="text-center">Stock</th>
                     <th class="text-center">Fotos</th>
                 </tr>
@@ -294,11 +300,8 @@
                     <td>{% if p.ubicacion %}<i class="bi bi-geo-alt-fill text-danger small"></i> {{ p.ubicacion }}{% else %}-{% endif %}</td>
                     <td class="text-center">{{ "%.3f"|format(p.peso_kg) if p.peso_kg else '-' }}</td>
                     <td class="text-center">
-                        {% if p.stock <= p.stock_min %}
-                            <span class="badge bg-danger-subtle text-danger border border-danger fw-bold">{{ p.stock }}</span>
-                        {% else %}
-                            <span class="badge bg-success-subtle text-success border border-success">{{ p.stock }}</span>
-                        {% endif %}
+                        <span class="stock-num {{ 'bajo' if p.stock <= p.stock_min else '' }}"
+                              title="{{ 'Stock bajo' if p.stock <= p.stock_min else 'Stock OK' }} (mínimo {{ p.stock_min }})">{{ "{:,}".format(p.stock or 0) }}</span>
                     </td>
                     <td class="text-center">
                         <button class="btn btn-sm btn-outline-info py-0" title="Ver Fotos"
