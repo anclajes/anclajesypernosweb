@@ -6509,7 +6509,12 @@ def editar_producto():
         prod.stock_minimo = int(request.form.get('stock_minimo', 10))
         prod.precio_unidad = float(request.form['p_unidad'])
         prod.precio_caja = float(request.form['p_caja'])
-        prod.ubicacion = _texto_limpio(request.form.get('ubicacion', ''))
+        # Ubicación: una o varias ("ANAQUEL X CASILLERO Y + ANAQUEL Z CASILLERO W") o texto libre
+        ubicacion_val = ' '.join(_texto_limpio(request.form.get('ubicacion', '')).split())
+        if len(ubicacion_val) > 200:
+            flash(f'⛔ La ubicación es muy larga ({len(ubicacion_val)} letras, máximo 200). Quita alguna o acórtala.')
+            return redirect(url_origen or url_for('inventario'))
+        prod.ubicacion = ubicacion_val
         prod.estado = estado_val
         prod.activo = request.form.get('activo') == '1'
         prod.ultima_edicion_manual_fecha = hora_peru()
@@ -9205,7 +9210,12 @@ def editar_producto_importbolts():
         prod.stock_minimo = int(request.form.get('stock_minimo', 10))
         prod.precio_unidad = float(request.form['p_unidad'])
         prod.precio_caja = float(request.form['p_caja'])
-        prod.ubicacion = _texto_limpio(request.form.get('ubicacion', ''))
+        # Ubicación: una o varias ("ANAQUEL X CASILLERO Y + ANAQUEL Z CASILLERO W") o texto libre
+        ubicacion_val = ' '.join(_texto_limpio(request.form.get('ubicacion', '')).split())
+        if len(ubicacion_val) > 200:
+            flash(f'⛔ La ubicación es muy larga ({len(ubicacion_val)} letras, máximo 200). Quita alguna o acórtala.')
+            return redirect(url_origen or url_for('inventario_importbolts'))
+        prod.ubicacion = ubicacion_val
         prod.estado = estado_val
         prod.activo = request.form.get('activo') == '1'
         prod.ultima_edicion_manual_fecha = hora_peru()
@@ -10988,7 +10998,8 @@ def auditoria_api_verificar_duplicado(origen):
 
 @app.route('/api/catalogo/<tipo>')
 def api_catalogo_valores(tipo):
-    if session.get('role') not in ['auditor_stock', 'admin', 'administracion']: return {'valores': []}, 403
+    # 'almacen' también: Editar Producto usa los mismos Anaqueles/Casilleros para la ubicación
+    if session.get('role') not in ['auditor_stock', 'admin', 'administracion', 'almacen']: return {'valores': []}, 403
     tipo = tipo.upper()
     valores_q = CatalogoValor.query.filter_by(tipo=tipo, activo=True).all()
     valores = sorted(valores_q, key=lambda v: orden_natural_ubicacion(v.valor))

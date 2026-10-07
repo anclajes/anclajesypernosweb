@@ -314,23 +314,21 @@
                 </div>
                 
                 <div class="col-12 col-sm-6 col-md-4 col-lg-2">
-                    <input type="text" name="categoria" id="filtro_familia" class="form-control bg-light text-uppercase"
-                           list="listFiltroFamilias" placeholder="-- Todas las Familias --"
-                           value="{{ '' if cat_filtro == 'todos' else cat_filtro }}"
-                           oninput="mantenerMayusYCursor(this)"
-                           onchange="document.getElementById('formFiltros').submit()"
-                           title="Elige de la lista o escribe: se busca por coincidencia, no hace falta el nombre exacto ni elegirla primero.">
-                    <datalist id="listFiltroFamilias">{% for cat in lista_categorias %}<option value="{{ cat }}">{% endfor %}</datalist>
+                    <select name="categoria" id="filtro_familia" class="form-select filtro-s2" data-placeholder="-- Todas las Familias --" data-form="formFiltros">
+                        <option value=""></option>
+                        {% set _f_val = '' if cat_filtro == 'todos' else cat_filtro %}
+                        {% if _f_val and _f_val not in lista_categorias %}<option value="{{ _f_val }}" selected>{{ _f_val }}</option>{% endif %}
+                        {% for cat in lista_categorias %}<option value="{{ cat }}" {{ 'selected' if cat == _f_val }}>{{ cat }}</option>{% endfor %}
+                    </select>
                 </div>
 
                 <div class="col-12 col-sm-6 col-md-4 col-lg-2">
-                    <input type="text" name="calidad" id="filtro_calidad" class="form-control bg-light text-uppercase"
-                           list="listFiltroCalidades" placeholder="-- Calidad --"
-                           value="{{ '' if calidad_filtro == 'todos' else calidad_filtro }}"
-                           oninput="mantenerMayusYCursor(this)"
-                           onchange="document.getElementById('formFiltros').submit()"
-                           title="Elige de la lista o escribe: se busca por coincidencia, no hace falta el nombre exacto ni elegirla primero.">
-                    <datalist id="listFiltroCalidades">{% for cal in lista_calidades %}<option value="{{ cal }}">{% endfor %}</datalist>
+                    <select name="calidad" id="filtro_calidad" class="form-select filtro-s2" data-placeholder="-- Calidad --" data-form="formFiltros">
+                        <option value=""></option>
+                        {% set _c_val = '' if calidad_filtro == 'todos' else calidad_filtro %}
+                        {% if _c_val and _c_val not in lista_calidades %}<option value="{{ _c_val }}" selected>{{ _c_val }}</option>{% endif %}
+                        {% for cal in lista_calidades %}<option value="{{ cal }}" {{ 'selected' if cal == _c_val }}>{{ cal }}</option>{% endfor %}
+                    </select>
                 </div>
 
                 <div class="col-6 col-md-6 col-lg-2">
@@ -423,7 +421,7 @@
                         {% endif %}
                     </td>
                     <td><span class="badge bg-light text-dark border">{{ p.categoria }}</span></td>
-                    <td class="text-nowrap text-muted">{% if p.ubicacion %}<i class="bi bi-geo-alt-fill text-danger small"></i> {{ p.ubicacion }}{% else %}-{% endif %}</td>
+                    <td class="celda-ubic text-muted">{% if p.ubicacion %}{% for u in p.ubicacion.split(' + ') %}<div class="ubic-item"><i class="bi bi-geo-alt-fill text-danger small"></i><span>{{ u }}</span></div>{% endfor %}{% else %}-{% endif %}</td>
                     <td><span class="badge bg-secondary bg-opacity-25 text-dark">{{ p.calidad }}</span></td>
                     <td class="text-center text-muted">{{ "%.3f"|format(p.peso_kg) if p.peso_kg else '-' }}</td>
                     
@@ -729,10 +727,17 @@
                             </select>
                             <div class="form-text" style="font-size:.7rem;">Solo de la lista. Para agregar o corregir estados: Catálogos &gt; Estado Físico.</div>
                         </div>
-                        <div class="col-12 col-sm-6">
-                            <label class="form-label small fw-bold">Ubicación</label>
-                            <input id="edit_ubicacion" name="ubicacion" class="form-control form-control-sm text-uppercase" oninput="mantenerMayusYCursor(this)">
+                    </div>
+                    <!-- UBICACIÓN: una o varias (Anaquel + Casillero de los catálogos de Auditoría) o texto libre -->
+                    <div class="mb-2">
+                        <label class="form-label small fw-bold mb-1"><i class="bi bi-geo-alt-fill text-danger"></i> Ubicación</label>
+                        <input type="hidden" id="edit_ubicacion" name="ubicacion">
+                        <div id="edit_ubic_editor"></div>
+                        <div class="d-flex flex-wrap gap-2 mt-2">
+                            <button type="button" class="btn btn-sm btn-outline-primary" onclick="UbicEditor.agregar('par')"><i class="bi bi-plus-lg"></i> Anaquel + Casillero</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="UbicEditor.agregar('texto')"><i class="bi bi-fonts"></i> Texto libre</button>
                         </div>
+                        <div class="ubic-preview" id="edit_ubic_preview"></div>
                     </div>
                     <div class="row g-2">
                         <div class="col-6 col-md-3">
@@ -1360,7 +1365,7 @@ function evitarDobleEnvioMovimiento(event) {
         document.getElementById('edit_punidad').value = punidad;
         document.getElementById('edit_pcaja').value = pcaja;
         document.getElementById('edit_activo').checked = (activo === true || activo === 'true' || activo === 1 || activo === '1');
-        document.getElementById('edit_ubicacion').value = (ubicacion && ubicacion !== 'None') ? ubicacion : '';
+        UbicEditor.cargar((ubicacion && ubicacion !== 'None') ? ubicacion : '');
         document.getElementById('edit_url_origen').value = window.location.href;
 
         // Estado: solo de la lista. Si el producto tiene uno viejo que ya no está, se muestra marcado.
@@ -1396,6 +1401,11 @@ function evitarDobleEnvioMovimiento(event) {
     function confirmarEdicion(event) {
         event.preventDefault();
         const form = event.target;
+        const errorUbic = UbicEditor.validar();
+        if (errorUbic) {
+            Swal.fire({ icon: 'warning', title: 'Revisa la ubicación', text: errorUbic });
+            return;
+        }
         const nuevaUbicacion = document.getElementById('edit_ubicacion').value.trim();
         const nuevoEstado = document.getElementById('edit_estado').value;
         const nuevoPUni = parseFloat(document.getElementById('edit_punidad').value);
@@ -2926,5 +2936,17 @@ function validarNombreEnVivoIB() {
         });
     }, 400);
 }
+</script>
+<script src="{{ url_for('static', filename='js/filtros.js') }}?v=1"></script>
+<script src="{{ url_for('static', filename='js/ubicaciones.js') }}?v=1"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    UbicEditor.init({
+        contenedor: document.getElementById('edit_ubic_editor'),
+        hidden: document.getElementById('edit_ubicacion'),
+        preview: document.getElementById('edit_ubic_preview'),
+        modal: document.getElementById('modalEditar'),
+    });
+});
 </script>
 {% endblock %}

@@ -324,3 +324,25 @@ html.erp-cargando .sidebar *,
 html.erp-cargando .main-content {
     transition: none !important;
 }
+
+/* --- Filtros Familia / Calidad con buscador (select2) en los inventarios --- */
+select.filtro-s2 + .select2-container .select2-selection--single {
+    height: 38px;
+    border: 1px solid #dee2e6;
+    border-radius: .375rem;
+}
+select.filtro-s2 + .select2-container .select2-selection__rendered {
+    line-height: 36px;
+    padding-left: 12px;
+    text-transform: uppercase;
+}
+select.filtro-s2 + .select2-container .select2-selection__arrow { height: 36px; }
+select.filtro-s2 + .select2-container .select2-selection__placeholder { color: #6c757d; text-transform: none; }
+.select2-container--open .select2-search__field { font-size: 16px; } /* 16px: evita que el iPhone haga zoom al escribir */
+.select2-results__option { font-size: .88rem; }
+
+/* --- Ubicación (una o varias, separadas por " + "): se muestra una por línea y no se corta --- */
+td.celda-ubic, td.celda-ubic * { white-space: normal !important; }
+td.celda-ubic { min-width: 130px; max-width: 240px; font-size: .8rem; line-height: 1.2; }
+td.celda-ubic .ubic-item { display: flex; gap: 4px; align-items: baseline; margin: 1px 0; word-break: break-word; }
+td.celda-ubic .ubic-item .bi { flex: 0 0 auto; }
