@@ -2,6 +2,7 @@
 {% block title %}{{ proc.numero_oc|oc }}{% endblock %}
 
 {% block content %}
+{% set iconos_doc = {'ORDEN_COMPRA': 'bi-receipt', 'NOTA_SALIDA': 'bi-box-arrow-up-right', 'GUIA': 'bi-truck'} %}
 <style>
     .poc-head { border-radius: 14px; background: linear-gradient(90deg, #1e1b4b 0%, #3730a3 100%); color: #fff; }
     .poc-head .num { font-size: 1.6rem; font-weight: 800; letter-spacing: .02em; }
@@ -16,8 +17,14 @@
     .poc-etapa-salida_proceso { color:#92400e; background:#fffbeb; border-color:#fcd34d; }
     .poc-etapa-reingreso { color:#166534; background:#f0fdf4; border-color:#86efac; }
     .poc-etapa-salida_final { color:#991b1b; background:#fef2f2; border-color:#fca5a5; }
-    .poc-doc { display: inline-block; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:1px 6px; font-size:.72rem; white-space:nowrap; margin: 1px 0; }
-    .poc-doc a { text-decoration: none; color: #0f172a; }
+    .poc-doc { --c:#475569; --bg:#f8fafc; display: inline-block; background:var(--bg); border:1px solid color-mix(in srgb, var(--c) 35%, #e2e8f0);
+               border-left:3px solid var(--c); border-radius:6px; padding:1px 6px; font-size:.72rem; white-space:nowrap; margin: 1px 0; }
+    .poc-doc-orden_compra { --c:#2563eb; --bg:#eff6ff; }
+    .poc-doc-nota_salida { --c:#d97706; --bg:#fffbeb; }
+    .poc-doc-guia { --c:#059669; --bg:#ecfdf5; }
+    .poc-doc a { text-decoration: none; color: #0f172a; font-weight: 600; }
+    .poc-doc .poc-doc-ico { color: var(--c); }
+    .poc-doc-fmt { font-size:.56rem; font-weight:700; color:var(--c); border:1px solid var(--c); border-radius:4px; padding:0 3px; margin-left:2px; vertical-align:1px; }
     .poc-doc a + a { margin-left: 4px; color: #64748b; }
 </style>
 
@@ -142,9 +149,10 @@
                     <td style="font-size:.74rem;">{{ m.razon_social_proveedor or '—' }}</td>
                     <td>
                         {% for d in docs_mov[x.origen].get(m.id, []) %}
-                        <span class="poc-doc">
+                        <span class="poc-doc poc-doc-{{ d.tipo_documento|lower }}">
                             <a href="{{ url_for('ver_documento_kardex', doc_id=d.id) }}" target="_blank" title="{{ d.nombre_original }}">
-                                <i class="bi {{ 'bi-file-earmark-pdf-fill text-danger' if d.content_type == 'application/pdf' else 'bi-file-earmark-image-fill text-primary' }}"></i> {{ tipos_doc.get(d.tipo_documento) }}</a>
+                                <i class="bi {{ iconos_doc.get(d.tipo_documento, 'bi-file-earmark') }} poc-doc-ico"></i> {{ tipos_doc.get(d.tipo_documento) }}
+                                <span class="poc-doc-fmt">{{ 'PDF' if d.content_type == 'application/pdf' else 'FOTO' }}</span></a>
                             <a href="{{ url_for('ver_documento_kardex', doc_id=d.id, download=1) }}" title="Descargar"><i class="bi bi-download"></i></a>
                         </span>
                         {% else %}<span class="text-muted">—</span>{% endfor %}

@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
+{% set iconos_doc = {'ORDEN_COMPRA': 'bi-receipt', 'NOTA_SALIDA': 'bi-box-arrow-up-right', 'GUIA': 'bi-truck'} %}
 
 <style>
     .kardex-filtros-card { border-radius: 14px; }
@@ -277,8 +278,14 @@
     .kardex-tabla .kx-etapa-salida_final { color:#b91c1c; }
     .kardex-tabla .kx-obs { font-size:.72rem; color:#475569; margin-top:2px; font-style:italic; }
     .kardex-tabla .kx-docs { display:flex; flex-wrap:wrap; gap:4px 8px; align-items:center; font-size:.72rem; }
-    .kardex-tabla .kx-doc { background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:1px 6px; white-space:nowrap; }
-    .kardex-tabla .kx-doc a { text-decoration:none; color:#0f172a; }
+    .kardex-tabla .kx-doc { --c:#475569; --bg:#f8fafc; background:var(--bg); border:1px solid color-mix(in srgb, var(--c) 35%, #e2e8f0);
+                            border-left:3px solid var(--c); border-radius:6px; padding:1px 6px; white-space:nowrap; }
+    .kardex-tabla .kx-doc-orden_compra { --c:#2563eb; --bg:#eff6ff; }
+    .kardex-tabla .kx-doc-nota_salida { --c:#d97706; --bg:#fffbeb; }
+    .kardex-tabla .kx-doc-guia { --c:#059669; --bg:#ecfdf5; }
+    .kardex-tabla .kx-doc a { text-decoration:none; color:#0f172a; font-weight:600; }
+    .kardex-tabla .kx-doc .kx-doc-ico { color:var(--c); }
+    .kardex-tabla .kx-doc-fmt { font-size:.56rem; font-weight:700; color:var(--c); border:1px solid var(--c); border-radius:4px; padding:0 3px; margin-left:2px; vertical-align:1px; }
     .kardex-tabla .kx-doc a + a { margin-left:4px; color:#64748b; }
     .kardex-tabla .kx-doc-x { font-size:.72rem; line-height:1; margin-left:2px; vertical-align:baseline; }
     .kardex-tabla .kx-doc-add { font-size:.72rem; text-decoration:none; color:#64748b; }
@@ -344,9 +351,10 @@
                         {% if (docs_m and puede_ver_docs) or puede_adjuntar %}
                         <div class="kx-docs mt-1">
                             {% if puede_ver_docs %}{% for d in docs_m %}
-                            <span class="kx-doc">
+                            <span class="kx-doc kx-doc-{{ d.tipo_documento|lower }}">
                                 <a href="{{ url_for('ver_documento_kardex', doc_id=d.id) }}" target="_blank" title="Ver {{ tipos_doc.get(d.tipo_documento) }} ({{ d.nombre_original }})">
-                                    <i class="bi {{ 'bi-file-earmark-pdf-fill text-danger' if d.content_type == 'application/pdf' else 'bi-file-earmark-image-fill text-primary' }}"></i> {{ tipos_doc.get(d.tipo_documento) }}</a>
+                                    <i class="bi {{ iconos_doc.get(d.tipo_documento, 'bi-file-earmark') }} kx-doc-ico"></i> {{ tipos_doc.get(d.tipo_documento) }}
+                                    <span class="kx-doc-fmt">{{ 'PDF' if d.content_type == 'application/pdf' else 'FOTO' }}</span></a>
                                 <a href="{{ url_for('ver_documento_kardex', doc_id=d.id, download=1) }}" title="Descargar"><i class="bi bi-download"></i></a>
                                 {% if session.get('role') == 'admin' %}
                                 <form method="POST" action="{{ url_for('eliminar_documento_kardex', doc_id=d.id) }}" class="d-inline"
@@ -433,9 +441,12 @@
                 <div class="modal-body">
                     <div class="small text-muted mb-2" id="adjuntar_doc_mov"></div>
                     <label class="small fw-bold mb-1">Tipo de documento</label>
-                    <select name="tipo_documento" class="form-select form-select-sm mb-2" required>
-                        {% for k, v in tipos_doc.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}
-                    </select>
+                    <div class="adj-tipos mb-2">
+                        {% for k, v in tipos_doc.items() %}
+                        <input type="radio" class="btn-check" name="tipo_documento" id="adj_tipo_{{ k }}" value="{{ k }}" {{ 'checked' if loop.first }} required>
+                        <label class="adj-tipo kx-doc-{{ k|lower }}" for="adj_tipo_{{ k }}"><i class="bi {{ iconos_doc.get(k) }}"></i><span>{{ v }}</span></label>
+                        {% endfor %}
+                    </div>
                     <input type="file" name="archivo" id="adjuntar_doc_archivo" class="form-control form-control-sm" required
                            accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp">
                     <div class="form-text small" style="font-size:.68rem;">PDF o foto (JPG, PNG, WEBP) · máx. 5MB.</div>
@@ -447,6 +458,16 @@
         </div>
     </div>
 </div>
+<style>
+    .adj-tipos { display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; }
+    .adj-tipo { --c:#475569; --bg:#f8fafc; display:flex; flex-direction:column; align-items:center; gap:2px; padding:8px 4px; margin:0;
+                border:1.5px solid #e2e8f0; border-radius:10px; cursor:pointer; font-size:.7rem; font-weight:600; text-align:center; color:#334155; }
+    .adj-tipo .bi { font-size:1.2rem; color:var(--c); }
+    .adj-tipo.kx-doc-orden_compra { --c:#2563eb; --bg:#eff6ff; }
+    .adj-tipo.kx-doc-nota_salida { --c:#d97706; --bg:#fffbeb; }
+    .adj-tipo.kx-doc-guia { --c:#059669; --bg:#ecfdf5; }
+    .btn-check:checked + .adj-tipo { border-color:var(--c); background:var(--bg); box-shadow:0 0 0 3px color-mix(in srgb, var(--c) 15%, transparent); color:#0f172a; }
+</style>
 <script>
 function abrirAdjuntarDoc(movId, texto) {
     const f = document.getElementById('formAdjuntarDoc');

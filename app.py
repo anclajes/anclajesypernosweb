@@ -6669,7 +6669,28 @@ def _es_motivo_de_proceso(nombre):
 
 def _es_motivo_reingreso(nombre):
     n = _txt_sin_tildes(nombre)
-    return _es_motivo_de_proceso(n) or 'REINGRESO' in n
+    return _es_motivo_de_proceso(n) or 'REINGRESO' in n or 'TERMINADO' in n
+
+
+ETAPAS_OC_MOTIVO = {'INICIO': 'Inicia una OC', 'REINGRESO': 'Reingreso a una OC'}
+
+
+def _etapa_oc_por_nombre(nombre, tipo):
+    """Sugerencia inicial (solo se usa para llenar la columna la primera vez o si falta el motivo):
+    SALIDA con MAESTRANZA/TRANSFORM -> INICIO; ENTRADA con REINGRESO/MAESTRANZA/TRANSFORM/TERMINADO -> REINGRESO."""
+    if tipo == 'SALIDA' and _es_motivo_de_proceso(nombre):
+        return 'INICIO'
+    if tipo == 'ENTRADA' and _es_motivo_reingreso(nombre):
+        return 'REINGRESO'
+    return None
+
+
+def _etapa_oc_de_motivo(motivo_obj, nombre, tipo):
+    """Lo que manda es lo configurado en Catálogos -> Motivos (columna 'Proceso OC')."""
+    if motivo_obj is not None:
+        etapa = getattr(motivo_obj, 'etapa_oc', None)
+        return etapa if etapa in ETAPAS_OC_MOTIVO else None
+    return _etapa_oc_por_nombre(nombre, tipo)
 
 
 def _es_consumo_interno(nombre):
@@ -6714,7 +6735,20 @@ def _asegurar_kardex_extras():
             if es_pg and any(c[0] == 'proceso_oc_id' for c in faltan):
                 conn.execute(text(f'CREATE INDEX IF NOT EXISTS ix_{tabla}_proceso_oc_id ON {tabla} (proceso_oc_id)'))
     MovimientoDocumento.__table__.create(bind=db.engine, checkfirst=True)
+    # Motivos: qué etapa del proceso por OC marcan (configurable en Catálogos -> Motivos)
+    etapa_nueva = 'etapa_oc' not in {c['name'] for c in insp.get_columns('motivo_movimiento')}
+    if etapa_nueva:
+        with db.engine.begin() as conn:
+            if es_pg:
+                conn.execute(text("SET LOCAL lock_timeout = '5s'"))
+            conn.execute(text(f'ALTER TABLE motivo_movimiento ADD COLUMN {"IF NOT EXISTS " if es_pg else ""}etapa_oc VARCHAR(12)'))
     _sembrar_kardex_extras()
+    if etapa_nueva:
+        # Primera vez: se marca solo según el nombre (REQUERIMIENTO DE MAESTRANZA -> inicia; PRODUCTO TERMINADO,
+        # REINGRESO... -> reingreso). Después lo decide el administrador en el catálogo.
+        for m in MotivoMovimiento.query.all():
+            m.etapa_oc = _etapa_oc_por_nombre(m.nombre, m.tipo)
+        db.session.commit()
     _kardex_extras_ok = True
 
 
@@ -6728,7 +6762,8 @@ def _sembrar_kardex_extras():
             for v in OPCIONES_CONSUMO_INTERNO_INICIALES:
                 db.session.add(CatalogoValor(tipo='CONSUMO_INTERNO', valor=v, activo=True, es_predeterminado=False))
         if not any(_es_motivo_reingreso(m.nombre) for m in MotivoMovimiento.query.filter_by(tipo='ENTRADA').all()):
-            db.session.add(MotivoMovimiento(nombre='REINGRESO DE MAESTRANZA', tipo='ENTRADA', activo=True, es_predeterminado=True))
+            db.session.add(MotivoMovimiento(nombre='REINGRESO DE MAESTRANZA', tipo='ENTRADA', activo=True, es_predeterminado=True,
+                                            etapa_oc='REINGRESO'))
         db.session.add(SystemConfig(key='kardex_extras_sembrado', value='1', updated_by='Sistema'))
         db.session.commit()
     except IntegrityError:
@@ -6874,7 +6909,7 @@ def _documentos_de_movimientos(origen, ids):
     return resultado
 
 
-def _preparar_extras_movimiento(origen, tipo_kardex, motivo_nombre, prod_id, cantidad):
+def _preparar_extras_movimiento(origen, tipo_kardex, motivo_nombre, prod_id, cantidad, etapa_motivo='AUTO'):
     """Valida TODO lo nuevo del movimiento ANTES de tocar el stock: proceso por OC, consumo interno,
     observación y documentos. Devuelve (extras, None) o (None, mensaje_de_error)."""
     f = request.form
@@ -6893,10 +6928,13 @@ def _preparar_extras_movimiento(origen, tipo_kardex, motivo_nombre, prod_id, can
 
     # --- PROCESO POR N° DE OC ---
     sel = (f.get('proceso_oc_id') or '').strip()
-    inicio = tipo_kardex == 'SALIDA' and _es_motivo_de_proceso(motivo_nombre)
+    if etapa_motivo == 'AUTO':
+        etapa_motivo = _etapa_oc_por_nombre(motivo_nombre, tipo_kardex)
+    inicio = tipo_kardex == 'SALIDA' and etapa_motivo == 'INICIO'
+    reingreso_obligatorio = tipo_kardex == 'ENTRADA' and etapa_motivo == 'REINGRESO'
     if sel == '__nueva__':
         if not inicio:
-            return None, '⛔ Una OC nueva solo se crea en la salida a maestranza/transformación. Aquí elige una OC ya creada.'
+            return None, '⛔ Una OC nueva solo se crea en la salida que inicia el proceso (ej. requerimiento de maestranza). Aquí elige una OC ya creada.'
         numero = _normalizar_numero_oc(f.get('nuevo_numero_oc'))
         if len(numero) < 2:
             return None, '⛔ Escribe el N° de OC para iniciar el proceso.'
@@ -6937,9 +6975,9 @@ def _preparar_extras_movimiento(origen, tipo_kardex, motivo_nombre, prod_id, can
                               f'de {saldo["SALIDA_FINAL"]}: como máximo puedes sacar {max(disponible, 0)}.')
     else:
         if inicio:
-            return None, '⛔ Una salida a maestranza/transformación necesita su N° de OC: crea una nueva o elige una abierta.'
-        if tipo_kardex == 'ENTRADA' and _es_motivo_reingreso(motivo_nombre):
-            return None, '⛔ Un reingreso de maestranza/transformación debe ir con su OC: elígela de la lista.'
+            return None, f'⛔ El motivo {motivo_nombre} inicia un proceso: crea una OC nueva o elige una abierta.'
+        if reingreso_obligatorio:
+            return None, f'⛔ El motivo {motivo_nombre} es un reingreso: elige la OC con la que salió el material.'
 
     # --- DOCUMENTOS (máx. uno por tipo) ---
     for tipo_doc, etiqueta in TIPOS_DOCUMENTO_MOV.items():
@@ -7032,7 +7070,7 @@ def api_procesos_oc_abiertos():
         data.append({
             'id': p.id, 'numero_oc': p.numero_oc, 'etiqueta': _etq_oc(p.numero_oc), 'descripcion': p.descripcion or '', 'productos': n_prod,
             'saldo': _saldo_producto_en_proceso(p.id, origen, prod_id) if prod_id else None,
-            'documentos': [{'id': d.id, 'tipo': TIPOS_DOCUMENTO_MOV.get(d.tipo_documento, d.tipo_documento),
+            'documentos': [{'id': d.id, 'clave': d.tipo_documento, 'tipo': TIPOS_DOCUMENTO_MOV.get(d.tipo_documento, d.tipo_documento),
                             'url': url_for('ver_documento_kardex', doc_id=d.id)} for d in docs],
         })
     return {'procesos': data}
@@ -7233,8 +7271,10 @@ def ajustar_stock():
     # Proceso por OC, consumo interno, observación y documentos: se valida TODO antes de tocar el stock
     motivo_obj = MotivoMovimiento.query.get(int(motivo_id)) if (motivo_id or '').isdigit() else None
     motivo_nombre = motivo_obj.nombre if motivo_obj else motivo_texto
+    tipo_kardex_mov = 'ENTRADA' if tipo_ajuste == 'ingreso' else 'SALIDA'
     extras, error_extras = _preparar_extras_movimiento(
-        'ANCLAJES', 'ENTRADA' if tipo_ajuste == 'ingreso' else 'SALIDA', motivo_nombre, prod_id, cantidad)
+        'ANCLAJES', tipo_kardex_mov, motivo_nombre, prod_id, cantidad,
+        _etapa_oc_de_motivo(motivo_obj, motivo_nombre, tipo_kardex_mov))
     if error_extras:
         flash(error_extras)
         return redirect(url_origen or url_for('inventario'))
@@ -8962,8 +9002,10 @@ def ajustar_stock_importbolts():
     # Proceso por OC, consumo interno, observación y documentos: se valida TODO antes de tocar el stock
     motivo_obj = MotivoMovimiento.query.get(int(motivo_id)) if (motivo_id or '').isdigit() else None
     motivo_nombre = motivo_obj.nombre if motivo_obj else motivo_texto
+    tipo_kardex_mov = 'ENTRADA' if tipo_ajuste == 'ingreso' else 'SALIDA'
     extras, error_extras = _preparar_extras_movimiento(
-        'IMPORTBOLTS', 'ENTRADA' if tipo_ajuste == 'ingreso' else 'SALIDA', motivo_nombre, prod_id, cantidad)
+        'IMPORTBOLTS', tipo_kardex_mov, motivo_nombre, prod_id, cantidad,
+        _etapa_oc_de_motivo(motivo_obj, motivo_nombre, tipo_kardex_mov))
     if error_extras:
         flash(error_extras)
         return redirect(url_origen or url_for('inventario_importbolts'))
@@ -10599,7 +10641,7 @@ def listar_motivos_movimiento(tipo):
     if session.get('user_id') is None:
         return {'motivos': []}, 403
     motivos = MotivoMovimiento.query.filter_by(tipo=tipo.upper(), activo=True).order_by(MotivoMovimiento.nombre).all()
-    return {'motivos': [{'id': m.id, 'nombre': m.nombre} for m in motivos]}
+    return {'motivos': [{'id': m.id, 'nombre': m.nombre, 'etapa_oc': getattr(m, 'etapa_oc', None) or ''} for m in motivos]}
 
 
 @app.route('/api/motivos_movimiento/nuevo', methods=['POST'])
@@ -10616,7 +10658,8 @@ def crear_motivo_movimiento():
     if MotivoMovimiento.query.filter_by(nombre=nombre, tipo=tipo).first():
         return {'status': 'error', 'msg': f'El motivo "{nombre}" ya existe para {tipo.lower()}s.'}
 
-    nuevo = MotivoMovimiento(nombre=nombre, tipo=tipo, es_predeterminado=False)
+    nuevo = MotivoMovimiento(nombre=nombre, tipo=tipo, es_predeterminado=False,
+                             etapa_oc=_etapa_oc_por_nombre(nombre, tipo))   # se puede cambiar en Catálogos
     db.session.add(nuevo)
     db.session.commit()
     return {'status': 'success', 'id': nuevo.id, 'nombre': nuevo.nombre}
@@ -11972,6 +12015,23 @@ def admin_catalogo_valor_eliminar(val_id):
 # error de tipeo (p. ej. "CAJA X 8000" vs "CAJA POR 8000 UNIDADES"). Crear uno nuevo ya
 # existía (/api/motivos_movimiento/nuevo y /api/presentaciones/nueva, ambos solo admin).
 # ============================================
+
+@app.route('/admin/motivos/<int:motivo_id>/etapa_oc', methods=['POST'])
+def admin_motivo_etapa_oc(motivo_id):
+    """Qué hace el motivo en el proceso por OC: INICIO (salida que crea/usa una OC), REINGRESO (entrada que
+    vuelve a una OC) o nada. Solo cambia lo que se pide de aquí en adelante; el historial no se toca."""
+    if session.get('role') not in ['admin', 'almacen']:
+        return {'status': 'error', 'msg': 'No autorizado'}, 403
+    m = MotivoMovimiento.query.get_or_404(motivo_id)
+    etapa = (request.form.get('etapa_oc') or '').upper() or None
+    permitida = {'SALIDA': 'INICIO', 'ENTRADA': 'REINGRESO'}.get(m.tipo)
+    if etapa not in (None, permitida):
+        return {'status': 'error', 'msg': 'Esa opción no corresponde a este tipo de motivo.'}
+    m.etapa_oc = etapa
+    registrar_log(f"Motivo {m.nombre} ({m.tipo}): proceso OC -> {ETAPAS_OC_MOTIVO.get(etapa, 'ninguno')}", 'bi-diagram-3', 'text-info')
+    db.session.commit()
+    return {'status': 'success', 'etapa_oc': etapa or ''}
+
 
 @app.route('/admin/motivos/<int:motivo_id>/editar', methods=['POST'])
 def admin_motivo_editar(motivo_id):

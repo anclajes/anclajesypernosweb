@@ -772,6 +772,40 @@
     </div>
 </div>
 
+<style>
+    /* Documentos del Movimiento de Kardex: un color por tipo (igual que en el Kardex) */
+    .doc-tiles { display: grid; gap: 6px; }
+    .doc-tile { --c: #2563eb; --bg: #eff6ff; position: relative; display: flex; align-items: center; border: 1.5px dashed color-mix(in srgb, var(--c) 45%, #cbd5e1);
+                border-radius: 10px; background: #fff; transition: background .15s, border-color .15s, box-shadow .15s; }
+    .doc-tile.doc-orden_compra { --c: #2563eb; --bg: #eff6ff; }
+    .doc-tile.doc-nota_salida { --c: #d97706; --bg: #fffbeb; }
+    .doc-tile.doc-guia { --c: #059669; --bg: #ecfdf5; }
+    .doc-tile:hover { background: var(--bg); border-color: var(--c); }
+    .doc-tile-main { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; padding: 7px 10px; margin: 0; cursor: pointer; }
+    .doc-tile-main input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+    .doc-ico { flex: 0 0 38px; width: 38px; height: 38px; border-radius: 9px; display: flex; align-items: center; justify-content: center;
+               background: var(--bg); color: var(--c); font-size: 1.15rem; overflow: hidden; }
+    .doc-ico img { width: 100%; height: 100%; object-fit: cover; }
+    .doc-info { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
+    .doc-tit { font-size: .8rem; font-weight: 700; color: #0f172a; }
+    .doc-estado { font-size: .7rem; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .doc-sug { display: none; font-size: .6rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--c);
+               border: 1px solid var(--c); border-radius: 10px; padding: 0 6px; margin-left: 4px; vertical-align: 1px; }
+    .doc-tile.sugerido .doc-sug { display: inline-block; }
+    .doc-tile.sugerido:not(.con-archivo) { border-color: var(--c); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 12%, transparent); }
+    .doc-tile.con-archivo { border-style: solid; border-color: var(--c); background: var(--bg); }
+    .doc-tile.con-archivo .doc-estado { color: #0f172a; font-weight: 600; }
+    .doc-tile.con-archivo .doc-estado .bi { color: var(--c); }
+    .doc-quitar { display: none; border: 0; background: transparent; color: #64748b; padding: 0 12px; align-self: stretch; }
+    .doc-quitar:hover { color: #dc2626; }
+    .doc-tile.con-archivo .doc-quitar { display: block; }
+    .doc-tile.con-archivo .doc-tile-main input[type=file] + .doc-ico { box-shadow: inset 0 0 0 1.5px var(--c); }
+    .kx-proceso-box .form-text { font-size: .68rem; }
+    .doc-ya { --c: #475569; --bg: #f8fafc; display: inline-block; font-size: .7rem; font-weight: 600; text-decoration: none; color: #0f172a; background: var(--bg);
+              border: 1px solid color-mix(in srgb, var(--c) 35%, #e2e8f0); border-left: 3px solid var(--c); border-radius: 6px; padding: 0 6px; margin: 0 3px 2px 0; }
+    .doc-ya.doc-orden_compra { --c: #2563eb; --bg: #eff6ff; } .doc-ya.doc-nota_salida { --c: #d97706; --bg: #fffbeb; } .doc-ya.doc-guia { --c: #059669; --bg: #ecfdf5; }
+    .doc-ya .bi { color: var(--c); }
+</style>
 <div class="modal fade" id="modalStock" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content border-0 shadow-lg">
@@ -853,7 +887,9 @@
                             <input type="text" name="nuevo_numero_oc" id="stock_nuevo_numero_oc" maxlength="50"
                                    class="form-control form-control-sm text-uppercase mb-1" placeholder="N° de OC del cliente (ej: OC-4512)">
                             <input type="text" name="nuevo_oc_descripcion" id="stock_nuevo_oc_desc" maxlength="200"
-                                   class="form-control form-control-sm" placeholder="Cliente o trabajo (opcional)">
+                                   class="form-control form-control-sm" placeholder="Para qué es: cliente final y trabajo (opcional)">
+                            <div class="form-text">Ej: <i>Minera Sur – 20 ejes torneados</i>. Sirve para reconocer la OC en la lista.
+                                No es el RUC de abajo: ahí va <b>a quién se entrega el material</b> (el taller o maestranza).</div>
                         </div>
                         <div id="proceso_oc_info" class="small mt-1"></div>
                     </div>
@@ -961,18 +997,29 @@
                                   class="form-control form-control-sm shadow-sm" placeholder="Detalle útil para quien revise el Kardex"></textarea>
                     </div>
 
-                    <!-- DOCUMENTOS ADJUNTOS -->
+                    <!-- DOCUMENTOS ADJUNTOS: una tarjeta por tipo, cada una con su color e ícono -->
                     <div class="mb-1">
-                        <label class="small text-muted fw-bold mb-0"><i class="bi bi-paperclip"></i> Documentos (opcional)</label>
-                        <div class="form-text small mt-0 mb-2" style="font-size:.68rem;">PDF o foto (JPG, PNG, WEBP) · máx. 5MB cada uno. Se podrán ver y descargar desde el Kardex.</div>
-                        {% for clave_doc, etiqueta_doc in [('ORDEN_COMPRA', 'Orden de Compra'), ('NOTA_SALIDA', 'Nota de Salida'), ('GUIA', 'Guía')] %}
-                        <div class="input-group input-group-sm mb-1">
-                            <span class="input-group-text" style="min-width:118px; font-size:.74rem;">{{ etiqueta_doc }}</span>
-                            <input type="file" name="doc_{{ clave_doc }}" class="form-control doc-mov-input"
-                                   accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
-                                   onchange="validarDocMovimiento(this)">
+                        <div class="d-flex justify-content-between align-items-end mb-1">
+                            <label class="small text-muted fw-bold mb-0"><i class="bi bi-paperclip"></i> Documentos <span class="fw-normal">(opcional)</span></label>
+                            <span class="text-muted" style="font-size:.66rem;">PDF o foto · máx. 5MB c/u</span>
                         </div>
-                        {% endfor %}
+                        <div class="doc-tiles">
+                            {% for clave_doc, etiqueta_doc, icono_doc in [('ORDEN_COMPRA', 'Orden de Compra', 'bi-receipt'), ('NOTA_SALIDA', 'Nota de Salida', 'bi-box-arrow-up-right'), ('GUIA', 'Guía de Remisión', 'bi-truck')] %}
+                            <div class="doc-tile doc-{{ clave_doc|lower }}" id="tile_doc_{{ clave_doc }}" data-icono="{{ icono_doc }}">
+                                <label class="doc-tile-main">
+                                    <input type="file" name="doc_{{ clave_doc }}" class="doc-mov-input"
+                                           accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
+                                           onchange="validarDocMovimiento(this)">
+                                    <span class="doc-ico"><i class="bi {{ icono_doc }}"></i></span>
+                                    <span class="doc-info">
+                                        <span class="doc-tit">{{ etiqueta_doc }} <span class="doc-sug">Sugerido</span></span>
+                                        <span class="doc-estado"><i class="bi bi-cloud-arrow-up"></i> Toca para adjuntar</span>
+                                    </span>
+                                </label>
+                                <button type="button" class="doc-quitar" title="Quitar archivo" onclick="quitarDocMovimiento('{{ clave_doc }}')"><i class="bi bi-x-lg"></i></button>
+                            </div>
+                            {% endfor %}
+                        </div>
                         <div id="docs_oc_existentes" class="small mt-1"></div>
                     </div>
                 </div>
@@ -2175,6 +2222,7 @@ function cargarMotivos(tipoMovimiento) {
                 opt.value = m.id;
                 opt.text = m.nombre;
                 opt.dataset.nombre = m.nombre;
+                opt.dataset.etapaOc = m.etapa_oc || '';   // INICIO / REINGRESO (Catálogos -> Motivos -> Proceso OC)
                 select.appendChild(opt);
             });
         });
@@ -2207,7 +2255,7 @@ function seleccionarMotivo() {
         bloqueRef.classList.add('d-none');
         inputRef.value = '';
     }
-    actualizarBloquesMotivo(tipo, nombreMotivo);
+    actualizarBloquesMotivo(tipo, nombreMotivo, selected ? (selected.dataset.etapaOc || '') : '');
 }
 
 // =====================================================================
@@ -2248,9 +2296,52 @@ function reiniciarExtrasMovimiento() {
     document.getElementById('label_observacion').innerText = 'Observación (opcional)';
     modoProcesoOC = 'NINGUNO';
     ocRequerida = false;
+    document.querySelectorAll('.doc-tile').forEach(t => { pintarTileDoc(t, null); t.classList.remove('sugerido'); });
 }
 
-function actualizarBloquesMotivo(tipo, nombreMotivo) {
+// Documento sugerido según el paso: salida a proceso -> Nota de Salida; reingreso -> Orden de Compra;
+// venta -> Orden de Compra + Guía. Solo resalta la tarjeta: ninguno es obligatorio.
+function marcarDocsSugeridos(tipo, nombreMotivo) {
+    const n = txtSinTildes(nombreMotivo);
+    let sug = [];
+    if (modoProcesoOC === 'INICIO') sug = ['NOTA_SALIDA'];
+    else if (modoProcesoOC === 'REINGRESO' && ocRequerida) sug = ['ORDEN_COMPRA'];
+    else if (tipo === 'salida' && n.includes('VENTA')) sug = ['ORDEN_COMPRA', 'GUIA'];
+    else if (tipo === 'ingreso' && n.includes('COMPRA')) sug = ['GUIA'];
+    document.querySelectorAll('.doc-tile').forEach(t => t.classList.toggle('sugerido', sug.includes(t.id.replace('tile_doc_', ''))));
+}
+
+function pintarTileDoc(tile, archivo) {
+    const ico = tile.querySelector('.doc-ico');
+    const estado = tile.querySelector('.doc-estado');
+    if (ico.dataset.url) { URL.revokeObjectURL(ico.dataset.url); delete ico.dataset.url; }
+    if (!archivo) {
+        tile.classList.remove('con-archivo');
+        ico.innerHTML = `<i class="bi ${tile.dataset.icono}"></i>`;
+        estado.innerHTML = '<i class="bi bi-cloud-arrow-up"></i> Toca para adjuntar';
+        return;
+    }
+    tile.classList.add('con-archivo');
+    const esPdf = archivo.name.toLowerCase().endsWith('.pdf');
+    if (esPdf) {
+        ico.innerHTML = '<i class="bi bi-file-earmark-pdf-fill"></i>';
+    } else {
+        const url = URL.createObjectURL(archivo);
+        ico.dataset.url = url;
+        ico.innerHTML = `<img src="${url}" alt="">`;
+    }
+    const mb = archivo.size >= 1048576 ? (archivo.size / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(archivo.size / 1024)) + ' KB';
+    estado.innerHTML = `<i class="bi bi-check-circle-fill"></i> ${escTxt(archivo.name)} · ${mb}`;
+    estado.title = archivo.name;
+}
+
+function quitarDocMovimiento(clave) {
+    const input = document.querySelector(`input[name=doc_${clave}]`);
+    input.value = '';
+    pintarTileDoc(document.getElementById(`tile_doc_${clave}`), null);
+}
+
+function actualizarBloquesMotivo(tipo, nombreMotivo, etapaOC) {
     // CONSUMO INTERNO
     const esConsumo = tipo === 'salida' && esConsumoInterno(nombreMotivo);
     document.getElementById('bloqueConsumoInterno').classList.toggle('d-none', !esConsumo);
@@ -2258,10 +2349,16 @@ function actualizarBloquesMotivo(tipo, nombreMotivo) {
     if (esConsumo) cargarOpcionesConsumo();
 
     // PROCESO POR OC
+    // Lo decide la marca "Proceso OC" del motivo en Catálogos (① Inicia una OC / ② Reingreso a una OC)
     if (!nombreMotivo) { modoProcesoOC = 'NINGUNO'; ocRequerida = false; }
-    else if (tipo === 'salida' && esMotivoDeProceso(nombreMotivo)) { modoProcesoOC = 'INICIO'; ocRequerida = true; }
-    else if (tipo === 'ingreso') { modoProcesoOC = 'REINGRESO'; ocRequerida = esMotivoReingreso(nombreMotivo); }
+    else if (tipo === 'salida' && etapaOC === 'INICIO') { modoProcesoOC = 'INICIO'; ocRequerida = true; }
+    else if (tipo === 'ingreso') { modoProcesoOC = 'REINGRESO'; ocRequerida = etapaOC === 'REINGRESO'; }
     else { modoProcesoOC = 'FINAL'; ocRequerida = false; }
+    const labelProv = document.getElementById('label_proveedor_seccion');
+    if (modoProcesoOC === 'INICIO') labelProv.innerText = 'Destino: taller o maestranza que recibe el material';
+    else if (ocRequerida) labelProv.innerText = 'Proveedor: taller o maestranza que devuelve el producto';
+    else labelProv.innerText = (tipo === 'ingreso') ? 'Proveedor' : 'Destino / Cliente';
+    marcarDocsSugeridos(tipo, nombreMotivo);
     cargarProcesosAbiertos();
 }
 
@@ -2339,14 +2436,14 @@ function cambioProcesoOC() {
     }
     if (p.documentos && p.documentos.length) {
         docsBox.innerHTML = '<span class="text-muted">Esta OC ya tiene: </span>' + p.documentos.map(d =>
-            `<a href="${d.url}" target="_blank" class="badge text-bg-light border text-decoration-none me-1"><i class="bi bi-file-earmark-text"></i> ${escTxt(d.tipo)}</a>`).join('') +
+            `<a href="${d.url}" target="_blank" class="doc-ya doc-${(d.clave || '').toLowerCase()}"><i class="bi ${({ORDEN_COMPRA: 'bi-receipt', NOTA_SALIDA: 'bi-box-arrow-up-right', GUIA: 'bi-truck'})[d.clave] || 'bi-file-earmark'}"></i> ${escTxt(d.tipo)}</a>`).join('') +
             '<span class="text-muted"> — no hace falta volver a subirlos.</span>';
     }
 }
 
 function validarDocMovimiento(input) {
     const f = input.files && input.files[0];
-    if (!f) return;
+    if (!f) { pintarTileDoc(input.closest('.doc-tile'), null); return; }
     const ext = (f.name.split('.').pop() || '').toLowerCase();
     let error = '';
     if (!['pdf', 'jpg', 'jpeg', 'png', 'webp'].includes(ext)) error = 'Solo se permiten PDF o fotos (JPG, PNG, WEBP). Videos y otros archivos no.';
@@ -2354,8 +2451,11 @@ function validarDocMovimiento(input) {
     else if (f.size === 0) error = 'El archivo está vacío.';
     if (error) {
         input.value = '';
+        pintarTileDoc(input.closest('.doc-tile'), null);
         Swal.fire({ icon: 'warning', title: 'Archivo no permitido', text: error });
+        return;
     }
+    pintarTileDoc(input.closest('.doc-tile'), f);
 }
 
 

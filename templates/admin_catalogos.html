@@ -20,6 +20,7 @@
     .cat-tabs .nav-link:hover:not(.active) {
         background-color: #e9ecef;
     }
+    .motivo-etapa-oc.activa { background-color:#eef2ff; border-color:#a5b4fc; color:#3730a3; font-weight:600; }
 </style>
 
 <h4 class="fw-bold mb-3"><i class="bi bi-sliders"></i> Catálogos y Campos del Conteo Físico</h4>
@@ -214,6 +215,9 @@
             <i class="bi bi-info-circle-fill"></i> Estos motivos son <strong>compartidos entre Anclajes e ImportBolts</strong> —
             se usan al registrar un movimiento en el Kardex de cualquiera de los dos inventarios. Renombrar o desactivar uno
             aquí no cambia el historial ya registrado, solo las opciones que se ofrecen de ahora en adelante.
+            <div class="mt-1"><i class="bi bi-diagram-3-fill"></i> <b>Proceso OC:</b> marca con <b>① Inicia una OC</b> las salidas que abren un
+            proceso (ej. REQUERIMIENTO DE MAESTRANZA) y con <b>② Reingreso a una OC</b> las entradas que vuelven a él (ej. PRODUCTO TERMINADO).
+            Con eso el Movimiento de Kardex pide crear/elegir la OC o elegirla para el reingreso. La venta final no necesita marca: cualquier salida puede elegir una OC abierta.</div>
             <div class="mt-1"><i class="bi bi-arrow-left-right"></i> Para <b>dejar de usar un motivo y llevar su historial a otro</b>
             (ej. TRANSFORMACIÓN → REQUERIMIENTO DE MAESTRANZA) usa <b>"Pasar movimientos"</b>: cambia el motivo de todos sus
             movimientos en los dos Kardex (las cantidades y el stock no cambian) y, si marcas la opción, después lo elimina,
@@ -233,13 +237,22 @@
                         </div>
                         <div class="table-responsive">
                             <table class="table table-sm table-hover mb-0" id="tabla_motivo_{{ tipo }}">
-                                <thead><tr><th>Nombre</th><th class="text-center" title="Movimientos en el Kardex (Anclajes + Import Bolts)">Movim.</th><th class="text-center">Estado</th><th class="text-end">Acciones</th></tr></thead>
+                                <thead><tr><th>Nombre</th><th class="text-center" title="Movimientos en el Kardex (Anclajes + Import Bolts)">Movim.</th><th title="Qué hace este motivo en el Proceso por N° de OC">Proceso OC</th><th class="text-center">Estado</th><th class="text-end">Acciones</th></tr></thead>
                                 <tbody>
                                     {% for m in lista %}
                                     <tr id="fila-motivo-{{ m.id }}">
                                         <td id="nombre-motivo-{{ m.id }}">{{ m.nombre }} {% if m.es_predeterminado %}<span class="badge bg-light text-muted border ms-1" style="font-size:.65rem;">predeterminado</span>{% endif %}</td>
                                         {% set um = (usos_motivos or {}).get(m.id, {'total': 0, 'ANCLAJES': 0, 'IMPORTBOLTS': 0}) %}
                                         <td class="text-center"><span class="badge {{ 'bg-dark' if um.total else 'bg-light text-muted border' }}" title="Anclajes {{ um.ANCLAJES }} · Import Bolts {{ um.IMPORTBOLTS }}">{{ um.total }}</span></td>
+                                        <td>
+                                            {% set etapa_permitida = 'INICIO' if m.tipo == 'SALIDA' else 'REINGRESO' %}
+                                            <select class="form-select form-select-sm motivo-etapa-oc {{ 'activa' if m.etapa_oc }}" style="min-width:150px; font-size:.75rem;"
+                                                    onchange="cambiarEtapaOC({{ m.id }}, this)" title="Proceso por N° de OC">
+                                                <option value="" {{ 'selected' if not m.etapa_oc }}>— No usa OC</option>
+                                                <option value="{{ etapa_permitida }}" {{ 'selected' if m.etapa_oc == etapa_permitida }}>
+                                                    {{ '① Inicia una OC' if m.tipo == 'SALIDA' else '② Reingreso a una OC' }}</option>
+                                            </select>
+                                        </td>
                                         <td class="text-center" id="estado-motivo-{{ m.id }}">
                                             {% if m.activo %}<span class="badge bg-success">Activo</span>{% else %}<span class="badge bg-secondary">Inactivo</span>{% endif %}
                                         </td>
@@ -260,7 +273,7 @@
                                         </td>
                                     </tr>
                                     {% else %}
-                                    <tr id="fila-vacia-motivo-{{ tipo }}"><td colspan="4" class="text-center text-muted py-3">Sin motivos aún.</td></tr>
+                                    <tr id="fila-vacia-motivo-{{ tipo }}"><td colspan="5" class="text-center text-muted py-3">Sin motivos aún.</td></tr>
                                     {% endfor %}
                                 </tbody>
                             </table>
@@ -677,12 +690,30 @@ function agregarMotivo(tipo) {
                 </td>`;
             tbody.appendChild(fila);
             input.value = '';
-            Swal.fire({ icon: 'success', title: 'Agregado', timer: 1200, showConfirmButton: false });
+            // Se recarga para mostrar la fila completa (con su columna "Proceso OC")
+            Swal.fire({ icon: 'success', title: 'Agregado', timer: 1000, showConfirmButton: false })
+                .then(() => { location.hash = 'tab-motivos'; location.reload(); });
         })
         .catch(err => {
             console.error('Error en agregarMotivo:', err);
             Swal.fire({ icon: 'error', title: 'Error de conexión', text: 'No se pudo comunicar con el servidor. Intente de nuevo.' });
         });
+}
+
+function cambiarEtapaOC(id, sel) {
+    const fd = new FormData();
+    fd.append('etapa_oc', sel.value);
+    fetch(`/admin/motivos/${id}/etapa_oc`, { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(data => {
+            if (data.status !== 'success') {
+                Swal.fire({ icon: 'error', title: 'No se pudo guardar', text: data.msg });
+                return;
+            }
+            sel.classList.toggle('activa', !!data.etapa_oc);
+            Swal.fire({ icon: 'success', title: 'Guardado', timer: 900, showConfirmButton: false });
+        })
+        .catch(() => Swal.fire({ icon: 'error', title: 'Error de conexión', text: 'Intente de nuevo.' }));
 }
 
 function editarMotivo(id) {

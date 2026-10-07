@@ -588,6 +588,8 @@ class MotivoMovimiento(db.Model):
     activo = db.Column(db.Boolean, default=True)
     es_predeterminado = db.Column(db.Boolean, default=False)  # protege los de fábrica de borrado accidental
     creado_en = db.Column(db.DateTime, default=hora_peru)
+    # Proceso por N° de OC: 'INICIO' (salida que crea/elige la OC), 'REINGRESO' (entrada que vuelve a la OC) o None
+    etapa_oc = db.Column(db.String(12), nullable=True)
 
     __table_args__ = (db.UniqueConstraint('nombre', 'tipo', name='uq_motivo_nombre_tipo'),)
 
