@@ -4,8 +4,41 @@
 {% block subtitle %}Directorio y Control de Accesos{% endblock %}
 
 {% block content %}
+<style>
+    .usr-kpi { border-radius: 14px; padding: 12px 16px; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.08); height: 100%; }
+    .usr-kpi .num { font-size: 1.8rem; font-weight: 800; line-height: 1; }
+    .usr-kpi .lbl { font-size: .78rem; color: #64748b; font-weight: 600; }
+    .punto { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+    .punto.on { background: #22c55e; box-shadow: 0 0 0 3px rgba(34,197,94,.25); }
+    .punto.off { background: #cbd5e1; }
+    .fila-bloqueada { background: #fff5f5 !important; }
+</style>
+
+<!-- RESUMEN -->
+<div class="row g-2 g-md-3 mb-3">
+    <div class="col-6 col-lg-3"><div class="usr-kpi"><div class="num text-success">{{ resumen.en_linea }}</div>
+        <div class="lbl"><span class="punto on"></span>Conectados ahora</div></div></div>
+    <div class="col-6 col-lg-3"><div class="usr-kpi"><div class="num text-danger">{{ resumen.bloqueados }}</div>
+        <div class="lbl"><i class="bi bi-lock-fill"></i> Bloqueados</div></div></div>
+    <div class="col-6 col-lg-3"><div class="usr-kpi"><div class="num text-warning">{{ resumen.sin_entrar }}</div>
+        <div class="lbl"><i class="bi bi-hourglass-bottom"></i> Sin entrar hace +30 días</div></div></div>
+    <div class="col-6 col-lg-3"><div class="usr-kpi"><div class="num" style="color:#b45309;">{{ resumen.fallidos_24h }}</div>
+        <div class="lbl"><i class="bi bi-shield-exclamation"></i> Intentos fallidos (24 h)</div></div></div>
+</div>
+
+{% if alertas %}
+<div class="alert alert-danger shadow-sm small">
+    <div class="fw-bold mb-1"><i class="bi bi-shield-fill-exclamation"></i> Bloqueos por contraseñas incorrectas en las últimas 24 horas</div>
+    {% for a in alertas %}
+    <div>• <b>@{{ a.username_intentado }}</b> — {{ a.fecha.strftime('%d/%m %H:%M') }} · IP {{ a.ip or '-' }} · {{ a.dispositivo or '' }} {{ a.navegador or '' }}
+        {% if a.user_id %}<a href="{{ url_for('ficha_usuario', user_id=a.user_id) }}" class="ms-1">ver ficha</a>{% endif %}</div>
+    {% endfor %}
+    <div class="mt-1 text-muted">Si no fue esa persona, revisa su ficha o bloquea su usuario.</div>
+</div>
+{% endif %}
+
 <!-- ENCABEZADO Y BUSCADOR RESPONSIVE -->
-<div class="d-flex flex-column flex-md-row justify-content-between align-items-stretch align-items-md-center mb-4 gap-3">
+<div class="d-flex flex-column flex-md-row justify-content-between align-items-stretch align-items-md-center mb-3 gap-3">
     <div class="input-group w-100 w-md-50 shadow-sm">
         <span class="input-group-text bg-white border-end-0"><i class="bi bi-search text-muted"></i></span>
         <input type="text" id="filtroTabla" class="form-control border-start-0" placeholder="Buscar por nombre o usuario..." onkeyup="filtrarTabla()">
@@ -18,31 +51,37 @@
 
 <!-- TABLA PRINCIPAL RESPONSIVE -->
 <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
-    <div class="card-header bg-white py-3 border-0">
-        <h6 class="mb-0 fw-bold text-muted text-uppercase small ls-1">Personal Registrado</h6>
+    <div class="card-header bg-white py-3 border-0 d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <h6 class="mb-0 fw-bold text-muted text-uppercase small ls-1">Personal Registrado ({{ usuarios|length }})</h6>
+        <span class="small text-muted"><span class="punto on"></span>conectado = usó el sistema en los últimos {{ minutos_en_linea }} min</span>
     </div>
-    
+
     <div class="table-responsive">
         <table class="table align-middle table-hover mb-0 text-nowrap" id="tablaUsuarios">
             <thead class="bg-light">
                 <tr>
                     <th class="ps-4 text-uppercase text-muted small fw-bold" style="min-width: 250px;">Perfil</th>
                     <th class="text-uppercase text-muted small fw-bold" style="min-width: 150px;">Rol / Cargo</th>
-                    <th class="text-uppercase text-muted small fw-bold" style="min-width: 180px;">Contacto</th>
-                    <th class="text-center pe-4 text-uppercase text-muted small fw-bold" style="min-width: 100px;">Acciones</th>
+                    <th class="text-uppercase text-muted small fw-bold" style="min-width: 190px;">Estado / Última conexión</th>
+                    <th class="text-uppercase text-muted small fw-bold" style="min-width: 170px;">Contacto</th>
+                    <th class="text-center pe-4 text-uppercase text-muted small fw-bold" style="min-width: 200px;">Acciones</th>
                 </tr>
             </thead>
             <tbody>
                 {% for u in usuarios %}
-                <tr>
+                {% set temporal = u.id in bloqueo_temp %}
+                <tr class="{{ 'fila-bloqueada' if u.bloqueado or temporal else '' }}">
                     <td class="ps-4">
                         <div class="d-flex align-items-center gap-3">
-                            <div class="rounded-circle d-flex align-items-center justify-content-center fw-bold text-white shadow-sm flex-shrink-0" 
-                                 style="width: 42px; height: 42px; font-size: 1.1rem; background-color: {{ 'var(--bs-primary)' if u.role == 'admin' else '#6c757d' }};">
-                                {{ u.username[0]|upper }}
+                            <div class="position-relative flex-shrink-0">
+                                <div class="rounded-circle d-flex align-items-center justify-content-center fw-bold text-white shadow-sm"
+                                     style="width: 42px; height: 42px; font-size: 1.1rem; background-color: {{ 'var(--bs-primary)' if u.role == 'admin' else '#6c757d' }};">
+                                    {{ u.username[0]|upper }}
+                                </div>
+                                {% if u.id in en_linea %}<span class="punto on position-absolute" style="right:-3px; bottom:-1px; border:2px solid #fff; margin:0;" title="Conectado ahora"></span>{% endif %}
                             </div>
                             <div class="d-flex flex-column text-wrap">
-                                <span class="fw-bold text-dark lh-sm">{{ u.nombre_completo }}</span>
+                                <a href="{{ url_for('ficha_usuario', user_id=u.id) }}" class="fw-bold text-dark lh-sm text-decoration-none">{{ u.nombre_completo }}</a>
                                 <div class="d-flex align-items-center mt-1">
                                     <small class="text-muted me-1">@{{ u.username }}</small>
                                     {% if u.role == 'admin' %}
@@ -72,9 +111,23 @@
                         {% elif u.role == 'almacen_visor' %}
                             <span class="badge bg-light text-dark border mb-1"><i class="bi bi-eye-fill"></i> Visor Inventario</span>
                         {% endif %}
-                        
-                        <div class="small text-muted" style="font-size: 0.75rem;">
-                            {{ u.cargo_formal or 'Sin cargo definido' }}
+                        <div class="small text-muted" style="font-size: 0.75rem;">{{ u.cargo_formal or 'Sin cargo definido' }}</div>
+                    </td>
+
+                    <td class="small">
+                        {% if u.bloqueado %}
+                            <span class="badge bg-danger" title="{{ u.bloqueado_motivo or 'Sin motivo anotado' }} — por {{ u.bloqueado_por or '-' }}"><i class="bi bi-lock-fill"></i> Bloqueado</span>
+                            {% if u.bloqueado_motivo %}<div class="text-danger text-wrap" style="max-width:220px; font-size:.72rem;">{{ u.bloqueado_motivo }}</div>{% endif %}
+                        {% elif temporal %}
+                            <span class="badge text-dark" style="background:#fde68a;" title="5 contraseñas incorrectas seguidas"><i class="bi bi-hourglass-split"></i> Bloqueo temporal hasta {{ u.bloqueo_temporal_hasta.strftime('%H:%M') }}</span>
+                        {% elif u.id in en_linea %}
+                            <span class="fw-bold text-success"><span class="punto on"></span>Conectado ahora</span>
+                        {% else %}
+                            <span class="text-muted"><span class="punto off"></span>Desconectado</span>
+                        {% endif %}
+                        <div class="text-muted mt-1" style="font-size:.75rem;" title="Último uso del sistema{% if u.ultima_actividad %}: {{ u.ultima_actividad.strftime('%d/%m/%Y %H:%M') }}{% endif %}">
+                            <i class="bi bi-clock-history"></i> {{ u.ultima_actividad|hace }}
+                            {% if not u.ultima_actividad or u.ultima_actividad < hace_30d %}<span class="badge bg-warning-subtle text-warning-emphasis border ms-1">+30 días</span>{% endif %}
                         </div>
                     </td>
 
@@ -84,9 +137,8 @@
                         {% else %}
                             <div class="text-muted small mb-1">--</div>
                         {% endif %}
-                        
                         {% if u.email_empresa %}
-                            <div class="text-muted small text-truncate" style="max-width: 180px;" title="{{u.email_empresa}}">
+                            <div class="text-muted small text-truncate" style="max-width: 170px;" title="{{u.email_empresa}}">
                                 <i class="bi bi-envelope"></i> {{ u.email_empresa }}
                             </div>
                         {% endif %}
@@ -94,34 +146,65 @@
 
                     <td class="text-center pe-4">
                         <div class="btn-group">
+                            <a class="btn btn-sm btn-light border text-dark" href="{{ url_for('ficha_usuario', user_id=u.id) }}" title="Ver ficha: accesos y acciones">
+                                <i class="bi bi-person-vcard"></i>
+                            </a>
                             <button class="btn btn-sm btn-light border text-primary"
-                                    onclick="abrirModalEditar('{{u.id}}', '{{u.nombre_completo}}', '{{u.username}}', '{{u.role}}', '{{u.celular}}','{{u.cargo_formal}}', '{{u.email_empresa}}', {{ 'true' if u.es_superadmin else 'false' }})"
+                                    onclick="abrirModalEditar({{ u.id|string|tojson|forceescape }}, {{ u.nombre_completo|tojson|forceescape }}, {{ u.username|tojson|forceescape }}, {{ u.role|tojson|forceescape }}, {{ (u.celular or '')|tojson|forceescape }}, {{ (u.cargo_formal or '')|tojson|forceescape }}, {{ (u.email_empresa or '')|tojson|forceescape }}, {{ 'true' if u.es_superadmin else 'false' }})"
                                     title="Editar Perfil">
                                 <i class="bi bi-pencil-square"></i>
                             </button>
-                            
                             {% if u.id != session.get('user_id') %}
-                            <a href="{{ url_for('eliminar_usuario', user_id=u.id) }}" 
-                               class="btn btn-sm btn-light border text-danger hover-danger"
-                               onclick="return confirm('⛔ PRECAUCIÓN:\n\n¿Está seguro de ELIMINAR al usuario @{{u.username}}?\n\nEsta acción borrará su acceso, pero mantendrá su historial de ventas/kardex por seguridad.');"
-                               title="Eliminar Acceso">
-                                <i class="bi bi-trash"></i>
-                            </a>
+                                {% if u.bloqueado or temporal %}
+                                <button class="btn btn-sm btn-light border text-success" title="Desbloquear" onclick="accionUsuario('desbloquear', {{ u.id }}, {{ u.username|tojson|forceescape }})"><i class="bi bi-unlock-fill"></i></button>
+                                {% else %}
+                                <button class="btn btn-sm btn-light border text-danger" title="Bloquear acceso" onclick="accionUsuario('bloquear', {{ u.id }}, {{ u.username|tojson|forceescape }})"><i class="bi bi-lock-fill"></i></button>
+                                {% endif %}
+                                <button class="btn btn-sm btn-light border text-warning" title="Cerrar su sesión en todos sus dispositivos" onclick="accionUsuario('cerrar_sesion', {{ u.id }}, {{ u.username|tojson|forceescape }})"><i class="bi bi-box-arrow-right"></i></button>
+                                <button class="btn btn-sm btn-light border text-secondary" title="Desactivar (no se borra su historial)" onclick="accionUsuario('desactivar', {{ u.id }}, {{ u.username|tojson|forceescape }})"><i class="bi bi-person-x"></i></button>
                             {% else %}
-                            <button class="btn btn-sm btn-light border text-muted" disabled title="No puedes borrar tu propia cuenta activa">
-                                <i class="bi bi-lock-fill"></i>
-                            </button>
+                            <button class="btn btn-sm btn-light border text-muted" disabled title="Es tu propia cuenta"><i class="bi bi-person-check"></i></button>
                             {% endif %}
                         </div>
                     </td>
                 </tr>
                 {% else %}
-                <tr><td colspan="4" class="text-center py-5 text-muted">No se encontraron usuarios.</td></tr>
+                <tr><td colspan="5" class="text-center py-5 text-muted">No se encontraron usuarios.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
 </div>
+
+<!-- USUARIOS DESACTIVADOS -->
+{% if desactivados %}
+<div class="card border-0 shadow-sm rounded-4 mt-3">
+    <div class="card-header bg-white py-3 border-0">
+        <a class="fw-bold text-muted text-uppercase small text-decoration-none" data-bs-toggle="collapse" href="#boxDesactivados">
+            <i class="bi bi-person-x"></i> Usuarios desactivados ({{ desactivados|length }}) <i class="bi bi-chevron-down"></i>
+        </a>
+        <div class="small text-muted">No pueden ingresar y no aparecen para asignar, pero sus ventas, Kardex y auditorías se conservan.</div>
+    </div>
+    <div class="collapse" id="boxDesactivados">
+        <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0 small">
+                <thead class="table-light"><tr><th class="ps-4">Usuario</th><th>Rol</th><th>Desactivado</th><th>Última conexión</th><th class="text-end pe-4"></th></tr></thead>
+                <tbody>
+                    {% for u in desactivados %}
+                    <tr class="text-muted">
+                        <td class="ps-4"><a href="{{ url_for('ficha_usuario', user_id=u.id) }}" class="fw-bold text-secondary">{{ u.nombre_completo }}</a> <span>@{{ u.username }}</span></td>
+                        <td>{{ u.role }}</td>
+                        <td>{{ u.desactivado_fecha.strftime('%d/%m/%y %H:%M') if u.desactivado_fecha else '-' }} <span class="d-block" style="font-size:.72rem;">por {{ u.desactivado_por or '-' }}</span></td>
+                        <td>{{ u.ultima_actividad|hace }}</td>
+                        <td class="text-end pe-4"><button class="btn btn-sm btn-outline-success" onclick="accionUsuario('reactivar', {{ u.id }}, {{ u.username|tojson|forceescape }})"><i class="bi bi-arrow-counterclockwise"></i> Reactivar</button></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
 
 <!-- MODAL USUARIO RESPONSIVE -->
 <div class="modal fade" id="modalUsuario" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
@@ -346,5 +429,41 @@
 
         new bootstrap.Modal(document.getElementById('modalUsuario')).show();
     }
+</script>
+<script>
+// --- Acciones de control de acceso (bloquear, desbloquear, cerrar sesión, desactivar, reactivar) ---
+const URL_ACCION_USUARIO = {
+    bloquear: id => `/usuarios/${id}/bloquear`,
+    desbloquear: id => `/usuarios/${id}/desbloquear`,
+    cerrar_sesion: id => `/usuarios/${id}/cerrar_sesion`,
+    desactivar: id => `/usuarios/eliminar/${id}`,
+    reactivar: id => `/usuarios/${id}/reactivar`,
+};
+const TEXTO_ACCION_USUARIO = {
+    bloquear: u => ({ title: `¿Bloquear a @${u}?`, html: 'No podrá ingresar. Si está conectado, sale en su siguiente clic.<br>Al intentar entrar verá: <i>"Tu usuario está bloqueado, comunícate con el administrador."</i>', motivo: 'Motivo del bloqueo (opcional, solo lo ve Gerencia)', boton: 'Sí, bloquear', color: '#dc3545' }),
+    desbloquear: u => ({ title: `¿Desbloquear a @${u}?`, html: 'Podrá volver a ingresar con su contraseña.', boton: 'Sí, desbloquear', color: '#198754' }),
+    cerrar_sesion: u => ({ title: `¿Cerrar la sesión de @${u}?`, html: 'Se cierra en todos sus dispositivos (sale en su siguiente clic). Puede volver a ingresar con su contraseña.', boton: 'Sí, cerrar sesión', color: '#fd7e14' }),
+    desactivar: u => ({ title: `¿Desactivar a @${u}?`, html: 'Ya no podrá ingresar y dejará de aparecer en la lista y para asignar.<br><b>Su historial (ventas, Kardex, auditorías) se conserva</b> y se puede reactivar después.', motivo: 'Motivo (opcional)', boton: 'Sí, desactivar', color: '#6c757d' }),
+    reactivar: u => ({ title: `¿Reactivar a @${u}?`, html: 'Podrá volver a ingresar con su contraseña.', boton: 'Sí, reactivar', color: '#198754' }),
+};
+function accionUsuario(accion, id, username) {
+    const t = TEXTO_ACCION_USUARIO[accion](username);
+    Swal.fire({
+        title: t.title, html: t.html, icon: 'question', showCancelButton: true, confirmButtonText: t.boton,
+        cancelButtonText: 'Cancelar', confirmButtonColor: t.color,
+        input: t.motivo ? 'text' : undefined, inputPlaceholder: t.motivo || undefined
+    }).then(r => {
+        if (!r.isConfirmed) return;
+        const fd = new FormData();
+        if (t.motivo && r.value) fd.append('motivo', r.value);
+        fetch(URL_ACCION_USUARIO[accion](id), { method: 'POST', body: fd })
+            .then(x => x.json())
+            .then(d => {
+                if (d.status === 'success') Swal.fire({ icon: 'success', title: 'Listo', text: d.msg, timer: 1800, showConfirmButton: false }).then(() => location.reload());
+                else Swal.fire('No se pudo', d.msg || 'Error', 'error');
+            })
+            .catch(() => Swal.fire('Error', 'No se pudo comunicar con el servidor.', 'error'));
+    });
+}
 </script>
 {% endblock %}

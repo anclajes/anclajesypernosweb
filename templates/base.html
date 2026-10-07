@@ -199,8 +199,11 @@
                 {% if session.get('role') in ['admin', 'administracion'] %}
                 <div class="nav-title">Sistema</div>
                 {% if session.get('role') == 'admin' %}
-                <a href="{{ url_for('gestion_usuarios') }}" class="nav-link {{ 'active' if request.endpoint == 'gestion_usuarios' }}">
+                <a href="{{ url_for('gestion_usuarios') }}" class="nav-link {{ 'active' if request.endpoint in ['gestion_usuarios', 'ficha_usuario'] }}">
                     <i class="bi bi-people me-2"></i> <span>Usuarios</span>
+                    {% if alertas_seguridad %}
+                    <span class="badge rounded-pill bg-danger ms-1" title="Usuarios bloqueados por contraseñas incorrectas en las últimas 24 h">{{ alertas_seguridad }}</span>
+                    {% endif %}
                 </a>
                 {% endif %}
                 <a href="{{ url_for('metas_vendedores') }}" class="nav-link {{ 'active' if request.endpoint == 'metas_vendedores' }}">

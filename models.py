@@ -32,6 +32,37 @@ class User(db.Model):
     # tocar esas rutas a menos que también tenga esto en True.
     es_superadmin = db.Column(db.Boolean, default=False, nullable=False)
 
+    # --- Control de acceso (las columnas se agregan solas al arrancar: ver _asegurar_control_usuarios) ---
+    bloqueado = db.Column(db.Boolean, default=False)              # bloqueo manual del administrador
+    bloqueado_motivo = db.Column(db.String(255))
+    bloqueado_por = db.Column(db.String(100))
+    bloqueado_fecha = db.Column(db.DateTime)
+    desactivado = db.Column(db.Boolean, default=False)            # "eliminado": no entra, pero su historial se conserva
+    desactivado_por = db.Column(db.String(100))
+    desactivado_fecha = db.Column(db.DateTime)
+    ultimo_login = db.Column(db.DateTime)
+    ultima_actividad = db.Column(db.DateTime)                     # último clic en el sistema
+    intentos_fallidos = db.Column(db.Integer, default=0)          # contraseñas incorrectas seguidas
+    bloqueo_temporal_hasta = db.Column(db.DateTime)               # 5 intentos fallidos -> 15 minutos
+    sesion_version = db.Column(db.Integer, default=0)             # +1 = cerrar su sesión a distancia
+
+
+class AccesoUsuario(db.Model):
+    """Historial de accesos: ingresos, intentos fallidos, bloqueos, cierres de sesión."""
+    __tablename__ = 'acceso_usuario'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True, index=True)
+    username_intentado = db.Column(db.String(100))
+    fecha = db.Column(db.DateTime, default=hora_peru, index=True)
+    evento = db.Column(db.String(30), nullable=False)
+    ip = db.Column(db.String(64))
+    dispositivo = db.Column(db.String(20))
+    navegador = db.Column(db.String(80))
+    user_agent = db.Column(db.String(400))
+    detalle = db.Column(db.String(255))
+
+    usuario = db.relationship('User', foreign_keys=[user_id])
+
 # --- 3. PRODUCTOS ---
 class Product(db.Model):
     id = db.Column(db.Integer, primary_key=True)

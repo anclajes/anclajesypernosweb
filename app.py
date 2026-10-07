@@ -3,6 +3,7 @@ from models import db, User, Product, Category, Client, Order, OrderDetail, Prod
 from models import ProductImportBolts, CategoryImportBolts, ProductMovementImportBolts
 from models import MaestroCambioLog, MaestroProducto
 from models import CorreccionAuditoria, CorreccionAuditoriaFoto
+from models import AccesoUsuario
 from models import ProductMovement
 from models import Payment
 from models import Category
@@ -1661,28 +1662,240 @@ def calidades_de_familia():
     except Exception as e:
         return {'status': 'error', 'msg': str(e)}
     
+# ============================================================================================
+# CONTROL DE ACCESO DE USUARIOS
+#  - Cada página revisa al usuario en la base: si lo bloquearon, desactivaron, le cerraron la
+#    sesión a distancia o le cambiaron el rol, se aplica en su siguiente clic.
+#  - Última conexión / "conectado ahora" (actividad en los últimos 5 minutos).
+#  - 5 contraseñas incorrectas seguidas -> ese usuario queda bloqueado 15 minutos (y se avisa al
+#    admin). 10 fallidos desde una misma conexión (IP) en 15 minutos -> esa IP espera 15 minutos.
+#  - La sesión se cierra sola tras 8 horas sin uso.
+#  - Historial de accesos (AccesoUsuario): fecha, IP, celular/PC, navegador.
+# ============================================================================================
+MAX_INTENTOS_LOGIN = 5
+MINUTOS_BLOQUEO_TEMPORAL = 15
+MAX_FALLIDOS_POR_IP = 10
+INACTIVIDAD_MAXIMA = timedelta(hours=8)
+MINUTOS_EN_LINEA = 5
+_control_usuarios_ok = False
+
+_COLUMNAS_CONTROL_USUARIO = [
+    ('bloqueado', 'BOOLEAN', 'FALSE'), ('bloqueado_motivo', 'VARCHAR(255)', None), ('bloqueado_por', 'VARCHAR(100)', None),
+    ('bloqueado_fecha', 'TIMESTAMP', None), ('desactivado', 'BOOLEAN', 'FALSE'), ('desactivado_por', 'VARCHAR(100)', None),
+    ('desactivado_fecha', 'TIMESTAMP', None), ('ultimo_login', 'TIMESTAMP', None), ('ultima_actividad', 'TIMESTAMP', None),
+    ('intentos_fallidos', 'INTEGER', '0'), ('bloqueo_temporal_hasta', 'TIMESTAMP', None), ('sesion_version', 'INTEGER', '0'),
+]
+
+
+def _asegurar_control_usuarios():
+    """Agrega a la tabla "user" las columnas de control de acceso y crea acceso_usuario, si faltan
+    (no hace falta correr ninguna ruta /fix_). Si ya están, no hace nada."""
+    global _control_usuarios_ok
+    if _control_usuarios_ok:
+        return
+    from sqlalchemy import inspect as sa_inspect
+    existentes = {c['name'] for c in sa_inspect(db.engine).get_columns('user')}
+    faltan = [c for c in _COLUMNAS_CONTROL_USUARIO if c[0] not in existentes]
+    if faltan:
+        es_pg = db.engine.dialect.name == 'postgresql'
+        with db.engine.begin() as conn:
+            if es_pg:
+                conn.execute(text("SET LOCAL lock_timeout = '5s'"))
+            for nombre, tipo, defecto in faltan:
+                if defecto == 'FALSE' and not es_pg:
+                    defecto = '0'
+                conn.execute(text(f'ALTER TABLE "user" ADD COLUMN {"IF NOT EXISTS " if es_pg else ""}{nombre} {tipo}'
+                                  f'{" DEFAULT " + defecto if defecto else ""}'))
+    AccesoUsuario.__table__.create(bind=db.engine, checkfirst=True)
+    _control_usuarios_ok = True
+
+
+try:
+    with app.app_context():
+        _asegurar_control_usuarios()
+except Exception as _e_ctrl_usuarios:
+    print(f"Aviso: no se pudo preparar el control de usuarios al arrancar: {_e_ctrl_usuarios}")
+
+
+def _ip_cliente():
+    reenviada = request.headers.get('X-Forwarded-For', '')
+    return (reenviada.split(',')[0].strip() if reenviada else (request.remote_addr or ''))[:64]
+
+
+def _info_dispositivo(ua):
+    """('Celular' | 'Tablet' | 'PC', 'Chrome · Android') a partir del navegador."""
+    u = (ua or '').lower()
+    if 'ipad' in u or 'tablet' in u or ('android' in u and 'mobile' not in u):
+        disp = 'Tablet'
+    elif 'mobi' in u or 'iphone' in u or 'android' in u:
+        disp = 'Celular'
+    else:
+        disp = 'PC'
+    for clave, nombre in [('edg/', 'Edge'), ('opr/', 'Opera'), ('opera', 'Opera'), ('samsungbrowser', 'Samsung Internet'),
+                          ('firefox/', 'Firefox'), ('fxios', 'Firefox'), ('crios', 'Chrome'), ('chrome/', 'Chrome'), ('safari/', 'Safari')]:
+        if clave in u:
+            nav = nombre
+            break
+    else:
+        nav = 'Otro'
+    for clave, nombre in [('windows', 'Windows'), ('android', 'Android'), ('iphone', 'iOS'), ('ipad', 'iPadOS'),
+                          ('mac os', 'macOS'), ('cros', 'ChromeOS'), ('linux', 'Linux')]:
+        if clave in u:
+            so = nombre
+            break
+    else:
+        so = ''
+    return disp, (f"{nav} · {so}" if so else nav)
+
+
+def _registrar_acceso(evento, user=None, username='', detalle=''):
+    """Anota un evento en el historial de accesos (no hace commit)."""
+    ua = request.headers.get('User-Agent', '') if request else ''
+    disp, nav = _info_dispositivo(ua)
+    db.session.add(AccesoUsuario(
+        user_id=user.id if user else None, username_intentado=(username or (user.username if user else ''))[:100],
+        fecha=hora_peru(), evento=evento, ip=_ip_cliente(), dispositivo=disp, navegador=nav[:80],
+        user_agent=ua[:400], detalle=(detalle or '')[:255]))
+
+
+def _quiere_json():
+    """True si la petición la hizo JavaScript (fetch) y espera JSON en vez de una página."""
+    return 'text/html' not in (request.headers.get('Accept') or '') or request.path.startswith('/api/')
+
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     error = None
     username_val = ''
+    # Mensaje de por qué se cerró la sesión (bloqueo, inactividad, cierre a distancia...)
+    aviso = session.pop('aviso_login', None)
     if request.method == 'POST':
         username_val = request.form.get('username', '').strip()
         username = username_val.lower()  # el usuario se guarda en minúsculas al crearlo
         password = request.form.get('password', '')
-
+        try:
+            _asegurar_control_usuarios()
+        except Exception:
+            app.logger.exception("No se pudo preparar el control de usuarios")
+        ahora = hora_peru()
         user = User.query.filter_by(username=username).first()
 
+        fallidos_ip = AccesoUsuario.query.filter(
+            AccesoUsuario.ip == _ip_cliente(), AccesoUsuario.evento == 'LOGIN_FALLIDO',
+            AccesoUsuario.fecha >= ahora - timedelta(minutes=MINUTOS_BLOQUEO_TEMPORAL)).count()
+        if fallidos_ip >= MAX_FALLIDOS_POR_IP:
+            _registrar_acceso('LOGIN_RECHAZADO', user, username, 'Demasiados intentos fallidos desde esta conexión (IP)')
+            db.session.commit()
+            error = (f'Demasiados intentos fallidos desde esta conexión. Espera {MINUTOS_BLOQUEO_TEMPORAL} minutos '
+                     f'e inténtalo de nuevo.')
+            return render_template('login.html', error=error, username_val=username_val)
+
+        if user and user.bloqueo_temporal_hasta and user.bloqueo_temporal_hasta > ahora:
+            minutos = max(1, math.ceil((user.bloqueo_temporal_hasta - ahora).total_seconds() / 60))
+            _registrar_acceso('LOGIN_RECHAZADO', user, username, f'Bloqueo temporal por intentos fallidos (faltaban {minutos} min)')
+            db.session.commit()
+            error = (f'Por seguridad, este usuario quedó bloqueado {minutos} minuto(s) por varios intentos fallidos. '
+                     f'Inténtalo más tarde o pide ayuda al administrador.')
+            return render_template('login.html', error=error, username_val=username_val)
+
         if user and password and check_password_hash(user.password, password):
-            session['user_id'] = user.id
-            session['role'] = user.role
-            session['username'] = user.username
-            session['nombre'] = user.nombre_completo
-            session['es_superadmin'] = bool(getattr(user, 'es_superadmin', False))
-            return redirect(url_for('index'))
+            if user.desactivado:
+                _registrar_acceso('LOGIN_RECHAZADO', user, username, 'Usuario desactivado')
+                error = 'Tu usuario está desactivado. Comunícate con el administrador.'
+            elif user.bloqueado:
+                _registrar_acceso('LOGIN_RECHAZADO', user, username, 'Usuario bloqueado por el administrador')
+                error = 'Tu usuario está bloqueado, comunícate con el administrador.'
+            else:
+                user.intentos_fallidos = 0
+                user.bloqueo_temporal_hasta = None
+                user.ultimo_login = ahora
+                user.ultima_actividad = ahora
+                _registrar_acceso('LOGIN_OK', user, username)
+                db.session.commit()
+                session.clear()
+                session['user_id'] = user.id
+                session['role'] = user.role
+                session['username'] = user.username
+                session['nombre'] = user.nombre_completo
+                session['es_superadmin'] = bool(getattr(user, 'es_superadmin', False))
+                session['sv'] = user.sesion_version or 0
+                session['ult'] = ahora.isoformat()
+                return redirect(url_for('index'))
+            db.session.commit()
         else:
             error = 'Usuario o contraseña incorrectos. Revisa mayúsculas, espacios y que Bloq Mayús esté apagado.'
+            if user:
+                user.intentos_fallidos = (user.intentos_fallidos or 0) + 1
+                _registrar_acceso('LOGIN_FALLIDO', user, username, f'Contraseña incorrecta (intento {user.intentos_fallidos} de {MAX_INTENTOS_LOGIN})')
+                if user.intentos_fallidos >= MAX_INTENTOS_LOGIN:
+                    user.bloqueo_temporal_hasta = ahora + timedelta(minutes=MINUTOS_BLOQUEO_TEMPORAL)
+                    user.intentos_fallidos = 0
+                    _registrar_acceso('BLOQUEO_TEMPORAL', user, username,
+                                      f'{MAX_INTENTOS_LOGIN} intentos fallidos seguidos: bloqueado {MINUTOS_BLOQUEO_TEMPORAL} min')
+                    error = (f'Demasiados intentos fallidos: por seguridad este usuario quedó bloqueado '
+                             f'{MINUTOS_BLOQUEO_TEMPORAL} minutos. Si olvidaste tu contraseña, pide ayuda al administrador.')
+            else:
+                _registrar_acceso('LOGIN_FALLIDO', None, username, 'Usuario no existe')
+            db.session.commit()
 
-    return render_template('login.html', error=error, username_val=username_val)
+    return render_template('login.html', error=error or aviso, username_val=username_val)
+
+
+@app.before_request
+def _control_sesion_usuario():
+    """Revisa en CADA página que el usuario siga habilitado y con el mismo rol (ver arriba)."""
+    if request.endpoint in (None, 'login', 'logout', 'static'):
+        return
+    uid = session.get('user_id')
+    if not uid:
+        return
+    try:
+        _asegurar_control_usuarios()
+        user = User.query.get(uid)
+    except Exception:
+        app.logger.exception("Control de sesión: no se pudo leer el usuario")
+        return  # si la base no responde, no se saca a nadie (la ruta mostrará su propio error)
+    ahora = hora_peru()
+    motivo, evento, detalle = None, None, ''
+    if not user or user.desactivado:
+        motivo, evento, detalle = 'Tu usuario fue desactivado. Comunícate con el administrador.', 'SESION_CERRADA', 'Usuario desactivado'
+    elif user.bloqueado:
+        motivo, evento, detalle = 'Tu usuario está bloqueado, comunícate con el administrador.', 'SESION_CERRADA', 'Usuario bloqueado'
+    elif (session.get('sv') or 0) != (user.sesion_version or 0):
+        motivo, evento, detalle = 'El administrador cerró tu sesión. Vuelve a ingresar.', 'SESION_CERRADA', 'Cerrada a distancia por el administrador'
+    else:
+        try:
+            ultima = datetime.fromisoformat(session['ult']) if session.get('ult') else None
+        except (TypeError, ValueError):
+            ultima = None
+        if ultima and ahora - ultima > INACTIVIDAD_MAXIMA:
+            horas = int(INACTIVIDAD_MAXIMA.total_seconds() // 3600)
+            motivo, evento, detalle = (f'Tu sesión se cerró por inactividad ({horas} horas sin uso). Vuelve a ingresar.',
+                                       'INACTIVIDAD', f'{horas} horas sin uso')
+    if motivo:
+        try:
+            _registrar_acceso(evento, user, session.get('username', ''), detalle)
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+        session.clear()
+        session['aviso_login'] = motivo
+        if _quiere_json():
+            return {'status': 'error', 'msg': motivo, 'sesion_terminada': True}, 401
+        return redirect(url_for('login'))
+
+    # Siempre con los datos ACTUALES de la base (si le cambiaron el rol, rige desde ya)
+    session['role'] = user.role
+    session['username'] = user.username
+    session['nombre'] = user.nombre_completo
+    session['es_superadmin'] = bool(user.es_superadmin)
+    session['ult'] = ahora.isoformat()
+    if not user.ultima_actividad or (ahora - user.ultima_actividad).total_seconds() > 60:
+        try:
+            user.ultima_actividad = ahora
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
 
 
 @app.before_request
@@ -1701,7 +1914,7 @@ def _restringir_almacen_visor():
 # 1. ACTUALIZAR CONTEXT PROCESSOR (Para la campana inteligente)
 @app.context_processor
 def inject_notifications():
-    if 'user_id' not in session: return dict(alertas_stock=0, historial=[], correcciones_pendientes=0)
+    if 'user_id' not in session: return dict(alertas_stock=0, historial=[], correcciones_pendientes=0, alertas_seguridad=0)
 
     # AHORA ES DINÁMICO: Compara stock_actual vs stock_minimo de cada producto
     try:
@@ -1724,7 +1937,17 @@ def inject_notifications():
     except:
         count_correcciones = 0
 
-    return dict(alertas_stock=count_stock_bajo, historial=historial, correcciones_pendientes=count_correcciones)
+    # Seguridad: usuarios bloqueados 15 min por intentos fallidos en las últimas 24 h (solo Gerencia)
+    alertas_seguridad = 0
+    if session.get('role') == 'admin':
+        try:
+            alertas_seguridad = AccesoUsuario.query.filter(
+                AccesoUsuario.evento == 'BLOQUEO_TEMPORAL', AccesoUsuario.fecha >= hora_peru() - timedelta(hours=24)).count()
+        except Exception:
+            alertas_seguridad = 0
+
+    return dict(alertas_stock=count_stock_bajo, historial=historial, correcciones_pendientes=count_correcciones,
+                alertas_seguridad=alertas_seguridad)
 
 # 2. NUEVA RUTA: EXPORTAR A EXCEL
 # --- NUEVA RUTA: EXPORTAR A EXCEL (OPTIMIZADA PARA BAJO CONSUMO DE RAM) ---
@@ -2311,6 +2534,12 @@ def listar_servicios_activos():
 
 @app.route('/logout')
 def logout():
+    try:
+        if session.get('user_id'):
+            _registrar_acceso('LOGOUT', User.query.get(session['user_id']), session.get('username', ''))
+            db.session.commit()
+    except Exception:
+        db.session.rollback()
     session.clear()
     return redirect(url_for('login'))
 
@@ -2730,8 +2959,27 @@ def gestion_usuarios():
     if session.get('role') != 'admin': 
         return "Acceso denegado", 403
     
-    usuarios = User.query.all()
-    return render_template('usuarios.html', usuarios=usuarios)
+    ahora = hora_peru()
+    todos = User.query.order_by(User.nombre_completo).all()
+    usuarios = [u for u in todos if not u.desactivado]
+    desactivados = [u for u in todos if u.desactivado]
+    hace_5 = ahora - timedelta(minutes=MINUTOS_EN_LINEA)
+    hace_30d = ahora - timedelta(days=30)
+    hace_24h = ahora - timedelta(hours=24)
+    en_linea = {u.id for u in usuarios if u.ultima_actividad and u.ultima_actividad >= hace_5}
+    bloqueo_temp = {u.id for u in usuarios if u.bloqueo_temporal_hasta and u.bloqueo_temporal_hasta > ahora}
+    alertas = (AccesoUsuario.query.filter(AccesoUsuario.evento == 'BLOQUEO_TEMPORAL', AccesoUsuario.fecha >= hace_24h)
+               .order_by(AccesoUsuario.fecha.desc()).all())
+    resumen = {
+        'en_linea': len(en_linea),
+        'bloqueados': sum(1 for u in usuarios if u.bloqueado or u.id in bloqueo_temp),
+        'sin_entrar': sum(1 for u in usuarios if not u.ultima_actividad or u.ultima_actividad < hace_30d),
+        'fallidos_24h': AccesoUsuario.query.filter(AccesoUsuario.evento == 'LOGIN_FALLIDO', AccesoUsuario.fecha >= hace_24h).count(),
+        'desactivados': len(desactivados),
+    }
+    return render_template('usuarios.html', usuarios=usuarios, desactivados=desactivados, en_linea=en_linea,
+                           bloqueo_temp=bloqueo_temp, resumen=resumen, alertas=alertas, ahora=ahora,
+                           hace_30d=hace_30d, minutos_en_linea=MINUTOS_EN_LINEA)
 
 # --- EN APP.PY ---
 
@@ -2880,21 +3128,141 @@ def perfil_usuario():
 
     return render_template('perfil.html', u=usuario)
 
-@app.route('/usuarios/eliminar/<int:user_id>')
+def _accion_sobre_usuario(user_id, permitir_propio=False):
+    """Validaciones comunes de las acciones del admin. Devuelve (usuario, error_json)."""
+    if session.get('role') != 'admin':
+        return None, ({'status': 'error', 'msg': 'No autorizado'}, 403)
+    if not permitir_propio and user_id == session.get('user_id'):
+        return None, ({'status': 'error', 'msg': 'No puedes hacer esto con tu propia cuenta.'}, 400)
+    u = User.query.get(user_id)
+    if not u:
+        return None, ({'status': 'error', 'msg': 'Usuario no encontrado.'}, 404)
+    return u, None
+
+
+def _es_ultimo_admin_habilitado(u):
+    if u.role != 'admin':
+        return False
+    otros = User.query.filter(User.role == 'admin', User.id != u.id).all()
+    return not any(not o.bloqueado and not o.desactivado for o in otros)
+
+
+@app.route('/usuarios/eliminar/<int:user_id>', methods=['POST'])
 def eliminar_usuario(user_id):
-    if session.get('role') != 'admin': return "Acceso denegado", 403
-    
-    # Protección: No te puedes borrar a ti mismo
-    if user_id == session.get('user_id'):
-        flash('Error: No puedes eliminar tu propia cuenta mientras estás conectado.')
-        return redirect(url_for('gestion_usuarios'))
-    
-    usuario = User.query.get_or_404(user_id)
-    db.session.delete(usuario)
+    """Ya no se borra a nadie: se DESACTIVA (no puede entrar y deja de aparecer en la lista), pero
+    sus ventas, Kardex y auditorías se conservan con su nombre. Se puede reactivar."""
+    u, err = _accion_sobre_usuario(user_id)
+    if err: return err
+    if _es_ultimo_admin_habilitado(u):
+        return {'status': 'error', 'msg': 'Es el único usuario de Gerencia habilitado: no se puede desactivar.'}
+    motivo = request.form.get('motivo', '').strip()[:200]
+    u.desactivado = True
+    u.desactivado_por = session.get('nombre')
+    u.desactivado_fecha = hora_peru()
+    u.sesion_version = (u.sesion_version or 0) + 1
+    _registrar_acceso('DESACTIVADO', u, u.username, f"Por {session.get('nombre')}" + (f": {motivo}" if motivo else ''))
+    registrar_log(f"Desactivó al usuario @{u.username}" + (f": {motivo}" if motivo else ''), "bi-person-x-fill", "text-danger")
     db.session.commit()
-    flash('Usuario eliminado permanentemente.')
-    
-    return redirect(url_for('gestion_usuarios'))
+    return {'status': 'success', 'msg': f'@{u.username} quedó desactivado. Su historial se conserva.'}
+
+
+@app.route('/usuarios/<int:user_id>/reactivar', methods=['POST'])
+def reactivar_usuario(user_id):
+    u, err = _accion_sobre_usuario(user_id)
+    if err: return err
+    u.desactivado = False
+    u.desactivado_por = None
+    u.desactivado_fecha = None
+    _registrar_acceso('REACTIVADO', u, u.username, f"Por {session.get('nombre')}")
+    registrar_log(f"Reactivó al usuario @{u.username}", "bi-person-check-fill", "text-success")
+    db.session.commit()
+    return {'status': 'success', 'msg': f'@{u.username} está activo de nuevo.'}
+
+
+@app.route('/usuarios/<int:user_id>/bloquear', methods=['POST'])
+def bloquear_usuario(user_id):
+    u, err = _accion_sobre_usuario(user_id)
+    if err: return err
+    if _es_ultimo_admin_habilitado(u):
+        return {'status': 'error', 'msg': 'Es el único usuario de Gerencia habilitado: no se puede bloquear.'}
+    motivo = request.form.get('motivo', '').strip()[:255]
+    u.bloqueado = True
+    u.bloqueado_motivo = motivo or None
+    u.bloqueado_por = session.get('nombre')
+    u.bloqueado_fecha = hora_peru()
+    _registrar_acceso('BLOQUEADO', u, u.username, f"Por {session.get('nombre')}" + (f": {motivo}" if motivo else ''))
+    registrar_log(f"Bloqueó al usuario @{u.username}" + (f": {motivo}" if motivo else ''), "bi-lock-fill", "text-danger")
+    db.session.commit()
+    return {'status': 'success', 'msg': f'@{u.username} quedó bloqueado. Si estaba conectado, sale en su siguiente clic.'}
+
+
+@app.route('/usuarios/<int:user_id>/desbloquear', methods=['POST'])
+def desbloquear_usuario(user_id):
+    u, err = _accion_sobre_usuario(user_id, permitir_propio=True)
+    if err: return err
+    estaba_temporal = bool(u.bloqueo_temporal_hasta and u.bloqueo_temporal_hasta > hora_peru())
+    u.bloqueado = False
+    u.bloqueado_motivo = None
+    u.bloqueado_por = None
+    u.bloqueado_fecha = None
+    u.bloqueo_temporal_hasta = None
+    u.intentos_fallidos = 0
+    _registrar_acceso('DESBLOQUEADO', u, u.username, f"Por {session.get('nombre')}" + (' (bloqueo por intentos fallidos)' if estaba_temporal else ''))
+    registrar_log(f"Desbloqueó al usuario @{u.username}", "bi-unlock-fill", "text-success")
+    db.session.commit()
+    return {'status': 'success', 'msg': f'@{u.username} puede volver a ingresar.'}
+
+
+@app.route('/usuarios/<int:user_id>/cerrar_sesion', methods=['POST'])
+def cerrar_sesion_usuario(user_id):
+    """Cierra la sesión del usuario en TODOS sus dispositivos (sale en su siguiente clic)."""
+    u, err = _accion_sobre_usuario(user_id)
+    if err: return err
+    u.sesion_version = (u.sesion_version or 0) + 1
+    _registrar_acceso('CIERRE_REMOTO', u, u.username, f"Por {session.get('nombre')}")
+    registrar_log(f"Cerró a distancia la sesión de @{u.username}", "bi-box-arrow-right", "text-warning")
+    db.session.commit()
+    return {'status': 'success', 'msg': f'Se cerró la sesión de @{u.username} en todos sus dispositivos.'}
+
+
+@app.route('/usuarios/<int:user_id>')
+def ficha_usuario(user_id):
+    """Ficha del usuario: estado, accesos (ingresos, intentos fallidos, bloqueos) y sus últimas acciones."""
+    if session.get('role') != 'admin': return "Acceso denegado", 403
+    u = User.query.get_or_404(user_id)
+    ahora = hora_peru()
+    accesos = AccesoUsuario.query.filter_by(user_id=u.id).order_by(AccesoUsuario.fecha.desc()).limit(150).all()
+    acciones = AuditLog.query.filter_by(user_id=u.id).order_by(AuditLog.fecha.desc()).limit(100).all()
+    kardex = sorted(
+        [('Anclajes', m) for m in ProductMovement.query.filter_by(user_id=u.id).order_by(ProductMovement.fecha.desc()).limit(50).all()] +
+        [('Import Bolts', m) for m in ProductMovementImportBolts.query.filter_by(user_id=u.id).order_by(ProductMovementImportBolts.fecha.desc()).limit(50).all()],
+        key=lambda x: x[1].fecha or ahora, reverse=True)[:50]
+    ventas = Order.query.filter_by(vendedor_id=u.id).order_by(Order.fecha.desc()).limit(50).all()
+    ultimo_ok = next((a for a in accesos if a.evento == 'LOGIN_OK'), None)
+    fallidos_7d = sum(1 for a in accesos if a.evento == 'LOGIN_FALLIDO' and a.fecha and a.fecha >= ahora - timedelta(days=7))
+    return render_template('usuario_ficha.html', u=u, accesos=accesos, acciones=acciones, kardex=kardex, ventas=ventas,
+                           ultimo_ok=ultimo_ok, fallidos_7d=fallidos_7d, ahora=ahora,
+                           en_linea=bool(u.ultima_actividad and u.ultima_actividad >= ahora - timedelta(minutes=MINUTOS_EN_LINEA)),
+                           bloqueo_temporal=bool(u.bloqueo_temporal_hasta and u.bloqueo_temporal_hasta > ahora))
+
+
+@app.template_filter('hace')
+def _filtro_hace(fecha):
+    """'ahora' / 'hace 3 min' / 'hace 2 h' / 'ayer 14:20' / '05/10/26 14:20'."""
+    if not fecha:
+        return 'Nunca'
+    seg = (hora_peru() - fecha).total_seconds()
+    if seg < 60:
+        return 'ahora'
+    if seg < 3600:
+        return f'hace {int(seg // 60)} min'
+    if seg < 6 * 3600:
+        return f'hace {int(seg // 3600)} h'
+    if fecha.date() == hora_peru().date():
+        return f"hoy {fecha.strftime('%H:%M')}"
+    if (hora_peru().date() - fecha.date()).days == 1:
+        return f"ayer {fecha.strftime('%H:%M')}"
+    return fecha.strftime('%d/%m/%y %H:%M')
 
 # --- MODIFICAR LA RUTA NUEVA_VENTA EN APP.PY ---
 @app.route('/nueva_venta', methods=['GET', 'POST'])
@@ -6569,7 +6937,7 @@ def despachos():
     
     # --- 🔴 NUEVO: CARGAR LA LISTA DE CHOFERES ---
     # Esto es lo que te faltaba. Busca todos los usuarios con rol 'chofer'
-    choferes = User.query.filter_by(role='chofer').all()
+    choferes = [c for c in User.query.filter_by(role='chofer').all() if not c.desactivado and not c.bloqueado]
     
     # Contadores
     count_pend = Order.query.filter(Order.estado == 'Aprobado').count()
@@ -12391,6 +12759,7 @@ def _es_superadmin():
 # Los catálogos de configuración (motivo_movimiento, presentacion, catalogo_valor,
 # campo_personalizado/opcion, system_config) NO están aquí a propósito: no se borran.
 TABLAS_RESET_ORDEN = [
+    ('acceso_usuario', AccesoUsuario),
     ('correccion_auditoria_foto', CorreccionAuditoriaFoto),   # hijas de correccion_auditoria
     ('correccion_auditoria', CorreccionAuditoria),             # hija de registro_auditoria
     ('registro_auditoria_foto', RegistroAuditoriaFoto),
@@ -12455,6 +12824,7 @@ TABLAS_TODAS_ORDEN = [
     ('registro_auditoria_log', RegistroAuditoriaLog),
     ('correccion_auditoria', CorreccionAuditoria),
     ('correccion_auditoria_foto', CorreccionAuditoriaFoto),
+    ('acceso_usuario', AccesoUsuario),
 ]
 
 
