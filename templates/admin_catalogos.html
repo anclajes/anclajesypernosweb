@@ -47,6 +47,7 @@
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-NICHO">Casilleros</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-motivos">Motivos de Movimiento (Kardex)</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-presentaciones">Presentaciones (Kardex)</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-CONSUMO_INTERNO">Consumo Interno (Kardex)</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-campos">Campos Personalizados</button></li>
 </ul>
 
@@ -99,8 +100,15 @@
 </div>
 
 <div class="tab-content">
-    {% for tipo, titulo in [('ESTADO_FISICO','Estado Físico'), ('UNIDAD_MEDIDA','Unidad de Medida'), ('ANAQUEL','Anaquel'), ('NICHO','Casillero')] %}
+    {% for tipo, titulo in [('ESTADO_FISICO','Estado Físico'), ('UNIDAD_MEDIDA','Unidad de Medida'), ('ANAQUEL','Anaquel'), ('NICHO','Casillero'), ('CONSUMO_INTERNO','Consumo Interno')] %}
     <div class="tab-pane fade {{ 'show active' if tipo == 'ESTADO_FISICO' }}" id="tab-{{ tipo }}">
+        {% if tipo == 'CONSUMO_INTERNO' %}
+        <div class="alert py-2 shadow-sm mb-3 border-0" style="background-color: #e6f0fa; border-left: 4px solid var(--theme-primary, #0F172A) !important;">
+            <i class="bi bi-tools"></i> Opciones del motivo de salida <b>CONSUMO INTERNO</b> (material usado en infraestructura o
+            máquinas de la empresa). Aparecen en <b>Movimiento de Kardex</b> de los dos inventarios al elegir ese motivo, junto con
+            un campo obligatorio para explicar el uso. Desactivar una opción no cambia los movimientos ya registrados.
+        </div>
+        {% endif %}
         <div class="card border-0 shadow-sm">
             <div class="card-body">
                 <div class="d-flex flex-column flex-sm-row gap-2 mb-3">

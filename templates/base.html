@@ -78,11 +78,14 @@
                 <a href="{{ url_for('ver_kardex_importbolts') }}" class="nav-link {{ 'active' if request.endpoint == 'ver_kardex_importbolts' }}">
                     <i class="bi bi-clock-history me-2"></i> <span>Kardex ImportBolts</span>
                 </a>
+                <a href="{{ url_for('procesos_oc') }}" class="nav-link {{ 'active' if request.endpoint in ['procesos_oc', 'proceso_oc_detalle'] }}">
+                    <i class="bi bi-diagram-3 me-2"></i> <span>Procesos por OC</span>
+                </a>
             {% else %}
                 <!-- ================================== -->
                 <!-- MENÚ NORMAL (resto de roles)        -->
                 <!-- ================================== -->
-                {% set grupo_inventario = ['inventario_general', 'inventario', 'inventario_importbolts', 'crear_producto', 'editar_producto', 'ver_kardex', 'ver_kardex_importbolts', 'rotacion_stock', 'admin_maestro', 'admin_maestro_auditoria', 'producto_info'] %}
+                {% set grupo_inventario = ['inventario_general', 'inventario', 'inventario_importbolts', 'crear_producto', 'editar_producto', 'ver_kardex', 'ver_kardex_importbolts', 'procesos_oc', 'proceso_oc_detalle', 'rotacion_stock', 'admin_maestro', 'admin_maestro_auditoria', 'producto_info'] %}
                 <div class="nav-title">Principal</div>
                 <a href="{{ url_for('index') }}" class="nav-link {{ 'active' if request.endpoint == 'index' }}">
                     <i class="bi bi-grid-1x2 me-2"></i> <span>Dashboard</span>
@@ -119,6 +122,11 @@
                         <li>
                             <a href="{{ url_for('ver_kardex_importbolts') }}" class="nav-link py-2 ps-3 {{ 'active' if request.endpoint == 'ver_kardex_importbolts' }}">
                                 <i class="bi bi-clock-history fs-6 me-2"></i> <span>Kardex ImportBolts</span>
+                            </a>
+                        </li>
+                        <li>
+                            <a href="{{ url_for('procesos_oc') }}" class="nav-link py-2 ps-3 {{ 'active' if request.endpoint in ['procesos_oc', 'proceso_oc_detalle'] }}">
+                                <i class="bi bi-diagram-3 fs-6 me-2"></i> <span>Procesos por OC</span>
                             </a>
                         </li>
                         {% endif %}

@@ -821,7 +821,7 @@
 <div class="modal fade" id="modalStock" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content border-0 shadow-lg">
-            <form action="{{ url_for('ajustar_stock_importbolts') }}" method="POST" id="formAjusteStock" onsubmit="return evitarDobleEnvioMovimiento(event)">
+            <form action="{{ url_for('ajustar_stock_importbolts') }}" method="POST" id="formAjusteStock" enctype="multipart/form-data" data-origen="IMPORTBOLTS" onsubmit="return evitarDobleEnvioMovimiento(event)">
                 <input type="hidden" name="prod_id" id="stock_id">
                 <input type="hidden" name="url_origen" id="stock_url_origen">
                 <input type="hidden" name="motivo_id" id="stock_motivo_id">
@@ -878,6 +878,30 @@
                             </button>
                             {% endif %}
                         </div>
+                    </div>
+
+                    <!-- CONSUMO INTERNO: en qué se usó (opciones del catálogo "Consumo Interno") -->
+                    <div class="mb-3 d-none" id="bloqueConsumoInterno">
+                        <label class="small text-muted fw-bold mb-1"><i class="bi bi-tools"></i> ¿En qué se usó? *</label>
+                        <select name="detalle_motivo" id="stock_detalle_motivo" class="form-select form-select-sm shadow-sm">
+                            <option value="">-- Seleccione --</option>
+                        </select>
+                        <div class="form-text small" style="font-size:.68rem;">Las opciones se administran en Catálogos → Consumo Interno.</div>
+                    </div>
+
+                    <!-- PROCESO POR N° DE OC (maestranza / transformación -> reingreso -> salida final) -->
+                    <div class="mb-3 d-none kx-proceso-box" id="bloqueProcesoOC">
+                        <label class="small fw-bold mb-1" style="color: var(--theme-primary);">
+                            <i class="bi bi-diagram-3-fill"></i> Proceso por N° de OC <span id="proceso_oc_req" class="text-danger">*</span>
+                        </label>
+                        <select name="proceso_oc_id" id="stock_proceso_oc" class="form-select form-select-sm shadow-sm" onchange="cambioProcesoOC()"></select>
+                        <div id="bloqueNuevaOC" class="d-none mt-2">
+                            <input type="text" name="nuevo_numero_oc" id="stock_nuevo_numero_oc" maxlength="50"
+                                   class="form-control form-control-sm text-uppercase mb-1" placeholder="N° de OC del cliente (ej: OC-4512)">
+                            <input type="text" name="nuevo_oc_descripcion" id="stock_nuevo_oc_desc" maxlength="200"
+                                   class="form-control form-control-sm" placeholder="Cliente o trabajo (opcional)">
+                        </div>
+                        <div id="proceso_oc_info" class="small mt-1"></div>
                     </div>
 
                     <!-- REFERENCIA (solo aparece si el motivo es COMPRA o VENTA) -->
@@ -973,6 +997,29 @@
                             </button>
                             {% endif %}
                         </div>
+                    </div>
+                    <hr class="my-3">
+
+                    <!-- OBSERVACIÓN (obligatoria en CONSUMO INTERNO) -->
+                    <div class="mb-3">
+                        <label class="small text-muted fw-bold mb-1" id="label_observacion">Observación (opcional)</label>
+                        <textarea name="observacion" id="stock_observacion" rows="2" maxlength="300"
+                                  class="form-control form-control-sm shadow-sm" placeholder="Detalle útil para quien revise el Kardex"></textarea>
+                    </div>
+
+                    <!-- DOCUMENTOS ADJUNTOS -->
+                    <div class="mb-1">
+                        <label class="small text-muted fw-bold mb-0"><i class="bi bi-paperclip"></i> Documentos (opcional)</label>
+                        <div class="form-text small mt-0 mb-2" style="font-size:.68rem;">PDF o foto (JPG, PNG, WEBP) · máx. 5MB cada uno. Se podrán ver y descargar desde el Kardex.</div>
+                        {% for clave_doc, etiqueta_doc in [('ORDEN_COMPRA', 'Orden de Compra'), ('NOTA_SALIDA', 'Nota de Salida'), ('GUIA', 'Guía')] %}
+                        <div class="input-group input-group-sm mb-1">
+                            <span class="input-group-text" style="min-width:118px; font-size:.74rem;">{{ etiqueta_doc }}</span>
+                            <input type="file" name="doc_{{ clave_doc }}" class="form-control doc-mov-input"
+                                   accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
+                                   onchange="validarDocMovimiento(this)">
+                        </div>
+                        {% endfor %}
+                        <div id="docs_oc_existentes" class="small mt-1"></div>
                     </div>
                 </div>
                 <div class="modal-footer p-2 bg-light flex-column">
@@ -1471,6 +1518,8 @@ function evitarDobleEnvioMovimiento(event) {
         const inputFecha = document.getElementById('stock_fecha_movimiento');
         inputFecha.max = hoyStr;
         inputFecha.value = hoyStr;
+        reiniciarExtrasMovimiento();
+        liberarEnvioMovimiento();
         cambioTipoProveedor();
         cambioTipoMovimiento();
         cargarPresentaciones();
@@ -2138,6 +2187,7 @@ function cambioTipoMovimiento() {
     // hasta que se elija un motivo de nuevo (seleccionarMotivo lo vuelve a mostrar si aplica).
     document.getElementById('bloqueReferenciaMovimiento').classList.add('d-none');
     document.getElementById('stock_referencia').value = '';
+    actualizarBloquesMotivo(tipo, '');
 }
 
 function cargarMotivos(tipoMovimiento) {
@@ -2186,7 +2236,157 @@ function seleccionarMotivo() {
         bloqueRef.classList.add('d-none');
         inputRef.value = '';
     }
+    actualizarBloquesMotivo(tipo, nombreMotivo);
 }
+
+// =====================================================================
+// PROCESO POR N° DE OC, CONSUMO INTERNO Y DOCUMENTOS DEL MOVIMIENTO
+// - Salida con motivo de MAESTRANZA / TRANSFORMACIÓN: se crea la OC (o se agrega el producto a una abierta).
+// - Reingreso y salida final: solo se ELIGE una OC ya creada (no se vuelve a escribir).
+// - CONSUMO INTERNO: elegir en qué se usó + explicación obligatoria.
+// =====================================================================
+const ORIGEN_MOVIMIENTO = document.getElementById('formAjusteStock').dataset.origen;
+let procesosAbiertosCache = [];
+let opcionesConsumoCache = null;
+let modoProcesoOC = 'NINGUNO';   // INICIO | REINGRESO | FINAL | NINGUNO
+let ocRequerida = false;
+
+function txtSinTildes(s) {
+    return (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().trim();
+}
+function esMotivoDeProceso(n) { const t = txtSinTildes(n); return t.includes('MAESTRANZA') || t.includes('TRANSFORM'); }
+function esMotivoReingreso(n) { return esMotivoDeProceso(n) || txtSinTildes(n).includes('REINGRESO'); }
+function esConsumoInterno(n) { return txtSinTildes(n).split(/\s+/).join(' ') === 'CONSUMO INTERNO'; }
+function escTxt(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function liberarEnvioMovimiento() {
+    enviandoMovimientoKardex = false;
+    const btn = document.getElementById('btnRegistrarMovimiento');
+    if (btn) { btn.disabled = false; btn.innerHTML = 'Registrar Movimiento'; }
+}
+
+function reiniciarExtrasMovimiento() {
+    document.getElementById('bloqueConsumoInterno').classList.add('d-none');
+    document.getElementById('bloqueProcesoOC').classList.add('d-none');
+    document.getElementById('bloqueNuevaOC').classList.add('d-none');
+    document.getElementById('proceso_oc_info').innerHTML = '';
+    document.getElementById('docs_oc_existentes').innerHTML = '';
+    document.getElementById('stock_proceso_oc').innerHTML = '';
+    document.getElementById('label_observacion').innerText = 'Observación (opcional)';
+    modoProcesoOC = 'NINGUNO';
+    ocRequerida = false;
+}
+
+function actualizarBloquesMotivo(tipo, nombreMotivo) {
+    // CONSUMO INTERNO
+    const esConsumo = tipo === 'salida' && esConsumoInterno(nombreMotivo);
+    document.getElementById('bloqueConsumoInterno').classList.toggle('d-none', !esConsumo);
+    document.getElementById('label_observacion').innerText = esConsumo ? 'Explica en qué se usó * (máquina, área, trabajo...)' : 'Observación (opcional)';
+    if (esConsumo) cargarOpcionesConsumo();
+
+    // PROCESO POR OC
+    if (!nombreMotivo) { modoProcesoOC = 'NINGUNO'; ocRequerida = false; }
+    else if (tipo === 'salida' && esMotivoDeProceso(nombreMotivo)) { modoProcesoOC = 'INICIO'; ocRequerida = true; }
+    else if (tipo === 'ingreso') { modoProcesoOC = 'REINGRESO'; ocRequerida = esMotivoReingreso(nombreMotivo); }
+    else { modoProcesoOC = 'FINAL'; ocRequerida = false; }
+    cargarProcesosAbiertos();
+}
+
+function cargarOpcionesConsumo() {
+    const sel = document.getElementById('stock_detalle_motivo');
+    const pintar = (ops) => {
+        sel.innerHTML = '<option value="">-- Seleccione --</option>' + ops.map(o => `<option value="${escTxt(o)}">${escTxt(o)}</option>`).join('');
+    };
+    if (opcionesConsumoCache) return pintar(opcionesConsumoCache);
+    fetch('/api/consumo_interno/opciones').then(r => r.json()).then(d => { opcionesConsumoCache = d.opciones || []; pintar(opcionesConsumoCache); });
+}
+
+function cargarProcesosAbiertos() {
+    const bloque = document.getElementById('bloqueProcesoOC');
+    const sel = document.getElementById('stock_proceso_oc');
+    document.getElementById('bloqueNuevaOC').classList.add('d-none');
+    document.getElementById('proceso_oc_info').innerHTML = '';
+    document.getElementById('docs_oc_existentes').innerHTML = '';
+    if (modoProcesoOC === 'NINGUNO') { bloque.classList.add('d-none'); sel.innerHTML = ''; return; }
+    const prodId = document.getElementById('stock_id').value;
+    fetch(`/api/procesos_oc/abiertos?origen=${ORIGEN_MOVIMIENTO}&prod_id=${encodeURIComponent(prodId)}`)
+        .then(r => r.json())
+        .then(d => {
+            procesosAbiertosCache = d.procesos || [];
+            // Sin OC abiertas y sin necesidad de una: no se muestra nada (no estorba en una compra o venta normal)
+            if (modoProcesoOC !== 'INICIO' && !ocRequerida && procesosAbiertosCache.length === 0) {
+                bloque.classList.add('d-none'); sel.innerHTML = ''; return;
+            }
+            let html = ocRequerida ? '<option value="" selected disabled>-- Elige la OC --</option>' : '<option value="">-- Sin proceso (movimiento normal) --</option>';
+            if (modoProcesoOC === 'INICIO') html += '<option value="__nueva__">➕ Nueva OC (inicia el proceso)</option>';
+            procesosAbiertosCache.forEach(p => {
+                let extra = '';
+                if (p.saldo) {
+                    const s = p.saldo;
+                    if (s.SALIDA_PROCESO || s.REINGRESO || s.SALIDA_FINAL) extra = ` — este producto: salió ${s.SALIDA_PROCESO} · reingresó ${s.REINGRESO} · salida final ${s.SALIDA_FINAL}`;
+                }
+                html += `<option value="${p.id}">${escTxt(p.etiqueta)}${p.descripcion ? ' · ' + escTxt(p.descripcion) : ''}${extra}</option>`;
+            });
+            sel.innerHTML = html;
+            document.getElementById('proceso_oc_req').classList.toggle('d-none', !ocRequerida);
+            bloque.classList.remove('d-none');
+            if (ocRequerida && procesosAbiertosCache.length === 0 && modoProcesoOC !== 'INICIO') {
+                document.getElementById('proceso_oc_info').innerHTML = '<span class="text-danger"><i class="bi bi-exclamation-triangle-fill"></i> No hay OC abiertas. El reingreso debe ir con la OC con la que salió el material.</span>';
+            }
+        });
+}
+
+function cambioProcesoOC() {
+    const val = document.getElementById('stock_proceso_oc').value;
+    const info = document.getElementById('proceso_oc_info');
+    const docsBox = document.getElementById('docs_oc_existentes');
+    document.getElementById('bloqueNuevaOC').classList.toggle('d-none', val !== '__nueva__');
+    info.innerHTML = ''; docsBox.innerHTML = '';
+    if (val === '__nueva__') {
+        info.innerHTML = '<span class="text-muted"><i class="bi bi-info-circle"></i> Escribe el N° de OC. Luego, al reingresar y en la venta final, solo tendrás que elegirla.</span>';
+        return;
+    }
+    const p = procesosAbiertosCache.find(x => String(x.id) === val);
+    if (!p) return;
+    const s = p.saldo || {SALIDA_PROCESO: 0, REINGRESO: 0, SALIDA_FINAL: 0};
+    if (modoProcesoOC === 'INICIO') {
+        info.innerHTML = `<span class="text-muted"><i class="bi bi-plus-circle"></i> Se agrega a la ${escTxt(p.etiqueta)} (ya tiene ${p.productos} producto(s)).</span>`;
+    } else if (modoProcesoOC === 'REINGRESO') {
+        const disp = s.SALIDA_PROCESO - s.REINGRESO;
+        info.innerHTML = s.SALIDA_PROCESO === 0
+            ? '<span class="text-danger"><i class="bi bi-x-circle-fill"></i> Este producto no salió en esta OC: solo se reingresa lo que salió.</span>'
+            : `<span class="${disp > 0 ? 'text-success' : 'text-danger'}"><i class="bi bi-arrow-return-left"></i> Salió ${s.SALIDA_PROCESO} · ya reingresó ${s.REINGRESO} → puedes reingresar hasta <b>${Math.max(disp, 0)}</b>.</span>`;
+    } else {
+        const disp = s.REINGRESO - s.SALIDA_FINAL;
+        info.innerHTML = s.REINGRESO === 0
+            ? '<span class="text-danger"><i class="bi bi-x-circle-fill"></i> Este producto aún no tiene reingreso en esta OC.</span>'
+            : `<span class="${disp > 0 ? 'text-success' : 'text-danger'}"><i class="bi bi-box-arrow-right"></i> Reingresó ${s.REINGRESO} · salida final ${s.SALIDA_FINAL} → disponible <b>${Math.max(disp, 0)}</b>.</span>`;
+        const ref = document.getElementById('stock_referencia');
+        if (ref && !document.getElementById('bloqueReferenciaMovimiento').classList.contains('d-none') && !ref.value) ref.value = p.numero_oc;
+    }
+    if (p.documentos && p.documentos.length) {
+        docsBox.innerHTML = '<span class="text-muted">Esta OC ya tiene: </span>' + p.documentos.map(d =>
+            `<a href="${d.url}" target="_blank" class="badge text-bg-light border text-decoration-none me-1"><i class="bi bi-file-earmark-text"></i> ${escTxt(d.tipo)}</a>`).join('') +
+            '<span class="text-muted"> — no hace falta volver a subirlos.</span>';
+    }
+}
+
+function validarDocMovimiento(input) {
+    const f = input.files && input.files[0];
+    if (!f) return;
+    const ext = (f.name.split('.').pop() || '').toLowerCase();
+    let error = '';
+    if (!['pdf', 'jpg', 'jpeg', 'png', 'webp'].includes(ext)) error = 'Solo se permiten PDF o fotos (JPG, PNG, WEBP). Videos y otros archivos no.';
+    else if (f.size > 5 * 1024 * 1024) error = `El archivo pesa ${(f.size / 1048576).toFixed(1)}MB y el máximo es 5MB.`;
+    else if (f.size === 0) error = 'El archivo está vacío.';
+    if (error) {
+        input.value = '';
+        Swal.fire({ icon: 'warning', title: 'Archivo no permitido', text: error });
+    }
+}
+
 
 function cambioTipoProveedor() {
     const esNacional = document.getElementById('radioNacional').checked;
@@ -2302,15 +2502,42 @@ function abrirNuevoMotivo() {
 // Validación final antes de enviar: asegura que se eligió un motivo real
 document.getElementById('formAjusteStock').addEventListener('submit', function(e) {
     if (!document.getElementById('stock_motivo_id').value) {
-        e.preventDefault();
+        e.preventDefault(); liberarEnvioMovimiento();
         return Swal.fire('Falta el motivo', 'Debe seleccionar un motivo del movimiento.', 'warning');
+    }
+
+    // Proceso por OC
+    const ocSel = document.getElementById('stock_proceso_oc').value;
+    if (ocRequerida && !ocSel) {
+        e.preventDefault(); liberarEnvioMovimiento();
+        return Swal.fire('Falta la OC', modoProcesoOC === 'INICIO'
+            ? 'Esta salida inicia un proceso: elige "Nueva OC" y escribe su número, o elige una OC abierta.'
+            : 'Este reingreso debe ir con la OC con la que salió el material.', 'warning');
+    }
+    if (ocSel === '__nueva__' && document.getElementById('stock_nuevo_numero_oc').value.trim().length < 2) {
+        e.preventDefault(); liberarEnvioMovimiento();
+        return Swal.fire('Falta el N° de OC', 'Escribe el número de la nueva OC.', 'warning');
+    }
+
+    // Consumo interno
+    const nombreMot = document.getElementById('stock_motivo_texto').value;
+    if (document.getElementById('stock_tipo_movimiento').value === 'salida' && esConsumoInterno(nombreMot)) {
+        const sel = document.getElementById('stock_detalle_motivo');
+        if (sel.options.length > 1 && !sel.value) {
+            e.preventDefault(); liberarEnvioMovimiento();
+            return Swal.fire('Consumo interno', 'Elige en qué se usó el material.', 'warning');
+        }
+        if (document.getElementById('stock_observacion').value.trim().length < 5) {
+            e.preventDefault(); liberarEnvioMovimiento();
+            return Swal.fire('Consumo interno', 'Explica brevemente en qué se usó (máquina, área, trabajo...).', 'warning');
+        }
     }
 
     const esNacional = document.getElementById('radioNacional').checked;
 
     if (esNacional) {
         if (!document.getElementById('stock_proveedor_id').value) {
-            e.preventDefault();
+            e.preventDefault(); liberarEnvioMovimiento();
             return Swal.fire({
                 icon: 'warning',
                 title: 'Proveedor no validado',
@@ -2320,7 +2547,7 @@ document.getElementById('formAjusteStock').addEventListener('submit', function(e
     } else {
         actualizarCamposInternacional();
         if (!document.getElementById('input_razon_social_proveedor').value.trim()) {
-            e.preventDefault();
+            e.preventDefault(); liberarEnvioMovimiento();
             return Swal.fire('Falta información', 'Ingrese la Razón Social del proveedor internacional.', 'warning');
         }
     }

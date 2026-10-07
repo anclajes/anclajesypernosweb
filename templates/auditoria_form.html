@@ -4,6 +4,13 @@
 
 {% block content %}
 <style>
+    /* Ubicación registrada en el sistema + consejo de varias ubicaciones */
+    .ubic-sistema { background:#f1f5f9; border:1px solid #e2e8f0; border-radius:8px; padding:7px 10px; font-size:.85rem; }
+    .ubic-sistema.ubic-ok { background:#ecfdf5; border-color:#a7f3d0; }
+    .ubic-sistema.ubic-ok b { color:#065f46; }
+    .ubic-sistema.ubic-sin { background:#fffbeb; border-color:#fcd34d; }
+    .ubic-sistema.ubic-sin b { color:#92400e; }
+    .ubic-consejo { background:#eff6ff; border-left:3px solid #3b82f6; border-radius:6px; padding:6px 10px; font-size:.78rem; color:#1e3a8a; line-height:1.35; }
     :root {
         --auditoria-primary: {{ '#004b87' if origen == 'IMPORTBOLTS' else '#0B3D91' }};
         --auditoria-accent: {{ '#80c342' if origen == 'IMPORTBOLTS' else '#ffc107' }};
@@ -112,6 +119,12 @@
     <div class="card card-auditoria-section border-0 shadow-sm mb-3">
         <div class="card-header text-white fw-bold"><i class="bi bi-geo-alt-fill"></i> Ubicación Física</div>
             <div class="card-body">
+                <!-- Ubicación que el sistema tiene registrada para el producto elegido (siempre visible) -->
+                <div id="ubicacion_sistema_box" class="ubic-sistema mb-3">
+                    <i class="bi bi-pin-map-fill"></i>
+                    <span class="text-muted">Ubicación en el sistema:</span>
+                    <b id="ubicacion_sistema_txt" class="text-muted fw-normal fst-italic">elige un producto</b>
+                </div>
                 <div class="row g-3">
                     <div class="col-12 col-md-6">
                         <label class="form-label small fw-bold">Anaquel <span class="text-danger">*</span></label>
@@ -123,6 +136,11 @@
                     </div>
                 </div>
                 <div class="form-text mt-1">Ambos campos son obligatorios. <span class="text-danger fw-bold">*</span></div>
+                <div class="ubic-consejo mt-2">
+                    <i class="bi bi-lightbulb-fill"></i>
+                    <b>¿Lo encontraste en varias ubicaciones?</b> Si puedes, júntalo en una sola (o en las menos posibles)
+                    y registra <b>un conteo por cada ubicación final</b>.
+                </div>
             </div>
         </div>
 
@@ -538,8 +556,28 @@ $(document).on('change', '#producto_id', function() {
     const id = $(this).val();
     const p = productosCache.find(x => x.id == id);
     document.getElementById('descripcion_mostrar').value = p ? (p.nombre + (p.estado ? `  ·  Estado: ${p.estado}` : '')) : '';
+    mostrarUbicacionSistema(p);
     verificarDuplicadoPeriodo(id);
 });
+
+// Ubicación que el sistema tiene registrada para el producto (o "Ubicación no registrada").
+function mostrarUbicacionSistema(p) {
+    const box = document.getElementById('ubicacion_sistema_box');
+    const txt = document.getElementById('ubicacion_sistema_txt');
+    box.classList.remove('ubic-ok', 'ubic-sin');
+    if (!p) {
+        txt.className = 'text-muted fw-normal fst-italic';
+        txt.textContent = 'elige un producto';
+    } else if (p.ubicacion) {
+        box.classList.add('ubic-ok');
+        txt.className = '';
+        txt.textContent = p.ubicacion;
+    } else {
+        box.classList.add('ubic-sin');
+        txt.className = '';
+        txt.textContent = 'Ubicación no registrada';
+    }
+}
 
 // Avisa, ANTES de que el auditor envíe, si este código ya tiene otro(s) conteo(s) dentro de
 // esta MISMA auditoría (mismo período) — para que no lo registre dos veces por error, o para
@@ -630,6 +668,7 @@ function construirResumenHtml() {
     html += '<div class="text-uppercase small fw-bold mt-3 mb-1" style="color:var(--auditoria-primary);"><i class="bi bi-geo-alt-fill"></i> Ubicación</div>';
     html += construirFilaResumen('Anaquel', anaquelVal);
     html += construirFilaResumen('Casillero', nichoVal);
+    html += construirFilaResumen('Ubicación en el sistema', p ? (p.ubicacion || 'Ubicación no registrada') : '');
 
     html += '<div class="text-uppercase small fw-bold mt-3 mb-1" style="color:var(--auditoria-primary);"><i class="bi bi-calculator-fill"></i> Cantidades</div>';
     html += construirFilaResumen('# Cajas', numCajas);

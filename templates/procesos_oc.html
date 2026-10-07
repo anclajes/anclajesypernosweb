@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}Procesos por OC{% endblock %}
+
+{% block content %}
+<style>
+    .poc-tabla th { font-size: .75rem; white-space: nowrap; vertical-align: middle; }
+    .poc-tabla td { vertical-align: middle; }
+    .poc-num { font-weight: 800; color: #3730a3; text-decoration: none; }
+    .poc-etapas { display: flex; gap: 6px; flex-wrap: wrap; }
+    .poc-etapa { font-size: .7rem; border-radius: 6px; padding: 2px 7px; border: 1px solid #e2e8f0; background: #f8fafc; white-space: nowrap; }
+    .poc-etapa b { font-variant-numeric: tabular-nums; }
+    .poc-e1 { border-color: #fcd34d; background: #fffbeb; color: #92400e; }
+    .poc-e2 { border-color: #86efac; background: #f0fdf4; color: #166534; }
+    .poc-e3 { border-color: #fca5a5; background: #fef2f2; color: #991b1b; }
+</style>
+
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+    <div>
+        <h2 class="mb-0"><i class="bi bi-diagram-3-fill"></i> Procesos por N° de OC</h2>
+        <div class="text-muted small">Maestranza / transformación: salida a proceso → reingreso → salida final, todo amarrado a una OC.</div>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="{{ url_for('ver_kardex') }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-clock-history"></i> Kardex Anclajes</a>
+        <a href="{{ url_for('ver_kardex_importbolts') }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-clock-history"></i> Kardex ImportBolts</a>
+    </div>
+</div>
+
+<div class="alert alert-light border small py-2">
+    <i class="bi bi-info-circle-fill text-primary"></i>
+    <b>Cómo funciona:</b> 1) En <b>Movimiento de Kardex</b>, una salida con motivo de <b>maestranza o transformación</b> pide el N° de OC
+    (se crea ahí; los demás productos del mismo trabajo eligen esa OC). 2) Al volver, registra un <b>ingreso</b> eligiendo la OC: se reingresa
+    la misma cantidad a cada producto. 3) La <b>venta final</b> (u otra salida) también elige la OC. Cuando todo cuadra, la OC se cierra sola.
+</div>
+
+<form method="GET" class="d-flex flex-wrap gap-2 align-items-center mb-3">
+    <div class="btn-group btn-group-sm" role="group">
+        <a href="{{ url_for('procesos_oc', estado='ABIERTO', q=buscar) }}" class="btn {{ 'btn-primary' if estado == 'ABIERTO' else 'btn-outline-primary' }}">Abiertas <span class="badge text-bg-light ms-1">{{ conteo.ABIERTO }}</span></a>
+        <a href="{{ url_for('procesos_oc', estado='CERRADO', q=buscar) }}" class="btn {{ 'btn-primary' if estado == 'CERRADO' else 'btn-outline-primary' }}">Cerradas <span class="badge text-bg-light ms-1">{{ conteo.CERRADO }}</span></a>
+        <a href="{{ url_for('procesos_oc', estado='TODOS', q=buscar) }}" class="btn {{ 'btn-primary' if estado not in ['ABIERTO', 'CERRADO'] else 'btn-outline-primary' }}">Todas</a>
+    </div>
+    <input type="hidden" name="estado" value="{{ estado }}">
+    <div class="input-group input-group-sm" style="max-width: 320px;">
+        <input type="text" name="q" class="form-control" placeholder="Buscar N° de OC o cliente..." value="{{ buscar }}">
+        <button class="btn btn-outline-secondary" type="submit"><i class="bi bi-search"></i></button>
+    </div>
+</form>
+
+<div class="card shadow-sm border-0">
+    <div class="card-body p-0 table-responsive">
+        <table class="table table-hover mb-0 small poc-tabla">
+            <thead class="table-dark">
+                <tr>
+                    <th class="ps-3">N° de OC</th>
+                    <th>Cliente / trabajo</th>
+                    <th class="text-center">Productos</th>
+                    <th>Avance (unidades)</th>
+                    <th class="text-center">Docs</th>
+                    <th>Inicio</th>
+                    <th class="text-center">Estado</th>
+                    <th class="pe-3 text-end"></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for f in filas %}{% set p = f.p %}{% set t = f.r.totales %}
+                <tr>
+                    <td class="ps-3"><a class="poc-num" href="{{ url_for('proceso_oc_detalle', proc_id=p.id) }}">{{ p.numero_oc|oc }}</a></td>
+                    <td>{{ p.descripcion or '—' }}</td>
+                    <td class="text-center">{{ f.r['items']|length }}</td>
+                    <td>
+                        <div class="poc-etapas">
+                            <span class="poc-etapa poc-e1">Salió <b>{{ "{:,}".format(t.SALIDA_PROCESO) }}</b></span>
+                            <span class="poc-etapa poc-e2">Reingresó <b>{{ "{:,}".format(t.REINGRESO) }}</b></span>
+                            <span class="poc-etapa poc-e3">Salida final <b>{{ "{:,}".format(t.SALIDA_FINAL) }}</b></span>
+                        </div>
+                    </td>
+                    <td class="text-center">{% if f.docs %}<span class="badge text-bg-light border"><i class="bi bi-paperclip"></i> {{ f.docs }}</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                    <td class="text-nowrap">
+                        {{ p.fecha_creacion.strftime('%d/%m/%y') if p.fecha_creacion else '' }}
+                        <div class="text-muted" style="font-size:.7rem;">{{ p.creado_por.nombre_completo if p.creado_por else '' }}</div>
+                    </td>
+                    <td class="text-center">
+                        {% if p.estado == 'ABIERTO' %}
+                            {% if f.r.completo %}<span class="badge bg-success">Completo</span>{% else %}<span class="badge bg-warning text-dark">En curso</span>{% endif %}
+                        {% else %}<span class="badge bg-secondary">Cerrada</span>{% endif %}
+                    </td>
+                    <td class="pe-3 text-end"><a href="{{ url_for('proceso_oc_detalle', proc_id=p.id) }}" class="btn btn-sm btn-outline-primary py-0"><i class="bi bi-eye"></i> Ver flujo</a></td>
+                </tr>
+                {% else %}
+                <tr><td colspan="8" class="text-center text-muted py-5">
+                    <i class="bi bi-diagram-3 display-6 opacity-25"></i>
+                    <p class="mt-2 mb-0">No hay procesos {{ 'abiertos' if estado == 'ABIERTO' else ('cerrados' if estado == 'CERRADO' else '') }}{% if buscar %} que coincidan con "{{ buscar }}"{% endif %}.</p>
+                </td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

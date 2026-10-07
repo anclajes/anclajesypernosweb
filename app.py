@@ -4,6 +4,7 @@ from models import ProductImportBolts, CategoryImportBolts, ProductMovementImpor
 from models import MaestroCambioLog, MaestroProducto
 from models import CorreccionAuditoria, CorreccionAuditoriaFoto
 from models import AccesoUsuario
+from models import ProcesoOC, MovimientoDocumento
 from models import ProductMovement
 from models import Payment
 from models import Category
@@ -69,6 +70,7 @@ RUTAS_PERMITIDAS_ALMACEN_VISOR = {
     'inventario_general', 'inventario', 'inventario_importbolts',
     'ver_kardex', 'ver_kardex_importbolts',
     'listar_fotos_producto', 'ver_foto_producto',
+    'ver_documento_kardex', 'procesos_oc', 'proceso_oc_detalle',
 }
 
 def orden_natural_ubicacion(valor):
@@ -579,6 +581,9 @@ def _archivo_demasiado_grande(e):
         flash('El archivo es demasiado grande (máximo 200MB). Si tu respaldo pesa más que '
               'eso, avísame para subir aún más el límite.', 'error')
         return redirect(url_for('admin_reset_sistema_restaurar'))
+    if request.path.endswith('/ajustar_stock') or request.path.endswith('/documento'):
+        flash('⛔ Los documentos pesan demasiado: máximo 5MB por archivo (PDF o foto). No se registró nada.', 'error')
+        return redirect(request.referrer or url_for('index'))
     if request.path.endswith('/reportar_error'):
         return {'status': 'error', 'msg': 'Las fotos pesan demasiado en total (máximo 5MB entre todas). '
                                           'Quita alguna foto o envía menos fotos.'}, 413
@@ -6547,6 +6552,13 @@ def eliminar_producto(prod_id):
             # Redirigir a la página anterior (Mantiene filtros)
             return redirect(request.referrer or url_for('inventario'))
 
+        # 2.5 Si su Kardex tiene documentos adjuntos o está en un proceso por OC, no se borra (se perdería el rastro)
+        if ProductMovement.query.filter(ProductMovement.product_id == prod_id, ProductMovement.proceso_oc_id.isnot(None)).first() or \
+                MovimientoDocumento.query.join(ProductMovement, MovimientoDocumento.movimiento_id == ProductMovement.id) \
+                .filter(ProductMovement.product_id == prod_id).first():
+            flash(f'⛔ No se puede eliminar {sku_eliminado}: su Kardex tiene documentos adjuntos o un proceso por OC. Use "Desactivar".')
+            return redirect(request.referrer or url_for('inventario'))
+
         # 3. LIMPIEZA DE KARDEX (Solo si no hay ventas)
         ProductMovement.query.filter_by(product_id=prod_id).delete()
 
@@ -6620,9 +6632,575 @@ def verificar_eliminacion_producto(prod_id):
 
     return {'status': 'success', 'tiene_ventas': cantidad > 0, 'cantidad_ventas': cantidad}
 
+# ============================================
+# KARDEX: DOCUMENTOS ADJUNTOS (OC / NOTA DE SALIDA / GUÍA), PROCESO POR N° DE OC Y CONSUMO INTERNO
+# - Documentos: PDF o foto (JPG/PNG/WEBP), máx. 5MB c/u, validados por su contenido real (no solo
+#   la extensión). Viven en S3 y se ven/descargan desde el Kardex y desde la ficha del proceso.
+# - Proceso por OC: 1) SALIDA_PROCESO (motivo con MAESTRANZA o TRANSFORMACIÓN; aquí se crea la OC)
+#   -> 2) REINGRESO (misma cantidad, mismos productos) -> 3) SALIDA_FINAL (venta u otro motivo).
+#   Las etapas siguientes SOLO pueden elegir una OC ya creada, nunca escribirla de nuevo.
+# - CONSUMO INTERNO: motivo de salida con opciones propias (catálogo CONSUMO_INTERNO) + explicación.
+# Las tablas y columnas nuevas se crean solas al arrancar (no hace falta ninguna ruta /fix_).
+# ============================================
+TIPOS_DOCUMENTO_MOV = {'ORDEN_COMPRA': 'Orden de Compra', 'NOTA_SALIDA': 'Nota de Salida', 'GUIA': 'Guía'}
+MAX_BYTES_DOCUMENTO = 5 * 1024 * 1024
+LIMITE_PETICION_MOVIMIENTO = 17 * 1024 * 1024     # 3 documentos de 5MB + el resto del formulario
+ETAPAS_PROCESO = {'SALIDA_PROCESO': 'Salida a proceso', 'REINGRESO': 'Reingreso', 'SALIDA_FINAL': 'Salida final'}
+ROLES_VEN_DOCUMENTOS_KARDEX = ['admin', 'almacen', 'almacen_visor', 'administracion']
+ROLES_GESTIONAN_PROCESOS = ['admin', 'almacen']
+MOTIVO_CONSUMO_INTERNO = 'CONSUMO INTERNO'
+OPCIONES_CONSUMO_INTERNO_INICIALES = ['MEJORA DE INFRAESTRUCTURA', 'MANTENIMIENTO / MEJORA DE MÁQUINAS', 'OTRO']
+_COLUMNAS_MOV_NUEVAS = [('proceso_oc_id', 'INTEGER'), ('etapa_proceso', 'VARCHAR(20)'),
+                        ('detalle_motivo', 'VARCHAR(100)'), ('observacion', 'VARCHAR(300)')]
+_kardex_extras_ok = False
+
+
+def _txt_sin_tildes(s):
+    import unicodedata
+    s = unicodedata.normalize('NFD', (s or '').upper())
+    return ''.join(c for c in s if unicodedata.category(c) != 'Mn').strip()
+
+
+def _es_motivo_de_proceso(nombre):
+    """Motivos que ABREN un proceso por OC (salida) o lo continúan (reingreso)."""
+    n = _txt_sin_tildes(nombre)
+    return 'MAESTRANZA' in n or 'TRANSFORM' in n
+
+
+def _es_motivo_reingreso(nombre):
+    n = _txt_sin_tildes(nombre)
+    return _es_motivo_de_proceso(n) or 'REINGRESO' in n
+
+
+def _es_consumo_interno(nombre):
+    return ' '.join(_txt_sin_tildes(nombre).split()) == MOTIVO_CONSUMO_INTERNO
+
+
+def _etq_oc(numero):
+    """'4512' -> 'OC 4512'; 'OC-4512' se deja igual (no 'OC OC-4512')."""
+    n = (numero or '').strip()
+    return n if _txt_sin_tildes(n).startswith('OC') else f'OC {n}'
+
+
+app.add_template_filter(_etq_oc, 'oc')
+
+
+def _normalizar_numero_oc(valor):
+    return ' '.join((valor or '').upper().split())[:50]
+
+
+def _asegurar_kardex_extras():
+    """Crea proceso_oc y movimiento_documento, y agrega a los dos Kardex las columnas nuevas, si faltan.
+    También siembra UNA sola vez el motivo CONSUMO INTERNO (con sus opciones iniciales) y un motivo de
+    entrada para el reingreso de maestranza (si no hay ninguno)."""
+    global _kardex_extras_ok
+    if _kardex_extras_ok:
+        return
+    from sqlalchemy import inspect as sa_inspect
+    es_pg = db.engine.dialect.name == 'postgresql'
+    ProcesoOC.__table__.create(bind=db.engine, checkfirst=True)
+    insp = sa_inspect(db.engine)
+    for tabla in ('product_movement', 'product_movement_importbolts'):
+        existentes = {c['name'] for c in insp.get_columns(tabla)}
+        faltan = [c for c in _COLUMNAS_MOV_NUEVAS if c[0] not in existentes]
+        if not faltan:
+            continue
+        with db.engine.begin() as conn:
+            if es_pg:
+                conn.execute(text("SET LOCAL lock_timeout = '5s'"))
+            for nombre, tipo in faltan:
+                ref = ' REFERENCES proceso_oc(id)' if (nombre == 'proceso_oc_id' and es_pg) else ''
+                conn.execute(text(f'ALTER TABLE {tabla} ADD COLUMN {"IF NOT EXISTS " if es_pg else ""}{nombre} {tipo}{ref}'))
+            if es_pg and any(c[0] == 'proceso_oc_id' for c in faltan):
+                conn.execute(text(f'CREATE INDEX IF NOT EXISTS ix_{tabla}_proceso_oc_id ON {tabla} (proceso_oc_id)'))
+    MovimientoDocumento.__table__.create(bind=db.engine, checkfirst=True)
+    _sembrar_kardex_extras()
+    _kardex_extras_ok = True
+
+
+def _sembrar_kardex_extras():
+    if SystemConfig.query.get('kardex_extras_sembrado'):
+        return
+    try:
+        if not any(_es_consumo_interno(m.nombre) for m in MotivoMovimiento.query.filter_by(tipo='SALIDA').all()):
+            db.session.add(MotivoMovimiento(nombre=MOTIVO_CONSUMO_INTERNO, tipo='SALIDA', activo=True, es_predeterminado=True))
+        if not CatalogoValor.query.filter_by(tipo='CONSUMO_INTERNO').first():
+            for v in OPCIONES_CONSUMO_INTERNO_INICIALES:
+                db.session.add(CatalogoValor(tipo='CONSUMO_INTERNO', valor=v, activo=True, es_predeterminado=False))
+        if not any(_es_motivo_reingreso(m.nombre) for m in MotivoMovimiento.query.filter_by(tipo='ENTRADA').all()):
+            db.session.add(MotivoMovimiento(nombre='REINGRESO DE MAESTRANZA', tipo='ENTRADA', activo=True, es_predeterminado=True))
+        db.session.add(SystemConfig(key='kardex_extras_sembrado', value='1', updated_by='Sistema'))
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()   # otro proceso del servidor lo sembró al mismo tiempo
+
+
+try:
+    with app.app_context():
+        _asegurar_kardex_extras()
+except Exception as _e_kardex_extras:
+    print(f"Aviso: no se pudieron preparar documentos/procesos del Kardex al arrancar: {_e_kardex_extras}")
+
+
+_kardex_extras_ultimo_intento = [0.0]
+
+
+@app.before_request
+def _kardex_extras_antes_de_cada_peticion():
+    """Reintento por si al arrancar la base no estaba disponible (cuando ya quedó listo es solo un if;
+    si sigue fallando, se reintenta como mucho una vez por minuto para no frenar cada página)."""
+    if _kardex_extras_ok or request.endpoint in (None, 'static'):
+        return
+    import time
+    if time.time() - _kardex_extras_ultimo_intento[0] < 60:
+        return
+    _kardex_extras_ultimo_intento[0] = time.time()
+    try:
+        _asegurar_kardex_extras()
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("No se pudieron preparar documentos/procesos del Kardex")
+
+
+def _modelos_kardex(origen):
+    return (ProductMovementImportBolts, ProductImportBolts) if origen == 'IMPORTBOLTS' else (ProductMovement, Product)
+
+
+def _validar_documento_kardex(archivo):
+    """PDF o imagen JPG/PNG/WEBP de máx. 5MB, comprobado por su contenido real. Los PDF con scripts,
+    acciones automáticas o archivos incrustados se rechazan. Devuelve (True, (ext, mime, tamaño)) o
+    (False, mensaje)."""
+    if not archivo or not archivo.filename:
+        return False, 'Archivo vacío.'
+    nombre = archivo.filename
+    ext = nombre.rsplit('.', 1)[-1].lower() if '.' in nombre else ''
+    if ext not in ('pdf', 'jpg', 'jpeg', 'png', 'webp'):
+        return False, f'"{nombre}": formato no permitido. Solo PDF o foto (JPG, PNG, WEBP).'
+    archivo.stream.seek(0, 2)
+    tamano = archivo.stream.tell()
+    archivo.stream.seek(0)
+    if tamano == 0:
+        return False, f'"{nombre}" está vacío.'
+    if tamano > MAX_BYTES_DOCUMENTO:
+        return False, f'"{nombre}" pesa {tamano / 1048576:.1f}MB y el máximo es 5MB.'
+    cab = archivo.stream.read(12)
+    archivo.stream.seek(0)
+    if ext == 'pdf':
+        if not cab.startswith(b'%PDF-'):
+            return False, f'"{nombre}" no es un PDF válido. Se rechazó por seguridad.'
+        contenido = archivo.stream.read()
+        archivo.stream.seek(0)
+        if re.search(rb'/(JavaScript|JS\b|Launch|EmbeddedFile)', contenido):
+            return False, (f'"{nombre}" trae contenido activo (scripts o archivos incrustados) y se rechazó por '
+                           f'seguridad. Ábrelo y guárdalo de nuevo con "Imprimir → Guardar como PDF".')
+        return True, ('pdf', 'application/pdf', tamano)
+    if cab.startswith(b'\xff\xd8\xff') and ext in ('jpg', 'jpeg'):
+        return True, ('jpg', 'image/jpeg', tamano)
+    if cab.startswith(b'\x89PNG\r\n\x1a\n') and ext == 'png':
+        return True, ('png', 'image/png', tamano)
+    if cab[0:4] == b'RIFF' and cab[8:12] == b'WEBP' and ext == 'webp':
+        return True, ('webp', 'image/webp', tamano)
+    return False, f'"{nombre}" no es una imagen válida (o su extensión no coincide). Se rechazó por seguridad.'
+
+
+def _subir_documento_kardex(origen, mov, tipo_doc, archivo, info, claves_subidas):
+    """Sube el archivo (ya validado) a S3 y crea su MovimientoDocumento (sin commit)."""
+    ext, mime, tamano = info
+    s3_key = f"kardex/{origen.lower()}/{mov.id}/{tipo_doc.lower()}_{uuid.uuid4().hex}.{ext}"
+    archivo.stream.seek(0)
+    s3_client.upload_fileobj(archivo.stream, S3_BUCKET_NAME, s3_key, ExtraArgs={'ContentType': mime})
+    claves_subidas.append(s3_key)
+    doc = MovimientoDocumento(
+        origen=origen, tipo_documento=tipo_doc, s3_key=s3_key,
+        movimiento_id=mov.id if origen == 'ANCLAJES' else None,
+        movimiento_ib_id=mov.id if origen == 'IMPORTBOLTS' else None,
+        proceso_oc_id=mov.proceso_oc_id,
+        nombre_original=secure_filename(archivo.filename)[:200] or f'documento.{ext}',
+        content_type=mime, tamano_bytes=tamano, subido_por_id=session.get('user_id'), fecha=hora_peru())
+    db.session.add(doc)
+    return doc
+
+
+def _borrar_de_s3(claves):
+    for k in claves:
+        try:
+            s3_client.delete_object(Bucket=S3_BUCKET_NAME, Key=k)
+        except Exception as e:
+            print(f"Aviso: no se pudo borrar {k} de S3: {e}")
+
+
+def _saldo_producto_en_proceso(proceso_id, origen, product_id):
+    Modelo, _ = _modelos_kardex(origen)
+    saldo = {'SALIDA_PROCESO': 0, 'REINGRESO': 0, 'SALIDA_FINAL': 0}
+    filas = db.session.query(Modelo.etapa_proceso, func.coalesce(func.sum(Modelo.cantidad), 0)).filter(
+        Modelo.proceso_oc_id == proceso_id, Modelo.product_id == product_id).group_by(Modelo.etapa_proceso).all()
+    for etapa, total in filas:
+        if etapa in saldo:
+            saldo[etapa] = int(total or 0)
+    return saldo
+
+
+def _resumen_proceso(proc):
+    """Movimientos (de los dos inventarios, en orden) y balance por producto de un proceso."""
+    movimientos, items = [], {}
+    for origen in ('ANCLAJES', 'IMPORTBOLTS'):
+        Modelo, _ = _modelos_kardex(origen)
+        for m in Modelo.query.filter_by(proceso_oc_id=proc.id).all():
+            movimientos.append({'origen': origen, 'mov': m})
+            it = items.setdefault((origen, m.product_id), {
+                'origen': origen, 'producto': m.product,
+                'SALIDA_PROCESO': 0, 'REINGRESO': 0, 'SALIDA_FINAL': 0})
+            if m.etapa_proceso in ETAPAS_PROCESO:
+                it[m.etapa_proceso] += m.cantidad or 0
+    movimientos.sort(key=lambda x: (x['mov'].fecha or datetime.min, x['mov'].id))
+    lista = sorted(items.values(), key=lambda i: (i['origen'], i['producto'].sku if i['producto'] else ''))
+    for it in lista:
+        it['falta_reingresar'] = it['SALIDA_PROCESO'] - it['REINGRESO']
+        it['falta_salida_final'] = it['REINGRESO'] - it['SALIDA_FINAL']
+        it['completo'] = it['SALIDA_PROCESO'] > 0 and it['falta_reingresar'] == 0 and it['falta_salida_final'] == 0
+    totales = {k: sum(i[k] for i in lista) for k in ETAPAS_PROCESO}
+    return {'movimientos': movimientos, 'items': lista, 'totales': totales,
+            'completo': bool(lista) and all(i['completo'] for i in lista)}
+
+
+def _documentos_de_movimientos(origen, ids):
+    """{movimiento_id: [MovimientoDocumento, ...]} para una página del Kardex."""
+    if not ids:
+        return {}
+    col = MovimientoDocumento.movimiento_ib_id if origen == 'IMPORTBOLTS' else MovimientoDocumento.movimiento_id
+    resultado = {}
+    for d in MovimientoDocumento.query.filter(col.in_(ids)).order_by(MovimientoDocumento.id).all():
+        resultado.setdefault(d.movimiento_ib_id if origen == 'IMPORTBOLTS' else d.movimiento_id, []).append(d)
+    return resultado
+
+
+def _preparar_extras_movimiento(origen, tipo_kardex, motivo_nombre, prod_id, cantidad):
+    """Valida TODO lo nuevo del movimiento ANTES de tocar el stock: proceso por OC, consumo interno,
+    observación y documentos. Devuelve (extras, None) o (None, mensaje_de_error)."""
+    f = request.form
+    extras = {'proceso': None, 'nueva_oc': None, 'etapa': None, 'detalle_motivo': None,
+              'observacion': ' '.join((f.get('observacion') or '').split())[:300] or None, 'archivos': []}
+
+    # --- CONSUMO INTERNO ---
+    if tipo_kardex == 'SALIDA' and _es_consumo_interno(motivo_nombre):
+        opciones = {v.valor for v in CatalogoValor.query.filter_by(tipo='CONSUMO_INTERNO', activo=True).all()}
+        detalle = (f.get('detalle_motivo') or '').strip()
+        if opciones and detalle not in opciones:
+            return None, '⛔ Consumo interno: elige en qué se usó el material.'
+        if not extras['observacion'] or len(extras['observacion']) < 5:
+            return None, '⛔ Consumo interno: explica brevemente en qué se usó (máquina, área, trabajo...).'
+        extras['detalle_motivo'] = detalle[:100] or None
+
+    # --- PROCESO POR N° DE OC ---
+    sel = (f.get('proceso_oc_id') or '').strip()
+    inicio = tipo_kardex == 'SALIDA' and _es_motivo_de_proceso(motivo_nombre)
+    if sel == '__nueva__':
+        if not inicio:
+            return None, '⛔ Una OC nueva solo se crea en la salida a maestranza/transformación. Aquí elige una OC ya creada.'
+        numero = _normalizar_numero_oc(f.get('nuevo_numero_oc'))
+        if len(numero) < 2:
+            return None, '⛔ Escribe el N° de OC para iniciar el proceso.'
+        existente = ProcesoOC.query.filter(func.upper(ProcesoOC.numero_oc) == numero).first()
+        if existente:
+            return None, (f'⛔ La {_etq_oc(existente.numero_oc)} ya existe'
+                          + (' y está cerrada.' if existente.estado != 'ABIERTO' else ': selecciónala de la lista en vez de crearla de nuevo.'))
+        extras['nueva_oc'] = (numero, ' '.join((f.get('nuevo_oc_descripcion') or '').split())[:200] or None)
+        extras['etapa'] = 'SALIDA_PROCESO'
+    elif sel:
+        try:
+            proc = ProcesoOC.query.get(int(sel))
+        except ValueError:
+            proc = None
+        if not proc:
+            return None, '⛔ La OC elegida no existe. Vuelve a elegirla.'
+        if proc.estado != 'ABIERTO':
+            return None, f'⛔ La {_etq_oc(proc.numero_oc)} está cerrada. Pide que la reabran si necesitas registrar algo más.'
+        extras['proceso'] = proc
+        saldo = _saldo_producto_en_proceso(proc.id, origen, int(prod_id))
+        if inicio:
+            extras['etapa'] = 'SALIDA_PROCESO'
+        elif tipo_kardex == 'ENTRADA':
+            extras['etapa'] = 'REINGRESO'
+            disponible = saldo['SALIDA_PROCESO'] - saldo['REINGRESO']
+            if saldo['SALIDA_PROCESO'] == 0:
+                return None, f'⛔ Este producto no salió a proceso en la {_etq_oc(proc.numero_oc)}: solo se reingresa lo que salió.'
+            if cantidad > disponible:
+                return None, (f'⛔ En la {_etq_oc(proc.numero_oc)} este producto salió {saldo["SALIDA_PROCESO"]} y ya reingresó '
+                              f'{saldo["REINGRESO"]}: como máximo puedes reingresar {max(disponible, 0)}.')
+        else:
+            extras['etapa'] = 'SALIDA_FINAL'
+            disponible = saldo['REINGRESO'] - saldo['SALIDA_FINAL']
+            if saldo['REINGRESO'] == 0:
+                return None, f'⛔ Este producto todavía no tiene reingreso en la {_etq_oc(proc.numero_oc)}. Primero registra el reingreso.'
+            if cantidad > disponible:
+                return None, (f'⛔ En la {_etq_oc(proc.numero_oc)} este producto reingresó {saldo["REINGRESO"]} y ya tuvo salida final '
+                              f'de {saldo["SALIDA_FINAL"]}: como máximo puedes sacar {max(disponible, 0)}.')
+    else:
+        if inicio:
+            return None, '⛔ Una salida a maestranza/transformación necesita su N° de OC: crea una nueva o elige una abierta.'
+        if tipo_kardex == 'ENTRADA' and _es_motivo_reingreso(motivo_nombre):
+            return None, '⛔ Un reingreso de maestranza/transformación debe ir con su OC: elígela de la lista.'
+
+    # --- DOCUMENTOS (máx. uno por tipo) ---
+    for tipo_doc, etiqueta in TIPOS_DOCUMENTO_MOV.items():
+        archivo = request.files.get(f'doc_{tipo_doc}')
+        if not archivo or not archivo.filename:
+            continue
+        ok, info = _validar_documento_kardex(archivo)
+        if not ok:
+            return None, f'⛔ {etiqueta}: {info}'
+        extras['archivos'].append((tipo_doc, archivo, info))
+    return extras, None
+
+
+def _aplicar_extras_movimiento(origen, mov, extras, claves):
+    """Después de crear el movimiento (con flush): crea la OC nueva si corresponde, guarda los campos
+    extra y sube los documentos a S3. Va anotando en 'claves' lo que sube (para borrarlo si algo falla)."""
+    if extras['nueva_oc']:
+        numero, desc = extras['nueva_oc']
+        proc = ProcesoOC(numero_oc=numero, descripcion=desc, estado='ABIERTO',
+                         creado_por_id=session.get('user_id'), fecha_creacion=hora_peru())
+        db.session.add(proc)
+        db.session.flush()
+        extras['proceso'] = proc
+        registrar_log(f"Inició el proceso {_etq_oc(numero)}" + (f" ({desc})" if desc else ''), 'bi-diagram-3', 'text-primary')
+    if extras['proceso']:
+        mov.proceso_oc_id = extras['proceso'].id
+        mov.etapa_proceso = extras['etapa']
+        if extras['etapa'] == 'SALIDA_FINAL' and not mov.referencia:
+            mov.referencia = extras['proceso'].numero_oc[:50]
+    mov.detalle_motivo = extras['detalle_motivo']
+    mov.observacion = extras['observacion']
+    for tipo_doc, archivo, info in extras['archivos']:
+        _subir_documento_kardex(origen, mov, tipo_doc, archivo, info, claves)
+
+
+def _cerrar_proceso_si_completo(proc):
+    """Al completar todo (lo que salió volvió y salió definitivamente) el proceso se cierra solo."""
+    if proc and proc.estado == 'ABIERTO' and _resumen_proceso(proc)['completo']:
+        proc.estado = 'CERRADO'
+        proc.fecha_cierre = hora_peru()
+        proc.cerrado_por_id = session.get('user_id')
+        proc.nota_cierre = 'Cerrado automáticamente: todo lo que salió reingresó y tuvo su salida final.'
+        return True
+    return False
+
+
+def _guardar_movimiento_con_extras(origen, kardex, extras):
+    """Flush + extras + commit, con limpieza de S3 si algo falla. Devuelve (ok, mensaje_extra)."""
+    claves = []
+    try:
+        db.session.flush()
+        _aplicar_extras_movimiento(origen, kardex, extras, claves)
+        db.session.flush()
+        cerrado = _cerrar_proceso_si_completo(extras['proceso']) if kardex.etapa_proceso == 'SALIDA_FINAL' else False
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        _borrar_de_s3(claves)
+        return False, '⛔ Esa OC acaba de ser creada por otro usuario. Vuelve a abrir el movimiento y elígela de la lista.'
+    except Exception as e:
+        db.session.rollback()
+        _borrar_de_s3(claves)
+        app.logger.exception("No se pudo guardar el movimiento con sus documentos")
+        return False, f'⛔ No se pudo guardar el movimiento (no se registró nada): {e}'
+    partes = []
+    if extras['archivos']:
+        partes.append(f"{len(extras['archivos'])} documento(s) adjunto(s)")
+    if extras['proceso']:
+        partes.append(f"{_etq_oc(extras['proceso'].numero_oc)} · {ETAPAS_PROCESO.get(kardex.etapa_proceso, '')}")
+        if cerrado:
+            partes.append('proceso completo y cerrado ✅')
+    return True, ' · '.join(partes)
+
+
+@app.route('/api/procesos_oc/abiertos')
+def api_procesos_oc_abiertos():
+    """OC abiertas para el selector del Movimiento de Kardex, con el saldo del producto elegido."""
+    if session.get('role') not in ROLES_GESTIONAN_PROCESOS:
+        return {'procesos': []}, 403
+    origen = 'IMPORTBOLTS' if request.args.get('origen') == 'IMPORTBOLTS' else 'ANCLAJES'
+    prod_id = request.args.get('prod_id', type=int)
+    procesos = ProcesoOC.query.filter_by(estado='ABIERTO').order_by(ProcesoOC.fecha_creacion.desc()).all()
+    data = []
+    for p in procesos:
+        docs = MovimientoDocumento.query.filter_by(proceso_oc_id=p.id).order_by(MovimientoDocumento.id).all()
+        n_prod = 0
+        for o in ('ANCLAJES', 'IMPORTBOLTS'):
+            Modelo, _ = _modelos_kardex(o)
+            n_prod += db.session.query(func.count(func.distinct(Modelo.product_id))).filter(Modelo.proceso_oc_id == p.id).scalar() or 0
+        data.append({
+            'id': p.id, 'numero_oc': p.numero_oc, 'etiqueta': _etq_oc(p.numero_oc), 'descripcion': p.descripcion or '', 'productos': n_prod,
+            'saldo': _saldo_producto_en_proceso(p.id, origen, prod_id) if prod_id else None,
+            'documentos': [{'id': d.id, 'tipo': TIPOS_DOCUMENTO_MOV.get(d.tipo_documento, d.tipo_documento),
+                            'url': url_for('ver_documento_kardex', doc_id=d.id)} for d in docs],
+        })
+    return {'procesos': data}
+
+
+@app.route('/api/consumo_interno/opciones')
+def api_consumo_interno_opciones():
+    if session.get('role') not in ['admin', 'almacen']:
+        return {'opciones': []}, 403
+    valores = CatalogoValor.query.filter_by(tipo='CONSUMO_INTERNO', activo=True).all()
+    return {'opciones': sorted((v.valor for v in valores), key=_clave_alfabetica)}
+
+
+@app.route('/kardex/documento/<int:doc_id>')
+def ver_documento_kardex(doc_id):
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    if session.get('role') not in ROLES_VEN_DOCUMENTOS_KARDEX:
+        return "No autorizado", 403
+    doc = MovimientoDocumento.query.get_or_404(doc_id)
+    try:
+        archivo_s3 = s3_client.get_object(Bucket=S3_BUCKET_NAME, Key=doc.s3_key)
+    except Exception as e:
+        return f"<h3>No se pudo recuperar el documento</h3><p>{html.escape(str(e))}</p>", 404
+    ext = doc.s3_key.rsplit('.', 1)[-1].lower()
+    mime = {'pdf': 'application/pdf', 'jpg': 'image/jpeg', 'png': 'image/png', 'webp': 'image/webp'}.get(ext, 'application/octet-stream')
+    etiqueta = TIPOS_DOCUMENTO_MOV.get(doc.tipo_documento, 'Documento').replace(' ', '_').replace('í', 'i')
+    ref = (doc.proceso_oc.numero_oc if doc.proceso_oc else '') or str(doc.movimiento_id or doc.movimiento_ib_id or '')
+    nombre = secure_filename(f"{etiqueta}_{ref}_{doc.id}.{ext}") or f"documento_{doc.id}.{ext}"
+    resp = send_file(io.BytesIO(archivo_s3['Body'].read()), mimetype=mime,
+                     as_attachment=request.args.get('download') == '1', download_name=nombre)
+    resp.headers['X-Content-Type-Options'] = 'nosniff'
+    resp.headers['Cache-Control'] = 'private, max-age=300'
+    return resp
+
+
+@app.route('/kardex/<origen>/movimiento/<int:mov_id>/documento', methods=['POST'])
+def subir_documento_movimiento(origen, mov_id):
+    """Adjuntar un documento a un movimiento ya registrado (ej. la guía llegó después)."""
+    origen = origen.upper()
+    destino = request.referrer or url_for('ver_kardex_importbolts' if origen == 'IMPORTBOLTS' else 'ver_kardex')
+    if session.get('role') not in ['admin', 'almacen'] or origen not in ('ANCLAJES', 'IMPORTBOLTS'):
+        flash('⛔ No autorizado para adjuntar documentos.')
+        return redirect(destino)
+    request.max_content_length = LIMITE_PETICION_MOVIMIENTO
+    Modelo, _ = _modelos_kardex(origen)
+    mov = Modelo.query.get_or_404(mov_id)
+    tipo_doc = (request.form.get('tipo_documento') or '').upper()
+    if tipo_doc not in TIPOS_DOCUMENTO_MOV:
+        flash('⛔ Elige el tipo de documento (Orden de Compra, Nota de Salida o Guía).')
+        return redirect(destino)
+    archivo = request.files.get('archivo')
+    ok, info = _validar_documento_kardex(archivo)
+    if not ok:
+        flash(f'⛔ {info}')
+        return redirect(destino)
+    claves = []
+    try:
+        _subir_documento_kardex(origen, mov, tipo_doc, archivo, info, claves)
+        registrar_log(f"Adjuntó {TIPOS_DOCUMENTO_MOV[tipo_doc]} al movimiento #{mov.id} del Kardex "
+                      f"{'Import Bolts' if origen == 'IMPORTBOLTS' else 'Anclajes'} ({mov.product.sku})", 'bi-paperclip', 'text-info')
+        db.session.commit()
+        flash(f'✅ {TIPOS_DOCUMENTO_MOV[tipo_doc]} adjuntada al movimiento de {mov.product.sku}.')
+    except Exception as e:
+        db.session.rollback()
+        _borrar_de_s3(claves)
+        flash(f'⛔ No se pudo subir el documento: {e}')
+    return redirect(destino)
+
+
+@app.route('/kardex/documento/<int:doc_id>/eliminar', methods=['POST'])
+def eliminar_documento_kardex(doc_id):
+    """Solo Gerencia: quitar un documento subido por error (queda en el historial quién lo quitó)."""
+    destino = request.referrer or url_for('ver_kardex')
+    if session.get('role') != 'admin':
+        flash('⛔ Solo Gerencia puede quitar documentos del Kardex.')
+        return redirect(destino)
+    doc = MovimientoDocumento.query.get_or_404(doc_id)
+    clave = doc.s3_key
+    registrar_log(f"Quitó el documento {TIPOS_DOCUMENTO_MOV.get(doc.tipo_documento, '')} "
+                  f"({doc.nombre_original}) del movimiento #{doc.movimiento_id or doc.movimiento_ib_id}", 'bi-trash-fill', 'text-danger')
+    db.session.delete(doc)
+    db.session.commit()
+    _borrar_de_s3([clave])
+    flash('Documento quitado del movimiento.')
+    return redirect(destino)
+
+
+@app.route('/procesos_oc')
+def procesos_oc():
+    if session.get('role') not in ROLES_GESTIONAN_PROCESOS + ['administracion', 'almacen_visor']:
+        return "Acceso denegado", 403
+    estado = request.args.get('estado', 'ABIERTO')
+    buscar = _normalizar_numero_oc(request.args.get('q'))
+    q = ProcesoOC.query
+    if estado in ('ABIERTO', 'CERRADO'):
+        q = q.filter(ProcesoOC.estado == estado)
+    if buscar:
+        q = q.filter(or_(ProcesoOC.numero_oc.ilike(f'%{buscar}%'), ProcesoOC.descripcion.ilike(f'%{buscar}%')))
+    procesos = q.order_by(ProcesoOC.fecha_creacion.desc()).limit(300).all()
+    filas = []
+    for p in procesos:
+        r = _resumen_proceso(p)
+        filas.append({'p': p, 'r': r, 'docs': MovimientoDocumento.query.filter_by(proceso_oc_id=p.id).count()})
+    conteo = {e: ProcesoOC.query.filter_by(estado=e).count() for e in ('ABIERTO', 'CERRADO')}
+    return render_template('procesos_oc.html', filas=filas, estado=estado, buscar=buscar, conteo=conteo,
+                           etapas=ETAPAS_PROCESO)
+
+
+@app.route('/procesos_oc/<int:proc_id>')
+def proceso_oc_detalle(proc_id):
+    if session.get('role') not in ROLES_GESTIONAN_PROCESOS + ['administracion', 'almacen_visor']:
+        return "Acceso denegado", 403
+    proc = ProcesoOC.query.get_or_404(proc_id)
+    r = _resumen_proceso(proc)
+    docs_mov = {}
+    for o in ('ANCLAJES', 'IMPORTBOLTS'):
+        docs_mov[o] = _documentos_de_movimientos(o, [x['mov'].id for x in r['movimientos'] if x['origen'] == o])
+    return render_template('proceso_oc_detalle.html', proc=proc, r=r, docs_mov=docs_mov,
+                           etapas=ETAPAS_PROCESO, tipos_doc=TIPOS_DOCUMENTO_MOV,
+                           puede_gestionar=session.get('role') in ROLES_GESTIONAN_PROCESOS)
+
+
+@app.route('/procesos_oc/<int:proc_id>/estado', methods=['POST'])
+def proceso_oc_cambiar_estado(proc_id):
+    if session.get('role') not in ROLES_GESTIONAN_PROCESOS:
+        flash('⛔ No autorizado.')
+        return redirect(url_for('proceso_oc_detalle', proc_id=proc_id))
+    proc = ProcesoOC.query.get_or_404(proc_id)
+    accion = request.form.get('accion')
+    nota = ' '.join((request.form.get('nota') or '').split())[:255]
+    if accion == 'cerrar' and proc.estado == 'ABIERTO':
+        r = _resumen_proceso(proc)
+        if not r['completo'] and len(nota) < 5:
+            flash('⛔ El proceso tiene cantidades pendientes: escribe el motivo del cierre.')
+            return redirect(url_for('proceso_oc_detalle', proc_id=proc_id))
+        proc.estado = 'CERRADO'
+        proc.fecha_cierre = hora_peru()
+        proc.cerrado_por_id = session.get('user_id')
+        proc.nota_cierre = nota or 'Cerrado manualmente (completo).'
+        registrar_log(f"Cerró el proceso {_etq_oc(proc.numero_oc)}" + (f": {nota}" if nota else ''), 'bi-lock-fill', 'text-secondary')
+        flash(f'Proceso {_etq_oc(proc.numero_oc)} cerrado.')
+    elif accion == 'reabrir' and proc.estado == 'CERRADO':
+        proc.estado = 'ABIERTO'
+        proc.fecha_cierre = None
+        proc.cerrado_por_id = None
+        proc.nota_cierre = None
+        registrar_log(f"Reabrió el proceso {_etq_oc(proc.numero_oc)}" + (f": {nota}" if nota else ''), 'bi-unlock-fill', 'text-warning')
+        flash(f'Proceso {_etq_oc(proc.numero_oc)} reabierto: ya se puede elegir otra vez en los movimientos.')
+    db.session.commit()
+    return redirect(url_for('proceso_oc_detalle', proc_id=proc_id))
+
+
+def _filtro_kardex_por_oc(query, Modelo):
+    """Filtro ?oc=<id del proceso> del Kardex. Devuelve (query, proceso o None)."""
+    oc_id = request.args.get('oc', type=int)
+    if not oc_id:
+        return query, None
+    proc = ProcesoOC.query.get(oc_id)
+    return query.filter(Modelo.proceso_oc_id == oc_id), proc
+
+
+
 @app.route('/producto/ajustar_stock', methods=['POST'])
 def ajustar_stock():
     if session.get('role') not in ['admin', 'almacen']: return "No autorizado", 403
+    # Puede traer hasta 3 documentos de 5MB (Orden de Compra, Nota de Salida, Guía)
+    request.max_content_length = LIMITE_PETICION_MOVIMIENTO
 
     prod_id = request.form['prod_id']
     tipo_ajuste = request.form['tipo']
@@ -6650,6 +7228,15 @@ def ajustar_stock():
     fecha_movimiento, error_fecha = _resolver_fecha_movimiento(fecha_movimiento_form)
     if error_fecha:
         flash(error_fecha)
+        return redirect(url_origen or url_for('inventario'))
+
+    # Proceso por OC, consumo interno, observación y documentos: se valida TODO antes de tocar el stock
+    motivo_obj = MotivoMovimiento.query.get(int(motivo_id)) if (motivo_id or '').isdigit() else None
+    motivo_nombre = motivo_obj.nombre if motivo_obj else motivo_texto
+    extras, error_extras = _preparar_extras_movimiento(
+        'ANCLAJES', 'ENTRADA' if tipo_ajuste == 'ingreso' else 'SALIDA', motivo_nombre, prod_id, cantidad)
+    if error_extras:
+        flash(error_extras)
         return redirect(url_origen or url_for('inventario'))
 
     # ================================================================
@@ -6753,7 +7340,12 @@ def ajustar_stock():
         fecha=fecha_movimiento
     )
     db.session.add(kardex)
-    db.session.commit()
+    ok_guardado, detalle_guardado = _guardar_movimiento_con_extras('ANCLAJES', kardex, extras)
+    if not ok_guardado:
+        session.pop('_flashes', None)   # quita el "registrado" de arriba: no se guardó nada
+        flash(detalle_guardado)
+    elif detalle_guardado:
+        flash(f'📎 {detalle_guardado}')
 
     if url_origen:
         return redirect(url_origen)
@@ -6776,7 +7368,9 @@ def ver_kardex():
                 ProductMovement.motivo.ilike(f"%{busqueda}%"),
                 ProductMovement.referencia.ilike(f"%{busqueda}%"),
                 ProductMovement.ruc_proveedor.ilike(f"%{busqueda}%"),
-                ProductMovement.razon_social_proveedor.ilike(f"%{busqueda}%")
+                ProductMovement.razon_social_proveedor.ilike(f"%{busqueda}%"),
+                ProductMovement.detalle_motivo.ilike(f"%{busqueda}%"),
+                ProductMovement.observacion.ilike(f"%{busqueda}%")
             )
         )
 
@@ -6854,6 +7448,9 @@ def ver_kardex():
         query = query.join(MotivoMovimiento, ProductMovement.motivo_id == MotivoMovimiento.id) \
                      .filter(MotivoMovimiento.nombre.ilike(f"%{motivo_cat_filtro}%"))
 
+    # 12. Proceso por N° de OC: todo su flujo (salida a proceso, reingreso y salida final)
+    query, proceso_filtro = _filtro_kardex_por_oc(query, ProductMovement)
+
     # Totales de TODO el filtro (no solo de la página): movimientos, unidades y toneladas
     # (cantidad x peso nominal, igual que los dashboards) para poder cuadrar contra el KPI.
     tot_movs, tot_unid, tot_kg = query.with_entities(
@@ -6870,6 +7467,8 @@ def ver_kardex():
     per_page = 25
     pagination = query.paginate(page=page, per_page=per_page, error_out=False)
     movimientos = pagination.items
+    docs_por_mov = _documentos_de_movimientos('ANCLAJES', [m.id for m in movimientos])
+    procesos_oc_lista = ProcesoOC.query.order_by(ProcesoOC.estado, ProcesoOC.fecha_creacion.desc()).limit(300).all()
 
     categorias = Category.query.order_by(Category.nombre).all()
 
@@ -6902,7 +7501,15 @@ def ver_kardex():
                            lista_calidades_kardex=lista_calidades_kardex,
                            catalogo_motivos=catalogo_motivos,
                            cat_filtro=cat_nombre,
-                           calidad_filtro=calidad_nombre)
+                           calidad_filtro=calidad_nombre,
+                           origen_kardex='ANCLAJES',
+                           docs_por_mov=docs_por_mov,
+                           procesos_oc_lista=procesos_oc_lista,
+                           proceso_filtro=proceso_filtro,
+                           etapas_proceso=ETAPAS_PROCESO,
+                           tipos_doc=TIPOS_DOCUMENTO_MOV,
+                           puede_adjuntar=session.get('role') in ['admin', 'almacen'],
+                           puede_ver_docs=session.get('role') in ROLES_VEN_DOCUMENTOS_KARDEX)
 
 
 
@@ -8321,6 +8928,8 @@ def inventario_importbolts_respaldo():
 @app.route('/producto_importbolts/ajustar_stock', methods=['POST'])
 def ajustar_stock_importbolts():
     if session.get('role') not in ['admin', 'almacen']: return "No autorizado", 403
+    # Puede traer hasta 3 documentos de 5MB (Orden de Compra, Nota de Salida, Guía)
+    request.max_content_length = LIMITE_PETICION_MOVIMIENTO
 
     prod_id = request.form['prod_id']
     tipo_ajuste = request.form['tipo']
@@ -8348,6 +8957,15 @@ def ajustar_stock_importbolts():
     fecha_movimiento, error_fecha = _resolver_fecha_movimiento(fecha_movimiento_form)
     if error_fecha:
         flash(error_fecha)
+        return redirect(url_origen or url_for('inventario_importbolts'))
+
+    # Proceso por OC, consumo interno, observación y documentos: se valida TODO antes de tocar el stock
+    motivo_obj = MotivoMovimiento.query.get(int(motivo_id)) if (motivo_id or '').isdigit() else None
+    motivo_nombre = motivo_obj.nombre if motivo_obj else motivo_texto
+    extras, error_extras = _preparar_extras_movimiento(
+        'IMPORTBOLTS', 'ENTRADA' if tipo_ajuste == 'ingreso' else 'SALIDA', motivo_nombre, prod_id, cantidad)
+    if error_extras:
+        flash(error_extras)
         return redirect(url_origen or url_for('inventario_importbolts'))
 
     # ================================================================
@@ -8448,7 +9066,12 @@ def ajustar_stock_importbolts():
         fecha=fecha_movimiento
     )
     db.session.add(kardex)
-    db.session.commit()
+    ok_guardado, detalle_guardado = _guardar_movimiento_con_extras('IMPORTBOLTS', kardex, extras)
+    if not ok_guardado:
+        session.pop('_flashes', None)   # quita el "registrado" de arriba: no se guardó nada
+        flash(detalle_guardado)
+    elif detalle_guardado:
+        flash(f'📎 {detalle_guardado}')
 
     if url_origen:
         return redirect(url_origen)
@@ -8572,6 +9195,14 @@ def eliminar_producto_importbolts(prod_id):
         ventas = OrderDetail.query.filter_by(product_id_importbolts=prod_id).first()
         if ventas:
             flash(f'⛔ No se puede eliminar {sku_eliminado}: Ya tiene ventas registradas. Use "Desactivar" en su lugar.')
+            return redirect(request.referrer or url_for('inventario_importbolts'))
+
+        # Si su Kardex tiene documentos adjuntos o está en un proceso por OC, no se borra (se perdería el rastro)
+        if ProductMovementImportBolts.query.filter(ProductMovementImportBolts.product_id == prod_id,
+                                                   ProductMovementImportBolts.proceso_oc_id.isnot(None)).first() or \
+                MovimientoDocumento.query.join(ProductMovementImportBolts, MovimientoDocumento.movimiento_ib_id == ProductMovementImportBolts.id) \
+                .filter(ProductMovementImportBolts.product_id == prod_id).first():
+            flash(f'⛔ No se puede eliminar {sku_eliminado}: su Kardex tiene documentos adjuntos o un proceso por OC. Use "Desactivar".')
             return redirect(request.referrer or url_for('inventario_importbolts'))
 
         # Limpiar Kardex de ImportBolts
@@ -8776,7 +9407,9 @@ def ver_kardex_importbolts():
                 ProductMovementImportBolts.motivo.ilike(f"%{busqueda}%"),
                 ProductMovementImportBolts.referencia.ilike(f"%{busqueda}%"),
                 ProductMovementImportBolts.ruc_proveedor.ilike(f"%{busqueda}%"),
-                ProductMovementImportBolts.razon_social_proveedor.ilike(f"%{busqueda}%")
+                ProductMovementImportBolts.razon_social_proveedor.ilike(f"%{busqueda}%"),
+                ProductMovementImportBolts.detalle_motivo.ilike(f"%{busqueda}%"),
+                ProductMovementImportBolts.observacion.ilike(f"%{busqueda}%")
             )
         )
 
@@ -8847,6 +9480,9 @@ def ver_kardex_importbolts():
         query = query.join(MotivoMovimiento, ProductMovementImportBolts.motivo_id == MotivoMovimiento.id) \
                      .filter(MotivoMovimiento.nombre.ilike(f"%{motivo_cat_filtro}%"))
 
+    # 12. Proceso por N° de OC: todo su flujo (salida a proceso, reingreso y salida final)
+    query, proceso_filtro = _filtro_kardex_por_oc(query, ProductMovementImportBolts)
+
     # Totales de TODO el filtro (no solo de la página): movimientos, unidades y toneladas
     # (cantidad x peso nominal, igual que los dashboards) para poder cuadrar contra el KPI.
     tot_movs, tot_unid, tot_kg = query.with_entities(
@@ -8863,6 +9499,8 @@ def ver_kardex_importbolts():
     per_page = 25
     pagination = query.paginate(page=page, per_page=per_page, error_out=False)
     movimientos = pagination.items
+    docs_por_mov = _documentos_de_movimientos('IMPORTBOLTS', [m.id for m in movimientos])
+    procesos_oc_lista = ProcesoOC.query.order_by(ProcesoOC.estado, ProcesoOC.fecha_creacion.desc()).limit(300).all()
 
     categorias = CategoryImportBolts.query.order_by(CategoryImportBolts.nombre).all()
 
@@ -8894,7 +9532,15 @@ def ver_kardex_importbolts():
                            lista_calidades_kardex=lista_calidades_kardex,
                            catalogo_motivos=catalogo_motivos,
                            cat_filtro=cat_nombre,
-                           calidad_filtro=calidad_nombre)
+                           calidad_filtro=calidad_nombre,
+                           origen_kardex='IMPORTBOLTS',
+                           docs_por_mov=docs_por_mov,
+                           procesos_oc_lista=procesos_oc_lista,
+                           proceso_filtro=proceso_filtro,
+                           etapas_proceso=ETAPAS_PROCESO,
+                           tipos_doc=TIPOS_DOCUMENTO_MOV,
+                           puede_adjuntar=session.get('role') in ['admin', 'almacen'],
+                           puede_ver_docs=session.get('role') in ROLES_VEN_DOCUMENTOS_KARDEX)
 
 
 # =====================================================================
@@ -10240,7 +10886,8 @@ def auditoria_api_codigos(origen):
 
     productos = q.order_by(Modelo.sku).all()
     return {'status': 'success', 'productos': [
-        {'id': p.id, 'sku': p.sku, 'nombre': p.nombre, 'estado': p.estado or ''} for p in productos
+        {'id': p.id, 'sku': p.sku, 'nombre': p.nombre, 'estado': p.estado or '',
+         'ubicacion': ' '.join((p.ubicacion or '').split())} for p in productos   # ubicación actual en el sistema (no revela stock)
     ]}
 
 
@@ -10280,7 +10927,7 @@ def auditoria_api_verificar_duplicado(origen):
     for r in registros:
         ubic = ' '.join(filter(None, [
             f"Anaquel {r.anaquel}" if r.anaquel else '',
-            f"Nicho {r.nicho}" if r.nicho else '',
+            f"Casillero {r.nicho}" if r.nicho else '',
         ])).strip() or 'sin ubicación registrada'
         item = {
             'id': r.id, 'auditor': r.trabajador.nombre_completo, 'ubicacion': ubic,
@@ -11000,7 +11647,7 @@ def admin_auditoria_resolver_correccion(reg_id):
 @app.route('/admin/catalogos')
 def admin_catalogos():
     if session.get('role') not in ['admin', 'almacen']: return "Acceso denegado", 403
-    tipos = ['ESTADO_FISICO', 'UNIDAD_MEDIDA', 'ANAQUEL', 'NICHO']
+    tipos = ['ESTADO_FISICO', 'UNIDAD_MEDIDA', 'ANAQUEL', 'NICHO', 'CONSUMO_INTERNO']
     catalogos = {}
     for t in tipos:
         valores = CatalogoValor.query.filter_by(tipo=t).all()
@@ -11274,7 +11921,7 @@ def admin_catalogo_valor_nuevo():
     tipo = request.form.get('tipo', '').strip().upper()
     valor = ' '.join(request.form.get('valor', '').split()).upper()
 
-    if tipo not in ['ESTADO_FISICO', 'UNIDAD_MEDIDA', 'ANAQUEL', 'NICHO']:
+    if tipo not in ['ESTADO_FISICO', 'UNIDAD_MEDIDA', 'ANAQUEL', 'NICHO', 'CONSUMO_INTERNO']:
         return {'status': 'error', 'msg': 'Tipo de catálogo inválido'}
     if not valor:
         return {'status': 'error', 'msg': 'Debe escribir un valor antes de agregar.'}
@@ -12760,6 +13407,7 @@ def _es_superadmin():
 # campo_personalizado/opcion, system_config) NO están aquí a propósito: no se borran.
 TABLAS_RESET_ORDEN = [
     ('acceso_usuario', AccesoUsuario),
+    ('movimiento_documento', MovimientoDocumento),   # hija de los dos kardex y de proceso_oc
     ('correccion_auditoria_foto', CorreccionAuditoriaFoto),   # hijas de correccion_auditoria
     ('correccion_auditoria', CorreccionAuditoria),             # hija de registro_auditoria
     ('registro_auditoria_foto', RegistroAuditoriaFoto),
@@ -12778,6 +13426,7 @@ TABLAS_RESET_ORDEN = [
     ('order', Order),
     ('product_movement', ProductMovement),
     ('product_movement_importbolts', ProductMovementImportBolts),
+    ('proceso_oc', ProcesoOC),                        # después de los movimientos que la usan
     ('client', Client),
     ('proveedor', Proveedor),
     ('product', Product),
@@ -12812,8 +13461,10 @@ TABLAS_TODAS_ORDEN = [
     ('payment', Payment),
     ('intercompany_transfer', IntercompanyTransfer),
     ('order_kit_component', OrderKitComponent),
+    ('proceso_oc', ProcesoOC),
     ('product_movement', ProductMovement),
     ('product_movement_importbolts', ProductMovementImportBolts),
+    ('movimiento_documento', MovimientoDocumento),
     ('product_image', ProductImage),
     ('meta_vendedor', MetaVendedor),
     ('audit_log', AuditLog),
@@ -12835,6 +13486,11 @@ def _asegurar_tablas_correccion_seguro():
         _asegurar_tabla_correcciones()
     except Exception:
         app.logger.exception("No se pudieron verificar las tablas de correcciones")
+    try:
+        _asegurar_kardex_extras()
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("No se pudieron verificar las tablas de documentos/procesos del Kardex")
 
 
 def _fila_a_dict(obj):

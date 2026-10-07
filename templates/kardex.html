@@ -63,7 +63,7 @@
                 <div class="kardex-filtros-grupo">
                     <label class="form-label"><i class="bi bi-search"></i> Búsqueda</label>
                     <input type="text" name="busqueda" class="form-control form-control-sm"
-                           placeholder="Código, descripción, motivo, OC/Factura o RUC..."
+                           placeholder="Código, descripción, motivo, OC/Factura, RUC u observación..."
                            value="{{ request.args.get('busqueda', '') }}">
                 </div>
             </div>
@@ -145,6 +145,21 @@
                 </div>
             </div>
 
+            <!-- PROCESO POR N° DE OC: todo el flujo (salida a proceso, reingreso y salida final) -->
+            <div class="col-12 col-lg-2">
+                <div class="kardex-filtros-grupo">
+                    <label class="form-label"><i class="bi bi-diagram-3"></i> Proceso / OC</label>
+                    <select name="oc" class="form-select form-select-sm" onchange="document.getElementById('formFiltroKardex').submit()">
+                        <option value="">Todos</option>
+                        {% for p in procesos_oc_lista %}
+                        <option value="{{ p.id }}" {% if request.args.get('oc')|string == p.id|string %}selected{% endif %}>
+                            {{ p.numero_oc|oc }}{% if p.estado != 'ABIERTO' %} (cerrada){% endif %}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+
             <!-- FECHAS -->
             <div class="col-6 col-lg-2">
                 <div class="kardex-filtros-grupo">
@@ -212,6 +227,17 @@
     <a href="javascript:history.back()" class="btn btn-sm btn-outline-primary"><i class="bi bi-arrow-left"></i> Volver al dashboard</a>
 </div>
 {% endif %}
+{% if proceso_filtro %}
+<div class="alert d-flex justify-content-between align-items-center flex-wrap gap-2 py-2 mb-2 shadow-sm" style="background:#eef2ff; border:1px solid #c7d2fe;">
+    <div class="small">
+        <i class="bi bi-diagram-3-fill text-primary"></i>
+        Flujo de la <strong>{{ proceso_filtro.numero_oc|oc }}</strong>{% if proceso_filtro.descripcion %} · {{ proceso_filtro.descripcion }}{% endif %}
+        <span class="badge {{ 'bg-success' if proceso_filtro.estado == 'ABIERTO' else 'bg-secondary' }} ms-1">{{ 'Abierta' if proceso_filtro.estado == 'ABIERTO' else 'Cerrada' }}</span>
+        <span class="text-muted ms-1">— aquí solo este inventario; la ficha muestra los dos y el saldo por producto.</span>
+    </div>
+    <a href="{{ url_for('proceso_oc_detalle', proc_id=proceso_filtro.id) }}" class="btn btn-sm btn-primary"><i class="bi bi-eye"></i> Ver flujo completo</a>
+</div>
+{% endif %}
 {% if resumen_filtro is defined %}
 <div class="d-flex flex-wrap align-items-center gap-2 mb-2 small">
     {% if _motivo_activo %}
@@ -241,6 +267,20 @@
                               border: 1px solid #e2e8f0; font-weight: 800; font-size: .95rem; font-variant-numeric: tabular-nums; color: #0f172a; }
     .kardex-tabla .kx-motivo { min-width: 220px; max-width: 360px; white-space: normal; word-break: break-word; font-size: .8rem; line-height: 1.3; }
     .kardex-tabla .kx-proveedor { min-width: 150px; max-width: 220px; font-size: .75rem; line-height: 1.25; }
+    .kardex-tabla .kx-oc { display:inline-block; font-size:.68rem; font-weight:700; padding:1px 7px; border-radius:10px; background:#eef2ff;
+                           border:1px solid #c7d2fe; color:#3730a3; text-decoration:none; }
+    .kardex-tabla .kx-oc:hover { background:#e0e7ff; }
+    .kardex-tabla .kx-etapa { font-size:.66rem; font-weight:600; color:#64748b; margin-left:3px; }
+    .kardex-tabla .kx-etapa-salida_proceso { color:#b45309; }
+    .kardex-tabla .kx-etapa-reingreso { color:#15803d; }
+    .kardex-tabla .kx-etapa-salida_final { color:#b91c1c; }
+    .kardex-tabla .kx-obs { font-size:.72rem; color:#475569; margin-top:2px; font-style:italic; }
+    .kardex-tabla .kx-docs { display:flex; flex-wrap:wrap; gap:4px 8px; align-items:center; font-size:.72rem; }
+    .kardex-tabla .kx-doc { background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:1px 6px; white-space:nowrap; }
+    .kardex-tabla .kx-doc a { text-decoration:none; color:#0f172a; }
+    .kardex-tabla .kx-doc a + a { margin-left:4px; color:#64748b; }
+    .kardex-tabla .kx-doc-x { font-size:.72rem; line-height:1; margin-left:2px; vertical-align:baseline; }
+    .kardex-tabla .kx-doc-add { font-size:.72rem; text-decoration:none; color:#64748b; }
 </style>
 <div class="card shadow-sm border-0">
     <div class="card-body p-0 table-responsive" style="min-height: 400px;">
@@ -289,8 +329,39 @@
                     </td>
 
                     <td class="kx-motivo">
-                        {{ m.motivo }}
+                        {{ m.motivo }}{% if m.detalle_motivo %} · <span class="fw-semibold">{{ m.detalle_motivo }}</span>{% endif %}
                         {% if m.referencia %}<span class="fw-bold text-dark">/ {{ m.referencia }}</span>{% endif %}
+                        {% if m.proceso_oc %}
+                        <div class="mt-1">
+                            <a href="{{ url_for(request.endpoint, oc=m.proceso_oc_id) }}" class="kx-oc" title="Ver todo el flujo de esta OC">
+                                <i class="bi bi-diagram-3-fill"></i> {{ m.proceso_oc.numero_oc|oc }}</a>
+                            <span class="kx-etapa kx-etapa-{{ (m.etapa_proceso or '')|lower }}">{{ etapas_proceso.get(m.etapa_proceso, '') }}</span>
+                        </div>
+                        {% endif %}
+                        {% if m.observacion %}<div class="kx-obs"><i class="bi bi-chat-left-text"></i> {{ m.observacion }}</div>{% endif %}
+                        {% set docs_m = docs_por_mov.get(m.id, []) %}
+                        {% if (docs_m and puede_ver_docs) or puede_adjuntar %}
+                        <div class="kx-docs mt-1">
+                            {% if puede_ver_docs %}{% for d in docs_m %}
+                            <span class="kx-doc">
+                                <a href="{{ url_for('ver_documento_kardex', doc_id=d.id) }}" target="_blank" title="Ver {{ tipos_doc.get(d.tipo_documento) }} ({{ d.nombre_original }})">
+                                    <i class="bi {{ 'bi-file-earmark-pdf-fill text-danger' if d.content_type == 'application/pdf' else 'bi-file-earmark-image-fill text-primary' }}"></i> {{ tipos_doc.get(d.tipo_documento) }}</a>
+                                <a href="{{ url_for('ver_documento_kardex', doc_id=d.id, download=1) }}" title="Descargar"><i class="bi bi-download"></i></a>
+                                {% if session.get('role') == 'admin' %}
+                                <form method="POST" action="{{ url_for('eliminar_documento_kardex', doc_id=d.id) }}" class="d-inline"
+                                      onsubmit="return confirm('¿Quitar este documento del movimiento?');">
+                                    <button type="submit" class="btn btn-link p-0 text-danger kx-doc-x" title="Quitar documento (solo Gerencia)"><i class="bi bi-x-circle"></i></button>
+                                </form>
+                                {% endif %}
+                            </span>
+                            {% endfor %}{% endif %}
+                            {% if puede_adjuntar %}
+                            <button type="button" class="btn btn-link p-0 kx-doc-add" title="Adjuntar documento a este movimiento"
+                                    onclick="abrirAdjuntarDoc({{ m.id }}, {{ (m.product.sku ~ ' · ' ~ m.tipo ~ ' ' ~ m.cantidad)|tojson|forceescape }})">
+                                <i class="bi bi-paperclip"></i>{% if not docs_m %} Adjuntar{% endif %}</button>
+                            {% endif %}
+                        </div>
+                        {% endif %}
                     </td>
 
                     <td class="kx-proveedor">
@@ -332,7 +403,7 @@
         <nav aria-label="Navegación">
             <ul class="pagination justify-content-center mb-0 pagination-sm">
                 <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
-                    <a class="page-link" href="{{ url_for('ver_kardex', page=pagination.prev_num, busqueda=request.args.get('busqueda',''), categoria=cat_filtro, calidad=calidad_filtro, proveedor=request.args.get('proveedor','todos'), tipo=request.args.get('tipo',''), fecha_inicio=request.args.get('fecha_inicio',''), fecha_fin=request.args.get('fecha_fin',''), ocultar_iniciales=request.args.get('ocultar_iniciales',''), solo_interempresa=request.args.get('solo_interempresa',''), motivo=request.args.get('motivo',''), motivo_id=request.args.get('motivo_id',''), manual=request.args.get('manual',''), motivo_cat=request.args.get('motivo_cat',''), desde=request.args.get('desde','')) }}">Anterior</a>
+                    <a class="page-link" href="{{ url_for('ver_kardex', page=pagination.prev_num, busqueda=request.args.get('busqueda',''), categoria=cat_filtro, calidad=calidad_filtro, proveedor=request.args.get('proveedor','todos'), tipo=request.args.get('tipo',''), fecha_inicio=request.args.get('fecha_inicio',''), fecha_fin=request.args.get('fecha_fin',''), ocultar_iniciales=request.args.get('ocultar_iniciales',''), solo_interempresa=request.args.get('solo_interempresa',''), motivo=request.args.get('motivo',''), motivo_id=request.args.get('motivo_id',''), manual=request.args.get('manual',''), motivo_cat=request.args.get('motivo_cat',''), desde=request.args.get('desde',''), oc=request.args.get('oc','')) }}">Anterior</a>
                 </li>
                 <li class="page-item disabled">
                     <span class="page-link text-muted">
@@ -341,11 +412,65 @@
                     </span>
                 </li>
                 <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
-                    <a class="page-link" href="{{ url_for('ver_kardex', page=pagination.next_num, busqueda=request.args.get('busqueda',''), categoria=cat_filtro, calidad=calidad_filtro, proveedor=request.args.get('proveedor','todos'), tipo=request.args.get('tipo',''), fecha_inicio=request.args.get('fecha_inicio',''), fecha_fin=request.args.get('fecha_fin',''), ocultar_iniciales=request.args.get('ocultar_iniciales',''), solo_interempresa=request.args.get('solo_interempresa',''), motivo=request.args.get('motivo',''), motivo_id=request.args.get('motivo_id',''), manual=request.args.get('manual',''), motivo_cat=request.args.get('motivo_cat',''), desde=request.args.get('desde','')) }}">Siguiente</a>
+                    <a class="page-link" href="{{ url_for('ver_kardex', page=pagination.next_num, busqueda=request.args.get('busqueda',''), categoria=cat_filtro, calidad=calidad_filtro, proveedor=request.args.get('proveedor','todos'), tipo=request.args.get('tipo',''), fecha_inicio=request.args.get('fecha_inicio',''), fecha_fin=request.args.get('fecha_fin',''), ocultar_iniciales=request.args.get('ocultar_iniciales',''), solo_interempresa=request.args.get('solo_interempresa',''), motivo=request.args.get('motivo',''), motivo_id=request.args.get('motivo_id',''), manual=request.args.get('manual',''), motivo_cat=request.args.get('motivo_cat',''), desde=request.args.get('desde',''), oc=request.args.get('oc','')) }}">Siguiente</a>
                 </li>
             </ul>
         </nav>
     </div>
 
 </div>
+{% if puede_adjuntar %}
+<!-- Adjuntar un documento a un movimiento ya registrado (ej. la guía llegó después) -->
+<div class="modal fade" id="modalAdjuntarDoc" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content border-0 shadow">
+            <form method="POST" id="formAdjuntarDoc" enctype="multipart/form-data" onsubmit="return validarAdjuntarDoc()">
+                <div class="modal-header py-2 text-white" style="background-color: var(--theme-primary);">
+                    <h6 class="modal-title fw-bold"><i class="bi bi-paperclip"></i> Adjuntar documento</h6>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="small text-muted mb-2" id="adjuntar_doc_mov"></div>
+                    <label class="small fw-bold mb-1">Tipo de documento</label>
+                    <select name="tipo_documento" class="form-select form-select-sm mb-2" required>
+                        {% for k, v in tipos_doc.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}
+                    </select>
+                    <input type="file" name="archivo" id="adjuntar_doc_archivo" class="form-control form-control-sm" required
+                           accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp">
+                    <div class="form-text small" style="font-size:.68rem;">PDF o foto (JPG, PNG, WEBP) · máx. 5MB.</div>
+                </div>
+                <div class="modal-footer p-2">
+                    <button type="submit" id="btnAdjuntarDoc" class="btn btn-sm w-100 text-white fw-bold" style="background-color: var(--theme-primary);">Subir documento</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<script>
+function abrirAdjuntarDoc(movId, texto) {
+    const f = document.getElementById('formAdjuntarDoc');
+    f.reset();
+    f.action = `/kardex/{{ origen_kardex }}/movimiento/${movId}/documento`;
+    document.getElementById('adjuntar_doc_mov').textContent = texto;
+    const btn = document.getElementById('btnAdjuntarDoc');
+    btn.disabled = false; btn.innerHTML = 'Subir documento';
+    new bootstrap.Modal(document.getElementById('modalAdjuntarDoc')).show();
+}
+function validarAdjuntarDoc() {
+    const f = document.getElementById('adjuntar_doc_archivo').files[0];
+    if (!f) return false;
+    const ext = (f.name.split('.').pop() || '').toLowerCase();
+    let error = '';
+    if (!['pdf', 'jpg', 'jpeg', 'png', 'webp'].includes(ext)) error = 'Solo se permiten PDF o fotos (JPG, PNG, WEBP).';
+    else if (f.size > 5 * 1024 * 1024) error = `El archivo pesa ${(f.size / 1048576).toFixed(1)}MB y el máximo es 5MB.`;
+    if (error) {
+        if (window.Swal) Swal.fire({ icon: 'warning', title: 'Archivo no permitido', text: error }); else alert(error);
+        return false;
+    }
+    const btn = document.getElementById('btnAdjuntarDoc');
+    btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Subiendo...';
+    return true;
+}
+</script>
+{% endif %}
 {% endblock %}

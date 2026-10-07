@@ -119,7 +119,15 @@ class ProductMovement(db.Model):
     motivo_id = db.Column(db.Integer, db.ForeignKey('motivo_movimiento.id'), nullable=True)
     referencia = db.Column(db.String(50), nullable=True)  # Nº de Orden de Compra (motivo COMPRA) o Nº de Factura/Guía (motivo VENTA)
 
+    # --- Proceso por N° de OC (salida a maestranza/transformación -> reingreso -> salida final) ---
+    proceso_oc_id = db.Column(db.Integer, db.ForeignKey('proceso_oc.id'), nullable=True, index=True)
+    etapa_proceso = db.Column(db.String(20), nullable=True)   # SALIDA_PROCESO / REINGRESO / SALIDA_FINAL
+    # --- Detalle del motivo (ej. CONSUMO INTERNO -> 'MEJORA DE INFRAESTRUCTURA') y explicación libre ---
+    detalle_motivo = db.Column(db.String(100), nullable=True)
+    observacion = db.Column(db.String(300), nullable=True)
+
     proveedor = db.relationship('Proveedor')
+    proceso_oc = db.relationship('ProcesoOC')
 
     product = db.relationship('Product', backref='movements')
     user = db.relationship('User', backref='movements')
@@ -484,7 +492,15 @@ class ProductMovementImportBolts(db.Model):
     motivo_id = db.Column(db.Integer, db.ForeignKey('motivo_movimiento.id'), nullable=True)
     referencia = db.Column(db.String(50), nullable=True)  # Nº de Orden de Compra (motivo COMPRA) o Nº de Factura/Guía (motivo VENTA)
 
+    # --- Proceso por N° de OC (salida a maestranza/transformación -> reingreso -> salida final) ---
+    proceso_oc_id = db.Column(db.Integer, db.ForeignKey('proceso_oc.id'), nullable=True, index=True)
+    etapa_proceso = db.Column(db.String(20), nullable=True)   # SALIDA_PROCESO / REINGRESO / SALIDA_FINAL
+    # --- Detalle del motivo (ej. CONSUMO INTERNO -> 'MEJORA DE INFRAESTRUCTURA') y explicación libre ---
+    detalle_motivo = db.Column(db.String(100), nullable=True)
+    observacion = db.Column(db.String(300), nullable=True)
+
     proveedor = db.relationship('Proveedor')
+    proceso_oc = db.relationship('ProcesoOC')
 
     product = db.relationship('ProductImportBolts', backref='movements')
     user = db.relationship('User', backref='movements_importbolts')
@@ -520,6 +536,50 @@ class ProductImage(db.Model):
     subido_por = db.relationship('User')
 
 # --- MOTIVOS DE MOVIMIENTO (predeterminados + agregados por admin) ---
+class ProcesoOC(db.Model):
+    """Agrupa bajo un mismo N° de OC todo el recorrido de un trabajo de maestranza/transformación:
+    1) SALIDA_PROCESO: sale el material (motivo con MAESTRANZA o TRANSFORMACIÓN) — aquí se crea la OC.
+    2) REINGRESO: vuelve la MISMA cantidad a los mismos productos (el producto transformado no existe
+       en el sistema; se reingresa al material de origen para no perder el seguimiento).
+    3) SALIDA_FINAL: sale como venta (u otro motivo) y se descuenta definitivamente.
+    Se comparte entre Anclajes e Import Bolts. Al completarse todo, se cierra sola."""
+    __tablename__ = 'proceso_oc'
+    id = db.Column(db.Integer, primary_key=True)
+    numero_oc = db.Column(db.String(50), unique=True, nullable=False, index=True)
+    descripcion = db.Column(db.String(200), nullable=True)      # cliente / trabajo (opcional)
+    estado = db.Column(db.String(10), default='ABIERTO')         # ABIERTO / CERRADO
+    creado_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    fecha_creacion = db.Column(db.DateTime, default=hora_peru)
+    cerrado_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    fecha_cierre = db.Column(db.DateTime, nullable=True)
+    nota_cierre = db.Column(db.String(255), nullable=True)
+
+    creado_por = db.relationship('User', foreign_keys=[creado_por_id])
+    cerrado_por = db.relationship('User', foreign_keys=[cerrado_por_id])
+
+
+class MovimientoDocumento(db.Model):
+    """PDF o foto adjunta a un movimiento del Kardex (Orden de Compra, Nota de Salida o Guía).
+    El archivo vive en S3; aquí solo la referencia. Un movimiento es de Anclajes (movimiento_id)
+    o de Import Bolts (movimiento_ib_id), nunca de los dos."""
+    __tablename__ = 'movimiento_documento'
+    id = db.Column(db.Integer, primary_key=True)
+    origen = db.Column(db.String(15), nullable=False)            # ANCLAJES / IMPORTBOLTS
+    movimiento_id = db.Column(db.Integer, db.ForeignKey('product_movement.id'), nullable=True, index=True)
+    movimiento_ib_id = db.Column(db.Integer, db.ForeignKey('product_movement_importbolts.id'), nullable=True, index=True)
+    proceso_oc_id = db.Column(db.Integer, db.ForeignKey('proceso_oc.id'), nullable=True, index=True)
+    tipo_documento = db.Column(db.String(20), nullable=False)    # ORDEN_COMPRA / NOTA_SALIDA / GUIA
+    s3_key = db.Column(db.String(300), nullable=False)
+    nombre_original = db.Column(db.String(200))
+    content_type = db.Column(db.String(50))
+    tamano_bytes = db.Column(db.Integer)
+    subido_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    fecha = db.Column(db.DateTime, default=hora_peru)
+
+    subido_por = db.relationship('User')
+    proceso_oc = db.relationship('ProcesoOC')
+
+
 class MotivoMovimiento(db.Model):
     __tablename__ = 'motivo_movimiento'
     id = db.Column(db.Integer, primary_key=True)

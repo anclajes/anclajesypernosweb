@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+{% block title %}{{ proc.numero_oc|oc }}{% endblock %}
+
+{% block content %}
+<style>
+    .poc-head { border-radius: 14px; background: linear-gradient(90deg, #1e1b4b 0%, #3730a3 100%); color: #fff; }
+    .poc-head .num { font-size: 1.6rem; font-weight: 800; letter-spacing: .02em; }
+    .poc-kpi { background: rgba(255,255,255,.12); border-radius: 10px; padding: 6px 12px; min-width: 120px; }
+    .poc-kpi .v { font-size: 1.25rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+    .poc-kpi .l { font-size: .68rem; text-transform: uppercase; opacity: .8; }
+    .poc-tabla th { font-size: .74rem; white-space: nowrap; vertical-align: middle; }
+    .poc-tabla td { vertical-align: middle; }
+    .poc-n { font-weight: 800; font-variant-numeric: tabular-nums; }
+    .poc-falta { font-size: .7rem; font-weight: 700; }
+    .poc-etapa { font-size: .68rem; font-weight: 700; border-radius: 6px; padding: 2px 7px; white-space: nowrap; border: 1px solid; }
+    .poc-etapa-salida_proceso { color:#92400e; background:#fffbeb; border-color:#fcd34d; }
+    .poc-etapa-reingreso { color:#166534; background:#f0fdf4; border-color:#86efac; }
+    .poc-etapa-salida_final { color:#991b1b; background:#fef2f2; border-color:#fca5a5; }
+    .poc-doc { display: inline-block; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:1px 6px; font-size:.72rem; white-space:nowrap; margin: 1px 0; }
+    .poc-doc a { text-decoration: none; color: #0f172a; }
+    .poc-doc a + a { margin-left: 4px; color: #64748b; }
+</style>
+
+<div class="mb-2">
+    <a href="{{ url_for('procesos_oc') }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> Procesos por OC</a>
+</div>
+
+<div class="poc-head shadow-sm p-3 mb-3">
+    <div class="d-flex justify-content-between flex-wrap gap-3 align-items-start">
+        <div>
+            <div class="small text-uppercase opacity-75"><i class="bi bi-diagram-3-fill"></i> Proceso por N° de OC</div>
+            <div class="num">{{ proc.numero_oc|oc }}</div>
+            {% if proc.descripcion %}<div>{{ proc.descripcion }}</div>{% endif %}
+            <div class="small opacity-75 mt-1">
+                Iniciado el {{ proc.fecha_creacion.strftime('%d/%m/%Y %H:%M') if proc.fecha_creacion else '—' }}
+                {% if proc.creado_por %}por {{ proc.creado_por.nombre_completo }}{% endif %}
+            </div>
+            <div class="mt-2">
+                {% if proc.estado == 'ABIERTO' %}
+                    {% if r.completo %}<span class="badge bg-success">Completo</span>{% else %}<span class="badge bg-warning text-dark">Abierta · en curso</span>{% endif %}
+                {% else %}
+                    <span class="badge bg-light text-dark">Cerrada</span>
+                    <span class="small opacity-75 ms-1">{{ proc.fecha_cierre.strftime('%d/%m/%Y %H:%M') if proc.fecha_cierre else '' }}{% if proc.cerrado_por %} · {{ proc.cerrado_por.nombre_completo }}{% endif %}</span>
+                    {% if proc.nota_cierre %}<div class="small opacity-75 mt-1"><i class="bi bi-chat-left-text"></i> {{ proc.nota_cierre }}</div>{% endif %}
+                {% endif %}
+            </div>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            <div class="poc-kpi"><div class="l">1. Salió a proceso</div><div class="v">{{ "{:,}".format(r.totales.SALIDA_PROCESO) }}</div></div>
+            <div class="poc-kpi"><div class="l">2. Reingresó</div><div class="v">{{ "{:,}".format(r.totales.REINGRESO) }}</div></div>
+            <div class="poc-kpi"><div class="l">3. Salida final</div><div class="v">{{ "{:,}".format(r.totales.SALIDA_FINAL) }}</div></div>
+        </div>
+    </div>
+    <div class="d-flex gap-2 flex-wrap mt-3">
+        <a href="{{ url_for('ver_kardex', oc=proc.id) }}" class="btn btn-sm btn-light"><i class="bi bi-clock-history"></i> Ver en Kardex Anclajes</a>
+        <a href="{{ url_for('ver_kardex_importbolts', oc=proc.id) }}" class="btn btn-sm btn-light"><i class="bi bi-clock-history"></i> Ver en Kardex ImportBolts</a>
+        {% if puede_gestionar %}
+            {% if proc.estado == 'ABIERTO' %}
+            <button type="button" class="btn btn-sm btn-outline-light" onclick="cambiarEstadoProceso('cerrar', {{ 'true' if r.completo else 'false' }})"><i class="bi bi-lock-fill"></i> Cerrar proceso</button>
+            {% else %}
+            <button type="button" class="btn btn-sm btn-outline-light" onclick="cambiarEstadoProceso('reabrir', true)"><i class="bi bi-unlock-fill"></i> Reabrir</button>
+            {% endif %}
+        {% endif %}
+    </div>
+</div>
+
+<!-- SALDO POR PRODUCTO -->
+<div class="card shadow-sm border-0 mb-3">
+    <div class="card-header bg-white fw-bold"><i class="bi bi-boxes"></i> Saldo por producto</div>
+    <div class="card-body p-0 table-responsive">
+        <table class="table table-sm mb-0 small poc-tabla">
+            <thead class="table-light">
+                <tr>
+                    <th class="ps-3">Inventario</th>
+                    <th>Producto</th>
+                    <th class="text-center">1. Salió</th>
+                    <th class="text-center">2. Reingresó</th>
+                    <th class="text-center">3. Salida final</th>
+                    <th class="pe-3">Pendiente</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for it in r['items'] %}
+                <tr>
+                    <td class="ps-3"><span class="badge {{ 'bg-success-subtle text-success-emphasis' if it.origen == 'IMPORTBOLTS' else 'bg-primary-subtle text-primary-emphasis' }} border">{{ 'Import Bolts' if it.origen == 'IMPORTBOLTS' else 'Anclajes' }}</span></td>
+                    <td>
+                        <strong>{{ it.producto.sku if it.producto else '—' }}</strong>
+                        <div class="text-muted" style="font-size:.72rem;">{{ it.producto.nombre if it.producto else '' }}</div>
+                    </td>
+                    <td class="text-center poc-n">{{ "{:,}".format(it.SALIDA_PROCESO) }}</td>
+                    <td class="text-center poc-n">{{ "{:,}".format(it.REINGRESO) }}</td>
+                    <td class="text-center poc-n">{{ "{:,}".format(it.SALIDA_FINAL) }}</td>
+                    <td class="pe-3">
+                        {% if it.completo %}<span class="poc-falta text-success"><i class="bi bi-check-circle-fill"></i> Completo</span>
+                        {% else %}
+                            {% if it.falta_reingresar > 0 %}<div class="poc-falta text-warning-emphasis">Falta reingresar {{ "{:,}".format(it.falta_reingresar) }}</div>{% endif %}
+                            {% if it.falta_salida_final > 0 %}<div class="poc-falta text-danger">Falta salida final {{ "{:,}".format(it.falta_salida_final) }}</div>{% endif %}
+                            {% if it.SALIDA_PROCESO == 0 %}<div class="poc-falta text-danger">Sin salida a proceso</div>{% endif %}
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="6" class="text-center text-muted py-4">Esta OC todavía no tiene movimientos.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- FLUJO COMPLETO -->
+<div class="card shadow-sm border-0">
+    <div class="card-header bg-white fw-bold"><i class="bi bi-list-ol"></i> Flujo completo (los dos inventarios, en orden)</div>
+    <div class="card-body p-0 table-responsive">
+        <table class="table table-sm table-hover mb-0 small poc-tabla">
+            <thead class="table-light">
+                <tr>
+                    <th class="ps-3">Fecha</th>
+                    <th>Etapa</th>
+                    <th>Producto</th>
+                    <th class="text-center">Cant.</th>
+                    <th>Motivo / Referencia</th>
+                    <th>Proveedor / Cliente</th>
+                    <th>Documentos</th>
+                    <th class="pe-3">Usuario</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for x in r.movimientos %}{% set m = x.mov %}
+                <tr>
+                    <td class="ps-3 text-nowrap">{{ m.fecha.strftime('%d/%m/%y %H:%M') if m.fecha else '' }}</td>
+                    <td><span class="poc-etapa poc-etapa-{{ (m.etapa_proceso or '')|lower }}">{{ etapas.get(m.etapa_proceso, '—') }}</span></td>
+                    <td>
+                        <strong>{{ m.product.sku }}</strong>
+                        <span class="badge {{ 'bg-success-subtle text-success-emphasis' if x.origen == 'IMPORTBOLTS' else 'bg-primary-subtle text-primary-emphasis' }} border ms-1" style="font-size:.6rem;">{{ 'IB' if x.origen == 'IMPORTBOLTS' else 'AyP' }}</span>
+                        <div class="text-muted" style="font-size:.72rem;">{{ m.product.nombre }}</div>
+                    </td>
+                    <td class="text-center poc-n {{ 'text-success' if m.tipo == 'ENTRADA' else 'text-danger' }}">{{ '+' if m.tipo == 'ENTRADA' else '-' }}{{ "{:,}".format(m.cantidad) }}</td>
+                    <td>
+                        {{ m.motivo }}{% if m.referencia %} <b>/ {{ m.referencia }}</b>{% endif %}
+                        {% if m.observacion %}<div class="text-muted fst-italic" style="font-size:.72rem;"><i class="bi bi-chat-left-text"></i> {{ m.observacion }}</div>{% endif %}
+                    </td>
+                    <td style="font-size:.74rem;">{{ m.razon_social_proveedor or '—' }}</td>
+                    <td>
+                        {% for d in docs_mov[x.origen].get(m.id, []) %}
+                        <span class="poc-doc">
+                            <a href="{{ url_for('ver_documento_kardex', doc_id=d.id) }}" target="_blank" title="{{ d.nombre_original }}">
+                                <i class="bi {{ 'bi-file-earmark-pdf-fill text-danger' if d.content_type == 'application/pdf' else 'bi-file-earmark-image-fill text-primary' }}"></i> {{ tipos_doc.get(d.tipo_documento) }}</a>
+                            <a href="{{ url_for('ver_documento_kardex', doc_id=d.id, download=1) }}" title="Descargar"><i class="bi bi-download"></i></a>
+                        </span>
+                        {% else %}<span class="text-muted">—</span>{% endfor %}
+                    </td>
+                    <td class="pe-3 text-nowrap text-muted">{{ m.user.username if m.user else '' }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="8" class="text-center text-muted py-4">Sin movimientos.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% if puede_gestionar %}
+<form method="POST" id="formEstadoProceso" action="{{ url_for('proceso_oc_cambiar_estado', proc_id=proc.id) }}" class="d-none">
+    <input type="hidden" name="accion" id="estado_accion">
+    <input type="hidden" name="nota" id="estado_nota">
+</form>
+<script>
+function cambiarEstadoProceso(accion, completo) {
+    const enviar = (nota) => {
+        document.getElementById('estado_accion').value = accion;
+        document.getElementById('estado_nota').value = nota || '';
+        document.getElementById('formEstadoProceso').submit();
+    };
+    if (accion === 'cerrar' && !completo) {
+        Swal.fire({
+            title: 'Cerrar con pendientes',
+            html: 'Esta OC todavía tiene cantidades sin reingresar o sin salida final.<br>Escribe el motivo del cierre:',
+            input: 'text', inputPlaceholder: 'Ej: merma en el proceso, se anuló el trabajo...',
+            showCancelButton: true, confirmButtonText: 'Cerrar proceso',
+            inputValidator: (v) => { if (!v || v.trim().length < 5) return 'Escribe el motivo (mín. 5 letras)'; }
+        }).then(r => { if (r.isConfirmed) enviar(r.value); });
+    } else {
+        Swal.fire({
+            title: accion === 'cerrar' ? '¿Cerrar este proceso?' : '¿Reabrir este proceso?',
+            text: accion === 'cerrar' ? 'Ya no aparecerá para elegir en los movimientos.' : 'Volverá a aparecer para elegir en los movimientos del Kardex.',
+            icon: 'question', showCancelButton: true, confirmButtonText: 'Sí'
+        }).then(r => { if (r.isConfirmed) enviar(''); });
+    }
+}
+</script>
+{% endif %}
+{% endblock %}
