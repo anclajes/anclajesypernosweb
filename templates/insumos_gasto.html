@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}Insumos internos{% endblock %}
+{% block subtitle %}Gasto por área{% endblock %}
+{% block content %}
+{% include '_insumos_nav.html' %}
+<style>
+    .barra-area { height: 10px; border-radius: 5px; background: #2a78d6; min-width: 3px; }
+    .mes-celda { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+</style>
+<form method="GET" class="row g-2 align-items-end mb-3">
+    <div class="col-12 col-sm-4 col-md-3"><label class="small fw-bold text-muted">Empresa</label>
+        <select name="empresa" class="form-select" onchange="this.form.submit()"><option value="AMBAS">Las dos</option>
+            {% for k, e in empresas.items() %}<option value="{{ k }}" {{ 'selected' if k == empresa }}>{{ e.corto }}</option>{% endfor %}</select></div>
+    <div class="col-6 col-sm-3 col-md-2"><label class="small fw-bold text-muted">Desde</label><input type="date" name="desde" class="form-control" value="{{ desde.isoformat() }}"></div>
+    <div class="col-6 col-sm-3 col-md-2"><label class="small fw-bold text-muted">Hasta</label><input type="date" name="hasta" class="form-control" value="{{ hasta.isoformat() }}"></div>
+    <div class="col-12 col-sm-2 col-md-1"><button class="btn btn-primary w-100"><i class="bi bi-funnel"></i></button></div>
+</form>
+
+<div class="row g-2 mb-3">
+    <div class="col-6 col-md-4"><div class="card border-0 shadow-sm h-100"><div class="card-body py-2">
+        <div class="ins-dato">Gasto del período</div><div class="ins-kpi">{{ total|soles }}</div>
+        <div class="text-muted small">{{ desde.strftime('%d/%m/%Y') }} al {{ hasta.strftime('%d/%m/%Y') }}</div></div></div></div>
+    <div class="col-6 col-md-4"><div class="card border-0 shadow-sm h-100"><div class="card-body py-2">
+        <div class="ins-dato">Salidas</div><div class="ins-kpi">{{ n_salidas }}</div><div class="text-muted small">sin contar anuladas</div></div></div></div>
+    <div class="col-12 col-md-4"><div class="card border-0 shadow-sm h-100"><div class="card-body py-2 small text-muted">
+        <i class="bi bi-info-circle-fill text-primary"></i> Cada salida se valoriza al <b>costo promedio</b> del insumo en ese momento
+        (precio con IGV de las facturas, promediado con lo que ya había). Por eso, aunque la factura sea por 100 unidades, cada área carga solo lo que sacó.</div></div></div>
+</div>
+
+<div class="row g-3 mb-3">
+    <div class="col-12 col-lg-7">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-white fw-bold small"><i class="bi bi-bar-chart"></i> Gasto por área</div>
+            <div class="card-body p-0 table-responsive">
+                <table class="table align-middle mb-0 small">
+                    <thead class="table-light"><tr><th class="ps-3">Área</th><th style="width:35%;"></th><th class="text-end">Gasto</th><th class="text-end">%</th><th class="text-center">Salidas</th>
+                        {% if empresa == 'AMBAS' %}<th class="text-end">Anclajes</th><th class="text-end pe-3">Import Bolts</th>{% endif %}</tr></thead>
+                    <tbody>
+                    {% for a in areas %}
+                        <tr title="{{ a.nombre }}: {{ a.total|soles }} ({{ a.pct }}%)">
+                            <td class="ps-3 fw-semibold"><a href="{{ url_for('insumos_salidas', area_id=a.id, desde=desde.isoformat(), hasta=hasta.isoformat(), empresa=empresa if empresa != 'AMBAS' else 'TODAS') }}">{{ a.nombre }}</a></td>
+                            <td><div class="barra-area" style="width: {{ a.barra }}%;"></div></td>
+                            <td class="text-end fw-bold text-nowrap">{{ a.total|soles }}</td>
+                            <td class="text-end">{{ a.pct }}%</td>
+                            <td class="text-center">{{ a.salidas }}</td>
+                            {% if empresa == 'AMBAS' %}<td class="text-end text-nowrap">{{ a.anclajes|soles }}</td><td class="text-end pe-3 text-nowrap">{{ a.importbolts|soles }}</td>{% endif %}
+                        </tr>
+                    {% else %}
+                        <tr><td colspan="7" class="text-center text-muted py-4">Sin salidas en este período.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <div class="col-12 col-lg-5">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-white fw-bold small"><i class="bi bi-person"></i> Por trabajador <span class="fw-normal text-muted">(a cuenta de / solicitante)</span></div>
+            <div class="card-body p-0 table-responsive">
+                <table class="table align-middle mb-0 small">
+                    <tbody>
+                    {% for p in personas %}
+                        <tr><td class="ps-3"><a href="{{ url_for('insumos_salidas', trabajador_id=p.id, desde=desde.isoformat(), hasta=hasta.isoformat()) }}" class="fw-semibold">{{ p.nombre }}</a>
+                            <div class="text-muted" style="font-size:.72rem;">{{ p.area }}</div></td>
+                            <td class="text-center">{{ p.salidas }} sal.</td><td class="text-end pe-3 fw-bold text-nowrap">{{ p.total|soles }}</td></tr>
+                    {% else %}<tr><td class="text-center text-muted py-4">—</td></tr>{% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-white fw-bold small"><i class="bi bi-calendar3"></i> Últimos 6 meses por área</div>
+    <div class="card-body p-0 table-responsive">
+        <table class="table align-middle mb-0 small">
+            <thead class="table-light"><tr><th class="ps-3">Área</th>{% for m in meses %}<th class="text-end">{{ m }}</th>{% endfor %}<th class="text-end pe-3">Total</th></tr></thead>
+            <tbody>
+            {% for r in mensual %}
+                <tr><td class="ps-3 fw-semibold">{{ r.area }}</td>
+                    {% for v in r.meses %}<td class="mes-celda" style="background: rgba(42,120,214,{{ (0.06 + 0.5 * v / max_celda)|round(2) if v else 0 }});">{{ v|soles if v else '—' }}</td>{% endfor %}
+                    <td class="mes-celda pe-3 fw-bold">{{ r.total|soles }}</td></tr>
+            {% else %}
+                <tr><td colspan="8" class="text-center text-muted py-4">Sin salidas en los últimos 6 meses.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-white fw-bold small"><i class="bi bi-box2"></i> Insumos de mayor gasto en el período</div>
+    <div class="card-body p-0 table-responsive">
+        <table class="table align-middle mb-0 small">
+            <thead class="table-light"><tr><th class="ps-3">Código</th><th>Descripción</th><th class="text-center">Cantidad</th><th class="text-end pe-3">Gasto</th></tr></thead>
+            <tbody>
+            {% for i in insumos %}
+                <tr><td class="ps-3 fw-bold">{{ i.codigo }}</td><td>{{ i.descripcion }}</td><td class="text-center">{{ i.cantidad|cant }} {{ i.unidad }}</td><td class="text-end pe-3 fw-bold">{{ i.total|soles }}</td></tr>
+            {% else %}<tr><td colspan="4" class="text-center text-muted py-4">—</td></tr>{% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

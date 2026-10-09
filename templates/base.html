@@ -147,6 +147,26 @@
                     </ul>
                 </div>
 
+                {% if session.get('role') in ['admin', 'almacen', 'administracion'] %}
+                {% set en_insumos = (request.endpoint or '').startswith('insumos') %}
+                <a class="nav-link" data-bs-toggle="collapse" href="#collapseInsumos" role="button" aria-expanded="{{ 'true' if en_insumos else 'false' }}" aria-controls="collapseInsumos">
+                    <i class="bi bi-tools me-2"></i> <span>Insumos Internos</span>
+                    <i class="bi bi-chevron-down ms-auto" style="font-size: 0.8rem;"></i>
+                </a>
+                <div class="collapse {{ 'show' if en_insumos else '' }}" id="collapseInsumos">
+                    <ul class="nav flex-column ms-2 mb-2" style="border-left: 1px solid rgba(255,255,255,0.1);">
+                        <li><a href="{{ url_for('insumos_inventario') }}" class="nav-link py-2 ps-3 {{ 'active' if request.endpoint == 'insumos_inventario' }}"><i class="bi bi-boxes fs-6 me-2"></i> <span>Inventario</span></a></li>
+                        {% if session.get('role') in ['admin', 'almacen'] %}
+                        <li><a href="{{ url_for('insumos_salida_nueva') }}" class="nav-link py-2 ps-3 {{ 'active' if request.endpoint == 'insumos_salida_nueva' }}"><i class="bi bi-box-arrow-up fs-6 me-2"></i> <span>Nueva salida</span></a></li>
+                        <li><a href="{{ url_for('insumos_ingreso_nuevo') }}" class="nav-link py-2 ps-3 {{ 'active' if request.endpoint == 'insumos_ingreso_nuevo' }}"><i class="bi bi-box-arrow-in-down fs-6 me-2"></i> <span>Nuevo ingreso</span></a></li>
+                        {% endif %}
+                        <li><a href="{{ url_for('insumos_salidas') }}" class="nav-link py-2 ps-3 {{ 'active' if request.endpoint in ['insumos_salidas', 'insumos_salida_detalle'] }}"><i class="bi bi-journal-arrow-up fs-6 me-2"></i> <span>Salidas</span></a></li>
+                        <li><a href="{{ url_for('insumos_ingresos') }}" class="nav-link py-2 ps-3 {{ 'active' if request.endpoint in ['insumos_ingresos', 'insumos_ingreso_detalle'] }}"><i class="bi bi-journal-arrow-down fs-6 me-2"></i> <span>Ingresos</span></a></li>
+                        <li><a href="{{ url_for('insumos_gasto') }}" class="nav-link py-2 ps-3 {{ 'active' if request.endpoint == 'insumos_gasto' }}"><i class="bi bi-pie-chart fs-6 me-2"></i> <span>Gasto por área</span></a></li>
+                    </ul>
+                </div>
+                {% endif %}
+
                 {# Comercial: por ahora oculto para el rol Vendedor (solo Gerencia y Administración) #}
                 {% if session.get('role') in ['admin', 'administracion'] %}
                 <div class="nav-title">Comercial</div>

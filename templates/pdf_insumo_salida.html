@@ -1,0 +1,82 @@
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+    /* Formato "SALIDA DE MATERIALES DE ALMACÉN" (xhtml2pdf): bordes en cada celda, sin celdas vacías. */
+    @page { size: a4 landscape; margin: 1.1cm 1.2cm 1cm 1.2cm; }
+    body { font-family: Helvetica, Arial, sans-serif; font-size: 8.5pt; color: #111; }
+    table { width: 100%; border-collapse: collapse; }
+    td, th { border: 0.8px solid #000; padding: 3px 4px; vertical-align: middle; }
+    .sin-borde td { border: 0; }
+    .titulo { font-size: 17pt; font-weight: bold; text-align: center; }
+    .caja td { font-size: 8pt; font-weight: bold; padding: 2px 4px; }
+    .centro { text-align: center; }
+    .der { text-align: right; }
+    .neg { font-weight: bold; }
+    .cab th { font-size: 8pt; font-weight: bold; text-align: center; background-color: #f2f2f2; }
+    td.it { font-size: 8.5pt; padding-top: 3px; padding-bottom: 3px; }
+    .etq { font-weight: bold; font-size: 8pt; }
+    .firma { vertical-align: top; padding-bottom: 4px; }
+    .chico { font-size: 7pt; color: #444; }
+    .consumo { font-size: 10.5pt; font-weight: bold; text-align: center; }
+</style>
+</head>
+<body>
+<table>
+    <tr>
+        <td style="width: 20%; text-align: center;">{% if logo %}<img src="{{ logo.uri }}" width="{{ logo.ancho }}" height="{{ logo.alto }}">{% else %}<b>{{ emp.nombre }}</b>{% endif %}</td>
+        <td style="width: 57%;" class="titulo">SALIDA DE MATERIALES DE ALMACÉN<br><span class="chico">{{ emp.nombre }}</span></td>
+        <td style="width: 23%; padding: 0;">
+            <table class="caja">
+                <tr><td colspan="2" class="centro" style="border-top: 0; border-left: 0; border-right: 0;">{{ formato.codigo }}</td></tr>
+                <tr><td style="border-left: 0;">VERSIÓN</td><td class="centro" style="border-right: 0;">{{ formato.version }}</td></tr>
+                <tr><td style="border-left: 0;">FECHA</td><td class="centro" style="border-right: 0;">{{ sal.fecha.strftime('%d/%m/%Y') }}</td></tr>
+                <tr><td colspan="2" class="centro" style="border-bottom: 0; border-left: 0; border-right: 0;">PÁGINA 1 DE 1</td></tr>
+            </table>
+        </td>
+    </tr>
+</table>
+<table class="sin-borde" style="margin-top: 4px;">
+    <tr><td style="width: 77%;">{% if sal.estado == 'ANULADA' %}<b style="color: #b00;">ANULADA el {{ sal.fecha_anulacion.strftime('%d/%m/%Y') if sal.fecha_anulacion else '' }}: {{ sal.motivo_anulacion }}</b>{% else %}&nbsp;{% endif %}</td>
+        <td style="width: 23%; border: 0.8px solid #000;" class="consumo">CONSUMO N° {{ '%06d'|format(sal.numero) }}</td></tr>
+</table>
+<table style="margin-top: 6px;">
+    <tr class="cab">
+        <th style="width: 13%;">CÓDIGO</th><th style="width: 36%;">DESCRIPCIÓN</th><th style="width: 11%;">CANTIDAD<br>SOLICITADA</th>
+        <th style="width: 11%;">CANTIDAD<br>DESPACHADA</th><th style="width: 10%;">UNIDAD DE<br>MEDIDA</th><th style="width: 19%;">UBICACIÓN</th>
+    </tr>
+    {% for d in filas %}
+    <tr>
+        {% if d %}
+        <td class="it">{{ d.insumo.codigo }}</td><td class="it">{{ d.insumo.descripcion[:70] }}</td><td class="it centro">{{ d.cantidad_solicitada|cant }}</td>
+        <td class="it centro neg">{{ d.cantidad_despachada|cant }}</td><td class="it centro">{{ d.unidad or '' }}</td><td class="it">{{ d.ubicacion or '' }}</td>
+        {% else %}
+        <td class="it">&nbsp;</td><td class="it">&nbsp;</td><td class="it">&nbsp;</td><td class="it">&nbsp;</td><td class="it">&nbsp;</td><td class="it">&nbsp;</td>
+        {% endif %}
+    </tr>
+    {% endfor %}
+    <tr>
+        <td colspan="3"><span class="etq">SOLICITADO POR:</span> {{ sal.solicitado_por.nombre if sal.solicitado_por else '' }}</td>
+        <td><span class="etq">SECCIÓN:</span></td><td colspan="2">{{ sal.area.nombre if sal.area else '' }}</td>
+    </tr>
+    <tr>
+        <td colspan="3"><span class="etq">NECESARIO PARA:</span> {{ sal.motivo or '' }}{% if sal.motivo_detalle %} — {{ sal.motivo_detalle[:90] }}{% endif %}</td>
+        <td><span class="etq">GRABADO POR:</span></td><td colspan="2">{{ sal.usuario.nombre_completo if sal.usuario else '' }}</td>
+    </tr>
+    <tr>
+        <td colspan="3"><span class="etq">A CUENTA PERSONAL DE:</span> {{ sal.a_cuenta_de.nombre if sal.a_cuenta_de else '' }}</td>
+        <td><span class="etq">CÓDIGO:</span></td><td>{{ (sal.a_cuenta_de.codigo if sal.a_cuenta_de else (sal.recibido_por.codigo if sal.recibido_por else '')) or '' }}</td>
+        <td class="etq">FIRMA</td>
+    </tr>
+</table>
+<table>
+    <tr>
+        <td style="width: 34%;" class="firma"><span class="etq">AUTORIZACIÓN DE JEFE DE ÁREA:</span><br>{{ sal.autorizado_por.nombre if sal.autorizado_por else '' }}<br><br><br></td>
+        <td style="width: 33%;" class="firma"><span class="etq">ENTREGADO POR RESPONSABLE ALMACÉN:</span><br>{{ sal.usuario.nombre_completo if sal.usuario else '' }}<br><br><br></td>
+        <td style="width: 33%;" class="firma"><span class="etq">RECIBIDO POR:</span> {{ sal.recibido_por.nombre if sal.recibido_por else '' }}<br>
+            {% if firma %}<img src="{{ firma.uri }}" width="{{ firma.ancho }}" height="{{ firma.alto }}"><br><span class="chico">Firmado en pantalla el {{ sal.firma_fecha.strftime('%d/%m/%Y %H:%M') if sal.firma_fecha else '' }}</span>{% else %}<br><br><br>{% endif %}</td>
+    </tr>
+</table>
+<p class="chico" style="margin-top: 4px;">Costo de la salida (costo promedio con IGV): S/ {{ '{:,.2f}'.format(sal.total_costo or 0) }} · Registrado en el sistema el {{ sal.fecha_registro.strftime('%d/%m/%Y %H:%M') if sal.fecha_registro else '' }}</p>
+</body>
+</html>

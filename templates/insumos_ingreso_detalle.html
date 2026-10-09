@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Insumos internos{% endblock %}
+{% block subtitle %}Ingreso #{{ ing.id }}{% endblock %}
+{% block content %}
+{% include '_insumos_nav.html' %}
+{% set emp = empresas[ing.empresa] %}
+<div class="card border-0 shadow-sm mb-3" style="border-left: 6px solid {{ emp.color }} !important;"><div class="card-body d-flex flex-wrap justify-content-between gap-3 align-items-center">
+    <div class="d-flex align-items-center gap-3">
+        <img src="{{ url_for('static', filename='img/' ~ emp.logo) }}" alt="" style="height:44px; object-fit:contain;">
+        <div>
+            <div class="text-muted small">INGRESO DE INSUMOS · {{ emp.nombre }}</div>
+            <h4 class="mb-0 fw-bold">#{{ ing.id }} · {{ ing.numero_factura and ('Factura ' ~ ing.numero_factura) or 'Sin N° de factura' }}
+                {% if ing.estado == 'ANULADO' %}<span class="badge bg-secondary align-middle">ANULADO</span>{% endif %}</h4>
+            <div class="small text-muted">{{ ing.fecha.strftime('%d/%m/%Y') }} · registrado por {{ ing.usuario.nombre_completo if ing.usuario else '-' }}{% if ing.almacen %} · {{ ing.almacen }}{% endif %}</div>
+        </div>
+    </div>
+    {% if session.get('role') == 'admin' and ing.estado == 'REGISTRADO' %}
+    <button class="btn btn-outline-secondary" onclick="anular()"><i class="bi bi-x-octagon"></i> Anular ingreso</button>
+    {% endif %}
+</div>
+{% if ing.estado == 'ANULADO' %}<div class="alert alert-secondary small py-2 mx-3"><i class="bi bi-x-octagon"></i> Anulado por <b>{{ ing.anulado_por }}</b> el {{ ing.fecha_anulacion.strftime('%d/%m/%Y %H:%M') if ing.fecha_anulacion else '' }}: {{ ing.motivo_anulacion }}</div>{% endif %}
+</div>
+<div class="row g-3">
+    <div class="col-12 col-lg-4">
+        <div class="card border-0 shadow-sm mb-3"><div class="card-body small">
+            <div class="text-muted fw-bold mb-1">PROVEEDOR</div>
+            <div class="fw-bold">{{ ing.razon_social or '-' }}</div>
+            <div>RUC: {{ ing.ruc or '-' }}</div>
+            {% if ing.direccion %}<div class="text-muted">{{ ing.direccion }}</div>{% endif %}
+            {% if ing.contacto_nombre or ing.contacto_telefono %}<div class="mt-1"><i class="bi bi-person"></i> {{ ing.contacto_nombre or '' }} {% if ing.contacto_telefono %}· <i class="bi bi-telephone"></i> {{ ing.contacto_telefono }}{% endif %}</div>{% endif %}
+            {% if ing.observacion %}<div class="mt-2 fst-italic">{{ ing.observacion }}</div>{% endif %}
+        </div></div>
+        <div class="card border-0 shadow-sm"><div class="card-body small">
+            <div class="text-muted fw-bold mb-1">DOCUMENTOS</div>
+            {% for d in docs %}
+            <div class="mb-1"><a href="{{ url_for('insumos_documento', doc_id=d.id) }}" target="_blank"><i class="bi {{ 'bi-file-earmark-pdf-fill text-danger' if d.content_type == 'application/pdf' else 'bi-file-earmark-image-fill text-primary' }}"></i> {{ d.tipo|title }} · {{ d.nombre_original }}</a>
+                <a href="{{ url_for('insumos_documento', doc_id=d.id, download=1) }}" class="text-muted ms-1" title="Descargar"><i class="bi bi-download"></i></a></div>
+            {% else %}<div class="text-muted mb-2">Sin documentos.</div>{% endfor %}
+            {% if puede_editar %}
+            <form method="POST" action="{{ url_for('insumos_ingreso_documento', ingreso_id=ing.id) }}" enctype="multipart/form-data" class="mt-2">
+                <div class="input-group input-group-sm">
+                    <select name="tipo" class="form-select" style="max-width:110px;"><option value="FACTURA">Factura</option><option value="GUIA">Guía</option><option value="OTRO">Otro</option></select>
+                    <input type="file" name="archivo" class="form-control" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*" required>
+                    <button class="btn btn-primary"><i class="bi bi-upload"></i></button>
+                </div>
+            </form>
+            {% endif %}
+        </div></div>
+    </div>
+    <div class="col-12 col-lg-8">
+        <div class="card border-0 shadow-sm"><div class="card-body p-0 table-responsive">
+            <table class="table align-middle mb-0 small">
+                <thead class="table-light"><tr><th class="ps-3">Código</th><th>Descripción</th><th>Cód. prov.</th><th class="text-center">Cantidad</th>
+                    <th class="text-end">P. unit. c/IGV</th><th class="text-end">Total</th><th class="text-end pe-3" title="Costo promedio antes → después de este ingreso">Costo prom.</th></tr></thead>
+                <tbody>
+                {% for d in ing.detalles %}
+                <tr><td class="ps-3 fw-bold">{{ d.insumo.codigo }}</td><td>{{ d.insumo.descripcion }}</td><td class="text-muted">{{ d.codigo_proveedor or '-' }}</td>
+                    <td class="text-center">{{ d.cantidad|cant }} {{ d.insumo.unidad }}</td><td class="text-end">{{ d.precio_unitario|soles }}</td>
+                    <td class="text-end fw-semibold">{{ d.precio_total|soles }}</td>
+                    <td class="text-end pe-3 text-nowrap"><span class="text-muted">{{ d.costo_prom_antes|soles }}</span> → <b>{{ d.costo_prom_despues|soles }}</b></td></tr>
+                {% endfor %}
+                </tbody>
+                <tfoot><tr><td colspan="5" class="text-end fw-bold">Total con IGV</td><td class="text-end fw-bold fs-6">{{ ing.total|soles }}</td><td></td></tr></tfoot>
+            </table>
+        </div></div>
+    </div>
+</div>
+<form method="POST" id="formAnular" action="{{ url_for('insumos_ingreso_anular', ingreso_id=ing.id) }}" class="d-none"><input type="hidden" name="motivo" id="motivoAnular"></form>
+<script>
+function anular() {
+    Swal.fire({ title: '¿Anular este ingreso?', html: 'Se descuenta del stock y se revierte el costo promedio. Solo se puede si lo ingresado no se consumió.<br>Escribe el motivo:',
+        input: 'text', icon: 'warning', showCancelButton: true, confirmButtonText: 'Anular', cancelButtonText: 'Cancelar', confirmButtonColor: '#dc3545',
+        inputValidator: v => (!v || v.trim().length < 5) ? 'Escribe el motivo (mín. 5 letras)' : undefined
+    }).then(r => { if (r.isConfirmed) { document.getElementById('motivoAnular').value = r.value; document.getElementById('formAnular').submit(); } });
+}
+</script>
+{% endblock %}

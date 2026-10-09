@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}Insumos internos{% endblock %}
+{% block subtitle %}Salida N° {{ '%06d'|format(sal.numero) }}{% endblock %}
+{% block content %}
+{% include '_insumos_nav.html' %}
+{% set emp = empresas[sal.empresa] %}
+<style>
+    .cab-salida { border-radius: 14px; border-left: 6px solid {{ emp.color }}; }
+    .cab-salida img { height: 46px; object-fit: contain; }
+    .dato { font-size: .7rem; text-transform: uppercase; color: #64748b; font-weight: 700; }
+    .pad-firma { width: 100%; height: 170px; border: 1.5px dashed #94a3b8; border-radius: 10px; background: #fff; display: block; }
+    .firma-img { max-height: 110px; max-width: 100%; border-bottom: 1px solid #94a3b8; }
+</style>
+<div class="card border-0 shadow-sm cab-salida mb-3"><div class="card-body d-flex flex-wrap justify-content-between gap-3 align-items-center">
+    <div class="d-flex align-items-center gap-3">
+        <img src="{{ url_for('static', filename='img/' ~ emp.logo) }}" alt="{{ emp.corto }}">
+        <div>
+            <div class="text-muted small">SALIDA DE MATERIALES DE ALMACÉN · {{ emp.nombre }}</div>
+            <h4 class="mb-0 fw-bold">CONSUMO N° {{ '%06d'|format(sal.numero) }}
+                {% if sal.estado == 'ANULADA' %}<span class="badge bg-secondary align-middle">ANULADA</span>{% endif %}</h4>
+            <div class="small text-muted">{{ sal.fecha.strftime('%d/%m/%Y') }} · registrado por {{ sal.usuario.nombre_completo if sal.usuario else '-' }} el {{ sal.fecha_registro.strftime('%d/%m/%Y %H:%M') if sal.fecha_registro else '' }}</div>
+        </div>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+        <a href="{{ url_for('insumos_salida_pdf', salida_id=sal.id) }}" class="btn btn-danger fw-bold"><i class="bi bi-file-earmark-pdf"></i> Descargar PDF</a>
+        {% if session.get('role') == 'admin' and sal.estado == 'REGISTRADA' %}
+        <button class="btn btn-outline-secondary" onclick="anular()"><i class="bi bi-x-octagon"></i> Anular</button>
+        {% endif %}
+    </div>
+</div>
+{% if sal.estado == 'ANULADA' %}
+<div class="alert alert-secondary small py-2"><i class="bi bi-x-octagon"></i> Anulada por <b>{{ sal.anulado_por }}</b> el {{ sal.fecha_anulacion.strftime('%d/%m/%Y %H:%M') if sal.fecha_anulacion else '' }}: {{ sal.motivo_anulacion }}. Lo despachado volvió al stock.</div>
+{% endif %}
+</div>
+
+<div class="row g-3">
+    <div class="col-12 col-lg-4">
+        <div class="card border-0 shadow-sm h-100"><div class="card-body small">
+            <div class="mb-2"><div class="dato">Solicitado por</div><b>{{ sal.solicitado_por.nombre if sal.solicitado_por else '-' }}</b>{% if sal.solicitado_por and sal.solicitado_por.codigo %} <span class="text-muted">({{ sal.solicitado_por.codigo }})</span>{% endif %}</div>
+            <div class="mb-2"><div class="dato">Sección / área</div>{{ sal.area.nombre if sal.area else '-' }}</div>
+            <div class="mb-2"><div class="dato">Necesario para</div>{{ sal.motivo or '-' }}{% if sal.motivo_detalle %}<div class="text-muted">{{ sal.motivo_detalle }}</div>{% endif %}</div>
+            <div class="mb-2"><div class="dato">A cuenta personal de</div>{{ sal.a_cuenta_de.nombre if sal.a_cuenta_de else '-' }}</div>
+            <div class="mb-2"><div class="dato">Autorizado por</div>{{ sal.autorizado_por.nombre if sal.autorizado_por else '-' }}</div>
+            <div class="mb-2"><div class="dato">Entregado por (almacén)</div>{{ sal.usuario.nombre_completo if sal.usuario else '-' }}</div>
+            <div><div class="dato">Recibido por</div>{{ sal.recibido_por.nombre if sal.recibido_por else '-' }}</div>
+        </div></div>
+    </div>
+    <div class="col-12 col-lg-8">
+        <div class="card border-0 shadow-sm mb-3"><div class="card-body p-0 table-responsive">
+            <table class="table align-middle mb-0 small">
+                <thead class="table-light"><tr><th class="ps-3">Código</th><th>Descripción</th><th class="text-center">Solicitado</th><th class="text-center">Despachado</th>
+                    <th>Ubicación</th><th class="text-end">Costo unit.</th><th class="text-end pe-3">Costo</th></tr></thead>
+                <tbody>
+                {% for d in sal.detalles %}
+                    <tr><td class="ps-3 fw-bold">{{ d.insumo.codigo }}</td><td>{{ d.insumo.descripcion }}</td>
+                        <td class="text-center">{{ d.cantidad_solicitada|cant }} {{ d.unidad }}</td><td class="text-center fw-bold">{{ d.cantidad_despachada|cant }} {{ d.unidad }}</td>
+                        <td class="text-muted">{{ d.ubicacion or '-' }}</td><td class="text-end">{{ d.costo_unitario|soles }}</td><td class="text-end pe-3 fw-semibold">{{ d.costo_total|soles }}</td></tr>
+                {% endfor %}
+                </tbody>
+                <tfoot><tr><td colspan="6" class="text-end fw-bold">Costo total cargado a {{ sal.area.nombre if sal.area else 'el área' }}</td><td class="text-end pe-3 fw-bold fs-6">{{ sal.total_costo|soles }}</td></tr></tfoot>
+            </table>
+        </div></div>
+
+        <div class="row g-3">
+            <div class="col-12 col-md-6">
+                <div class="card border-0 shadow-sm h-100"><div class="card-body">
+                    <div class="dato mb-2"><i class="bi bi-pen"></i> Firma de quien recibe</div>
+                    {% if sal.firma_s3_key %}
+                        <img class="firma-img" src="{{ url_for('insumos_salida_firma', salida_id=sal.id) }}" alt="Firma">
+                        <div class="small text-muted mt-1">{{ sal.firma_por }} · {{ sal.firma_fecha.strftime('%d/%m/%Y %H:%M') if sal.firma_fecha else '' }}</div>
+                    {% endif %}
+                    {% if puede_editar and sal.estado == 'REGISTRADA' %}
+                    <div id="zonaFirma" class="{{ 'd-none' if sal.firma_s3_key }} mt-2">
+                        <canvas class="pad-firma" id="padFirma"></canvas>
+                        <div class="d-flex gap-2 mt-2">
+                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="pad.limpiar()">Borrar</button>
+                            <button type="button" class="btn btn-sm btn-success flex-fill fw-bold" onclick="guardarFirma()"><i class="bi bi-check2"></i> Guardar firma</button>
+                        </div>
+                    </div>
+                    {% if sal.firma_s3_key %}<button class="btn btn-sm btn-link px-0" onclick="document.getElementById('zonaFirma').classList.remove('d-none'); pad.ajustar();">Volver a firmar</button>{% endif %}
+                    {% elif not sal.firma_s3_key %}<div class="text-muted small">Sin firma en pantalla.</div>{% endif %}
+                </div></div>
+            </div>
+            <div class="col-12 col-md-6">
+                <div class="card border-0 shadow-sm h-100"><div class="card-body">
+                    <div class="dato mb-2"><i class="bi bi-paperclip"></i> Formato firmado a mano</div>
+                    {% for d in docs %}
+                    <div class="small mb-1"><a href="{{ url_for('insumos_documento', doc_id=d.id) }}" target="_blank"><i class="bi {{ 'bi-file-earmark-pdf-fill text-danger' if d.content_type == 'application/pdf' else 'bi-file-earmark-image-fill text-primary' }}"></i> {{ d.nombre_original }}</a>
+                        <a href="{{ url_for('insumos_documento', doc_id=d.id, download=1) }}" class="text-muted ms-1"><i class="bi bi-download"></i></a>
+                        <span class="text-muted">· {{ d.subido_por }} {{ d.fecha.strftime('%d/%m %H:%M') if d.fecha else '' }}</span></div>
+                    {% else %}<div class="text-muted small mb-2">Sin documento. Imprime el PDF, fírmenlo y sube la foto o el escaneo.</div>{% endfor %}
+                    {% if puede_editar %}
+                    <form method="POST" action="{{ url_for('insumos_salida_documento', salida_id=sal.id) }}" enctype="multipart/form-data" class="d-flex gap-2 mt-2">
+                        <input type="file" name="archivo" class="form-control form-control-sm" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*" required>
+                        <button class="btn btn-sm btn-primary"><i class="bi bi-upload"></i></button>
+                    </form>
+                    {% endif %}
+                </div></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<form method="POST" id="formAnular" action="{{ url_for('insumos_salida_anular', salida_id=sal.id) }}" class="d-none"><input type="hidden" name="motivo" id="motivoAnular"></form>
+<script src="{{ url_for('static', filename='js/firma.js') }}?v=1"></script>
+<script>
+const padEl = document.getElementById('padFirma');
+const pad = padEl ? FirmaPad(padEl) : null;
+function guardarFirma() {
+    if (!pad || pad.vacia()) return Swal.fire('Falta la firma', 'Firma en el recuadro con el dedo o el mouse.', 'warning');
+    const fd = new FormData(); fd.append('firma_png', pad.png());
+    fetch({{ url_for('insumos_salida_firmar', salida_id=sal.id)|tojson }}, { method: 'POST', body: fd }).then(r => r.json()).then(d => {
+        if (d.status === 'success') location.reload(); else Swal.fire('No se pudo', d.msg, 'error');
+    });
+}
+function anular() {
+    Swal.fire({ title: '¿Anular esta salida?', html: 'Lo despachado vuelve al stock y deja de contar en el gasto del área.<br>Escribe el motivo:',
+        input: 'text', icon: 'warning', showCancelButton: true, confirmButtonText: 'Anular', cancelButtonText: 'Cancelar', confirmButtonColor: '#dc3545',
+        inputValidator: v => (!v || v.trim().length < 5) ? 'Escribe el motivo (mín. 5 letras)' : undefined
+    }).then(r => { if (r.isConfirmed) { document.getElementById('motivoAnular').value = r.value; document.getElementById('formAnular').submit(); } });
+}
+</script>
+{% endblock %}

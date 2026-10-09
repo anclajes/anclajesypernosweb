@@ -1,0 +1,257 @@
+{% extends "base.html" %}
+{% block title %}Insumos internos{% endblock %}
+{% block subtitle %}Nuevo ingreso (compra){% endblock %}
+{% block content %}
+{% include '_insumos_nav.html' %}
+<style>
+    .emp-opc { display: flex; gap: 8px; flex-wrap: wrap; }
+    .emp-opc label { display: flex; align-items: center; gap: 8px; border: 2px solid #e2e8f0; border-radius: 10px; padding: 6px 12px; cursor: pointer;
+                     font-weight: 700; background: #fff; color: #334155; margin: 0; }
+    .emp-opc label img { height: 30px; object-fit: contain; }
+    .emp-opc input:checked + label { border-color: var(--c); color: var(--c); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 18%, transparent); }
+    .fila-item { border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px; margin-bottom: 8px; background: #fff; position: relative; }
+    .fila-item .n { position: absolute; top: -9px; left: 10px; background: #0f172a; color: #fff; border-radius: 10px; font-size: .68rem; font-weight: 700; padding: 0 7px; }
+    .fila-item label { font-size: .68rem; font-weight: 700; color: #64748b; text-transform: uppercase; margin-bottom: 1px; }
+    .fila-item .info { font-size: .74rem; color: #475569; }
+    .fila-item .quitar { position: absolute; top: 4px; right: 6px; border: 0; background: transparent; color: #94a3b8; }
+    .fila-item .quitar:hover { color: #dc2626; }
+    .total-ingreso { font-size: 1.4rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+    .doc-in { border: 1.5px dashed #cbd5e1; border-radius: 10px; padding: 8px 10px; display: flex; align-items: center; gap: 10px; cursor: pointer; margin: 0; }
+    .doc-in input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+    .doc-in.con { border-style: solid; border-color: #2563eb; background: #eff6ff; }
+    .doc-in .ico { font-size: 1.3rem; color: #2563eb; }
+</style>
+
+<form method="POST" action="{{ url_for('insumos_ingreso_guardar') }}" enctype="multipart/form-data" id="formIngreso">
+<div class="row g-3">
+    <div class="col-12 col-lg-5">
+        <div class="card border-0 shadow-sm mb-3"><div class="card-body">
+            <label class="small fw-bold text-muted d-block mb-1">EMPRESA QUE COMPRA</label>
+            <div class="emp-opc mb-3">
+                {% for clave, e in empresas.items() %}
+                <input type="radio" class="btn-check" name="empresa" id="emp_{{ clave }}" value="{{ clave }}" {{ 'checked' if clave == empresa }} onchange="cambioEmpresa()">
+                <label for="emp_{{ clave }}" style="--c: {{ e.color }};"><img src="{{ url_for('static', filename='img/' ~ e.logo) }}" alt=""> {{ e.corto }}</label>
+                {% endfor %}
+            </div>
+            <div class="row g-2">
+                <div class="col-6"><label class="small fw-bold">Fecha *</label>
+                    <input type="date" name="fecha" class="form-control" value="{{ hoy.isoformat() }}" max="{{ hoy.isoformat() }}" required>
+                    <div class="form-text" style="font-size:.68rem;">Puede ser una fecha anterior.</div></div>
+                <div class="col-6"><label class="small fw-bold"># Factura</label>
+                    <input type="text" name="numero_factura" class="form-control text-uppercase" maxlength="50" placeholder="F001-12345"></div>
+                <div class="col-12"><label class="small fw-bold">Almacén</label>
+                    <select name="almacen" class="form-select"><option value="">— Sin especificar —</option>
+                        {% for a in almacenes %}<option value="{{ a.valor }}">{{ a.valor }}</option>{% endfor %}</select></div>
+            </div>
+        </div></div>
+
+        <div class="card border-0 shadow-sm mb-3"><div class="card-body">
+            <label class="small fw-bold text-muted d-block mb-1">PROVEEDOR</label>
+            <input type="hidden" name="proveedor_id" id="proveedor_id">
+            <div class="position-relative mb-1">
+                <div class="input-group">
+                    <input type="text" id="ruc" name="ruc" class="form-control" placeholder="RUC (11) o DNI (8), o el nombre" autocomplete="off" oninput="sugerirProv(this.value)">
+                    <button type="button" class="btn btn-outline-primary" onclick="buscarProv()"><i class="bi bi-search"></i> Buscar</button>
+                </div>
+                <div id="sugProv" class="list-group position-absolute w-100 shadow-sm" style="z-index:1060; max-height:220px; overflow-y:auto; display:none;"></div>
+            </div>
+            <div id="provMsg" class="small mb-2"></div>
+            <input type="text" name="razon_social" id="razon_social" class="form-control mb-2" placeholder="Razón social *" readonly>
+            <input type="text" name="direccion" id="direccion" class="form-control mb-2" placeholder="Dirección" readonly>
+            <div class="form-check small mb-2">
+                <input class="form-check-input" type="checkbox" id="sinRuc" onchange="modoSinRuc()">
+                <label class="form-check-label" for="sinRuc">Compra sin RUC / proveedor informal (escribir a mano)</label>
+            </div>
+            <div class="row g-2">
+                <div class="col-7"><input type="text" name="contacto_nombre" id="contacto_nombre" class="form-control" maxlength="120" placeholder="Nombre de contacto"></div>
+                <div class="col-5"><input type="text" name="contacto_telefono" id="contacto_telefono" class="form-control" maxlength="40" placeholder="Teléfono"></div>
+            </div>
+        </div></div>
+
+        <div class="card border-0 shadow-sm mb-3"><div class="card-body">
+            <label class="small fw-bold text-muted d-block mb-2">DOCUMENTOS <span class="fw-normal">(PDF o foto · máx. 5MB)</span></label>
+            {% for tipo, etq in [('FACTURA', 'Factura'), ('GUIA', 'Guía de remisión')] %}
+            <label class="doc-in mb-2" id="lbl_{{ tipo }}">
+                <input type="file" name="doc_{{ tipo }}" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*" onchange="docElegido(this, '{{ tipo }}')">
+                <i class="bi {{ 'bi-receipt' if tipo == 'FACTURA' else 'bi-truck' }} ico"></i>
+                <span><b>{{ etq }}</b><br><span class="small text-muted" id="txt_{{ tipo }}">Toca para adjuntar</span></span>
+            </label>
+            {% endfor %}
+            <textarea name="observacion" class="form-control mt-2" rows="2" maxlength="300" placeholder="Observación (opcional)"></textarea>
+        </div></div>
+    </div>
+
+    <div class="col-12 col-lg-7">
+        <div class="card border-0 shadow-sm"><div class="card-body">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+                <label class="small fw-bold text-muted mb-0">INSUMOS COMPRADOS</label>
+                <button type="button" class="btn btn-sm btn-outline-success" onclick="abrirInsumo(null)"><i class="bi bi-plus-lg"></i> Nuevo insumo (maestro)</button>
+            </div>
+            <div id="filas"></div>
+            <button type="button" class="btn btn-outline-primary w-100 mb-3" onclick="agregarFila()"><i class="bi bi-plus-circle"></i> Agregar otro insumo</button>
+            <div class="d-flex justify-content-between align-items-center border-top pt-2">
+                <span class="text-muted">Total del ingreso (con IGV)</span>
+                <span class="total-ingreso" id="totalIngreso">S/ 0.00</span>
+            </div>
+            <div class="form-text">El costo de cada insumo se calcula como <b>promedio ponderado</b> entre lo que ya había y esta compra.</div>
+            <button type="submit" class="btn btn-success btn-lg w-100 fw-bold mt-3" id="btnGuardar"><i class="bi bi-check2-circle"></i> Registrar ingreso</button>
+        </div></div>
+    </div>
+</div>
+</form>
+
+{% include '_insumo_modal.html' %}
+
+<template id="tplFila">
+    <div class="fila-item">
+        <span class="n"></span>
+        <button type="button" class="quitar" title="Quitar"><i class="bi bi-x-circle-fill"></i></button>
+        <div class="row g-2">
+            <div class="col-12"><label>Insumo *</label><select name="insumo_id[]" class="form-select sel-insumo" style="width:100%;"></select>
+                <div class="info mt-1"></div></div>
+            <div class="col-6 col-md-4"><label>Cód. proveedor</label><input name="codigo_proveedor[]" class="form-control form-control-sm" maxlength="60"></div>
+            <div class="col-6 col-md-2"><label>Cantidad *</label><input name="cantidad[]" type="number" step="any" min="0" class="form-control form-control-sm c-cant"></div>
+            <div class="col-6 col-md-3"><label>Precio unit. c/IGV</label><input name="precio_unitario[]" type="number" step="any" min="0" class="form-control form-control-sm c-pu"></div>
+            <div class="col-6 col-md-3"><label>Precio total c/IGV</label><input name="precio_total[]" type="number" step="any" min="0" class="form-control form-control-sm c-pt"></div>
+            <div class="col-6 col-md-4"><label>Stock mínimo</label><input name="stock_minimo[]" type="number" step="any" min="0" class="form-control form-control-sm c-min"></div>
+        </div>
+    </div>
+</template>
+
+<script>
+const INSUMOS = {{ insumos_json|tojson }};
+function empresaActual() { return document.querySelector('input[name=empresa]:checked').value; }
+function datoInsumo(id) { return (INSUMOS[empresaActual()] || []).find(i => String(i.id) === String(id)); }
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function fmt(n, d = 2) { return Number(n || 0).toLocaleString('es-PE', { minimumFractionDigits: d, maximumFractionDigits: d }); }
+
+function opcionesInsumos(sel) {
+    const val = sel.value;
+    sel.innerHTML = '<option value=""></option>' + (INSUMOS[empresaActual()] || []).map(i =>
+        `<option value="${i.id}">${esc(i.codigo)} — ${esc(i.descripcion)}</option>`).join('');
+    sel.value = val;
+}
+function pintarInfo(fila) {
+    const d = datoInsumo(fila.querySelector('.sel-insumo').value);
+    const info = fila.querySelector('.info');
+    if (!d) { info.innerHTML = ''; return; }
+    info.innerHTML = `<span class="badge bg-light text-dark border">${esc(d.unidad)}</span> Stock actual: <b>${fmt(d.stock, 0)}</b> · costo prom.: <b>S/ ${fmt(d.costo, 2)}</b>${d.categoria ? ' · ' + esc(d.categoria) : ''}`;
+    const min = fila.querySelector('.c-min');
+    if (!min.dataset.tocado) min.value = d.minimo || '';
+}
+function activarSelect(sel, fila) {
+    if (window.jQuery && jQuery.fn.select2) {
+        jQuery(sel).select2({ placeholder: 'Busca por código o descripción', width: '100%' }).on('change', () => pintarInfo(fila));
+    } else sel.addEventListener('change', () => pintarInfo(fila));
+}
+function numerar() { document.querySelectorAll('#filas .fila-item').forEach((f, i) => f.querySelector('.n').textContent = i + 1); }
+function recalcular() {
+    let total = 0;
+    document.querySelectorAll('#filas .fila-item').forEach(f => total += parseFloat(f.querySelector('.c-pt').value) || 0);
+    document.getElementById('totalIngreso').textContent = 'S/ ' + fmt(total);
+}
+function agregarFila(insumoId) {
+    const fila = document.getElementById('tplFila').content.firstElementChild.cloneNode(true);
+    document.getElementById('filas').appendChild(fila);
+    const sel = fila.querySelector('.sel-insumo');
+    opcionesInsumos(sel);
+    if (insumoId) sel.value = insumoId;
+    activarSelect(sel, fila);
+    const cant = fila.querySelector('.c-cant'), pu = fila.querySelector('.c-pu'), pt = fila.querySelector('.c-pt');
+    const desdeUnit = () => { const q = parseFloat(cant.value), u = parseFloat(pu.value); if (q > 0 && u >= 0) pt.value = (q * u).toFixed(2); recalcular(); };
+    const desdeTotal = () => { const q = parseFloat(cant.value), t = parseFloat(pt.value); if (q > 0 && t >= 0) pu.value = (t / q).toFixed(4); recalcular(); };
+    cant.addEventListener('input', () => (fila.dataset.ultimo === 'total' ? desdeTotal() : desdeUnit()));
+    pu.addEventListener('input', () => { fila.dataset.ultimo = 'unit'; desdeUnit(); });
+    pt.addEventListener('input', () => { fila.dataset.ultimo = 'total'; desdeTotal(); });
+    fila.querySelector('.c-min').addEventListener('input', e => e.target.dataset.tocado = '1');
+    fila.querySelector('.quitar').addEventListener('click', () => {
+        if (document.querySelectorAll('#filas .fila-item').length === 1) return;
+        if (window.jQuery && jQuery(sel).data('select2')) jQuery(sel).select2('destroy');
+        fila.remove(); numerar(); recalcular();
+    });
+    numerar(); pintarInfo(fila);
+    return fila;
+}
+function cambioEmpresa() {
+    document.querySelectorAll('#filas .fila-item').forEach(f => { const s = f.querySelector('.sel-insumo'); opcionesInsumos(s); if (window.jQuery) jQuery(s).trigger('change.select2'); pintarInfo(f); });
+}
+document.addEventListener('insumoGuardado', e => {
+    const n = e.detail;
+    Object.keys(INSUMOS).forEach(k => INSUMOS[k].push({ ...n }));
+    let vacia = [...document.querySelectorAll('#filas .fila-item')].find(f => !f.querySelector('.sel-insumo').value);
+    document.querySelectorAll('#filas .sel-insumo').forEach(s => opcionesInsumos(s));
+    if (vacia) { const s = vacia.querySelector('.sel-insumo'); s.value = n.id; if (window.jQuery) jQuery(s).trigger('change'); pintarInfo(vacia); }
+    else agregarFila(n.id);
+    Swal.fire({ icon: 'success', title: 'Insumo creado', text: `${n.codigo} — ${n.descripcion}`, timer: 1600, showConfirmButton: false });
+});
+
+// ---- Proveedor (misma búsqueda de RUC que el Kardex) ----
+let tSug = null;
+function sugerirProv(t) {
+    document.getElementById('proveedor_id').value = '';
+    clearTimeout(tSug);
+    const cont = document.getElementById('sugProv');
+    if (!t || t.length < 2 || document.getElementById('sinRuc').checked) { cont.style.display = 'none'; return; }
+    tSug = setTimeout(() => fetch(`/api/buscar_proveedores_db?q=${encodeURIComponent(t)}`).then(r => r.json()).then(d => {
+        cont.innerHTML = '';
+        (d.results || []).forEach(p => {
+            const b = document.createElement('button'); b.type = 'button'; b.className = 'list-group-item list-group-item-action py-1 px-2 small';
+            b.innerHTML = `<b>${esc(p.documento || 'S/N')}</b> — ${esc(p.razon_social)}`;
+            b.onclick = () => { elegirProv({ proveedor_id: p.id, razon_social: p.razon_social, direccion: p.direccion }, p.documento); cont.style.display = 'none'; };
+            cont.appendChild(b);
+        });
+        cont.style.display = (d.results || []).length ? 'block' : 'none';
+    }), 300);
+}
+function elegirProv(d, doc) {
+    document.getElementById('proveedor_id').value = d.proveedor_id;
+    if (doc) document.getElementById('ruc').value = doc;
+    document.getElementById('razon_social').value = d.razon_social || '';
+    document.getElementById('direccion').value = d.direccion || '';
+    if (d.telefono && !document.getElementById('contacto_telefono').value) document.getElementById('contacto_telefono').value = d.telefono;
+    document.getElementById('provMsg').innerHTML = '<span class="text-success"><i class="bi bi-check-circle-fill"></i> Proveedor validado</span>';
+}
+function buscarProv() {
+    const n = document.getElementById('ruc').value.trim();
+    const msg = document.getElementById('provMsg');
+    if (n.length !== 8 && n.length !== 11) { msg.innerHTML = '<span class="text-danger">Escribe un RUC (11) o DNI (8).</span>'; return; }
+    msg.innerHTML = '<span class="text-muted"><span class="spinner-border spinner-border-sm"></span> Consultando SUNAT/RENIEC...</span>';
+    fetch('/api/consultar_proveedor', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: `numero=${encodeURIComponent(n)}&force=false` })
+        .then(r => r.json()).then(d => {
+            if (d.status === 'success') elegirProv(d, n);
+            else { document.getElementById('proveedor_id').value = ''; msg.innerHTML = `<span class="text-danger"><i class="bi bi-x-circle-fill"></i> ${esc(d.msg)}</span>`; }
+        }).catch(() => msg.innerHTML = '<span class="text-danger">Error de conexión.</span>');
+}
+function modoSinRuc() {
+    const sin = document.getElementById('sinRuc').checked;
+    ['razon_social', 'direccion'].forEach(id => document.getElementById(id).readOnly = !sin);
+    document.getElementById('proveedor_id').value = '';
+    document.getElementById('provMsg').innerHTML = sin ? '<span class="text-muted">Escribe la razón social a mano.</span>' : '';
+}
+function docElegido(inp, tipo) {
+    const f = inp.files[0];
+    const lbl = document.getElementById('lbl_' + tipo), txt = document.getElementById('txt_' + tipo);
+    if (f) {
+        const ext = (f.name.split('.').pop() || '').toLowerCase();
+        if (!['pdf', 'jpg', 'jpeg', 'png', 'webp'].includes(ext) || f.size > 5 * 1024 * 1024) {
+            inp.value = ''; Swal.fire('Archivo no permitido', 'Solo PDF o foto (JPG, PNG, WEBP) de hasta 5MB.', 'warning');
+        }
+    }
+    const ok = inp.files[0];
+    lbl.classList.toggle('con', !!ok);
+    txt.textContent = ok ? `${ok.name} · ${(ok.size / 1048576).toFixed(1)} MB` : 'Toca para adjuntar';
+}
+document.getElementById('formIngreso').addEventListener('submit', function (e) {
+    const filas = [...document.querySelectorAll('#filas .fila-item')].filter(f => f.querySelector('.sel-insumo').value);
+    let error = '';
+    if (!document.getElementById('proveedor_id').value && !(document.getElementById('sinRuc').checked && document.getElementById('razon_social').value.trim()))
+        error = 'Busca y valida el proveedor por su RUC (o marca "sin RUC" y escribe la razón social).';
+    else if (!filas.length) error = 'Agrega al menos un insumo.';
+    else if (filas.some(f => !(parseFloat(f.querySelector('.c-cant').value) > 0) || !(parseFloat(f.querySelector('.c-pt').value) >= 0) || f.querySelector('.c-pt').value === ''))
+        error = 'Cada insumo necesita cantidad y precio (unitario o total).';
+    if (error) { e.preventDefault(); return Swal.fire('Falta información', error, 'warning'); }
+    const btn = document.getElementById('btnGuardar'); btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Guardando...';
+});
+agregarFila();
+</script>
+{% endblock %}

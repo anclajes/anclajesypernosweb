@@ -1,0 +1,55 @@
+{# Modal Crear / Editar insumo del maestro. Espera: categorias, unidades. Dispara el evento 'insumoGuardado' (detail = insumo). #}
+<div class="modal fade" id="modalInsumo" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <form class="modal-content border-0 shadow" id="formInsumo" onsubmit="return guardarInsumo(event)">
+            <div class="modal-header text-white py-2" style="background: var(--theme-primary, #0F172A);">
+                <h6 class="modal-title fw-bold" id="tituloInsumo">Nuevo insumo</h6>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" name="id" id="ins_id">
+                <div class="mb-2"><label class="small fw-bold">Código interno <span class="text-muted fw-normal">(vacío = automático)</span></label>
+                    <input name="codigo" id="ins_codigo" class="form-control text-uppercase" maxlength="50" placeholder="Ej: EPP-GUANTE-01"></div>
+                <div class="mb-2"><label class="small fw-bold">Descripción *</label>
+                    <input name="descripcion" id="ins_desc" class="form-control text-uppercase" maxlength="300" required placeholder="Ej: GUANTES DE NITRILO TALLA L"></div>
+                <div class="row g-2">
+                    <div class="col-7"><label class="small fw-bold">Categoría</label>
+                        <select name="categoria" id="ins_cat" class="form-select"><option value="">— Sin categoría —</option>
+                            {% for c in categorias %}<option value="{{ c.valor }}">{{ c.valor }}</option>{% endfor %}</select></div>
+                    <div class="col-5"><label class="small fw-bold">Unidad *</label>
+                        <select name="unidad" id="ins_uni" class="form-select" required><option value="">—</option>
+                            {% for u in unidades %}<option value="{{ u.valor }}">{{ u.valor }}</option>{% endfor %}</select></div>
+                </div>
+                <div class="form-text">Las categorías y unidades se administran en Insumos → Configuración.</div>
+            </div>
+            <div class="modal-footer p-2"><button type="submit" class="btn btn-primary w-100 fw-bold" id="btnGuardarInsumo">Guardar</button></div>
+        </form>
+    </div>
+</div>
+<script>
+function abrirInsumo(datos) {
+    const d = datos || {};
+    document.getElementById('tituloInsumo').textContent = d.id ? 'Editar insumo' : 'Nuevo insumo';
+    document.getElementById('ins_id').value = d.id || '';
+    document.getElementById('ins_codigo').value = d.codigo || '';
+    document.getElementById('ins_desc').value = d.descripcion || '';
+    document.getElementById('ins_cat').value = d.categoria || '';
+    document.getElementById('ins_uni').value = d.unidad || '';
+    new bootstrap.Modal(document.getElementById('modalInsumo')).show();
+}
+function guardarInsumo(ev) {
+    ev.preventDefault();
+    const btn = document.getElementById('btnGuardarInsumo');
+    btn.disabled = true;
+    fetch('/insumos/maestro/guardar', { method: 'POST', body: new FormData(document.getElementById('formInsumo')) })
+        .then(r => r.json())
+        .then(d => {
+            btn.disabled = false;
+            if (d.status !== 'success') return Swal.fire('No se pudo guardar', d.msg, 'warning');
+            const m = bootstrap.Modal.getInstance(document.getElementById('modalInsumo')); if (m) m.hide();
+            document.dispatchEvent(new CustomEvent('insumoGuardado', { detail: d.insumo }));
+        })
+        .catch(() => { btn.disabled = false; Swal.fire('Error', 'No se pudo comunicar con el servidor.', 'error'); });
+    return false;
+}
+</script>

@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+{% block title %}Insumos internos{% endblock %}
+{% block subtitle %}Nueva salida de materiales{% endblock %}
+{% block content %}
+{% include '_insumos_nav.html' %}
+<style>
+    .emp-opc { display: flex; gap: 8px; flex-wrap: wrap; }
+    .emp-opc label { display: flex; align-items: center; gap: 8px; border: 2px solid #e2e8f0; border-radius: 10px; padding: 6px 12px; cursor: pointer;
+                     font-weight: 700; background: #fff; color: #334155; margin: 0; }
+    .emp-opc label img { height: 30px; object-fit: contain; }
+    .emp-opc input:checked + label { border-color: var(--c); color: var(--c); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 18%, transparent); }
+    .fila-item { border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px; margin-bottom: 8px; background: #fff; position: relative; }
+    .fila-item .n { position: absolute; top: -9px; left: 10px; background: #b91c1c; color: #fff; border-radius: 10px; font-size: .68rem; font-weight: 700; padding: 0 7px; }
+    .fila-item label { font-size: .68rem; font-weight: 700; color: #64748b; text-transform: uppercase; margin-bottom: 1px; }
+    .fila-item .info { font-size: .74rem; color: #475569; }
+    .fila-item .quitar { position: absolute; top: 4px; right: 6px; border: 0; background: transparent; color: #94a3b8; }
+    .fila-item.sin-stock { border-color: #fecaca; background: #fff7f7; }
+    .num-consumo { font-weight: 800; font-size: 1.1rem; color: #b91c1c; font-variant-numeric: tabular-nums; }
+    .pad-firma { width: 100%; height: 170px; border: 1.5px dashed #94a3b8; border-radius: 10px; background: #fff; display: block; }
+    .total-salida { font-size: 1.35rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+</style>
+
+<form method="POST" action="{{ url_for('insumos_salida_guardar') }}" id="formSalida">
+<input type="hidden" name="firma_png" id="firma_png">
+<div class="row g-3">
+    <div class="col-12 col-lg-5">
+        <div class="card border-0 shadow-sm mb-3"><div class="card-body">
+            <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-1">
+                <label class="small fw-bold text-muted">EMPRESA</label>
+                <span class="small text-muted">CONSUMO N° <span class="num-consumo" id="numConsumo"></span></span>
+            </div>
+            <div class="emp-opc mb-3">
+                {% for clave, e in empresas.items() %}
+                <input type="radio" class="btn-check" name="empresa" id="emp_{{ clave }}" value="{{ clave }}" {{ 'checked' if clave == empresa }} onchange="cambioEmpresa()">
+                <label for="emp_{{ clave }}" style="--c: {{ e.color }};"><img src="{{ url_for('static', filename='img/' ~ e.logo) }}" alt=""> {{ e.corto }}</label>
+                {% endfor %}
+            </div>
+            <div class="row g-2">
+                <div class="col-12 col-sm-6"><label class="small fw-bold">Fecha *</label>
+                    <input type="date" name="fecha" class="form-control" value="{{ hoy.isoformat() }}" max="{{ hoy.isoformat() }}" required></div>
+                <div class="col-12"><label class="small fw-bold">Solicitado por *</label>
+                    <select name="solicitado_por_id" id="sel_solicitado" class="form-select sel-trab" required></select></div>
+                <div class="col-12 col-sm-6"><label class="small fw-bold">Sección / área *</label>
+                    <select name="area_id" id="sel_area" class="form-select" required><option value="">— Elige —</option>
+                        {% for a in areas %}<option value="{{ a.id }}">{{ a.nombre }}</option>{% endfor %}</select></div>
+                <div class="col-12 col-sm-6"><label class="small fw-bold">Necesario para *</label>
+                    <select name="motivo" class="form-select" required><option value="">— Elige —</option>
+                        {% for m in motivos %}<option value="{{ m.valor }}">{{ m.valor }}</option>{% endfor %}</select></div>
+                <div class="col-12"><input type="text" name="motivo_detalle" class="form-control" maxlength="300" placeholder="Detalle (opcional): máquina, trabajo, obra..."></div>
+                <div class="col-12 col-sm-6"><label class="small fw-bold">A cuenta personal de</label>
+                    <select name="a_cuenta_de_id" id="sel_cuenta" class="form-select sel-trab"></select></div>
+                <div class="col-12 col-sm-6"><label class="small fw-bold">Autorizado por (jefe de área)</label>
+                    <select name="autorizado_por_id" id="sel_jefe" class="form-select sel-trab" data-solo-jefes="1"></select></div>
+                <div class="col-12"><label class="small fw-bold">Recibido por</label>
+                    <select name="recibido_por_id" id="sel_recibido" class="form-select sel-trab"></select>
+                    <div class="form-text">Si lo dejas vacío, recibe quien lo solicitó. Los trabajadores se crean en Insumos → Configuración.</div></div>
+            </div>
+        </div></div>
+    </div>
+
+    <div class="col-12 col-lg-7">
+        <div class="card border-0 shadow-sm mb-3"><div class="card-body">
+            <label class="small fw-bold text-muted d-block mb-2">MATERIALES</label>
+            <div id="filas"></div>
+            <button type="button" class="btn btn-outline-danger w-100 mb-3" onclick="agregarFila()"><i class="bi bi-plus-circle"></i> Agregar otro insumo</button>
+            <div class="d-flex justify-content-between align-items-center border-top pt-2">
+                <span class="text-muted">Costo de esta salida <span class="small">(a costo promedio)</span></span>
+                <span class="total-salida" id="totalSalida">S/ 0.00</span>
+            </div>
+        </div></div>
+
+        <div class="card border-0 shadow-sm"><div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+                <label class="small fw-bold text-muted mb-0"><i class="bi bi-pen"></i> FIRMA DE QUIEN RECIBE <span class="fw-normal">(opcional)</span></label>
+                <button type="button" class="btn btn-sm btn-link" onclick="pad.limpiar()">Borrar firma</button>
+            </div>
+            <canvas class="pad-firma" id="padFirma"></canvas>
+            <div class="form-text">Firma con el dedo en el celular/tablet. También puedes firmar después, o imprimir el PDF, firmarlo a mano y subir la foto.</div>
+            <button type="submit" class="btn btn-danger btn-lg w-100 fw-bold mt-3" id="btnGuardar"><i class="bi bi-box-arrow-up"></i> Registrar salida</button>
+        </div></div>
+    </div>
+</div>
+</form>
+
+<template id="tplFila">
+    <div class="fila-item">
+        <span class="n"></span>
+        <button type="button" class="quitar" title="Quitar"><i class="bi bi-x-circle-fill"></i></button>
+        <div class="row g-2">
+            <div class="col-12"><label>Insumo *</label><select name="insumo_id[]" class="form-select sel-insumo" style="width:100%;"></select>
+                <div class="info mt-1"></div></div>
+            <div class="col-6"><label>Cantidad solicitada *</label><input name="cantidad_solicitada[]" type="number" step="any" min="0" class="form-control form-control-sm c-sol"></div>
+            <div class="col-6"><label>Cantidad despachada *</label><input name="cantidad_despachada[]" type="number" step="any" min="0" class="form-control form-control-sm c-desp"></div>
+        </div>
+    </div>
+</template>
+
+<script src="{{ url_for('static', filename='js/firma.js') }}?v=1"></script>
+<script>
+const INSUMOS = {{ insumos_json|tojson }};
+const SIGUIENTE = {{ siguiente|tojson }};
+const TRAB = [{% for t in trabajadores %}{id: {{ t.id }}, nombre: {{ t.nombre|tojson }}, codigo: {{ (t.codigo or '')|tojson }}, area_id: {{ t.area_id|tojson }}, area: {{ (t.area.nombre if t.area else '')|tojson }}, empresa: {{ (t.empresa or 'AMBAS')|tojson }}, jefe: {{ 'true' if t.es_jefe else 'false' }}}{{ ',' if not loop.last }}{% endfor %}];
+const pad = FirmaPad(document.getElementById('padFirma'));
+function empresaActual() { return document.querySelector('input[name=empresa]:checked').value; }
+function datoInsumo(id) { return (INSUMOS[empresaActual()] || []).find(i => String(i.id) === String(id)); }
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function fmt(n, d = 2) { return Number(n || 0).toLocaleString('es-PE', { minimumFractionDigits: d, maximumFractionDigits: d }); }
+function fmtCant(n) { return Number(n || 0).toLocaleString('es-PE', { maximumFractionDigits: 3 }); }
+
+function cargarTrabajadores() {
+    const emp = empresaActual();
+    document.querySelectorAll('select.sel-trab').forEach(sel => {
+        const val = sel.value, soloJefes = sel.dataset.soloJefes === '1';
+        const lista = TRAB.filter(t => (t.empresa === 'AMBAS' || t.empresa === emp) && (!soloJefes || t.jefe));
+        sel.innerHTML = '<option value=""></option>' + lista.map(t => `<option value="${t.id}">${esc(t.nombre)}${t.area ? ' · ' + esc(t.area) : ''}</option>`).join('');
+        sel.value = val;
+        if (window.jQuery && jQuery.fn.select2) {
+            if (!jQuery(sel).data('select2')) jQuery(sel).select2({ placeholder: soloJefes ? '— Jefe de área —' : '— Elige —', width: '100%', allowClear: true });
+            jQuery(sel).trigger('change.select2');
+        }
+    });
+}
+function alElegirSolicitante() {
+    const t = TRAB.find(x => String(x.id) === document.getElementById('sel_solicitado').value);
+    if (t && t.area_id) document.getElementById('sel_area').value = t.area_id;
+}
+function opcionesInsumos(sel) {
+    const val = sel.value;
+    sel.innerHTML = '<option value=""></option>' + (INSUMOS[empresaActual()] || []).map(i =>
+        `<option value="${i.id}" ${i.stock > 0 ? '' : 'disabled'}>${esc(i.codigo)} — ${esc(i.descripcion)} (stock ${fmtCant(i.stock)} ${esc(i.unidad)})</option>`).join('');
+    sel.value = val;
+}
+function pintarFila(fila) {
+    const d = datoInsumo(fila.querySelector('.sel-insumo').value);
+    const info = fila.querySelector('.info');
+    const desp = parseFloat(fila.querySelector('.c-desp').value) || 0;
+    fila.classList.toggle('sin-stock', !!d && desp > d.stock);
+    if (!d) { info.innerHTML = ''; recalcular(); return; }
+    info.innerHTML = `<span class="badge bg-light text-dark border">${esc(d.unidad)}</span> Stock: <b>${fmtCant(d.stock)}</b>` +
+        `${d.almacen ? ' · ' + esc(d.almacen) : ''} · costo prom.: S/ ${fmt(d.costo)}` +
+        (desp ? ` · <b>S/ ${fmt(desp * d.costo)}</b>` : '') + (desp > d.stock ? ' <span class="text-danger fw-bold">· no alcanza el stock</span>' : '');
+    recalcular();
+}
+function recalcular() {
+    let total = 0;
+    document.querySelectorAll('#filas .fila-item').forEach(f => {
+        const d = datoInsumo(f.querySelector('.sel-insumo').value);
+        if (d) total += (parseFloat(f.querySelector('.c-desp').value) || 0) * d.costo;
+    });
+    document.getElementById('totalSalida').textContent = 'S/ ' + fmt(total);
+}
+function numerar() { document.querySelectorAll('#filas .fila-item').forEach((f, i) => f.querySelector('.n').textContent = i + 1); }
+function agregarFila() {
+    const fila = document.getElementById('tplFila').content.firstElementChild.cloneNode(true);
+    document.getElementById('filas').appendChild(fila);
+    const sel = fila.querySelector('.sel-insumo');
+    opcionesInsumos(sel);
+    if (window.jQuery && jQuery.fn.select2) jQuery(sel).select2({ placeholder: 'Busca por código o descripción', width: '100%' }).on('change', () => pintarFila(fila));
+    else sel.addEventListener('change', () => pintarFila(fila));
+    const sol = fila.querySelector('.c-sol'), desp = fila.querySelector('.c-desp');
+    sol.addEventListener('input', () => { if (!desp.dataset.tocado) desp.value = sol.value; pintarFila(fila); });
+    desp.addEventListener('input', () => { desp.dataset.tocado = '1'; pintarFila(fila); });
+    fila.querySelector('.quitar').addEventListener('click', () => {
+        if (document.querySelectorAll('#filas .fila-item').length === 1) return;
+        if (window.jQuery && jQuery(sel).data('select2')) jQuery(sel).select2('destroy');
+        fila.remove(); numerar(); recalcular();
+    });
+    numerar();
+}
+function cambioEmpresa() {
+    document.getElementById('numConsumo').textContent = String(SIGUIENTE[empresaActual()]).padStart(6, '0');
+    document.querySelectorAll('#filas .fila-item').forEach(f => { const s = f.querySelector('.sel-insumo'); opcionesInsumos(s); if (window.jQuery) jQuery(s).trigger('change.select2'); pintarFila(f); });
+    cargarTrabajadores();
+}
+document.getElementById('formSalida').addEventListener('submit', function (e) {
+    const filas = [...document.querySelectorAll('#filas .fila-item')].filter(f => f.querySelector('.sel-insumo').value);
+    let error = '';
+    if (!document.getElementById('sel_solicitado').value) error = 'Elige quién solicita.';
+    else if (!filas.length) error = 'Agrega al menos un insumo.';
+    else if (filas.some(f => !(parseFloat(f.querySelector('.c-sol').value) > 0) || !(parseFloat(f.querySelector('.c-desp').value) > 0))) error = 'Cada insumo necesita cantidad solicitada y despachada.';
+    else if (filas.some(f => parseFloat(f.querySelector('.c-desp').value) > parseFloat(f.querySelector('.c-sol').value))) error = 'Lo despachado no puede ser más de lo solicitado.';
+    else if (document.querySelector('#filas .fila-item.sin-stock')) error = 'Hay insumos sin stock suficiente.';
+    if (error) { e.preventDefault(); return Swal.fire('Revisa la salida', error, 'warning'); }
+    document.getElementById('firma_png').value = pad.vacia() ? '' : pad.png();
+    const btn = document.getElementById('btnGuardar'); btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Guardando...';
+});
+document.addEventListener('DOMContentLoaded', () => {
+    cargarTrabajadores();
+    if (window.jQuery) jQuery('#sel_solicitado').on('change', alElegirSolicitante); else document.getElementById('sel_solicitado').addEventListener('change', alElegirSolicitante);
+    cambioEmpresa();
+});
+agregarFila();
+</script>
+{% endblock %}

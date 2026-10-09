@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Insumos internos{% endblock %}
+{% block subtitle %}Salidas de materiales{% endblock %}
+{% block content %}
+{% include '_insumos_nav.html' %}
+<form method="GET" class="row g-2 align-items-end mb-3">
+    <div class="col-6 col-md-2"><label class="small fw-bold text-muted">Empresa</label>
+        <select name="empresa" class="form-select form-select-sm" onchange="this.form.submit()">
+            <option value="TODAS">Las dos</option>
+            {% for k, e in empresas.items() %}<option value="{{ k }}" {{ 'selected' if k == empresa }}>{{ e.corto }}</option>{% endfor %}
+        </select></div>
+    <div class="col-6 col-md-3"><label class="small fw-bold text-muted">Área</label>
+        <select name="area_id" class="form-select form-select-sm" onchange="this.form.submit()"><option value="">Todas</option>
+            {% for a in areas %}<option value="{{ a.id }}" {{ 'selected' if a.id == area_id }}>{{ a.nombre }}</option>{% endfor %}</select></div>
+    <div class="col-12 col-md-3"><label class="small fw-bold text-muted">Trabajador</label>
+        <select name="trabajador_id" class="form-select form-select-sm" onchange="this.form.submit()"><option value="">Todos</option>
+            {% for t in trabajadores %}<option value="{{ t.id }}" {{ 'selected' if t.id == trabajador_id }}>{{ t.nombre }}</option>{% endfor %}</select></div>
+    <div class="col-6 col-md-2"><label class="small fw-bold text-muted">Desde</label><input type="date" name="desde" class="form-control form-control-sm" value="{{ desde.isoformat() if desde else '' }}"></div>
+    <div class="col-6 col-md-2"><label class="small fw-bold text-muted">Hasta</label><input type="date" name="hasta" class="form-control form-control-sm" value="{{ hasta.isoformat() if hasta else '' }}"></div>
+    <div class="col-12 text-end"><button class="btn btn-sm btn-primary"><i class="bi bi-funnel"></i> Filtrar</button>
+        <a href="{{ url_for('insumos_salidas') }}" class="btn btn-sm btn-outline-secondary">Limpiar</a></div>
+</form>
+<div class="d-flex justify-content-between align-items-center mb-2 small">
+    <span class="text-muted">{{ salidas|length }} salida(s)</span>
+    <span>Total (sin anuladas): <b class="fs-6">{{ total|soles }}</b></span>
+</div>
+<div class="card border-0 shadow-sm"><div class="card-body p-0 table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+        <thead class="table-dark"><tr><th class="ps-3">N°</th><th>Fecha</th><th>Empresa</th><th>Área</th><th>Solicitado por</th><th>Necesario para</th>
+            <th class="text-center">Ítems</th><th class="text-end">Costo</th><th class="text-center">Firma</th><th class="pe-3"></th></tr></thead>
+        <tbody>
+        {% for s in salidas %}
+            <tr class="{{ 'opacity-50' if s.estado == 'ANULADA' }}">
+                <td class="ps-3 fw-bold text-nowrap">{{ '%06d'|format(s.numero) }}{% if s.estado == 'ANULADA' %} <span class="badge bg-secondary">Anulada</span>{% endif %}</td>
+                <td class="text-nowrap">{{ s.fecha.strftime('%d/%m/%Y') }}</td>
+                <td>{{ empresas[s.empresa].corto }}</td>
+                <td>{{ s.area.nombre if s.area else '-' }}</td>
+                <td>{{ s.solicitado_por.nombre if s.solicitado_por else '-' }}</td>
+                <td>{{ s.motivo or '-' }}{% if s.motivo_detalle %}<div class="text-muted" style="font-size:.72rem;">{{ s.motivo_detalle }}</div>{% endif %}</td>
+                <td class="text-center">{{ s.detalles|length }}</td>
+                <td class="text-end fw-semibold text-nowrap">{{ s.total_costo|soles }}</td>
+                <td class="text-center">{% if s.firma_s3_key %}<i class="bi bi-pen-fill text-success" title="Firmada en pantalla"></i>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                <td class="pe-3 text-end text-nowrap">
+                    <a href="{{ url_for('insumos_salida_detalle', salida_id=s.id) }}" class="btn btn-sm btn-outline-primary py-0"><i class="bi bi-eye"></i></a>
+                    <a href="{{ url_for('insumos_salida_pdf', salida_id=s.id) }}" class="btn btn-sm btn-outline-danger py-0" title="PDF"><i class="bi bi-file-earmark-pdf"></i></a>
+                </td>
+            </tr>
+        {% else %}
+            <tr><td colspan="10" class="text-center text-muted py-5">No hay salidas con estos filtros.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div></div>
+{% endblock %}

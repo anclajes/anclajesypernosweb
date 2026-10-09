@@ -6,6 +6,8 @@ from models import CorreccionAuditoria, CorreccionAuditoriaFoto
 from models import AccesoUsuario
 from models import ProcesoOC, MovimientoDocumento
 from models import ActividadUsuario, ActividadHora, AlertaSeguridad
+from models import (InsumoArea, InsumoTrabajador, Insumo, InsumoStock, InsumoIngreso, InsumoIngresoDetalle,
+                    InsumoSalida, InsumoSalidaDetalle, InsumoMovimiento, InsumoDocumento)
 from flask import g
 from models import ProductMovement
 from models import Payment
@@ -2008,6 +2010,19 @@ NOMBRES_PAGINA = {
     'actividad_usuarios': ('Usuarios', 'Actividad y alertas'),
     'perfil_usuario': ('Usuarios', 'Mi perfil'),
     'admin_reset_sistema': ('Sistema', 'Reset / respaldo del sistema'),
+    'insumos_inventario': ('Insumos', 'Insumos: inventario'),
+    'insumos_maestro': ('Insumos', 'Insumos: maestro'),
+    'insumos_ingreso_nuevo': ('Insumos', 'Insumos: nuevo ingreso'),
+    'insumos_ingresos': ('Insumos', 'Insumos: ingresos'),
+    'insumos_ingreso_detalle': ('Insumos', 'Insumos: detalle de ingreso'),
+    'insumos_salida_nueva': ('Insumos', 'Insumos: nueva salida'),
+    'insumos_salidas': ('Insumos', 'Insumos: salidas'),
+    'insumos_salida_detalle': ('Insumos', 'Insumos: detalle de salida'),
+    'insumos_salida_pdf': ('Insumos', 'PDF de salida de materiales'),
+    'insumos_documento': ('Insumos', 'Documento de insumos'),
+    'insumos_kardex': ('Insumos', 'Insumos: kardex valorizado'),
+    'insumos_gasto': ('Insumos', 'Insumos: gasto por área'),
+    'insumos_config': ('Insumos', 'Insumos: configuración'),
 }
 # Descargas de DATOS del sistema (las que importan para una posible fuga de información)
 EXPORTACIONES_DATOS = {
@@ -14224,6 +14239,14 @@ def _es_superadmin():
 # Los catálogos de configuración (motivo_movimiento, presentacion, catalogo_valor,
 # campo_personalizado/opcion, system_config) NO están aquí a propósito: no se borran.
 TABLAS_RESET_ORDEN = [
+    ('insumo_documento', InsumoDocumento),          # insumos internos: hijos primero
+    ('insumo_movimiento', InsumoMovimiento),
+    ('insumo_salida_detalle', InsumoSalidaDetalle),
+    ('insumo_salida', InsumoSalida),
+    ('insumo_ingreso_detalle', InsumoIngresoDetalle),
+    ('insumo_ingreso', InsumoIngreso),
+    ('insumo_stock', InsumoStock),
+    ('insumo', Insumo),
     ('acceso_usuario', AccesoUsuario),
     ('actividad_usuario', ActividadUsuario),
     ('actividad_hora', ActividadHora),
@@ -14300,6 +14323,16 @@ TABLAS_TODAS_ORDEN = [
     ('actividad_usuario', ActividadUsuario),
     ('actividad_hora', ActividadHora),
     ('alerta_seguridad', AlertaSeguridad),
+    ('insumo_area', InsumoArea),
+    ('insumo_trabajador', InsumoTrabajador),
+    ('insumo', Insumo),
+    ('insumo_stock', InsumoStock),
+    ('insumo_ingreso', InsumoIngreso),
+    ('insumo_ingreso_detalle', InsumoIngresoDetalle),
+    ('insumo_salida', InsumoSalida),
+    ('insumo_salida_detalle', InsumoSalidaDetalle),
+    ('insumo_movimiento', InsumoMovimiento),
+    ('insumo_documento', InsumoDocumento),
 ]
 
 
@@ -14315,6 +14348,11 @@ def _asegurar_tablas_correccion_seguro():
     except Exception:
         db.session.rollback()
         app.logger.exception("No se pudieron verificar las tablas de documentos/procesos del Kardex")
+    try:
+        _asegurar_insumos()
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("No se pudieron verificar las tablas de Insumos")
 
 
 def _fila_a_dict(obj):
@@ -15505,6 +15543,1064 @@ def dashboard_ventas_general_pdf():
     )
     nombre_archivo = f"reporte_ventas_general_{ctx_a['fecha_inicio']}_a_{ctx_a['fecha_fin']}.pdf"
     return _generar_respuesta_pdf(html_renderizado, nombre_archivo, "el PDF del dashboard General")
+
+
+# =====================================================================================
+# INSUMOS INTERNOS (material de uso interno de la empresa)
+# - Maestro único de insumos; stock, costo y ubicación SEPARADOS por empresa (Anclajes / Import Bolts).
+# - Ingresos con factura (proveedor por RUC, igual que el Kardex) y documentos (PDF/foto) en S3.
+# - Salidas con el formato "SALIDA DE MATERIALES DE ALMACÉN" (PDF con el logo de cada empresa,
+#   correlativo propio por empresa, firma en pantalla o documento firmado subido).
+# - Costo: PROMEDIO PONDERADO con IGV. Cada ingreso recalcula el costo promedio del stock:
+#       nuevo_promedio = (stock * promedio + cantidad * precio) / (stock + cantidad)
+#   y cada salida se valoriza a ese promedio -> así se sabe cuánto gasta cada área aunque la
+#   factura sea por 100 unidades y se saquen de a pocas y para áreas distintas.
+# Las tablas se crean solas al arrancar (no hace falta ninguna ruta /fix_).
+# =====================================================================================
+from functools import wraps as _wraps_insumos
+
+EMPRESAS_INSUMOS = {
+    'ANCLAJES': {'nombre': 'Anclajes y Pernos SAC', 'corto': 'Anclajes', 'logo': 'logo.png', 'color': '#0B3D91'},
+    'IMPORTBOLTS': {'nombre': 'Import Bolts SAC', 'corto': 'Import Bolts', 'logo': 'logo_import.png', 'color': '#004b87'},
+}
+ROLES_INSUMOS_EDITAN = ['admin', 'almacen']
+ROLES_INSUMOS_VEN = ['admin', 'almacen', 'administracion']
+CATALOGOS_INSUMOS = {'INSUMO_CATEGORIA': 'Categorías', 'INSUMO_UNIDAD': 'Unidades de medida',
+                     'INSUMO_MOTIVO': 'Necesario para (motivos)', 'INSUMO_ALMACEN': 'Almacenes / ubicaciones'}
+_INSUMOS_INICIALES = {
+    'INSUMO_CATEGORIA': ['EPP / SEGURIDAD', 'LIMPIEZA', 'OFICINA', 'HERRAMIENTAS', 'REPUESTOS', 'LUBRICANTES', 'SOLDADURA', 'ELÉCTRICOS'],
+    'INSUMO_UNIDAD': ['UND', 'PAR', 'CAJA', 'PAQUETE', 'KG', 'LT', 'GLN', 'MT', 'ROLLO'],
+    'INSUMO_MOTIVO': ['PRODUCCIÓN', 'MANTENIMIENTO DE MÁQUINAS', 'MEJORA DE INFRAESTRUCTURA', 'LIMPIEZA',
+                      'SEGURIDAD (EPP)', 'OFICINA / ADMINISTRATIVO'],
+    'INSUMO_ALMACEN': ['ALMACÉN PRINCIPAL'],
+}
+_AREAS_INICIALES = ['PRODUCCIÓN', 'ALMACÉN', 'MANTENIMIENTO', 'ADMINISTRACIÓN', 'VENTAS', 'LOGÍSTICA']
+FORMATO_SALIDA_DEF = {'codigo': 'LAL-FO-0001', 'version': '01'}
+_insumos_ok = False
+
+
+def _asegurar_insumos():
+    """Crea las tablas del módulo si faltan y siembra UNA vez los catálogos iniciales."""
+    global _insumos_ok
+    if _insumos_ok:
+        return
+    for modelo in (InsumoArea, InsumoTrabajador, Insumo, InsumoStock, InsumoIngreso, InsumoIngresoDetalle,
+                   InsumoSalida, InsumoSalidaDetalle, InsumoMovimiento, InsumoDocumento):
+        modelo.__table__.create(bind=db.engine, checkfirst=True)
+    if not SystemConfig.query.get('insumos_sembrado'):
+        try:
+            for tipo, valores in _INSUMOS_INICIALES.items():
+                if not CatalogoValor.query.filter_by(tipo=tipo).first():
+                    for v in valores:
+                        db.session.add(CatalogoValor(tipo=tipo, valor=v, activo=True, es_predeterminado=False))
+            if not InsumoArea.query.first():
+                for a in _AREAS_INICIALES:
+                    db.session.add(InsumoArea(nombre=a, activo=True))
+            db.session.add(SystemConfig(key='insumos_sembrado', value='1', updated_by='Sistema'))
+            db.session.commit()
+        except IntegrityError:
+            db.session.rollback()
+    _insumos_ok = True
+
+
+try:
+    with app.app_context():
+        _asegurar_insumos()
+except Exception as _e_insumos:
+    print(f"Aviso: no se pudo preparar el módulo de Insumos al arrancar: {_e_insumos}")
+
+
+def _ruta_insumos(editar=False, como_json=False, solo_admin=False):
+    """Permisos del módulo: Gerencia y Almacén registran; Administración solo consulta."""
+    def deco(f):
+        @_wraps_insumos(f)
+        def envoltura(*args, **kwargs):
+            rol = session.get('role')
+            permitidos = ['admin'] if solo_admin else (ROLES_INSUMOS_EDITAN if editar else ROLES_INSUMOS_VEN)
+            if rol not in permitidos:
+                if como_json:
+                    return {'status': 'error', 'msg': 'No autorizado'}, 403
+                return "Acceso denegado", 403
+            _asegurar_insumos()
+            return f(*args, **kwargs)
+        return envoltura
+    return deco
+
+
+def _num(valor):
+    """'12,5' -> 12.5 ; '' o inválido -> None."""
+    try:
+        v = float(str(valor).replace(',', '.').strip())
+        return v if math.isfinite(v) else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _cant_txt(v):
+    """12.0 -> '12' ; 2.5 -> '2.5' ; 1.125 -> '1.125'."""
+    if v is None:
+        return '-'
+    v = round(float(v), 3)
+    return f'{int(v):,}' if v == int(v) else f'{v:,.3f}'.rstrip('0').rstrip('.')
+
+
+app.add_template_filter(_cant_txt, 'cant')
+app.add_template_filter(lambda v: f'S/ {float(v or 0):,.2f}', 'soles')
+
+
+def _empresa_param(nombre='empresa', defecto=None):
+    e = (request.values.get(nombre) or defecto or session.get('insumos_empresa') or 'ANCLAJES').upper()
+    return e if e in EMPRESAS_INSUMOS else 'ANCLAJES'
+
+
+def _catalogo_insumos(tipo, incluir_inactivos=False):
+    q = CatalogoValor.query.filter_by(tipo=tipo)
+    if not incluir_inactivos:
+        q = q.filter_by(activo=True)
+    return sorted(q.all(), key=lambda v: _clave_alfabetica(v.valor))
+
+
+def _stock_de(insumo_id, empresa, crear=True):
+    st = InsumoStock.query.filter_by(insumo_id=insumo_id, empresa=empresa).first()
+    if not st and crear:
+        st = InsumoStock(insumo_id=insumo_id, empresa=empresa, stock_actual=0, stock_minimo=0, costo_promedio=0)
+        db.session.add(st)
+        db.session.flush()
+    return st
+
+
+def _entrada_a_stock(st, cantidad, precio_unitario):
+    """Suma al stock y recalcula el COSTO PROMEDIO PONDERADO. Devuelve (stock_antes, prom_antes)."""
+    antes, prom_antes = float(st.stock_actual or 0), float(st.costo_promedio or 0)
+    nuevo = antes + cantidad
+    if antes <= 0 or nuevo <= 0:
+        st.costo_promedio = round(precio_unitario, 6)
+    else:
+        st.costo_promedio = round((antes * prom_antes + cantidad * precio_unitario) / nuevo, 6)
+    st.stock_actual = round(nuevo, 6)
+    return antes, prom_antes
+
+
+def _salida_de_stock(st, cantidad):
+    """Resta del stock; la salida vale el costo promedio actual (el promedio no cambia). Devuelve (antes, costo_unit)."""
+    antes = float(st.stock_actual or 0)
+    st.stock_actual = round(antes - cantidad, 6)
+    return antes, float(st.costo_promedio or 0)
+
+
+def _subir_doc_insumo(carpeta, archivo, info, tipo, claves, ingreso_id=None, salida_id=None):
+    ext, mime, tamano = info
+    s3_key = f"insumos/{carpeta}/{tipo.lower()}_{uuid.uuid4().hex}.{ext}"
+    archivo.stream.seek(0)
+    s3_client.upload_fileobj(archivo.stream, S3_BUCKET_NAME, s3_key, ExtraArgs={'ContentType': mime})
+    claves.append(s3_key)
+    db.session.add(InsumoDocumento(ingreso_id=ingreso_id, salida_id=salida_id, tipo=tipo, s3_key=s3_key,
+                                   nombre_original=secure_filename(archivo.filename)[:200] or f'documento.{ext}',
+                                   content_type=mime, tamano_bytes=tamano, subido_por=session.get('nombre', ''),
+                                   fecha=hora_peru()))
+
+
+def _fecha_movimiento_insumo(texto):
+    """Fecha del ingreso/salida: puede ser anterior (nunca futura). Se le pone la hora actual."""
+    ahora = hora_peru()
+    if not (texto or '').strip():
+        return ahora, None
+    try:
+        dia = datetime.strptime(texto.strip(), '%Y-%m-%d').date()
+    except ValueError:
+        return None, 'La fecha no es válida.'
+    if dia > ahora.date():
+        return None, 'La fecha no puede ser futura.'
+    return datetime.combine(dia, ahora.time()), None
+
+
+def _datos_formulario_insumos(empresa):
+    """Insumos activos con el stock de la empresa (para los selectores con buscador)."""
+    stocks = {s.insumo_id: s for s in InsumoStock.query.filter_by(empresa=empresa).all()}
+    lista = []
+    for i in Insumo.query.filter_by(activo=True).order_by(Insumo.codigo).all():
+        s = stocks.get(i.id)
+        lista.append({'id': i.id, 'codigo': i.codigo, 'descripcion': i.descripcion, 'unidad': i.unidad or '',
+                      'categoria': i.categoria or '', 'stock': round(float(s.stock_actual or 0), 3) if s else 0,
+                      'costo': round(float(s.costo_promedio or 0), 4) if s else 0, 'almacen': (s.almacen or '') if s else '',
+                      'minimo': round(float(s.stock_minimo or 0), 3) if s else 0})
+    return lista
+
+
+# ---------------------------- INVENTARIO ----------------------------
+@app.route('/insumos')
+@_ruta_insumos()
+def insumos_inventario():
+    empresa = _empresa_param()
+    session['insumos_empresa'] = empresa
+    q = ' '.join((request.args.get('q') or '').split())
+    categoria = request.args.get('categoria', '')
+    bajo = request.args.get('bajo') == '1'
+    ver = request.args.get('ver', 'activos')
+    insumos = Insumo.query.order_by(Insumo.codigo).all()
+    stocks = {s.insumo_id: s for s in InsumoStock.query.filter_by(empresa=empresa).all()}
+    filas = []
+    for i in insumos:
+        if ver == 'activos' and not i.activo:
+            continue
+        if categoria and (i.categoria or '') != categoria:
+            continue
+        if q and not all(p in f'{i.codigo} {i.descripcion}'.upper() for p in q.upper().split()):
+            continue
+        s = stocks.get(i.id)
+        stock = float(s.stock_actual or 0) if s else 0
+        minimo = float(s.stock_minimo or 0) if s else 0
+        if bajo and not (minimo > 0 and stock <= minimo):
+            continue
+        filas.append({'i': i, 's': s, 'stock': stock, 'minimo': minimo, 'costo': float(s.costo_promedio or 0) if s else 0,
+                      'valor': stock * (float(s.costo_promedio or 0) if s else 0), 'bajo': minimo > 0 and stock <= minimo})
+    ahora = hora_peru()
+    inicio_mes = datetime(ahora.year, ahora.month, 1)
+    gasto_mes = sum(x.total_costo or 0 for x in InsumoSalida.query.filter(
+        InsumoSalida.empresa == empresa, InsumoSalida.estado == 'REGISTRADA', InsumoSalida.fecha >= inicio_mes).all())
+    todos = [{'stock': float(s.stock_actual or 0), 'min': float(s.stock_minimo or 0), 'valor': float(s.stock_actual or 0) * float(s.costo_promedio or 0)}
+             for s in stocks.values()]
+    kpi = {'items': sum(1 for t in todos if t['stock'] > 0), 'valor': sum(t['valor'] for t in todos),
+           'bajo': sum(1 for t in todos if t['min'] > 0 and t['stock'] <= t['min']), 'gasto_mes': gasto_mes}
+    return render_template('insumos_inventario.html', empresa=empresa, empresas=EMPRESAS_INSUMOS, filas=filas, kpi=kpi,
+                           q=q, categoria=categoria, bajo=bajo, ver=ver, categorias=_catalogo_insumos('INSUMO_CATEGORIA'),
+                           almacenes=_catalogo_insumos('INSUMO_ALMACEN'), puede_editar=session.get('role') in ROLES_INSUMOS_EDITAN,
+                           seccion='inventario')
+
+
+@app.route('/insumos/stock/<int:insumo_id>/<empresa>', methods=['POST'])
+@_ruta_insumos(editar=True, como_json=True)
+def insumos_stock_config(insumo_id, empresa):
+    """Stock mínimo y almacén/ubicación de un insumo en una empresa."""
+    empresa = empresa.upper()
+    if empresa not in EMPRESAS_INSUMOS or not Insumo.query.get(insumo_id):
+        return {'status': 'error', 'msg': 'Datos inválidos'}
+    minimo = _num(request.form.get('stock_minimo'))
+    if minimo is None or minimo < 0:
+        return {'status': 'error', 'msg': 'El stock mínimo debe ser un número mayor o igual a 0.'}
+    st = _stock_de(insumo_id, empresa)
+    st.stock_minimo = minimo
+    st.almacen = ' '.join((request.form.get('almacen') or '').split())[:100] or None
+    db.session.commit()
+    return {'status': 'success'}
+
+
+# ---------------------------- MAESTRO ----------------------------
+@app.route('/insumos/maestro')
+@_ruta_insumos()
+def insumos_maestro():
+    q = ' '.join((request.args.get('q') or '').split()).upper()
+    insumos = Insumo.query.order_by(Insumo.codigo).all()
+    if q:
+        insumos = [i for i in insumos if all(p in f'{i.codigo} {i.descripcion} {i.categoria or ""}'.upper() for p in q.split())]
+    stocks = {}
+    for s in InsumoStock.query.all():
+        stocks.setdefault(s.insumo_id, {})[s.empresa] = s
+    return render_template('insumos_maestro.html', insumos=insumos, stocks=stocks, q=q, empresas=EMPRESAS_INSUMOS,
+                           categorias=_catalogo_insumos('INSUMO_CATEGORIA'), unidades=_catalogo_insumos('INSUMO_UNIDAD'),
+                           puede_editar=session.get('role') in ROLES_INSUMOS_EDITAN, seccion='maestro')
+
+
+@app.route('/insumos/maestro/guardar', methods=['POST'])
+@_ruta_insumos(editar=True, como_json=True)
+def insumos_maestro_guardar():
+    """Crear o editar un insumo del maestro (también lo usa el "+ Nuevo insumo" del ingreso)."""
+    f = request.form
+    insumo_id = f.get('id', type=int)
+    codigo = ' '.join((f.get('codigo') or '').split()).upper()[:50]
+    descripcion = ' '.join((f.get('descripcion') or '').split()).upper()[:300]
+    categoria = (f.get('categoria') or '').strip()[:100]
+    unidad = (f.get('unidad') or '').strip()[:30]
+    if len(descripcion) < 3:
+        return {'status': 'error', 'msg': 'Escribe la descripción del insumo.'}
+    if not unidad:
+        return {'status': 'error', 'msg': 'Elige la unidad de medida.'}
+    if codigo and Insumo.query.filter(func.upper(Insumo.codigo) == codigo, Insumo.id != (insumo_id or 0)).first():
+        return {'status': 'error', 'msg': f'El código {codigo} ya existe en el maestro.'}
+    ahora = hora_peru()
+    if insumo_id:
+        ins = Insumo.query.get(insumo_id)
+        if not ins:
+            return {'status': 'error', 'msg': 'El insumo no existe.'}
+        antes = f'{ins.codigo} {ins.descripcion}'
+        ins.descripcion, ins.categoria, ins.unidad = descripcion, categoria or None, unidad
+        if codigo:
+            ins.codigo = codigo
+        ins.actualizado_por, ins.fecha_actualizacion = session.get('nombre', ''), ahora
+        registrar_log(f"Editó el insumo {antes} → {ins.codigo} {ins.descripcion}", 'bi-box2', 'text-warning')
+    else:
+        ins = Insumo(codigo=codigo or f'TMP-{uuid.uuid4().hex[:8]}', descripcion=descripcion, categoria=categoria or None,
+                     unidad=unidad, activo=True, creado_por=session.get('nombre', ''), fecha_creacion=ahora)
+        db.session.add(ins)
+        db.session.flush()
+        if not codigo:
+            ins.codigo = f'INS-{ins.id:05d}'
+        registrar_log(f"Creó el insumo {ins.codigo} {ins.descripcion}", 'bi-box2', 'text-success')
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return {'status': 'error', 'msg': 'Ese código ya existe. Usa otro.'}
+    return {'status': 'success', 'insumo': {'id': ins.id, 'codigo': ins.codigo, 'descripcion': ins.descripcion,
+                                            'unidad': ins.unidad, 'categoria': ins.categoria or '', 'stock': 0, 'costo': 0,
+                                            'almacen': '', 'minimo': 0}}
+
+
+@app.route('/insumos/maestro/<int:insumo_id>/activo', methods=['POST'])
+@_ruta_insumos(editar=True, como_json=True)
+def insumos_maestro_activo(insumo_id):
+    ins = Insumo.query.get_or_404(insumo_id)
+    ins.activo = not ins.activo
+    registrar_log(f"{'Activó' if ins.activo else 'Desactivó'} el insumo {ins.codigo}", 'bi-box2', 'text-info')
+    db.session.commit()
+    return {'status': 'success', 'activo': ins.activo}
+
+
+# ---------------------------- INGRESOS ----------------------------
+@app.route('/insumos/ingreso/nuevo')
+@_ruta_insumos(editar=True)
+def insumos_ingreso_nuevo():
+    empresa = _empresa_param()
+    return render_template('insumos_ingreso_form.html', empresa=empresa, empresas=EMPRESAS_INSUMOS,
+                           insumos_json={e: _datos_formulario_insumos(e) for e in EMPRESAS_INSUMOS},
+                           categorias=_catalogo_insumos('INSUMO_CATEGORIA'), unidades=_catalogo_insumos('INSUMO_UNIDAD'),
+                           almacenes=_catalogo_insumos('INSUMO_ALMACEN'), hoy=hora_peru().date(), seccion='ingreso')
+
+
+@app.route('/insumos/ingreso/guardar', methods=['POST'])
+@_ruta_insumos(editar=True)
+def insumos_ingreso_guardar():
+    request.max_content_length = LIMITE_PETICION_MOVIMIENTO
+    f = request.form
+    volver = url_for('insumos_ingreso_nuevo', empresa=f.get('empresa'))
+    empresa = (f.get('empresa') or '').upper()
+    if empresa not in EMPRESAS_INSUMOS:
+        flash('⛔ Elige la empresa del ingreso.')
+        return redirect(volver)
+    fecha, err = _fecha_movimiento_insumo(f.get('fecha'))
+    if err:
+        flash(f'⛔ {err}')
+        return redirect(volver)
+    proveedor = Proveedor.query.get(f.get('proveedor_id', type=int)) if f.get('proveedor_id', type=int) else None
+    razon = ' '.join((f.get('razon_social') or '').split())[:200]
+    if not proveedor and not razon:
+        flash('⛔ Busca el proveedor por su RUC (o escribe su razón social si no tiene).')
+        return redirect(volver)
+    items, errores = [], []
+    ids = f.getlist('insumo_id[]')
+    for n, (iid, cod_prov, cant, pu, pt, smin) in enumerate(zip(ids, f.getlist('codigo_proveedor[]'), f.getlist('cantidad[]'),
+                                                              f.getlist('precio_unitario[]'), f.getlist('precio_total[]'),
+                                                              f.getlist('stock_minimo[]')), start=1):
+        if not (iid or '').strip():
+            continue
+        ins = Insumo.query.get(int(iid)) if iid.isdigit() else None
+        cantidad, unit, total, minimo = _num(cant), _num(pu), _num(pt), _num(smin)
+        if not ins or not ins.activo:
+            errores.append(f'Fila {n}: el insumo no existe o está inactivo.')
+            continue
+        if cantidad is None or cantidad <= 0:
+            errores.append(f'Fila {n} ({ins.codigo}): la cantidad debe ser mayor a 0.')
+            continue
+        if unit is None and total is not None:
+            unit = total / cantidad
+        if unit is None or unit < 0:
+            errores.append(f'Fila {n} ({ins.codigo}): falta el precio (unitario o total) con IGV.')
+            continue
+        total = round(total if total is not None else unit * cantidad, 2)
+        items.append({'ins': ins, 'cod_prov': ' '.join((cod_prov or '').split())[:60], 'cantidad': cantidad,
+                      'unit': round(unit, 6), 'total': total, 'minimo': minimo})
+    if not items and not errores:
+        errores.append('Agrega al menos un insumo.')
+    archivos = []
+    for tipo in ('FACTURA', 'GUIA'):
+        a = request.files.get(f'doc_{tipo}')
+        if a and a.filename:
+            ok, info = _validar_documento_kardex(a)
+            if not ok:
+                errores.append(f'{tipo.title()}: {info}')
+            else:
+                archivos.append((tipo, a, info))
+    if errores:
+        flash('⛔ ' + ' '.join(errores))
+        return redirect(volver)
+
+    ahora = hora_peru()
+    claves = []
+    try:
+        ing = InsumoIngreso(
+            empresa=empresa, fecha=fecha, proveedor_id=proveedor.id if proveedor else None,
+            ruc=(proveedor.documento if proveedor else ' '.join((f.get('ruc') or '').split()))[:20] or None,
+            razon_social=(proveedor.razon_social if proveedor else razon), direccion=(proveedor.direccion if proveedor else ' '.join((f.get('direccion') or '').split()))[:250] or None,
+            numero_factura=' '.join((f.get('numero_factura') or '').split()).upper()[:50] or None,
+            contacto_nombre=' '.join((f.get('contacto_nombre') or '').split())[:120] or None,
+            contacto_telefono=' '.join((f.get('contacto_telefono') or '').split())[:40] or None,
+            almacen=(f.get('almacen') or '').strip()[:100] or None,
+            observacion=' '.join((f.get('observacion') or '').split())[:300] or None,
+            total=round(sum(i['total'] for i in items), 2), estado='REGISTRADO', user_id=session.get('user_id'), fecha_registro=ahora)
+        db.session.add(ing)
+        db.session.flush()
+        ref = f"Factura {ing.numero_factura}" if ing.numero_factura else f"Ingreso #{ing.id}"
+        for it in items:
+            st = _stock_de(it['ins'].id, empresa)
+            antes, prom_antes = _entrada_a_stock(st, it['cantidad'], it['unit'])
+            if ing.almacen:
+                st.almacen = ing.almacen
+            if it['minimo'] is not None and it['minimo'] >= 0:
+                st.stock_minimo = it['minimo']
+            st.ultimo_ingreso = fecha
+            db.session.add(InsumoIngresoDetalle(
+                ingreso_id=ing.id, insumo_id=it['ins'].id, codigo_proveedor=it['cod_prov'] or None, cantidad=it['cantidad'],
+                precio_unitario=it['unit'], precio_total=it['total'], stock_antes=antes, stock_despues=st.stock_actual,
+                costo_prom_antes=prom_antes, costo_prom_despues=st.costo_promedio))
+            db.session.add(InsumoMovimiento(
+                empresa=empresa, insumo_id=it['ins'].id, fecha=fecha, tipo='ENTRADA', concepto='COMPRA', cantidad=it['cantidad'],
+                costo_unitario=it['unit'], costo_total=it['total'], stock_antes=antes, stock_despues=st.stock_actual,
+                costo_prom_despues=st.costo_promedio, referencia=ref[:120], ingreso_id=ing.id, user_id=session.get('user_id'),
+                fecha_registro=ahora))
+        for tipo, a, info in archivos:
+            _subir_doc_insumo(f"{empresa.lower()}/ingresos/{ing.id}", a, info, tipo, claves, ingreso_id=ing.id)
+        registrar_log(f"Ingreso de insumos {EMPRESAS_INSUMOS[empresa]['corto']} #{ing.id} ({ref}, {len(items)} ítem(s), S/ {ing.total:,.2f})",
+                      'bi-box-arrow-in-down', 'text-success')
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        _borrar_de_s3(claves)
+        app.logger.exception("No se pudo guardar el ingreso de insumos")
+        flash(f'⛔ No se pudo guardar el ingreso (no se registró nada): {e}')
+        return redirect(volver)
+    flash(f'✅ Ingreso registrado: {len(items)} insumo(s) por S/ {ing.total:,.2f}.')
+    return redirect(url_for('insumos_ingreso_detalle', ingreso_id=ing.id))
+
+
+@app.route('/insumos/ingresos')
+@_ruta_insumos()
+def insumos_ingresos():
+    empresa = request.args.get('empresa', 'TODAS')
+    q = InsumoIngreso.query
+    if empresa in EMPRESAS_INSUMOS:
+        q = q.filter(InsumoIngreso.empresa == empresa)
+    buscar = ' '.join((request.args.get('q') or '').split())
+    ingresos = q.order_by(InsumoIngreso.fecha.desc(), InsumoIngreso.id.desc()).limit(500).all()
+    if buscar:
+        b = buscar.upper()
+        ingresos = [i for i in ingresos if b in f'{i.razon_social or ""} {i.ruc or ""} {i.numero_factura or ""}'.upper()]
+    docs = {}
+    for d in InsumoDocumento.query.filter(InsumoDocumento.ingreso_id.in_([i.id for i in ingresos] or [0])).all():
+        docs.setdefault(d.ingreso_id, []).append(d)
+    return render_template('insumos_ingresos.html', ingresos=ingresos, docs=docs, empresa=empresa, empresas=EMPRESAS_INSUMOS,
+                           buscar=buscar, seccion='ingresos')
+
+
+@app.route('/insumos/ingresos/<int:ingreso_id>')
+@_ruta_insumos()
+def insumos_ingreso_detalle(ingreso_id):
+    ing = InsumoIngreso.query.get_or_404(ingreso_id)
+    docs = InsumoDocumento.query.filter_by(ingreso_id=ing.id).order_by(InsumoDocumento.id).all()
+    return render_template('insumos_ingreso_detalle.html', ing=ing, docs=docs, empresas=EMPRESAS_INSUMOS, seccion='ingresos',
+                           puede_editar=session.get('role') in ROLES_INSUMOS_EDITAN)
+
+
+@app.route('/insumos/ingresos/<int:ingreso_id>/documento', methods=['POST'])
+@_ruta_insumos(editar=True)
+def insumos_ingreso_documento(ingreso_id):
+    request.max_content_length = LIMITE_PETICION_MOVIMIENTO
+    ing = InsumoIngreso.query.get_or_404(ingreso_id)
+    tipo = (request.form.get('tipo') or 'FACTURA').upper()
+    tipo = tipo if tipo in ('FACTURA', 'GUIA', 'OTRO') else 'OTRO'
+    archivo = request.files.get('archivo')
+    ok, info = _validar_documento_kardex(archivo)
+    if not ok:
+        flash(f'⛔ {info}')
+        return redirect(url_for('insumos_ingreso_detalle', ingreso_id=ing.id))
+    claves = []
+    try:
+        _subir_doc_insumo(f"{ing.empresa.lower()}/ingresos/{ing.id}", archivo, info, tipo, claves, ingreso_id=ing.id)
+        db.session.commit()
+        flash('✅ Documento adjuntado.')
+    except Exception as e:
+        db.session.rollback()
+        _borrar_de_s3(claves)
+        flash(f'⛔ No se pudo subir el documento: {e}')
+    return redirect(url_for('insumos_ingreso_detalle', ingreso_id=ing.id))
+
+
+@app.route('/insumos/ingresos/<int:ingreso_id>/anular', methods=['POST'])
+@_ruta_insumos(solo_admin=True)
+def insumos_ingreso_anular(ingreso_id):
+    """Gerencia: anula un ingreso mal registrado. Solo si su cantidad sigue en stock (no se consumió)."""
+    ing = InsumoIngreso.query.get_or_404(ingreso_id)
+    motivo = ' '.join((request.form.get('motivo') or '').split())[:255]
+    destino = url_for('insumos_ingreso_detalle', ingreso_id=ing.id)
+    if ing.estado != 'REGISTRADO':
+        flash('Este ingreso ya estaba anulado.')
+        return redirect(destino)
+    if len(motivo) < 5:
+        flash('⛔ Escribe el motivo de la anulación.')
+        return redirect(destino)
+    ahora = hora_peru()
+    for d in ing.detalles:
+        st = _stock_de(d.insumo_id, ing.empresa, crear=False)
+        if not st or float(st.stock_actual or 0) + 1e-9 < d.cantidad:
+            flash(f'⛔ No se puede anular: de {d.insumo.codigo} ya salió parte de lo ingresado '
+                  f'(stock {_cant_txt(st.stock_actual if st else 0)}, ingreso {_cant_txt(d.cantidad)}).')
+            return redirect(destino)
+    for d in ing.detalles:
+        st = _stock_de(d.insumo_id, ing.empresa, crear=False)
+        antes, prom = float(st.stock_actual or 0), float(st.costo_promedio or 0)
+        nuevo = round(antes - d.cantidad, 6)
+        if nuevo > 0:
+            recalculado = (antes * prom - d.cantidad * d.precio_unitario) / nuevo
+            st.costo_promedio = round(recalculado, 6) if recalculado > 0 else prom
+        st.stock_actual = nuevo
+        db.session.add(InsumoMovimiento(
+            empresa=ing.empresa, insumo_id=d.insumo_id, fecha=ahora, tipo='SALIDA', concepto='ANULACION', cantidad=d.cantidad,
+            costo_unitario=d.precio_unitario, costo_total=d.precio_total, stock_antes=antes, stock_despues=nuevo,
+            costo_prom_despues=st.costo_promedio, referencia=f'Anulación ingreso #{ing.id}', ingreso_id=ing.id,
+            observacion=motivo, user_id=session.get('user_id'), fecha_registro=ahora))
+    ing.estado, ing.anulado_por, ing.fecha_anulacion, ing.motivo_anulacion = 'ANULADO', session.get('nombre', ''), ahora, motivo
+    registrar_log(f"Anuló el ingreso de insumos #{ing.id}: {motivo}", 'bi-x-octagon', 'text-danger')
+    db.session.commit()
+    flash('Ingreso anulado: el stock y el costo promedio se revirtieron.')
+    return redirect(destino)
+
+
+# ---------------------------- SALIDAS ----------------------------
+def _siguiente_numero_salida(empresa):
+    ultimo = db.session.query(func.max(InsumoSalida.numero)).filter(InsumoSalida.empresa == empresa).scalar()
+    return int(ultimo or 0) + 1
+
+
+@app.route('/insumos/salida/nueva')
+@_ruta_insumos(editar=True)
+def insumos_salida_nueva():
+    empresa = _empresa_param()
+    trabajadores = InsumoTrabajador.query.filter_by(activo=True).order_by(InsumoTrabajador.nombre).all()
+    return render_template('insumos_salida_form.html', empresa=empresa, empresas=EMPRESAS_INSUMOS,
+                           insumos_json={e: _datos_formulario_insumos(e) for e in EMPRESAS_INSUMOS},
+                           trabajadores=trabajadores, areas=InsumoArea.query.filter_by(activo=True).order_by(InsumoArea.nombre).all(),
+                           motivos=_catalogo_insumos('INSUMO_MOTIVO'), hoy=hora_peru().date(), seccion='salida',
+                           siguiente={e: _siguiente_numero_salida(e) for e in EMPRESAS_INSUMOS})
+
+
+def _guardar_firma_png(data_url, salida, claves):
+    """Firma dibujada en pantalla (data:image/png;base64,...) -> S3. Devuelve la clave o lanza ValueError."""
+    if not data_url.startswith('data:image/png;base64,'):
+        raise ValueError('Firma no válida.')
+    datos = base64.b64decode(data_url.split(',', 1)[1], validate=True)
+    if not datos.startswith(b'\x89PNG\r\n\x1a\n') or len(datos) > 400 * 1024:
+        raise ValueError('Firma no válida o demasiado grande.')
+    s3_key = f"insumos/{salida.empresa.lower()}/firmas/salida_{salida.id}_{uuid.uuid4().hex[:8]}.png"
+    s3_client.upload_fileobj(io.BytesIO(datos), S3_BUCKET_NAME, s3_key, ExtraArgs={'ContentType': 'image/png'})
+    claves.append(s3_key)
+    return s3_key
+
+
+@app.route('/insumos/salida/guardar', methods=['POST'])
+@_ruta_insumos(editar=True)
+def insumos_salida_guardar():
+    f = request.form
+    volver = url_for('insumos_salida_nueva', empresa=f.get('empresa'))
+    empresa = (f.get('empresa') or '').upper()
+    if empresa not in EMPRESAS_INSUMOS:
+        flash('⛔ Elige la empresa de la salida.')
+        return redirect(volver)
+    fecha, err = _fecha_movimiento_insumo(f.get('fecha'))
+    if err:
+        flash(f'⛔ {err}')
+        return redirect(volver)
+
+    def trab(nombre, obligatorio=False, jefe=False):
+        t = InsumoTrabajador.query.get(f.get(nombre, type=int)) if f.get(nombre, type=int) else None
+        if t and not t.activo:
+            t = None
+        if jefe and t and not t.es_jefe:
+            t = None
+        return t
+    solicitado, recibido, autorizado, a_cuenta = trab('solicitado_por_id'), trab('recibido_por_id'), trab('autorizado_por_id', jefe=True), trab('a_cuenta_de_id')
+    area = InsumoArea.query.get(f.get('area_id', type=int)) if f.get('area_id', type=int) else None
+    motivo = (f.get('motivo') or '').strip()
+    errores = []
+    if not solicitado:
+        errores.append('Elige quién solicita.')
+    if not area or not area.activo:
+        errores.append('Elige el área (sección) a la que se carga el gasto.')
+    if motivo not in {v.valor for v in _catalogo_insumos('INSUMO_MOTIVO')}:
+        errores.append('Elige para qué es necesario (motivo).')
+    if f.get('autorizado_por_id') and not autorizado:
+        errores.append('Quien autoriza debe estar marcado como jefe de área.')
+    items, pedidos = [], {}
+    for n, (iid, sol, desp) in enumerate(zip(f.getlist('insumo_id[]'), f.getlist('cantidad_solicitada[]'),
+                                             f.getlist('cantidad_despachada[]')), start=1):
+        if not (iid or '').strip():
+            continue
+        ins = Insumo.query.get(int(iid)) if iid.isdigit() else None
+        cs, cd = _num(sol), _num(desp)
+        if not ins:
+            errores.append(f'Fila {n}: el insumo no existe.')
+            continue
+        if cs is None or cs <= 0:
+            errores.append(f'Fila {n} ({ins.codigo}): la cantidad solicitada debe ser mayor a 0.')
+            continue
+        cd = cs if cd is None else cd
+        if cd <= 0 or cd > cs + 1e-9:
+            errores.append(f'Fila {n} ({ins.codigo}): lo despachado debe ser mayor a 0 y no más de lo solicitado.')
+            continue
+        pedidos[ins.id] = pedidos.get(ins.id, 0) + cd
+        items.append({'ins': ins, 'cs': cs, 'cd': cd})
+    for iid, total_pedido in pedidos.items():
+        st = _stock_de(iid, empresa, crear=False)
+        disponible = float(st.stock_actual or 0) if st else 0
+        if total_pedido > disponible + 1e-9:
+            ins = Insumo.query.get(iid)
+            errores.append(f'{ins.codigo}: solo hay {_cant_txt(disponible)} {ins.unidad or ""} en {EMPRESAS_INSUMOS[empresa]["corto"]} '
+                           f'(pides {_cant_txt(total_pedido)}).')
+    if not items and not errores:
+        errores.append('Agrega al menos un insumo.')
+    if errores:
+        flash('⛔ ' + ' '.join(errores))
+        return redirect(volver)
+
+    ahora = hora_peru()
+    for intento in range(3):
+        claves = []
+        try:
+            sal = InsumoSalida(
+                empresa=empresa, numero=_siguiente_numero_salida(empresa), fecha=fecha, area_id=area.id,
+                solicitado_por_id=solicitado.id, recibido_por_id=(recibido or solicitado).id,
+                autorizado_por_id=autorizado.id if autorizado else None, a_cuenta_de_id=a_cuenta.id if a_cuenta else None,
+                motivo=motivo[:100], motivo_detalle=' '.join((f.get('motivo_detalle') or '').split())[:300] or None,
+                estado='REGISTRADA', user_id=session.get('user_id'), fecha_registro=ahora)
+            db.session.add(sal)
+            db.session.flush()
+            total = 0
+            for it in items:
+                st = _stock_de(it['ins'].id, empresa, crear=False)
+                antes, costo = _salida_de_stock(st, it['cd'])
+                st.ultima_salida = fecha
+                costo_total = round(costo * it['cd'], 2)
+                total += costo_total
+                db.session.add(InsumoSalidaDetalle(
+                    salida_id=sal.id, insumo_id=it['ins'].id, cantidad_solicitada=it['cs'], cantidad_despachada=it['cd'],
+                    unidad=it['ins'].unidad, ubicacion=st.almacen, costo_unitario=costo, costo_total=costo_total,
+                    stock_antes=antes, stock_despues=st.stock_actual))
+                db.session.add(InsumoMovimiento(
+                    empresa=empresa, insumo_id=it['ins'].id, fecha=fecha, tipo='SALIDA', concepto='CONSUMO', cantidad=it['cd'],
+                    costo_unitario=costo, costo_total=costo_total, stock_antes=antes, stock_despues=st.stock_actual,
+                    costo_prom_despues=st.costo_promedio, referencia=f'Consumo N° {sal.numero:06d} · {area.nombre}'[:120],
+                    salida_id=sal.id, area_id=area.id, user_id=session.get('user_id'), fecha_registro=ahora))
+            sal.total_costo = round(total, 2)
+            firma = f.get('firma_png') or ''
+            if firma:
+                sal.firma_s3_key = _guardar_firma_png(firma, sal, claves)
+                sal.firma_fecha, sal.firma_por = ahora, (recibido or solicitado).nombre
+            registrar_log(f"Salida de insumos {EMPRESAS_INSUMOS[empresa]['corto']} N° {sal.numero:06d} para {area.nombre} "
+                          f"(S/ {sal.total_costo:,.2f})", 'bi-box-arrow-up', 'text-danger')
+            db.session.commit()
+            break
+        except IntegrityError:
+            db.session.rollback()
+            _borrar_de_s3(claves)
+            if intento == 2:
+                flash('⛔ Otro usuario registró una salida al mismo tiempo. Vuelve a intentarlo.')
+                return redirect(volver)
+        except Exception as e:
+            db.session.rollback()
+            _borrar_de_s3(claves)
+            app.logger.exception("No se pudo guardar la salida de insumos")
+            flash(f'⛔ No se pudo guardar la salida (no se registró nada): {e}')
+            return redirect(volver)
+    flash(f'✅ Salida N° {sal.numero:06d} registrada (S/ {sal.total_costo:,.2f} para {area.nombre}).')
+    return redirect(url_for('insumos_salida_detalle', salida_id=sal.id))
+
+
+@app.route('/insumos/salidas')
+@_ruta_insumos()
+def insumos_salidas():
+    empresa = request.args.get('empresa', 'TODAS')
+    q = InsumoSalida.query
+    if empresa in EMPRESAS_INSUMOS:
+        q = q.filter(InsumoSalida.empresa == empresa)
+    area_id = request.args.get('area_id', type=int)
+    if area_id:
+        q = q.filter(InsumoSalida.area_id == area_id)
+    trabajador_id = request.args.get('trabajador_id', type=int)
+    desde = _fecha_param('desde', None)
+    hasta = _fecha_param('hasta', None)
+    if desde:
+        q = q.filter(InsumoSalida.fecha >= datetime.combine(desde, datetime.min.time()))
+    if hasta:
+        q = q.filter(InsumoSalida.fecha < datetime.combine(hasta, datetime.min.time()) + timedelta(days=1))
+    salidas = q.order_by(InsumoSalida.fecha.desc(), InsumoSalida.id.desc()).limit(500).all()
+    if trabajador_id:
+        salidas = [s for s in salidas if trabajador_id in (s.solicitado_por_id, s.recibido_por_id, s.a_cuenta_de_id)]
+    total = sum(s.total_costo or 0 for s in salidas if s.estado == 'REGISTRADA')
+    return render_template('insumos_salidas.html', salidas=salidas, total=total, empresa=empresa, empresas=EMPRESAS_INSUMOS,
+                           areas=InsumoArea.query.order_by(InsumoArea.nombre).all(), area_id=area_id,
+                           trabajadores=InsumoTrabajador.query.order_by(InsumoTrabajador.nombre).all(), trabajador_id=trabajador_id,
+                           desde=desde, hasta=hasta, seccion='salidas')
+
+
+@app.route('/insumos/salidas/<int:salida_id>')
+@_ruta_insumos()
+def insumos_salida_detalle(salida_id):
+    sal = InsumoSalida.query.get_or_404(salida_id)
+    docs = InsumoDocumento.query.filter_by(salida_id=sal.id).order_by(InsumoDocumento.id).all()
+    return render_template('insumos_salida_detalle.html', sal=sal, docs=docs, empresas=EMPRESAS_INSUMOS, seccion='salidas',
+                           puede_editar=session.get('role') in ROLES_INSUMOS_EDITAN)
+
+
+@app.route('/insumos/salidas/<int:salida_id>/firmar', methods=['POST'])
+@_ruta_insumos(editar=True, como_json=True)
+def insumos_salida_firmar(salida_id):
+    sal = InsumoSalida.query.get_or_404(salida_id)
+    if sal.estado != 'REGISTRADA':
+        return {'status': 'error', 'msg': 'La salida está anulada.'}
+    claves, anterior = [], sal.firma_s3_key
+    try:
+        sal.firma_s3_key = _guardar_firma_png(request.form.get('firma_png') or '', sal, claves)
+        sal.firma_fecha, sal.firma_por = hora_peru(), (sal.recibido_por.nombre if sal.recibido_por else '')
+        registrar_log(f"Firmó la recepción de la salida de insumos N° {sal.numero:06d}", 'bi-pen', 'text-info')
+        db.session.commit()
+    except ValueError as e:
+        db.session.rollback()
+        return {'status': 'error', 'msg': str(e)}
+    except Exception as e:
+        db.session.rollback()
+        _borrar_de_s3(claves)
+        return {'status': 'error', 'msg': f'No se pudo guardar la firma: {e}'}
+    if anterior:
+        _borrar_de_s3([anterior])
+    return {'status': 'success'}
+
+
+@app.route('/insumos/salidas/<int:salida_id>/firma')
+@_ruta_insumos()
+def insumos_salida_firma(salida_id):
+    sal = InsumoSalida.query.get_or_404(salida_id)
+    if not sal.firma_s3_key:
+        return "Sin firma", 404
+    obj = s3_client.get_object(Bucket=S3_BUCKET_NAME, Key=sal.firma_s3_key)
+    return send_file(io.BytesIO(obj['Body'].read()), mimetype='image/png')
+
+
+@app.route('/insumos/salidas/<int:salida_id>/documento', methods=['POST'])
+@_ruta_insumos(editar=True)
+def insumos_salida_documento(salida_id):
+    """El formato impreso y firmado a mano (PDF o foto)."""
+    request.max_content_length = LIMITE_PETICION_MOVIMIENTO
+    sal = InsumoSalida.query.get_or_404(salida_id)
+    archivo = request.files.get('archivo')
+    ok, info = _validar_documento_kardex(archivo)
+    if not ok:
+        flash(f'⛔ {info}')
+        return redirect(url_for('insumos_salida_detalle', salida_id=sal.id))
+    claves = []
+    try:
+        _subir_doc_insumo(f"{sal.empresa.lower()}/salidas/{sal.id}", archivo, info, 'SALIDA_FIRMADA', claves, salida_id=sal.id)
+        registrar_log(f"Subió el formato firmado de la salida de insumos N° {sal.numero:06d}", 'bi-paperclip', 'text-info')
+        db.session.commit()
+        flash('✅ Documento firmado adjuntado.')
+    except Exception as e:
+        db.session.rollback()
+        _borrar_de_s3(claves)
+        flash(f'⛔ No se pudo subir el documento: {e}')
+    return redirect(url_for('insumos_salida_detalle', salida_id=sal.id))
+
+
+@app.route('/insumos/documento/<int:doc_id>')
+@_ruta_insumos()
+def insumos_documento(doc_id):
+    doc = InsumoDocumento.query.get_or_404(doc_id)
+    try:
+        obj = s3_client.get_object(Bucket=S3_BUCKET_NAME, Key=doc.s3_key)
+    except Exception as e:
+        return f"<h3>No se pudo recuperar el documento</h3><p>{html.escape(str(e))}</p>", 404
+    ext = doc.s3_key.rsplit('.', 1)[-1].lower()
+    resp = send_file(io.BytesIO(obj['Body'].read()), mimetype=doc.content_type or 'application/octet-stream',
+                     as_attachment=request.args.get('download') == '1',
+                     download_name=secure_filename(f"{doc.tipo.lower()}_{doc.ingreso_id or doc.salida_id}_{doc.id}.{ext}"))
+    resp.headers['X-Content-Type-Options'] = 'nosniff'
+    return resp
+
+
+@app.route('/insumos/salidas/<int:salida_id>/anular', methods=['POST'])
+@_ruta_insumos(solo_admin=True)
+def insumos_salida_anular(salida_id):
+    """Gerencia: anula una salida mal registrada; lo despachado vuelve al stock a su mismo costo."""
+    sal = InsumoSalida.query.get_or_404(salida_id)
+    destino = url_for('insumos_salida_detalle', salida_id=sal.id)
+    motivo = ' '.join((request.form.get('motivo') or '').split())[:255]
+    if sal.estado != 'REGISTRADA':
+        flash('Esta salida ya estaba anulada.')
+        return redirect(destino)
+    if len(motivo) < 5:
+        flash('⛔ Escribe el motivo de la anulación.')
+        return redirect(destino)
+    ahora = hora_peru()
+    for d in sal.detalles:
+        st = _stock_de(d.insumo_id, sal.empresa)
+        antes, _ = _entrada_a_stock(st, d.cantidad_despachada, d.costo_unitario or 0)
+        db.session.add(InsumoMovimiento(
+            empresa=sal.empresa, insumo_id=d.insumo_id, fecha=ahora, tipo='ENTRADA', concepto='ANULACION',
+            cantidad=d.cantidad_despachada, costo_unitario=d.costo_unitario, costo_total=d.costo_total, stock_antes=antes,
+            stock_despues=st.stock_actual, costo_prom_despues=st.costo_promedio,
+            referencia=f'Anulación consumo N° {sal.numero:06d}', salida_id=sal.id, area_id=sal.area_id, observacion=motivo,
+            user_id=session.get('user_id'), fecha_registro=ahora))
+    sal.estado, sal.anulado_por, sal.fecha_anulacion, sal.motivo_anulacion = 'ANULADA', session.get('nombre', ''), ahora, motivo
+    registrar_log(f"Anuló la salida de insumos N° {sal.numero:06d}: {motivo}", 'bi-x-octagon', 'text-danger')
+    db.session.commit()
+    flash('Salida anulada: lo despachado volvió al stock y ya no cuenta en el gasto del área.')
+    return redirect(destino)
+
+
+_LOGOS_PDF_INSUMOS = {}
+
+
+def _imagen_pdf(datos, alto_px, ancho_max_px):
+    """Imagen reducida (PNG en data URI) + su ancho/alto para xhtml2pdf, que necesita los dos."""
+    from PIL import Image
+    im = Image.open(io.BytesIO(datos))
+    im.load()
+    w, h = im.size
+    ancho = min(ancho_max_px, alto_px * w / h) if h else ancho_max_px
+    alto = ancho * h / w if w else alto_px
+    if im.mode not in ('RGB', 'RGBA'):
+        im = im.convert('RGBA')
+    im.thumbnail((int(ancho * 3), int(alto * 3)))       # 3x para que se vea nítido al imprimir
+    buf = io.BytesIO()
+    im.save(buf, format='PNG', optimize=True)
+    return {'uri': 'data:image/png;base64,' + base64.b64encode(buf.getvalue()).decode(), 'ancho': round(ancho), 'alto': round(alto)}
+
+
+def _logo_pdf_insumos(empresa):
+    if empresa not in _LOGOS_PDF_INSUMOS:
+        ruta = os.path.join(app.root_path, 'static', 'img', EMPRESAS_INSUMOS[empresa]['logo'])
+        try:
+            with open(ruta, 'rb') as fh:
+                _LOGOS_PDF_INSUMOS[empresa] = _imagen_pdf(fh.read(), 62, 160)
+        except Exception:
+            app.logger.exception("No se pudo preparar el logo de %s para el PDF", empresa)
+            return None
+    return _LOGOS_PDF_INSUMOS[empresa]
+
+
+@app.route('/insumos/salidas/<int:salida_id>/pdf')
+@_ruta_insumos()
+def insumos_salida_pdf(salida_id):
+    sal = InsumoSalida.query.get_or_404(salida_id)
+    emp = EMPRESAS_INSUMOS[sal.empresa]
+    firma = None
+    if sal.firma_s3_key:
+        try:
+            obj = s3_client.get_object(Bucket=S3_BUCKET_NAME, Key=sal.firma_s3_key)
+            firma = _imagen_pdf(obj['Body'].read(), 46, 190)
+        except Exception:
+            app.logger.exception("No se pudo leer la firma de la salida %s", sal.id)
+    cfg = {k: (SystemConfig.query.get(f'insumos_formato_{k}_{sal.empresa}').value
+               if SystemConfig.query.get(f'insumos_formato_{k}_{sal.empresa}') else v) for k, v in FORMATO_SALIDA_DEF.items()}
+    filas = list(sal.detalles) + [None] * max(0, 10 - len(sal.detalles))
+    html_renderizado = render_template('pdf_insumo_salida.html', sal=sal, emp=emp, logo=_logo_pdf_insumos(sal.empresa),
+                                       firma=firma, formato=cfg, filas=filas)
+    return _generar_respuesta_pdf(html_renderizado, f"salida_{emp['corto'].replace(' ', '')}_{sal.numero:06d}.pdf",
+                                  "el PDF de la salida de materiales")
+
+
+# ---------------------------- KARDEX VALORIZADO ----------------------------
+@app.route('/insumos/kardex')
+@_ruta_insumos()
+def insumos_kardex():
+    empresa = _empresa_param()
+    insumo_id = request.args.get('insumo_id', type=int)
+    desde, hasta = _fecha_param('desde', None), _fecha_param('hasta', None)
+    q = InsumoMovimiento.query.filter(InsumoMovimiento.empresa == empresa)
+    if insumo_id:
+        q = q.filter(InsumoMovimiento.insumo_id == insumo_id)
+    if desde:
+        q = q.filter(InsumoMovimiento.fecha >= datetime.combine(desde, datetime.min.time()))
+    if hasta:
+        q = q.filter(InsumoMovimiento.fecha < datetime.combine(hasta, datetime.min.time()) + timedelta(days=1))
+    movs = q.order_by(InsumoMovimiento.fecha.desc(), InsumoMovimiento.id.desc()).limit(500).all()
+    entradas = sum(m.costo_total or 0 for m in movs if m.tipo == 'ENTRADA')
+    salidas = sum(m.costo_total or 0 for m in movs if m.tipo == 'SALIDA')
+    insumo = Insumo.query.get(insumo_id) if insumo_id else None
+    stock = _stock_de(insumo_id, empresa, crear=False) if insumo_id else None
+    return render_template('insumos_kardex.html', empresa=empresa, empresas=EMPRESAS_INSUMOS, movs=movs, insumo=insumo, stock=stock,
+                           insumos=Insumo.query.order_by(Insumo.codigo).all(), desde=desde, hasta=hasta,
+                           tot_entradas=entradas, tot_salidas=salidas, seccion='kardex')
+
+
+# ---------------------------- GASTO POR ÁREA ----------------------------
+MESES_CORTOS_INSUMOS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Set', 'Oct', 'Nov', 'Dic']
+
+
+@app.route('/insumos/gasto')
+@_ruta_insumos()
+def insumos_gasto():
+    ahora = hora_peru()
+    empresa = request.args.get('empresa', 'AMBAS')
+    hasta = _fecha_param('hasta', ahora.date())
+    desde = _fecha_param('desde', ahora.date().replace(day=1))
+    if desde > hasta:
+        desde, hasta = hasta, desde
+    ini = datetime.combine(desde, datetime.min.time())
+    fin = datetime.combine(hasta, datetime.min.time()) + timedelta(days=1)
+
+    def salidas_entre(a, b):
+        q = InsumoSalida.query.filter(InsumoSalida.estado == 'REGISTRADA', InsumoSalida.fecha >= a, InsumoSalida.fecha < b)
+        if empresa in EMPRESAS_INSUMOS:
+            q = q.filter(InsumoSalida.empresa == empresa)
+        return q.all()
+    salidas = salidas_entre(ini, fin)
+    total = sum(s.total_costo or 0 for s in salidas)
+    areas, personas, insumos = {}, {}, {}
+    for s in salidas:
+        a = areas.setdefault(s.area_id, {'id': s.area_id, 'nombre': s.area.nombre if s.area else 'Sin área', 'total': 0, 'salidas': 0,
+                                         'anclajes': 0, 'importbolts': 0})
+        a['total'] += s.total_costo or 0
+        a['salidas'] += 1
+        a['anclajes' if s.empresa == 'ANCLAJES' else 'importbolts'] += s.total_costo or 0
+        quien = s.a_cuenta_de or s.solicitado_por
+        if quien:
+            p = personas.setdefault(quien.id, {'id': quien.id, 'nombre': quien.nombre, 'area': quien.area.nombre if quien.area else '',
+                                               'total': 0, 'salidas': 0})
+            p['total'] += s.total_costo or 0
+            p['salidas'] += 1
+        for d in s.detalles:
+            i = insumos.setdefault(d.insumo_id, {'codigo': d.insumo.codigo, 'descripcion': d.insumo.descripcion,
+                                                 'unidad': d.unidad or d.insumo.unidad, 'cantidad': 0, 'total': 0})
+            i['cantidad'] += d.cantidad_despachada or 0
+            i['total'] += d.costo_total or 0
+    lista_areas = sorted(areas.values(), key=lambda a: -a['total'])
+    maximo = max([a['total'] for a in lista_areas] + [0]) or 1
+    for a in lista_areas:
+        a['pct'] = round(100 * a['total'] / total, 1) if total else 0
+        a['barra'] = round(100 * a['total'] / maximo)
+    # Últimos 6 meses (hasta el mes de "hasta"), por área
+    meses = []
+    y, m = hasta.year, hasta.month
+    for _ in range(6):
+        meses.insert(0, (y, m))
+        y, m = (y, m - 1) if m > 1 else (y - 1, 12)
+    ini6 = datetime(meses[0][0], meses[0][1], 1)
+    fin6 = datetime(hasta.year + (hasta.month == 12), hasta.month % 12 + 1, 1)
+    matriz = {}
+    for s in salidas_entre(ini6, fin6):
+        fila = matriz.setdefault(s.area.nombre if s.area else 'Sin área', {})
+        clave = (s.fecha.year, s.fecha.month)
+        fila[clave] = fila.get(clave, 0) + (s.total_costo or 0)
+    mensual = sorted(({'area': k, 'meses': [v.get(mm, 0) for mm in meses], 'total': sum(v.values())} for k, v in matriz.items()),
+                     key=lambda r: -r['total'])
+    max_celda = max([x for r in mensual for x in r['meses']] + [0]) or 1
+    return render_template('insumos_gasto.html', empresa=empresa, empresas=EMPRESAS_INSUMOS, desde=desde, hasta=hasta, total=total,
+                           n_salidas=len(salidas), areas=lista_areas, personas=sorted(personas.values(), key=lambda p: -p['total'])[:15],
+                           insumos=sorted(insumos.values(), key=lambda i: -i['total'])[:15], mensual=mensual, max_celda=max_celda,
+                           meses=[f"{MESES_CORTOS_INSUMOS[mm - 1]} {str(yy)[2:]}" for yy, mm in meses], seccion='gasto')
+
+
+# ---------------------------- CONFIGURACIÓN ----------------------------
+@app.route('/insumos/config')
+@_ruta_insumos(editar=True)
+def insumos_config():
+    formato = {}
+    for e in EMPRESAS_INSUMOS:
+        for k, v in FORMATO_SALIDA_DEF.items():
+            cfg = SystemConfig.query.get(f'insumos_formato_{k}_{e}')
+            formato[f'{k}_{e}'] = cfg.value if cfg else v
+    return render_template('insumos_config.html', areas=InsumoArea.query.order_by(InsumoArea.nombre).all(),
+                           trabajadores=InsumoTrabajador.query.order_by(InsumoTrabajador.activo.desc(), InsumoTrabajador.nombre).all(),
+                           catalogos={t: _catalogo_insumos(t, incluir_inactivos=True) for t in CATALOGOS_INSUMOS},
+                           nombres_catalogo=CATALOGOS_INSUMOS, formato=formato, empresas=EMPRESAS_INSUMOS,
+                           tab=request.args.get('tab', 'trabajadores'), seccion='config')
+
+
+@app.route('/insumos/config/area', methods=['POST'])
+@_ruta_insumos(editar=True, como_json=True)
+def insumos_config_area():
+    area_id = request.form.get('id', type=int)
+    if request.form.get('accion') == 'toggle':
+        a = InsumoArea.query.get_or_404(area_id)
+        a.activo = not a.activo
+        db.session.commit()
+        return {'status': 'success', 'activo': a.activo}
+    nombre = ' '.join((request.form.get('nombre') or '').split()).upper()[:100]
+    if len(nombre) < 2:
+        return {'status': 'error', 'msg': 'Escribe el nombre del área.'}
+    if InsumoArea.query.filter(func.upper(InsumoArea.nombre) == nombre, InsumoArea.id != (area_id or 0)).first():
+        return {'status': 'error', 'msg': f'El área {nombre} ya existe.'}
+    if area_id:
+        InsumoArea.query.get_or_404(area_id).nombre = nombre
+    else:
+        db.session.add(InsumoArea(nombre=nombre, activo=True))
+    db.session.commit()
+    return {'status': 'success'}
+
+
+@app.route('/insumos/config/trabajador', methods=['POST'])
+@_ruta_insumos(editar=True, como_json=True)
+def insumos_config_trabajador():
+    f = request.form
+    tid = f.get('id', type=int)
+    if f.get('accion') == 'toggle':
+        t = InsumoTrabajador.query.get_or_404(tid)
+        t.activo = not t.activo
+        db.session.commit()
+        return {'status': 'success', 'activo': t.activo}
+    nombre = ' '.join((f.get('nombre') or '').split()).title()[:150]
+    if len(nombre) < 3:
+        return {'status': 'error', 'msg': 'Escribe el nombre del trabajador.'}
+    area = InsumoArea.query.get(f.get('area_id', type=int)) if f.get('area_id', type=int) else None
+    empresa = (f.get('empresa') or 'AMBAS').upper()
+    t = InsumoTrabajador.query.get_or_404(tid) if tid else InsumoTrabajador(activo=True)
+    t.nombre, t.codigo, t.cargo = nombre, ' '.join((f.get('codigo') or '').split())[:30] or None, ' '.join((f.get('cargo') or '').split())[:100] or None
+    t.area_id = area.id if area else None
+    t.empresa = empresa if empresa in ('ANCLAJES', 'IMPORTBOLTS', 'AMBAS') else 'AMBAS'
+    t.es_jefe = f.get('es_jefe') == '1'
+    if not tid:
+        db.session.add(t)
+    db.session.commit()
+    return {'status': 'success'}
+
+
+@app.route('/insumos/config/catalogo', methods=['POST'])
+@_ruta_insumos(editar=True, como_json=True)
+def insumos_config_catalogo():
+    f = request.form
+    if f.get('accion') == 'toggle':
+        v = CatalogoValor.query.get_or_404(f.get('id', type=int))
+        if v.tipo not in CATALOGOS_INSUMOS:
+            return {'status': 'error', 'msg': 'No autorizado'}, 403
+        v.activo = not v.activo
+        db.session.commit()
+        return {'status': 'success', 'activo': v.activo}
+    tipo = (f.get('tipo') or '').upper()
+    valor = ' '.join((f.get('valor') or '').split()).upper()[:100]
+    if tipo not in CATALOGOS_INSUMOS or not valor:
+        return {'status': 'error', 'msg': 'Escribe un valor.'}
+    if any(' '.join((x.valor or '').split()).upper() == valor for x in CatalogoValor.query.filter_by(tipo=tipo).all()):
+        return {'status': 'error', 'msg': f'"{valor}" ya existe.'}
+    db.session.add(CatalogoValor(tipo=tipo, valor=valor, activo=True, es_predeterminado=False, creado_por_id=session.get('user_id')))
+    db.session.commit()
+    return {'status': 'success'}
+
+
+@app.route('/insumos/config/formato', methods=['POST'])
+@_ruta_insumos(editar=True)
+def insumos_config_formato():
+    for e in EMPRESAS_INSUMOS:
+        for k in FORMATO_SALIDA_DEF:
+            valor = ' '.join((request.form.get(f'{k}_{e}') or '').split())[:30]
+            if not valor:
+                continue
+            clave = f'insumos_formato_{k}_{e}'
+            cfg = SystemConfig.query.get(clave)
+            if cfg:
+                cfg.value = valor
+            else:
+                db.session.add(SystemConfig(key=clave, value=valor, updated_by=session.get('username', '')))
+    db.session.commit()
+    flash('✅ Formato del PDF guardado.')
+    return redirect(url_for('insumos_config', tab='formato'))
+
 
 
 # --- ARRANQUE DE LA APLICACIÓN ---

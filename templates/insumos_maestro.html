@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Insumos internos{% endblock %}
+{% block subtitle %}Maestro de insumos{% endblock %}
+{% block content %}
+{% include '_insumos_nav.html' %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <form method="GET" class="input-group" style="max-width: 420px;">
+        <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+        <input type="text" name="q" class="form-control" placeholder="Código, descripción o categoría..." value="{{ q }}">
+    </form>
+    {% if puede_editar %}
+    <button class="btn btn-primary fw-bold" onclick="abrirInsumo(null)"><i class="bi bi-plus-lg"></i> Nuevo insumo</button>
+    {% endif %}
+</div>
+<div class="alert alert-light border small py-2"><i class="bi bi-info-circle-fill text-primary"></i>
+    El maestro es <b>uno solo para las dos empresas</b> (código, descripción, categoría y unidad). El <b>stock, costo y almacén</b> son de cada empresa
+    y se cargan con los <b>ingresos</b>. Si dejas el código vacío, se genera solo (INS-00001...).</div>
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0 table-responsive">
+        <table class="table table-hover align-middle mb-0 small">
+            <thead class="table-dark"><tr><th class="ps-3">Código</th><th>Descripción</th><th>Categoría</th><th>Unidad</th>
+                {% for clave, e in empresas.items() %}<th class="text-center">Stock {{ e.corto }}</th>{% endfor %}
+                <th class="text-center">Estado</th><th class="pe-3 text-end"></th></tr></thead>
+            <tbody>
+            {% for i in insumos %}
+                <tr class="{{ 'opacity-50' if not i.activo }}">
+                    <td class="ps-3 fw-bold text-nowrap">{{ i.codigo }}</td>
+                    <td>{{ i.descripcion }}</td>
+                    <td>{{ i.categoria or '-' }}</td>
+                    <td>{{ i.unidad }}</td>
+                    {% for clave, e in empresas.items() %}{% set s = stocks.get(i.id, {}).get(clave) %}
+                    <td class="text-center num">{{ s.stock_actual|cant if s else '0' }}</td>
+                    {% endfor %}
+                    <td class="text-center">{% if i.activo %}<span class="badge bg-success">Activo</span>{% else %}<span class="badge bg-secondary">Inactivo</span>{% endif %}</td>
+                    <td class="pe-3 text-end text-nowrap">
+                        {% if puede_editar %}
+                        <button class="btn btn-sm btn-outline-primary py-0" title="Editar"
+                                onclick="abrirInsumo({{ {'id': i.id, 'codigo': i.codigo, 'descripcion': i.descripcion, 'categoria': i.categoria or '', 'unidad': i.unidad or ''}|tojson|forceescape }})"><i class="bi bi-pencil"></i></button>
+                        <button class="btn btn-sm btn-outline-secondary py-0" title="Activar / desactivar" onclick="toggleInsumo({{ i.id }})"><i class="bi {{ 'bi-toggle-on' if i.activo else 'bi-toggle-off' }}"></i></button>
+                        {% endif %}
+                    </td>
+                </tr>
+            {% else %}
+                <tr><td colspan="9" class="text-center text-muted py-5">Todavía no hay insumos{% if q %} con "{{ q }}"{% endif %}.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% include '_insumo_modal.html' %}
+<script>
+function toggleInsumo(id) {
+    fetch(`/insumos/maestro/${id}/activo`, { method: 'POST' }).then(r => r.json()).then(d => { if (d.status === 'success') location.reload(); });
+}
+document.addEventListener('insumoGuardado', () => location.reload());
+</script>
+{% endblock %}

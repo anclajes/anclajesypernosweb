@@ -1,0 +1,36 @@
+{# Navegación común del módulo Insumos Internos. Espera: seccion #}
+{% set puede_editar_insumos = session.get('role') in ['admin', 'almacen'] %}
+<style>
+    .ins-nav { display: flex; flex-wrap: nowrap; gap: 4px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 14px; scrollbar-width: thin; }
+    .ins-nav a { white-space: nowrap; font-size: .82rem; font-weight: 600; color: #475569; background: #f1f5f9; border: 1px solid #e2e8f0;
+                 border-radius: 8px; padding: 6px 11px; text-decoration: none; }
+    .ins-nav a:hover { background: #e2e8f0; color: #0f172a; }
+    .ins-nav a.activa { background: var(--theme-primary, #0F172A); border-color: var(--theme-primary, #0F172A); color: #fff; }
+    .ins-nav a.accion { background: #ecfdf5; border-color: #a7f3d0; color: #047857; }
+    .ins-nav a.accion.salida { background: #fef2f2; border-color: #fecaca; color: #b91c1c; }
+    .ins-nav a.accion.activa { color: #fff; }
+    .ins-empresa { display: inline-flex; align-items: center; gap: 8px; }
+    .ins-empresa img { height: 34px; object-fit: contain; }
+    .ins-kpi { font-size: 1.3rem; font-weight: 800; font-variant-numeric: tabular-nums; color: #0f172a; line-height: 1.15; }
+    .ins-dato { font-size: .7rem; text-transform: uppercase; letter-spacing: .04em; color: #64748b; font-weight: 700; }
+    .num { font-variant-numeric: tabular-nums; }
+</style>
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+    <h4 class="fw-bold mb-0"><i class="bi bi-tools"></i> Insumos internos</h4>
+    <span class="text-muted small">Material de uso interno · costo promedio con IGV</span>
+</div>
+<nav class="ins-nav">
+    <a href="{{ url_for('insumos_inventario') }}" class="{{ 'activa' if seccion == 'inventario' }}"><i class="bi bi-boxes"></i> Inventario</a>
+    {% if puede_editar_insumos %}
+    <a href="{{ url_for('insumos_salida_nueva') }}" class="accion salida {{ 'activa' if seccion == 'salida' }}"><i class="bi bi-box-arrow-up"></i> Nueva salida</a>
+    <a href="{{ url_for('insumos_ingreso_nuevo') }}" class="accion {{ 'activa' if seccion == 'ingreso' }}"><i class="bi bi-box-arrow-in-down"></i> Nuevo ingreso</a>
+    {% endif %}
+    <a href="{{ url_for('insumos_salidas') }}" class="{{ 'activa' if seccion == 'salidas' }}"><i class="bi bi-journal-arrow-up"></i> Salidas</a>
+    <a href="{{ url_for('insumos_ingresos') }}" class="{{ 'activa' if seccion == 'ingresos' }}"><i class="bi bi-journal-arrow-down"></i> Ingresos</a>
+    <a href="{{ url_for('insumos_kardex') }}" class="{{ 'activa' if seccion == 'kardex' }}"><i class="bi bi-clock-history"></i> Kardex</a>
+    <a href="{{ url_for('insumos_gasto') }}" class="{{ 'activa' if seccion == 'gasto' }}"><i class="bi bi-pie-chart"></i> Gasto por área</a>
+    <a href="{{ url_for('insumos_maestro') }}" class="{{ 'activa' if seccion == 'maestro' }}"><i class="bi bi-list-columns"></i> Maestro</a>
+    {% if puede_editar_insumos %}
+    <a href="{{ url_for('insumos_config') }}" class="{{ 'activa' if seccion == 'config' }}"><i class="bi bi-gear"></i> Configuración</a>
+    {% endif %}
+</nav>

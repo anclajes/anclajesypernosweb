@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block title %}Insumos internos{% endblock %}
+{% block subtitle %}Inventario {{ empresas[empresa].corto }}{% endblock %}
+{% block content %}
+{% include '_insumos_nav.html' %}
+<style>
+    .emp-switch a { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 10px; border: 2px solid #e2e8f0;
+                    background: #fff; text-decoration: none; color: #334155; font-weight: 700; font-size: .85rem; }
+    .emp-switch a img { height: 28px; object-fit: contain; }
+    .emp-switch a.on { border-color: var(--c); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 18%, transparent); color: var(--c); }
+    .tabla-ins th { font-size: .74rem; white-space: nowrap; }
+    .tabla-ins td { vertical-align: middle; }
+    .stock-chip { display: inline-block; min-width: 3.4rem; padding: 2px 8px; border-radius: 7px; font-weight: 800; background: #f1f5f9; border: 1px solid #e2e8f0; }
+    .stock-chip.bajo { background: #fef2f2; border-color: #fecaca; color: #b91c1c; }
+    .stock-chip.cero { color: #94a3b8; }
+</style>
+
+<div class="d-flex flex-wrap gap-2 mb-3 emp-switch">
+    {% for clave, e in empresas.items() %}
+    <a href="{{ url_for('insumos_inventario', empresa=clave) }}" class="{{ 'on' if clave == empresa }}" style="--c: {{ e.color }};">
+        <img src="{{ url_for('static', filename='img/' ~ e.logo) }}" alt="{{ e.corto }}"> {{ e.corto }}
+    </a>
+    {% endfor %}
+</div>
+
+<div class="row g-2 mb-3">
+    <div class="col-6 col-md-3"><div class="card border-0 shadow-sm h-100"><div class="card-body py-2">
+        <div class="ins-dato">Insumos con stock</div><div class="ins-kpi">{{ kpi['items'] }}</div></div></div></div>
+    <div class="col-6 col-md-3"><div class="card border-0 shadow-sm h-100"><div class="card-body py-2">
+        <div class="ins-dato">Valor del inventario</div><div class="ins-kpi">{{ kpi.valor|soles }}</div><div class="text-muted small">a costo promedio</div></div></div></div>
+    <div class="col-6 col-md-3"><div class="card border-0 shadow-sm h-100"><div class="card-body py-2">
+        <div class="ins-dato">Bajo stock mínimo</div><div class="ins-kpi {{ 'text-danger' if kpi.bajo }}">{{ kpi.bajo }}</div>
+        {% if kpi.bajo %}<a class="small" href="{{ url_for('insumos_inventario', empresa=empresa, bajo=1) }}">Ver cuáles</a>{% endif %}</div></div></div>
+    <div class="col-6 col-md-3"><div class="card border-0 shadow-sm h-100"><div class="card-body py-2">
+        <div class="ins-dato">Consumido este mes</div><div class="ins-kpi">{{ kpi.gasto_mes|soles }}</div>
+        <a class="small" href="{{ url_for('insumos_gasto', empresa=empresa) }}">Ver por área</a></div></div></div>
+</div>
+
+<form method="GET" class="row g-2 align-items-center mb-3">
+    <input type="hidden" name="empresa" value="{{ empresa }}">
+    <div class="col-12 col-md-4">
+        <div class="input-group"><span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+        <input type="text" name="q" class="form-control" placeholder="Código o descripción..." value="{{ q }}"></div>
+    </div>
+    <div class="col-12 col-sm-6 col-md-3">
+        <select name="categoria" class="form-select filtro-s2" data-placeholder="-- Todas las categorías --">
+            <option value=""></option>
+            {% for c in categorias %}<option value="{{ c.valor }}" {{ 'selected' if c.valor == categoria }}>{{ c.valor }}</option>{% endfor %}
+        </select>
+    </div>
+    <div class="col-6 col-md-2">
+        <select name="ver" class="form-select" onchange="this.form.submit()">
+            <option value="activos" {{ 'selected' if ver == 'activos' }}>Solo activos</option>
+            <option value="todos" {{ 'selected' if ver == 'todos' }}>Todos</option>
+        </select>
+    </div>
+    <div class="col-6 col-md-2">
+        <div class="form-check form-switch border rounded py-2 px-2 bg-light m-0 text-center">
+            <input class="form-check-input float-none ms-0 me-1" type="checkbox" name="bajo" value="1" id="chkBajo" {{ 'checked' if bajo }} onchange="this.form.submit()">
+            <label class="form-check-label small fw-bold text-danger" for="chkBajo">Stock bajo</label>
+        </div>
+    </div>
+    <div class="col-12 col-md-1"><button class="btn btn-primary w-100"><i class="bi bi-funnel"></i></button></div>
+</form>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0 table-responsive">
+        <table class="table table-hover align-middle mb-0 small tabla-ins">
+            <thead class="table-dark">
+                <tr>
+                    <th class="ps-3">Código</th><th>Descripción</th><th>Categoría</th><th class="text-center">Stock</th>
+                    <th class="text-center">Mínimo</th><th class="text-end">Costo prom.</th><th class="text-end">Valor</th><th>Almacén</th>
+                    <th class="pe-3 text-end"></th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for f in filas %}
+                <tr class="{{ 'opacity-50' if not f.i.activo }}">
+                    <td class="ps-3 fw-bold text-nowrap">{{ f.i.codigo }}</td>
+                    <td>{{ f.i.descripcion }}{% if not f.i.activo %} <span class="badge bg-secondary">Inactivo</span>{% endif %}</td>
+                    <td><span class="badge bg-light text-dark border">{{ f.i.categoria or '-' }}</span></td>
+                    <td class="text-center text-nowrap"><span class="stock-chip num {{ 'bajo' if f.bajo }} {{ 'cero' if not f.stock }}">{{ f.stock|cant }}</span> <span class="text-muted">{{ f.i.unidad }}</span></td>
+                    <td class="text-center num">{{ f.minimo|cant if f.minimo else '-' }}</td>
+                    <td class="text-end num">{{ f.costo|soles if f.costo else '-' }}</td>
+                    <td class="text-end num fw-semibold">{{ f.valor|soles if f.valor else '-' }}</td>
+                    <td class="text-muted">{{ f.s.almacen if f.s and f.s.almacen else '-' }}</td>
+                    <td class="pe-3 text-end text-nowrap">
+                        <a class="btn btn-sm btn-outline-secondary py-0" title="Kardex" href="{{ url_for('insumos_kardex', empresa=empresa, insumo_id=f.i.id) }}"><i class="bi bi-clock-history"></i></a>
+                        {% if puede_editar %}
+                        <button class="btn btn-sm btn-outline-primary py-0" title="Stock mínimo y almacén"
+                                onclick="configStock({{ f.i.id }}, {{ (f.i.codigo ~ ' · ' ~ f.i.descripcion)|tojson|forceescape }}, {{ f.minimo|tojson }}, {{ (f.s.almacen if f.s else '')|tojson|forceescape }})"><i class="bi bi-sliders"></i></button>
+                        {% endif %}
+                    </td>
+                </tr>
+            {% else %}
+                <tr><td colspan="9" class="text-center text-muted py-5"><i class="bi bi-box2 display-6 opacity-25"></i>
+                    <p class="mt-2 mb-0">No hay insumos {{ 'con estos filtros' if q or categoria or bajo else 'en el maestro todavía' }}.
+                    {% if puede_editar and not (q or categoria or bajo) %}<br>Créalos en <a href="{{ url_for('insumos_maestro') }}">Maestro</a> y luego registra un <a href="{{ url_for('insumos_ingreso_nuevo', empresa=empresa) }}">ingreso</a>.{% endif %}</p></td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/filtros.js') }}?v=1"></script>
+<script>
+const ALMACENES = {{ almacenes|map(attribute='valor')|list|tojson }};
+function configStock(id, nombre, minimo, almacen) {
+    const opciones = ['<option value="">— Sin almacén —</option>'].concat(ALMACENES.map(a => `<option ${a === almacen ? 'selected' : ''}>${a.replace(/</g, '&lt;')}</option>`)).join('');
+    Swal.fire({
+        title: 'Stock mínimo y almacén', width: 460,
+        html: `<div class="text-start small"><div class="text-muted mb-2">${nombre.replace(/</g, '&lt;')} · {{ empresas[empresa].corto }}</div>
+               <label class="fw-bold">Stock mínimo</label><input id="sw_min" type="number" min="0" step="any" class="form-control mb-2" value="${minimo || 0}">
+               <label class="fw-bold">Almacén / ubicación</label><select id="sw_alm" class="form-select">${opciones}</select></div>`,
+        showCancelButton: true, confirmButtonText: 'Guardar', cancelButtonText: 'Cancelar',
+        preConfirm: () => ({ min: document.getElementById('sw_min').value, alm: document.getElementById('sw_alm').value })
+    }).then(r => {
+        if (!r.isConfirmed) return;
+        const fd = new FormData(); fd.append('stock_minimo', r.value.min); fd.append('almacen', r.value.alm);
+        fetch(`/insumos/stock/${id}/{{ empresa }}`, { method: 'POST', body: fd }).then(x => x.json()).then(d => {
+            if (d.status === 'success') location.reload(); else Swal.fire('No se pudo', d.msg, 'error');
+        });
+    });
+}
+</script>
+{% endblock %}

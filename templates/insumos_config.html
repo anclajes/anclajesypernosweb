@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% block title %}Insumos internos{% endblock %}
+{% block subtitle %}Configuración{% endblock %}
+{% block content %}
+{% include '_insumos_nav.html' %}
+<style>
+    .cfg-tabs .nav-link { color: #495057 !important; background: #f1f3f5; border: 1px solid #dee2e6; margin-right: 4px; font-weight: 500; }
+    .cfg-tabs .nav-link.active { color: #fff !important; background: var(--theme-primary, #0d6efd); border-color: var(--theme-primary, #0d6efd); }
+</style>
+<ul class="nav nav-tabs cfg-tabs mb-3 flex-wrap border-0">
+    <li class="nav-item"><button class="nav-link {{ 'active' if tab == 'trabajadores' }}" data-bs-toggle="tab" data-bs-target="#c-trab"><i class="bi bi-people"></i> Trabajadores</button></li>
+    <li class="nav-item"><button class="nav-link {{ 'active' if tab == 'areas' }}" data-bs-toggle="tab" data-bs-target="#c-areas"><i class="bi bi-diagram-2"></i> Áreas</button></li>
+    {% for t, nombre in nombres_catalogo.items() %}
+    <li class="nav-item"><button class="nav-link {{ 'active' if tab == t }}" data-bs-toggle="tab" data-bs-target="#c-{{ t }}">{{ nombre }}</button></li>
+    {% endfor %}
+    <li class="nav-item"><button class="nav-link {{ 'active' if tab == 'formato' }}" data-bs-toggle="tab" data-bs-target="#c-formato"><i class="bi bi-file-earmark-pdf"></i> Formato PDF</button></li>
+</ul>
+<div class="tab-content">
+    <!-- TRABAJADORES -->
+    <div class="tab-pane fade {{ 'show active' if tab == 'trabajadores' }}" id="c-trab">
+        <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+            <span class="small text-muted">Personal que solicita, recibe o autoriza salidas (no necesita usuario del sistema). Los marcados como <b>jefe</b> pueden autorizar.</span>
+            <button class="btn btn-primary btn-sm fw-bold" onclick="editarTrab(null)"><i class="bi bi-plus-lg"></i> Nuevo trabajador</button>
+        </div>
+        <div class="card border-0 shadow-sm"><div class="card-body p-0 table-responsive">
+            <table class="table table-hover align-middle mb-0 small">
+                <thead class="table-light"><tr><th class="ps-3">Nombre</th><th>Código / DNI</th><th>Cargo</th><th>Área</th><th>Empresa</th><th class="text-center">Jefe</th><th class="text-center">Estado</th><th class="pe-3"></th></tr></thead>
+                <tbody>
+                {% for t in trabajadores %}
+                    <tr class="{{ 'opacity-50' if not t.activo }}">
+                        <td class="ps-3 fw-semibold">{{ t.nombre }}</td><td>{{ t.codigo or '-' }}</td><td>{{ t.cargo or '-' }}</td><td>{{ t.area.nombre if t.area else '-' }}</td>
+                        <td>{{ {'AMBAS': 'Las dos', 'ANCLAJES': 'Anclajes', 'IMPORTBOLTS': 'Import Bolts'}.get(t.empresa or 'AMBAS') }}</td>
+                        <td class="text-center">{% if t.es_jefe %}<i class="bi bi-check-circle-fill text-success"></i>{% endif %}</td>
+                        <td class="text-center">{% if t.activo %}<span class="badge bg-success">Activo</span>{% else %}<span class="badge bg-secondary">Inactivo</span>{% endif %}</td>
+                        <td class="pe-3 text-end text-nowrap">
+                            <button class="btn btn-sm btn-outline-primary py-0" onclick="editarTrab({{ {'id': t.id, 'nombre': t.nombre, 'codigo': t.codigo or '', 'cargo': t.cargo or '', 'area_id': t.area_id or '', 'empresa': t.empresa or 'AMBAS', 'es_jefe': t.es_jefe}|tojson|forceescape }})"><i class="bi bi-pencil"></i></button>
+                            <button class="btn btn-sm btn-outline-secondary py-0" onclick="post('trabajador', {accion: 'toggle', id: {{ t.id }}})"><i class="bi {{ 'bi-toggle-on' if t.activo else 'bi-toggle-off' }}"></i></button>
+                        </td>
+                    </tr>
+                {% else %}<tr><td colspan="8" class="text-center text-muted py-4">Todavía no hay trabajadores.</td></tr>{% endfor %}
+                </tbody>
+            </table>
+        </div></div>
+    </div>
+    <!-- ÁREAS -->
+    <div class="tab-pane fade {{ 'show active' if tab == 'areas' }}" id="c-areas">
+        <div class="card border-0 shadow-sm" style="max-width: 640px;"><div class="card-body">
+            <div class="input-group mb-3"><input id="nuevaArea" class="form-control text-uppercase" placeholder="Nueva área (ej. MANTENIMIENTO)" onkeydown="if(event.key==='Enter'){event.preventDefault(); post('area', {nombre: this.value});}">
+                <button class="btn btn-primary" onclick="post('area', {nombre: document.getElementById('nuevaArea').value})"><i class="bi bi-plus-lg"></i> Agregar</button></div>
+            <table class="table table-sm align-middle mb-0 small"><tbody>
+            {% for a in areas %}
+                <tr class="{{ 'opacity-50' if not a.activo }}"><td class="fw-semibold">{{ a.nombre }}</td>
+                    <td class="text-center">{% if a.activo %}<span class="badge bg-success">Activa</span>{% else %}<span class="badge bg-secondary">Inactiva</span>{% endif %}</td>
+                    <td class="text-end text-nowrap">
+                        <button class="btn btn-sm btn-outline-primary py-0" onclick="renombrarArea({{ a.id }}, {{ a.nombre|tojson|forceescape }})"><i class="bi bi-pencil"></i></button>
+                        <button class="btn btn-sm btn-outline-secondary py-0" onclick="post('area', {accion: 'toggle', id: {{ a.id }}})"><i class="bi {{ 'bi-toggle-on' if a.activo else 'bi-toggle-off' }}"></i></button></td></tr>
+            {% endfor %}
+            </tbody></table>
+        </div></div>
+    </div>
+    <!-- CATÁLOGOS SIMPLES -->
+    {% for t, nombre in nombres_catalogo.items() %}
+    <div class="tab-pane fade {{ 'show active' if tab == t }}" id="c-{{ t }}">
+        <div class="card border-0 shadow-sm" style="max-width: 640px;"><div class="card-body">
+            <div class="input-group mb-3"><input id="nuevo_{{ t }}" class="form-control text-uppercase" placeholder="Nuevo valor para {{ nombre|lower }}"
+                   onkeydown="if(event.key==='Enter'){event.preventDefault(); post('catalogo', {tipo: '{{ t }}', valor: this.value}, '{{ t }}');}">
+                <button class="btn btn-primary" onclick="post('catalogo', {tipo: '{{ t }}', valor: document.getElementById('nuevo_{{ t }}').value}, '{{ t }}')"><i class="bi bi-plus-lg"></i> Agregar</button></div>
+            <table class="table table-sm align-middle mb-0 small"><tbody>
+            {% for v in catalogos[t] %}
+                <tr class="{{ 'opacity-50' if not v.activo }}"><td class="fw-semibold">{{ v.valor }}</td>
+                    <td class="text-center">{% if v.activo %}<span class="badge bg-success">Activo</span>{% else %}<span class="badge bg-secondary">Inactivo</span>{% endif %}</td>
+                    <td class="text-end"><button class="btn btn-sm btn-outline-secondary py-0" onclick="post('catalogo', {accion: 'toggle', id: {{ v.id }}}, '{{ t }}')"><i class="bi {{ 'bi-toggle-on' if v.activo else 'bi-toggle-off' }}"></i></button></td></tr>
+            {% else %}<tr><td class="text-muted">Sin valores.</td></tr>{% endfor %}
+            </tbody></table>
+        </div></div>
+    </div>
+    {% endfor %}
+    <!-- FORMATO PDF -->
+    <div class="tab-pane fade {{ 'show active' if tab == 'formato' }}" id="c-formato">
+        <form method="POST" action="{{ url_for('insumos_config_formato') }}" class="card border-0 shadow-sm" style="max-width: 640px;"><div class="card-body">
+            <p class="small text-muted">Datos del recuadro superior derecho del PDF "Salida de materiales de almacén", por empresa.</p>
+            {% for k, e in empresas.items() %}
+            <div class="row g-2 mb-2 align-items-end">
+                <div class="col-12 col-sm-4 fw-bold">{{ e.corto }}</div>
+                <div class="col-7 col-sm-5"><label class="small text-muted">Código del formato</label><input name="codigo_{{ k }}" class="form-control" value="{{ formato['codigo_' ~ k] }}"></div>
+                <div class="col-5 col-sm-3"><label class="small text-muted">Versión</label><input name="version_{{ k }}" class="form-control" value="{{ formato['version_' ~ k] }}"></div>
+            </div>
+            {% endfor %}
+        </div><div class="card-footer bg-white text-end"><button class="btn btn-primary btn-sm fw-bold"><i class="bi bi-save"></i> Guardar</button></div></form>
+    </div>
+</div>
+
+<div class="modal fade" id="modalTrab" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><form class="modal-content border-0 shadow" id="formTrab" onsubmit="return guardarTrab(event)">
+    <div class="modal-header py-2 text-white" style="background: var(--theme-primary, #0F172A);"><h6 class="modal-title fw-bold" id="tituloTrab">Trabajador</h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+        <input type="hidden" name="id" id="t_id">
+        <div class="mb-2"><label class="small fw-bold">Nombre completo *</label><input name="nombre" id="t_nombre" class="form-control" required maxlength="150"></div>
+        <div class="row g-2 mb-2">
+            <div class="col-6"><label class="small fw-bold">Código / DNI</label><input name="codigo" id="t_codigo" class="form-control" maxlength="30"></div>
+            <div class="col-6"><label class="small fw-bold">Cargo</label><input name="cargo" id="t_cargo" class="form-control" maxlength="100"></div>
+        </div>
+        <div class="row g-2 mb-2">
+            <div class="col-7"><label class="small fw-bold">Área</label><select name="area_id" id="t_area" class="form-select"><option value="">—</option>
+                {% for a in areas if a.activo %}<option value="{{ a.id }}">{{ a.nombre }}</option>{% endfor %}</select></div>
+            <div class="col-5"><label class="small fw-bold">Empresa</label><select name="empresa" id="t_empresa" class="form-select">
+                <option value="AMBAS">Las dos</option><option value="ANCLAJES">Anclajes</option><option value="IMPORTBOLTS">Import Bolts</option></select></div>
+        </div>
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="es_jefe" value="1" id="t_jefe"><label class="form-check-label small" for="t_jefe">Es jefe de área (puede autorizar salidas)</label></div>
+    </div>
+    <div class="modal-footer p-2"><button class="btn btn-primary w-100 fw-bold">Guardar</button></div>
+</form></div></div>
+
+<script>
+function post(que, datos, tab) {
+    const fd = new FormData(); Object.entries(datos).forEach(([k, v]) => fd.append(k, v));
+    fetch(`/insumos/config/${que}`, { method: 'POST', body: fd }).then(r => r.json()).then(d => {
+        if (d.status === 'success') location.href = `{{ url_for('insumos_config') }}?tab=${tab || (que === 'area' ? 'areas' : 'trabajadores')}`;
+        else Swal.fire('No se pudo', d.msg, 'warning');
+    });
+}
+function renombrarArea(id, nombre) {
+    Swal.fire({ title: 'Renombrar área', input: 'text', inputValue: nombre, showCancelButton: true, confirmButtonText: 'Guardar' })
+        .then(r => { if (r.isConfirmed) post('area', { id: id, nombre: r.value }); });
+}
+function editarTrab(t) {
+    t = t || {};
+    document.getElementById('tituloTrab').textContent = t.id ? 'Editar trabajador' : 'Nuevo trabajador';
+    document.getElementById('t_id').value = t.id || '';
+    document.getElementById('t_nombre').value = t.nombre || '';
+    document.getElementById('t_codigo').value = t.codigo || '';
+    document.getElementById('t_cargo').value = t.cargo || '';
+    document.getElementById('t_area').value = t.area_id || '';
+    document.getElementById('t_empresa').value = t.empresa || 'AMBAS';
+    document.getElementById('t_jefe').checked = !!t.es_jefe;
+    new bootstrap.Modal(document.getElementById('modalTrab')).show();
+}
+function guardarTrab(ev) {
+    ev.preventDefault();
+    fetch('/insumos/config/trabajador', { method: 'POST', body: new FormData(document.getElementById('formTrab')) }).then(r => r.json()).then(d => {
+        if (d.status === 'success') location.href = '{{ url_for('insumos_config') }}?tab=trabajadores'; else Swal.fire('No se pudo', d.msg, 'warning');
+    });
+    return false;
+}
+</script>
+{% endblock %}
