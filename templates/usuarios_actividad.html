@@ -1,0 +1,210 @@
+{% extends "base.html" %}
+{% block title %}Actividad y alertas{% endblock %}
+{% block subtitle %}Uso del sistema y seguridad de las cuentas{% endblock %}
+
+{% block content %}
+<style>
+    .ua-tabs .nav-link { color: #495057 !important; background: #f1f3f5; border: 1px solid #dee2e6; margin-right: 4px; font-weight: 500; }
+    .ua-tabs .nav-link.active { color: #fff !important; background: var(--theme-primary, #0d6efd); border-color: var(--theme-primary, #0d6efd); }
+    .alerta-fila.revisada { opacity: .6; }
+    .alerta-ico { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex: 0 0 34px; }
+    .ico-ALTA { background: #fee2e2; color: #b91c1c; } .ico-MEDIA { background: #fef3c7; color: #92400e; } .ico-BAJA { background: #e0f2fe; color: #075985; }
+    .cmp th { font-size: .72rem; white-space: nowrap; vertical-align: bottom; }
+    .cmp td { font-variant-numeric: tabular-nums; }
+    .cmp .mejor { background: #e0ecfb; font-weight: 700; }
+    .barra-cmp { height: 6px; border-radius: 3px; background: #cde2fb; position: relative; overflow: hidden; min-width: 60px; }
+    .barra-cmp span { position: absolute; left: 0; top: 0; bottom: 0; background: #2a78d6; border-radius: 3px; }
+</style>
+
+{% set iconos_alerta = {
+    'FUERA_HORARIO': 'bi-moon-stars-fill', 'DISPOSITIVO_NUEVO': 'bi-phone-vibrate-fill', 'IP_NUEVA': 'bi-wifi',
+    'EXPORTACION_MASIVA': 'bi-file-earmark-arrow-down-fill', 'EXPORT_CLIENTES': 'bi-people-fill',
+    'SIN_PERMISO': 'bi-shield-x', 'CUENTA_COMPARTIDA': 'bi-person-fill-exclamation', 'BLOQUEO_TEMPORAL': 'bi-hourglass-split'
+} %}
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <a href="{{ url_for('gestion_usuarios') }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> Volver a Usuarios</a>
+    <span class="small text-muted"><i class="bi bi-info-circle"></i> Solo se registra el uso de este sistema. El detalle se guarda {{ dias_detalle }} días.</span>
+</div>
+
+<ul class="nav nav-tabs ua-tabs mb-3 flex-wrap border-0">
+    <li class="nav-item"><button class="nav-link {{ 'active' if tab == 'alertas' }}" data-bs-toggle="tab" data-bs-target="#t-alertas">
+        <i class="bi bi-shield-exclamation"></i> Alertas {% if pendientes %}<span class="badge bg-danger" id="badgePendientes">{{ pendientes }}</span>{% endif %}</button></li>
+    <li class="nav-item"><button class="nav-link {{ 'active' if tab == 'comparativo' }}" data-bs-toggle="tab" data-bs-target="#t-comparativo"><i class="bi bi-people"></i> Comparativo por rol</button></li>
+    <li class="nav-item"><button class="nav-link {{ 'active' if tab == 'config' }}" data-bs-toggle="tab" data-bs-target="#t-config"><i class="bi bi-sliders"></i> Configuración de alertas</button></li>
+</ul>
+
+<div class="tab-content">
+    <!-- ================= ALERTAS ================= -->
+    <div class="tab-pane fade {{ 'show active' if tab == 'alertas' }}" id="t-alertas">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+            <div class="btn-group btn-group-sm">
+                <a class="btn {{ 'btn-primary' if ver == 'pendientes' else 'btn-outline-primary' }}" href="{{ url_for('actividad_usuarios', tab='alertas', ver='pendientes') }}">Pendientes ({{ pendientes }})</a>
+                <a class="btn {{ 'btn-primary' if ver != 'pendientes' else 'btn-outline-primary' }}" href="{{ url_for('actividad_usuarios', tab='alertas', ver='todas') }}">Todas</a>
+            </div>
+            {% if pendientes %}
+            <button class="btn btn-sm btn-outline-success" onclick="revisarAlerta(null)"><i class="bi bi-check2-all"></i> Marcar todas como revisadas</button>
+            {% endif %}
+        </div>
+        <div class="card border-0 shadow-sm">
+            <ul class="list-group list-group-flush">
+            {% for a in alertas %}{% set nv = niveles.get(a.nivel, ('bg-secondary', a.nivel)) %}
+                <li class="list-group-item alerta-fila {{ 'revisada' if a.revisada }} d-flex gap-3 align-items-start" id="alerta-{{ a.id }}">
+                    <div class="alerta-ico ico-{{ a.nivel }}"><i class="bi {{ iconos_alerta.get(a.tipo, 'bi-exclamation-triangle-fill') }}"></i></div>
+                    <div class="flex-grow-1 min-w-0">
+                        <div class="d-flex flex-wrap gap-2 align-items-center">
+                            <b>{{ a.titulo }}</b><span class="badge {{ nv[0] }}">{{ nv[1] }}</span>
+                            <span class="text-muted small">{{ a.fecha.strftime('%d/%m/%Y %H:%M') }}</span>
+                        </div>
+                        <div class="small">
+                            {% if a.usuario %}<a href="{{ url_for('ficha_usuario', user_id=a.usuario.id, dia=a.fecha.date().isoformat(), tab='actividad') }}" class="fw-semibold">{{ a.usuario.nombre_completo }}</a>
+                            <span class="text-muted">@{{ a.usuario.username }} · {{ role_labels.get(a.usuario.role, a.usuario.role) }}</span>{% endif %}
+                        </div>
+                        {% if a.detalle %}<div class="small text-muted">{{ a.detalle }}</div>{% endif %}
+                        {% if a.revisada %}<div class="small text-success"><i class="bi bi-check2"></i> Revisada{% if a.revisada_por %} por {{ a.revisada_por }}{% endif %}{% if a.fecha_revision %} · {{ a.fecha_revision.strftime('%d/%m %H:%M') }}{% endif %}</div>{% endif %}
+                    </div>
+                    {% if not a.revisada %}
+                    <button class="btn btn-sm btn-outline-success flex-shrink-0" onclick="revisarAlerta({{ a.id }})" title="Ya lo revisé"><i class="bi bi-check2"></i><span class="d-none d-sm-inline"> Revisada</span></button>
+                    {% endif %}
+                </li>
+            {% else %}
+                <li class="list-group-item text-center text-muted py-5"><i class="bi bi-shield-check display-6 text-success opacity-50"></i>
+                    <p class="mt-2 mb-0">{{ 'No hay alertas pendientes.' if ver == 'pendientes' else 'Todavía no hay alertas.' }}</p></li>
+            {% endfor %}
+            </ul>
+        </div>
+        <div class="small text-muted mt-2">
+            <b>Qué genera una alerta:</b> ingreso fuera del horario laboral · ingreso desde un dispositivo nuevo (alta) o una red/IP nueva (baja) ·
+            {{ cfg.umbral_export }} o más exportaciones de datos en una hora · descargar el directorio de clientes (si no es Gerencia) ·
+            {{ cfg.umbral_denegados }} o más intentos de entrar a páginas sin permiso en 30 min · la misma cuenta activa a la vez en dos equipos o
+            conexiones distintas · bloqueo por contraseñas incorrectas.
+        </div>
+    </div>
+
+    <!-- ================= COMPARATIVO ================= -->
+    <div class="tab-pane fade {{ 'show active' if tab == 'comparativo' }}" id="t-comparativo">
+        <form method="GET" class="row g-2 align-items-end mb-3">
+            <input type="hidden" name="tab" value="comparativo">
+            <div class="col-12 col-sm-4 col-lg-3">
+                <label class="small fw-bold text-muted">Rol</label>
+                <select name="rol" class="form-select form-select-sm" onchange="this.form.submit()">
+                    {% for r in roles %}<option value="{{ r }}" {{ 'selected' if r == rol }}>{{ role_labels.get(r, r) }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="col-6 col-sm-3 col-lg-2"><label class="small fw-bold text-muted">Desde</label>
+                <input type="date" name="desde" class="form-control form-control-sm" value="{{ desde.isoformat() }}" max="{{ ahora.date().isoformat() }}"></div>
+            <div class="col-6 col-sm-3 col-lg-2"><label class="small fw-bold text-muted">Hasta</label>
+                <input type="date" name="hasta" class="form-control form-control-sm" value="{{ hasta.isoformat() }}" max="{{ ahora.date().isoformat() }}"></div>
+            <div class="col-12 col-sm-2 col-lg-1"><button class="btn btn-sm btn-primary w-100"><i class="bi bi-funnel"></i> Ver</button></div>
+        </form>
+
+        <div class="card border-0 shadow-sm">
+            <div class="card-body p-0 table-responsive">
+                <table class="table table-sm table-hover align-middle mb-0 small cmp">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="ps-3">Usuario</th>
+                            <th class="text-center">Días con uso</th>
+                            <th>Tiempo activo</th>
+                            <th class="text-center">Abierto</th>
+                            <th class="text-center">% activo</th>
+                            <th class="text-center">Sesiones</th>
+                            <th class="text-center">Páginas</th>
+                            {% if filas %}{% for p in filas[0].r.productividad %}<th class="text-center">{{ p.etq }}<br><span class="fw-normal text-muted">total · por hora</span></th>{% endfor %}{% endif %}
+                            <th class="text-center">Export. · desc.</th>
+                            <th class="text-center">Sin permiso</th>
+                            <th class="text-center pe-3">Alertas</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% set max_act = (filas|map(attribute='r')|map(attribute='activo')|max) if filas else 0 %}
+                    {% for f in filas %}{% set r = f.r %}
+                        <tr>
+                            <td class="ps-3"><a href="{{ url_for('ficha_usuario', user_id=f.u.id, dia=hasta.isoformat(), tab='semana') }}" class="fw-semibold">{{ f.u.nombre_completo }}</a>
+                                <div class="text-muted">@{{ f.u.username }}</div></td>
+                            <td class="text-center">{{ r.dias_con_uso }}</td>
+                            <td class="{{ 'mejor' if mejor.activo and r.activo == mejor.activo }}">
+                                <div class="fw-bold">{{ r.activo|duracion }}</div>
+                                <div class="barra-cmp" title="Activo frente al que más tiempo activo tuvo"><span style="width: {{ (100 * r.activo / max_act)|round|int if max_act else 0 }}%;"></span></div>
+                            </td>
+                            <td class="text-center">{{ r.abierto|duracion }}</td>
+                            <td class="text-center">{{ r.pct_activo }}%</td>
+                            <td class="text-center">{{ r.sesiones }}</td>
+                            <td class="text-center">{{ r.paginas }}</td>
+                            {% for p in r.productividad %}
+                            <td class="text-center {{ 'mejor' if mejor.get('prod' ~ loop.index0) is not none and p.por_hora == mejor.get('prod' ~ loop.index0) }}">
+                                <b>{{ p.valor }}</b> · {{ p.por_hora if p.por_hora is not none else '—' }}</td>
+                            {% endfor %}
+                            <td class="text-center {{ 'text-danger fw-bold' if r.exportaciones }}">{{ r.exportaciones }} · {{ r.descargas }}</td>
+                            <td class="text-center {{ 'text-danger fw-bold' if r.denegados }}">{{ r.denegados }}</td>
+                            <td class="text-center pe-3">{% if f.alertas %}<span class="badge bg-danger">{{ f.alertas }}</span>{% else %}0{% endif %}</td>
+                        </tr>
+                    {% else %}
+                        <tr><td colspan="12" class="text-center text-muted py-4">No hay usuarios activos con este rol.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="small text-muted mt-2">
+            Del {{ desde.strftime('%d/%m/%Y') }} al {{ hasta.strftime('%d/%m/%Y') }}. <span class="cmp"><span class="mejor px-1">Resaltado</span></span> = el mejor del grupo.
+            "Por hora" = total ÷ horas activas. Toca un nombre para ver su semana en la Ficha.
+        </div>
+    </div>
+
+    <!-- ================= CONFIGURACIÓN ================= -->
+    <div class="tab-pane fade {{ 'show active' if tab == 'config' }}" id="t-config">
+        <form method="POST" action="{{ url_for('actividad_config_alertas') }}" class="card border-0 shadow-sm" style="max-width: 640px;">
+            <div class="card-body">
+                <h6 class="fw-bold mb-3"><i class="bi bi-clock"></i> Horario laboral</h6>
+                <div class="row g-2 mb-2">
+                    <div class="col-6 col-sm-4"><label class="small fw-bold text-muted">Desde</label>
+                        <input type="time" name="seg_horario_inicio" class="form-control form-control-sm" value="{{ cfg.crudo.seg_horario_inicio }}" required></div>
+                    <div class="col-6 col-sm-4"><label class="small fw-bold text-muted">Hasta</label>
+                        <input type="time" name="seg_horario_fin" class="form-control form-control-sm" value="{{ cfg.crudo.seg_horario_fin }}" required></div>
+                </div>
+                <label class="small fw-bold text-muted d-block mb-1">Días laborables</label>
+                <div class="d-flex flex-wrap gap-2 mb-3">
+                    {% for d in range(7) %}
+                    <input type="checkbox" class="btn-check" name="seg_dias" id="dia{{ d }}" value="{{ d }}" {{ 'checked' if d in cfg.dias }}>
+                    <label class="btn btn-sm btn-outline-primary" for="dia{{ d }}">{{ dias_semana[d][:3] }}</label>
+                    {% endfor %}
+                </div>
+                <div class="form-text mb-3">Un ingreso fuera de este horario o en un día no marcado genera una alerta.</div>
+
+                <h6 class="fw-bold mb-2"><i class="bi bi-exclamation-diamond"></i> Límites</h6>
+                <div class="row g-2">
+                    <div class="col-12 col-sm-6"><label class="small fw-bold text-muted">Exportaciones de datos en 1 hora</label>
+                        <input type="number" min="1" max="100" name="seg_umbral_export" class="form-control form-control-sm" value="{{ cfg.umbral_export }}" required>
+                        <div class="form-text">Excel de inventario, clientes, ventas, respaldos…</div></div>
+                    <div class="col-12 col-sm-6"><label class="small fw-bold text-muted">Intentos sin permiso en 30 min</label>
+                        <input type="number" min="1" max="100" name="seg_umbral_denegados" class="form-control form-control-sm" value="{{ cfg.umbral_denegados }}" required></div>
+                </div>
+            </div>
+            <div class="card-footer bg-white text-end"><button class="btn btn-primary btn-sm fw-bold"><i class="bi bi-save"></i> Guardar</button></div>
+        </form>
+    </div>
+</div>
+
+<script>
+function revisarAlerta(id) {
+    const fd = new FormData();
+    if (id === null) fd.append('todas', '1'); else fd.append('alerta_id', id);
+    const hacer = () => fetch({{ url_for('actividad_revisar_alertas')|tojson }}, { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(d => {
+            if (d.status !== 'success') return Swal.fire('No se pudo', d.msg || 'Error', 'error');
+            if (id === null) return location.reload();
+            const fila = document.getElementById('alerta-' + id);
+            if (fila) { fila.classList.add('revisada'); const b = fila.querySelector('button'); if (b) b.remove(); }
+            const badge = document.getElementById('badgePendientes');
+            if (badge) { if (d.pendientes) badge.textContent = d.pendientes; else badge.remove(); }
+        })
+        .catch(() => Swal.fire('Error', 'No se pudo comunicar con el servidor.', 'error'));
+    if (id === null) {
+        Swal.fire({ title: '¿Marcar todas como revisadas?', icon: 'question', showCancelButton: true, confirmButtonText: 'Sí', cancelButtonText: 'Cancelar' })
+            .then(r => { if (r.isConfirmed) hacer(); });
+    } else hacer();
+}
+</script>
+{% endblock %}

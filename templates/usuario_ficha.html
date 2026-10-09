@@ -12,6 +12,32 @@
     .uf-tabs .nav-link { color: #495057 !important; background: #f1f3f5; border: 1px solid #dee2e6; margin-right: 4px; font-weight: 500; }
     .uf-tabs .nav-link.active { color: #fff !important; background: var(--theme-primary, #0d6efd); border-color: var(--theme-primary, #0d6efd); }
     .ev { font-size: .68rem; }
+    /* --- Actividad dentro del sistema --- */
+    .act-kpi { font-size: 1.35rem; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.1; color: #0f172a; }
+    .act-kpi small { font-size: .7rem; font-weight: 600; color: #64748b; }
+    .tl { position: relative; margin: 0; padding: 0 0 0 4px; list-style: none; }
+    .tl li { display: flex; gap: 10px; padding: 6px 0; border-bottom: 1px dashed #e9ecef; }
+    .tl li:last-child { border-bottom: 0; }
+    .tl .tl-hora { flex: 0 0 64px; font-variant-numeric: tabular-nums; color: #64748b; font-size: .78rem; padding-top: 1px; }
+    .tl .tl-ico { flex: 0 0 22px; text-align: center; }
+    .tl .tl-cuerpo { flex: 1; min-width: 0; font-size: .82rem; line-height: 1.3; }
+    .tl .tl-tit { font-weight: 600; color: #0f172a; word-break: break-word; }
+    .tl .tl-det { color: #64748b; font-size: .74rem; word-break: break-word; }
+    .tl .tl-extra { color: #2a78d6; font-size: .72rem; font-weight: 600; }
+    .tl li.grupo-alerta { background: #fef2f2; }
+    .tl li.grupo-denegado { background: #fff7ed; }
+    .tl-filtros .btn { font-size: .72rem; }
+    .barra-dia { position: relative; height: 16px; background: #f1f5f9; border-radius: 4px; overflow: hidden; }
+    .barra-dia .b-abierto { position: absolute; left: 0; top: 0; bottom: 0; background: #cde2fb; border-radius: 4px; }
+    .barra-dia .b-activo { position: absolute; left: 0; top: 3px; bottom: 3px; background: #2a78d6; border-radius: 3px; }
+    .leyenda-c { display: inline-block; width: 12px; height: 10px; border-radius: 2px; vertical-align: middle; margin-right: 3px; }
+    .barra-mod { height: 8px; background: #2a78d6; border-radius: 4px; min-width: 2px; }
+    .calor { border-collapse: separate; border-spacing: 2px; font-size: .68rem; }
+    .calor th { font-weight: 600; color: #64748b; text-align: center; padding: 0 2px; white-space: nowrap; }
+    .calor td.c { width: 26px; min-width: 22px; height: 24px; border-radius: 4px; cursor: default; }
+    .calor .n0 { background: #f1f5f9; } .calor .n1 { background: #cde2fb; } .calor .n2 { background: #9ec5f4; }
+    .calor .n3 { background: #6da7ec; } .calor .n4 { background: #3987e5; } .calor .n5 { background: #256abf; } .calor .n6 { background: #104281; }
+    .calor td.c:hover { outline: 2px solid #0f172a; outline-offset: 0; }
 </style>
 
 {% set ev_info = {
@@ -109,14 +135,214 @@
 
 <!-- PESTAÑAS -->
 <ul class="nav nav-tabs uf-tabs mb-3 flex-wrap border-0">
-    <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#t-accesos"><i class="bi bi-door-open"></i> Accesos ({{ accesos|length }})</button></li>
+    <li class="nav-item"><button class="nav-link {{ 'active' if tab == 'actividad' }}" data-bs-toggle="tab" data-bs-target="#t-actividad"><i class="bi bi-activity"></i> Actividad del día</button></li>
+    <li class="nav-item"><button class="nav-link {{ 'active' if tab == 'semana' }}" data-bs-toggle="tab" data-bs-target="#t-semana"><i class="bi bi-calendar-week"></i> Semana</button></li>
+    <li class="nav-item"><button class="nav-link {{ 'active' if tab == 'horarios' }}" data-bs-toggle="tab" data-bs-target="#t-horarios"><i class="bi bi-grid-3x3"></i> Horarios</button></li>
+    <li class="nav-item"><button class="nav-link {{ 'active' if tab == 'alertas' }}" data-bs-toggle="tab" data-bs-target="#t-alertas"><i class="bi bi-shield-exclamation"></i> Alertas{% if alertas_u|selectattr('revisada', 'equalto', false)|list|length %} <span class="badge bg-danger">{{ alertas_u|selectattr('revisada', 'equalto', false)|list|length }}</span>{% endif %}</button></li>
+    <li class="nav-item"><button class="nav-link {{ 'active' if tab == 'accesos' }}" data-bs-toggle="tab" data-bs-target="#t-accesos"><i class="bi bi-door-open"></i> Accesos ({{ accesos|length }})</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t-acciones"><i class="bi bi-journal-text"></i> Acciones ({{ acciones|length }})</button></li>
     <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t-kardex"><i class="bi bi-arrow-left-right"></i> Kardex ({{ kardex|length }})</button></li>
     {% if ventas %}<li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#t-ventas"><i class="bi bi-receipt"></i> Ventas ({{ ventas|length }})</button></li>{% endif %}
 </ul>
 
 <div class="tab-content">
-    <div class="tab-pane fade show active" id="t-accesos">
+    <!-- ================= ACTIVIDAD DEL DÍA ================= -->
+    <div class="tab-pane fade {{ 'show active' if tab == 'actividad' }}" id="t-actividad">
+        <form method="GET" class="d-flex flex-wrap align-items-center gap-2 mb-3">
+            <input type="hidden" name="tab" value="actividad">
+            <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('ficha_usuario', user_id=u.id, dia=dia_anterior.isoformat(), tab='actividad') }}" title="Día anterior"><i class="bi bi-chevron-left"></i></a>
+            <input type="date" name="dia" class="form-control form-control-sm" style="max-width: 170px;" value="{{ dia.isoformat() }}" max="{{ ahora.date().isoformat() }}" onchange="this.form.submit()">
+            {% if dia_siguiente %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('ficha_usuario', user_id=u.id, dia=dia_siguiente.isoformat(), tab='actividad') }}" title="Día siguiente"><i class="bi bi-chevron-right"></i></a>{% endif %}
+            <span class="fw-bold ms-1">{{ ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'][dia.weekday()] }} {{ dia.strftime('%d/%m/%Y') }}</span>
+            {% if dia != ahora.date() %}<a class="btn btn-sm btn-link" href="{{ url_for('ficha_usuario', user_id=u.id, tab='actividad') }}">Ir a hoy</a>{% endif %}
+        </form>
+
+        <div class="row g-2 mb-3">
+            <div class="col-6 col-md-3"><div class="card border-0 shadow-sm h-100"><div class="card-body py-2">
+                <div class="uf-dato">Tiempo activo</div><div class="act-kpi">{{ resumen_dia.activo|duracion }}</div>
+                <div class="text-muted small">usando el sistema</div></div></div></div>
+            <div class="col-6 col-md-3"><div class="card border-0 shadow-sm h-100"><div class="card-body py-2">
+                <div class="uf-dato">Tiempo abierto</div><div class="act-kpi">{{ resumen_dia.abierto|duracion }}</div>
+                <div class="text-muted small">{{ resumen_dia.pct_activo }}% fue activo</div></div></div></div>
+            <div class="col-6 col-md-3"><div class="card border-0 shadow-sm h-100"><div class="card-body py-2">
+                <div class="uf-dato">Sesiones · páginas</div><div class="act-kpi">{{ sesiones|length }} <small>sesiones</small> · {{ resumen_dia.paginas }} <small>páginas</small></div>
+                <div class="text-muted small">{{ resumen_dia.acciones }} acciones registradas</div></div></div></div>
+            <div class="col-6 col-md-3"><div class="card border-0 shadow-sm h-100"><div class="card-body py-2">
+                <div class="uf-dato">Exportaciones · descargas</div>
+                <div class="act-kpi {{ 'text-danger' if resumen_dia.exportaciones else '' }}">{{ resumen_dia.exportaciones }} <small>exp.</small> · {{ resumen_dia.descargas }} <small>desc.</small></div>
+                <div class="text-muted small {{ 'text-danger fw-bold' if resumen_dia.denegados }}">{{ resumen_dia.denegados }} intento(s) sin permiso</div></div></div></div>
+        </div>
+
+        <div class="card border-0 shadow-sm mb-3">
+            <div class="card-header bg-white fw-bold small"><i class="bi bi-clock-history"></i> Sesiones del día</div>
+            <div class="table-responsive"><table class="table table-sm align-middle mb-0 small">
+                <thead class="table-light"><tr><th class="ps-3">Entró</th><th>Salió</th><th class="text-center">Duración</th><th class="text-center">Activo</th><th class="text-center">Páginas</th><th>Dispositivo</th><th class="pe-3">Cierre</th></tr></thead>
+                <tbody>
+                {% for s in sesiones %}
+                <tr>
+                    <td class="ps-3 fw-semibold">{{ s.inicio.strftime('%H:%M') }}</td>
+                    <td>{% if s.en_curso %}<span class="badge bg-success-subtle text-success border border-success">En curso</span>{% else %}{{ s.fin_real.strftime('%H:%M') }}{% endif %}</td>
+                    <td class="text-center">{{ s.duracion|duracion }}</td>
+                    <td class="text-center fw-bold" style="color:#2a78d6;">{{ s.activo|duracion }}</td>
+                    <td class="text-center">{{ s.paginas }}</td>
+                    <td>{{ s.dispositivo or '-' }} <span class="text-muted">· IP {{ s.ip or '-' }}</span></td>
+                    <td class="pe-3 text-muted">{{ s.cierre or '' }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="7" class="text-center text-muted py-3">Sin sesiones registradas este día.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table></div>
+        </div>
+
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <span class="fw-bold small"><i class="bi bi-list-ol"></i> Línea de tiempo ({{ linea|length }})</span>
+                <div class="btn-group btn-group-sm tl-filtros" role="group">
+                    <button type="button" class="btn btn-outline-secondary active" data-g="todo">Todo</button>
+                    <button type="button" class="btn btn-outline-secondary" data-g="pagina">Páginas</button>
+                    <button type="button" class="btn btn-outline-secondary" data-g="accion">Acciones</button>
+                    <button type="button" class="btn btn-outline-secondary" data-g="acceso">Accesos</button>
+                    <button type="button" class="btn btn-outline-secondary" data-g="otros">Descargas y alertas</button>
+                </div>
+            </div>
+            <div class="card-body py-2">
+                <ul class="tl" id="lineaTiempo">
+                {% for i in linea %}
+                    <li class="grupo-{{ i.grupo }}" data-g="{{ i.grupo }}">
+                        <span class="tl-hora">{{ i.fecha.strftime('%H:%M:%S') }}</span>
+                        <span class="tl-ico"><i class="bi {{ i.icono }} {{ i.color }}"></i></span>
+                        <div class="tl-cuerpo">
+                            <div class="tl-tit">{{ i.titulo }}{% if i.veces %} <span class="badge bg-dark">×{{ i.veces }}</span> <span class="text-muted fw-normal" style="font-size:.72rem;">hasta {{ i.hasta.strftime('%H:%M:%S') }}</span>{% endif %}</div>
+                            {% if i.detalle %}<div class="tl-det">{{ i.detalle }}</div>{% endif %}
+                            {% if i.extra %}<div class="tl-extra">{{ i.extra }}</div>{% endif %}
+                        </div>
+                    </li>
+                {% else %}
+                    <li class="text-muted justify-content-center py-3">Sin actividad registrada este día.</li>
+                {% endfor %}
+                </ul>
+                <div class="text-muted mt-2" style="font-size:.7rem;">
+                    <i class="bi bi-info-circle"></i> <b>Activo</b> = pestaña visible y usándose (mouse, teclado o toque en el último minuto).
+                    <b>Abierto</b> = la página estaba abierta, aunque quieta o en segundo plano. Solo se mide el uso de este sistema.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= SEMANA ================= -->
+    <div class="tab-pane fade {{ 'show active' if tab == 'semana' }}" id="t-semana">
+        <div class="text-muted small mb-2">Últimos 7 días hasta el {{ dia.strftime('%d/%m/%Y') }} (cambia el día en "Actividad del día").</div>
+        <div class="row g-2 mb-3">
+            <div class="col-6 col-md-3"><div class="card border-0 shadow-sm h-100"><div class="card-body py-2">
+                <div class="uf-dato">Horas activas</div><div class="act-kpi">{{ semana.activo|duracion }}</div>
+                <div class="text-muted small">de {{ semana.abierto|duracion }} abierto ({{ semana.pct_activo }}%)</div></div></div></div>
+            <div class="col-6 col-md-3"><div class="card border-0 shadow-sm h-100"><div class="card-body py-2">
+                <div class="uf-dato">Días con uso</div><div class="act-kpi">{{ semana.dias_con_uso }} <small>de 7</small></div>
+                <div class="text-muted small">{{ semana.sesiones }} sesiones · {{ semana.paginas }} páginas</div></div></div></div>
+            {% for p in semana.productividad %}
+            <div class="col-6 col-md-3"><div class="card border-0 shadow-sm h-100"><div class="card-body py-2">
+                <div class="uf-dato">{{ p.etq }}</div><div class="act-kpi">{{ p.valor }}</div>
+                <div class="text-muted small">{% if p.por_hora is not none %}{{ p.por_hora }} por hora activa{% else %}sin horas activas{% endif %}</div></div></div></div>
+            {% endfor %}
+            <div class="col-6 col-md-3"><div class="card border-0 shadow-sm h-100"><div class="card-body py-2">
+                <div class="uf-dato">Acciones · exportaciones</div><div class="act-kpi">{{ semana.acciones }} <small>acc.</small> · {{ semana.exportaciones }} <small>exp.</small></div>
+                <div class="text-muted small">{{ semana.descargas }} descargas · {{ semana.denegados }} sin permiso</div></div></div></div>
+        </div>
+        <div class="row g-3">
+            <div class="col-12 col-lg-6">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-header bg-white fw-bold small d-flex justify-content-between flex-wrap gap-2">
+                        <span><i class="bi bi-bar-chart"></i> Tiempo por día</span>
+                        <span class="fw-normal text-muted"><span class="leyenda-c" style="background:#2a78d6;"></span>Activo <span class="leyenda-c ms-2" style="background:#cde2fb;"></span>Abierto</span>
+                    </div>
+                    <div class="card-body">
+                        {% for d in semana.dias %}
+                        <div class="d-flex align-items-center gap-2 mb-2" title="{{ d.nombre }} {{ d.dia.strftime('%d/%m') }}: activo {{ d.activo|duracion }} · abierto {{ d.abierto|duracion }}">
+                            <div class="small text-muted" style="flex:0 0 78px;">{{ d.nombre[:3] }} {{ d.dia.strftime('%d/%m') }}</div>
+                            <div class="barra-dia flex-grow-1">
+                                <div class="b-abierto" style="width: {{ d.pct_abierto }}%;"></div>
+                                <div class="b-activo" style="width: {{ d.pct_activo }}%;"></div>
+                            </div>
+                            <div class="small text-end" style="flex:0 0 96px;"><b>{{ d.activo|duracion }}</b> <span class="text-muted">/ {{ d.abierto|duracion }}</span></div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+            <div class="col-12 col-lg-6">
+                <div class="card border-0 shadow-sm h-100">
+                    <div class="card-header bg-white fw-bold small"><i class="bi bi-grid"></i> Módulos más usados (tiempo activo)</div>
+                    <div class="card-body">
+                        {% for m in semana.modulos %}
+                        <div class="mb-2">
+                            <div class="d-flex justify-content-between small"><b>{{ m.modulo }}</b><span>{{ m.activo|duracion }} · {{ m.visitas }} visita(s)</span></div>
+                            <div class="barra-mod" style="width: {{ m.pct }}%;"></div>
+                            <div class="text-muted" style="font-size:.7rem;">{% for nombre, seg in m.top %}{{ nombre }} ({{ seg|duracion }}){{ ' · ' if not loop.last }}{% endfor %}</div>
+                        </div>
+                        {% else %}
+                        <div class="text-muted small">Sin páginas registradas en estos días.</div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= HORARIOS (MAPA DE CALOR) ================= -->
+    <div class="tab-pane fade {{ 'show active' if tab == 'horarios' }}" id="t-horarios">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white small d-flex flex-wrap justify-content-between gap-2">
+                <span class="fw-bold"><i class="bi bi-grid-3x3"></i> ¿A qué hora usa el sistema? — tiempo activo de {{ calor.semanas }} semanas ({{ calor.desde.strftime('%d/%m') }} al {{ calor.hasta.strftime('%d/%m/%Y') }})</span>
+                <span class="text-muted">Total: <b>{{ calor.total|duracion }}</b></span>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="calor">
+                        <thead><tr><th></th>{% for h in calor.horas %}<th>{{ '%02d'|format(h) }}</th>{% endfor %}</tr></thead>
+                        <tbody>
+                        {% for d in range(7) %}
+                        <tr>
+                            <th class="text-end pe-1">{{ calor.dias[d][:3] }}</th>
+                            {% for h in calor.horas %}{% set c = calor.celdas[d][h] %}
+                            <td class="c n{{ c.nivel }}" title="{{ calor.dias[d] }} {{ '%02d'|format(h) }}:00–{{ '%02d'|format(h + 1) }}:00 · {{ c.seg|duracion if c.seg else 'sin uso' }} (suma de {{ calor.semanas }} semanas)"></td>
+                            {% endfor %}
+                        </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                <div class="d-flex align-items-center gap-1 mt-2 small text-muted flex-wrap">
+                    Menos <table class="calor d-inline-table"><tr>{% for n in range(7) %}<td class="c n{{ n }}" style="height:12px; width:18px;"></td>{% endfor %}</tr></table> Más
+                    <span class="ms-2">· Pasa el mouse (o toca) un cuadro para ver los minutos.</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= ALERTAS DEL USUARIO ================= -->
+    <div class="tab-pane fade {{ 'show active' if tab == 'alertas' }}" id="t-alertas">
+        <div class="card border-0 shadow-sm"><div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0 small">
+                <thead class="table-light"><tr><th class="ps-3">Fecha</th><th>Nivel</th><th>Alerta</th><th class="pe-3">Estado</th></tr></thead>
+                <tbody>
+                {% for a in alertas_u %}{% set nv = niveles.get(a.nivel, ('bg-secondary', a.nivel)) %}
+                <tr>
+                    <td class="ps-3 text-nowrap">{{ a.fecha.strftime('%d/%m/%y %H:%M') }}</td>
+                    <td><span class="badge {{ nv[0] }}">{{ nv[1] }}</span></td>
+                    <td><b>{{ a.titulo }}</b><div class="text-muted">{{ a.detalle or '' }}</div></td>
+                    <td class="pe-3">{% if a.revisada %}<span class="text-muted"><i class="bi bi-check2"></i> Revisada{% if a.revisada_por %} por {{ a.revisada_por }}{% endif %}</span>{% else %}<span class="badge bg-danger-subtle text-danger border border-danger">Pendiente</span>{% endif %}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="4" class="text-center text-muted py-4">Sin alertas de seguridad para este usuario.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div></div>
+        <div class="mt-2"><a href="{{ url_for('actividad_usuarios') }}" class="small"><i class="bi bi-activity"></i> Ver y revisar todas las alertas</a></div>
+    </div>
+
+    <div class="tab-pane fade {{ 'show active' if tab == 'accesos' }}" id="t-accesos">
         <div class="card border-0 shadow-sm"><div class="table-responsive">
             <table class="table table-sm table-hover align-middle mb-0 small">
                 <thead class="table-light"><tr><th class="ps-3">Fecha / Hora</th><th>Evento</th><th>Dispositivo</th><th>IP</th><th class="pe-3">Detalle</th></tr></thead>
@@ -198,6 +424,18 @@
     {% endif %}
 </div>
 
+<script>
+// Línea de tiempo: filtrar por tipo
+document.querySelectorAll('.tl-filtros .btn').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('.tl-filtros .btn').forEach(x => x.classList.toggle('active', x === b));
+    const g = b.dataset.g;
+    document.querySelectorAll('#lineaTiempo li[data-g]').forEach(li => {
+        const tipo = li.dataset.g;
+        const ver = g === 'todo' || tipo === g || (g === 'otros' && ['descarga', 'alerta', 'denegado'].includes(tipo));
+        li.style.display = ver ? '' : 'none';
+    });
+}));
+</script>
 <script>
 const URL_ACCION_USUARIO = {
     bloquear: id => `/usuarios/${id}/bloquear`,

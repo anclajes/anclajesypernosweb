@@ -5,6 +5,8 @@ from models import MaestroCambioLog, MaestroProducto
 from models import CorreccionAuditoria, CorreccionAuditoriaFoto
 from models import AccesoUsuario
 from models import ProcesoOC, MovimientoDocumento
+from models import ActividadUsuario, ActividadHora, AlertaSeguridad
+from flask import g
 from models import ProductMovement
 from models import Payment
 from models import Category
@@ -71,6 +73,7 @@ RUTAS_PERMITIDAS_ALMACEN_VISOR = {
     'ver_kardex', 'ver_kardex_importbolts',
     'listar_fotos_producto', 'ver_foto_producto',
     'ver_documento_kardex', 'procesos_oc', 'proceso_oc_detalle',
+    'actividad_pulso',
 }
 
 def orden_natural_ubicacion(valor):
@@ -1712,6 +1715,16 @@ def _asegurar_control_usuarios():
                 conn.execute(text(f'ALTER TABLE "user" ADD COLUMN {"IF NOT EXISTS " if es_pg else ""}{nombre} {tipo}'
                                   f'{" DEFAULT " + defecto if defecto else ""}'))
     AccesoUsuario.__table__.create(bind=db.engine, checkfirst=True)
+    # Actividad dentro del sistema y alertas de seguridad (ver "ACTIVIDAD DE USUARIOS")
+    if 'sesion_id' not in {c['name'] for c in sa_inspect(db.engine).get_columns('acceso_usuario')}:
+        es_pg = db.engine.dialect.name == 'postgresql'
+        with db.engine.begin() as conn:
+            if es_pg:
+                conn.execute(text("SET LOCAL lock_timeout = '5s'"))
+            conn.execute(text(f'ALTER TABLE acceso_usuario ADD COLUMN {"IF NOT EXISTS " if es_pg else ""}sesion_id VARCHAR(32)'))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS ix_acceso_usuario_sesion_id ON acceso_usuario (sesion_id)'))
+    for modelo in (ActividadUsuario, ActividadHora, AlertaSeguridad):
+        modelo.__table__.create(bind=db.engine, checkfirst=True)
     _control_usuarios_ok = True
 
 
@@ -1753,14 +1766,14 @@ def _info_dispositivo(ua):
     return disp, (f"{nav} · {so}" if so else nav)
 
 
-def _registrar_acceso(evento, user=None, username='', detalle=''):
+def _registrar_acceso(evento, user=None, username='', detalle='', sesion_id=None):
     """Anota un evento en el historial de accesos (no hace commit)."""
     ua = request.headers.get('User-Agent', '') if request else ''
     disp, nav = _info_dispositivo(ua)
     db.session.add(AccesoUsuario(
         user_id=user.id if user else None, username_intentado=(username or (user.username if user else ''))[:100],
         fecha=hora_peru(), evento=evento, ip=_ip_cliente(), dispositivo=disp, navegador=nav[:80],
-        user_agent=ua[:400], detalle=(detalle or '')[:255]))
+        user_agent=ua[:400], detalle=(detalle or '')[:255], sesion_id=(sesion_id or session.get('sid'))))
 
 
 def _quiere_json():
@@ -1815,9 +1828,16 @@ def login():
                 user.bloqueo_temporal_hasta = None
                 user.ultimo_login = ahora
                 user.ultima_actividad = ahora
-                _registrar_acceso('LOGIN_OK', user, username)
+                sid = uuid.uuid4().hex   # une este ingreso con sus páginas y su salida
+                try:
+                    with db.session.begin_nested():
+                        _alertas_al_ingresar(user, ahora, sid)
+                except Exception:
+                    app.logger.exception("No se pudieron revisar las alertas del ingreso")
+                _registrar_acceso('LOGIN_OK', user, username, sesion_id=sid)
                 db.session.commit()
                 session.clear()
+                session['sid'] = sid
                 session['user_id'] = user.id
                 session['role'] = user.role
                 session['username'] = user.username
@@ -1837,6 +1857,13 @@ def login():
                     user.intentos_fallidos = 0
                     _registrar_acceso('BLOQUEO_TEMPORAL', user, username,
                                       f'{MAX_INTENTOS_LOGIN} intentos fallidos seguidos: bloqueado {MINUTOS_BLOQUEO_TEMPORAL} min')
+                    try:
+                        with db.session.begin_nested():
+                            _crear_alerta(user.id, 'BLOQUEO_TEMPORAL', 'MEDIA', 'Bloqueo por contraseñas incorrectas',
+                                          f'{MAX_INTENTOS_LOGIN} intentos fallidos seguidos · IP {_ip_cliente()}',
+                                          clave=ahora.strftime('%Y-%m-%d %H:%M'))
+                    except Exception:
+                        app.logger.exception("No se pudo crear la alerta de bloqueo")
                     error = (f'Demasiados intentos fallidos: por seguridad este usuario quedó bloqueado '
                              f'{MINUTOS_BLOQUEO_TEMPORAL} minutos. Si olvidaste tu contraseña, pide ayuda al administrador.')
             else:
@@ -1894,6 +1921,10 @@ def _control_sesion_usuario():
     session['username'] = user.username
     session['nombre'] = user.nombre_completo
     session['es_superadmin'] = bool(user.es_superadmin)
+    # El pulso del navegador sin uso real (pestaña quieta) NO cuenta como actividad: así el cierre por
+    # inactividad y el "Conectado ahora" siguen funcionando aunque la pestaña quede abierta.
+    if request.endpoint == 'actividad_pulso' and request.args.get('a') != '1':
+        return
     session['ult'] = ahora.isoformat()
     if not user.ultima_actividad or (ahora - user.ultima_actividad).total_seconds() > 60:
         try:
@@ -1912,14 +1943,716 @@ def _restringir_almacen_visor():
     if session.get('role') == 'almacen_visor' and request.endpoint not in RUTAS_PERMITIDAS_ALMACEN_VISOR:
         if request.endpoint is None:
             return  # ruta que no existe: que Flask muestre su 404 normal
+        g.acceso_denegado = True   # queda en su actividad como "intentó entrar sin permiso"
         flash('Tu usuario solo tiene acceso a la vista de Inventario.', 'error')
         return redirect(url_for('inventario_general'))
+
+
+# ============================================
+# ACTIVIDAD DE USUARIOS DENTRO DEL SISTEMA (solo Gerencia la ve)
+# - Páginas que abre cada usuario (con los filtros/búsquedas que usó), exportaciones, descargas e
+#   intentos de entrar sin permiso: los anota el servidor (after_request).
+# - Tiempo ACTIVO (pestaña visible + mouse/teclado/toque en el último minuto) y ABIERTO (pestaña abierta,
+#   aunque esté quieta o en segundo plano): los reporta el navegador cada minuto (/api/actividad/pulso).
+# - Sesiones: cada ingreso tiene un id (session['sid']) que une su ingreso, sus páginas y su salida.
+# - Alertas de seguridad para Gerencia (ver _crear_alerta).
+# Solo se registra lo que pasa DENTRO del sistema. El detalle se guarda 90 días; el resumen por hora, 400 días.
+# ============================================
+NOMBRES_PAGINA = {
+    'index': ('Inicio', 'Dashboard'),
+    'inventario': ('Inventario', 'Inventario Anclajes'),
+    'inventario_importbolts': ('Inventario', 'Inventario Import Bolts'),
+    'inventario_general': ('Inventario', 'Inventario General'),
+    'producto_info': ('Inventario', 'Info de producto (QR)'),
+    'ver_kardex': ('Kardex', 'Kardex Anclajes'),
+    'ver_kardex_importbolts': ('Kardex', 'Kardex Import Bolts'),
+    'procesos_oc': ('Kardex', 'Procesos por OC'),
+    'proceso_oc_detalle': ('Kardex', 'Detalle de proceso OC'),
+    'ver_documento_kardex': ('Kardex', 'Documento del Kardex'),
+    'admin_maestro': ('Maestro', 'Maestro de productos'),
+    'admin_maestro_auditoria': ('Maestro', 'Historial del Maestro'),
+    'admin_maestro_nuevo': ('Maestro', 'Nuevo producto (Maestro)'),
+    'nueva_venta': ('Ventas', 'Nueva venta / cotización'),
+    'historial_ventas': ('Ventas', 'Historial de ventas'),
+    'editar_venta': ('Ventas', 'Editar venta'),
+    'cobranzas': ('Ventas', 'Cobranzas'),
+    'metas_vendedores': ('Ventas', 'Metas de venta'),
+    'descargar_cotizacion': ('Ventas', 'PDF de cotización'),
+    'descargar_cotizacion_v2': ('Ventas', 'PDF de cotización'),
+    'descargar_nota_pedido': ('Ventas', 'Nota de pedido'),
+    'ver_oc': ('Ventas', 'OC del cliente'),
+    'dashboard_ventas_anclajes': ('Dashboards', 'Ventas Anclajes'),
+    'dashboard_ventas_importbolts': ('Dashboards', 'Ventas Import Bolts'),
+    'dashboard_ventas_general': ('Dashboards', 'Ventas General'),
+    'dashboard_ventas_anclajes_pdf': ('Dashboards', 'PDF ventas Anclajes'),
+    'dashboard_ventas_importbolts_pdf': ('Dashboards', 'PDF ventas Import Bolts'),
+    'dashboard_ventas_general_pdf': ('Dashboards', 'PDF ventas General'),
+    'despachos': ('Logística', 'Despachos'),
+    'picking_almacen': ('Logística', 'Picking'),
+    'traslados_intercompany': ('Logística', 'Traslados inter-empresa'),
+    'rotacion_stock': ('Reportes', 'Rotación de stock'),
+    'reporte_precios_proveedores': ('Reportes', 'Mejores precios'),
+    'reportes_predicciones': ('Reportes', 'Predicciones'),
+    'auditoria_inicio': ('Auditoría', 'Inicio de auditoría'),
+    'auditoria_elegir_periodo': ('Auditoría', 'Elegir auditoría'),
+    'auditoria_form': ('Auditoría', 'Nuevo conteo'),
+    'auditoria_mis_registros': ('Auditoría', 'Mis conteos'),
+    'auditoria_editar_form': ('Auditoría', 'Corregir conteo'),
+    'admin_auditorias_lista': ('Auditoría', 'Revisión de conteos'),
+    'admin_auditorias_detalle': ('Auditoría', 'Detalle de conteo'),
+    'admin_auditorias_historial': ('Auditoría', 'Kardex de auditorías'),
+    'admin_periodos_lista': ('Auditoría', 'Períodos de auditoría'),
+    'admin_catalogos': ('Catálogos', 'Catálogos'),
+    'gestion_usuarios': ('Usuarios', 'Usuarios'),
+    'ficha_usuario': ('Usuarios', 'Ficha de usuario'),
+    'actividad_usuarios': ('Usuarios', 'Actividad y alertas'),
+    'perfil_usuario': ('Usuarios', 'Mi perfil'),
+    'admin_reset_sistema': ('Sistema', 'Reset / respaldo del sistema'),
+}
+# Descargas de DATOS del sistema (las que importan para una posible fuga de información)
+EXPORTACIONES_DATOS = {
+    'exportar_excel': 'Excel de inventario Anclajes',
+    'exportar_excel_importbolts': 'Excel de inventario Import Bolts',
+    'exportar_directorio_clientes': 'Directorio de clientes',
+    'exportar_historial_excel': 'Historial de ventas (Excel)',
+    'descargar_reporte_excel': 'Reporte en Excel',
+    'exportar_rotacion_stock': 'Rotación de stock (Excel)',
+    'exportar_traslados_intercompany': 'Traslados inter-empresa (Excel)',
+    'inventario_respaldo': 'Respaldo de inventario Anclajes',
+    'inventario_importbolts_respaldo': 'Respaldo de inventario Import Bolts',
+    'admin_reset_sistema_respaldo': 'Respaldo completo del sistema',
+    'admin_reset_sistema_descargar': 'Respaldo completo del sistema',
+}
+MIMES_DESCARGA = {'application/pdf', 'text/csv', 'application/zip', 'application/octet-stream',
+                  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                  'application/vnd.ms-excel'}
+FILTROS_LEGIBLES = [('busqueda', 'busca'), ('q', 'busca'), ('categoria', 'familia'), ('familia', 'familia'),
+                    ('calidad', 'calidad'), ('origen', 'inventario'), ('tipo', 'tipo'), ('estado', 'estado'),
+                    ('estado_activo', 'ver'), ('proveedor', 'proveedor'), ('motivo', 'motivo'), ('motivo_cat', 'motivo'),
+                    ('oc', 'OC #'), ('vista', 'vista'), ('stock_bajo', 'stock bajo'), ('fecha_inicio', 'desde'),
+                    ('fecha_fin', 'hasta'), ('desde', 'desde'), ('hasta', 'hasta'), ('dia', 'día'), ('page', 'pág.')]
+NOMBRES_PARAM_RUTA = {'user_id': 'usuario #', 'reg_id': 'conteo #', 'order_id': 'pedido #', 'proc_id': 'OC #',
+                      'doc_id': 'documento #', 'sku': 'código', 'origen': 'inventario', 'periodo_id': 'período #',
+                      'prod_id': 'producto #', 'filename': 'archivo', 'nombre_archivo': 'archivo', 'nuevo_estado': 'estado'}
+DIAS_SEMANA = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+CONFIG_ALERTAS_DEF = {'seg_horario_inicio': '07:00', 'seg_horario_fin': '19:00', 'seg_dias': '0,1,2,3,4,5',
+                      'seg_umbral_export': '3', 'seg_umbral_denegados': '5'}
+NIVELES_ALERTA = {'ALTA': ('bg-danger', 'Alta'), 'MEDIA': ('bg-warning text-dark', 'Media'), 'BAJA': ('bg-info text-dark', 'Baja')}
+VENTAS_CONCRETADAS = ['Aprobado', 'Por Despachar', 'En Preparacion', 'Despachado', 'Entregado']
+MINUTOS_SESION_SIMULTANEA = 3
+DIAS_DETALLE_ACTIVIDAD = 90
+
+
+def _nombre_pagina(endpoint):
+    if endpoint in NOMBRES_PAGINA:
+        return NOMBRES_PAGINA[endpoint]
+    if endpoint in EXPORTACIONES_DATOS:
+        return ('Exportaciones', EXPORTACIONES_DATOS[endpoint])
+    return ('Otros', (endpoint or '-').replace('_', ' ').capitalize())
+
+
+app.add_template_filter(lambda ep: _nombre_pagina(ep)[1], 'nombre_pagina')
+
+
+def _duracion_txt(seg):
+    """75 -> '1 min'; 3900 -> '1 h 5 min'; 20 -> '20 s'."""
+    seg = int(seg or 0)
+    if seg < 60:
+        return f'{seg} s'
+    h, m = divmod(seg // 60, 60)
+    return f'{h} h {m} min' if h else f'{m} min'
+
+
+app.add_template_filter(_duracion_txt, 'duracion')
+
+
+def _detalle_peticion():
+    """'busca: P0907 · familia: PERNO HEX' a partir de los filtros de la URL y los datos de la ruta."""
+    partes = []
+    for k, etq in FILTROS_LEGIBLES:
+        v = ' '.join((request.args.get(k) or '').split())
+        if v and v.lower() not in ('todos', 'todas', 'none', 'off'):
+            partes.append(f'{etq}: {v[:40]}' if not etq.endswith('#') else f'{etq}{v[:40]}')
+    for k, v in (request.view_args or {}).items():
+        etq = NOMBRES_PARAM_RUTA.get(k, k.replace('_', ' '))
+        partes.append(f'{etq}{v}' if etq.endswith('#') else f'{etq}: {str(v)[:40]}')
+    return ' · '.join(partes)[:255]
+
+
+def _es_navegacion():
+    """True si es una página que el usuario abrió (no un fetch de JavaScript)."""
+    destino = request.headers.get('Sec-Fetch-Dest')
+    if destino:
+        return destino in ('document', 'iframe')
+    if request.headers.get('X-Requested-With'):
+        return False
+    return 'text/html' in (request.headers.get('Accept') or '')
+
+
+def _prefijo_ip(ip):
+    """Red aproximada: los 3 primeros números de una IPv4 o los 4 primeros grupos de una IPv6."""
+    ip = (ip or '').strip()
+    if not ip:
+        return ''
+    if ':' in ip:
+        return ':'.join(ip.split(':')[:4])
+    return '.'.join(ip.split('.')[:3])
+
+
+def _config_alertas():
+    vals = {}
+    for k, defecto in CONFIG_ALERTAS_DEF.items():
+        try:
+            cfg = SystemConfig.query.get(k)
+            vals[k] = (cfg.value if cfg and cfg.value not in (None, '') else defecto)
+        except Exception:
+            vals[k] = defecto
+
+    def hora(t, defecto):
+        try:
+            return datetime.strptime(t, '%H:%M').time()
+        except (TypeError, ValueError):
+            return datetime.strptime(defecto, '%H:%M').time()
+
+    def entero(t, defecto):
+        try:
+            return max(1, int(t))
+        except (TypeError, ValueError):
+            return int(defecto)
+    dias = {int(x) for x in str(vals['seg_dias']).split(',') if x.strip().isdigit() and int(x) < 7}
+    return {'inicio': hora(vals['seg_horario_inicio'], '07:00'), 'fin': hora(vals['seg_horario_fin'], '19:00'),
+            'dias': dias, 'umbral_export': entero(vals['seg_umbral_export'], '3'),
+            'umbral_denegados': entero(vals['seg_umbral_denegados'], '5'), 'crudo': vals}
+
+
+def _crear_alerta(user_id, tipo, nivel, titulo, detalle='', clave=''):
+    """Crea una alerta para Gerencia (sin commit). No repite la misma (usuario + tipo + clave) en 24 h."""
+    ahora = hora_peru()
+    clave = (clave or '')[:120]
+    if AlertaSeguridad.query.filter(AlertaSeguridad.user_id == user_id, AlertaSeguridad.tipo == tipo,
+                                    AlertaSeguridad.clave == clave,
+                                    AlertaSeguridad.fecha >= ahora - timedelta(hours=24)).first():
+        return None
+    alerta = AlertaSeguridad(user_id=user_id, tipo=tipo, nivel=nivel, titulo=titulo[:150], detalle=(detalle or '')[:255],
+                             clave=clave, fecha=ahora, revisada=False)
+    db.session.add(alerta)
+    return alerta
+
+
+def _sesion_simultanea(user_id, sid, ip, dispositivo, ahora):
+    """Otra sesión del MISMO usuario con actividad en los últimos minutos, desde otro equipo o conexión."""
+    if not sid:
+        return None
+    otra = (ActividadUsuario.query
+            .filter(ActividadUsuario.user_id == user_id, ActividadUsuario.tipo == 'PAGINA',
+                    ActividadUsuario.sesion_id.isnot(None), ActividadUsuario.sesion_id != sid,
+                    ActividadUsuario.ultimo_pulso >= ahora - timedelta(minutes=MINUTOS_SESION_SIMULTANEA))
+            .order_by(ActividadUsuario.ultimo_pulso.desc()).first())
+    if otra and (otra.ip != ip or otra.dispositivo != dispositivo):
+        return otra
+    return None
+
+
+def _alertas_al_ingresar(user, ahora, sid):
+    """Se llama en un ingreso correcto, ANTES de anotar el LOGIN_OK (para comparar con los ingresos anteriores)."""
+    disp, nav = _info_dispositivo(request.headers.get('User-Agent', ''))
+    ip = _ip_cliente()
+    cfg = _config_alertas()
+    if ahora.weekday() not in cfg['dias'] or not (cfg['inicio'] <= ahora.time() <= cfg['fin']):
+        _crear_alerta(user.id, 'FUERA_HORARIO', 'MEDIA', 'Ingreso fuera del horario laboral',
+                      f"{DIAS_SEMANA[ahora.weekday()]} {ahora.strftime('%d/%m %H:%M')} · {disp} {nav} · IP {ip}",
+                      clave=ahora.date().isoformat())
+    previos = (AccesoUsuario.query.with_entities(AccesoUsuario.dispositivo, AccesoUsuario.navegador, AccesoUsuario.ip)
+               .filter(AccesoUsuario.user_id == user.id, AccesoUsuario.evento == 'LOGIN_OK',
+                       AccesoUsuario.fecha >= ahora - timedelta(days=180)).all())
+    if previos:
+        if (disp, nav[:80]) not in {(d, n) for d, n, _ in previos}:
+            _crear_alerta(user.id, 'DISPOSITIVO_NUEVO', 'ALTA', 'Ingreso desde un dispositivo nuevo',
+                          f'{disp} · {nav} · IP {ip}', clave=f'{disp}|{nav}')
+        pref = _prefijo_ip(ip)
+        if pref and pref not in {_prefijo_ip(x) for _, _, x in previos}:
+            _crear_alerta(user.id, 'IP_NUEVA', 'BAJA', 'Ingreso desde una conexión (IP) nueva',
+                          f'IP {ip} · {disp} {nav}', clave=pref)
+    otra = _sesion_simultanea(user.id, sid, ip, disp, ahora)
+    if otra:
+        _crear_alerta(user.id, 'CUENTA_COMPARTIDA', 'ALTA', 'Cuenta usada en dos dispositivos a la vez',
+                      f'Ingresó en {disp} (IP {ip}) mientras seguía activa en {otra.dispositivo or "otro equipo"} (IP {otra.ip or "-"})',
+                      clave=ahora.date().isoformat())
+
+
+@app.before_request
+def _preparar_actividad():
+    """Id de la sesión (para unir ingreso, páginas y salida) e id de la vista para los pulsos del navegador."""
+    if request.endpoint in (None, 'static') or not session.get('user_id'):
+        return
+    if not session.get('sid'):
+        session['sid'] = uuid.uuid4().hex
+    if request.method == 'GET':
+        g.vista_id = uuid.uuid4().hex
+
+
+@app.after_request
+def _registrar_actividad(resp):
+    """Anota páginas abiertas, exportaciones, descargas e intentos sin permiso. Nunca rompe la respuesta."""
+    try:
+        uid = session.get('user_id')
+        ep = request.endpoint
+        if not uid or ep in (None, 'static', 'login', 'logout', 'actividad_pulso'):
+            return resp
+        dispo = (resp.headers.get('Content-Disposition') or '').lower()
+        denegado = resp.status_code == 403 or bool(g.get('acceso_denegado'))
+        tipo, detalle = None, _detalle_peticion()
+        if denegado:
+            if request.path.startswith('/api/') or not _es_navegacion():
+                return resp
+            tipo = 'DENEGADO'
+        elif resp.status_code == 200 and ep in EXPORTACIONES_DATOS:
+            tipo = 'EXPORTACION'
+        elif resp.status_code == 200 and ('attachment' in dispo or resp.mimetype in MIMES_DESCARGA):
+            tipo = 'DESCARGA'
+        elif request.method == 'GET' and resp.status_code == 200 and resp.mimetype == 'text/html' and _es_navegacion():
+            tipo = 'PAGINA'
+        if not tipo:
+            return resp
+        if tipo in ('EXPORTACION', 'DESCARGA') and 'filename=' in dispo:
+            nombre_arch = resp.headers.get('Content-Disposition').split('filename=')[-1].strip('"\' ;')
+            detalle = (f'archivo: {nombre_arch[:80]}' + (f' · {detalle}' if detalle else ''))[:255]
+        # Lo que la página haya dejado SIN guardar se descarta igual al terminar la petición: se descarta antes,
+        # para que este registro nunca guarde por accidente cambios a medias de otra parte.
+        db.session.rollback()
+        _asegurar_control_usuarios()
+        disp, _ = _info_dispositivo(request.headers.get('User-Agent', ''))
+        ahora = hora_peru()
+        db.session.add(ActividadUsuario(
+            user_id=uid, sesion_id=session.get('sid'), vista_id=g.get('vista_id') if tipo == 'PAGINA' else None,
+            tipo=tipo, endpoint=(ep or '')[:80], ruta=request.full_path.rstrip('?')[:255], detalle=detalle,
+            fecha=ahora, ultimo_pulso=ahora if tipo == 'PAGINA' else None, seg_activo=0, seg_abierto=0,
+            dispositivo=disp, ip=_ip_cliente()))
+        cfg = None
+        if tipo == 'EXPORTACION':
+            cfg = _config_alertas()
+            n = ActividadUsuario.query.filter(ActividadUsuario.user_id == uid, ActividadUsuario.tipo == 'EXPORTACION',
+                                              ActividadUsuario.fecha >= ahora - timedelta(hours=1)).count()
+            if n >= cfg['umbral_export']:
+                _crear_alerta(uid, 'EXPORTACION_MASIVA', 'ALTA', 'Muchas exportaciones de datos',
+                              f'{n} exportaciones en la última hora (la última: {EXPORTACIONES_DATOS[ep]})',
+                              clave=ahora.strftime('%Y-%m-%d %H'))
+            if ep == 'exportar_directorio_clientes' and session.get('role') != 'admin':
+                _crear_alerta(uid, 'EXPORT_CLIENTES', 'MEDIA', 'Descargó el directorio de clientes',
+                              f"{ahora.strftime('%d/%m %H:%M')} · {disp}", clave=ahora.date().isoformat())
+        elif tipo == 'DENEGADO':
+            cfg = _config_alertas()
+            n = ActividadUsuario.query.filter(ActividadUsuario.user_id == uid, ActividadUsuario.tipo == 'DENEGADO',
+                                              ActividadUsuario.fecha >= ahora - timedelta(minutes=30)).count()
+            if n >= cfg['umbral_denegados']:
+                _crear_alerta(uid, 'SIN_PERMISO', 'MEDIA', 'Intentos de entrar a páginas sin permiso',
+                              f'{n} intentos en 30 min (el último: {_nombre_pagina(ep)[1]})',
+                              clave=ahora.strftime('%Y-%m-%d %H'))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("No se pudo registrar la actividad")
+    return resp
+
+
+def _sumar_hora(user_id, ahora, activo, abierto):
+    """Suma tiempo al resumen por hora (mapa de calor). Si dos pestañas crean la fila a la vez, se reintenta."""
+    for _ in range(2):
+        fila = ActividadHora.query.filter_by(user_id=user_id, dia=ahora.date(), hora=ahora.hour).first()
+        if fila:
+            fila.seg_activo = (fila.seg_activo or 0) + activo
+            fila.seg_abierto = (fila.seg_abierto or 0) + abierto
+            return
+        try:
+            with db.session.begin_nested():
+                db.session.add(ActividadHora(user_id=user_id, dia=ahora.date(), hora=ahora.hour,
+                                             seg_activo=activo, seg_abierto=abierto))
+            return
+        except IntegrityError:
+            continue
+
+
+def _limpieza_actividad(ahora):
+    """Una vez al día: borra el detalle de más de 90 días (el resumen por hora queda 400 días)."""
+    cfg = SystemConfig.query.get('actividad_limpieza')
+    hoy = ahora.date().isoformat()
+    if cfg and cfg.value == hoy:
+        return
+    ActividadUsuario.query.filter(ActividadUsuario.fecha < ahora - timedelta(days=DIAS_DETALLE_ACTIVIDAD)).delete(synchronize_session=False)
+    ActividadHora.query.filter(ActividadHora.dia < ahora.date() - timedelta(days=400)).delete(synchronize_session=False)
+    AlertaSeguridad.query.filter(AlertaSeguridad.revisada.is_(True),
+                                 AlertaSeguridad.fecha < ahora - timedelta(days=365)).delete(synchronize_session=False)
+    if cfg:
+        cfg.value = hoy
+    else:
+        db.session.add(SystemConfig(key='actividad_limpieza', value=hoy, updated_by='Sistema'))
+
+
+@app.route('/api/actividad/pulso', methods=['POST'])
+def actividad_pulso():
+    """El navegador avisa cada minuto (y al salir de la página) cuánto tiempo estuvo activa/abierta la pestaña."""
+    uid = session.get('user_id')
+    if not uid:
+        return {'ok': False}, 401
+    datos = request.get_json(silent=True, force=True) or {}
+    vid = str(datos.get('v') or '')[:32]
+
+    def segundos(x):
+        try:
+            return max(0, min(300, int(float(x))))
+        except (TypeError, ValueError):
+            return 0
+    abierto = segundos(datos.get('abi'))
+    activo = min(segundos(datos.get('act')), abierto)
+    try:
+        _asegurar_control_usuarios()
+        fila = ActividadUsuario.query.filter_by(vista_id=vid, user_id=uid).first() if vid else None
+        if not fila:
+            return {'ok': False}
+        ahora = hora_peru()
+        fila.seg_activo = (fila.seg_activo or 0) + activo
+        fila.seg_abierto = (fila.seg_abierto or 0) + abierto
+        fila.ultimo_pulso = ahora
+        if activo or abierto:
+            _sumar_hora(uid, ahora, activo, abierto)
+        otra = _sesion_simultanea(uid, fila.sesion_id, fila.ip, fila.dispositivo, ahora)
+        if otra:
+            _crear_alerta(uid, 'CUENTA_COMPARTIDA', 'ALTA', 'Cuenta usada en dos dispositivos a la vez',
+                          f'{fila.dispositivo or "-"} (IP {fila.ip or "-"}) y {otra.dispositivo or "-"} (IP {otra.ip or "-"}) al mismo tiempo',
+                          clave=ahora.date().isoformat())
+        _limpieza_actividad(ahora)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("No se pudo guardar el pulso de actividad")
+        return {'ok': False}
+    return {'ok': True}
+
+
+# ---------- Cálculos para la Ficha y el panel de Actividad ----------
+EVENTOS_FIN_SESION = {'LOGOUT': 'Cerró sesión', 'INACTIVIDAD': 'Cierre por inactividad', 'SESION_CERRADA': 'Sesión terminada',
+                      'CIERRE_REMOTO': 'Cerrada por Gerencia'}
+TEXTO_ACCESO = {'LOGIN_OK': ('bi-box-arrow-in-right', 'text-success', 'Ingresó al sistema'),
+                'LOGIN_FALLIDO': ('bi-x-octagon', 'text-warning', 'Contraseña incorrecta'),
+                'LOGIN_RECHAZADO': ('bi-slash-circle', 'text-danger', 'Ingreso rechazado'),
+                'BLOQUEO_TEMPORAL': ('bi-hourglass-split', 'text-danger', 'Bloqueo 15 min por contraseñas'),
+                'LOGOUT': ('bi-box-arrow-right', 'text-secondary', 'Cerró sesión'),
+                'INACTIVIDAD': ('bi-moon', 'text-secondary', 'Sesión cerrada por inactividad'),
+                'SESION_CERRADA': ('bi-door-closed', 'text-dark', 'Sesión terminada'),
+                'CIERRE_REMOTO': ('bi-door-closed', 'text-dark', 'Sesión cerrada por Gerencia')}
+
+
+def _rango_dia(dia):
+    ini = datetime.combine(dia, datetime.min.time())
+    return ini, ini + timedelta(days=1)
+
+
+def _sesiones_de(user_id, ini, fin, ahora):
+    accesos = AccesoUsuario.query.filter(AccesoUsuario.user_id == user_id, AccesoUsuario.fecha >= ini,
+                                         AccesoUsuario.fecha < fin, AccesoUsuario.sesion_id.isnot(None)).all()
+    paginas = ActividadUsuario.query.filter(ActividadUsuario.user_id == user_id, ActividadUsuario.fecha >= ini,
+                                            ActividadUsuario.fecha < fin, ActividadUsuario.tipo == 'PAGINA',
+                                            ActividadUsuario.sesion_id.isnot(None)).all()
+    ses = {}
+
+    def base(sid):
+        return ses.setdefault(sid, {'sid': sid, 'inicio': None, 'fin': None, 'ultimo': None, 'cierre': None,
+                                    'activo': 0, 'abierto': 0, 'paginas': 0, 'dispositivo': None, 'ip': None})
+    for a in accesos:
+        s = base(a.sesion_id)
+        if a.evento == 'LOGIN_OK':
+            s['inicio'] = a.fecha
+            s['dispositivo'] = f'{a.dispositivo or ""} · {a.navegador or ""}'.strip(' ·')
+            s['ip'] = a.ip
+        elif a.evento in EVENTOS_FIN_SESION:
+            s['fin'] = a.fecha
+            s['cierre'] = EVENTOS_FIN_SESION[a.evento]
+    for p in paginas:
+        s = base(p.sesion_id)
+        s['inicio'] = min(x for x in [s['inicio'], p.fecha] if x)
+        fin_p = p.ultimo_pulso or p.fecha
+        s['ultimo'] = max(x for x in [s['ultimo'], fin_p] if x)
+        s['activo'] += p.seg_activo or 0
+        s['abierto'] += p.seg_abierto or 0
+        s['paginas'] += 1
+        if not s['dispositivo']:
+            s['dispositivo'] = p.dispositivo
+            s['ip'] = p.ip
+    lista = []
+    for s in ses.values():
+        if not s['inicio']:
+            continue
+        fin_real = s['fin'] or s['ultimo'] or s['inicio']
+        s['en_curso'] = not s['fin'] and bool(s['ultimo']) and s['ultimo'] >= ahora - timedelta(minutes=5)
+        if not s['fin'] and not s['en_curso']:
+            s['cierre'] = 'Sin cierre (cerró la pestaña o se quedó sin actividad)'
+        s['duracion'] = max(0, int((fin_real - s['inicio']).total_seconds()))
+        s['activo'] = min(s['activo'], s['duracion']) if s['duracion'] else s['activo']
+        s['fin_real'] = fin_real
+        lista.append(s)
+    return sorted(lista, key=lambda s: s['inicio'])
+
+
+def _productividad(u, ini, fin, horas_activas):
+    items = []
+    if u.role == 'auditor_stock':
+        items.append(('Conteos registrados', RegistroAuditoria.query.filter(
+            RegistroAuditoria.trabajador_id == u.id, RegistroAuditoria.fecha_registro >= ini,
+            RegistroAuditoria.fecha_registro < fin).count()))
+    elif u.role in ('almacen', 'almacen_visor'):
+        n = sum(M.query.filter(M.user_id == u.id, M.fecha >= ini, M.fecha < fin).count()
+                for M in (ProductMovement, ProductMovementImportBolts))
+        items.append(('Movimientos de Kardex', n))
+    elif u.role == 'vendedor':
+        q = Order.query.filter(Order.vendedor_id == u.id, Order.fecha >= ini, Order.fecha < fin)
+        items.append(('Cotizaciones / pedidos', q.count()))
+        items.append(('Ventas concretadas', q.filter(Order.estado.in_(VENTAS_CONCRETADAS)).count()))
+    else:
+        items.append(('Acciones registradas', AuditLog.query.filter(
+            AuditLog.user_id == u.id, AuditLog.fecha >= ini, AuditLog.fecha < fin).count()))
+    return [{'etq': e, 'valor': v, 'por_hora': (round(v / horas_activas, 1) if horas_activas >= 0.1 else None)}
+            for e, v in items]
+
+
+def _linea_de_tiempo(u, dia, ahora):
+    ini, fin = _rango_dia(dia)
+    items = []
+
+    def add(fecha, icono, color, titulo, detalle='', extra='', grupo='accion'):
+        if fecha:
+            items.append({'fecha': fecha, 'icono': icono, 'color': color, 'titulo': titulo, 'detalle': detalle,
+                          'extra': extra, 'grupo': grupo})
+    for a in AccesoUsuario.query.filter(AccesoUsuario.user_id == u.id, AccesoUsuario.fecha >= ini, AccesoUsuario.fecha < fin).all():
+        ic, col, txt = TEXTO_ACCESO.get(a.evento, ('bi-info-circle', 'text-muted', a.evento))
+        add(a.fecha, ic, col, txt, f'{a.dispositivo or ""} {a.navegador or ""} · IP {a.ip or "-"}'.strip(), a.detalle or '', 'acceso')
+    for x in ActividadUsuario.query.filter(ActividadUsuario.user_id == u.id, ActividadUsuario.fecha >= ini,
+                                           ActividadUsuario.fecha < fin).all():
+        modulo, nombre = _nombre_pagina(x.endpoint)
+        if x.tipo == 'PAGINA':
+            extra = (f'activo {_duracion_txt(x.seg_activo)} · abierto {_duracion_txt(x.seg_abierto)}'
+                     if (x.seg_abierto or x.seg_activo) else 'sin tiempo registrado')
+            add(x.fecha, 'bi-window', 'text-primary', nombre, x.detalle or '', extra, 'pagina')
+        elif x.tipo == 'EXPORTACION':
+            add(x.fecha, 'bi-file-earmark-arrow-down-fill', 'text-danger', f'Exportó: {nombre}', x.detalle or '', '', 'descarga')
+        elif x.tipo == 'DESCARGA':
+            add(x.fecha, 'bi-download', 'text-info', f'Descargó / vio: {nombre}', x.detalle or '', '', 'descarga')
+        elif x.tipo == 'DENEGADO':
+            add(x.fecha, 'bi-shield-x', 'text-danger', f'Intentó entrar sin permiso: {nombre}', x.ruta or '', '', 'denegado')
+    for l in AuditLog.query.filter(AuditLog.user_id == u.id, AuditLog.fecha >= ini, AuditLog.fecha < fin).all():
+        add(l.fecha, l.icono or 'bi-journal-text', l.color or 'text-dark', l.accion, '', '', 'accion')
+    for inv, M in (('Anclajes', ProductMovement), ('Import Bolts', ProductMovementImportBolts)):
+        for m in M.query.filter(M.user_id == u.id, M.fecha >= ini, M.fecha < fin).all():
+            add(m.fecha, 'bi-arrow-left-right', 'text-success' if m.tipo == 'ENTRADA' else 'text-danger',
+                f"Kardex {inv}: {'+' if m.tipo == 'ENTRADA' else '-'}{m.cantidad} {m.product.sku if m.product else ''}",
+                (m.motivo or '') + (f' / {m.referencia}' if m.referencia else ''), '', 'accion')
+    for o in Order.query.filter(Order.vendedor_id == u.id, Order.fecha >= ini, Order.fecha < fin).all():
+        add(o.fecha, 'bi-receipt', 'text-primary', f'Pedido / cotización #{o.id}',
+            (o.cliente.nombre if getattr(o, 'cliente', None) else ''), o.estado or '', 'accion')
+    for r in RegistroAuditoria.query.filter(RegistroAuditoria.trabajador_id == u.id, RegistroAuditoria.fecha_registro >= ini,
+                                            RegistroAuditoria.fecha_registro < fin).all():
+        add(r.fecha_registro, 'bi-clipboard2-check', 'text-info', f'Conteo #{r.id}: {r.sku_snapshot or ""}',
+            f'{r.cantidad_total} {r.unidad_medida or ""}'.strip(), r.estado_registro or '', 'accion')
+    for al in AlertaSeguridad.query.filter(AlertaSeguridad.user_id == u.id, AlertaSeguridad.fecha >= ini, AlertaSeguridad.fecha < fin).all():
+        add(al.fecha, 'bi-exclamation-triangle-fill', 'text-danger', f'Alerta: {al.titulo}', al.detalle or '', '', 'alerta')
+    # Lo mismo repetido seguido (ej. 5 intentos sin permiso, 3 exportaciones) se muestra en una sola línea "×5"
+    agrupados = []
+    for i in sorted(items, key=lambda i: i['fecha']):
+        prev = agrupados[-1] if agrupados else None
+        if (prev and i['grupo'] in ('descarga', 'denegado') and prev['grupo'] == i['grupo'] and prev['titulo'] == i['titulo']
+                and prev['detalle'] == i['detalle'] and (i['fecha'] - prev.get('hasta', prev['fecha'])) <= timedelta(minutes=10)):
+            prev['veces'] = prev.get('veces', 1) + 1
+            prev['hasta'] = i['fecha']
+            continue
+        agrupados.append(i)
+    return agrupados
+
+
+def _resumen_periodo(u, ini, fin):
+    """Tiempo activo/abierto, sesiones, páginas, módulos más usados y conteos del período [ini, fin)."""
+    horas = ActividadHora.query.filter(ActividadHora.user_id == u.id, ActividadHora.dia >= ini.date(),
+                                       ActividadHora.dia < fin.date()).all()
+    por_dia = {}
+    for h in horas:
+        d = por_dia.setdefault(h.dia, {'activo': 0, 'abierto': 0})
+        d['activo'] += h.seg_activo or 0
+        d['abierto'] += h.seg_abierto or 0
+    acts = ActividadUsuario.query.filter(ActividadUsuario.user_id == u.id, ActividadUsuario.fecha >= ini,
+                                         ActividadUsuario.fecha < fin).all()
+    paginas = [a for a in acts if a.tipo == 'PAGINA']
+    modulos = {}
+    for p in paginas:
+        modulo, nombre = _nombre_pagina(p.endpoint)
+        m = modulos.setdefault(modulo, {'modulo': modulo, 'activo': 0, 'visitas': 0, 'paginas': {}})
+        m['activo'] += p.seg_activo or 0
+        m['visitas'] += 1
+        m['paginas'][nombre] = m['paginas'].get(nombre, 0) + (p.seg_activo or 0)
+    lista_mod = sorted(modulos.values(), key=lambda m: (-m['activo'], -m['visitas']))
+    max_mod = max([m['activo'] for m in lista_mod] + [1])
+    for m in lista_mod:
+        m['pct'] = round(100 * m['activo'] / max_mod)
+        m['top'] = sorted(m['paginas'].items(), key=lambda kv: -kv[1])[:3]
+    activo = sum(d['activo'] for d in por_dia.values())
+    abierto = sum(d['abierto'] for d in por_dia.values())
+    horas_activas = activo / 3600
+    dias = []
+    d = ini.date()
+    while d < fin.date():
+        v = por_dia.get(d, {'activo': 0, 'abierto': 0})
+        dias.append({'dia': d, 'nombre': DIAS_SEMANA[d.weekday()], **v})
+        d += timedelta(days=1)
+    max_dia = max([x['abierto'] for x in dias] + [1])
+    for x in dias:
+        x['pct_abierto'] = round(100 * x['abierto'] / max_dia)
+        x['pct_activo'] = round(100 * x['activo'] / max_dia)
+    return {
+        'activo': activo, 'abierto': abierto, 'pct_activo': round(100 * activo / abierto) if abierto else 0,
+        'dias_con_uso': sum(1 for x in dias if x['abierto'] or x['activo']),
+        'sesiones': len({p.sesion_id for p in paginas if p.sesion_id}), 'paginas': len(paginas),
+        'exportaciones': sum(1 for a in acts if a.tipo == 'EXPORTACION'),
+        'descargas': sum(1 for a in acts if a.tipo == 'DESCARGA'),
+        'denegados': sum(1 for a in acts if a.tipo == 'DENEGADO'),
+        'acciones': AuditLog.query.filter(AuditLog.user_id == u.id, AuditLog.fecha >= ini, AuditLog.fecha < fin).count(),
+        'modulos': lista_mod, 'dias': dias,
+        'productividad': _productividad(u, ini, fin, horas_activas), 'horas_activas': horas_activas,
+    }
+
+
+def _mapa_calor(user_id, fin_dia, semanas=4):
+    """Minutos activos por día de la semana × hora, en las últimas N semanas."""
+    desde = fin_dia - timedelta(days=7 * semanas - 1)
+    matriz = [[0] * 24 for _ in range(7)]
+    for h in ActividadHora.query.filter(ActividadHora.user_id == user_id, ActividadHora.dia >= desde,
+                                        ActividadHora.dia <= fin_dia).all():
+        if 0 <= (h.hora or 0) < 24:
+            matriz[h.dia.weekday()][h.hora] += (h.seg_activo or 0)
+    maximo = max(max(f) for f in matriz) or 1
+    # 0 = sin uso; 1..6 = escala de un solo color (claro -> oscuro)
+    celdas = [[{'seg': s, 'nivel': 0 if not s else min(6, 1 + int(5 * s / maximo))} for s in fila] for fila in matriz]
+    horas_con_uso = [h for h in range(24) if any(matriz[d][h] for d in range(7))]
+    h_ini = min(horas_con_uso + [7]) if horas_con_uso else 7
+    h_fin = max(horas_con_uso + [19]) if horas_con_uso else 19
+    return {'celdas': celdas, 'desde': desde, 'hasta': fin_dia, 'semanas': semanas, 'horas': list(range(h_ini, h_fin + 1)),
+            'dias': DIAS_SEMANA, 'total': sum(sum(f) for f in matriz)}
+
+
+
+# ---------- Panel "Actividad y alertas" (solo Gerencia) ----------
+def _fecha_param(nombre, defecto):
+    try:
+        return datetime.strptime(request.args.get(nombre, ''), '%Y-%m-%d').date()
+    except ValueError:
+        return defecto
+
+
+@app.route('/usuarios/actividad')
+def actividad_usuarios():
+    if session.get('role') != 'admin':
+        return "Acceso denegado", 403
+    _asegurar_control_usuarios()
+    ahora = hora_peru()
+    hoy = ahora.date()
+    tab = request.args.get('tab', 'alertas')
+    ver = request.args.get('ver', 'pendientes')
+    q = AlertaSeguridad.query
+    if ver == 'pendientes':
+        q = q.filter(AlertaSeguridad.revisada.is_(False))
+    alertas = q.order_by(AlertaSeguridad.fecha.desc()).limit(300).all()
+    pendientes = AlertaSeguridad.query.filter(AlertaSeguridad.revisada.is_(False)).count()
+
+    activos = [u for u in User.query.order_by(User.nombre_completo).all() if not u.desactivado]
+    roles = sorted({u.role for u in activos}, key=lambda r: ROLE_LABELS.get(r, r))
+    rol = request.args.get('rol') or ('vendedor' if 'vendedor' in roles else (roles[0] if roles else ''))
+    hasta = _fecha_param('hasta', hoy)
+    desde = _fecha_param('desde', hasta - timedelta(days=6))
+    if desde > hasta:
+        desde, hasta = hasta, desde
+    desde = max(desde, hasta - timedelta(days=DIAS_DETALLE_ACTIVIDAD - 1))
+    ini, fin = _rango_dia(desde)[0], _rango_dia(hasta)[1]
+    filas = []
+    for u in [x for x in activos if x.role == rol]:
+        r = _resumen_periodo(u, ini, fin)
+        n_alertas = AlertaSeguridad.query.filter(AlertaSeguridad.user_id == u.id, AlertaSeguridad.fecha >= ini,
+                                                 AlertaSeguridad.fecha < fin).count()
+        filas.append({'u': u, 'r': r, 'alertas': n_alertas})
+    filas.sort(key=lambda f: -f['r']['activo'])
+    # Lo mejor de cada columna se resalta (solo si hay con quién comparar)
+    mejor = {}
+    if len(filas) > 1:
+        mejor['activo'] = max(f['r']['activo'] for f in filas)
+        n_prod = len(filas[0]['r']['productividad'])
+        for i in range(n_prod):
+            valores = [f['r']['productividad'][i]['por_hora'] for f in filas if f['r']['productividad'][i]['por_hora'] is not None]
+            mejor[f'prod{i}'] = max(valores) if valores else None
+    cfg = _config_alertas()
+    return render_template('usuarios_actividad.html', tab=tab, ver=ver, alertas=alertas, pendientes=pendientes,
+                           roles=roles, rol=rol, role_labels=ROLE_LABELS, desde=desde, hasta=hasta, filas=filas,
+                           mejor=mejor, cfg=cfg, dias_semana=DIAS_SEMANA, niveles=NIVELES_ALERTA, ahora=ahora,
+                           dias_detalle=DIAS_DETALLE_ACTIVIDAD)
+
+
+@app.route('/usuarios/actividad/alertas/revisar', methods=['POST'])
+def actividad_revisar_alertas():
+    """Marca como revisada una alerta (alerta_id) o todas las pendientes (todas=1)."""
+    if session.get('role') != 'admin':
+        return {'status': 'error', 'msg': 'No autorizado'}, 403
+    ahora = hora_peru()
+    if request.form.get('todas') == '1':
+        alertas = AlertaSeguridad.query.filter(AlertaSeguridad.revisada.is_(False)).all()
+    else:
+        alerta = AlertaSeguridad.query.get(request.form.get('alerta_id', type=int) or 0)
+        alertas = [alerta] if alerta else []
+    for a in alertas:
+        a.revisada = True
+        a.revisada_por = session.get('nombre', '')
+        a.fecha_revision = ahora
+    db.session.commit()
+    return {'status': 'success', 'revisadas': len(alertas),
+            'pendientes': AlertaSeguridad.query.filter(AlertaSeguridad.revisada.is_(False)).count()}
+
+
+@app.route('/usuarios/actividad/config', methods=['POST'])
+def actividad_config_alertas():
+    if session.get('role') != 'admin':
+        return "Acceso denegado", 403
+    f = request.form
+    errores = []
+    nuevos = {}
+    for k in ('seg_horario_inicio', 'seg_horario_fin'):
+        try:
+            nuevos[k] = datetime.strptime((f.get(k) or '').strip(), '%H:%M').strftime('%H:%M')
+        except ValueError:
+            errores.append('Hora no válida')
+    dias = sorted({int(x) for x in f.getlist('seg_dias') if x.isdigit() and int(x) < 7})
+    if not dias:
+        errores.append('Marca al menos un día laboral')
+    nuevos['seg_dias'] = ','.join(str(d) for d in dias)
+    for k in ('seg_umbral_export', 'seg_umbral_denegados'):
+        v = (f.get(k) or '').strip()
+        if not v.isdigit() or not (1 <= int(v) <= 100):
+            errores.append('Los límites deben ser números entre 1 y 100')
+        nuevos[k] = v
+    if errores:
+        flash('⛔ ' + '. '.join(dict.fromkeys(errores)) + '.')
+        return redirect(url_for('actividad_usuarios', tab='config'))
+    for k, v in nuevos.items():
+        cfg = SystemConfig.query.get(k)
+        if cfg:
+            cfg.value = v
+            cfg.updated_at = hora_peru()
+            cfg.updated_by = session.get('username', 'admin')
+        else:
+            db.session.add(SystemConfig(key=k, value=v, updated_by=session.get('username', 'admin')))
+    registrar_log('Cambió la configuración de alertas de seguridad', 'bi-shield-lock', 'text-info')
+    db.session.commit()
+    flash('✅ Configuración de alertas guardada.')
+    return redirect(url_for('actividad_usuarios', tab='config'))
 
 
 # 1. ACTUALIZAR CONTEXT PROCESSOR (Para la campana inteligente)
 @app.context_processor
 def inject_notifications():
-    if 'user_id' not in session: return dict(alertas_stock=0, historial=[], correcciones_pendientes=0, alertas_seguridad=0)
+    if 'user_id' not in session: return dict(alertas_stock=0, historial=[], correcciones_pendientes=0, alertas_seguridad=0, vista_id=None)
 
     # AHORA ES DINÁMICO: Compara stock_actual vs stock_minimo de cada producto
     try:
@@ -1946,13 +2679,12 @@ def inject_notifications():
     alertas_seguridad = 0
     if session.get('role') == 'admin':
         try:
-            alertas_seguridad = AccesoUsuario.query.filter(
-                AccesoUsuario.evento == 'BLOQUEO_TEMPORAL', AccesoUsuario.fecha >= hora_peru() - timedelta(hours=24)).count()
+            alertas_seguridad = AlertaSeguridad.query.filter(AlertaSeguridad.revisada.is_(False)).count()
         except Exception:
             alertas_seguridad = 0
 
     return dict(alertas_stock=count_stock_bajo, historial=historial, correcciones_pendientes=count_correcciones,
-                alertas_seguridad=alertas_seguridad)
+                alertas_seguridad=alertas_seguridad, vista_id=g.get('vista_id'))
 
 # 2. NUEVA RUTA: EXPORTAR A EXCEL
 # --- NUEVA RUTA: EXPORTAR A EXCEL (OPTIMIZADA PARA BAJO CONSUMO DE RAM) ---
@@ -3245,8 +3977,23 @@ def ficha_usuario(user_id):
     ventas = Order.query.filter_by(vendedor_id=u.id).order_by(Order.fecha.desc()).limit(50).all()
     ultimo_ok = next((a for a in accesos if a.evento == 'LOGIN_OK'), None)
     fallidos_7d = sum(1 for a in accesos if a.evento == 'LOGIN_FALLIDO' and a.fecha and a.fecha >= ahora - timedelta(days=7))
+    # --- Actividad dentro del sistema: día elegido, su semana (7 días hasta ese día) y 4 semanas de horarios ---
+    dia = _fecha_param('dia', ahora.date())
+    if dia > ahora.date():
+        dia = ahora.date()
+    ini_dia, fin_dia = _rango_dia(dia)
+    sesiones = _sesiones_de(u.id, ini_dia, fin_dia, ahora)
+    linea = _linea_de_tiempo(u, dia, ahora)
+    resumen_dia = _resumen_periodo(u, ini_dia, fin_dia)
+    semana = _resumen_periodo(u, _rango_dia(dia - timedelta(days=6))[0], fin_dia)
+    calor = _mapa_calor(u.id, dia)
+    alertas_u = AlertaSeguridad.query.filter_by(user_id=u.id).order_by(AlertaSeguridad.fecha.desc()).limit(30).all()
     return render_template('usuario_ficha.html', u=u, accesos=accesos, acciones=acciones, kardex=kardex, ventas=ventas,
                            ultimo_ok=ultimo_ok, fallidos_7d=fallidos_7d, ahora=ahora,
+                           dia=dia, sesiones=sesiones, linea=linea, resumen_dia=resumen_dia, semana=semana, calor=calor,
+                           alertas_u=alertas_u, niveles=NIVELES_ALERTA, role_labels=ROLE_LABELS,
+                           tab=request.args.get('tab', 'actividad'), dia_anterior=dia - timedelta(days=1),
+                           dia_siguiente=(dia + timedelta(days=1)) if dia < ahora.date() else None,
                            en_linea=bool(u.ultima_actividad and u.ultima_actividad >= ahora - timedelta(minutes=MINUTOS_EN_LINEA)),
                            bloqueo_temporal=bool(u.bloqueo_temporal_hasta and u.bloqueo_temporal_hasta > ahora))
 
@@ -13478,6 +14225,9 @@ def _es_superadmin():
 # campo_personalizado/opcion, system_config) NO están aquí a propósito: no se borran.
 TABLAS_RESET_ORDEN = [
     ('acceso_usuario', AccesoUsuario),
+    ('actividad_usuario', ActividadUsuario),
+    ('actividad_hora', ActividadHora),
+    ('alerta_seguridad', AlertaSeguridad),
     ('movimiento_documento', MovimientoDocumento),   # hija de los dos kardex y de proceso_oc
     ('correccion_auditoria_foto', CorreccionAuditoriaFoto),   # hijas de correccion_auditoria
     ('correccion_auditoria', CorreccionAuditoria),             # hija de registro_auditoria
@@ -13547,6 +14297,9 @@ TABLAS_TODAS_ORDEN = [
     ('correccion_auditoria', CorreccionAuditoria),
     ('correccion_auditoria_foto', CorreccionAuditoriaFoto),
     ('acceso_usuario', AccesoUsuario),
+    ('actividad_usuario', ActividadUsuario),
+    ('actividad_hora', ActividadHora),
+    ('alerta_seguridad', AlertaSeguridad),
 ]
 
 

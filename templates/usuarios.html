@@ -44,9 +44,15 @@
         <input type="text" id="filtroTabla" class="form-control border-start-0" placeholder="Buscar por nombre o usuario..." onkeyup="filtrarTabla()">
     </div>
 
-    <button class="btn btn-primary shadow-sm fw-bold px-4 w-100 w-md-auto py-2 py-md-1" onclick="abrirModalCrear()">
-        <i class="bi bi-person-plus-fill me-2"></i> Nuevo Usuario
-    </button>
+    <div class="d-flex flex-column flex-sm-row gap-2">
+        <a href="{{ url_for('actividad_usuarios') }}" class="btn btn-outline-primary shadow-sm fw-bold px-3 py-2 py-md-1">
+            <i class="bi bi-activity me-1"></i> Actividad y alertas
+            {% if alertas_seguridad %}<span class="badge rounded-pill bg-danger ms-1">{{ alertas_seguridad }}</span>{% endif %}
+        </a>
+        <button class="btn btn-primary shadow-sm fw-bold px-4 py-2 py-md-1" onclick="abrirModalCrear()">
+            <i class="bi bi-person-plus-fill me-2"></i> Nuevo Usuario
+        </button>
+    </div>
 </div>
 
 <!-- TABLA PRINCIPAL RESPONSIVE -->

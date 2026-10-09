@@ -60,6 +60,62 @@ class AccesoUsuario(db.Model):
     navegador = db.Column(db.String(80))
     user_agent = db.Column(db.String(400))
     detalle = db.Column(db.String(255))
+    sesion_id = db.Column(db.String(32), nullable=True, index=True)   # une el ingreso con su salida y su actividad
+
+    usuario = db.relationship('User', foreign_keys=[user_id])
+
+
+class ActividadUsuario(db.Model):
+    """Qué hizo cada usuario DENTRO del sistema: páginas que abrió (con sus filtros/búsquedas y el tiempo
+    activo/abierto que reporta el navegador), exportaciones y descargas, e intentos de entrar sin permiso.
+    Solo actividad en el sistema: no se registra nada fuera de él. Se guarda 90 días (luego queda el resumen por hora)."""
+    __tablename__ = 'actividad_usuario'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    sesion_id = db.Column(db.String(32), nullable=True, index=True)
+    vista_id = db.Column(db.String(32), nullable=True, unique=True)   # solo PAGINA: lo usan los pulsos del navegador
+    tipo = db.Column(db.String(12), nullable=False, default='PAGINA')   # PAGINA / EXPORTACION / DESCARGA / DENEGADO
+    endpoint = db.Column(db.String(80))
+    ruta = db.Column(db.String(255))
+    detalle = db.Column(db.String(255))          # filtros / búsqueda usados, nombre del archivo, etc.
+    fecha = db.Column(db.DateTime, default=hora_peru, index=True)
+    ultimo_pulso = db.Column(db.DateTime, nullable=True)
+    seg_activo = db.Column(db.Integer, default=0)    # pestaña visible y con mouse/teclado/toque
+    seg_abierto = db.Column(db.Integer, default=0)   # pestaña abierta (aunque esté quieta o en segundo plano)
+    dispositivo = db.Column(db.String(20))
+    ip = db.Column(db.String(64))
+
+    usuario = db.relationship('User', foreign_keys=[user_id])
+
+
+class ActividadHora(db.Model):
+    """Resumen por usuario, día y hora del tiempo activo/abierto (para el mapa de calor y los resúmenes)."""
+    __tablename__ = 'actividad_hora'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    dia = db.Column(db.Date, nullable=False, index=True)
+    hora = db.Column(db.Integer, nullable=False)     # 0..23 (hora de Perú)
+    seg_activo = db.Column(db.Integer, default=0)
+    seg_abierto = db.Column(db.Integer, default=0)
+
+    __table_args__ = (db.UniqueConstraint('user_id', 'dia', 'hora', name='uq_actividad_hora'),)
+
+
+class AlertaSeguridad(db.Model):
+    """Alertas para Gerencia: ingreso fuera de horario, dispositivo/IP nuevos, exportaciones masivas,
+    intentos sin permiso, cuenta usada en dos dispositivos a la vez, bloqueos por contraseña."""
+    __tablename__ = 'alerta_seguridad'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True, index=True)
+    tipo = db.Column(db.String(30), nullable=False)
+    nivel = db.Column(db.String(10), nullable=False, default='MEDIA')   # ALTA / MEDIA / BAJA
+    titulo = db.Column(db.String(150), nullable=False)
+    detalle = db.Column(db.String(255))
+    clave = db.Column(db.String(120))            # para no repetir la misma alerta varias veces
+    fecha = db.Column(db.DateTime, default=hora_peru, index=True)
+    revisada = db.Column(db.Boolean, default=False, index=True)
+    revisada_por = db.Column(db.String(100))
+    fecha_revision = db.Column(db.DateTime, nullable=True)
 
     usuario = db.relationship('User', foreign_keys=[user_id])
 

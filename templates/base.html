@@ -209,8 +209,11 @@
                 {% if session.get('role') == 'admin' %}
                 <a href="{{ url_for('gestion_usuarios') }}" class="nav-link {{ 'active' if request.endpoint in ['gestion_usuarios', 'ficha_usuario'] }}">
                     <i class="bi bi-people me-2"></i> <span>Usuarios</span>
+                </a>
+                <a href="{{ url_for('actividad_usuarios') }}" class="nav-link {{ 'active' if request.endpoint == 'actividad_usuarios' }}">
+                    <i class="bi bi-activity me-2"></i> <span>Actividad y alertas</span>
                     {% if alertas_seguridad %}
-                    <span class="badge rounded-pill bg-danger ms-1" title="Usuarios bloqueados por contraseñas incorrectas en las últimas 24 h">{{ alertas_seguridad }}</span>
+                    <span class="badge rounded-pill bg-danger ms-1" title="Alertas de seguridad sin revisar">{{ alertas_seguridad }}</span>
                     {% endif %}
                 </a>
                 {% endif %}
@@ -409,5 +412,45 @@
             }
         });
     </script>
+    {% if session.get('user_id') and vista_id %}
+    <script>
+    /* Tiempo en ESTA página del sistema: ACTIVO (pestaña visible y con mouse/teclado/toque en el último minuto)
+       y ABIERTO (pestaña abierta, aunque esté quieta o en segundo plano). Se envía cada minuto y al salir.
+       Solo mide el uso de este sistema; no ve nada fuera de él. */
+    (function () {
+        const VISTA = {{ vista_id|tojson }};
+        const URL_PULSO = {{ url_for('actividad_pulso')|tojson }};
+        const INACTIVO_MS = 60000, MAX_PASO_MS = 120000, CADA_MS = 60000;
+        let ultimaInteraccion = Date.now(), ultimoTick = Date.now(), act = 0, abi = 0, hubo = false, detenido = false;
+        const marcar = () => { ultimaInteraccion = Date.now(); hubo = true; };
+        ['mousemove', 'mousedown', 'keydown', 'wheel', 'scroll', 'touchstart', 'input'].forEach(
+            ev => window.addEventListener(ev, marcar, { passive: true, capture: true }));
+        function tick() {
+            const ahora = Date.now();
+            const paso = Math.min(Math.max(ahora - ultimoTick, 0), MAX_PASO_MS);  // celular dormido: no suma horas
+            ultimoTick = ahora;
+            abi += paso;
+            if (document.visibilityState === 'visible' && ahora - ultimaInteraccion < INACTIVO_MS) act += paso;
+        }
+        function enviar(alSalir) {
+            if (detenido) return;
+            tick();
+            const a = Math.floor(act / 1000), b = Math.floor(abi / 1000);
+            if (!b) return;
+            act -= a * 1000; abi -= b * 1000;
+            const cuerpo = JSON.stringify({ v: VISTA, act: a, abi: b });
+            const url = URL_PULSO + (hubo ? '?a=1' : '');
+            hubo = false;
+            if (alSalir && navigator.sendBeacon) { navigator.sendBeacon(url, new Blob([cuerpo], { type: 'text/plain' })); return; }
+            fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: cuerpo, keepalive: true, credentials: 'same-origin' })
+                .then(r => { if (r.status === 401) detenido = true; }).catch(() => {});
+        }
+        setInterval(tick, 5000);
+        setInterval(() => enviar(false), CADA_MS);
+        document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') enviar(true); else tick(); });
+        window.addEventListener('pagehide', () => enviar(true));
+    })();
+    </script>
+    {% endif %}
 </body>
 </html>
