@@ -4,37 +4,61 @@
 {% block content %}
 {% include '_insumos_nav.html' %}
 <style>
-    .cfg-tabs .nav-link { color: #495057 !important; background: #f1f3f5; border: 1px solid #dee2e6; margin-right: 4px; font-weight: 500; }
+    .cfg-tabs { flex-wrap: wrap; }
+    .cfg-tabs .nav-link { color: #495057 !important; background: #f1f3f5; border: 1px solid #dee2e6; margin: 0 4px 4px 0; font-weight: 500; font-size: .85rem; }
     .cfg-tabs .nav-link.active { color: #fff !important; background: var(--theme-primary, #0d6efd); border-color: var(--theme-primary, #0d6efd); }
+    .cfg-tabs .nav-link.peligro { color: #b91c1c !important; background: #fef2f2; border-color: #fecaca; }
+    .cfg-tabs .nav-link.peligro.active { color: #fff !important; background: #dc2626; border-color: #dc2626; }
+    @media (max-width: 767.98px) {
+        .cfg-tabs { flex-wrap: nowrap !important; overflow-x: auto; overflow-y: hidden; padding-bottom: 4px; scrollbar-width: thin; }
+        .cfg-tabs .nav-item { flex: 0 0 auto; }
+        .cfg-tabs .nav-link { white-space: nowrap; padding: 6px 10px; font-size: .8rem; }
+    }
+    .acciones { white-space: nowrap; text-align: right; }
+    .acciones .btn { padding: 1px 7px; }
+    .jefe-btn { border: 1px solid #e2e8f0; background: #fff; border-radius: 20px; font-size: .72rem; font-weight: 700; padding: 1px 9px; color: #94a3b8; }
+    .jefe-btn.si { background: #ecfdf5; border-color: #86efac; color: #15803d; }
+    .uso { font-size: .7rem; color: #64748b; }
+    .zona-peligro { border: 2px solid #fecaca; border-radius: 12px; background: #fff; }
+    .zona-peligro .opc { border: 1px solid #e2e8f0; border-radius: 10px; padding: 8px 10px; margin-bottom: 8px; }
+    .zona-peligro .opc.fija { background: #fef2f2; border-color: #fecaca; }
 </style>
-<ul class="nav nav-tabs cfg-tabs mb-3 flex-wrap border-0">
+<ul class="nav nav-tabs cfg-tabs mb-3 border-0" id="cfgTabs">
     <li class="nav-item"><button class="nav-link {{ 'active' if tab == 'trabajadores' }}" data-bs-toggle="tab" data-bs-target="#c-trab"><i class="bi bi-people"></i> Trabajadores</button></li>
     <li class="nav-item"><button class="nav-link {{ 'active' if tab == 'areas' }}" data-bs-toggle="tab" data-bs-target="#c-areas"><i class="bi bi-diagram-2"></i> Áreas</button></li>
+    <li class="nav-item"><button class="nav-link {{ 'active' if tab == 'proveedores' }}" data-bs-toggle="tab" data-bs-target="#c-prov"><i class="bi bi-building"></i> Proveedores</button></li>
     {% for t, nombre in nombres_catalogo.items() %}
     <li class="nav-item"><button class="nav-link {{ 'active' if tab == t }}" data-bs-toggle="tab" data-bs-target="#c-{{ t }}">{{ nombre }}</button></li>
     {% endfor %}
     <li class="nav-item"><button class="nav-link {{ 'active' if tab == 'formato' }}" data-bs-toggle="tab" data-bs-target="#c-formato"><i class="bi bi-file-earmark-pdf"></i> Formato PDF</button></li>
+    {% if es_admin %}
+    <li class="nav-item"><button class="nav-link peligro {{ 'active' if tab == 'vaciar' }}" data-bs-toggle="tab" data-bs-target="#c-vaciar"><i class="bi bi-trash3"></i> Vaciar datos del módulo</button></li>
+    {% endif %}
 </ul>
 <div class="tab-content">
     <!-- TRABAJADORES -->
     <div class="tab-pane fade {{ 'show active' if tab == 'trabajadores' }}" id="c-trab">
         <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
-            <span class="small text-muted">Personal que solicita, recibe o autoriza salidas (no necesita usuario del sistema). Los marcados como <b>jefe</b> pueden autorizar.</span>
+            <span class="small text-muted">Personal que solicita, recibe o autoriza salidas (no necesita usuario del sistema).
+                Toca <b>Jefe</b> para marcar/desmarcar quién puede <b>autorizar</b> salidas.</span>
             <button class="btn btn-primary btn-sm fw-bold" onclick="editarTrab(null)"><i class="bi bi-plus-lg"></i> Nuevo trabajador</button>
         </div>
         <div class="card border-0 shadow-sm"><div class="card-body p-0 table-responsive">
             <table class="table table-hover align-middle mb-0 small">
-                <thead class="table-light"><tr><th class="ps-3">Nombre</th><th>Código / DNI</th><th>Cargo</th><th>Área</th><th>Empresa</th><th class="text-center">Jefe</th><th class="text-center">Estado</th><th class="pe-3"></th></tr></thead>
+                <thead class="table-light"><tr><th class="ps-3">Nombre</th><th>Código / DNI</th><th>Cargo</th><th>Área</th><th>Empresa</th><th class="text-center">Jefe de área</th><th class="text-center">Estado</th><th class="pe-3"></th></tr></thead>
                 <tbody>
                 {% for t in trabajadores %}
                     <tr class="{{ 'opacity-50' if not t.activo }}">
-                        <td class="ps-3 fw-semibold">{{ t.nombre }}</td><td>{{ t.codigo or '-' }}</td><td>{{ t.cargo or '-' }}</td><td>{{ t.area.nombre if t.area else '-' }}</td>
+                        <td class="ps-3 fw-semibold">{{ t.nombre }}{% if uso_trab.get(t.id) %}<div class="uso">{{ uso_trab[t.id] }} salida(s)</div>{% endif %}</td>
+                        <td>{{ t.codigo or '-' }}</td><td>{{ t.cargo or '-' }}</td><td>{{ t.area.nombre if t.area else '-' }}</td>
                         <td>{{ {'AMBAS': 'Las dos', 'ANCLAJES': 'Anclajes', 'IMPORTBOLTS': 'Import Bolts'}.get(t.empresa or 'AMBAS') }}</td>
-                        <td class="text-center">{% if t.es_jefe %}<i class="bi bi-check-circle-fill text-success"></i>{% endif %}</td>
+                        <td class="text-center"><button type="button" class="jefe-btn {{ 'si' if t.es_jefe }}" title="Puede autorizar salidas"
+                                onclick="post('trabajador', {accion: 'jefe', id: {{ t.id }}})"><i class="bi {{ 'bi-check-circle-fill' if t.es_jefe else 'bi-circle' }}"></i> {{ 'Sí' if t.es_jefe else 'No' }}</button></td>
                         <td class="text-center">{% if t.activo %}<span class="badge bg-success">Activo</span>{% else %}<span class="badge bg-secondary">Inactivo</span>{% endif %}</td>
-                        <td class="pe-3 text-end text-nowrap">
-                            <button class="btn btn-sm btn-outline-primary py-0" onclick="editarTrab({{ {'id': t.id, 'nombre': t.nombre, 'codigo': t.codigo or '', 'cargo': t.cargo or '', 'area_id': t.area_id or '', 'empresa': t.empresa or 'AMBAS', 'es_jefe': t.es_jefe}|tojson|forceescape }})"><i class="bi bi-pencil"></i></button>
-                            <button class="btn btn-sm btn-outline-secondary py-0" onclick="post('trabajador', {accion: 'toggle', id: {{ t.id }}})"><i class="bi {{ 'bi-toggle-on' if t.activo else 'bi-toggle-off' }}"></i></button>
+                        <td class="pe-3 acciones">
+                            <button class="btn btn-sm btn-outline-primary" title="Editar" onclick="editarTrab({{ {'id': t.id, 'nombre': t.nombre, 'codigo': t.codigo or '', 'cargo': t.cargo or '', 'area_id': t.area_id or '', 'empresa': t.empresa or 'AMBAS', 'es_jefe': t.es_jefe}|tojson|forceescape }})"><i class="bi bi-pencil"></i></button>
+                            <button class="btn btn-sm btn-outline-secondary" title="{{ 'Desactivar' if t.activo else 'Activar' }}" onclick="post('trabajador', {accion: 'toggle', id: {{ t.id }}})"><i class="bi {{ 'bi-toggle-on' if t.activo else 'bi-toggle-off' }}"></i></button>
+                            <button class="btn btn-sm btn-outline-danger" title="Borrar" onclick="borrar('trabajador', {{ t.id }}, {{ t.nombre|tojson|forceescape }})"><i class="bi bi-trash"></i></button>
                         </td>
                     </tr>
                 {% else %}<tr><td colspan="8" class="text-center text-muted py-4">Todavía no hay trabajadores.</td></tr>{% endfor %}
@@ -44,32 +68,62 @@
     </div>
     <!-- ÁREAS -->
     <div class="tab-pane fade {{ 'show active' if tab == 'areas' }}" id="c-areas">
-        <div class="card border-0 shadow-sm" style="max-width: 640px;"><div class="card-body">
+        <div class="card border-0 shadow-sm" style="max-width: 680px;"><div class="card-body">
             <div class="input-group mb-3"><input id="nuevaArea" class="form-control text-uppercase" placeholder="Nueva área (ej. MANTENIMIENTO)" onkeydown="if(event.key==='Enter'){event.preventDefault(); post('area', {nombre: this.value});}">
                 <button class="btn btn-primary" onclick="post('area', {nombre: document.getElementById('nuevaArea').value})"><i class="bi bi-plus-lg"></i> Agregar</button></div>
             <table class="table table-sm align-middle mb-0 small"><tbody>
             {% for a in areas %}
-                <tr class="{{ 'opacity-50' if not a.activo }}"><td class="fw-semibold">{{ a.nombre }}</td>
+                <tr class="{{ 'opacity-50' if not a.activo }}"><td class="fw-semibold">{{ a.nombre }}{% if uso_area.get(a.id) %}<div class="uso">{{ uso_area[a.id] }} salida(s)</div>{% endif %}</td>
                     <td class="text-center">{% if a.activo %}<span class="badge bg-success">Activa</span>{% else %}<span class="badge bg-secondary">Inactiva</span>{% endif %}</td>
-                    <td class="text-end text-nowrap">
-                        <button class="btn btn-sm btn-outline-primary py-0" onclick="renombrarArea({{ a.id }}, {{ a.nombre|tojson|forceescape }})"><i class="bi bi-pencil"></i></button>
-                        <button class="btn btn-sm btn-outline-secondary py-0" onclick="post('area', {accion: 'toggle', id: {{ a.id }}})"><i class="bi {{ 'bi-toggle-on' if a.activo else 'bi-toggle-off' }}"></i></button></td></tr>
-            {% endfor %}
+                    <td class="acciones">
+                        <button class="btn btn-sm btn-outline-primary" title="Renombrar" onclick="renombrar('area', {{ a.id }}, {{ a.nombre|tojson|forceescape }}, 'areas')"><i class="bi bi-pencil"></i></button>
+                        <button class="btn btn-sm btn-outline-secondary" title="{{ 'Desactivar' if a.activo else 'Activar' }}" onclick="post('area', {accion: 'toggle', id: {{ a.id }}})"><i class="bi {{ 'bi-toggle-on' if a.activo else 'bi-toggle-off' }}"></i></button>
+                        <button class="btn btn-sm btn-outline-danger" title="Borrar" onclick="borrar('area', {{ a.id }}, {{ a.nombre|tojson|forceescape }})"><i class="bi bi-trash"></i></button></td></tr>
+            {% else %}<tr><td class="text-muted">Sin áreas.</td></tr>{% endfor %}
             </tbody></table>
+        </div></div>
+    </div>
+    <!-- PROVEEDORES -->
+    <div class="tab-pane fade {{ 'show active' if tab == 'proveedores' }}" id="c-prov">
+        <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+            <span class="small text-muted">Se guardan solos al registrar un ingreso (con RUC o sin RUC). Aquí puedes corregir sus datos, agregar o borrar.</span>
+            <button class="btn btn-primary btn-sm fw-bold" onclick="editarProv(null)"><i class="bi bi-plus-lg"></i> Nuevo proveedor</button>
+        </div>
+        <div class="card border-0 shadow-sm"><div class="card-body p-0 table-responsive">
+            <table class="table table-hover align-middle mb-0 small">
+                <thead class="table-light"><tr><th class="ps-3">Proveedor</th><th>RUC / DNI</th><th>Contacto</th><th>Teléfono</th><th class="text-center">Compras</th><th>Última compra</th><th class="pe-3"></th></tr></thead>
+                <tbody>
+                {% for p in proveedores %}
+                    <tr><td class="ps-3 fw-semibold">{{ p.razon_social }}{% if p.direccion %}<div class="uso">{{ p.direccion }}</div>{% endif %}</td>
+                        <td>{% if p.ruc %}{{ p.ruc }}{% else %}<span class="badge bg-warning text-dark">Sin RUC</span>{% endif %}</td>
+                        <td>{{ p.contacto_nombre or '-' }}</td><td>{{ p.contacto_telefono or '-' }}</td>
+                        <td class="text-center">{{ compras.get(p.id, 0) }}</td>
+                        <td>{{ p.ultima_compra.strftime('%d/%m/%Y') if p.ultima_compra else '-' }}</td>
+                        <td class="pe-3 acciones">
+                            <button class="btn btn-sm btn-outline-primary" title="Editar" onclick="editarProv({{ {'id': p.id, 'ruc': p.ruc or '', 'razon_social': p.razon_social, 'direccion': p.direccion or '', 'contacto_nombre': p.contacto_nombre or '', 'contacto_telefono': p.contacto_telefono or ''}|tojson|forceescape }})"><i class="bi bi-pencil"></i></button>
+                            <button class="btn btn-sm btn-outline-danger" title="Borrar" onclick="borrar('proveedor', {{ p.id }}, {{ p.razon_social|tojson|forceescape }}, 'Sus ingresos ya registrados se conservan con los datos de la factura.')"><i class="bi bi-trash"></i></button></td></tr>
+                {% else %}<tr><td colspan="7" class="text-center text-muted py-4">Todavía no hay proveedores guardados: se guardan al registrar un ingreso.</td></tr>{% endfor %}
+                </tbody>
+            </table>
         </div></div>
     </div>
     <!-- CATÁLOGOS SIMPLES -->
     {% for t, nombre in nombres_catalogo.items() %}
     <div class="tab-pane fade {{ 'show active' if tab == t }}" id="c-{{ t }}">
-        <div class="card border-0 shadow-sm" style="max-width: 640px;"><div class="card-body">
-            <div class="input-group mb-3"><input id="nuevo_{{ t }}" class="form-control text-uppercase" placeholder="Nuevo valor para {{ nombre|lower }}"
+        <div class="card border-0 shadow-sm" style="max-width: 680px;"><div class="card-body">
+            <div class="input-group mb-2"><input id="nuevo_{{ t }}" class="form-control text-uppercase" placeholder="Nuevo valor para {{ nombre|lower }}"
                    onkeydown="if(event.key==='Enter'){event.preventDefault(); post('catalogo', {tipo: '{{ t }}', valor: this.value}, '{{ t }}');}">
                 <button class="btn btn-primary" onclick="post('catalogo', {tipo: '{{ t }}', valor: document.getElementById('nuevo_{{ t }}').value}, '{{ t }}')"><i class="bi bi-plus-lg"></i> Agregar</button></div>
+            {% if t == 'INSUMO_ALMACEN' %}<div class="form-text mb-2">Lugar físico donde se guardan los insumos (sale como "Ubicación" en el PDF de salida). No es el área que los consume.</div>{% endif %}
+            <div class="form-text mb-2"><i class="bi bi-info-circle"></i> Si renombras un valor, también se cambia donde ya estaba usado.</div>
             <table class="table table-sm align-middle mb-0 small"><tbody>
             {% for v in catalogos[t] %}
                 <tr class="{{ 'opacity-50' if not v.activo }}"><td class="fw-semibold">{{ v.valor }}</td>
                     <td class="text-center">{% if v.activo %}<span class="badge bg-success">Activo</span>{% else %}<span class="badge bg-secondary">Inactivo</span>{% endif %}</td>
-                    <td class="text-end"><button class="btn btn-sm btn-outline-secondary py-0" onclick="post('catalogo', {accion: 'toggle', id: {{ v.id }}}, '{{ t }}')"><i class="bi {{ 'bi-toggle-on' if v.activo else 'bi-toggle-off' }}"></i></button></td></tr>
+                    <td class="acciones">
+                        <button class="btn btn-sm btn-outline-primary" title="Renombrar" onclick="renombrar('catalogo', {{ v.id }}, {{ v.valor|tojson|forceescape }}, '{{ t }}')"><i class="bi bi-pencil"></i></button>
+                        <button class="btn btn-sm btn-outline-secondary" title="{{ 'Desactivar' if v.activo else 'Activar' }}" onclick="post('catalogo', {accion: 'toggle', id: {{ v.id }}}, '{{ t }}')"><i class="bi {{ 'bi-toggle-on' if v.activo else 'bi-toggle-off' }}"></i></button>
+                        <button class="btn btn-sm btn-outline-danger" title="Borrar" onclick="borrar('catalogo', {{ v.id }}, {{ v.valor|tojson|forceescape }}, '', '{{ t }}')"><i class="bi bi-trash"></i></button></td></tr>
             {% else %}<tr><td class="text-muted">Sin valores.</td></tr>{% endfor %}
             </tbody></table>
         </div></div>
@@ -86,11 +140,42 @@
                 <div class="col-5 col-sm-3"><label class="small text-muted">Versión</label><input name="version_{{ k }}" class="form-control" value="{{ formato['version_' ~ k] }}"></div>
             </div>
             {% endfor %}
-        </div><div class="card-footer bg-white text-end"><button class="btn btn-primary btn-sm fw-bold"><i class="bi bi-save"></i> Guardar</button></div></form>
+        </div><div class="card-footer bg-white d-flex justify-content-between">
+            <button class="btn btn-outline-secondary btn-sm" name="accion" value="restablecer" onclick="return confirm('¿Volver a {{ formato_def.codigo }} / versión {{ formato_def.version }} en las dos empresas?')"><i class="bi bi-arrow-counterclockwise"></i> Restablecer</button>
+            <button class="btn btn-primary btn-sm fw-bold"><i class="bi bi-save"></i> Guardar</button></div></form>
     </div>
+    {% if es_admin %}
+    <!-- VACIAR DATOS DEL MÓDULO -->
+    <div class="tab-pane fade {{ 'show active' if tab == 'vaciar' }}" id="c-vaciar">
+        <form method="POST" action="{{ url_for('insumos_vaciar') }}" class="zona-peligro p-3" style="max-width: 720px;" id="formVaciar">
+            <h5 class="fw-bold text-danger mb-1"><i class="bi bi-exclamation-octagon-fill"></i> Vaciar datos de Insumos Internos</h5>
+            <p class="small text-muted mb-3">Para empezar de cero después de probar. Borra <b>solo</b> lo de este módulo: el inventario de Anclajes / Import Bolts,
+                el Kardex, pedidos, auditorías y demás módulos <b>no se tocan</b>. No se puede deshacer.</p>
+            <div class="opc fija small">
+                <div class="form-check"><input class="form-check-input" type="checkbox" checked disabled>
+                    <label class="form-check-label fw-bold">Movimientos (siempre)</label></div>
+                <div class="text-muted">{{ conteo_vaciar.ingresos }} ingreso(s), {{ conteo_vaciar.salidas }} salida(s), {{ conteo_vaciar.movimientos }} movimiento(s) del kardex,
+                    stock y costo promedio ({{ conteo_vaciar.stocks }}), y los archivos subidos: <b>{{ conteo_vaciar.documentos }} PDF/foto(s)</b> y <b>{{ conteo_vaciar.firmas }} firma(s)</b>.
+                    El N° de consumo vuelve a empezar en 000001.</div>
+            </div>
+            <div class="opc small"><div class="form-check"><input class="form-check-input" type="checkbox" name="maestro" value="1" id="v_maestro">
+                <label class="form-check-label fw-bold" for="v_maestro">También el maestro de insumos ({{ conteo_vaciar.insumos }})</label></div></div>
+            <div class="opc small"><div class="form-check"><input class="form-check-input" type="checkbox" name="proveedores" value="1" id="v_prov">
+                <label class="form-check-label fw-bold" for="v_prov">También los proveedores de insumos guardados ({{ conteo_vaciar.proveedores }})</label></div></div>
+            <div class="opc small"><div class="form-check"><input class="form-check-input" type="checkbox" name="personal" value="1" id="v_pers">
+                <label class="form-check-label fw-bold" for="v_pers">También trabajadores ({{ conteo_vaciar.trabajadores }}) y áreas ({{ conteo_vaciar.areas }})</label></div></div>
+            <div class="opc small"><div class="form-check"><input class="form-check-input" type="checkbox" name="catalogos" value="1" id="v_cat">
+                <label class="form-check-label fw-bold" for="v_cat">También categorías, unidades, motivos, almacenes y formato PDF</label></div>
+                <div class="text-muted">Vuelven a los valores iniciales.</div></div>
+            <label class="small fw-bold mt-2">Para confirmar, escribe <span class="text-danger">BORRAR INSUMOS</span></label>
+            <input name="confirmacion" class="form-control mb-2" autocomplete="off" placeholder="BORRAR INSUMOS">
+            <button class="btn btn-danger fw-bold w-100" id="btnVaciar"><i class="bi bi-trash3-fill"></i> Vaciar datos del módulo</button>
+        </form>
+    </div>
+    {% endif %}
 </div>
 
-<div class="modal fade" id="modalTrab" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><form class="modal-content border-0 shadow" id="formTrab" onsubmit="return guardarTrab(event)">
+<div class="modal fade" id="modalTrab" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><form class="modal-content border-0 shadow" id="formTrab" onsubmit="return guardarModal(event, 'formTrab', 'trabajador', 'trabajadores')">
     <div class="modal-header py-2 text-white" style="background: var(--theme-primary, #0F172A);"><h6 class="modal-title fw-bold" id="tituloTrab">Trabajador</h6>
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
     <div class="modal-body">
@@ -111,17 +196,62 @@
     <div class="modal-footer p-2"><button class="btn btn-primary w-100 fw-bold">Guardar</button></div>
 </form></div></div>
 
+<div class="modal fade" id="modalProv" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><form class="modal-content border-0 shadow" id="formProv" onsubmit="return guardarModal(event, 'formProv', 'proveedor', 'proveedores')">
+    <div class="modal-header py-2 text-white" style="background: var(--theme-primary, #0F172A);"><h6 class="modal-title fw-bold" id="tituloProv">Proveedor</h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+        <input type="hidden" name="id" id="p_id">
+        <div class="mb-2"><label class="small fw-bold">Nombre / razón social *</label><input name="razon_social" id="p_razon" class="form-control" required maxlength="200"></div>
+        <div class="mb-2"><label class="small fw-bold">RUC / DNI <span class="fw-normal text-muted">(vacío = sin RUC)</span></label><input name="ruc" id="p_ruc" class="form-control" maxlength="11" inputmode="numeric"></div>
+        <div class="mb-2"><label class="small fw-bold">Dirección</label><input name="direccion" id="p_dir" class="form-control" maxlength="250"></div>
+        <div class="row g-2">
+            <div class="col-7"><label class="small fw-bold">Contacto</label><input name="contacto_nombre" id="p_cont" class="form-control" maxlength="120"></div>
+            <div class="col-5"><label class="small fw-bold">Teléfono</label><input name="contacto_telefono" id="p_tel" class="form-control" maxlength="40"></div>
+        </div>
+    </div>
+    <div class="modal-footer p-2"><button class="btn btn-primary w-100 fw-bold">Guardar</button></div>
+</form></div></div>
+
 <script>
+const URL_CONFIG = '{{ url_for('insumos_config') }}';
+document.addEventListener('DOMContentLoaded', () => { const a = document.querySelector('#cfgTabs .nav-link.active'); if (a) a.scrollIntoView({ block: 'nearest', inline: 'center' }); });
+const TAB_DE = { area: 'areas', trabajador: 'trabajadores', proveedor: 'proveedores' };
+function enviar(que, datos) {
+    const fd = datos instanceof FormData ? datos : new FormData();
+    if (!(datos instanceof FormData)) Object.entries(datos).forEach(([k, v]) => fd.append(k, v));
+    return fetch(`/insumos/config/${que}`, { method: 'POST', body: fd }).then(r => r.json());
+}
+function ir(tab) { location.href = `${URL_CONFIG}?tab=${tab}`; }
 function post(que, datos, tab) {
-    const fd = new FormData(); Object.entries(datos).forEach(([k, v]) => fd.append(k, v));
-    fetch(`/insumos/config/${que}`, { method: 'POST', body: fd }).then(r => r.json()).then(d => {
-        if (d.status === 'success') location.href = `{{ url_for('insumos_config') }}?tab=${tab || (que === 'area' ? 'areas' : 'trabajadores')}`;
+    enviar(que, datos).then(d => {
+        if (d.status === 'success') ir(tab || TAB_DE[que]);
         else Swal.fire('No se pudo', d.msg, 'warning');
     });
 }
-function renombrarArea(id, nombre) {
-    Swal.fire({ title: 'Renombrar área', input: 'text', inputValue: nombre, showCancelButton: true, confirmButtonText: 'Guardar' })
-        .then(r => { if (r.isConfirmed) post('area', { id: id, nombre: r.value }); });
+function renombrar(que, id, nombre, tab) {
+    Swal.fire({ title: 'Renombrar', input: 'text', inputValue: nombre, showCancelButton: true, confirmButtonText: 'Guardar', cancelButtonText: 'Cancelar' })
+        .then(r => {
+            if (!r.isConfirmed) return;
+            const datos = que === 'area' ? { id: id, nombre: r.value } : { accion: 'editar', id: id, valor: r.value };
+            enviar(que, datos).then(d => {
+                if (d.status !== 'success') return Swal.fire('No se pudo', d.msg, 'warning');
+                if (d.msg) Swal.fire({ icon: 'success', title: 'Renombrado', text: d.msg }).then(() => ir(tab)); else ir(tab);
+            });
+        });
+}
+function borrar(que, id, nombre, extra, tab) {
+    Swal.fire({ icon: 'warning', title: '¿Borrar?', html: `<b>${String(nombre).replace(/</g, '&lt;')}</b>${extra ? '<br><span class="small">' + extra + '</span>' : ''}`,
+                showCancelButton: true, confirmButtonText: 'Sí, borrar', cancelButtonText: 'Cancelar', confirmButtonColor: '#dc2626' })
+        .then(r => {
+            if (!r.isConfirmed) return;
+            const intentar = (forzar) => enviar(que, { accion: 'borrar', id: id, forzar: forzar ? '1' : '' }).then(d => {
+                if (d.status === 'success') return ir(tab || TAB_DE[que]);
+                if (d.status === 'confirmar') return Swal.fire({ icon: 'question', title: 'Está en uso', text: d.msg, showCancelButton: true,
+                    confirmButtonText: 'Borrar igual', cancelButtonText: 'Cancelar', confirmButtonColor: '#dc2626' }).then(x => { if (x.isConfirmed) intentar(true); });
+                Swal.fire('No se puede borrar', d.msg, 'info');
+            });
+            intentar(false);
+        });
 }
 function editarTrab(t) {
     t = t || {};
@@ -133,14 +263,34 @@ function editarTrab(t) {
     document.getElementById('t_area').value = t.area_id || '';
     document.getElementById('t_empresa').value = t.empresa || 'AMBAS';
     document.getElementById('t_jefe').checked = !!t.es_jefe;
-    new bootstrap.Modal(document.getElementById('modalTrab')).show();
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('modalTrab')).show();
 }
-function guardarTrab(ev) {
+function editarProv(p) {
+    p = p || {};
+    document.getElementById('tituloProv').textContent = p.id ? 'Editar proveedor' : 'Nuevo proveedor';
+    document.getElementById('p_id').value = p.id || '';
+    document.getElementById('p_razon').value = p.razon_social || '';
+    document.getElementById('p_ruc').value = p.ruc || '';
+    document.getElementById('p_dir').value = p.direccion || '';
+    document.getElementById('p_cont').value = p.contacto_nombre || '';
+    document.getElementById('p_tel').value = p.contacto_telefono || '';
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('modalProv')).show();
+}
+function guardarModal(ev, form, que, tab) {
     ev.preventDefault();
-    fetch('/insumos/config/trabajador', { method: 'POST', body: new FormData(document.getElementById('formTrab')) }).then(r => r.json()).then(d => {
-        if (d.status === 'success') location.href = '{{ url_for('insumos_config') }}?tab=trabajadores'; else Swal.fire('No se pudo', d.msg, 'warning');
+    enviar(que, new FormData(document.getElementById(form))).then(d => {
+        if (d.status === 'success') ir(tab); else Swal.fire('No se pudo', d.msg, 'warning');
     });
     return false;
 }
+{% if es_admin %}
+document.getElementById('formVaciar').addEventListener('submit', function (e) {
+    if (this.confirmacion.value.trim().toUpperCase() !== 'BORRAR INSUMOS') {
+        e.preventDefault();
+        return Swal.fire('Falta confirmar', 'Escribe BORRAR INSUMOS para continuar.', 'warning');
+    }
+    const btn = document.getElementById('btnVaciar'); btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Borrando...';
+});
+{% endif %}
 </script>
 {% endblock %}

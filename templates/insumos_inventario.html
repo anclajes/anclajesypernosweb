@@ -43,9 +43,9 @@
         <input type="text" name="q" class="form-control" placeholder="Código o descripción..." value="{{ q }}"></div>
     </div>
     <div class="col-12 col-sm-6 col-md-3">
-        <select name="categoria" class="form-select filtro-s2" data-placeholder="-- Todas las categorías --">
+        <select name="categoria" class="form-select filtro-cat" data-placeholder="Todas las categorías">
             <option value=""></option>
-            {% for c in categorias %}<option value="{{ c.valor }}" {{ 'selected' if c.valor == categoria }}>{{ c.valor }}</option>{% endfor %}
+            {% for c in categorias %}<option value="{{ c }}" {{ 'selected' if c == categoria }}>{{ c }}</option>{% endfor %}
         </select>
     </div>
     <div class="col-6 col-md-2">
@@ -81,7 +81,9 @@
                     <td><span class="badge bg-light text-dark border">{{ f.i.categoria or '-' }}</span></td>
                     <td class="text-center text-nowrap"><span class="stock-chip num {{ 'bajo' if f.bajo }} {{ 'cero' if not f.stock }}">{{ f.stock|cant }}</span> <span class="text-muted">{{ f.i.unidad }}</span></td>
                     <td class="text-center num">{{ f.minimo|cant if f.minimo else '-' }}</td>
-                    <td class="text-end num">{{ f.costo|soles if f.costo else '-' }}</td>
+                    <td class="text-end num text-nowrap">{{ f.costo|soles if f.costo else '-' }}
+                        {% if puede_ajustar %}<button type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline" title="Editar costo promedio (queda en auditoría)"
+                            onclick="ajustarCosto({{ f.i.id }}, '{{ empresa }}', {{ (f.i.codigo ~ ' · ' ~ f.i.descripcion)|tojson|forceescape }}, {{ f.costo|tojson }}, {{ f.stock|tojson }})"><i class="bi bi-pencil-square"></i></button>{% endif %}</td>
                     <td class="text-end num fw-semibold">{{ f.valor|soles if f.valor else '-' }}</td>
                     <td class="text-muted">{{ f.s.almacen if f.s and f.s.almacen else '-' }}</td>
                     <td class="pe-3 text-end text-nowrap">
@@ -102,7 +104,8 @@
     </div>
 </div>
 
-<script src="{{ url_for('static', filename='js/filtros.js') }}?v=1"></script>
+{% if puede_ajustar %}<div class="text-end small mt-2"><a href="{{ url_for('insumos_kardex', empresa=empresa, concepto='AJUSTE_COSTO') }}"><i class="bi bi-shield-check"></i> Ver auditoría de ajustes de costo</a></div>{% endif %}
+{% include '_insumos_costo.html' %}
 <script>
 const ALMACENES = {{ almacenes|map(attribute='valor')|list|tojson }};
 function configStock(id, nombre, minimo, almacen) {

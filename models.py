@@ -1074,6 +1074,23 @@ class InsumoStock(db.Model):
     __table_args__ = (db.UniqueConstraint('insumo_id', 'empresa', name='uq_insumo_stock_empresa'),)
 
 
+class InsumoProveedor(db.Model):
+    """Proveedores de insumos guardados (con RUC/DNI o sin RUC) para elegirlos rápido en cada ingreso."""
+    __tablename__ = 'insumo_proveedor'
+    id = db.Column(db.Integer, primary_key=True)
+    ruc = db.Column(db.String(20), index=True)                 # vacío = compra sin RUC / informal
+    razon_social = db.Column(db.String(200), nullable=False)
+    direccion = db.Column(db.String(250))
+    contacto_nombre = db.Column(db.String(120))
+    contacto_telefono = db.Column(db.String(40))
+    proveedor_id = db.Column(db.Integer, db.ForeignKey('proveedor.id'), nullable=True)   # el validado en SUNAT
+    creado_por = db.Column(db.String(100))
+    fecha_creacion = db.Column(db.DateTime, default=hora_peru)
+    actualizado_por = db.Column(db.String(100))
+    fecha_actualizacion = db.Column(db.DateTime, nullable=True)
+    ultima_compra = db.Column(db.DateTime, nullable=True)
+
+
 class InsumoIngreso(db.Model):
     """Ingreso (compra) con su factura: cabecera."""
     __tablename__ = 'insumo_ingreso'
@@ -1090,6 +1107,7 @@ class InsumoIngreso(db.Model):
     almacen = db.Column(db.String(100))
     observacion = db.Column(db.String(300))
     total = db.Column(db.Float, default=0)
+    insumo_proveedor_id = db.Column(db.Integer, db.ForeignKey('insumo_proveedor.id'), nullable=True)
     estado = db.Column(db.String(10), default='REGISTRADO')       # REGISTRADO / ANULADO
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     fecha_registro = db.Column(db.DateTime, default=hora_peru)

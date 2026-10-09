@@ -13,8 +13,15 @@
             {% for k, e in empresas.items() %}<option value="{{ k }}" {{ 'selected' if k == empresa }}>{{ e.corto }}</option>{% endfor %}</select></div>
     <div class="col-6 col-sm-3 col-md-2"><label class="small fw-bold text-muted">Desde</label><input type="date" name="desde" class="form-control" value="{{ desde.isoformat() }}"></div>
     <div class="col-6 col-sm-3 col-md-2"><label class="small fw-bold text-muted">Hasta</label><input type="date" name="hasta" class="form-control" value="{{ hasta.isoformat() }}"></div>
+    <div class="col-12 col-sm-6 col-md-3"><label class="small fw-bold text-muted">Categoría</label>
+        <select name="categoria" class="form-select filtro-cat" data-placeholder="Todas las categorías">
+            <option value=""></option>
+            {% for c in categorias_filtro %}<option value="{{ c }}" {{ 'selected' if c == categoria }}>{{ c }}</option>{% endfor %}
+        </select></div>
     <div class="col-12 col-sm-2 col-md-1"><button class="btn btn-primary w-100"><i class="bi bi-funnel"></i></button></div>
 </form>
+{% if categoria %}<div class="alert alert-info py-2 small"><i class="bi bi-funnel-fill"></i> Mostrando solo el gasto en <b>{{ categoria }}</b>.
+    <a href="{{ url_for('insumos_gasto', empresa=empresa, desde=desde.isoformat(), hasta=hasta.isoformat()) }}">Ver todas las categorías</a></div>{% endif %}
 
 <div class="row g-2 mb-3">
     <div class="col-6 col-md-4"><div class="card border-0 shadow-sm h-100"><div class="card-body py-2">
@@ -84,6 +91,21 @@
             {% else %}
                 <tr><td colspan="8" class="text-center text-muted py-4">Sin salidas en los últimos 6 meses.</td></tr>
             {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-white fw-bold small"><i class="bi bi-tags"></i> Gasto por categoría</div>
+    <div class="card-body p-0 table-responsive">
+        <table class="table align-middle mb-0 small">
+            <tbody>
+            {% for c in por_categoria %}
+                <tr><td class="ps-3 fw-semibold"><a href="{{ url_for('insumos_gasto', empresa=empresa, desde=desde.isoformat(), hasta=hasta.isoformat(), categoria=c.nombre if c.nombre != 'Sin categoría' else '') }}">{{ c.nombre }}</a></td>
+                    <td style="width:40%;"><div class="barra-area" style="width: {{ c.pct }}%; background: #16a34a;"></div></td>
+                    <td class="text-end">{{ c.pct }}%</td><td class="text-end pe-3 fw-bold text-nowrap">{{ c.total|soles }}</td></tr>
+            {% else %}<tr><td class="text-center text-muted py-4">—</td></tr>{% endfor %}
             </tbody>
         </table>
     </div>

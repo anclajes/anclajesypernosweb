@@ -10,6 +10,11 @@
     <div class="col-12 col-md-5"><label class="small fw-bold text-muted">Buscar</label>
         <div class="input-group input-group-sm"><input type="text" name="q" class="form-control" value="{{ buscar }}" placeholder="Proveedor, RUC o N° de factura">
         <button class="btn btn-primary"><i class="bi bi-search"></i></button></div></div>
+    <div class="col-12 col-md-3"><label class="small fw-bold text-muted">Categoría (de lo comprado)</label>
+        <select name="categoria" class="form-select form-select-sm filtro-cat" data-placeholder="Todas las categorías">
+            <option value=""></option>
+            {% for c in categorias_filtro %}<option value="{{ c }}" {{ 'selected' if c == categoria }}>{{ c }}</option>{% endfor %}
+        </select></div>
 </form>
 <div class="card border-0 shadow-sm"><div class="card-body p-0 table-responsive">
     <table class="table table-hover align-middle mb-0 small">

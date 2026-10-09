@@ -17,12 +17,17 @@
             {% for t in trabajadores %}<option value="{{ t.id }}" {{ 'selected' if t.id == trabajador_id }}>{{ t.nombre }}</option>{% endfor %}</select></div>
     <div class="col-6 col-md-2"><label class="small fw-bold text-muted">Desde</label><input type="date" name="desde" class="form-control form-control-sm" value="{{ desde.isoformat() if desde else '' }}"></div>
     <div class="col-6 col-md-2"><label class="small fw-bold text-muted">Hasta</label><input type="date" name="hasta" class="form-control form-control-sm" value="{{ hasta.isoformat() if hasta else '' }}"></div>
-    <div class="col-12 text-end"><button class="btn btn-sm btn-primary"><i class="bi bi-funnel"></i> Filtrar</button>
+    <div class="col-12 col-md-4"><label class="small fw-bold text-muted">Categoría (de lo despachado)</label>
+        <select name="categoria" class="form-select form-select-sm filtro-cat" data-placeholder="Todas las categorías">
+            <option value=""></option>
+            {% for c in categorias_filtro %}<option value="{{ c }}" {{ 'selected' if c == categoria }}>{{ c }}</option>{% endfor %}
+        </select></div>
+    <div class="col-12 col-md-8 text-end"><button class="btn btn-sm btn-primary"><i class="bi bi-funnel"></i> Filtrar</button>
         <a href="{{ url_for('insumos_salidas') }}" class="btn btn-sm btn-outline-secondary">Limpiar</a></div>
 </form>
 <div class="d-flex justify-content-between align-items-center mb-2 small">
     <span class="text-muted">{{ salidas|length }} salida(s)</span>
-    <span>Total (sin anuladas): <b class="fs-6">{{ total|soles }}</b></span>
+    <span>Total (sin anuladas): <b class="fs-6">{{ total|soles }}</b>{% if categoria %} · solo {{ categoria }}: <b class="fs-6 text-primary">{{ total_categoria|soles }}</b>{% endif %}</span>
 </div>
 <div class="card border-0 shadow-sm"><div class="card-body p-0 table-responsive">
     <table class="table table-hover align-middle mb-0 small">

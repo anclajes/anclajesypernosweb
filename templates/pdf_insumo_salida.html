@@ -18,14 +18,16 @@
     .etq { font-weight: bold; font-size: 8pt; }
     .firma { vertical-align: top; padding-bottom: 4px; }
     .chico { font-size: 7pt; color: #444; }
+    .empresa { font-size: 12.5pt; font-weight: bold; color: #0B3D91; }
+    .logo { text-align: center; vertical-align: middle; padding: 4px; }
     .consumo { font-size: 10.5pt; font-weight: bold; text-align: center; }
 </style>
 </head>
 <body>
 <table>
     <tr>
-        <td style="width: 20%; text-align: center;">{% if logo %}<img src="{{ logo.uri }}" width="{{ logo.ancho }}" height="{{ logo.alto }}">{% else %}<b>{{ emp.nombre }}</b>{% endif %}</td>
-        <td style="width: 57%;" class="titulo">SALIDA DE MATERIALES DE ALMACÉN<br><span class="chico">{{ emp.nombre }}</span></td>
+        <td style="width: 21%;" class="logo">{% if logo %}<img src="{{ logo.uri }}" width="{{ logo.ancho }}" height="{{ logo.alto }}">{% else %}<span class="empresa">{{ emp.nombre }}</span>{% endif %}</td>
+        <td style="width: 56%;" class="titulo">SALIDA DE MATERIALES DE ALMACÉN<br><span class="empresa">{{ emp.nombre }}</span></td>
         <td style="width: 23%; padding: 0;">
             <table class="caja">
                 <tr><td colspan="2" class="centro" style="border-top: 0; border-left: 0; border-right: 0;">{{ formato.codigo }}</td></tr>

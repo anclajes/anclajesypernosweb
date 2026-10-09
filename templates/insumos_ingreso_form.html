@@ -20,6 +20,12 @@
     .doc-in input { position: absolute; width: 1px; height: 1px; opacity: 0; }
     .doc-in.con { border-style: solid; border-color: #2563eb; background: #eff6ff; }
     .doc-in .ico { font-size: 1.3rem; color: #2563eb; }
+    .prov-sug { z-index: 1060; max-height: 300px; overflow-y: auto; display: none; border-radius: 10px; }
+    .prov-sug .grupo { font-size: .66rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: #64748b; background: #f8fafc; padding: 4px 10px; }
+    .prov-sug button { text-align: left; }
+    .prov-sug .ruc { font-variant-numeric: tabular-nums; font-weight: 700; color: #0B3D91; }
+    .prov-elegido { border: 1.5px solid #86efac; background: #f0fdf4; border-radius: 10px; padding: 8px 10px; display: none; }
+    .prov-elegido .nom { font-weight: 800; color: #14532d; }
 </style>
 
 <form method="POST" action="{{ url_for('insumos_ingreso_guardar') }}" enctype="multipart/form-data" id="formIngreso">
@@ -37,30 +43,47 @@
                 <div class="col-6"><label class="small fw-bold">Fecha *</label>
                     <input type="date" name="fecha" class="form-control" value="{{ hoy.isoformat() }}" max="{{ hoy.isoformat() }}" required>
                     <div class="form-text" style="font-size:.68rem;">Puede ser una fecha anterior.</div></div>
-                <div class="col-6"><label class="small fw-bold"># Factura</label>
-                    <input type="text" name="numero_factura" class="form-control text-uppercase" maxlength="50" placeholder="F001-12345"></div>
-                <div class="col-12"><label class="small fw-bold">Almacén</label>
+                <div class="col-6"><label class="small fw-bold"># Factura *</label>
+                    <input type="text" name="numero_factura" id="numero_factura" class="form-control text-uppercase" maxlength="50" placeholder="F001-12345" required>
+                    <div class="form-text" style="font-size:.68rem;">O el N° de boleta / recibo si es sin RUC.</div></div>
+                <div class="col-12"><label class="small fw-bold">Almacén donde se guarda</label>
                     <select name="almacen" class="form-select"><option value="">— Sin especificar —</option>
-                        {% for a in almacenes %}<option value="{{ a.valor }}">{{ a.valor }}</option>{% endfor %}</select></div>
+                        {% for a in almacenes %}<option value="{{ a.valor }}">{{ a.valor }}</option>{% endfor %}</select>
+                    <div class="form-text" style="font-size:.68rem;">Es el lugar físico donde quedan guardados estos insumos (no el área que los usará: eso se elige en cada <b>salida</b>). Sale en la columna "Ubicación" del PDF.</div></div>
             </div>
         </div></div>
 
         <div class="card border-0 shadow-sm mb-3"><div class="card-body">
-            <label class="small fw-bold text-muted d-block mb-1">PROVEEDOR</label>
+            <label class="small fw-bold text-muted d-block mb-1">PROVEEDOR *</label>
+            <input type="hidden" name="insumo_proveedor_id" id="insumo_proveedor_id">
             <input type="hidden" name="proveedor_id" id="proveedor_id">
-            <div class="position-relative mb-1">
-                <div class="input-group">
-                    <input type="text" id="ruc" name="ruc" class="form-control" placeholder="RUC (11) o DNI (8), o el nombre" autocomplete="off" oninput="sugerirProv(this.value)">
-                    <button type="button" class="btn btn-outline-primary" onclick="buscarProv()"><i class="bi bi-search"></i> Buscar</button>
+            <input type="hidden" name="sin_ruc" id="sin_ruc_val" value="">
+            <div id="provBuscar">
+                <div class="position-relative mb-1">
+                    <div class="input-group">
+                        <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+                        <input type="text" id="buscaProv" class="form-control" placeholder="Elige un guardado, o escribe nombre / RUC / DNI" autocomplete="off"
+                               oninput="sugerirProv(this.value)" onfocus="sugerirProv(this.value)">
+                        <button type="button" class="btn btn-outline-primary" onclick="buscarSunat()" title="Consultar RUC (11) o DNI (8) en SUNAT/RENIEC"><i class="bi bi-cloud-download"></i> SUNAT</button>
+                    </div>
+                    <div id="sugProv" class="list-group position-absolute w-100 shadow prov-sug"></div>
                 </div>
-                <div id="sugProv" class="list-group position-absolute w-100 shadow-sm" style="z-index:1060; max-height:220px; overflow-y:auto; display:none;"></div>
+                <div class="form-text mb-1" style="font-size:.7rem;">Toca el buscador para ver los proveedores guardados. Si es nuevo, escribe su RUC y pulsa <b>SUNAT</b>: quedará guardado para la próxima.</div>
             </div>
             <div id="provMsg" class="small mb-2"></div>
-            <input type="text" name="razon_social" id="razon_social" class="form-control mb-2" placeholder="Razón social *" readonly>
-            <input type="text" name="direccion" id="direccion" class="form-control mb-2" placeholder="Dirección" readonly>
+            <div class="prov-elegido mb-2" id="provElegido">
+                <div class="d-flex justify-content-between align-items-start gap-2">
+                    <div><div class="nom" id="pe_nombre"></div><div class="small text-muted" id="pe_det"></div></div>
+                    <button type="button" class="btn btn-sm btn-outline-secondary py-0" onclick="cambiarProv()"><i class="bi bi-arrow-repeat"></i> Cambiar</button>
+                </div>
+            </div>
+            <div id="provManual" style="display:none;">
+                <input type="text" name="razon_social" id="razon_social" class="form-control mb-2" maxlength="200" placeholder="Nombre / razón social *">
+                <input type="text" name="direccion" id="direccion" class="form-control mb-2" maxlength="250" placeholder="Dirección (opcional)">
+            </div>
             <div class="form-check small mb-2">
                 <input class="form-check-input" type="checkbox" id="sinRuc" onchange="modoSinRuc()">
-                <label class="form-check-label" for="sinRuc">Compra sin RUC / proveedor informal (escribir a mano)</label>
+                <label class="form-check-label" for="sinRuc">Compra <b>sin RUC</b> / proveedor informal (escribir sus datos; también se guarda)</label>
             </div>
             <div class="row g-2">
                 <div class="col-7"><input type="text" name="contacto_nombre" id="contacto_nombre" class="form-control" maxlength="120" placeholder="Nombre de contacto"></div>
@@ -107,8 +130,9 @@
         <span class="n"></span>
         <button type="button" class="quitar" title="Quitar"><i class="bi bi-x-circle-fill"></i></button>
         <div class="row g-2">
-            <div class="col-12"><label>Insumo *</label><select name="insumo_id[]" class="form-select sel-insumo" style="width:100%;"></select>
-                <div class="info mt-1"></div></div>
+            <div class="col-12 col-md-4"><label><i class="bi bi-funnel"></i> Categoría</label><select class="form-select form-select-sm sel-cat"></select></div>
+            <div class="col-12 col-md-8"><label>Insumo *</label><select name="insumo_id[]" class="form-select sel-insumo" style="width:100%;"></select></div>
+            <div class="col-12 info"></div>
             <div class="col-6 col-md-4"><label>Cód. proveedor</label><input name="codigo_proveedor[]" class="form-control form-control-sm" maxlength="60"></div>
             <div class="col-6 col-md-2"><label>Cantidad *</label><input name="cantidad[]" type="number" step="any" min="0" class="form-control form-control-sm c-cant"></div>
             <div class="col-6 col-md-3"><label>Precio unit. c/IGV</label><input name="precio_unitario[]" type="number" step="any" min="0" class="form-control form-control-sm c-pu"></div>
@@ -120,14 +144,23 @@
 
 <script>
 const INSUMOS = {{ insumos_json|tojson }};
+const CATEGORIAS = {{ categorias_filtro|tojson }};
 function empresaActual() { return document.querySelector('input[name=empresa]:checked').value; }
 function datoInsumo(id) { return (INSUMOS[empresaActual()] || []).find(i => String(i.id) === String(id)); }
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function fmt(n, d = 2) { return Number(n || 0).toLocaleString('es-PE', { minimumFractionDigits: d, maximumFractionDigits: d }); }
 
+function categoriaDe(fila) { return fila ? (fila.querySelector('.sel-cat').value || '') : ''; }
+function opcionesCategorias(selCat) {
+    const nombres = [...new Set(CATEGORIAS.concat(Object.values(INSUMOS).flat().map(i => i.categoria).filter(Boolean)))].sort((a, b) => a.localeCompare(b, 'es'));
+    const val = selCat.value;
+    selCat.innerHTML = '<option value="">Todas</option>' + nombres.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+    selCat.value = nombres.includes(val) ? val : '';
+}
 function opcionesInsumos(sel) {
-    const val = sel.value;
-    sel.innerHTML = '<option value=""></option>' + (INSUMOS[empresaActual()] || []).map(i =>
+    const val = sel.value, cat = categoriaDe(sel.closest('.fila-item'));
+    const lista = (INSUMOS[empresaActual()] || []).filter(i => !cat || i.categoria === cat || String(i.id) === String(val));
+    sel.innerHTML = '<option value=""></option>' + lista.map(i =>
         `<option value="${i.id}">${esc(i.codigo)} — ${esc(i.descripcion)}</option>`).join('');
     sel.value = val;
 }
@@ -153,10 +186,18 @@ function recalcular() {
 function agregarFila(insumoId) {
     const fila = document.getElementById('tplFila').content.firstElementChild.cloneNode(true);
     document.getElementById('filas').appendChild(fila);
-    const sel = fila.querySelector('.sel-insumo');
+    const sel = fila.querySelector('.sel-insumo'), selCat = fila.querySelector('.sel-cat');
+    opcionesCategorias(selCat);
     opcionesInsumos(sel);
     if (insumoId) sel.value = insumoId;
     activarSelect(sel, fila);
+    selCat.addEventListener('change', () => {
+        const d = datoInsumo(sel.value);
+        if (d && selCat.value && d.categoria !== selCat.value) sel.value = '';
+        opcionesInsumos(sel);
+        if (window.jQuery && jQuery(sel).data('select2')) { jQuery(sel).trigger('change'); if (!sel.value) jQuery(sel).select2('open'); }
+        pintarInfo(fila);
+    });
     const cant = fila.querySelector('.c-cant'), pu = fila.querySelector('.c-pu'), pt = fila.querySelector('.c-pt');
     const desdeUnit = () => { const q = parseFloat(cant.value), u = parseFloat(pu.value); if (q > 0 && u >= 0) pt.value = (q * u).toFixed(2); recalcular(); };
     const desdeTotal = () => { const q = parseFloat(cant.value), t = parseFloat(pt.value); if (q > 0 && t >= 0) pu.value = (t / q).toFixed(4); recalcular(); };
@@ -179,54 +220,91 @@ document.addEventListener('insumoGuardado', e => {
     const n = e.detail;
     Object.keys(INSUMOS).forEach(k => INSUMOS[k].push({ ...n }));
     let vacia = [...document.querySelectorAll('#filas .fila-item')].find(f => !f.querySelector('.sel-insumo').value);
+    if (vacia) vacia.querySelector('.sel-cat').value = '';
+    document.querySelectorAll('#filas .sel-cat').forEach(s => opcionesCategorias(s));
     document.querySelectorAll('#filas .sel-insumo').forEach(s => opcionesInsumos(s));
     if (vacia) { const s = vacia.querySelector('.sel-insumo'); s.value = n.id; if (window.jQuery) jQuery(s).trigger('change'); pintarInfo(vacia); }
     else agregarFila(n.id);
     Swal.fire({ icon: 'success', title: 'Insumo creado', text: `${n.codigo} — ${n.descripcion}`, timer: 1600, showConfirmButton: false });
 });
 
-// ---- Proveedor (misma búsqueda de RUC que el Kardex) ----
+// ---- Proveedor: guardados de insumos + búsqueda por RUC/DNI (SUNAT) + compra sin RUC ----
 let tSug = null;
+const porId = id => document.getElementById(id);
 function sugerirProv(t) {
-    document.getElementById('proveedor_id').value = '';
     clearTimeout(tSug);
-    const cont = document.getElementById('sugProv');
-    if (!t || t.length < 2 || document.getElementById('sinRuc').checked) { cont.style.display = 'none'; return; }
-    tSug = setTimeout(() => fetch(`/api/buscar_proveedores_db?q=${encodeURIComponent(t)}`).then(r => r.json()).then(d => {
+    const cont = porId('sugProv');
+    tSug = setTimeout(() => fetch(`{{ url_for('insumos_api_proveedores') }}?q=${encodeURIComponent(t.trim())}`).then(r => r.json()).then(d => {
         cont.innerHTML = '';
-        (d.results || []).forEach(p => {
+        const g = d.guardados || [], o = d.otros || [];
+        if (g.length) cont.insertAdjacentHTML('beforeend', `<div class="grupo"><i class="bi bi-bookmark-star-fill"></i> Proveedores de insumos guardados</div>`);
+        g.forEach(p => {
             const b = document.createElement('button'); b.type = 'button'; b.className = 'list-group-item list-group-item-action py-1 px-2 small';
-            b.innerHTML = `<b>${esc(p.documento || 'S/N')}</b> — ${esc(p.razon_social)}`;
-            b.onclick = () => { elegirProv({ proveedor_id: p.id, razon_social: p.razon_social, direccion: p.direccion }, p.documento); cont.style.display = 'none'; };
+            b.innerHTML = `<div><b>${esc(p.razon_social)}</b></div><div class="text-muted">${p.ruc ? `<span class="ruc">${esc(p.ruc)}</span>` : '<span class="badge bg-warning text-dark">Sin RUC</span>'}` +
+                `${p.contacto_nombre ? ' · ' + esc(p.contacto_nombre) : ''}${p.contacto_telefono ? ' · ' + esc(p.contacto_telefono) : ''}${p.ultima_compra ? ' · últ. compra ' + p.ultima_compra : ''}</div>`;
+            b.onclick = () => elegirGuardado(p);
             cont.appendChild(b);
         });
-        cont.style.display = (d.results || []).length ? 'block' : 'none';
-    }), 300);
+        if (o.length) cont.insertAdjacentHTML('beforeend', `<div class="grupo"><i class="bi bi-building"></i> Otros proveedores del sistema (Kardex)</div>`);
+        o.forEach(p => {
+            const b = document.createElement('button'); b.type = 'button'; b.className = 'list-group-item list-group-item-action py-1 px-2 small';
+            b.innerHTML = `<span class="ruc">${esc(p.ruc)}</span> — ${esc(p.razon_social)}`;
+            b.onclick = () => elegirSunat(p, 'Proveedor del sistema');
+            cont.appendChild(b);
+        });
+        if (!g.length && !o.length) cont.innerHTML = `<div class="list-group-item small text-muted">${t.trim() ? 'No hay guardados con ese dato. Si es un RUC/DNI, pulsa <b>SUNAT</b>.' : 'Todavía no hay proveedores guardados.'}</div>`;
+        cont.style.display = 'block';
+    }), t ? 250 : 0);
 }
-function elegirProv(d, doc) {
-    document.getElementById('proveedor_id').value = d.proveedor_id;
-    if (doc) document.getElementById('ruc').value = doc;
-    document.getElementById('razon_social').value = d.razon_social || '';
-    document.getElementById('direccion').value = d.direccion || '';
-    if (d.telefono && !document.getElementById('contacto_telefono').value) document.getElementById('contacto_telefono').value = d.telefono;
-    document.getElementById('provMsg').innerHTML = '<span class="text-success"><i class="bi bi-check-circle-fill"></i> Proveedor validado</span>';
+document.addEventListener('click', e => { if (!e.target.closest('#provBuscar')) porId('sugProv').style.display = 'none'; });
+function mostrarElegido(nombre, detalle) {
+    porId('pe_nombre').textContent = nombre; porId('pe_det').innerHTML = detalle;
+    porId('provElegido').style.display = 'block'; porId('provBuscar').style.display = 'none'; porId('sugProv').style.display = 'none';
+    porId('provMsg').innerHTML = '';
 }
-function buscarProv() {
-    const n = document.getElementById('ruc').value.trim();
-    const msg = document.getElementById('provMsg');
-    if (n.length !== 8 && n.length !== 11) { msg.innerHTML = '<span class="text-danger">Escribe un RUC (11) o DNI (8).</span>'; return; }
+function elegirGuardado(p) {
+    limpiarProv();
+    porId('insumo_proveedor_id').value = p.id;
+    porId('razon_social').value = p.razon_social; porId('direccion').value = p.direccion || '';
+    porId('contacto_nombre').value = p.contacto_nombre || ''; porId('contacto_telefono').value = p.contacto_telefono || '';
+    mostrarElegido(p.razon_social, `${p.ruc ? 'RUC/DNI <b>' + esc(p.ruc) + '</b>' : '<span class="badge bg-warning text-dark">Sin RUC</span>'}${p.direccion ? ' · ' + esc(p.direccion) : ''} · <span class="text-success"><i class="bi bi-bookmark-star-fill"></i> guardado</span>`);
+}
+function elegirSunat(p, origen) {
+    limpiarProv();
+    porId('proveedor_id').value = p.proveedor_id;
+    porId('razon_social').value = p.razon_social || ''; porId('direccion').value = p.direccion || '';
+    if (p.telefono) porId('contacto_telefono').value = p.telefono;
+    mostrarElegido(p.razon_social, `RUC/DNI <b>${esc(p.ruc)}</b>${p.direccion ? ' · ' + esc(p.direccion) : ''} · <span class="text-primary"><i class="bi bi-patch-check-fill"></i> ${esc(origen)}</span> <span class="text-muted">(se guardará en tus proveedores de insumos)</span>`);
+}
+function limpiarProv() {
+    ['insumo_proveedor_id', 'proveedor_id'].forEach(id => porId(id).value = '');
+    porId('sinRuc').checked = false; porId('sin_ruc_val').value = ''; porId('provManual').style.display = 'none';
+}
+function cambiarProv() {
+    limpiarProv();
+    ['razon_social', 'direccion', 'contacto_nombre', 'contacto_telefono'].forEach(id => porId(id).value = '');
+    porId('provElegido').style.display = 'none'; porId('provBuscar').style.display = 'block';
+    porId('buscaProv').value = ''; porId('buscaProv').focus();
+}
+function buscarSunat() {
+    const n = porId('buscaProv').value.trim(), msg = porId('provMsg');
+    if (!/^\d{8}$|^\d{11}$/.test(n)) { msg.innerHTML = '<span class="text-danger">Para SUNAT escribe un RUC (11 dígitos) o DNI (8).</span>'; return; }
     msg.innerHTML = '<span class="text-muted"><span class="spinner-border spinner-border-sm"></span> Consultando SUNAT/RENIEC...</span>';
     fetch('/api/consultar_proveedor', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: `numero=${encodeURIComponent(n)}&force=false` })
         .then(r => r.json()).then(d => {
-            if (d.status === 'success') elegirProv(d, n);
-            else { document.getElementById('proveedor_id').value = ''; msg.innerHTML = `<span class="text-danger"><i class="bi bi-x-circle-fill"></i> ${esc(d.msg)}</span>`; }
+            if (d.status === 'success') elegirSunat({ proveedor_id: d.proveedor_id, ruc: n, razon_social: d.razon_social, direccion: d.direccion, telefono: d.telefono }, d.origen === 'BD' ? 'validado (ya registrado)' : 'validado en SUNAT');
+            else msg.innerHTML = `<span class="text-danger"><i class="bi bi-x-circle-fill"></i> ${esc(d.msg)}</span>`;
         }).catch(() => msg.innerHTML = '<span class="text-danger">Error de conexión.</span>');
 }
 function modoSinRuc() {
-    const sin = document.getElementById('sinRuc').checked;
-    ['razon_social', 'direccion'].forEach(id => document.getElementById(id).readOnly = !sin);
-    document.getElementById('proveedor_id').value = '';
-    document.getElementById('provMsg').innerHTML = sin ? '<span class="text-muted">Escribe la razón social a mano.</span>' : '';
+    const sin = porId('sinRuc').checked;
+    ['insumo_proveedor_id', 'proveedor_id'].forEach(id => porId(id).value = '');
+    porId('sin_ruc_val').value = sin ? '1' : '';
+    porId('provManual').style.display = sin ? 'block' : 'none';
+    porId('provElegido').style.display = 'none';
+    porId('provBuscar').style.display = sin ? 'none' : 'block';
+    if (sin) { porId('razon_social').value = ''; porId('direccion').value = ''; porId('razon_social').focus(); }
+    porId('provMsg').innerHTML = sin ? '<span class="text-muted">Escribe el nombre del proveedor. Se guardará para elegirlo la próxima vez.</span>' : '';
 }
 function docElegido(inp, tipo) {
     const f = inp.files[0];
@@ -244,8 +322,9 @@ function docElegido(inp, tipo) {
 document.getElementById('formIngreso').addEventListener('submit', function (e) {
     const filas = [...document.querySelectorAll('#filas .fila-item')].filter(f => f.querySelector('.sel-insumo').value);
     let error = '';
-    if (!document.getElementById('proveedor_id').value && !(document.getElementById('sinRuc').checked && document.getElementById('razon_social').value.trim()))
-        error = 'Busca y valida el proveedor por su RUC (o marca "sin RUC" y escribe la razón social).';
+    if (!porId('insumo_proveedor_id').value && !porId('proveedor_id').value && !(porId('sinRuc').checked && porId('razon_social').value.trim().length >= 3))
+        error = 'Elige un proveedor guardado, búscalo por su RUC en SUNAT, o marca "sin RUC" y escribe su nombre.';
+    else if (!porId('numero_factura').value.trim()) error = 'Escribe el número de factura (o del comprobante).';
     else if (!filas.length) error = 'Agrega al menos un insumo.';
     else if (filas.some(f => !(parseFloat(f.querySelector('.c-cant').value) > 0) || !(parseFloat(f.querySelector('.c-pt').value) >= 0) || f.querySelector('.c-pt').value === ''))
         error = 'Cada insumo necesita cantidad y precio (unitario o total).';

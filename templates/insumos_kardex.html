@@ -7,14 +7,23 @@
     <div class="col-6 col-md-2"><label class="small fw-bold text-muted">Empresa</label>
         <select name="empresa" class="form-select" onchange="this.form.submit()">
             {% for k, e in empresas.items() %}<option value="{{ k }}" {{ 'selected' if k == empresa }}>{{ e.corto }}</option>{% endfor %}</select></div>
-    <div class="col-12 col-md-5"><label class="small fw-bold text-muted">Insumo</label>
+    <div class="col-6 col-md-3"><label class="small fw-bold text-muted">Categoría</label>
+        <select name="categoria" class="form-select filtro-cat" data-placeholder="Todas las categorías">
+            <option value=""></option>
+            {% for c in categorias_filtro %}<option value="{{ c }}" {{ 'selected' if c == categoria }}>{{ c }}</option>{% endfor %}
+        </select></div>
+    <div class="col-12 col-md-4"><label class="small fw-bold text-muted">Insumo</label>
         <select name="insumo_id" class="form-select filtro-s2-k" data-placeholder="Todos los insumos" onchange="this.form.submit()">
             <option value=""></option>
             {% for i in insumos %}<option value="{{ i.id }}" {{ 'selected' if insumo and i.id == insumo.id }}>{{ i.codigo }} — {{ i.descripcion }}</option>{% endfor %}
         </select></div>
+    <div class="col-6 col-md-3"><label class="small fw-bold text-muted">Movimiento</label>
+        <select name="concepto" class="form-select" onchange="this.form.submit()">
+            {% for v, t in [('', 'Todos'), ('COMPRA', 'Compras'), ('CONSUMO', 'Consumos'), ('ANULACION', 'Anulaciones'), ('AJUSTE_COSTO', 'Ajustes de costo')] %}
+            <option value="{{ v }}" {{ 'selected' if v == concepto }}>{{ t }}</option>{% endfor %}</select></div>
     <div class="col-6 col-md-2"><label class="small fw-bold text-muted">Desde</label><input type="date" name="desde" class="form-control" value="{{ desde.isoformat() if desde else '' }}"></div>
     <div class="col-6 col-md-2"><label class="small fw-bold text-muted">Hasta</label><input type="date" name="hasta" class="form-control" value="{{ hasta.isoformat() if hasta else '' }}"></div>
-    <div class="col-12 col-md-1"><button class="btn btn-primary w-100"><i class="bi bi-funnel"></i></button></div>
+    <div class="col-12 col-md-2"><button class="btn btn-primary w-100"><i class="bi bi-funnel"></i> Filtrar</button></div>
 </form>
 {% if insumo %}
 <div class="row g-2 mb-3">
@@ -23,7 +32,8 @@
     <div class="col-4 col-md-2"><div class="card border-0 shadow-sm h-100"><div class="card-body py-2">
         <div class="ins-dato">Stock</div><div class="ins-kpi">{{ stock.stock_actual|cant if stock else '0' }}</div></div></div></div>
     <div class="col-4 col-md-2"><div class="card border-0 shadow-sm h-100"><div class="card-body py-2">
-        <div class="ins-dato">Costo prom.</div><div class="ins-kpi">{{ (stock.costo_promedio if stock else 0)|soles }}</div></div></div></div>
+        <div class="ins-dato">Costo prom.</div><div class="ins-kpi">{{ (stock.costo_promedio if stock else 0)|soles }}</div>
+        {% if puede_ajustar %}<button type="button" class="btn btn-link btn-sm p-0" onclick="ajustarCosto({{ insumo.id }}, '{{ empresa }}', {{ (insumo.codigo ~ ' · ' ~ insumo.descripcion)|tojson|forceescape }}, {{ (stock.costo_promedio if stock else 0)|tojson }}, {{ (stock.stock_actual if stock else 0)|tojson }})"><i class="bi bi-pencil"></i> Editar</button>{% endif %}</div></div></div>
     <div class="col-4 col-md-2"><div class="card border-0 shadow-sm h-100"><div class="card-body py-2">
         <div class="ins-dato">Valor</div><div class="ins-kpi">{{ ((stock.stock_actual or 0) * (stock.costo_promedio or 0) if stock else 0)|soles }}</div></div></div></div>
 </div>
@@ -44,14 +54,20 @@
             <tr>
                 <td class="ps-3 text-nowrap">{{ m.fecha.strftime('%d/%m/%Y') }}<div class="text-muted" style="font-size:.7rem;">{{ m.usuario.username if m.usuario else '' }}</div></td>
                 {% if not insumo %}<td><a href="{{ url_for('insumos_kardex', empresa=empresa, insumo_id=m.insumo_id) }}" class="fw-bold">{{ m.insumo.codigo }}</a><div class="text-muted" style="font-size:.72rem;">{{ m.insumo.descripcion }}</div></td>{% endif %}
-                <td><span class="badge {{ 'bg-success' if m.concepto == 'COMPRA' else 'bg-danger' if m.concepto == 'CONSUMO' else 'bg-secondary' }}">{{ m.concepto }}</span>
+                <td><span class="badge {{ 'bg-success' if m.concepto == 'COMPRA' else 'bg-danger' if m.concepto == 'CONSUMO' else 'bg-warning text-dark' if m.concepto == 'AJUSTE_COSTO' else 'bg-secondary' }}">{{ 'AJUSTE DE COSTO' if m.concepto == 'AJUSTE_COSTO' else m.concepto }}</span>
                     {% if m.ingreso_id %}<a href="{{ url_for('insumos_ingreso_detalle', ingreso_id=m.ingreso_id) }}">{{ m.referencia }}</a>
                     {% elif m.salida_id %}<a href="{{ url_for('insumos_salida_detalle', salida_id=m.salida_id) }}">{{ m.referencia }}</a>{% else %}{{ m.referencia }}{% endif %}
-                    {% if m.observacion %}<div class="text-muted fst-italic" style="font-size:.72rem;">{{ m.observacion }}</div>{% endif %}</td>
+                    {% if m.observacion %}<div class="text-muted fst-italic" style="font-size:.72rem;">{% if m.concepto == 'AJUSTE_COSTO' %}<i class="bi bi-shield-check"></i> Motivo: {% endif %}{{ m.observacion }}</div>{% endif %}
+                    {% if m.concepto == 'AJUSTE_COSTO' %}<div class="text-muted" style="font-size:.7rem;">Por {{ m.usuario.nombre_completo if m.usuario else '?' }} el {{ m.fecha_registro.strftime('%d/%m/%Y %H:%M') if m.fecha_registro else '' }}</div>{% endif %}</td>
                 <td class="text-center text-success fw-bold">{{ m.cantidad|cant if m.tipo == 'ENTRADA' else '' }}</td>
                 <td class="text-center text-danger fw-bold">{{ m.cantidad|cant if m.tipo == 'SALIDA' else '' }}</td>
+                {% if m.concepto == 'AJUSTE_COSTO' %}
+                <td class="text-end text-nowrap" title="Costo anterior"><s class="text-muted">{{ m.costo_unitario|soles }}</s></td>
+                <td class="text-end text-nowrap {{ 'text-success' if (m.costo_total or 0) >= 0 else 'text-danger' }}" title="Cambio en el valor del stock">{{ '+' if (m.costo_total or 0) >= 0 }}{{ m.costo_total|soles }}</td>
+                {% else %}
                 <td class="text-end">{{ m.costo_unitario|soles }}</td>
                 <td class="text-end">{{ m.costo_total|soles }}</td>
+                {% endif %}
                 <td class="text-center fw-bold">{{ m.stock_despues|cant }}</td>
                 <td class="text-end">{{ m.costo_prom_despues|soles }}</td>
                 <td class="text-end pe-3">{{ ((m.stock_despues or 0) * (m.costo_prom_despues or 0))|soles }}</td>
@@ -62,6 +78,7 @@
         </tbody>
     </table>
 </div></div>
+{% include '_insumos_costo.html' %}
 <script>
 document.addEventListener('DOMContentLoaded', () => {
     if (window.jQuery && jQuery.fn.select2) jQuery('.filtro-s2-k').select2({ width: '100%', allowClear: true, placeholder: 'Todos los insumos' })

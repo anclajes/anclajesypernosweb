@@ -4,9 +4,15 @@
 {% block content %}
 {% include '_insumos_nav.html' %}
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-    <form method="GET" class="input-group" style="max-width: 420px;">
-        <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
-        <input type="text" name="q" class="form-control" placeholder="Código, descripción o categoría..." value="{{ q }}">
+    <form method="GET" class="row g-2 flex-grow-1" style="max-width: 720px;">
+        <div class="col-12 col-md-7"><div class="input-group">
+            <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+            <input type="text" name="q" class="form-control" placeholder="Código o descripción..." value="{{ q }}">
+            <button class="btn btn-primary"><i class="bi bi-funnel"></i></button></div></div>
+        <div class="col-12 col-md-5"><select name="categoria" class="form-select filtro-cat" data-placeholder="Todas las categorías">
+            <option value=""></option>
+            {% for c in categorias_filtro %}<option value="{{ c }}" {{ 'selected' if c == categoria }}>{{ c }}</option>{% endfor %}
+        </select></div>
     </form>
     {% if puede_editar %}
     <button class="btn btn-primary fw-bold" onclick="abrirInsumo(null)"><i class="bi bi-plus-lg"></i> Nuevo insumo</button>
@@ -37,11 +43,12 @@
                         <button class="btn btn-sm btn-outline-primary py-0" title="Editar"
                                 onclick="abrirInsumo({{ {'id': i.id, 'codigo': i.codigo, 'descripcion': i.descripcion, 'categoria': i.categoria or '', 'unidad': i.unidad or ''}|tojson|forceescape }})"><i class="bi bi-pencil"></i></button>
                         <button class="btn btn-sm btn-outline-secondary py-0" title="Activar / desactivar" onclick="toggleInsumo({{ i.id }})"><i class="bi {{ 'bi-toggle-on' if i.activo else 'bi-toggle-off' }}"></i></button>
+                        <button class="btn btn-sm btn-outline-danger py-0" title="Borrar" onclick="borrarInsumo({{ i.id }}, {{ (i.codigo ~ ' — ' ~ i.descripcion)|tojson|forceescape }})"><i class="bi bi-trash"></i></button>
                         {% endif %}
                     </td>
                 </tr>
             {% else %}
-                <tr><td colspan="9" class="text-center text-muted py-5">Todavía no hay insumos{% if q %} con "{{ q }}"{% endif %}.</td></tr>
+                <tr><td colspan="9" class="text-center text-muted py-5">{% if q or categoria %}No hay insumos con estos filtros.{% else %}Todavía no hay insumos.{% endif %}</td></tr>
             {% endfor %}
             </tbody>
         </table>
@@ -51,6 +58,11 @@
 <script>
 function toggleInsumo(id) {
     fetch(`/insumos/maestro/${id}/activo`, { method: 'POST' }).then(r => r.json()).then(d => { if (d.status === 'success') location.reload(); });
+}
+function borrarInsumo(id, nombre) {
+    Swal.fire({ icon: 'warning', title: '¿Borrar insumo?', text: nombre, showCancelButton: true, confirmButtonText: 'Sí, borrar', cancelButtonText: 'Cancelar', confirmButtonColor: '#dc2626' })
+        .then(r => { if (r.isConfirmed) fetch(`/insumos/maestro/${id}/borrar`, { method: 'POST' }).then(x => x.json()).then(d => {
+            if (d.status === 'success') location.reload(); else Swal.fire('No se puede borrar', d.msg, 'info'); }); });
 }
 document.addEventListener('insumoGuardado', () => location.reload());
 </script>

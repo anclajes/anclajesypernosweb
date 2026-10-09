@@ -8,7 +8,8 @@
     .ins-nav a.activa { background: var(--theme-primary, #0F172A); border-color: var(--theme-primary, #0F172A); color: #fff; }
     .ins-nav a.accion { background: #ecfdf5; border-color: #a7f3d0; color: #047857; }
     .ins-nav a.accion.salida { background: #fef2f2; border-color: #fecaca; color: #b91c1c; }
-    .ins-nav a.accion.activa { color: #fff; }
+    .ins-nav a.accion.activa { color: #fff; background: #047857; border-color: #047857; }
+    .ins-nav a.accion.salida.activa { background: #b91c1c; border-color: #b91c1c; }
     .ins-empresa { display: inline-flex; align-items: center; gap: 8px; }
     .ins-empresa img { height: 34px; object-fit: contain; }
     .ins-kpi { font-size: 1.3rem; font-weight: 800; font-variant-numeric: tabular-nums; color: #0f172a; line-height: 1.15; }
@@ -34,3 +35,17 @@
     <a href="{{ url_for('insumos_config') }}" class="{{ 'activa' if seccion == 'config' }}"><i class="bi bi-gear"></i> Configuración</a>
     {% endif %}
 </nav>
+<script>
+/* Filtro de categoría (select con buscador; al elegir, se aplica). Se usa en todas las pantallas del módulo. */
+document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('select.filtro-cat').forEach(sel => {
+        const enviar = () => setTimeout(() => sel.form && sel.form.submit(), 0);
+        if (window.jQuery && jQuery.fn.select2) {
+            jQuery(sel).select2({ width: '100%', allowClear: true, placeholder: sel.dataset.placeholder || 'Todas las categorías',
+                                  language: { noResults: () => 'Sin coincidencias' } })
+                .on('select2:select', enviar).on('select2:clear', () => { sel.value = ''; enviar(); })
+                .on('select2:open', () => setTimeout(() => { const b = document.querySelector('.select2-container--open .select2-search__field'); if (b) b.focus(); }, 0));
+        } else sel.addEventListener('change', enviar);
+    });
+});
+</script>

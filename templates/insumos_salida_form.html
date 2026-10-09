@@ -87,8 +87,9 @@
         <span class="n"></span>
         <button type="button" class="quitar" title="Quitar"><i class="bi bi-x-circle-fill"></i></button>
         <div class="row g-2">
-            <div class="col-12"><label>Insumo *</label><select name="insumo_id[]" class="form-select sel-insumo" style="width:100%;"></select>
-                <div class="info mt-1"></div></div>
+            <div class="col-12 col-md-4"><label><i class="bi bi-funnel"></i> Categoría</label><select class="form-select form-select-sm sel-cat"></select></div>
+            <div class="col-12 col-md-8"><label>Insumo *</label><select name="insumo_id[]" class="form-select sel-insumo" style="width:100%;"></select></div>
+            <div class="col-12 info"></div>
             <div class="col-6"><label>Cantidad solicitada *</label><input name="cantidad_solicitada[]" type="number" step="any" min="0" class="form-control form-control-sm c-sol"></div>
             <div class="col-6"><label>Cantidad despachada *</label><input name="cantidad_despachada[]" type="number" step="any" min="0" class="form-control form-control-sm c-desp"></div>
         </div>
@@ -99,6 +100,7 @@
 <script>
 const INSUMOS = {{ insumos_json|tojson }};
 const SIGUIENTE = {{ siguiente|tojson }};
+const CATEGORIAS = {{ categorias_filtro|tojson }};
 const TRAB = [{% for t in trabajadores %}{id: {{ t.id }}, nombre: {{ t.nombre|tojson }}, codigo: {{ (t.codigo or '')|tojson }}, area_id: {{ t.area_id|tojson }}, area: {{ (t.area.nombre if t.area else '')|tojson }}, empresa: {{ (t.empresa or 'AMBAS')|tojson }}, jefe: {{ 'true' if t.es_jefe else 'false' }}}{{ ',' if not loop.last }}{% endfor %}];
 const pad = FirmaPad(document.getElementById('padFirma'));
 function empresaActual() { return document.querySelector('input[name=empresa]:checked').value; }
@@ -124,9 +126,13 @@ function alElegirSolicitante() {
     const t = TRAB.find(x => String(x.id) === document.getElementById('sel_solicitado').value);
     if (t && t.area_id) document.getElementById('sel_area').value = t.area_id;
 }
+function opcionesCategorias(selCat) {
+    const nombres = [...new Set(CATEGORIAS.concat(Object.values(INSUMOS).flat().map(i => i.categoria).filter(Boolean)))].sort((a, b) => a.localeCompare(b, 'es'));
+    selCat.innerHTML = '<option value="">Todas</option>' + nombres.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+}
 function opcionesInsumos(sel) {
-    const val = sel.value;
-    sel.innerHTML = '<option value=""></option>' + (INSUMOS[empresaActual()] || []).map(i =>
+    const val = sel.value, fila = sel.closest('.fila-item'), cat = fila ? fila.querySelector('.sel-cat').value : '';
+    sel.innerHTML = '<option value=""></option>' + (INSUMOS[empresaActual()] || []).filter(i => !cat || i.categoria === cat || String(i.id) === String(val)).map(i =>
         `<option value="${i.id}" ${i.stock > 0 ? '' : 'disabled'}>${esc(i.codigo)} — ${esc(i.descripcion)} (stock ${fmtCant(i.stock)} ${esc(i.unidad)})</option>`).join('');
     sel.value = val;
 }
@@ -153,10 +159,18 @@ function numerar() { document.querySelectorAll('#filas .fila-item').forEach((f, 
 function agregarFila() {
     const fila = document.getElementById('tplFila').content.firstElementChild.cloneNode(true);
     document.getElementById('filas').appendChild(fila);
-    const sel = fila.querySelector('.sel-insumo');
+    const sel = fila.querySelector('.sel-insumo'), selCat = fila.querySelector('.sel-cat');
+    opcionesCategorias(selCat);
     opcionesInsumos(sel);
     if (window.jQuery && jQuery.fn.select2) jQuery(sel).select2({ placeholder: 'Busca por código o descripción', width: '100%' }).on('change', () => pintarFila(fila));
     else sel.addEventListener('change', () => pintarFila(fila));
+    selCat.addEventListener('change', () => {
+        const d = datoInsumo(sel.value);
+        if (d && selCat.value && d.categoria !== selCat.value) sel.value = '';
+        opcionesInsumos(sel);
+        if (window.jQuery && jQuery(sel).data('select2')) { jQuery(sel).trigger('change'); if (!sel.value) jQuery(sel).select2('open'); }
+        pintarFila(fila);
+    });
     const sol = fila.querySelector('.c-sol'), desp = fila.querySelector('.c-desp');
     sol.addEventListener('input', () => { if (!desp.dataset.tocado) desp.value = sol.value; pintarFila(fila); });
     desp.addEventListener('input', () => { desp.dataset.tocado = '1'; pintarFila(fila); });

@@ -1,0 +1,37 @@
+{# Editar el costo promedio (solo Gerencia). Queda en el Kardex como AJUSTE DE COSTO con motivo, usuario y fecha. #}
+<script>
+function ajustarCosto(id, empresa, nombre, actual, stock) {
+    const e = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const f2 = n => Number(n || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+    Swal.fire({
+        title: 'Editar costo promedio', width: 480,
+        html: `<div class="text-start small">
+                 <div class="text-muted mb-2">${e(nombre)}</div>
+                 <div class="d-flex justify-content-between border rounded p-2 mb-2 bg-light"><span>Costo actual</span><b>S/ ${f2(actual)}</b></div>
+                 <label class="fw-bold">Nuevo costo promedio (S/ por unidad, con IGV) *</label>
+                 <input id="aj_costo" type="number" min="0" step="any" class="form-control mb-1" value="${Number(actual || 0)}">
+                 <div class="text-muted mb-2" id="aj_dif" style="font-size:.75rem;"></div>
+                 <label class="fw-bold">Motivo del ajuste *</label>
+                 <textarea id="aj_motivo" class="form-control" rows="2" maxlength="255" placeholder="Ej: la factura se registró sin IGV"></textarea>
+                 <div class="mt-2 p-2 rounded" style="background:#fffbeb; border:1px solid #fde68a; font-size:.75rem;">
+                    <i class="bi bi-shield-check"></i> Queda en la <b>auditoría</b> (Kardex → "Ajustes de costo"): costo anterior, nuevo, quién, cuándo y motivo.
+                    Las salidas ya registradas no cambian; las siguientes usan el costo nuevo.</div></div>`,
+        showCancelButton: true, confirmButtonText: 'Guardar ajuste', cancelButtonText: 'Cancelar',
+        didOpen: () => {
+            const inp = document.getElementById('aj_costo'), dif = document.getElementById('aj_dif');
+            const pintar = () => { const n = parseFloat(inp.value); dif.innerHTML = isNaN(n) ? '' : `Valor del stock (${Number(stock || 0).toLocaleString('es-PE')} und): S/ ${f2((stock || 0) * (actual || 0))} → <b>S/ ${f2((stock || 0) * n)}</b>`; };
+            inp.addEventListener('input', pintar); pintar(); inp.select();
+        },
+        preConfirm: () => {
+            const costo = document.getElementById('aj_costo').value, motivo = document.getElementById('aj_motivo').value.trim();
+            if (costo === '' || parseFloat(costo) < 0) return Swal.showValidationMessage('Escribe el nuevo costo.');
+            if (motivo.length < 5) return Swal.showValidationMessage('Escribe el motivo (queda en la auditoría).');
+            const fd = new FormData(); fd.append('costo', costo); fd.append('motivo', motivo);
+            return fetch(`/insumos/stock/${id}/${empresa}/costo`, { method: 'POST', body: fd }).then(r => r.json()).then(d => {
+                if (d.status !== 'success') Swal.showValidationMessage(d.msg || 'No se pudo guardar.');
+                return d;
+            }).catch(() => Swal.showValidationMessage('Error de conexión.'));
+        }
+    }).then(r => { if (r.isConfirmed && r.value && r.value.status === 'success') location.reload(); });
+}
+</script>
