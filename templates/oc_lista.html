@@ -17,7 +17,11 @@
     .doc-chip.COTIZACION { background: #e0f2fe; color: #075985; } .doc-chip.OTRO { background: #f1f5f9; color: #334155; }
     .card-oc { border: 1px solid #e2e8f0; border-radius: 12px; padding: 10px 12px; background: #fff; margin-bottom: 8px; border-left: 4px solid var(--c); }
     .card-oc .fila { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; }
-    .card-oc .prov { font-weight: 700; font-size: .88rem; line-height: 1.2; }
+    .card-oc .prov { font-weight: 700; font-size: .88rem; line-height: 1.2; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+    .prov-cel { max-width: 250px; min-width: 150px; }
+    .prov-cel b { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: .8rem; line-height: 1.2; overflow-wrap: anywhere; }
+    .tabla-oc td.nowrap, .tabla-oc .nw { white-space: nowrap; }
+    .seg-ing { font-size: .68rem; color: #64748b; line-height: 1.2; margin-top: 2px; }
     .card-oc .det { font-size: .74rem; color: #64748b; }
 </style>
 
@@ -44,7 +48,8 @@
 
 {% if vista == 'conformes' %}
 <div class="alert alert-light border small py-2"><i class="bi bi-check2-all text-success"></i> Órdenes cuyo material <b>llegó y fue revisado</b> (estado, cantidad y documentos OK).
-    Aquí quedan sus <b>guías y facturas</b>. Las de <b>Insumos</b> aparecen como pendientes en Insumos internos hasta registrarlas.</div>
+    Aquí quedan sus <b>guías y facturas</b>. Las del <b>inventario</b> aparecen en <a href="{{ url_for('oc_ingresos_pendientes') }}">Ingresos pendientes</a> para que Almacén haga el movimiento y lo marque;
+    las de <b>Insumos</b>, como pendientes en Insumos internos.</div>
 {% elif vista == 'aprobar' and session.get('role') == 'admin' %}
 <div class="alert py-2 small" style="background:#fffbeb; border:1px solid #fde68a;"><i class="bi bi-pen text-warning"></i> Revisa cada orden y apruébala (el PDF llevará tu <b>firma y sello</b>) o recházala con el motivo.</div>
 {% endif %}
@@ -52,7 +57,7 @@
 {% macro estado_badge(o) %}{% set e = estados[o.estado] %}<span class="oc-estado" style="color: {{ e.color }}; background: {{ e.fondo }};"><i class="bi {{ e.icono }}"></i> {{ e.txt }}</span>{% endmacro %}
 {% macro aprobacion(o) %}
     {% if o.aprobado_por %}<span class="aprob si" title="Aprobada el {{ o.fecha_aprobacion.strftime('%d/%m/%Y %H:%M') }}"><i class="bi bi-patch-check-fill"></i> {{ o.aprobado_por.nombre_completo }}</span>
-    {% elif o.estado == 'RECHAZADA' %}<span class="aprob no" title="{{ o.motivo_rechazo }}"><i class="bi bi-x-octagon-fill"></i> Rechazó {{ o.rechazado_por.nombre_completo if o.rechazado_por else '' }}</span>
+    {% elif o.estado == 'RECHAZADA' %}<span class="aprob no" title="{{ oc_rechazo_txt(o) }}"><i class="bi bi-x-octagon-fill"></i> Rechazó {{ o.rechazado_por.nombre_completo if o.rechazado_por else '' }}</span>
     {% elif o.estado == 'ANULADA' %}<span class="aprob no" title="{{ o.motivo_anulacion }}"><i class="bi bi-slash-circle"></i> Anuló {{ o.anulado_por.nombre_completo if o.anulado_por else '' }}</span>
     {% elif o.estado == 'ENVIADA' %}<span class="aprob pend"><i class="bi bi-hourglass-split"></i> En revisión</span>
     {% else %}<span class="aprob pend"><i class="bi bi-dash-circle"></i> Sin enviar</span>{% endif %}
@@ -75,9 +80,9 @@
                 <tr>
                     <td class="ps-3 text-nowrap"><span class="oc-tipo {{ o.tipo }}">{{ o.tipo }}</span> <a class="oc-num" href="{{ url_for('oc_detalle', orden_id=o.id) }}">{{ '%06d'|format(o.numero) }}</a>
                         {% if o.cotizacion %}<div class="text-muted" style="font-size:.68rem;">Cot. {{ o.cotizacion }}</div>{% endif %}</td>
-                    <td class="text-nowrap">{{ o.fecha.strftime('%d/%m/%Y') }}<div class="text-muted" style="font-size:.68rem;">{{ o.creado_por.nombre_completo if o.creado_por else '' }}</div></td>
-                    <td><b>{{ o.razon_social }}</b><div class="text-muted" style="font-size:.7rem;">{{ o.ruc }} · {{ o.items|length }} ítem(s)</div></td>
-                    <td><span class="oc-dest {{ o.destino }}">{{ 'Inv. General' if o.destino == 'GENERAL' else 'Insumos' }}</span></td>
+                    <td class="text-nowrap">{{ o.fecha.strftime('%d/%m/%Y') }}<div class="text-muted text-truncate" style="font-size:.68rem; max-width:110px;">{{ o.creado_por.nombre_completo if o.creado_por else '' }}</div></td>
+                    <td><div class="prov-cel" title="{{ o.razon_social }}"><b>{{ o.razon_social }}</b><div class="text-muted" style="font-size:.7rem;">{{ o.ruc }} · {{ o.items|length }} ítem(s)</div></div></td>
+                    <td><span class="oc-dest {{ o.destino }}">{{ oc_destino_txt(o)|replace('Inventario', 'Inv.') }}</span></td>
                     <td>{% if o.fecha_llegada %}<div class="entrega"><i class="bi bi-box-seam"></i> Llegó {{ o.fecha_llegada.strftime('%d/%m/%Y %H:%M') }}</div>{% else %}{{ entrega(o) }}{% endif %}</td>
                     <td class="text-end text-nowrap num fw-bold">{{ monedas[o.moneda].simbolo }} {{ '{:,.2f}'.format(o.total or 0) }}</td>
                     {% if vista != 'conformes' %}<td>{{ estado_badge(o) }}</td>{% endif %}
@@ -85,7 +90,9 @@
                     {% if vista == 'conformes' %}
                     <td>{% for d in docs.get(o.id, []) %}<a class="doc-chip {{ d.tipo }}" href="{{ url_for('oc_documento_ver', doc_id=d.id) }}" target="_blank"><i class="bi {{ 'bi-file-earmark-pdf' if d.content_type == 'application/pdf' else 'bi-image' }}"></i> {{ {'GUIA': 'Guía', 'FACTURA': 'Factura', 'COTIZACION': 'Cotiz.', 'OTRO': 'Otro'}[d.tipo] }}</a>{% else %}<span class="text-muted">—</span>{% endfor %}</td>
                     <td>{% if o.destino == 'INSUMOS' %}{% if o.insumo_ingreso_id %}<span class="aprob si"><i class="bi bi-check2"></i> En Insumos</span>{% else %}<span class="aprob pend">Pendiente en Insumos</span>{% endif %}
-                        {% else %}{% if o.fecha_kardex %}<span class="aprob si"><i class="bi bi-check2"></i> En Kardex</span>{% else %}<span class="aprob pend">Falta Kardex</span>{% endif %}{% endif %}</td>
+                        {% else %}{% set ie = oc_ingreso_estado(o) %}{% if ie.completo %}<span class="aprob si"><i class="bi bi-check2-all"></i> Ingresado</span>
+                            <div class="seg-ing">{{ ie.ultimo.ingresado_por.nombre_completo if ie.ultimo.ingresado_por else '' }}<br>{{ ie.ultimo.fecha_ingreso.strftime('%d/%m/%Y %H:%M') }}</div>
+                        {% else %}<span class="aprob pend">Por ingresar {{ ie.hechos }}/{{ ie.total }}</span>{% endif %}{% endif %}</td>
                     {% endif %}
                     <td class="pe-3 text-end text-nowrap">
                         <a class="btn btn-sm btn-outline-primary py-0" href="{{ url_for('oc_detalle', orden_id=o.id) }}"><i class="bi bi-eye"></i> Ver</a>
@@ -111,8 +118,8 @@
                 <span class="text-muted small">· {{ o.fecha.strftime('%d/%m/%Y') }}</span></div>
             <div class="num fw-bold text-nowrap">{{ monedas[o.moneda].simbolo }} {{ '{:,.2f}'.format(o.total or 0) }}</div>
         </div>
-        <div class="prov mt-1">{{ o.razon_social }}</div>
-        <div class="det">{{ o.ruc }} · <span class="oc-dest {{ o.destino }}">{{ 'Inv. General' if o.destino == 'GENERAL' else 'Insumos' }}</span></div>
+        <div class="prov mt-1" title="{{ o.razon_social }}">{{ o.razon_social }}</div>
+        <div class="det">{{ o.ruc }} · <span class="oc-dest {{ o.destino }}">{{ oc_destino_txt(o)|replace('Inventario', 'Inv.') }}</span></div>
         <div class="mt-1">{% if o.fecha_llegada %}<div class="entrega"><i class="bi bi-box-seam"></i> Llegó {{ o.fecha_llegada.strftime('%d/%m/%Y %H:%M') }}</div>{% else %}{{ entrega(o) }}{% endif %}</div>
         <div class="d-flex flex-wrap gap-1 align-items-center mt-2">{{ estado_badge(o) }} {{ aprobacion(o) }}</div>
         <div class="d-flex gap-2 mt-2">

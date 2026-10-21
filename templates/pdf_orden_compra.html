@@ -2,136 +2,177 @@
 <head>
 <meta charset="utf-8">
 <style>
-    /* Orden de Compra / Servicio (xhtml2pdf): bordes por celda, ninguna celda vacía, clases en el <td>. */
-    @page { size: a4 portrait; margin: 1cm 1.1cm 1cm 1.1cm; }
-    body { font-family: Helvetica, Arial, sans-serif; font-size: 8.3pt; color: #111; }
+    /* Orden de Compra / Servicio (xhtml2pdf). Formato de la empresa: marco exterior, líneas azules entre bloques,
+       sin líneas internas en las tablas. Ninguna celda vacía (xhtml2pdf) y clases puestas en el <td>. */
+    @page {
+        size: a4 portrait;
+        margin: 0.9cm;
+        @frame contenido { left: 0.9cm; right: 0.9cm; top: 0.9cm; bottom: 0.9cm; padding: 6px 8px 6px 8px; -pdf-frame-border: 1; }
+    }
+    body { font-family: Helvetica, Arial, sans-serif; font-size: 8pt; color: #111; line-height: 1.15; }
     table { width: 100%; border-collapse: collapse; }
-    td, th { padding: 3px 5px; vertical-align: middle; }
-    .b td, .b th { border: 0.7px solid #333; }
-    .empresa { font-size: 13pt; font-weight: bold; color: #0B3D91; }
-    .chico { font-size: 7.2pt; color: #333; }
-    .caja-num td { border: 1.2px solid #0B3D91; text-align: center; }
-    .tipo { font-size: 11.5pt; font-weight: bold; color: #fff; background-color: #0B3D91; }
-    .numero { font-size: 14pt; font-weight: bold; color: #0B3D91; }
-    .etq { font-weight: bold; font-size: 7.2pt; background-color: #eef2f8; width: 19%; }
-    .val { font-size: 8.3pt; }
-    .cab th { font-size: 7.6pt; font-weight: bold; background-color: #0B3D91; color: #fff; text-align: center; }
-    td.it { font-size: 8.2pt; padding-top: 3px; padding-bottom: 2px; }
-    .c { text-align: center; } .r { text-align: right; }
-    .tot td { font-size: 8.6pt; }
-    td.tot-etq { font-weight: bold; background-color: #eef2f8; text-align: right; }
-    td.tot-final { font-weight: bold; font-size: 10pt; background-color: #0B3D91; color: #fff; text-align: right; }
-    .letras { font-size: 7.6pt; font-style: italic; }
-    .resaltado { background-color: #fde68a; font-weight: bold; }
-    .titulo-sec { font-size: 7.8pt; font-weight: bold; color: #0B3D91; }
-    .terminos { font-size: 7.4pt; line-height: 1.35; }
-    .aviso-pend { border: 1.5px solid #d97706; background-color: #fffbeb; color: #92400e; font-weight: bold; text-align: center; font-size: 9pt; }
-    .aviso-rech { border: 1.5px solid #b91c1c; background-color: #fef2f2; color: #991b1b; font-weight: bold; text-align: center; font-size: 9pt; }
-    .aviso-anul { border: 1.5px solid #334155; background-color: #f1f5f9; color: #1e293b; font-weight: bold; text-align: center; font-size: 9pt; }
-    .firma-box { border: 0.7px solid #333; text-align: center; vertical-align: bottom; }
-    .sello-pend { color: #b45309; font-weight: bold; font-size: 10pt; }
-    .sello-rech { color: #b91c1c; font-weight: bold; font-size: 15pt; }
-    .sello-anul { color: #334155; font-weight: bold; font-size: 15pt; }
+    td, th { padding: 1px 3px; vertical-align: top; }
+    .empresa { font-size: 12.5pt; font-weight: bold; }
+    .azul { color: #1f4e9c; }
+    .dir { font-size: 6.8pt; font-weight: bold; color: #1f4e9c; }
+    .mail { font-size: 7.4pt; color: #1f4e9c; text-decoration: underline; }
+    .tef { font-size: 6.8pt; color: #1f4e9c; font-weight: bold; }
+    td.caja-ruc { border-top: 1px solid #111; border-left: 1px solid #111; border-right: 1px solid #111; text-align: center; font-size: 10.5pt; }
+    td.caja-tipo { background-color: #7f7f7f; color: #fff; text-align: center; font-size: 11pt; font-weight: bold; border-left: 1px solid #111; border-right: 1px solid #111; }
+    td.caja-num { border-bottom: 1px solid #111; border-left: 1px solid #111; border-right: 1px solid #111; text-align: center; font-size: 11pt; }
+    td.linea { border-top: 2px solid #1f4e9c; font-size: 1pt; padding: 0; }
+    td.k { font-weight: bold; font-size: 7.6pt; white-space: nowrap; }
+    td.dp { font-weight: bold; font-size: 7.6pt; text-align: center; }
+    td.v { font-size: 7.8pt; }
+    td.k-res { font-weight: bold; font-size: 7.6pt; background-color: #bdd7ee; }
+    th.cab { background-color: #7f7f7f; color: #fff; font-size: 7.6pt; font-weight: bold; padding: 2px 3px; }
+    td.it { font-size: 7.6pt; padding-top: 2px; padding-bottom: 1px; }
+    td.itb { font-size: 7.6pt; font-weight: bold; padding-top: 2px; padding-bottom: 1px; }
+    .c { text-align: center; } .r { text-align: right; } .b { font-weight: bold; }
+    td.tk { font-weight: bold; font-size: 7.6pt; }
+    td.tv { font-size: 7.6pt; text-align: right; }
+    td.neto-k { background-color: #404040; color: #fff; font-weight: bold; font-size: 8pt; padding-top: 2px; padding-bottom: 1px; }
+    td.neto-v { background-color: #fff; color: #111; font-weight: bold; font-size: 8pt; text-align: right; border: 1px solid #404040; padding-top: 2px; padding-bottom: 1px; }
+    .letras { font-size: 7pt; font-style: italic; }
+    .titulo { font-weight: bold; text-decoration: underline; font-size: 7.8pt; }
+    .terminos { font-size: 7.2pt; }
+    .resaltado { color: #1f4e9c; font-weight: bold; background-color: #e8f0fe; }
+    td.hor-cab { background-color: #7f7f7f; color: #fff; text-align: center; font-weight: bold; font-size: 7.4pt; border: 1px solid #555; }
+    td.hor { text-align: center; font-size: 7.2pt; border-left: 1px solid #555; border-right: 1px solid #555; }
+    td.hor-fin { text-align: center; font-size: 7.2pt; border-left: 1px solid #555; border-right: 1px solid #555; border-bottom: 1px solid #555; }
+    td.aviso-pend { color: #b45309; font-weight: bold; font-size: 8pt; text-align: center; background-color: #fff7e6; }
+    td.aviso-rech { color: #b91c1c; font-weight: bold; font-size: 8pt; text-align: center; background-color: #fdecec; }
+    td.aviso-anul { color: #1e293b; font-weight: bold; font-size: 8pt; text-align: center; background-color: #eef2f7; }
+    .sello-pend { color: #b45309; font-weight: bold; font-size: 9pt; }
+    .sello-rech { color: #b91c1c; font-weight: bold; font-size: 14pt; }
+    .sello-anul { color: #334155; font-weight: bold; font-size: 14pt; }
+    .chico { font-size: 6.6pt; color: #444; }
 </style>
 </head>
 <body>
+<!-- ENCABEZADO -->
 <table>
     <tr>
-        <td style="width: 22%; text-align: center;">{% if logo %}<img src="{{ logo.uri }}" width="{{ logo.ancho }}" height="{{ logo.alto }}">{% else %}<b>{{ cfg.razon_social }}</b>{% endif %}</td>
-        <td style="width: 50%; text-align: center;"><span class="empresa">{{ cfg.razon_social }}</span><br>
-            <span class="chico">{{ cfg.direccion }}{% if cfg.ruc %} · RUC {{ cfg.ruc }}{% endif %}<br>{{ cfg.email }} · Telf. {{ cfg.telefono }}</span></td>
-        <td style="width: 28%;">
-            <table class="caja-num">
-                <tr><td class="tipo">{{ tipos[o.tipo]|upper }}</td></tr>
-                <tr><td class="numero">N° {{ '%06d'|format(o.numero) }}</td></tr>
-                <tr><td class="chico">Fecha: <b>{{ o.fecha.strftime('%d/%m/%Y') }}</b></td></tr>
+        <td style="width: 24%; vertical-align: middle;">{% if logo %}<img src="{{ logo.uri }}" width="{{ (logo.ancho * 0.8)|round|int }}" height="{{ (logo.alto * 0.8)|round|int }}">{% else %}<b>{{ cfg.razon_social }}</b>{% endif %}</td>
+        <td style="width: 46%; text-align: center; vertical-align: middle;">
+            <span class="empresa">{{ cfg.razon_social }}</span><br>
+            <span class="dir">{{ cfg.direccion }}</span><br>
+            <span class="mail">{{ cfg.email }}</span><br>
+            <span class="tef">tef&nbsp;&nbsp;{{ cfg.telefono }}</span>
+        </td>
+        <td style="width: 30%; vertical-align: middle;">
+            <table>
+                <tr><td class="caja-ruc">RUC: {{ cfg.ruc or '-' }}</td></tr>
+                <tr><td class="caja-tipo">{{ tipos[o.tipo]|upper }}</td></tr>
+                <tr><td class="caja-num">N° {{ '%06d'|format(o.numero) }}</td></tr>
             </table>
         </td>
     </tr>
 </table>
-
 {% if o.estado == 'RECHAZADA' %}
-<table style="margin-top: 5px;"><tr><td class="aviso-rech">ORDEN RECHAZADA por Gerencia el {{ o.fecha_rechazo.strftime('%d/%m/%Y') }} — Motivo: {{ o.motivo_rechazo }}. DOCUMENTO SIN VALIDEZ.</td></tr></table>
+<table><tr><td class="aviso-rech">ORDEN RECHAZADA por Gerencia el {{ o.fecha_rechazo.strftime('%d/%m/%Y') }} — {{ oc_rechazo_txt(o) }}. DOCUMENTO SIN VALIDEZ.</td></tr></table>
 {% elif o.estado == 'ANULADA' %}
-<table style="margin-top: 5px;"><tr><td class="aviso-anul">ORDEN ANULADA el {{ o.fecha_anulacion.strftime('%d/%m/%Y') }} por {{ o.anulado_por.nombre_completo if o.anulado_por else '' }} — {{ o.motivo_anulacion }}. DOCUMENTO SIN VALIDEZ.</td></tr></table>
+<table><tr><td class="aviso-anul">ORDEN ANULADA el {{ o.fecha_anulacion.strftime('%d/%m/%Y') }} — {{ o.motivo_anulacion }}. DOCUMENTO SIN VALIDEZ.</td></tr></table>
 {% elif o.estado in ['BORRADOR', 'ENVIADA'] %}
-<table style="margin-top: 5px;"><tr><td class="aviso-pend">PENDIENTE DE APROBACIÓN — aún no revisada ni aprobada por Gerencia. No válida sin firma y sello.</td></tr></table>
+<table><tr><td class="aviso-pend">PENDIENTE DE APROBACIÓN — aún no revisada ni aprobada por Gerencia. No válida sin firma y sello.</td></tr></table>
 {% endif %}
+<table style="margin-top: 3px;"><tr><td class="linea">&nbsp;</td></tr></table>
 
-<table class="b" style="margin-top: 6px;">
-    <tr><td class="etq">FECHA</td><td class="val" style="width: 31%;">{{ o.fecha.strftime('%d/%m/%Y') }}</td>
-        <td class="etq">CONTACTO</td><td class="val" style="width: 31%;">{{ o.contacto }}</td></tr>
-    <tr><td class="etq">RUC</td><td class="val">{{ o.ruc }}</td><td class="etq">TELÉFONO</td><td class="val">{{ o.telefono }}</td></tr>
-    <tr><td class="etq">RAZÓN SOCIAL</td><td class="val"><b>{{ o.razon_social }}</b></td><td class="etq">COTIZACIÓN</td><td class="val">{{ o.cotizacion or '-' }}</td></tr>
-    <tr><td class="etq">DIRECCIÓN</td><td class="val" colspan="3">{{ o.direccion or '-' }}</td></tr>
-    <tr><td class="etq">CONDICIÓN DE PAGO</td><td class="val">{{ o.condicion_pago }}</td><td class="etq">MONEDA</td><td class="val">{{ mon.nombre|upper }} ({{ mon.simbolo }})</td></tr>
-    <tr><td class="etq">{{ 'LUGAR DE RECOJO' if o.entrega_modo == 'RECOJO' else 'LUGAR DE ENTREGA' }}</td>
-        <td class="val" colspan="3">{{ o.lugar_recojo if o.entrega_modo == 'RECOJO' else cfg.lugar_entrega }}</td></tr>
-    <tr><td class="etq">FECHA DE ENTREGA</td><td class="val">{{ oc_entrega_txt(o) }}</td><td class="etq">CORREO</td><td class="val">{{ o.email or '-' }}</td></tr>
+<!-- DATOS DEL PROVEEDOR -->
+<table>
+    <tr><td class="k" style="width: 13%;">FECHA</td><td class="dp" style="width: 2%;">:</td><td class="v" style="width: 47%;">{{ o.fecha.strftime('%d/%m/%Y') }}</td>
+        <td class="k" style="width: 11%;">CONTACTO:</td><td class="v" style="width: 27%;">{{ o.contacto }}</td></tr>
+    <tr><td class="k">RUC</td><td class="dp">:</td><td class="v">{{ o.ruc }}</td><td class="k">TELEFONO:</td><td class="v">{{ o.telefono }}</td></tr>
+    <tr><td class="k">RAZON SOCIAL</td><td class="dp">:</td><td class="v"><b>{{ o.razon_social }}</b></td><td class="k">COTIZACION:</td><td class="v">{{ o.cotizacion or '' }}&nbsp;</td></tr>
+    <tr><td class="k">DIRECCION</td><td class="dp">:</td><td class="v">{{ o.direccion or '-' }}</td><td class="k">{{ 'CORREO:' if o.email else '&nbsp;'|safe }}</td><td class="v">{{ o.email or '' }}&nbsp;</td></tr>
 </table>
+<table style="margin-top: 2px;"><tr><td class="linea">&nbsp;</td></tr></table>
 
-<table class="b" style="margin-top: 7px;">
-    <tr class="cab"><th style="width: 7%;">ITEM</th><th style="width: 47%;">DESCRIPCIÓN</th><th style="width: 10%;">CANTIDAD</th>
-        <th style="width: 10%;">U.M.</th><th style="width: 12%;">P. UNIT.</th><th style="width: 14%;">TOTAL</th></tr>
+<table style="margin-top: 4px;"><tr><td class="v">Estimados señores:<br>Por medio de la presente nos es grato solicitarle lo siguiente:</td></tr></table>
+
+<!-- ÍTEMS -->
+<table style="margin-top: 5px;">
+    <tr><th class="cab" style="width: 7%; text-align: left;">ITEM</th><th class="cab" style="width: 51%; text-align: left;">DESCRIPCIÓN</th>
+        <th class="cab c" style="width: 10%;">CANTIDAD</th><th class="cab c" style="width: 8%;">U.M.</th>
+        <th class="cab r" style="width: 11%;">P. UNIT.</th><th class="cab r" style="width: 13%;">TOTAL</th></tr>
     {% for i in filas %}
     <tr>
         {% if i %}
-        <td class="it c">{{ i.item }}</td><td class="it">{{ i.descripcion }}</td><td class="it c">{{ i.cantidad|cant }}</td><td class="it c">{{ i.um }}</td>
-        <td class="it r">{{ '{:,.2f}'.format(i.precio_unitario) if (i.precio_unitario * 100)|round == i.precio_unitario * 100 else '{:,.4f}'.format(i.precio_unitario) }}</td>
-        <td class="it r">{{ '{:,.2f}'.format(i.total) }}</td>
+        <td class="it">{{ i.item }}</td><td class="itb">{{ i.descripcion }}</td><td class="itb c">{{ i.cantidad|cant }}</td><td class="itb c">{{ i.um }}</td>
+        <td class="itb r">{{ '{:,.2f}'.format(i.precio_unitario) if (i.precio_unitario * 100)|round == i.precio_unitario * 100 else '{:,.4f}'.format(i.precio_unitario) }}</td>
+        <td class="it r">{{ mon.simbolo }} {{ '{:,.2f}'.format(i.total) }}</td>
         {% else %}
         <td class="it">&nbsp;</td><td class="it">&nbsp;</td><td class="it">&nbsp;</td><td class="it">&nbsp;</td><td class="it">&nbsp;</td><td class="it">&nbsp;</td>
         {% endif %}
     </tr>
     {% endfor %}
 </table>
+
+<!-- TOTALES -->
 <table style="margin-top: 4px;">
     <tr>
-        <td style="width: 58%; vertical-align: top;" class="letras">{{ letras }}
-            {% if o.observaciones %}<br><br><span class="titulo-sec">OBSERVACIONES:</span> <span style="font-style: normal;">{{ o.observaciones }}</span>{% endif %}</td>
-        <td style="width: 42%; padding: 0;">
-            <table class="b tot">
-                <tr><td class="tot-etq" style="width: 50%;">SUBTOTAL</td><td class="r">{{ mon.simbolo }} {{ '{:,.2f}'.format(o.subtotal or 0) }}</td></tr>
-                <tr><td class="tot-etq">IGV {{ igv_pct }}%</td><td class="r">{{ mon.simbolo }} {{ '{:,.2f}'.format(o.igv or 0) }}</td></tr>
-                <tr><td class="tot-final">TOTAL</td><td class="tot-final">{{ mon.simbolo }} {{ '{:,.2f}'.format(o.total or 0) }}</td></tr>
+        <td style="width: 60%; vertical-align: bottom;" class="letras">{{ letras }}
+            {% if o.observaciones %}<br><span class="b" style="font-style: normal;">OBSERVACIONES:</span> <span style="font-style: normal;">{{ o.observaciones }}</span>{% endif %}</td>
+        <td style="width: 40%; padding: 0;">
+            <table>
+                <tr><td class="tk" style="width: 46%;">VALOR VENTA</td><td class="tk" style="width: 4%;">:</td><td class="tv" style="width: 12%;">{{ mon.simbolo }}</td><td class="tv" style="width: 38%;">{{ '{:,.2f}'.format(o.subtotal or 0) }}</td></tr>
+                <tr><td class="tk">DESC.</td><td class="tk">:</td><td class="tv">{{ mon.simbolo }}</td><td class="tv">-</td></tr>
+                <tr><td class="tk">SUB-TOTAL</td><td class="tk">:</td><td class="tv">{{ mon.simbolo }}</td><td class="tv">{{ '{:,.2f}'.format(o.subtotal or 0) }}</td></tr>
+                <tr><td class="tk">IGV</td><td class="tk">:</td><td class="tv">{{ mon.simbolo }}</td><td class="tv">{{ '{:,.2f}'.format(o.igv or 0) }}</td></tr>
+                <tr><td class="neto-k">TOTAL NETO</td><td class="neto-k">:</td><td class="neto-k" style="text-align: right;">{{ mon.simbolo }}</td><td class="neto-v">{{ '{:,.2f}'.format(o.total or 0) }}</td></tr>
+            </table>
+        </td>
+    </tr>
+</table>
+<table style="margin-top: 4px;"><tr><td class="linea">&nbsp;</td></tr></table>
+
+<!-- CONDICIONES -->
+<table>
+    <tr><td class="k" style="width: 19%;">CONDICION DE PAGO</td><td class="dp" style="width: 2%;">:</td><td class="v" style="width: 45%;">{{ o.condicion_pago }}</td>
+        <td class="k" style="width: 10%;">MONEDA</td><td class="dp" style="width: 2%;">:</td><td class="v c" style="width: 22%;">{{ mon.nombre|upper }}</td></tr>
+    <tr><td class="k-res">FECHA DE ENTREGA</td><td class="dp">:</td><td class="v" colspan="4"><span style="background-color: #bdd7ee;">&nbsp;{{ oc_entrega_txt(o) }}&nbsp;</span></td></tr>
+    <tr><td class="k">{{ 'LUGAR DE RECOJO' if o.entrega_modo == 'RECOJO' else 'LUGAR DE ENTREGA' }}</td><td class="dp">:</td>
+        <td class="v" colspan="4">{{ o.lugar_recojo if o.entrega_modo == 'RECOJO' else cfg.lugar_entrega }}</td></tr>
+</table>
+<table style="margin-top: 3px;"><tr><td class="linea">&nbsp;</td></tr></table>
+
+<!-- TÉRMINOS Y HORARIO -->
+<table style="margin-top: 3px;">
+    <tr>
+        <td style="width: 66%;" class="terminos"><span class="titulo">TERMINOS Y CONDICIONES:</span><br>
+            {% for linea in cfg.terminos.split('\n') %}{{ linea|resaltado }}<br>{% endfor %}</td>
+        <td style="width: 3%;">&nbsp;</td>
+        <td style="width: 31%; padding: 0;">
+            <table>
+                <tr><td class="hor-cab">HORARIO DE ATENCIÓN:</td></tr>
+                {% set lineas_h = cfg.horario.split('\n') %}
+                {% for linea in lineas_h %}
+                {% set pos = namespace(i=-1) %}{% for ch in linea %}{% if pos.i < 0 and ch.isdigit() %}{% set pos.i = loop.index0 %}{% endif %}{% endfor %}
+                <tr><td class="{{ 'hor-fin' if loop.last else 'hor' }}">{% if pos.i > 0 %}{{ linea[:pos.i].strip() }}<br>{{ linea[pos.i:].strip() }}{% else %}{{ linea }}{% endif %}</td></tr>
+                {% endfor %}
             </table>
         </td>
     </tr>
 </table>
 
-<table class="b" style="margin-top: 6px;">
+<!-- FIRMAS -->
+<table style="margin-top: 8px;">
     <tr>
-        <td style="width: 64%; vertical-align: top;" class="terminos"><span class="titulo-sec">TÉRMINOS Y CONDICIONES:</span><br>
-            {% for linea in cfg.terminos.split('\n') %}{{ linea|resaltado }}<br>{% endfor %}</td>
-        <td style="width: 36%; vertical-align: top;" class="terminos"><span class="titulo-sec">HORARIO DE ATENCIÓN:</span><br>
-            {% for linea in cfg.horario.split('\n') %}{{ linea }}<br>{% endfor %}</td>
-    </tr>
-</table>
-
-<table style="margin-top: 10px;">
-    <tr>
-        <td style="width: 46%;" class="firma-box">
-            <br><br><br>
-            ________________________________<br>
-            <b>Elaborado por:</b> {{ o.creado_por.nombre_completo if o.creado_por else '' }}<br>
-            <span class="chico">Logística · {{ o.fecha_registro.strftime('%d/%m/%Y %H:%M') if o.fecha_registro else '' }}</span>
-        </td>
-        <td style="width: 8%;">&nbsp;</td>
-        <td style="width: 46%;" class="firma-box">
+        <td style="width: 55%; vertical-align: top;">
+            <span class="b">Aprobado por:</span><br>
             {% if firma %}
                 <img src="{{ firma.uri }}" width="{{ firma.ancho }}" height="{{ firma.alto }}"><br>
-                <b>Aprobado por:</b> {{ o.aprobado_por.nombre_completo if o.aprobado_por else 'Gerencia' }}<br>
-                <span class="chico">Aprobada el {{ o.fecha_aprobacion.strftime('%d/%m/%Y %H:%M') if o.fecha_aprobacion else '' }}</span>
+                <span class="chico">{{ o.aprobado_por.nombre_completo if o.aprobado_por else 'Gerencia' }} · {{ o.fecha_aprobacion.strftime('%d/%m/%Y %H:%M') if o.fecha_aprobacion else '' }}</span>
             {% elif o.estado == 'RECHAZADA' %}
-                <br><span class="sello-rech">RECHAZADA</span><br><br>
-                <b>Aprobado por:</b> — <br><span class="chico">Rechazada por {{ o.rechazado_por.nombre_completo if o.rechazado_por else 'Gerencia' }}</span>
+                <span class="sello-rech">RECHAZADA</span><br><span class="chico">por {{ o.rechazado_por.nombre_completo if o.rechazado_por else 'Gerencia' }}</span>
             {% elif o.estado == 'ANULADA' %}
-                <br><span class="sello-anul">ANULADA</span><br><br>
-                <b>Aprobado por:</b> —<br><span class="chico">&nbsp;</span>
+                <span class="sello-anul">ANULADA</span>
             {% else %}
-                <span class="sello-pend">PENDIENTE DE APROBACIÓN</span><br><span class="chico">Sin revisar por Gerencia</span><br><br>
-                <b>Aprobado por:</b> ____________________<br><span class="chico">Gerencia General</span>
+                <span class="sello-pend">PENDIENTE DE APROBACIÓN</span><br><span class="chico">Sin revisar por Gerencia</span>
             {% endif %}
+        </td>
+        <td style="width: 45%; vertical-align: bottom; text-align: right;">
+            <span class="b">Elaborado:</span>&nbsp;&nbsp;&nbsp;{{ o.creado_por.nombre_completo if o.creado_por else '' }}
         </td>
     </tr>
 </table>

@@ -24,7 +24,8 @@
     {% for t, nombre in nombres_catalogo.items() %}
     <li class="nav-item"><button class="nav-link {{ 'active' if tab == t }}" data-bs-toggle="tab" data-bs-target="#c-{{ t }}">{{ nombre }}</button></li>
     {% endfor %}
-    <li class="nav-item"><button class="nav-link {{ 'active' if tab == 'proveedores' }}" data-bs-toggle="tab" data-bs-target="#c-prov"><i class="bi bi-building"></i> Proveedores</button></li>
+    <li class="nav-item"><button class="nav-link {{ 'active' if tab == 'motivos' }}" data-bs-toggle="tab" data-bs-target="#c-motivos"><i class="bi bi-x-octagon"></i> Motivos de rechazo</button></li>
+    <li class="nav-item"><button class="nav-link {{ 'active' if tab == 'proveedores' }}" data-bs-toggle="tab" data-bs-target="#c-prov"><i class="bi bi-building"></i> Proveedores y contactos</button></li>
     <li class="nav-item"><button class="nav-link {{ 'active' if tab == 'datos' }}" data-bs-toggle="tab" data-bs-target="#c-datos"><i class="bi bi-file-earmark-pdf"></i> Datos del PDF</button></li>
     {% if es_admin %}<li class="nav-item"><button class="nav-link peligro {{ 'active' if tab == 'vaciar' }}" data-bs-toggle="tab" data-bs-target="#c-vaciar"><i class="bi bi-trash3"></i> Vaciar datos del módulo</button></li>{% endif %}
 </ul>
@@ -51,23 +52,62 @@
     </div>
     {% endfor %}
 
+    <div class="tab-pane fade {{ 'show active' if tab == 'motivos' }}" id="c-motivos">
+        <div class="card border-0 shadow-sm" style="max-width: 760px;"><div class="card-body">
+            <p class="small text-muted mb-2">Opciones que Gerencia elige al <b>rechazar</b> una orden, agrupadas por categoría. Además puede escribir una explicación.</p>
+            <div class="row g-2 mb-3 align-items-end">
+                <div class="col-12 col-sm-4"><label class="small fw-bold">Categoría</label>
+                    <input id="m_cat" class="form-control text-uppercase" list="listaCats" placeholder="Ej: PRECIO"><datalist id="listaCats">{% for c in motivos %}<option value="{{ c }}">{% endfor %}</datalist></div>
+                <div class="col-12 col-sm-6"><label class="small fw-bold">Motivo</label><input id="m_mot" class="form-control" placeholder="Ej: Precio elevado frente a otras cotizaciones"></div>
+                <div class="col-12 col-sm-2"><button class="btn btn-primary w-100" onclick="post('motivo', {categoria: document.getElementById('m_cat').value, motivo: document.getElementById('m_mot').value}, 'motivos')"><i class="bi bi-plus-lg"></i> Agregar</button></div>
+            </div>
+            {% for cat, lista in motivos.items() %}
+            <div class="fw-bold small text-primary mt-2 mb-1"><i class="bi bi-folder2"></i> {{ cat }}</div>
+            <table class="table table-sm align-middle mb-2 small"><tbody>
+                {% for m in lista %}
+                <tr class="{{ 'opacity-50' if not m.activo }}"><td>{{ m.motivo }}{% if uso_motivo.get((m.categoria, m.motivo)) %}<div class="uso">usado en {{ uso_motivo[(m.categoria, m.motivo)] }} rechazo(s)</div>{% endif %}</td>
+                    <td class="text-center" style="width:90px;">{% if m.activo %}<span class="badge bg-success">Activo</span>{% else %}<span class="badge bg-secondary">Inactivo</span>{% endif %}</td>
+                    <td class="acciones" style="width:120px;">
+                        <button class="btn btn-sm btn-outline-primary" title="Editar" onclick="editarMotivo({{ {'id': m.id, 'categoria': m.categoria, 'motivo': m.motivo}|tojson|forceescape }})"><i class="bi bi-pencil"></i></button>
+                        <button class="btn btn-sm btn-outline-secondary" title="Activar/desactivar" onclick="post('motivo', {accion: 'toggle', id: {{ m.id }}}, 'motivos')"><i class="bi {{ 'bi-toggle-on' if m.activo else 'bi-toggle-off' }}"></i></button>
+                        <button class="btn btn-sm btn-outline-danger" title="Borrar" onclick="borrar('motivo', {{ m.id }}, {{ (m.categoria ~ ' · ' ~ m.motivo)|tojson|forceescape }}, 'motivos')"><i class="bi bi-trash"></i></button></td></tr>
+                {% endfor %}
+            </tbody></table>
+            {% else %}<div class="text-muted small">Sin motivos.</div>{% endfor %}
+            <div class="form-text">Los rechazos ya hechos guardan el texto del motivo: editarlo o borrarlo no cambia órdenes anteriores.</div>
+        </div></div>
+    </div>
+
     <div class="tab-pane fade {{ 'show active' if tab == 'proveedores' }}" id="c-prov">
-        <p class="small text-muted">Se guardan solos al hacer una orden (con su contacto y teléfono). Aquí puedes corregirlos o borrarlos; las órdenes ya hechas no cambian.</p>
-        <div class="card border-0 shadow-sm"><div class="card-body p-0 table-responsive">
-            <table class="table table-hover align-middle mb-0 small">
-                <thead class="table-light"><tr><th class="ps-3">Proveedor</th><th>RUC</th><th>Contacto</th><th>Teléfono</th><th>Correo</th><th>Última orden</th><th class="pe-3"></th></tr></thead>
-                <tbody>
-                {% for p in proveedores %}
-                <tr><td class="ps-3 fw-semibold">{{ p.razon_social }}{% if p.direccion %}<div class="uso">{{ p.direccion }}</div>{% endif %}</td><td>{{ p.ruc }}</td>
-                    <td>{{ p.contacto or '-' }}</td><td>{{ p.telefono or '-' }}</td><td>{{ p.email or '-' }}</td>
-                    <td>{{ p.ultima_orden.strftime('%d/%m/%Y') if p.ultima_orden else '-' }}</td>
-                    <td class="pe-3 acciones">
-                        <button class="btn btn-sm btn-outline-primary" onclick="editarProv({{ {'id': p.id, 'razon_social': p.razon_social, 'direccion': p.direccion or '', 'contacto': p.contacto or '', 'telefono': p.telefono or '', 'email': p.email or ''}|tojson|forceescape }})"><i class="bi bi-pencil"></i></button>
-                        <button class="btn btn-sm btn-outline-danger" onclick="borrar('proveedor', {{ p.id }}, {{ p.razon_social|tojson|forceescape }}, 'proveedores')"><i class="bi bi-trash"></i></button></td></tr>
-                {% else %}<tr><td colspan="7" class="text-center text-muted py-4">Todavía no hay proveedores: se guardan al crear una orden.</td></tr>{% endfor %}
-                </tbody>
+        <div class="alert alert-light border small py-2"><i class="bi bi-shield-check text-primary"></i> <b>Lista propia de órdenes</b> (no se mezcla con clientes ni con otros proveedores).
+            Los <b>contactos no se borran: se archivan</b>, así no se pierde con quién se trató cada orden. Solo Gerencia puede borrar definitivamente un contacto que <b>nunca se usó</b>.</div>
+        {% for p in proveedores %}{% set cs = contactos_prov.get(p.id, [])|sort(attribute='id', reverse=True) %}
+        <div class="card border-0 shadow-sm mb-2"><div class="card-body py-2">
+            <div class="d-flex flex-wrap gap-2 justify-content-between align-items-start">
+                <div style="min-width:0;"><b style="overflow-wrap:anywhere;">{{ p.razon_social }}</b>
+                    <div class="uso">RUC {{ p.ruc }}{% if p.direccion %} · {{ p.direccion }}{% endif %}{% if p.sunat_fecha %} · SUNAT {{ p.sunat_estado or '' }} {{ p.sunat_condicion or '' }} ({{ p.sunat_fecha.strftime('%d/%m/%Y') }}){% endif %}
+                        · {{ ordenes_prov.get(p.id, 0) }} orden(es)</div></div>
+                <div class="acciones">
+                    <button class="btn btn-sm btn-outline-primary" title="Editar" onclick="editarProv({{ {'id': p.id, 'razon_social': p.razon_social, 'direccion': p.direccion or ''}|tojson|forceescape }})"><i class="bi bi-pencil"></i></button>
+                    <button class="btn btn-sm btn-outline-danger" title="Borrar" onclick="borrar('proveedor', {{ p.id }}, {{ p.razon_social|tojson|forceescape }}, 'proveedores')"><i class="bi bi-trash"></i></button></div>
+            </div>
+            <table class="table table-sm align-middle mb-0 mt-1 small">
+                {% for c in cs %}
+                <tr class="{{ 'opacity-50' if not c.activo }}">
+                    <td><b>{{ c.nombre }}</b>{% if c.cargo %} <span class="text-muted">· {{ c.cargo }}</span>{% endif %}
+                        <div class="uso">{{ c.telefono }}{% if c.email %} · {{ c.email }}{% endif %}</div></td>
+                    <td class="uso">{{ 'Editado' if c.fecha_actualizacion else 'Guardado' }} {{ (c.fecha_actualizacion or c.fecha_creacion).strftime('%d/%m/%Y %H:%M') if (c.fecha_actualizacion or c.fecha_creacion) else '' }} por {{ c.actualizado_por or c.creado_por or '-' }}
+                        {% if c.usos %}<br>usado {{ c.usos }} vez(ces){% endif %}{% if not c.activo %}<br>Archivado por {{ c.archivado_por or '-' }}{% endif %}</td>
+                    <td class="acciones">
+                        <button class="btn btn-sm btn-outline-primary" title="Editar" onclick="editarContacto({{ {'id': c.id, 'nombre': c.nombre, 'telefono': c.telefono, 'email': c.email or '', 'cargo': c.cargo or ''}|tojson|forceescape }})"><i class="bi bi-pencil"></i></button>
+                        {% if c.activo %}<button class="btn btn-sm btn-outline-secondary" title="Archivar" onclick="contacto('archivar', {{ c.id }})"><i class="bi bi-archive"></i></button>
+                        {% else %}<button class="btn btn-sm btn-outline-success" title="Restaurar" onclick="contacto('restaurar', {{ c.id }})"><i class="bi bi-arrow-counterclockwise"></i></button>{% endif %}
+                        {% if es_admin and not c.usos %}<button class="btn btn-sm btn-outline-danger" title="Borrar definitivamente" onclick="contacto('borrar', {{ c.id }})"><i class="bi bi-trash"></i></button>{% endif %}</td>
+                </tr>
+                {% else %}<tr><td class="text-muted">Sin contactos.</td></tr>{% endfor %}
             </table>
         </div></div>
+        {% else %}<div class="text-center text-muted py-4">Todavía no hay proveedores: se agregan al buscar un RUC en SUNAT desde una orden.</div>{% endfor %}
     </div>
 
     <div class="tab-pane fade {{ 'show active' if tab == 'datos' }}" id="c-datos">
@@ -106,9 +146,9 @@
                 <div class="text-muted">{{ conteo.ordenes }} orden(es) con sus ítems e historial, y <b>{{ conteo.documentos }} archivo(s)</b> subidos (guías, facturas). La numeración vuelve a 000001.</div>
             </div>
             <div class="border rounded p-2 mb-2 small"><div class="form-check"><input class="form-check-input" type="checkbox" name="proveedores" value="1" id="v_prov">
-                <label class="form-check-label fw-bold" for="v_prov">También los proveedores guardados ({{ conteo.proveedores }})</label></div></div>
+                <label class="form-check-label fw-bold" for="v_prov">También los proveedores ({{ conteo.proveedores }}) y sus contactos ({{ conteo.contactos }})</label></div></div>
             <div class="border rounded p-2 mb-2 small"><div class="form-check"><input class="form-check-input" type="checkbox" name="catalogos" value="1" id="v_cat">
-                <label class="form-check-label fw-bold" for="v_cat">También U.M., condiciones de pago y datos del PDF</label></div><div class="text-muted">Vuelven a los valores iniciales.</div></div>
+                <label class="form-check-label fw-bold" for="v_cat">También U.M., condiciones de pago, motivos de rechazo y datos del PDF</label></div><div class="text-muted">Vuelven a los valores iniciales.</div></div>
             <label class="small fw-bold mt-2">Para confirmar, escribe <span class="text-danger">BORRAR ORDENES</span></label>
             <input name="confirmacion" class="form-control mb-2" autocomplete="off" placeholder="BORRAR ORDENES">
             <button class="btn btn-danger fw-bold w-100" id="btnVaciar"><i class="bi bi-trash3-fill"></i> Vaciar datos del módulo</button>
@@ -124,9 +164,22 @@
         <input type="hidden" name="id" id="p_id">
         <div class="mb-2"><label class="small fw-bold">Razón social *</label><input name="razon_social" id="p_razon" class="form-control" required maxlength="200"></div>
         <div class="mb-2"><label class="small fw-bold">Dirección</label><input name="direccion" id="p_dir" class="form-control" maxlength="250"></div>
-        <div class="row g-2"><div class="col-7"><label class="small fw-bold">Contacto</label><input name="contacto" id="p_cont" class="form-control" maxlength="120"></div>
-            <div class="col-5"><label class="small fw-bold">Teléfono</label><input name="telefono" id="p_tel" class="form-control" maxlength="40"></div>
-            <div class="col-12"><label class="small fw-bold">Correo</label><input name="email" id="p_mail" class="form-control" maxlength="120"></div></div>
+        <div class="form-text">Para traer los datos oficiales, usa el botón SUNAT desde una orden.</div>
+    </div>
+    <div class="modal-footer p-2"><button class="btn btn-primary w-100 fw-bold">Guardar</button></div>
+</form></div></div>
+
+<div class="modal fade" id="modalContacto" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><form class="modal-content border-0 shadow" id="formContacto" onsubmit="return guardarContacto(event)">
+    <div class="modal-header py-2 text-white" style="background: var(--theme-primary, #0F172A);"><h6 class="modal-title fw-bold">Editar contacto</h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+        <input type="hidden" name="id" id="k_id"><input type="hidden" name="accion" value="guardar">
+        <div class="row g-2">
+            <div class="col-7"><label class="small fw-bold">Nombre *</label><input name="nombre" id="k_nombre" class="form-control" required maxlength="120"></div>
+            <div class="col-5"><label class="small fw-bold">Teléfono *</label><input name="telefono" id="k_tel" class="form-control" required maxlength="40"></div>
+            <div class="col-7"><label class="small fw-bold">Correo</label><input name="email" id="k_mail" class="form-control" maxlength="120"></div>
+            <div class="col-5"><label class="small fw-bold">Cargo</label><input name="cargo" id="k_cargo" class="form-control" maxlength="80"></div>
+        </div>
     </div>
     <div class="modal-footer p-2"><button class="btn btn-primary w-100 fw-bold">Guardar</button></div>
 </form></div></div>
@@ -150,10 +203,33 @@ function borrar(que, id, nombre, tab) {
         .then(r => { if (r.isConfirmed) post(que, { accion: 'borrar', id: id }, tab); });
 }
 function editarProv(p) {
-    document.getElementById('p_id').value = p.id; document.getElementById('p_razon').value = p.razon_social;
-    document.getElementById('p_dir').value = p.direccion; document.getElementById('p_cont').value = p.contacto;
-    document.getElementById('p_tel').value = p.telefono; document.getElementById('p_mail').value = p.email;
+    document.getElementById('p_id').value = p.id; document.getElementById('p_razon').value = p.razon_social; document.getElementById('p_dir').value = p.direccion;
     bootstrap.Modal.getOrCreateInstance(document.getElementById('modalProv')).show();
+}
+function editarMotivo(m) {
+    Swal.fire({ title: 'Editar motivo', html: `<input id="sw_cat" class="swal2-input" value="${m.categoria.replace(/"/g, '&quot;')}" placeholder="Categoría">
+        <input id="sw_mot" class="swal2-input" value="${m.motivo.replace(/"/g, '&quot;')}" placeholder="Motivo">`, showCancelButton: true, confirmButtonText: 'Guardar', cancelButtonText: 'Cancelar',
+        preConfirm: () => ({ categoria: document.getElementById('sw_cat').value, motivo: document.getElementById('sw_mot').value }) })
+        .then(r => { if (r.isConfirmed) post('motivo', { id: m.id, categoria: r.value.categoria, motivo: r.value.motivo }, 'motivos'); });
+}
+function editarContacto(c) {
+    document.getElementById('k_id').value = c.id; document.getElementById('k_nombre').value = c.nombre;
+    document.getElementById('k_tel').value = c.telefono; document.getElementById('k_mail').value = c.email; document.getElementById('k_cargo').value = c.cargo;
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('modalContacto')).show();
+}
+function guardarContacto(ev) {
+    ev.preventDefault();
+    fetch('{{ url_for('oc_api_contacto') }}', { method: 'POST', body: new FormData(document.getElementById('formContacto')) }).then(r => r.json())
+        .then(d => d.status === 'success' ? ir('proveedores') : Swal.fire('No se pudo', d.msg, 'warning'));
+    return false;
+}
+function contacto(accion, id) {
+    const txt = { archivar: '¿Archivar este contacto? Deja de aparecer en las órdenes, pero no se pierde.', restaurar: '¿Restaurar este contacto?', borrar: '¿Borrar definitivamente este contacto? (nunca se usó)' }[accion];
+    Swal.fire({ icon: 'question', title: 'Confirmar', text: txt, showCancelButton: true, confirmButtonText: 'Sí', cancelButtonText: 'Cancelar' }).then(r => {
+        if (!r.isConfirmed) return;
+        const fd = new FormData(); fd.append('accion', accion); fd.append('id', id);
+        fetch('{{ url_for('oc_api_contacto') }}', { method: 'POST', body: fd }).then(x => x.json()).then(d => d.status === 'success' ? ir('proveedores') : Swal.fire('No se pudo', d.msg, 'warning'));
+    });
 }
 function guardarProv(ev) {
     ev.preventDefault();

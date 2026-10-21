@@ -1235,19 +1235,57 @@ class InsumoDocumento(db.Model):
 # ÓRDENES DE COMPRA / ÓRDENES DE SERVICIO (Logística)
 # =====================================================================================
 class OCProveedor(db.Model):
-    """Proveedores usados en órdenes de compra, con su contacto y teléfono, para elegirlos rápido."""
+    """Proveedores de ÓRDENES DE COMPRA (lista propia, separada de clientes y de otros proveedores del sistema).
+    Se llena al consultar un RUC en SUNAT desde una orden."""
     __tablename__ = 'oc_proveedor'
     id = db.Column(db.Integer, primary_key=True)
     ruc = db.Column(db.String(20), index=True)
     razon_social = db.Column(db.String(200), nullable=False)
     direccion = db.Column(db.String(250))
-    contacto = db.Column(db.String(120))
-    telefono = db.Column(db.String(40))
-    email = db.Column(db.String(120))
-    proveedor_id = db.Column(db.Integer, db.ForeignKey('proveedor.id'), nullable=True)
+    contacto = db.Column(db.String(120))      # (antiguo) hoy los contactos están en OCContacto
+    telefono = db.Column(db.String(40))       # (antiguo)
+    email = db.Column(db.String(120))         # (antiguo)
+    proveedor_id = db.Column(db.Integer, db.ForeignKey('proveedor.id'), nullable=True)   # ya no se usa
+    sunat_estado = db.Column(db.String(50))
+    sunat_condicion = db.Column(db.String(50))
+    sunat_fecha = db.Column(db.DateTime, nullable=True)       # última consulta a SUNAT
     creado_por = db.Column(db.String(100))
     fecha_creacion = db.Column(db.DateTime, default=hora_peru)
+    actualizado_por = db.Column(db.String(100))
+    fecha_actualizacion = db.Column(db.DateTime, nullable=True)
     ultima_orden = db.Column(db.DateTime, nullable=True)
+
+
+class OCContacto(db.Model):
+    """Contactos de un proveedor de órdenes (nombre + teléfono + correo opcional). No se borran: se ARCHIVAN,
+    para no perder el historial; Gerencia puede borrar definitivamente solo los que nunca se usaron."""
+    __tablename__ = 'oc_contacto'
+    id = db.Column(db.Integer, primary_key=True)
+    oc_proveedor_id = db.Column(db.Integer, db.ForeignKey('oc_proveedor.id'), nullable=False, index=True)
+    nombre = db.Column(db.String(120), nullable=False)
+    telefono = db.Column(db.String(40), nullable=False)
+    email = db.Column(db.String(120))
+    cargo = db.Column(db.String(80))
+    activo = db.Column(db.Boolean, default=True)
+    creado_por = db.Column(db.String(100))
+    fecha_creacion = db.Column(db.DateTime, default=hora_peru)
+    actualizado_por = db.Column(db.String(100))
+    fecha_actualizacion = db.Column(db.DateTime, nullable=True)
+    archivado_por = db.Column(db.String(100))
+    fecha_archivo = db.Column(db.DateTime, nullable=True)
+    usos = db.Column(db.Integer, default=0)
+    ultimo_uso = db.Column(db.DateTime, nullable=True)
+
+    proveedor = db.relationship('OCProveedor', backref='contactos')
+
+
+class OCMotivoRechazo(db.Model):
+    """Motivos de rechazo de una orden, organizados por categoría (Configuración)."""
+    __tablename__ = 'oc_motivo_rechazo'
+    id = db.Column(db.Integer, primary_key=True)
+    categoria = db.Column(db.String(60), nullable=False)
+    motivo = db.Column(db.String(150), nullable=False)
+    activo = db.Column(db.Boolean, default=True)
 
 
 class OrdenCompra(db.Model):
@@ -1258,6 +1296,7 @@ class OrdenCompra(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     tipo = db.Column(db.String(2), nullable=False, default='OC')          # OC / OS
     numero = db.Column(db.Integer, nullable=False)
+    empresa = db.Column(db.String(15), default='ANCLAJES')                # empresa que compra (y cuyo inventario recibe)
     fecha = db.Column(db.Date, nullable=False)
     estado = db.Column(db.String(12), nullable=False, default='BORRADOR', index=True)
     destino = db.Column(db.String(10), nullable=False, default='GENERAL')  # GENERAL / INSUMOS
@@ -1270,6 +1309,7 @@ class OrdenCompra(db.Model):
     contacto = db.Column(db.String(120), nullable=False)
     telefono = db.Column(db.String(40), nullable=False)
     email = db.Column(db.String(120))
+    contacto_id = db.Column(db.Integer, db.ForeignKey('oc_contacto.id'), nullable=True)
     cotizacion = db.Column(db.String(60))
     # Condiciones
     moneda = db.Column(db.String(3), nullable=False, default='PEN')       # PEN / USD
@@ -1294,7 +1334,9 @@ class OrdenCompra(db.Model):
     fecha_aprobacion = db.Column(db.DateTime, nullable=True)
     rechazado_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     fecha_rechazo = db.Column(db.DateTime, nullable=True)
-    motivo_rechazo = db.Column(db.String(300))
+    motivo_rechazo = db.Column(db.String(300))          # detalle escrito
+    rechazo_categoria = db.Column(db.String(60))
+    rechazo_opcion = db.Column(db.String(150))
     anulado_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     fecha_anulacion = db.Column(db.DateTime, nullable=True)
     motivo_anulacion = db.Column(db.String(300))
@@ -1339,6 +1381,16 @@ class OrdenCompraItem(db.Model):
     origen = db.Column(db.String(12))                          # ANCLAJES / IMPORTBOLTS / INSUMO / vacío (escrito a mano)
     codigo = db.Column(db.String(60))                          # SKU o código del insumo
     insumo_id = db.Column(db.Integer, db.ForeignKey('insumo.id'), nullable=True)
+    familia = db.Column(db.String(200))
+    calidad = db.Column(db.String(200))
+    es_nuevo = db.Column(db.Boolean, default=False)            # producto que NO está en el inventario: hay que crearlo
+    # Ingreso al inventario (lo marca Almacén cuando hizo el movimiento en el Kardex)
+    ingresado_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    fecha_ingreso = db.Column(db.DateTime, nullable=True)
+    sku_ingreso = db.Column(db.String(60))                     # SKU con el que se ingresó (obligatorio si era nuevo)
+    nota_ingreso = db.Column(db.String(300))
+
+    ingresado_por = db.relationship('User', foreign_keys=[ingresado_por_id])
 
 
 class OrdenCompraEvento(db.Model):

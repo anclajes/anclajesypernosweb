@@ -32,6 +32,10 @@
         {% if oc_por_aprobar %}<span class="cnt">{{ oc_por_aprobar }}</span>{% endif %}</a>
     <a href="{{ url_for('oc_lista', vista='recibir') }}" class="{{ 'activa' if seccion == 'lista' and vista == 'recibir' }}"><i class="bi bi-truck"></i> Por recibir</a>
     <a href="{{ url_for('oc_lista', vista='conformes') }}" class="{{ 'activa' if seccion == 'lista' and vista == 'conformes' }}"><i class="bi bi-check2-all"></i> Conformes / en almacén</a>
+    {% if session.get('role') in ['admin', 'logistica', 'almacen'] %}
+    <a href="{{ url_for('oc_ingresos_pendientes') }}" class="{{ 'activa' if seccion == 'ingresos' }}"><i class="bi bi-box-arrow-in-down"></i> Ingresos pendientes
+        {% if oc_por_ingresar %}<span class="cnt">{{ oc_por_ingresar }}</span>{% endif %}</a>
+    {% endif %}
     {% if puede_editar_oc %}
     <a href="{{ url_for('oc_nueva', tipo='OC') }}" class="nueva {{ 'activa' if seccion == 'nueva' }}"><i class="bi bi-plus-circle"></i> Nueva orden</a>
     <a href="{{ url_for('oc_config') }}" class="{{ 'activa' if seccion == 'config' }}"><i class="bi bi-gear"></i> Configuración</a>

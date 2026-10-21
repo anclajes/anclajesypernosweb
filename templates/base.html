@@ -85,7 +85,7 @@
                 <!-- ================================== -->
                 <!-- MENÚ NORMAL (resto de roles)        -->
                 <!-- ================================== -->
-                {% set grupo_inventario = ['inventario_general', 'inventario', 'inventario_importbolts', 'crear_producto', 'editar_producto', 'ver_kardex', 'ver_kardex_importbolts', 'procesos_oc', 'proceso_oc_detalle', 'rotacion_stock', 'admin_maestro', 'admin_maestro_auditoria', 'producto_info'] %}
+                {% set grupo_inventario = ['inventario_general', 'inventario', 'inventario_importbolts', 'crear_producto', 'editar_producto', 'ver_kardex', 'ver_kardex_importbolts', 'oc_ingresos_pendientes', 'procesos_oc', 'proceso_oc_detalle', 'rotacion_stock', 'admin_maestro', 'admin_maestro_auditoria', 'producto_info'] %}
                 <div class="nav-title">Principal</div>
                 <a href="{{ url_for('index') }}" class="nav-link {{ 'active' if request.endpoint == 'index' }}">
                     <i class="bi bi-grid-1x2 me-2"></i> <span>Dashboard</span>
@@ -113,7 +113,7 @@
                                 <i class="bi bi-nut fs-6 me-2"></i> <span>Inv. ImportBolts</span>
                             </a>
                         </li>
-                        {% if session.get('role') in ['admin', 'almacen', 'logistica'] %}
+                        {% if session.get('role') in ['admin', 'almacen', 'logistica', 'vendedor'] %}
                         <li>
                             <a href="{{ url_for('ver_kardex') }}" class="nav-link py-2 ps-3 {{ 'active' if request.endpoint == 'ver_kardex' }}">
                                 <i class="bi bi-clock-history fs-6 me-2"></i> <span>Kardex Anclajes</span>
@@ -122,6 +122,14 @@
                         <li>
                             <a href="{{ url_for('ver_kardex_importbolts') }}" class="nav-link py-2 ps-3 {{ 'active' if request.endpoint == 'ver_kardex_importbolts' }}">
                                 <i class="bi bi-clock-history fs-6 me-2"></i> <span>Kardex ImportBolts</span>
+                            </a>
+                        </li>
+                        {% endif %}
+                        {% if session.get('role') in ['admin', 'almacen', 'logistica'] %}
+                        <li>
+                            <a href="{{ url_for('oc_ingresos_pendientes') }}" class="nav-link py-2 ps-3 {{ 'active' if request.endpoint == 'oc_ingresos_pendientes' }}">
+                                <i class="bi bi-box-arrow-in-down fs-6 me-2"></i> <span>Ingresos pendientes (OC)</span>
+                                {% if oc_por_ingresar %}<span class="badge rounded-pill bg-warning text-dark ms-1">{{ oc_por_ingresar }}</span>{% endif %}
                             </a>
                         </li>
                         <li>

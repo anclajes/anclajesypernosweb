@@ -15,32 +15,51 @@
     .seg label small { color: #64748b; font-size: .72rem; line-height: 1.2; display: block; }
     .seg input:checked + label { border-color: var(--c, #0B3D91); background: color-mix(in srgb, var(--c, #0B3D91) 6%, #fff); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c, #0B3D91) 15%, transparent); }
     .seg input:checked + label i { color: var(--c, #0B3D91); }
+    .seg input:disabled + label { opacity: .5; cursor: not-allowed; }
     .seg input:focus-visible + label { outline: 2px solid #2563eb; outline-offset: 2px; }
     .seg.chico label { min-width: 0; padding: 6px 10px; }
     .card-t { font-size: .74rem; font-weight: 800; letter-spacing: .05em; color: #64748b; text-transform: uppercase; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
     .lbl { font-size: .74rem; font-weight: 700; color: #334155; margin-bottom: 2px; }
     .req::after { content: ' *'; color: #dc2626; }
-    .prov-sug { z-index: 1060; max-height: 320px; overflow-y: auto; display: none; border-radius: 10px; }
-    .prov-sug .grupo, .prod-sug .grupo { font-size: .66rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: #64748b; background: #f8fafc; padding: 4px 10px; }
-    .prov-sug button, .prod-sug button { text-align: left; }
+    .sug { z-index: 1060; max-height: 340px; overflow-y: auto; display: none; border-radius: 10px; }
+    .sug button { text-align: left; }
     .ruc { font-variant-numeric: tabular-nums; font-weight: 700; color: #0B3D91; }
-    .prov-elegido { border: 1.5px solid #86efac; background: #f0fdf4; border-radius: 10px; padding: 8px 10px; display: none; }
+    .prov-card { border: 1.5px solid #bbf7d0; background: #f0fdf4; border-radius: 12px; padding: 10px 12px; display: none; }
+    .prov-card .nom { font-weight: 800; color: #14532d; line-height: 1.2; overflow-wrap: anywhere; }
+    .chip { display: inline-flex; align-items: center; gap: 4px; font-size: .68rem; font-weight: 700; border-radius: 20px; padding: 1px 8px; }
+    .chip.ok { background: #dcfce7; color: #166534; } .chip.mal { background: #fee2e2; color: #991b1b; } .chip.gris { background: #f1f5f9; color: #475569; }
+    .contactos { display: grid; gap: 6px; }
+    .contacto { border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 8px 10px; display: flex; gap: 8px; align-items: flex-start; cursor: pointer; background: #fff; }
+    .contacto:has(input:checked) { border-color: #0B3D91; background: #eff6ff; }
+    .contacto .info { flex: 1 1 auto; min-width: 0; }
+    .contacto .n { font-weight: 700; font-size: .86rem; }
+    .contacto .d { font-size: .74rem; color: #475569; overflow-wrap: anywhere; }
+    .contacto .m { font-size: .66rem; color: #94a3b8; }
+    .contacto .acc button { border: 0; background: none; color: #94a3b8; padding: 2px 4px; }
+    .contacto .acc button:hover { color: #0B3D91; }
+    .form-contacto { border: 1.5px dashed #93c5fd; border-radius: 10px; padding: 10px; background: #f8fbff; }
     .item { border: 1px solid #e2e8f0; border-radius: 12px; padding: 10px; margin-bottom: 8px; background: #fff; position: relative; }
     .item .n { position: absolute; top: -9px; left: 10px; background: #0B3D91; color: #fff; border-radius: 10px; font-size: .68rem; font-weight: 800; padding: 0 8px; }
     .item .quitar { position: absolute; top: 4px; right: 6px; border: 0; background: transparent; color: #94a3b8; font-size: 1.05rem; }
     .item .quitar:hover { color: #dc2626; }
     .item label { font-size: .66rem; font-weight: 800; color: #64748b; text-transform: uppercase; margin-bottom: 1px; }
     .item .tot { font-weight: 800; font-variant-numeric: tabular-nums; padding-top: 4px; }
-    .prod-sug { z-index: 1050; max-height: 300px; overflow-y: auto; display: none; border-radius: 10px; }
-    .origen { font-size: .62rem; font-weight: 800; border-radius: 5px; padding: 1px 5px; }
-    .origen.ANCLAJES { background: #dbeafe; color: #1e40af; } .origen.IMPORTBOLTS { background: #e0e7ff; color: #3730a3; } .origen.INSUMO { background: #fef3c7; color: #92400e; }
-    .vinculo { font-size: .7rem; color: #166534; }
-    .vinculo button { border: 0; background: none; color: #94a3b8; padding: 0 2px; }
+    .ficha { font-size: .72rem; border-radius: 8px; padding: 5px 8px; margin-top: 4px; }
+    .ficha.vinc { background: #f0fdf4; border: 1px solid #bbf7d0; color: #14532d; }
+    .ficha.nuevo { background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412; }
+    .ficha .x { border: 0; background: none; color: #94a3b8; padding: 0 3px; }
+    .stk { display: inline-block; font-weight: 800; border-radius: 6px; padding: 0 6px; background: #fff; border: 1px solid #e2e8f0; color: #0f172a; }
+    .res-prod { border: 1px solid #e2e8f0; border-radius: 10px; padding: 8px 10px; margin-bottom: 6px; cursor: pointer; background: #fff; }
+    .res-prod:hover { border-color: #0B3D91; background: #f8fbff; }
+    .res-prod .sku { font-weight: 800; color: #0B3D91; font-size: .78rem; }
+    .res-prod .ds { font-weight: 600; font-size: .84rem; }
+    .res-prod .mt { font-size: .72rem; color: #64748b; }
     .totales { background: #0f172a; color: #fff; border-radius: 12px; padding: 12px 14px; }
     .totales .fila { display: flex; justify-content: space-between; font-variant-numeric: tabular-nums; }
     .totales .grande { font-size: 1.45rem; font-weight: 800; }
     .entrega-fija { background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 6px 10px; font-size: .78rem; }
     .num-prev { font-weight: 800; color: #0B3D91; font-variant-numeric: tabular-nums; }
+    #modalProd .select2-container { width: 100% !important; }
 </style>
 
 {% if errores %}<div class="alert alert-danger py-2" id="erroresOC"><b><i class="bi bi-exclamation-triangle-fill"></i> No se guardó. Revisa:</b>
@@ -58,10 +77,18 @@
             <div class="card-t"><i class="bi bi-file-earmark-text"></i> Datos de la orden
                 <span class="ms-auto text-muted fw-normal" style="text-transform:none; letter-spacing:0;">
                     {% if orden %}<span class="num-prev">{{ oc_codigo(orden) }}</span>{% else %}<span class="num-prev" id="numPrev"></span> <span style="font-size:.68rem;">(se confirma al guardar)</span>{% endif %}</span></div>
+            <div class="lbl">Empresa que compra</div>
+            <div class="seg chico mb-2">
+                {% for k, e in empresas_oc.items() %}
+                <input type="radio" name="empresa" id="emp_{{ k }}" value="{{ k }}" {{ 'checked' if (pv.empresa or 'ANCLAJES') == k }} {{ 'disabled' if not e.habilitada or orden }} onchange="pintarDestino()">
+                <label for="emp_{{ k }}" style="--c:#0B3D91;"><span><b>{{ e.corto }}</b>{% if not e.habilitada %}<small>Próximamente</small>{% endif %}</span></label>
+                {% endfor %}
+            </div>
+            {% if orden %}<input type="hidden" name="empresa" value="{{ orden.empresa or 'ANCLAJES' }}">{% endif %}
             {% if not orden %}
             <div class="seg chico mb-2">
                 {% for k, t in tipos.items() %}
-                <input type="radio" name="tipo" id="tipo_{{ k }}" value="{{ k }}" {{ 'checked' if (pv.tipo or 'OC') == k }} onchange="pintarNumero()">
+                <input type="radio" name="tipo" id="tipo_{{ k }}" value="{{ k }}" {{ 'checked' if (pv.tipo or 'OC') == k }} onchange="pintarNumero(); pintarFichas()">
                 <label for="tipo_{{ k }}" style="--c: {{ '#0B3D91' if k == 'OC' else '#7c3aed' }};"><i class="bi {{ 'bi-cart3' if k == 'OC' else 'bi-tools' }}"></i><span><b>{{ t }}</b></span></label>
                 {% endfor %}
             </div>
@@ -72,46 +99,80 @@
             </div>
             <div class="lbl req mt-2">Este material es para</div>
             <div class="seg">
-                <input type="radio" name="destino" id="dest_GENERAL" value="GENERAL" {{ 'checked' if pv.destino == 'GENERAL' }} required>
-                <label for="dest_GENERAL" style="--c:#0369a1;"><i class="bi bi-boxes"></i><span><b>Inventario General</b><small>Anclajes / Import Bolts (Kardex)</small></span></label>
-                <input type="radio" name="destino" id="dest_INSUMOS" value="INSUMOS" {{ 'checked' if pv.destino == 'INSUMOS' }}>
+                <input type="radio" name="destino" id="dest_GENERAL" value="GENERAL" {{ 'checked' if pv.destino == 'GENERAL' }} onchange="pintarFichas()">
+                <label for="dest_GENERAL" style="--c:#0369a1;"><i class="bi bi-boxes"></i><span><b id="destInvTxt">Inventario Anclajes</b><small>Al terminar, Almacén lo ingresa al Kardex</small></span></label>
+                <input type="radio" name="destino" id="dest_INSUMOS" value="INSUMOS" {{ 'checked' if pv.destino == 'INSUMOS' }} onchange="pintarFichas()">
                 <label for="dest_INSUMOS" style="--c:#b45309;"><i class="bi bi-tools"></i><span><b>Insumos internos</b><small>Inventario pequeño: quedará pendiente de ingresar</small></span></label>
             </div>
         </div></div>
 
         <!-- PROVEEDOR -->
         <div class="card border-0 shadow-sm mb-3"><div class="card-body">
-            <div class="card-t"><i class="bi bi-building"></i> Proveedor</div>
+            <div class="card-t"><i class="bi bi-building"></i> Proveedor <span class="ms-auto fw-normal" style="text-transform:none; letter-spacing:0; font-size:.68rem;">Lista propia de órdenes</span></div>
             <input type="hidden" name="oc_proveedor_id" id="oc_proveedor_id" value="{{ pv.oc_proveedor_id or '' }}">
-            <input type="hidden" name="proveedor_id" id="proveedor_id" value="{{ pv.proveedor_id or '' }}">
+            <input type="hidden" name="ruc" id="ruc" value="{{ pv.ruc or '' }}">
+            <input type="hidden" name="razon_social" id="razon_social" value="{{ pv.razon_social or '' }}">
+            <input type="hidden" name="direccion" id="direccion" value="{{ pv.direccion or '' }}">
             <div id="provBuscar">
                 <div class="position-relative mb-1">
                     <div class="input-group">
                         <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
-                        <input type="text" id="buscaProv" class="form-control" placeholder="Escribe el RUC o el nombre" autocomplete="off" inputmode="search"
-                               oninput="sugerirProv(this.value)" onfocus="sugerirProv(this.value)">
-                        <button type="button" class="btn btn-primary" onclick="buscarSunat()" title="Consultar RUC (11) o DNI (8) en SUNAT/RENIEC"><i class="bi bi-cloud-download"></i> SUNAT</button>
+                        <input type="text" id="buscaProv" class="form-control" placeholder="RUC o nombre del proveedor" autocomplete="off" inputmode="search"
+                               oninput="sugerirProv(this.value)" onfocus="sugerirProv(this.value)" onkeydown="if(event.key==='Enter'){event.preventDefault(); buscarSunat(false);}">
+                        <button type="button" class="btn btn-primary" onclick="buscarSunat(false)" title="Buscar el RUC en SUNAT"><i class="bi bi-cloud-download"></i> SUNAT</button>
                     </div>
-                    <div id="sugProv" class="list-group position-absolute w-100 shadow prov-sug"></div>
+                    <div id="sugProv" class="list-group position-absolute w-100 shadow sug"></div>
                 </div>
-                <div class="form-text mb-2" style="font-size:.7rem;">Al tocar se ven los proveedores ya usados (con su contacto). Si es nuevo, escribe el RUC y pulsa <b>SUNAT</b>.</div>
+                <div class="form-text mb-2" style="font-size:.7rem;">Toca para ver los proveedores ya usados. Si es nuevo, escribe su RUC y pulsa <b>SUNAT</b>: se guarda en la lista.</div>
             </div>
             <div id="provMsg" class="small mb-2"></div>
-            <div class="prov-elegido mb-2" id="provElegido">
+            <div class="prov-card mb-2" id="provCard">
                 <div class="d-flex justify-content-between align-items-start gap-2">
-                    <div><div class="fw-bold text-success" id="pe_nombre"></div><div class="small text-muted" id="pe_det"></div></div>
-                    <button type="button" class="btn btn-sm btn-outline-secondary py-0" onclick="cambiarProv()"><i class="bi bi-arrow-repeat"></i> Cambiar</button>
+                    <div style="min-width:0;"><div class="nom" id="pc_nombre"></div>
+                        <div class="small text-muted mt-1"><span class="ruc" id="pc_ruc"></span> <span id="pc_sunat"></span></div>
+                        <div class="small text-muted" id="pc_dir" style="overflow-wrap:anywhere;"></div></div>
+                    <div class="d-flex flex-column gap-1">
+                        <button type="button" class="btn btn-sm btn-outline-secondary py-0" onclick="cambiarProv()"><i class="bi bi-arrow-repeat"></i> Cambiar</button>
+                        <button type="button" class="btn btn-sm btn-outline-primary py-0" id="btnActSunat" onclick="buscarSunat(true)" title="Volver a consultar en SUNAT"><i class="bi bi-cloud-arrow-down"></i> SUNAT</button>
+                    </div>
                 </div>
             </div>
-            <div class="row g-2">
-                <div class="col-5"><div class="lbl req">RUC</div><input type="text" name="ruc" id="ruc" class="form-control" maxlength="11" inputmode="numeric" value="{{ pv.ruc or '' }}" readonly></div>
-                <div class="col-7"><div class="lbl req">Razón social</div><input type="text" name="razon_social" id="razon_social" class="form-control" maxlength="200" value="{{ pv.razon_social or '' }}" readonly></div>
-                <div class="col-12"><div class="lbl">Dirección</div><input type="text" name="direccion" id="direccion" class="form-control" maxlength="250" value="{{ pv.direccion or '' }}" readonly></div>
-                <div class="col-7"><div class="lbl req">Contacto</div><input type="text" name="contacto" id="contacto" class="form-control" maxlength="120" value="{{ pv.contacto or '' }}" placeholder="Nombre de quien atiende" required></div>
-                <div class="col-5"><div class="lbl req">Teléfono</div><input type="tel" name="telefono" id="telefono" class="form-control" maxlength="40" value="{{ pv.telefono or '' }}" required></div>
-                <div class="col-12"><div class="lbl">Correo</div><input type="email" name="email" id="email" class="form-control" maxlength="120" value="{{ pv.email or '' }}" placeholder="opcional"></div>
+            <div id="provManual" style="display:none;" class="mb-2">
+                <div class="row g-2">
+                    <div class="col-5"><div class="lbl req">RUC</div><input type="text" id="m_ruc" class="form-control" maxlength="11" inputmode="numeric"></div>
+                    <div class="col-7"><div class="lbl req">Razón social</div><input type="text" id="m_razon" class="form-control" maxlength="200"></div>
+                    <div class="col-12"><div class="lbl">Dirección</div><input type="text" id="m_dir" class="form-control" maxlength="250"></div>
+                </div>
             </div>
-            <button type="button" class="btn btn-link btn-sm px-0 mt-1" onclick="aMano()" id="btnAMano"><i class="bi bi-pencil"></i> La SUNAT no responde: escribir los datos a mano</button>
+            <button type="button" class="btn btn-link btn-sm px-0" onclick="aMano()" id="btnAMano"><i class="bi bi-pencil"></i> SUNAT no responde: escribir los datos a mano</button>
+
+            <!-- CONTACTOS -->
+            <input type="hidden" name="contacto_id" id="contacto_id" value="{{ pv.contacto_id or '' }}">
+            <input type="hidden" name="contacto" id="contacto" value="{{ pv.contacto or '' }}">
+            <input type="hidden" name="telefono" id="telefono" value="{{ pv.telefono or '' }}">
+            <input type="hidden" name="email" id="email" value="{{ pv.email or '' }}">
+            <div id="boxContactos" class="mt-2" style="display:none;">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <div class="lbl req mb-0">Contacto para esta orden</div>
+                    <button type="button" class="btn btn-sm btn-outline-primary py-0" id="btnNuevoContacto" onclick="formContacto(null)"><i class="bi bi-person-plus"></i> Nuevo contacto</button>
+                </div>
+                <div class="contactos" id="listaContactos"></div>
+                <div class="form-contacto mt-2" id="formContacto" style="display:none;">
+                    <input type="hidden" id="fc_id">
+                    <div class="small fw-bold mb-1" id="fc_titulo">Nuevo contacto</div>
+                    <div class="row g-2">
+                        <div class="col-12 col-sm-7"><div class="lbl req">Nombre</div><input type="text" id="fc_nombre" class="form-control form-control-sm" maxlength="120"></div>
+                        <div class="col-12 col-sm-5"><div class="lbl req">Teléfono</div><input type="tel" id="fc_tel" class="form-control form-control-sm" maxlength="40"></div>
+                        <div class="col-12 col-sm-7"><div class="lbl">Correo (opcional)</div><input type="email" id="fc_mail" class="form-control form-control-sm" maxlength="120"></div>
+                        <div class="col-12 col-sm-5"><div class="lbl">Cargo (opcional)</div><input type="text" id="fc_cargo" class="form-control form-control-sm" maxlength="80" placeholder="Ventas, gerente..."></div>
+                    </div>
+                    <div class="d-flex gap-2 mt-2" id="fc_botones">
+                        <button type="button" class="btn btn-primary btn-sm fw-bold flex-fill" onclick="guardarContacto()"><i class="bi bi-save"></i> <span id="fc_btn">Guardar contacto</span></button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="cerrarFormContacto()">Cancelar</button>
+                    </div>
+                    <div class="form-text" id="fc_nota" style="display:none;">Se guardará junto con la orden.</div>
+                </div>
+            </div>
         </div></div>
 
         <!-- CONDICIONES -->
@@ -156,7 +217,8 @@
         <!-- ÍTEMS -->
         <div class="card border-0 shadow-sm mb-3"><div class="card-body">
             <div class="card-t"><i class="bi bi-list-ol"></i> Productos / servicios <span class="ms-auto fw-normal text-muted" style="text-transform:none; letter-spacing:0; font-size:.72rem;">Precios <b>SIN IGV</b></span></div>
-            <div class="form-text mb-2" style="font-size:.72rem;"><i class="bi bi-lightning-charge-fill text-warning"></i> En <b>Descripción</b> escribe 2 letras para buscar un producto que ya tenemos (inventarios e insumos), o escribe libre.</div>
+            <div class="form-text mb-2" style="font-size:.72rem;"><i class="bi bi-funnel-fill text-primary"></i> Pulsa <b>Inventario</b> para buscar con <b>Familia y Calidad</b> (como en los inventarios) o escribe en la descripción.
+                Si no lo tenemos, escríbelo: quedará como <b class="text-warning">NUEVO</b> para que Almacén lo cree al ingresarlo.</div>
             <div id="items"></div>
             <button type="button" class="btn btn-outline-primary w-100" onclick="agregarItem()"><i class="bi bi-plus-circle"></i> Agregar ítem</button>
         </div></div>
@@ -185,11 +247,15 @@
         <span class="n"></span>
         <button type="button" class="quitar" title="Quitar"><i class="bi bi-x-circle-fill"></i></button>
         <input type="hidden" name="origen[]" class="i-origen"><input type="hidden" name="codigo[]" class="i-codigo"><input type="hidden" name="insumo_id[]" class="i-insumo">
+        <input type="hidden" name="familia[]" class="i-familia"><input type="hidden" name="calidad[]" class="i-calidad">
         <div class="row g-2">
             <div class="col-12 position-relative"><label>Descripción *</label>
-                <input type="text" name="descripcion[]" class="form-control form-control-sm text-uppercase i-desc" maxlength="400" autocomplete="off" placeholder="Buscar en inventario o escribir...">
-                <div class="list-group position-absolute w-100 shadow prod-sug"></div>
-                <div class="vinculo mt-1" style="display:none;"></div></div>
+                <div class="input-group input-group-sm">
+                    <input type="text" name="descripcion[]" class="form-control text-uppercase i-desc" maxlength="400" autocomplete="off" placeholder="Escribe o busca en el inventario...">
+                    <button type="button" class="btn btn-outline-primary i-buscar" title="Buscar con Familia y Calidad"><i class="bi bi-funnel"></i> Inventario</button>
+                </div>
+                <div class="list-group position-absolute w-100 shadow sug prod-sug" style="left:0;"></div>
+                <div class="i-ficha"></div></div>
             <div class="col-4 col-md-2"><label>Cantidad *</label><input type="number" name="cantidad[]" step="any" min="0" class="form-control form-control-sm i-cant" inputmode="decimal"></div>
             <div class="col-4 col-md-3"><label>U.M. *</label><select name="um[]" class="form-select form-select-sm i-um"></select></div>
             <div class="col-4 col-md-3"><label>P. Unit. *</label><input type="number" name="precio_unitario[]" step="any" min="0" class="form-control form-control-sm i-pu" inputmode="decimal"></div>
@@ -198,63 +264,120 @@
     </div>
 </template>
 
+<!-- Buscador de productos con Familia y Calidad -->
+<div class="modal fade" id="modalProd" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg"><div class="modal-content border-0 shadow">
+    <div class="modal-header py-2 text-white" style="background: var(--theme-primary, #0F172A);"><h6 class="modal-title fw-bold"><i class="bi bi-funnel"></i> Buscar en el inventario</h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+        <div class="row g-2 mb-2">
+            <div class="col-12 col-md-4"><label class="small fw-bold">Familia</label><select id="mp_familia" class="form-select"></select></div>
+            <div class="col-12 col-md-4"><label class="small fw-bold">Calidad</label><select id="mp_calidad" class="form-select"></select></div>
+            <div class="col-12 col-md-4"><label class="small fw-bold">Código o descripción</label><input type="search" id="mp_q" class="form-control" placeholder="Ej: perno 1/2" autocomplete="off"></div>
+        </div>
+        <div class="small text-muted mb-2" id="mp_total"></div>
+        <div id="mp_res"></div>
+    </div>
+    <div class="modal-footer p-2 justify-content-between">
+        <span class="small text-muted">¿No está? Ciérralo y escribe la descripción: quedará como <b>NUEVO</b>.</span>
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cerrar</button>
+    </div>
+</div></div></div>
+
 <script>
 const UMS = {{ ums|tojson }};
 const SIGUIENTE = {{ siguiente|tojson }};
 const ITEMS_PREVIOS = {{ (pv.get('items') or [])|tojson }};
 const IGV = {{ igv }};
 const MONEDAS = {{ monedas|tojson }};
-const GRUPOS_PROD = { ANCLAJES: 'Inventario Anclajes', IMPORTBOLTS: 'Inventario Import Bolts', INSUMO: 'Insumos internos' };
+const EMPRESAS = {{ empresas_oc|tojson }};
+const ES_ADMIN = {{ 'true' if session.get('role') == 'admin' else 'false' }};
 const porId = id => document.getElementById(id);
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function fmt(n) { return Number(n || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function fmtCant(n) { return Number(n || 0).toLocaleString('es-PE', { maximumFractionDigits: 3 }); }
 function r2(n) { return Math.round((n + Number.EPSILON) * 100) / 100; }
-function moneda() { const m = document.querySelector('input[name=moneda]:checked'); return MONEDAS[m ? m.value : 'PEN'].simbolo; }
-function destino() { const d = document.querySelector('input[name=destino]:checked'); return d ? d.value : ''; }
-function pintarNumero() {
-    const t = document.querySelector('input[name=tipo]:checked');
-    if (t && porId('numPrev')) porId('numPrev').textContent = `${t.value} N° ${String(SIGUIENTE[t.value]).padStart(6, '0')}`;
-}
+function valorRadio(n) { const r = document.querySelector(`input[name=${n}]:checked`); return r ? r.value : ''; }
+function moneda() { return MONEDAS[valorRadio('moneda') || 'PEN'].simbolo; }
+function destino() { return valorRadio('destino'); }
+function empresa() { return valorRadio('empresa') || 'ANCLAJES'; }
+function tipo() { return valorRadio('tipo') || '{{ orden.tipo if orden else 'OC' }}'; }
+function corto() { return EMPRESAS[empresa()].corto; }
+function post(url, datos) { const fd = new FormData(); Object.entries(datos).forEach(([k, v]) => fd.append(k, v == null ? '' : v)); return fetch(url, { method: 'POST', body: fd }).then(r => r.json()); }
+function pintarNumero() { const t = tipo(); if (porId('numPrev')) porId('numPrev').textContent = `${t} N° ${String(SIGUIENTE[t]).padStart(6, '0')}`; }
+function pintarDestino() { porId('destInvTxt').textContent = 'Inventario ' + corto(); pintarFichas(); }
 function pintarEntrega() {
     const recojo = porId('em_RECOJO').checked;
     porId('boxEmpresa').style.display = recojo ? 'none' : 'block';
     porId('boxRecojo').style.display = recojo ? 'block' : 'none';
-    const et = document.querySelector('input[name=entrega_tipo]:checked').value;
+    const et = valorRadio('entrega_tipo');
     porId('boxDias').style.display = et === 'DIAS' ? 'block' : 'none';
     porId('boxFecha').style.display = et === 'FECHA' ? 'block' : 'none';
 }
 
-// ---------- Ítems ----------
+// ================= ÍTEMS =================
 function numerar() { document.querySelectorAll('#items .item').forEach((f, i) => f.querySelector('.n').textContent = 'ÍTEM ' + (i + 1)); }
 function recalcular() {
     let sub = 0;
     document.querySelectorAll('#items .item').forEach(f => {
         const t = r2((parseFloat(f.querySelector('.i-cant').value) || 0) * (parseFloat(f.querySelector('.i-pu').value) || 0));
-        f.querySelector('.i-tot').textContent = `${moneda()} ${fmt(t)}`;
-        sub += t;
+        f.querySelector('.i-tot').textContent = `${moneda()} ${fmt(t)}`; sub += t;
     });
     sub = r2(sub); const igv = r2(sub * IGV);
-    porId('tSub').textContent = `${moneda()} ${fmt(sub)}`;
-    porId('tIgv').textContent = `${moneda()} ${fmt(igv)}`;
-    porId('tTot').textContent = `${moneda()} ${fmt(sub + igv)}`;
+    porId('tSub').textContent = `${moneda()} ${fmt(sub)}`; porId('tIgv').textContent = `${moneda()} ${fmt(igv)}`; porId('tTot').textContent = `${moneda()} ${fmt(sub + igv)}`;
 }
 function opcionesUM(sel, valor) {
     const lista = UMS.slice(); if (valor && !lista.includes(valor)) lista.push(valor);
     sel.innerHTML = '<option value="">—</option>' + lista.map(u => `<option value="${esc(u)}">${esc(u)}</option>`).join('');
     sel.value = valor || '';
 }
-function vincular(fila, p) {
-    fila.querySelector('.i-origen').value = p ? p.origen : '';
-    fila.querySelector('.i-codigo').value = p ? p.codigo : '';
-    fila.querySelector('.i-insumo').value = p && p.insumo_id ? p.insumo_id : '';
-    const v = fila.querySelector('.vinculo');
+function textoStock(p) {
+    if (p.origen === 'INSUMO') return '';
+    const a = p.stock_ANCLAJES, b = p.stock_IMPORTBOLTS;
+    return ` · Stock Anclajes <span class="stk">${a == null ? '—' : fmtCant(a)}</span> · Import Bolts <span class="stk">${b == null ? '—' : fmtCant(b)}</span>`;
+}
+function pintarFicha(fila) {
+    const box = fila.querySelector('.i-ficha'), p = fila._prod;
+    const desc = fila.querySelector('.i-desc').value.trim();
     if (p) {
-        const nom = { ANCLAJES: 'Anclajes', IMPORTBOLTS: 'Import Bolts', INSUMO: 'Insumo' }[p.origen] || p.origen;
-        v.innerHTML = `<i class="bi bi-link-45deg"></i> Vinculado: <b>${esc(p.codigo)}</b> (${nom}) <button type="button" title="Quitar vínculo"><i class="bi bi-x-circle"></i></button>`
-            + (p.ultimo ? `<div class="text-muted">Último precio: <b>${esc(p.ultimo.moneda)} ${fmt(p.ultimo.precio)}</b> / ${esc(p.ultimo.um)} · ${esc(p.ultimo.orden)} · ${esc(p.ultimo.proveedor)}</div>` : '');
-        v.querySelector('button').onclick = () => vincular(fila, null);
-        v.style.display = 'block';
-    } else { v.style.display = 'none'; v.innerHTML = ''; }
+        const enEmpresa = p.origen === 'INSUMO' || p.origen === empresa();
+        box.innerHTML = `<div class="ficha ${enEmpresa || destino() !== 'GENERAL' ? 'vinc' : 'nuevo'}"><i class="bi bi-link-45deg"></i> <b>${esc(p.sku)}</b>` +
+            (p.familia ? ` · ${esc(p.familia)}` : '') + (p.calidad ? ` · ${esc(p.calidad)}` : '') + textoStock(p) +
+            ` <button type="button" class="x" title="Quitar vínculo"><i class="bi bi-x-circle"></i></button>` +
+            (!enEmpresa && destino() === 'GENERAL' && tipo() === 'OC' ? `<div><b>NUEVO en ${esc(corto())}:</b> existe solo en ${p.origen === 'IMPORTBOLTS' ? 'Import Bolts' : 'otro inventario'}; Almacén deberá crearlo.</div>` : '') +
+            (p.ultimo ? `<div class="text-muted">Último precio: <b>${esc(p.ultimo.moneda)} ${fmt(p.ultimo.precio)}</b> / ${esc(p.ultimo.um)} · ${esc(p.ultimo.orden)} · ${esc(p.ultimo.proveedor)}</div>` : '') + '</div>';
+        box.querySelector('.x').onclick = () => vincular(fila, null);
+    } else if (desc && tipo() === 'OC' && destino() === 'GENERAL') {
+        box.innerHTML = `<div class="ficha nuevo"><i class="bi bi-stars"></i> <b>PRODUCTO NUEVO</b>: no está en el inventario ${esc(corto())}. Almacén lo creará al ingresarlo.</div>`;
+    } else if (desc && destino() === 'INSUMOS') {
+        box.innerHTML = `<div class="ficha nuevo"><i class="bi bi-info-circle"></i> No está vinculado al maestro de insumos: se elegirá al ingresarlo.</div>`;
+    } else box.innerHTML = '';
+}
+function pintarFichas() { document.querySelectorAll('#items .item').forEach(pintarFicha); }
+function vincular(fila, p) {
+    fila._prod = p || null;
+    fila.querySelector('.i-origen').value = p ? p.origen : '';
+    fila.querySelector('.i-codigo').value = p ? p.sku : '';
+    fila.querySelector('.i-insumo').value = p && p.insumo_id ? p.insumo_id : '';
+    fila.querySelector('.i-familia').value = p ? (p.familia || '') : '';
+    fila.querySelector('.i-calidad').value = p ? (p.calidad || '') : '';
+    pintarFicha(fila);
+}
+function elegirProducto(fila, p) {
+    fila.querySelector('.i-desc').value = (p.descripcion || '').toUpperCase();
+    vincular(fila, p);
+    const um = fila.querySelector('.i-um');
+    if (!um.value) { const u = (p.ultimo && p.ultimo.um) || (UMS.includes((p.um || '').toUpperCase()) ? p.um.toUpperCase() : ''); if (u) opcionesUM(um, u); }
+    fila.querySelector('.prod-sug').style.display = 'none';
+    fila.querySelector('.i-cant').focus();
+}
+function tarjetaProducto(p) {
+    const nom = { ANCLAJES: 'Anclajes', IMPORTBOLTS: 'Import Bolts', INSUMO: 'Insumo' }[p.origen] || '';
+    return `<div class="sku">${esc(p.sku)} <span class="text-muted fw-normal">· ${nom}</span></div><div class="ds">${esc(p.descripcion)}</div>` +
+        `<div class="mt">${p.familia ? 'Familia: <b>' + esc(p.familia) + '</b>' : ''}${p.calidad ? ' · Calidad: <b>' + esc(p.calidad) + '</b>' : ''}${textoStock(p)}</div>` +
+        (p.ultimo ? `<div class="mt">Últ. precio ${esc(p.ultimo.moneda)} ${fmt(p.ultimo.precio)} / ${esc(p.ultimo.um)} (${esc(p.ultimo.orden)})</div>` : '');
+}
+function urlProductos(q, familia, calidad) {
+    return `{{ url_for('oc_api_productos') }}?q=${encodeURIComponent(q || '')}&familia=${encodeURIComponent(familia || '')}&calidad=${encodeURIComponent(calidad || '')}&destino=${destino()}&empresa=${empresa()}`;
 }
 function agregarItem(datos) {
     datos = datos || {};
@@ -265,131 +388,221 @@ function agregarItem(datos) {
     desc.value = datos.descripcion || '';
     fila.querySelector('.i-cant').value = datos.cantidad || '';
     fila.querySelector('.i-pu').value = (datos.precio_unitario === 0 || datos.precio_unitario) ? datos.precio_unitario : '';
-    if (datos.codigo) vincular(fila, { origen: datos.origen, codigo: datos.codigo, insumo_id: datos.insumo_id });
+    if (datos.codigo) vincular(fila, { origen: datos.origen, sku: datos.codigo, insumo_id: datos.insumo_id, familia: datos.familia, calidad: datos.calidad });
     let t = null;
     desc.addEventListener('input', () => {
-        if (fila.querySelector('.i-codigo').value) vincular(fila, null);   // si cambia el texto, deja de estar vinculado
+        if (fila._prod) vincular(fila, null);
+        pintarFicha(fila);
         clearTimeout(t);
         const q = desc.value.trim();
         if (q.length < 2) { sug.style.display = 'none'; return; }
-        t = setTimeout(() => fetch(`{{ url_for('oc_api_productos') }}?q=${encodeURIComponent(q)}&destino=${destino()}`).then(r => r.json()).then(d => {
-            const res = d.results || [];
-            if (document.activeElement !== desc) return;      // ya salió del campo: no mostrar la lista
-            sug.innerHTML = res.length ? '' : '<div class="list-group-item small text-muted">Sin coincidencias: se usará lo que escribiste.</div>';
-            let grupo = '';
+        t = setTimeout(() => fetch(urlProductos(q)).then(r => r.json()).then(d => {
+            if (document.activeElement !== desc) return;
+            const res = (d.results || []).slice(0, 12);
+            sug.innerHTML = res.length ? '' : '<div class="list-group-item small text-muted">No está en el inventario: quedará como producto NUEVO.</div>';
             res.forEach(p => {
-                if (p.origen !== grupo) { grupo = p.origen; sug.insertAdjacentHTML('beforeend', `<div class="grupo">${GRUPOS_PROD[grupo]}</div>`); }
                 const b = document.createElement('button'); b.type = 'button'; b.className = 'list-group-item list-group-item-action py-1 px-2 small';
-                b.innerHTML = `<span class="origen ${p.origen}">${esc(p.codigo)}</span> ${esc(p.descripcion)}` +
-                    (p.ultimo ? `<div class="text-muted" style="font-size:.68rem;">Últ. precio ${esc(p.ultimo.moneda)} ${fmt(p.ultimo.precio)} / ${esc(p.ultimo.um)} (${esc(p.ultimo.orden)})</div>` : '');
-                b.onmousedown = e => e.preventDefault();
-                b.onclick = () => {
-                    desc.value = p.descripcion.toUpperCase(); vincular(fila, p); sug.style.display = 'none';
-                    const um = fila.querySelector('.i-um');
-                    if (!um.value) { const u = (p.ultimo && p.ultimo.um) || (UMS.includes((p.um || '').toUpperCase()) ? p.um.toUpperCase() : ''); if (u) opcionesUM(um, u); }
-                    fila.querySelector('.i-cant').focus();
-                };
+                b.innerHTML = tarjetaProducto(p); b.onmousedown = e => e.preventDefault(); b.onclick = () => elegirProducto(fila, p);
                 sug.appendChild(b);
             });
             sug.style.display = 'block';
-        }).catch(() => {}), 250);
+        }).catch(() => {}), 280);
     });
     desc.addEventListener('blur', () => setTimeout(() => sug.style.display = 'none', 150));
+    fila.querySelector('.i-buscar').addEventListener('click', () => abrirBuscador(fila));
     fila.querySelectorAll('.i-cant, .i-pu').forEach(i => i.addEventListener('input', recalcular));
     fila.querySelector('.quitar').addEventListener('click', () => {
         if (document.querySelectorAll('#items .item').length === 1) { fila.querySelectorAll('input').forEach(i => i.value = ''); vincular(fila, null); recalcular(); return; }
         fila.remove(); numerar(); recalcular();
     });
-    numerar(); recalcular();
+    numerar(); recalcular(); pintarFicha(fila);
     return fila;
 }
 
-// ---------- Proveedor ----------
-let tSug = null;
+// --- buscador con Familia / Calidad ---
+let filaBuscando = null, tMp = null;
+function s2(sel, placeholder) {
+    if (!(window.jQuery && jQuery.fn.select2)) { sel.addEventListener('change', buscarModal); return; }
+    jQuery(sel).select2({ width: '100%', allowClear: true, placeholder, tags: true, dropdownParent: jQuery('#modalProd'),
+        createTag: p => { const v = (p.term || '').trim().toUpperCase(); return v ? { id: v, text: v, newTag: true } : null; },
+        language: { noResults: () => 'Sin coincidencias' } }).on('change', buscarModal);
+}
+function llenarSelect(sel, lista, valor) {
+    const vals = lista.slice(); if (valor && !vals.includes(valor)) vals.unshift(valor);
+    sel.innerHTML = '<option value=""></option>' + vals.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+    sel.value = valor || '';
+    if (window.jQuery && jQuery(sel).data('select2')) jQuery(sel).trigger('change.select2');
+}
+function buscarModal() {
+    clearTimeout(tMp);
+    tMp = setTimeout(() => {
+        const fam = porId('mp_familia').value, cal = porId('mp_calidad').value, q = porId('mp_q').value.trim();
+        fetch(urlProductos(q, fam, cal)).then(r => r.json()).then(d => {
+            llenarSelect(porId('mp_familia'), d.familias || [], fam);
+            llenarSelect(porId('mp_calidad'), d.calidades || [], cal);
+            const res = d.results || [];
+            porId('mp_total').textContent = (q || fam || cal) ? `${d.total} producto(s)${d.total > res.length ? ' — se muestran los primeros ' + res.length + '; usa más filtros' : ''}` : 'Elige una familia, una calidad o escribe para buscar.';
+            const cont = porId('mp_res'); cont.innerHTML = '';
+            res.forEach(p => { const div = document.createElement('div'); div.className = 'res-prod'; div.innerHTML = tarjetaProducto(p);
+                div.onclick = () => { elegirProducto(filaBuscando, p); bootstrap.Modal.getOrCreateInstance(porId('modalProd')).hide(); }; cont.appendChild(div); });
+        });
+    }, 200);
+}
+function abrirBuscador(fila) {
+    filaBuscando = fila;
+    porId('mp_q').value = '';
+    bootstrap.Modal.getOrCreateInstance(porId('modalProd')).show();
+    buscarModal();
+    setTimeout(() => porId('mp_q').focus(), 300);
+}
+s2(porId('mp_familia'), 'Todas las familias'); s2(porId('mp_calidad'), 'Todas las calidades');
+porId('mp_q').addEventListener('input', buscarModal);
+
+// ================= PROVEEDOR =================
+let tSug = null, provActual = null, contactos = [];
 function sugerirProv(t) {
     clearTimeout(tSug);
     const cont = porId('sugProv');
     tSug = setTimeout(() => fetch(`{{ url_for('oc_api_proveedores') }}?q=${encodeURIComponent(t.trim())}`).then(r => r.json()).then(d => {
-        cont.innerHTML = '';
-        const g = d.guardados || [], o = d.otros || [];
-        if (g.length) cont.insertAdjacentHTML('beforeend', '<div class="grupo"><i class="bi bi-bookmark-star-fill"></i> Usados en órdenes</div>');
-        g.forEach(p => {
+        const lista = d.proveedores || [];
+        cont.innerHTML = lista.length ? '' : `<div class="list-group-item small text-muted">${t.trim() ? 'No está en la lista. Si es un RUC, pulsa <b>SUNAT</b>.' : 'Todavía no hay proveedores: busca un RUC en SUNAT.'}</div>`;
+        lista.forEach(p => {
             const b = document.createElement('button'); b.type = 'button'; b.className = 'list-group-item list-group-item-action py-1 px-2 small';
-            b.innerHTML = `<div><b>${esc(p.razon_social)}</b></div><div class="text-muted"><span class="ruc">${esc(p.ruc)}</span>` +
-                `${p.contacto ? ' · ' + esc(p.contacto) : ''}${p.telefono ? ' · ' + esc(p.telefono) : ''}${p.ultima ? ' · últ. ' + p.ultima : ''}</div>`;
-            b.onclick = () => elegir(p, 'guardado');
+            b.innerHTML = `<div><b>${esc(p.razon_social)}</b></div><div class="text-muted"><span class="ruc">${esc(p.ruc)}</span>${p.ultima ? ' · última orden ' + p.ultima : ''}</div>`;
+            b.onclick = () => cargarProveedor(p.id);
             cont.appendChild(b);
         });
-        if (o.length) cont.insertAdjacentHTML('beforeend', '<div class="grupo"><i class="bi bi-building"></i> Otros proveedores del sistema</div>');
-        o.forEach(p => {
-            const b = document.createElement('button'); b.type = 'button'; b.className = 'list-group-item list-group-item-action py-1 px-2 small';
-            b.innerHTML = `<span class="ruc">${esc(p.ruc)}</span> — ${esc(p.razon_social)}`;
-            b.onclick = () => elegir(p, 'sistema');
-            cont.appendChild(b);
-        });
-        if (!g.length && !o.length) cont.innerHTML = `<div class="list-group-item small text-muted">${t.trim() ? 'No hay guardados con ese dato. Si es un RUC, pulsa <b>SUNAT</b>.' : 'Todavía no hay proveedores usados en órdenes.'}</div>`;
         cont.style.display = 'block';
     }).catch(() => {}), t ? 250 : 0);
 }
 document.addEventListener('click', e => { if (!e.target.closest('#provBuscar')) porId('sugProv').style.display = 'none'; });
-function bloquearProv(si) { ['ruc', 'razon_social', 'direccion'].forEach(id => porId(id).readOnly = si); }
-function elegir(p, origen) {
-    porId('oc_proveedor_id').value = origen === 'guardado' ? p.id : '';
-    porId('proveedor_id').value = p.proveedor_id || '';
-    porId('ruc').value = p.ruc || ''; porId('razon_social').value = p.razon_social || ''; porId('direccion').value = p.direccion || '';
-    if (p.contacto) porId('contacto').value = p.contacto;
-    if (p.telefono) porId('telefono').value = p.telefono;
-    if (p.email) porId('email').value = p.email;
-    bloquearProv(true);
-    const etq = { guardado: '<i class="bi bi-bookmark-star-fill"></i> usado antes', sistema: '<i class="bi bi-building"></i> del sistema', sunat: '<i class="bi bi-patch-check-fill"></i> validado en SUNAT' }[origen];
-    porId('pe_nombre').textContent = p.razon_social;
-    porId('pe_det').innerHTML = `RUC <b>${esc(p.ruc)}</b> · <span class="text-success">${etq}</span>`;
-    porId('provElegido').style.display = 'block'; porId('provBuscar').style.display = 'none'; porId('sugProv').style.display = 'none';
-    porId('provMsg').innerHTML = (!porId('contacto').value || !porId('telefono').value) ? '<span class="text-warning"><i class="bi bi-exclamation-triangle-fill"></i> Completa el contacto y el teléfono.</span>' : '';
+function cargarProveedor(id) { fetch(`{{ url_for('oc_api_proveedor', prov_id=0) }}`.replace('/0', '/' + id)).then(r => r.json()).then(d => { if (d.proveedor) mostrarProveedor(d.proveedor); }); }
+function mostrarProveedor(p, msg) {
+    provActual = p;
+    porId('oc_proveedor_id').value = p.id; porId('ruc').value = p.ruc; porId('razon_social').value = p.razon_social; porId('direccion').value = p.direccion || '';
+    porId('pc_nombre').textContent = p.razon_social; porId('pc_ruc').textContent = 'RUC ' + p.ruc; porId('pc_dir').textContent = p.direccion || '';
+    const est = [p.sunat_estado, p.sunat_condicion].filter(Boolean);
+    porId('pc_sunat').innerHTML = est.length ? est.map(x => `<span class="chip ${/ACTIVO|HABIDO/.test(x) && !/NO /.test(x) ? 'ok' : 'mal'}">${esc(x)}</span>`).join(' ') + (p.sunat_fecha ? ` <span class="chip gris">SUNAT ${esc(p.sunat_fecha)}</span>` : '')
+                                         : '<span class="chip gris">escrito a mano</span>';
+    porId('provCard').style.display = 'block'; porId('provBuscar').style.display = 'none'; porId('provManual').style.display = 'none';
+    porId('btnAMano').style.display = 'none'; porId('sugProv').style.display = 'none';
+    porId('provMsg').innerHTML = msg || '';
+    contactos = p.contactos || [];
+    porId('btnNuevoContacto').style.display = '';
+    porId('fc_botones').style.display = 'flex'; porId('fc_nota').style.display = 'none';
+    pintarContactos();
 }
 function cambiarProv() {
-    ['oc_proveedor_id', 'proveedor_id', 'ruc', 'razon_social', 'direccion', 'contacto', 'telefono', 'email'].forEach(id => porId(id).value = '');
-    bloquearProv(true);
-    porId('provElegido').style.display = 'none'; porId('provBuscar').style.display = 'block'; porId('provMsg').innerHTML = '';
+    provActual = null; contactos = [];
+    ['oc_proveedor_id', 'ruc', 'razon_social', 'direccion', 'contacto_id', 'contacto', 'telefono', 'email'].forEach(id => porId(id).value = '');
+    porId('provCard').style.display = 'none'; porId('provBuscar').style.display = 'block'; porId('provManual').style.display = 'none';
+    porId('btnAMano').style.display = ''; porId('boxContactos').style.display = 'none'; porId('provMsg').innerHTML = '';
     porId('buscaProv').value = ''; porId('buscaProv').focus();
 }
-function buscarSunat() {
-    const n = porId('buscaProv').value.replace(/\D/g, ''), msg = porId('provMsg');
+function buscarSunat(actualizar) {
+    const n = (actualizar && provActual ? provActual.ruc : porId('buscaProv').value).replace(/\D/g, ''), msg = porId('provMsg');
     if (n.length !== 8 && n.length !== 11) { msg.innerHTML = '<span class="text-danger">Escribe un RUC (11 dígitos) o DNI (8) y pulsa SUNAT.</span>'; return; }
     msg.innerHTML = '<span class="text-muted"><span class="spinner-border spinner-border-sm"></span> Consultando SUNAT...</span>';
-    fetch('/api/consultar_proveedor', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: `numero=${encodeURIComponent(n)}&force=false` })
-        .then(r => r.json()).then(d => {
-            if (d.status === 'success') {
-                // si ya lo usamos antes, se traen también su contacto y teléfono
-                fetch(`{{ url_for('oc_api_proveedores') }}?q=${n}`).then(r => r.json()).then(x => {
-                    const g = (x.guardados || []).find(p => p.ruc === n);
-                    elegir(g || { proveedor_id: d.proveedor_id, ruc: n, razon_social: d.razon_social, direccion: d.direccion, telefono: d.telefono }, g ? 'guardado' : 'sunat');
-                });
-            } else msg.innerHTML = `<span class="text-danger"><i class="bi bi-x-circle-fill"></i> ${esc(d.msg)}</span>`;
-        }).catch(() => msg.innerHTML = '<span class="text-danger">Error de conexión.</span>');
+    post(`{{ url_for('oc_api_sunat') }}`, { numero: n, actualizar: actualizar ? '1' : '' }).then(d => {
+        if (d.status !== 'success') { msg.innerHTML = `<span class="text-danger"><i class="bi bi-x-circle-fill"></i> ${esc(d.msg)}</span>`; return; }
+        const txt = d.origen === 'LISTA' ? 'Ya estaba en la lista de proveedores.' : (d.nuevo ? 'Datos de SUNAT guardados en la lista de proveedores.' : 'Datos actualizados desde SUNAT.');
+        const sel = porId('contacto_id').value;
+        mostrarProveedor(d.proveedor, `<span class="text-success"><i class="bi bi-check-circle-fill"></i> ${txt}</span>`);
+        if (sel) elegirContacto(sel);
+    }).catch(() => msg.innerHTML = '<span class="text-danger">Error de conexión.</span>');
 }
 function aMano() {
-    bloquearProv(false);
-    porId('oc_proveedor_id').value = ''; porId('proveedor_id').value = '';
-    porId('provBuscar').style.display = 'none'; porId('provElegido').style.display = 'none';
-    porId('provMsg').innerHTML = '<span class="text-muted">Escribe RUC y razón social tal como figuran en la cotización.</span>';
-    porId('ruc').focus();
+    provActual = null; contactos = [];
+    porId('oc_proveedor_id').value = ''; porId('contacto_id').value = '';
+    porId('provBuscar').style.display = 'none'; porId('provCard').style.display = 'none'; porId('provManual').style.display = 'block'; porId('btnAMano').style.display = 'none';
+    porId('m_ruc').value = porId('buscaProv').value.replace(/\D/g, '');
+    porId('provMsg').innerHTML = '<span class="text-muted">Escribe los datos tal como figuran en la cotización. Se guardará en la lista al guardar la orden.</span>';
+    // sin proveedor guardado, el contacto se escribe aquí y se guarda junto con la orden
+    porId('boxContactos').style.display = 'block'; porId('listaContactos').innerHTML = ''; porId('btnNuevoContacto').style.display = 'none';
+    formContacto(null); porId('fc_botones').style.display = 'none'; porId('fc_nota').style.display = 'block'; porId('fc_titulo').textContent = 'Contacto';
+    porId('m_ruc').focus();
 }
 
-// ---------- Validación y envío ----------
+// ---- contactos ----
+function pintarContactos() {
+    porId('boxContactos').style.display = 'block';
+    const cont = porId('listaContactos'); cont.innerHTML = '';
+    if (!contactos.length) { cont.innerHTML = '<div class="small text-muted">Este proveedor no tiene contactos guardados: agrega uno.</div>'; formContacto(null); return; }
+    contactos.forEach(c => {
+        const lab = document.createElement('label'); lab.className = 'contacto';
+        lab.innerHTML = `<input type="radio" name="sel_contacto" class="form-check-input mt-1" value="${c.id}">
+            <div class="info"><div class="n">${esc(c.nombre)}${c.cargo ? ' <span class="text-muted fw-normal small">· ' + esc(c.cargo) + '</span>' : ''}</div>
+            <div class="d"><i class="bi bi-telephone"></i> ${esc(c.telefono)}${c.email ? ' · <i class="bi bi-envelope"></i> ' + esc(c.email) : ''}</div>
+            <div class="m">${c.editado ? 'Editado' : 'Guardado'} el ${esc(c.guardado)} por ${esc(c.guardado_por || '-')}${c.usos ? ' · usado ' + c.usos + ' vez(ces)' : ''}</div></div>
+            <div class="acc d-flex flex-column"><button type="button" title="Editar" data-a="editar"><i class="bi bi-pencil"></i></button>
+            <button type="button" title="Archivar (deja de aparecer)" data-a="archivar"><i class="bi bi-archive"></i></button></div>`;
+        lab.querySelector('input').addEventListener('change', () => elegirContacto(c.id));
+        lab.querySelector('[data-a=editar]').onclick = e => { e.preventDefault(); formContacto(c); };
+        lab.querySelector('[data-a=archivar]').onclick = e => { e.preventDefault(); archivarContacto(c); };
+        cont.appendChild(lab);
+    });
+    const sel = porId('contacto_id').value;
+    if (sel && contactos.some(c => String(c.id) === String(sel))) elegirContacto(sel);
+    else if (!sel && porId('contacto').value) {
+        const igual = contactos.find(c => c.nombre.toUpperCase() === porId('contacto').value.toUpperCase() && c.telefono === porId('telefono').value);
+        if (igual) elegirContacto(igual.id);
+    }
+}
+function elegirContacto(id) {
+    const c = contactos.find(x => String(x.id) === String(id)); if (!c) return;
+    porId('contacto_id').value = c.id; porId('contacto').value = c.nombre; porId('telefono').value = c.telefono; porId('email').value = c.email || '';
+    const r = document.querySelector(`input[name=sel_contacto][value="${c.id}"]`); if (r) r.checked = true;
+}
+function formContacto(c) {
+    porId('formContacto').style.display = 'block';
+    porId('fc_id').value = c ? c.id : '';
+    porId('fc_nombre').value = c ? c.nombre : ''; porId('fc_tel').value = c ? c.telefono : ''; porId('fc_mail').value = c ? (c.email || '') : ''; porId('fc_cargo').value = c ? (c.cargo || '') : '';
+    porId('fc_titulo').textContent = c ? 'Editar contacto' : 'Nuevo contacto'; porId('fc_btn').textContent = c ? 'Guardar cambios' : 'Guardar contacto';
+    porId('fc_nombre').focus();
+}
+function cerrarFormContacto() { porId('formContacto').style.display = 'none'; }
+function guardarContacto() {
+    if (!provActual) return;
+    post(`{{ url_for('oc_api_contacto') }}`, { accion: 'guardar', id: porId('fc_id').value, oc_proveedor_id: provActual.id, nombre: porId('fc_nombre').value,
+          telefono: porId('fc_tel').value, email: porId('fc_mail').value, cargo: porId('fc_cargo').value }).then(d => {
+        if (d.status !== 'success') return Swal.fire('No se pudo', d.msg, 'warning');
+        contactos = d.contactos; porId('contacto_id').value = d.contacto_id; pintarContactos(); elegirContacto(d.contacto_id); cerrarFormContacto();
+        Swal.fire({ icon: 'success', title: 'Contacto guardado', timer: 1200, showConfirmButton: false });
+    });
+}
+function archivarContacto(c) {
+    Swal.fire({ icon: 'question', title: '¿Archivar este contacto?', html: `<b>${esc(c.nombre)}</b> · ${esc(c.telefono)}<br><span class="small">Deja de aparecer en la lista, pero no se pierde: Gerencia puede restaurarlo en Configuración → Proveedores.</span>`,
+                showCancelButton: true, confirmButtonText: 'Archivar', cancelButtonText: 'Cancelar' }).then(r => {
+        if (!r.isConfirmed) return;
+        post(`{{ url_for('oc_api_contacto') }}`, { accion: 'archivar', id: c.id }).then(d => {
+            if (d.status !== 'success') return Swal.fire('No se pudo', d.msg, 'warning');
+            if (String(porId('contacto_id').value) === String(c.id)) ['contacto_id', 'contacto', 'telefono', 'email'].forEach(id => porId(id).value = '');
+            contactos = d.contactos; pintarContactos();
+        });
+    });
+}
+
+// ================= VALIDACIÓN Y ENVÍO =================
 let accionPulsada = 'guardar';
 document.querySelectorAll('#formOC button[type=submit]').forEach(b => b.addEventListener('click', () => accionPulsada = b.dataset.accion));
 porId('formOC').addEventListener('submit', function (e) {
+    if (porId('provManual').style.display === 'block') {
+        porId('ruc').value = porId('m_ruc').value.replace(/\D/g, ''); porId('razon_social').value = porId('m_razon').value.trim(); porId('direccion').value = porId('m_dir').value.trim();
+    }
+    // contacto escrito sin guardar en la lista: va con la orden y se guarda solo
+    if (!porId('contacto_id').value && porId('formContacto').style.display === 'block' && porId('fc_nombre').value.trim()) {
+        porId('contacto').value = porId('fc_nombre').value.trim(); porId('telefono').value = porId('fc_tel').value.trim(); porId('email').value = porId('fc_mail').value.trim();
+    }
     const err = [];
     const ruc = porId('ruc').value.replace(/\D/g, '');
-    if (!destino()) err.push('Elige si el material es para el Inventario General o para Insumos.');
+    if (!destino()) err.push('Elige si el material es para el inventario o para Insumos.');
     if (ruc.length !== 11 && ruc.length !== 8) err.push('Elige o busca el proveedor (RUC de 11 dígitos).');
     if (porId('razon_social').value.trim().length < 3) err.push('Falta la razón social del proveedor.');
-    if (porId('contacto').value.trim().length < 3) err.push('El CONTACTO es obligatorio.');
-    if (porId('telefono').value.replace(/\D/g, '').length < 6) err.push('El TELÉFONO es obligatorio.');
+    if (porId('contacto').value.trim().length < 3) err.push('Elige o escribe el CONTACTO.');
+    if (porId('telefono').value.replace(/\D/g, '').length < 6) err.push('Falta el TELÉFONO del contacto.');
     if (!porId('condicion_pago').value) err.push('Elige la condición de pago.');
     if (porId('em_RECOJO').checked && porId('lugar_recojo').value.trim().length < 5) err.push('Escribe dónde se recoge el material.');
-    const et = document.querySelector('input[name=entrega_tipo]:checked').value;
+    const et = valorRadio('entrega_tipo');
     if (et === 'DIAS' && !(parseInt(porId('entrega_dias').value) >= 1)) err.push('Escribe en cuántos días se entrega.');
     if (et === 'FECHA' && !porId('fecha_entrega').value) err.push('Escribe la fecha de entrega.');
     const filas = [...document.querySelectorAll('#items .item')].filter(f => f.querySelector('.i-desc').value.trim() || f.querySelector('.i-cant').value || f.querySelector('.i-pu').value);
@@ -401,7 +614,8 @@ porId('formOC').addEventListener('submit', function (e) {
     if (err.length) { e.preventDefault(); Swal.fire({ icon: 'warning', title: 'Falta información', html: [...new Set(err)].map(esc).join('<br>') }); return; }
     if (accionPulsada === 'enviar' && !this.dataset.confirmado) {
         e.preventDefault();
-        Swal.fire({ icon: 'question', title: '¿Enviar a Gerencia?', text: `Total: ${porId('tTot').textContent}. Ya no se podrá editar salvo que la retires.`,
+        const nuevos = filas.filter(f => f.querySelector('.ficha.nuevo')).length;
+        Swal.fire({ icon: 'question', title: '¿Enviar a Gerencia?', html: `Total: <b>${porId('tTot').textContent}</b>.` + (nuevos ? `<br>${nuevos} producto(s) NUEVO(S) para el inventario.` : '') + '<br>Ya no se podrá editar salvo que la retires.',
                     showCancelButton: true, confirmButtonText: 'Sí, enviar', cancelButtonText: 'Revisar' })
             .then(r => { if (r.isConfirmed) { this.dataset.confirmado = '1'; porId('accion').value = 'enviar'; this.requestSubmit ? this.requestSubmit() : this.submit(); } });
         return;
@@ -410,13 +624,13 @@ porId('formOC').addEventListener('submit', function (e) {
     this.querySelectorAll('button[type=submit]').forEach(b => b.disabled = true);
 });
 
-// ---------- Inicio ----------
-pintarNumero(); pintarEntrega();
+// ================= INICIO =================
+pintarNumero(); pintarEntrega(); porId('destInvTxt').textContent = 'Inventario ' + corto();
 if (ITEMS_PREVIOS.length) ITEMS_PREVIOS.forEach(it => agregarItem(it)); else agregarItem();
-if (porId('ruc').value && porId('razon_social').value) {
-    porId('pe_nombre').textContent = porId('razon_social').value;
-    porId('pe_det').innerHTML = `RUC <b>${esc(porId('ruc').value)}</b>`;
-    porId('provElegido').style.display = 'block'; porId('provBuscar').style.display = 'none';
+if (porId('oc_proveedor_id').value) cargarProveedor(porId('oc_proveedor_id').value);
+else if (porId('ruc').value && porId('razon_social').value) {
+    aMano(); porId('m_ruc').value = porId('ruc').value; porId('m_razon').value = porId('razon_social').value; porId('m_dir').value = porId('direccion').value;
+    porId('fc_nombre').value = porId('contacto').value; porId('fc_tel').value = porId('telefono').value; porId('fc_mail').value = porId('email').value;
 }
 </script>
 {% endblock %}
