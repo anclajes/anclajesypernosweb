@@ -1,0 +1,303 @@
+{% extends "base.html" %}
+{% block title %}{{ oc_codigo(orden) }}{% endblock %}
+{% block subtitle %}{{ tipos[orden.tipo] }} · {{ orden.razon_social }}{% endblock %}
+{% block content %}
+{% set vista = '' %}
+{% include '_oc_nav.html' %}
+{% set e = estados[orden.estado] %}
+{% set mon = monedas[orden.moneda] %}
+<style>
+    .cab-oc { border-radius: 14px; padding: 14px 16px; background: #fff; border: 1px solid #e2e8f0; border-top: 5px solid {{ e.color }}; }
+    .cab-oc .cod { font-size: 1.5rem; font-weight: 800; font-variant-numeric: tabular-nums; color: #0f172a; line-height: 1.1; }
+    .pasos { display: flex; gap: 0; margin: 14px 0 4px; overflow-x: auto; padding-bottom: 4px; }
+    .paso { flex: 1 1 0; min-width: 110px; text-align: center; position: relative; font-size: .7rem; color: #94a3b8; }
+    .paso::before { content: ''; position: absolute; top: 13px; left: -50%; width: 100%; height: 3px; background: #e2e8f0; z-index: 0; }
+    .paso:first-child::before { display: none; }
+    .paso .bola { width: 28px; height: 28px; border-radius: 50%; background: #e2e8f0; color: #fff; display: inline-flex; align-items: center; justify-content: center;
+                  position: relative; z-index: 1; font-size: .85rem; }
+    .paso.hecho { color: #0f172a; } .paso.hecho .bola { background: #16a34a; } .paso.hecho::before { background: #16a34a; }
+    .paso.actual .bola { background: {{ e.color }}; box-shadow: 0 0 0 4px color-mix(in srgb, {{ e.color }} 22%, transparent); }
+    .paso.actual { color: {{ e.color }}; font-weight: 700; }
+    .paso b { display: block; font-size: .74rem; margin-top: 4px; }
+    .paso .q { font-size: .66rem; color: #64748b; line-height: 1.2; }
+    .sello { border-radius: 12px; padding: 10px 14px; display: flex; gap: 10px; align-items: center; }
+    .sello.ok { background: #f0fdf4; border: 1.5px solid #86efac; color: #14532d; }
+    .sello.no { background: #fef2f2; border: 1.5px solid #fca5a5; color: #7f1d1d; }
+    .sello.pend { background: #fffbeb; border: 1.5px dashed #fbbf24; color: #78350f; }
+    .sello.anul { background: #f1f5f9; border: 1.5px solid #94a3b8; color: #1e293b; }
+    .sello i { font-size: 1.6rem; }
+    .dato { font-size: .68rem; text-transform: uppercase; letter-spacing: .04em; color: #64748b; font-weight: 800; }
+    .val { font-size: .88rem; color: #0f172a; font-weight: 600; word-break: break-word; }
+    .tabla-items th { font-size: .7rem; text-transform: uppercase; }
+    .tabla-items td { font-size: .84rem; vertical-align: middle; }
+    .letras { font-size: .74rem; color: #475569; font-style: italic; }
+    .doc { display: flex; align-items: center; gap: 10px; border: 1px solid #e2e8f0; border-radius: 10px; padding: 7px 10px; margin-bottom: 6px; }
+    .doc .ico { width: 34px; height: 34px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; flex: 0 0 auto; }
+    .doc.GUIA .ico { background: #ede9fe; color: #5b21b6; } .doc.FACTURA .ico { background: #dcfce7; color: #166534; }
+    .doc.COTIZACION .ico { background: #e0f2fe; color: #075985; } .doc.OTRO .ico { background: #f1f5f9; color: #334155; }
+    .linea { position: relative; padding-left: 22px; margin-bottom: 10px; }
+    .linea::before { content: ''; position: absolute; left: 6px; top: 16px; bottom: -14px; width: 2px; background: #e2e8f0; }
+    .linea:last-child::before { display: none; }
+    .linea .pt { position: absolute; left: 0; top: 3px; width: 14px; height: 14px; border-radius: 50%; background: #cbd5e1; border: 3px solid #fff; box-shadow: 0 0 0 1px #cbd5e1; }
+    .linea .pt.APROBADA, .linea .pt.CONFORME { background: #16a34a; } .linea .pt.RECHAZADA, .linea .pt.ANULADA { background: #dc2626; }
+    .linea .pt.ENVIADA { background: #f59e0b; } .linea .pt.LLEGADA { background: #0891b2; } .linea .pt.CREADA { background: #0B3D91; }
+    .linea .t { font-size: .8rem; font-weight: 700; } .linea .s { font-size: .74rem; color: #64748b; }
+    .acciones .btn { font-weight: 700; }
+    .check-conf { border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 8px 10px; margin-bottom: 6px; }
+    .check-conf:has(input:checked) { border-color: #16a34a; background: #f0fdf4; }
+</style>
+
+<div class="cab-oc shadow-sm mb-3">
+    <div class="d-flex flex-wrap justify-content-between gap-2 align-items-start">
+        <div>
+            <span class="oc-tipo {{ orden.tipo }}">{{ tipos[orden.tipo]|upper }}</span>
+            <div class="cod mt-1">{{ oc_codigo(orden) }}</div>
+            <div class="small text-muted">{{ orden.fecha.strftime('%d/%m/%Y') }} · elaborada por <b>{{ orden.creado_por.nombre_completo if orden.creado_por else '-' }}</b>
+                {% if duplicada_de %}· copia de <a href="{{ url_for('oc_detalle', orden_id=duplicada_de.id) }}">{{ oc_codigo(duplicada_de) }}</a>{% endif %}</div>
+        </div>
+        <div class="text-end">
+            <span class="oc-estado fs-6" style="color: {{ e.color }}; background: {{ e.fondo }};"><i class="bi {{ e.icono }}"></i> {{ e.txt }}</span>
+            <div class="fs-4 fw-bold num mt-1">{{ mon.simbolo }} {{ '{:,.2f}'.format(orden.total or 0) }}</div>
+            <div class="small text-muted">inc. IGV · <span class="oc-dest {{ orden.destino }}">{{ destinos[orden.destino] }}</span></div>
+        </div>
+    </div>
+
+    {% set pasos = [('CREADA', 'Creada', orden.fecha_registro, orden.creado_por), ('ENVIADA', 'Enviada a Gerencia', orden.fecha_envio, orden.enviado_por),
+                    ('APROBADA', 'Aprobada', orden.fecha_aprobacion, orden.aprobado_por), ('RECIBIDA', 'Material llegó', orden.fecha_llegada, orden.recibido_por),
+                    ('CONFORME', 'Conforme', orden.fecha_conforme, orden.conforme_por)] %}
+    {% set orden_estados = {'BORRADOR': 0, 'ENVIADA': 1, 'APROBADA': 2, 'RECIBIDA': 3, 'CONFORME': 4, 'RECHAZADA': 1, 'ANULADA': -1} %}
+    {% set nivel = orden_estados[orden.estado] %}
+    {% if orden.estado not in ['RECHAZADA', 'ANULADA'] %}
+    <div class="pasos">
+        {% for clave, txt, cuando, quien in pasos %}
+        <div class="paso {{ 'hecho' if loop.index0 <= nivel else ('actual' if loop.index0 == nivel + 1 else '') }}">
+            <span class="bola"><i class="bi {{ 'bi-check-lg' if loop.index0 <= nivel else 'bi-circle' }}"></i></span>
+            <b>{{ txt }}</b>
+            {% if cuando and loop.index0 <= nivel %}<div class="q">{{ cuando.strftime('%d/%m %H:%M') }}<br>{{ quien.nombre_completo if quien else '' }}</div>{% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Sello de aprobación (lo que se ve en el PDF) -->
+    <div class="mt-2">
+    {% if orden.estado in ['APROBADA', 'RECIBIDA', 'CONFORME'] %}
+        <div class="sello ok"><i class="bi bi-patch-check-fill"></i><div><b>APROBADA por {{ orden.aprobado_por.nombre_completo if orden.aprobado_por else 'Gerencia' }}</b>
+            <div class="small">el {{ orden.fecha_aprobacion.strftime('%d/%m/%Y a las %H:%M') }} · el PDF lleva la firma y sello de Gerencia</div></div></div>
+    {% elif orden.estado == 'RECHAZADA' %}
+        <div class="sello no"><i class="bi bi-x-octagon-fill"></i><div><b>RECHAZADA por {{ orden.rechazado_por.nombre_completo if orden.rechazado_por else 'Gerencia' }}</b> · {{ orden.fecha_rechazo.strftime('%d/%m/%Y %H:%M') }}
+            <div class="small">Motivo: {{ orden.motivo_rechazo }}</div></div></div>
+    {% elif orden.estado == 'ANULADA' %}
+        <div class="sello anul"><i class="bi bi-slash-circle"></i><div><b>ANULADA por {{ orden.anulado_por.nombre_completo if orden.anulado_por else '-' }}</b> · {{ orden.fecha_anulacion.strftime('%d/%m/%Y %H:%M') }}
+            <div class="small">Razón: {{ orden.motivo_anulacion }}</div></div></div>
+    {% elif orden.estado == 'ENVIADA' %}
+        <div class="sello pend"><i class="bi bi-hourglass-split"></i><div><b>Esperando aprobación de Gerencia</b>
+            <div class="small">Enviada por {{ orden.enviado_por.nombre_completo if orden.enviado_por else '-' }} el {{ orden.fecha_envio.strftime('%d/%m/%Y %H:%M') }}. El PDF dice "PENDIENTE DE APROBACIÓN".</div></div></div>
+    {% else %}
+        <div class="sello pend"><i class="bi bi-pencil-square"></i><div><b>Borrador: aún no enviada a Gerencia</b>
+            <div class="small">Revisa y pulsa "Enviar a Gerencia". El PDF dice "PENDIENTE DE APROBACIÓN".</div></div></div>
+    {% endif %}
+    </div>
+
+    <!-- Acciones -->
+    <div class="acciones d-flex flex-wrap gap-2 mt-3">
+        <a class="btn btn-outline-danger" href="{{ url_for('oc_pdf', orden_id=orden.id, ver=1) }}" target="_blank"><i class="bi bi-file-earmark-pdf"></i> Ver PDF</a>
+        <a class="btn btn-outline-secondary" href="{{ url_for('oc_pdf', orden_id=orden.id) }}"><i class="bi bi-download"></i> Descargar</a>
+        {% if p.editar %}<a class="btn btn-outline-primary" href="{{ url_for('oc_editar', orden_id=orden.id) }}"><i class="bi bi-pencil"></i> Editar</a>{% endif %}
+        {% if p.enviar %}<form method="POST" action="{{ url_for('oc_enviar', orden_id=orden.id) }}" onsubmit="return confirmar(this, '¿Enviar a Gerencia para aprobación?')"><button class="btn btn-success"><i class="bi bi-send-check"></i> Enviar a Gerencia</button></form>{% endif %}
+        {% if p.aprobar %}<form method="POST" action="{{ url_for('oc_aprobar', orden_id=orden.id) }}" onsubmit="return confirmar(this, '¿Aprobar {{ oc_codigo(orden) }} por {{ mon.simbolo }} {{ '{:,.2f}'.format(orden.total) }}? El PDF llevará tu firma y sello.')"><button class="btn btn-success"><i class="bi bi-patch-check-fill"></i> Aprobar</button></form>{% endif %}
+        {% if p.rechazar %}<button class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#mRechazar"><i class="bi bi-x-octagon"></i> Rechazar</button>{% endif %}
+        {% if p.llegada %}<button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#mLlegada"><i class="bi bi-truck"></i> Registrar llegada</button>{% endif %}
+        {% if p.conforme %}<button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#mConforme"><i class="bi bi-check-circle-fill"></i> Dar conformidad</button>{% endif %}
+        {% if p.insumos %}<a class="btn btn-warning" href="{{ url_for('insumos_ingreso_nuevo', oc=orden.id) }}"><i class="bi bi-box-arrow-in-down"></i> Ingresar a Insumos</a>{% endif %}
+        {% if p.kardex %}<form method="POST" action="{{ url_for('oc_marcar_kardex', orden_id=orden.id) }}" onsubmit="return confirmar(this, '¿Ya registraste el ingreso de este material en el Kardex?')"><button class="btn btn-outline-success"><i class="bi bi-journal-check"></i> Marcar: ingresado en Kardex</button></form>{% endif %}
+        {% if p.observar %}<button class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#mObs"><i class="bi bi-chat-left-text"></i> Observación</button>{% endif %}
+        {% if p.retirar %}<form method="POST" action="{{ url_for('oc_retirar', orden_id=orden.id) }}" onsubmit="return confirmar(this, '¿Retirarla de aprobación para corregirla?')"><button class="btn btn-outline-warning"><i class="bi bi-arrow-counterclockwise"></i> Retirar para corregir</button></form>{% endif %}
+        {% if p.duplicar %}<form method="POST" action="{{ url_for('oc_duplicar', orden_id=orden.id) }}"><button class="btn btn-outline-secondary"><i class="bi bi-files"></i> Duplicar</button></form>{% endif %}
+        {% if p.anular %}<button class="btn btn-outline-dark ms-sm-auto" data-bs-toggle="modal" data-bs-target="#mAnular"><i class="bi bi-slash-circle"></i> Anular</button>{% endif %}
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-12 col-lg-8">
+        <div class="card border-0 shadow-sm mb-3"><div class="card-body">
+            <div class="row g-3">
+                <div class="col-12 col-md-6">
+                    <div class="dato">Proveedor</div><div class="val">{{ orden.razon_social }}</div>
+                    <div class="small text-muted">RUC {{ orden.ruc }}{% if orden.direccion %} · {{ orden.direccion }}{% endif %}</div>
+                    <div class="small mt-1"><i class="bi bi-person"></i> {{ orden.contacto }} · <i class="bi bi-telephone"></i> <a href="tel:{{ orden.telefono }}">{{ orden.telefono }}</a>{% if orden.email %} · {{ orden.email }}{% endif %}</div>
+                </div>
+                <div class="col-6 col-md-3"><div class="dato">Pago</div><div class="val">{{ orden.condicion_pago }}</div>
+                    <div class="dato mt-2">Moneda</div><div class="val">{{ mon.simbolo }} {{ mon.nombre }}</div></div>
+                <div class="col-6 col-md-3"><div class="dato">Cotización</div><div class="val">{{ orden.cotizacion or '—' }}</div>
+                    <div class="dato mt-2">Fecha de entrega</div><div class="val">{{ oc_entrega_txt(orden) }}</div>
+                    {% set esp = oc_fecha_esperada(orden) %}{% if esp and orden.entrega_tipo == 'DIAS' %}<div class="small text-muted">≈ {{ esp.strftime('%d/%m/%Y') }}</div>{% endif %}</div>
+                <div class="col-12"><div class="dato">Entrega</div>
+                    <div class="val">{% if orden.entrega_modo == 'RECOJO' %}<i class="bi bi-person-walking"></i> Se recoge en: {{ orden.lugar_recojo }}{% else %}<i class="bi bi-truck"></i> Llega a la empresa: {{ cfg.lugar_entrega }}{% endif %}</div></div>
+            </div>
+        </div></div>
+
+        <div class="card border-0 shadow-sm mb-3"><div class="card-body p-0 table-responsive">
+            <table class="table mb-0 tabla-items">
+                <thead class="table-light"><tr><th class="ps-3">Ítem</th><th>Descripción</th><th class="text-end">Cantidad</th><th>U.M.</th><th class="text-end">P. Unit.</th><th class="text-end pe-3">Total</th></tr></thead>
+                <tbody>
+                {% for i in orden.items %}
+                    <tr><td class="ps-3">{{ i.item }}</td>
+                        <td>{{ i.descripcion }}{% if i.codigo %}<div class="text-muted" style="font-size:.7rem;"><i class="bi bi-link-45deg"></i> {{ i.codigo }} ({{ {'ANCLAJES': 'Anclajes', 'IMPORTBOLTS': 'Import Bolts', 'INSUMO': 'Insumo'}.get(i.origen, '') }})</div>{% endif %}</td>
+                        <td class="text-end num">{{ i.cantidad|cant }}</td><td>{{ i.um }}</td>
+                        <td class="text-end num">{{ '{:,.2f}'.format(i.precio_unitario) if (i.precio_unitario * 100)|round == i.precio_unitario * 100 else '{:,.4f}'.format(i.precio_unitario) }}</td>
+                        <td class="text-end num pe-3 fw-semibold">{{ '{:,.2f}'.format(i.total) }}</td></tr>
+                {% endfor %}
+                </tbody>
+                <tfoot>
+                    <tr><td colspan="5" class="text-end small">Subtotal</td><td class="text-end num pe-3">{{ mon.simbolo }} {{ '{:,.2f}'.format(orden.subtotal or 0) }}</td></tr>
+                    <tr><td colspan="5" class="text-end small">IGV {{ (igv * 100)|int }}%</td><td class="text-end num pe-3">{{ mon.simbolo }} {{ '{:,.2f}'.format(orden.igv or 0) }}</td></tr>
+                    <tr><td colspan="5" class="text-end fw-bold">TOTAL</td><td class="text-end num pe-3 fw-bold fs-6">{{ mon.simbolo }} {{ '{:,.2f}'.format(orden.total or 0) }}</td></tr>
+                </tfoot>
+            </table>
+        </div></div>
+        {% if orden.observaciones %}<div class="alert alert-light border small"><b>Observaciones:</b> {{ orden.observaciones }}</div>{% endif %}
+
+        {% if orden.fecha_llegada %}
+        <div class="card border-0 shadow-sm mb-3"><div class="card-body">
+            <div class="dato mb-2"><i class="bi bi-box-seam"></i> Recepción del material</div>
+            <div class="row g-2 small">
+                <div class="col-6 col-md-3"><div class="dato">Llegó</div><div class="val">{{ orden.fecha_llegada.strftime('%d/%m/%Y %H:%M') }}</div></div>
+                <div class="col-6 col-md-3"><div class="dato">Registró</div><div class="val">{{ orden.recibido_por.nombre_completo if orden.recibido_por else '-' }}</div></div>
+                <div class="col-6 col-md-3"><div class="dato">N° Guía</div><div class="val">{{ orden.numero_guia or '—' }}</div></div>
+                <div class="col-6 col-md-3"><div class="dato">N° Factura</div><div class="val">{{ orden.numero_factura or '—' }}</div></div>
+                {% if orden.nota_recepcion %}<div class="col-12"><div class="dato">Nota</div><div>{{ orden.nota_recepcion }}</div></div>{% endif %}
+                {% if orden.fecha_conforme %}<div class="col-12"><div class="sello ok py-2"><i class="bi bi-check-circle-fill"></i><div><b>Conforme</b>: material en buen estado, cantidad correcta y documentos OK ·
+                    {{ orden.conforme_por.nombre_completo if orden.conforme_por else '' }}, {{ orden.fecha_conforme.strftime('%d/%m/%Y %H:%M') }}{% if orden.nota_conforme %}<div class="small">{{ orden.nota_conforme }}</div>{% endif %}</div></div></div>{% endif %}
+                {% if orden.estado == 'CONFORME' %}<div class="col-12">
+                    {% if orden.destino == 'INSUMOS' %}
+                        {% if ingreso %}<span class="aprob si"><i class="bi bi-check2"></i> Ingresado en Insumos</span> <a href="{{ url_for('insumos_ingreso_detalle', ingreso_id=ingreso.id) }}">ver ingreso #{{ ingreso.id }}</a>
+                        {% else %}<span class="aprob pend"><i class="bi bi-hourglass"></i> Pendiente de ingresar en Insumos internos</span>{% endif %}
+                    {% else %}
+                        {% if orden.fecha_kardex %}<span class="aprob si"><i class="bi bi-check2"></i> Ingresado en Kardex</span> <span class="text-muted">por {{ orden.kardex_registrado_por.nombre_completo if orden.kardex_registrado_por else '' }} el {{ orden.fecha_kardex.strftime('%d/%m/%Y') }}</span>
+                        {% else %}<span class="aprob pend"><i class="bi bi-hourglass"></i> Falta registrar el ingreso en el Kardex</span>{% endif %}
+                    {% endif %}</div>{% endif %}
+            </div>
+        </div></div>
+        {% endif %}
+    </div>
+
+    <div class="col-12 col-lg-4">
+        <div class="card border-0 shadow-sm mb-3"><div class="card-body">
+            <div class="dato mb-2"><i class="bi bi-paperclip"></i> Documentos (guía, factura...)</div>
+            {% for d in docs %}
+            <div class="doc {{ d.tipo }}">
+                <span class="ico"><i class="bi {{ 'bi-file-earmark-pdf' if d.content_type == 'application/pdf' else 'bi-image' }}"></i></span>
+                <div class="flex-grow-1 small" style="min-width:0;"><b>{{ {'GUIA': 'Guía de remisión', 'FACTURA': 'Factura', 'COTIZACION': 'Cotización', 'OTRO': 'Otro'}[d.tipo] }}</b>
+                    <div class="text-muted text-truncate">{{ d.nombre_original }} · {{ d.subido_por }} · {{ d.fecha.strftime('%d/%m %H:%M') }}</div></div>
+                <a class="btn btn-sm btn-outline-primary py-0" href="{{ url_for('oc_documento_ver', doc_id=d.id) }}" target="_blank" title="Ver"><i class="bi bi-eye"></i></a>
+                {% if p.borrar_docs %}<form method="POST" action="{{ url_for('oc_documento_borrar', doc_id=d.id) }}" onsubmit="return confirmar(this, '¿Borrar este documento?')"><button class="btn btn-sm btn-outline-danger py-0" title="Borrar"><i class="bi bi-trash"></i></button></form>{% endif %}
+            </div>
+            {% else %}<div class="text-muted small mb-2">Sin documentos todavía.</div>{% endfor %}
+            {% if p.documentos %}
+            <form method="POST" action="{{ url_for('oc_documento', orden_id=orden.id) }}" enctype="multipart/form-data" class="mt-2"
+                  onsubmit="this.querySelector('input[type=file]').name = 'doc_' + this.tipo.value;">
+                <div class="row g-1">
+                    <div class="col-5"><select name="tipo" class="form-select form-select-sm"><option value="GUIA">Guía</option><option value="FACTURA">Factura</option><option value="COTIZACION">Cotización</option><option value="OTRO">Otro</option></select></div>
+                    <div class="col-7"><button class="btn btn-primary btn-sm w-100"><i class="bi bi-upload"></i> Adjuntar</button></div>
+                    <div class="col-12"><input type="file" name="doc_GUIA" class="form-control form-control-sm" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*" required></div>
+                </div>
+                <div class="form-text" style="font-size:.68rem;">PDF o foto · máx. 5MB</div>
+            </form>
+            {% endif %}
+        </div></div>
+
+        <div class="card border-0 shadow-sm"><div class="card-body">
+            <div class="dato mb-2"><i class="bi bi-clock-history"></i> Historial (auditoría)</div>
+            {% for ev in eventos %}
+            <div class="linea"><span class="pt {{ ev.accion }}"></span>
+                <div class="t">{{ {'CREADA': 'Creada', 'EDITADA': 'Editada', 'ENVIADA': 'Enviada a Gerencia', 'RETIRADA': 'Retirada para corregir', 'APROBADA': 'APROBADA',
+                                   'RECHAZADA': 'RECHAZADA', 'ANULADA': 'ANULADA', 'LLEGADA': 'Llegó el material', 'CONFORME': 'Conformidad (check verde)',
+                                   'OBSERVACION': 'Observación', 'DOCUMENTO': 'Documento adjuntado', 'DOC_BORRADO': 'Documento borrado',
+                                   'KARDEX': 'Ingresado en Kardex', 'INSUMOS': 'Insumos internos'}.get(ev.accion, ev.accion) }}</div>
+                <div class="s">{{ ev.fecha.strftime('%d/%m/%Y %H:%M') }} · <b>{{ ev.usuario.nombre_completo if ev.usuario else 'Sistema' }}</b></div>
+                {% if ev.detalle %}<div class="s">{{ ev.detalle }}</div>{% endif %}
+            </div>
+            {% endfor %}
+        </div></div>
+    </div>
+</div>
+
+<!-- MODALES -->
+{% macro modal(id, titulo, color='#0F172A') %}
+<div class="modal fade" id="{{ id }}" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable"><div class="modal-content border-0 shadow">
+    <div class="modal-header py-2 text-white" style="background: {{ color }};"><h6 class="modal-title fw-bold">{{ titulo }}</h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+    {{ caller() }}
+</div></div></div>
+{% endmacro %}
+
+{% if p.rechazar %}{% call modal('mRechazar', 'Rechazar ' ~ oc_codigo(orden), '#b91c1c') %}
+<form method="POST" action="{{ url_for('oc_rechazar', orden_id=orden.id) }}"><div class="modal-body">
+    <label class="small fw-bold">Motivo del rechazo *</label>
+    <textarea name="motivo" class="form-control" rows="3" minlength="5" maxlength="300" required placeholder="Ej: el precio es mayor al de la otra cotización"></textarea>
+    <div class="form-text">El PDF quedará marcado como RECHAZADA y Logística verá el motivo.</div>
+</div><div class="modal-footer p-2"><button class="btn btn-danger w-100 fw-bold">Rechazar</button></div></form>
+{% endcall %}{% endif %}
+
+{% if p.anular %}{% call modal('mAnular', 'Anular ' ~ oc_codigo(orden), '#334155') %}
+<form method="POST" action="{{ url_for('oc_anular', orden_id=orden.id) }}"><div class="modal-body">
+    <label class="small fw-bold">Razón de la anulación *</label>
+    <textarea name="motivo" class="form-control" rows="3" minlength="5" maxlength="300" required placeholder="Ej: el proveedor ya no tiene stock"></textarea>
+    <div class="form-text">Queda registrado quién la anuló y por qué. El número no se vuelve a usar.</div>
+</div><div class="modal-footer p-2"><button class="btn btn-dark w-100 fw-bold">Anular orden</button></div></form>
+{% endcall %}{% endif %}
+
+{% if p.llegada %}{% call modal('mLlegada', 'Registrar llegada del material', '#1d4ed8') %}
+<form method="POST" action="{{ url_for('oc_llegada', orden_id=orden.id) }}" enctype="multipart/form-data"><div class="modal-body">
+    <label class="small fw-bold d-block mb-1">¿Cuándo llegó?</label>
+    <div class="form-check"><input class="form-check-input" type="radio" name="cuando" value="ahora" id="c_ahora" checked onchange="document.getElementById('boxOtra').style.display='none'">
+        <label class="form-check-label small" for="c_ahora">Ahora ({{ ahora.strftime('%d/%m/%Y %H:%M') }})</label></div>
+    <div class="form-check mb-2"><input class="form-check-input" type="radio" name="cuando" value="otra" id="c_otra" onchange="document.getElementById('boxOtra').style.display='block'">
+        <label class="form-check-label small" for="c_otra">Otra fecha y hora</label></div>
+    <div id="boxOtra" style="display:none;" class="mb-2"><input type="datetime-local" name="fecha_llegada" class="form-control" max="{{ ahora.strftime('%Y-%m-%dT%H:%M') }}"></div>
+    <div class="row g-2 mb-2">
+        <div class="col-6"><label class="small fw-bold">N° de guía</label><input name="numero_guia" class="form-control text-uppercase" maxlength="60" placeholder="T001-00123"></div>
+        <div class="col-6"><label class="small fw-bold">N° de factura</label><input name="numero_factura" class="form-control text-uppercase" maxlength="60" placeholder="F001-4567"></div>
+    </div>
+    <label class="small fw-bold">Guía de remisión (PDF o foto)</label><input type="file" name="doc_GUIA" class="form-control form-control-sm mb-2" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*" multiple>
+    <label class="small fw-bold">Factura (PDF o foto)</label><input type="file" name="doc_FACTURA" class="form-control form-control-sm mb-2" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*" multiple>
+    <label class="small fw-bold">Nota (opcional)</label><textarea name="nota" class="form-control" rows="2" maxlength="500" placeholder="Ej: llegaron en 2 cajas, transportista Juan"></textarea>
+    <div class="form-text">Después de revisar el material, da la <b>conformidad</b>. Si la factura llega después, adjúntala luego.</div>
+</div><div class="modal-footer p-2"><button class="btn btn-primary w-100 fw-bold"><i class="bi bi-truck"></i> Registrar llegada</button></div></form>
+{% endcall %}{% endif %}
+
+{% if p.conforme %}{% call modal('mConforme', 'Conformidad del material', '#15803d') %}
+<form method="POST" action="{{ url_for('oc_conforme', orden_id=orden.id) }}" id="formConforme"><div class="modal-body">
+    <p class="small text-muted mb-2">Marca solo si revisaste todo. Queda registrado con tu nombre, fecha y hora.</p>
+    {% for k, t, d in [('chk_estado', 'El material llegó en buen estado', 'Sin daños, óxido ni piezas abiertas'), ('chk_cantidad', 'La cantidad es la correcta', 'Coincide con lo pedido en la orden'),
+                        ('chk_documentos', 'Guía y factura correctas', 'Datos, cantidades y precios coinciden con la orden')] %}
+    <label class="check-conf d-flex gap-2 align-items-start w-100"><input class="form-check-input mt-1" type="checkbox" name="{{ k }}" value="1">
+        <span><b class="small">{{ t }}</b><div class="text-muted" style="font-size:.72rem;">{{ d }}</div></span></label>
+    {% endfor %}
+    {% if not (docs|selectattr('tipo', 'in', ['GUIA', 'FACTURA'])|list) %}<div class="alert alert-warning py-1 px-2 small mt-2 mb-1"><i class="bi bi-exclamation-triangle-fill"></i> Primero adjunta la guía o la factura.</div>{% endif %}
+    <label class="small fw-bold mt-2">Nota (opcional)</label><textarea name="nota" class="form-control" rows="2" maxlength="500"></textarea>
+</div><div class="modal-footer p-2"><button class="btn btn-success w-100 fw-bold"><i class="bi bi-check-circle-fill"></i> Todo conforme</button></div></form>
+{% endcall %}{% endif %}
+
+{% if p.observar %}{% call modal('mObs', 'Registrar observación') %}
+<form method="POST" action="{{ url_for('oc_observacion', orden_id=orden.id) }}"><div class="modal-body">
+    <textarea name="texto" class="form-control" rows="3" maxlength="500" required placeholder="Ej: faltan 10 unidades, el proveedor las enviará el lunes"></textarea>
+    <div class="form-text">Queda en el historial de la orden.</div>
+</div><div class="modal-footer p-2"><button class="btn btn-primary w-100 fw-bold">Guardar</button></div></form>
+{% endcall %}{% endif %}
+
+<script>
+function confirmar(form, texto) {
+    if (form.dataset.ok) return true;
+    Swal.fire({ icon: 'question', title: 'Confirmar', text: texto, showCancelButton: true, confirmButtonText: 'Sí', cancelButtonText: 'Cancelar' })
+        .then(r => { if (r.isConfirmed) { form.dataset.ok = '1'; form.submit(); } });
+    return false;
+}
+document.getElementById('formConforme')?.addEventListener('submit', function (e) {
+    if ([...this.querySelectorAll('input[type=checkbox]')].some(c => !c.checked)) {
+        e.preventDefault(); Swal.fire('Falta confirmar', 'Marca las tres casillas: estado, cantidad y documentos.', 'warning');
+    }
+});
+</script>
+{% endblock %}

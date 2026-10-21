@@ -1,0 +1,39 @@
+{# Navegación común del módulo Órdenes de Compra / Servicio. Espera: seccion (y vista en la lista) #}
+{% set puede_editar_oc = session.get('role') in ['admin', 'logistica'] %}
+<style>
+    .oc-nav { display: flex; flex-wrap: nowrap; gap: 4px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 14px; scrollbar-width: thin; }
+    .oc-nav a { white-space: nowrap; font-size: .82rem; font-weight: 600; color: #475569; background: #f1f5f9; border: 1px solid #e2e8f0;
+                border-radius: 8px; padding: 6px 11px; text-decoration: none; display: inline-flex; align-items: center; gap: 5px; }
+    .oc-nav a:hover { background: #e2e8f0; color: #0f172a; }
+    .oc-nav a.activa { background: var(--theme-primary, #0F172A); border-color: var(--theme-primary, #0F172A); color: #fff; }
+    .oc-nav a.nueva { background: #ecfdf5; border-color: #a7f3d0; color: #047857; }
+    .oc-nav a.nueva.activa { background: #047857; border-color: #047857; color: #fff; }
+    .oc-nav .cnt { background: #dc2626; color: #fff; border-radius: 10px; font-size: .66rem; padding: 0 6px; font-weight: 800; }
+    .oc-estado { display: inline-flex; align-items: center; gap: 4px; font-size: .72rem; font-weight: 700; border-radius: 20px; padding: 2px 9px;
+                 white-space: nowrap; border: 1px solid currentColor; }
+    .oc-tipo { display: inline-block; font-size: .64rem; font-weight: 800; letter-spacing: .04em; border-radius: 5px; padding: 1px 5px; color: #fff; }
+    .oc-tipo.OC { background: #0B3D91; } .oc-tipo.OS { background: #7c3aed; }
+    .oc-num { font-weight: 800; font-variant-numeric: tabular-nums; color: #0f172a; text-decoration: none; }
+    .oc-dest { font-size: .7rem; font-weight: 700; border-radius: 6px; padding: 1px 7px; white-space: nowrap; }
+    .oc-dest.GENERAL { background: #e0f2fe; color: #075985; } .oc-dest.INSUMOS { background: #fef3c7; color: #92400e; }
+    .num { font-variant-numeric: tabular-nums; }
+    .aprob { display: inline-flex; align-items: center; gap: 5px; font-size: .72rem; font-weight: 700; border-radius: 7px; padding: 2px 8px; white-space: nowrap; }
+    .aprob.si { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
+    .aprob.no { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+    .aprob.pend { background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
+</style>
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+    <h4 class="fw-bold mb-0"><i class="bi bi-cart-check"></i> Órdenes de Compra y Servicio</h4>
+    <span class="text-muted small">Anclajes y Pernos Perú SAC · precios sin IGV + IGV 18%</span>
+</div>
+<nav class="oc-nav">
+    <a href="{{ url_for('oc_lista', vista='curso') }}" class="{{ 'activa' if seccion == 'lista' and vista in ['curso', 'todas', 'cerradas'] }}"><i class="bi bi-list-task"></i> Órdenes</a>
+    <a href="{{ url_for('oc_lista', vista='aprobar') }}" class="{{ 'activa' if seccion == 'lista' and vista == 'aprobar' }}"><i class="bi bi-hourglass-split"></i> Por aprobar
+        {% if oc_por_aprobar %}<span class="cnt">{{ oc_por_aprobar }}</span>{% endif %}</a>
+    <a href="{{ url_for('oc_lista', vista='recibir') }}" class="{{ 'activa' if seccion == 'lista' and vista == 'recibir' }}"><i class="bi bi-truck"></i> Por recibir</a>
+    <a href="{{ url_for('oc_lista', vista='conformes') }}" class="{{ 'activa' if seccion == 'lista' and vista == 'conformes' }}"><i class="bi bi-check2-all"></i> Conformes / en almacén</a>
+    {% if puede_editar_oc %}
+    <a href="{{ url_for('oc_nueva', tipo='OC') }}" class="nueva {{ 'activa' if seccion == 'nueva' }}"><i class="bi bi-plus-circle"></i> Nueva orden</a>
+    <a href="{{ url_for('oc_config') }}" class="{{ 'activa' if seccion == 'config' }}"><i class="bi bi-gear"></i> Configuración</a>
+    {% endif %}
+</nav>

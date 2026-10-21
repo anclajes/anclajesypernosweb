@@ -219,7 +219,7 @@
                 </select>
             </div>
 
-            {% if session.get('role') in ['admin', 'almacen'] %}
+            {% if session.get('role') in ['admin', 'almacen', 'logistica'] %}
             <div class="col-6 col-md-2">
                 <label class="small fw-bold text-muted">Estado</label>
                 <select name="estado_activo" class="form-select" onchange="document.getElementById('formFiltrosGeneral').submit()">

@@ -1,5 +1,5 @@
 {# Navegación común del módulo Insumos Internos. Espera: seccion #}
-{% set puede_editar_insumos = session.get('role') in ['admin', 'almacen'] %}
+{% set puede_editar_insumos = session.get('role') in ['admin', 'almacen', 'logistica'] %}
 <style>
     .ins-nav { display: flex; flex-wrap: nowrap; gap: 4px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 14px; scrollbar-width: thin; }
     .ins-nav a { white-space: nowrap; font-size: .82rem; font-weight: 600; color: #475569; background: #f1f5f9; border: 1px solid #e2e8f0;

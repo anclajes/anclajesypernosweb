@@ -1,0 +1,422 @@
+{% extends "base.html" %}
+{% block title %}Órdenes de compra{% endblock %}
+{% block subtitle %}{{ ('Editar ' ~ oc_codigo(orden)) if orden else 'Nueva orden' }}{% endblock %}
+{% block content %}
+{% set vista = '' %}
+{% include '_oc_nav.html' %}
+{% set pv = previo or {} %}
+<style>
+    .seg { display: flex; gap: 8px; flex-wrap: wrap; }
+    .seg input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+    .seg label { flex: 1 1 0; min-width: 140px; border: 2px solid #e2e8f0; border-radius: 12px; padding: 9px 12px; cursor: pointer; background: #fff;
+                 display: flex; gap: 10px; align-items: center; margin: 0; }
+    .seg label i { font-size: 1.35rem; color: #94a3b8; }
+    .seg label b { display: block; font-size: .86rem; color: #0f172a; }
+    .seg label small { color: #64748b; font-size: .72rem; line-height: 1.2; display: block; }
+    .seg input:checked + label { border-color: var(--c, #0B3D91); background: color-mix(in srgb, var(--c, #0B3D91) 6%, #fff); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c, #0B3D91) 15%, transparent); }
+    .seg input:checked + label i { color: var(--c, #0B3D91); }
+    .seg input:focus-visible + label { outline: 2px solid #2563eb; outline-offset: 2px; }
+    .seg.chico label { min-width: 0; padding: 6px 10px; }
+    .card-t { font-size: .74rem; font-weight: 800; letter-spacing: .05em; color: #64748b; text-transform: uppercase; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+    .lbl { font-size: .74rem; font-weight: 700; color: #334155; margin-bottom: 2px; }
+    .req::after { content: ' *'; color: #dc2626; }
+    .prov-sug { z-index: 1060; max-height: 320px; overflow-y: auto; display: none; border-radius: 10px; }
+    .prov-sug .grupo, .prod-sug .grupo { font-size: .66rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: #64748b; background: #f8fafc; padding: 4px 10px; }
+    .prov-sug button, .prod-sug button { text-align: left; }
+    .ruc { font-variant-numeric: tabular-nums; font-weight: 700; color: #0B3D91; }
+    .prov-elegido { border: 1.5px solid #86efac; background: #f0fdf4; border-radius: 10px; padding: 8px 10px; display: none; }
+    .item { border: 1px solid #e2e8f0; border-radius: 12px; padding: 10px; margin-bottom: 8px; background: #fff; position: relative; }
+    .item .n { position: absolute; top: -9px; left: 10px; background: #0B3D91; color: #fff; border-radius: 10px; font-size: .68rem; font-weight: 800; padding: 0 8px; }
+    .item .quitar { position: absolute; top: 4px; right: 6px; border: 0; background: transparent; color: #94a3b8; font-size: 1.05rem; }
+    .item .quitar:hover { color: #dc2626; }
+    .item label { font-size: .66rem; font-weight: 800; color: #64748b; text-transform: uppercase; margin-bottom: 1px; }
+    .item .tot { font-weight: 800; font-variant-numeric: tabular-nums; padding-top: 4px; }
+    .prod-sug { z-index: 1050; max-height: 300px; overflow-y: auto; display: none; border-radius: 10px; }
+    .origen { font-size: .62rem; font-weight: 800; border-radius: 5px; padding: 1px 5px; }
+    .origen.ANCLAJES { background: #dbeafe; color: #1e40af; } .origen.IMPORTBOLTS { background: #e0e7ff; color: #3730a3; } .origen.INSUMO { background: #fef3c7; color: #92400e; }
+    .vinculo { font-size: .7rem; color: #166534; }
+    .vinculo button { border: 0; background: none; color: #94a3b8; padding: 0 2px; }
+    .totales { background: #0f172a; color: #fff; border-radius: 12px; padding: 12px 14px; }
+    .totales .fila { display: flex; justify-content: space-between; font-variant-numeric: tabular-nums; }
+    .totales .grande { font-size: 1.45rem; font-weight: 800; }
+    .entrega-fija { background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 6px 10px; font-size: .78rem; }
+    .num-prev { font-weight: 800; color: #0B3D91; font-variant-numeric: tabular-nums; }
+</style>
+
+{% if errores %}<div class="alert alert-danger py-2" id="erroresOC"><b><i class="bi bi-exclamation-triangle-fill"></i> No se guardó. Revisa:</b>
+    <ul class="mb-0 small">{% for e in errores %}<li>{{ e }}</li>{% endfor %}</ul></div>{% endif %}
+{% if pv.duplicada_txt %}<div class="alert alert-info py-2 small"><i class="bi bi-files"></i> Copia de la <b>{{ pv.duplicada_txt }}</b>: revisa y guarda. Tendrá un número nuevo.</div>{% endif %}
+
+<form method="POST" action="{{ url_for('oc_guardar') }}" id="formOC" novalidate>
+<input type="hidden" name="id" value="{{ orden.id if orden else '' }}">
+<input type="hidden" name="duplicada_de" value="{{ pv.duplicada_de or '' }}">
+<input type="hidden" name="accion" id="accion" value="guardar">
+<div class="row g-3">
+    <div class="col-12 col-xl-5">
+        <!-- DATOS DE LA ORDEN -->
+        <div class="card border-0 shadow-sm mb-3"><div class="card-body">
+            <div class="card-t"><i class="bi bi-file-earmark-text"></i> Datos de la orden
+                <span class="ms-auto text-muted fw-normal" style="text-transform:none; letter-spacing:0;">
+                    {% if orden %}<span class="num-prev">{{ oc_codigo(orden) }}</span>{% else %}<span class="num-prev" id="numPrev"></span> <span style="font-size:.68rem;">(se confirma al guardar)</span>{% endif %}</span></div>
+            {% if not orden %}
+            <div class="seg chico mb-2">
+                {% for k, t in tipos.items() %}
+                <input type="radio" name="tipo" id="tipo_{{ k }}" value="{{ k }}" {{ 'checked' if (pv.tipo or 'OC') == k }} onchange="pintarNumero()">
+                <label for="tipo_{{ k }}" style="--c: {{ '#0B3D91' if k == 'OC' else '#7c3aed' }};"><i class="bi {{ 'bi-cart3' if k == 'OC' else 'bi-tools' }}"></i><span><b>{{ t }}</b></span></label>
+                {% endfor %}
+            </div>
+            {% else %}<input type="hidden" name="tipo" value="{{ orden.tipo }}">{% endif %}
+            <div class="row g-2">
+                <div class="col-6"><div class="lbl req">Fecha</div><input type="date" name="fecha" class="form-control" value="{{ pv.fecha or hoy.isoformat() }}" max="{{ hoy.isoformat() }}" required></div>
+                <div class="col-6"><div class="lbl">Cotización N°</div><input type="text" name="cotizacion" class="form-control text-uppercase" maxlength="60" value="{{ pv.cotizacion or '' }}" placeholder="Ej: COT-0158"></div>
+            </div>
+            <div class="lbl req mt-2">Este material es para</div>
+            <div class="seg">
+                <input type="radio" name="destino" id="dest_GENERAL" value="GENERAL" {{ 'checked' if pv.destino == 'GENERAL' }} required>
+                <label for="dest_GENERAL" style="--c:#0369a1;"><i class="bi bi-boxes"></i><span><b>Inventario General</b><small>Anclajes / Import Bolts (Kardex)</small></span></label>
+                <input type="radio" name="destino" id="dest_INSUMOS" value="INSUMOS" {{ 'checked' if pv.destino == 'INSUMOS' }}>
+                <label for="dest_INSUMOS" style="--c:#b45309;"><i class="bi bi-tools"></i><span><b>Insumos internos</b><small>Inventario pequeño: quedará pendiente de ingresar</small></span></label>
+            </div>
+        </div></div>
+
+        <!-- PROVEEDOR -->
+        <div class="card border-0 shadow-sm mb-3"><div class="card-body">
+            <div class="card-t"><i class="bi bi-building"></i> Proveedor</div>
+            <input type="hidden" name="oc_proveedor_id" id="oc_proveedor_id" value="{{ pv.oc_proveedor_id or '' }}">
+            <input type="hidden" name="proveedor_id" id="proveedor_id" value="{{ pv.proveedor_id or '' }}">
+            <div id="provBuscar">
+                <div class="position-relative mb-1">
+                    <div class="input-group">
+                        <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+                        <input type="text" id="buscaProv" class="form-control" placeholder="Escribe el RUC o el nombre" autocomplete="off" inputmode="search"
+                               oninput="sugerirProv(this.value)" onfocus="sugerirProv(this.value)">
+                        <button type="button" class="btn btn-primary" onclick="buscarSunat()" title="Consultar RUC (11) o DNI (8) en SUNAT/RENIEC"><i class="bi bi-cloud-download"></i> SUNAT</button>
+                    </div>
+                    <div id="sugProv" class="list-group position-absolute w-100 shadow prov-sug"></div>
+                </div>
+                <div class="form-text mb-2" style="font-size:.7rem;">Al tocar se ven los proveedores ya usados (con su contacto). Si es nuevo, escribe el RUC y pulsa <b>SUNAT</b>.</div>
+            </div>
+            <div id="provMsg" class="small mb-2"></div>
+            <div class="prov-elegido mb-2" id="provElegido">
+                <div class="d-flex justify-content-between align-items-start gap-2">
+                    <div><div class="fw-bold text-success" id="pe_nombre"></div><div class="small text-muted" id="pe_det"></div></div>
+                    <button type="button" class="btn btn-sm btn-outline-secondary py-0" onclick="cambiarProv()"><i class="bi bi-arrow-repeat"></i> Cambiar</button>
+                </div>
+            </div>
+            <div class="row g-2">
+                <div class="col-5"><div class="lbl req">RUC</div><input type="text" name="ruc" id="ruc" class="form-control" maxlength="11" inputmode="numeric" value="{{ pv.ruc or '' }}" readonly></div>
+                <div class="col-7"><div class="lbl req">Razón social</div><input type="text" name="razon_social" id="razon_social" class="form-control" maxlength="200" value="{{ pv.razon_social or '' }}" readonly></div>
+                <div class="col-12"><div class="lbl">Dirección</div><input type="text" name="direccion" id="direccion" class="form-control" maxlength="250" value="{{ pv.direccion or '' }}" readonly></div>
+                <div class="col-7"><div class="lbl req">Contacto</div><input type="text" name="contacto" id="contacto" class="form-control" maxlength="120" value="{{ pv.contacto or '' }}" placeholder="Nombre de quien atiende" required></div>
+                <div class="col-5"><div class="lbl req">Teléfono</div><input type="tel" name="telefono" id="telefono" class="form-control" maxlength="40" value="{{ pv.telefono or '' }}" required></div>
+                <div class="col-12"><div class="lbl">Correo</div><input type="email" name="email" id="email" class="form-control" maxlength="120" value="{{ pv.email or '' }}" placeholder="opcional"></div>
+            </div>
+            <button type="button" class="btn btn-link btn-sm px-0 mt-1" onclick="aMano()" id="btnAMano"><i class="bi bi-pencil"></i> La SUNAT no responde: escribir los datos a mano</button>
+        </div></div>
+
+        <!-- CONDICIONES -->
+        <div class="card border-0 shadow-sm mb-3"><div class="card-body">
+            <div class="card-t"><i class="bi bi-sliders"></i> Condiciones</div>
+            <div class="row g-2">
+                <div class="col-12 col-sm-6"><div class="lbl req">Moneda</div>
+                    <div class="seg chico">
+                        {% for k, m in monedas.items() %}
+                        <input type="radio" name="moneda" id="mon_{{ k }}" value="{{ k }}" {{ 'checked' if (pv.moneda or 'PEN') == k }} onchange="recalcular()">
+                        <label for="mon_{{ k }}" style="--c:#15803d; justify-content:center; white-space:nowrap;"><span><b>{{ m.simbolo }}</b> <small class="d-inline">{{ m.nombre }}</small></span></label>
+                        {% endfor %}
+                    </div></div>
+                <div class="col-12 col-sm-6"><div class="lbl req">Condición de pago</div>
+                    <select name="condicion_pago" id="condicion_pago" class="form-select" required><option value="">— Elige —</option>
+                        {% for c in condiciones %}<option value="{{ c }}" {{ 'selected' if c == pv.condicion_pago }}>{{ c }}</option>{% endfor %}
+                        {% if pv.condicion_pago and pv.condicion_pago not in condiciones %}<option value="{{ pv.condicion_pago }}" selected>{{ pv.condicion_pago }}</option>{% endif %}
+                    </select></div>
+            </div>
+            <div class="lbl req mt-3">Entrega del material</div>
+            <div class="seg mb-2">
+                <input type="radio" name="entrega_modo" id="em_EMPRESA" value="EMPRESA" {{ 'checked' if (pv.entrega_modo or 'EMPRESA') == 'EMPRESA' }} onchange="pintarEntrega()">
+                <label for="em_EMPRESA" style="--c:#0B3D91;"><i class="bi bi-truck"></i><span><b>Llega a la empresa</b><small>El proveedor lo trae</small></span></label>
+                <input type="radio" name="entrega_modo" id="em_RECOJO" value="RECOJO" {{ 'checked' if pv.entrega_modo == 'RECOJO' }} onchange="pintarEntrega()">
+                <label for="em_RECOJO" style="--c:#0B3D91;"><i class="bi bi-person-walking"></i><span><b>Lo recogemos</b><small>Indicar dónde</small></span></label>
+            </div>
+            <div id="boxEmpresa" class="entrega-fija"><i class="bi bi-geo-alt-fill text-danger"></i> <b>Lugar de entrega:</b> {{ cfg.lugar_entrega }}</div>
+            <div id="boxRecojo" style="display:none;"><input type="text" name="lugar_recojo" id="lugar_recojo" class="form-control" maxlength="250" value="{{ pv.lugar_recojo or '' }}" placeholder="¿Dónde se recoge? Ej: almacén del proveedor, Av. ..."></div>
+            <div class="lbl mt-3">Fecha de entrega</div>
+            <div class="seg chico mb-2">
+                {% for k, t in [('A_TRATAR', 'A tratar'), ('DIAS', 'En días'), ('FECHA', 'Fecha exacta')] %}
+                <input type="radio" name="entrega_tipo" id="et_{{ k }}" value="{{ k }}" {{ 'checked' if (pv.entrega_tipo or 'A_TRATAR') == k }} onchange="pintarEntrega()">
+                <label for="et_{{ k }}" style="--c:#0B3D91; justify-content:center;"><span><b>{{ t }}</b></span></label>
+                {% endfor %}
+            </div>
+            <div id="boxDias" style="display:none;"><div class="input-group" style="max-width:220px;"><input type="number" name="entrega_dias" id="entrega_dias" min="1" max="365" class="form-control" value="{{ pv.entrega_dias or '' }}"><span class="input-group-text">días</span></div></div>
+            <div id="boxFecha" style="display:none;"><input type="date" name="fecha_entrega" id="fecha_entrega" class="form-control" style="max-width:220px;" value="{{ pv.fecha_entrega or '' }}"></div>
+        </div></div>
+    </div>
+
+    <div class="col-12 col-xl-7">
+        <!-- ÍTEMS -->
+        <div class="card border-0 shadow-sm mb-3"><div class="card-body">
+            <div class="card-t"><i class="bi bi-list-ol"></i> Productos / servicios <span class="ms-auto fw-normal text-muted" style="text-transform:none; letter-spacing:0; font-size:.72rem;">Precios <b>SIN IGV</b></span></div>
+            <div class="form-text mb-2" style="font-size:.72rem;"><i class="bi bi-lightning-charge-fill text-warning"></i> En <b>Descripción</b> escribe 2 letras para buscar un producto que ya tenemos (inventarios e insumos), o escribe libre.</div>
+            <div id="items"></div>
+            <button type="button" class="btn btn-outline-primary w-100" onclick="agregarItem()"><i class="bi bi-plus-circle"></i> Agregar ítem</button>
+        </div></div>
+
+        <div class="totales mb-3">
+            <div class="fila small"><span>Subtotal</span><span id="tSub">0.00</span></div>
+            <div class="fila small"><span>IGV ({{ (igv * 100)|int }}%)</span><span id="tIgv">0.00</span></div>
+            <div class="fila mt-1 align-items-baseline"><span>TOTAL</span><span class="grande" id="tTot">0.00</span></div>
+        </div>
+
+        <div class="card border-0 shadow-sm"><div class="card-body">
+            <div class="lbl">Observaciones (opcional)</div>
+            <textarea name="observaciones" class="form-control mb-3" rows="2" maxlength="500" placeholder="Salen en el PDF debajo de los ítems">{{ pv.observaciones or '' }}</textarea>
+            <div class="d-flex flex-column flex-sm-row gap-2">
+                <button type="submit" class="btn btn-outline-primary btn-lg flex-fill fw-bold" data-accion="guardar"><i class="bi bi-save"></i> Guardar borrador</button>
+                <button type="submit" class="btn btn-success btn-lg flex-fill fw-bold" data-accion="enviar"><i class="bi bi-send-check"></i> Guardar y enviar a Gerencia</button>
+            </div>
+            <div class="form-text mt-2">Mientras no la apruebe Gerencia, el PDF dice <b>"PENDIENTE DE APROBACIÓN"</b>. Al aprobarla lleva la <b>firma y sello</b>.</div>
+        </div></div>
+    </div>
+</div>
+</form>
+
+<template id="tplItem">
+    <div class="item">
+        <span class="n"></span>
+        <button type="button" class="quitar" title="Quitar"><i class="bi bi-x-circle-fill"></i></button>
+        <input type="hidden" name="origen[]" class="i-origen"><input type="hidden" name="codigo[]" class="i-codigo"><input type="hidden" name="insumo_id[]" class="i-insumo">
+        <div class="row g-2">
+            <div class="col-12 position-relative"><label>Descripción *</label>
+                <input type="text" name="descripcion[]" class="form-control form-control-sm text-uppercase i-desc" maxlength="400" autocomplete="off" placeholder="Buscar en inventario o escribir...">
+                <div class="list-group position-absolute w-100 shadow prod-sug"></div>
+                <div class="vinculo mt-1" style="display:none;"></div></div>
+            <div class="col-4 col-md-2"><label>Cantidad *</label><input type="number" name="cantidad[]" step="any" min="0" class="form-control form-control-sm i-cant" inputmode="decimal"></div>
+            <div class="col-4 col-md-3"><label>U.M. *</label><select name="um[]" class="form-select form-select-sm i-um"></select></div>
+            <div class="col-4 col-md-3"><label>P. Unit. *</label><input type="number" name="precio_unitario[]" step="any" min="0" class="form-control form-control-sm i-pu" inputmode="decimal"></div>
+            <div class="col-12 col-md-4 text-end"><label>Total</label><div class="tot i-tot">0.00</div></div>
+        </div>
+    </div>
+</template>
+
+<script>
+const UMS = {{ ums|tojson }};
+const SIGUIENTE = {{ siguiente|tojson }};
+const ITEMS_PREVIOS = {{ (pv.get('items') or [])|tojson }};
+const IGV = {{ igv }};
+const MONEDAS = {{ monedas|tojson }};
+const GRUPOS_PROD = { ANCLAJES: 'Inventario Anclajes', IMPORTBOLTS: 'Inventario Import Bolts', INSUMO: 'Insumos internos' };
+const porId = id => document.getElementById(id);
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function fmt(n) { return Number(n || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function r2(n) { return Math.round((n + Number.EPSILON) * 100) / 100; }
+function moneda() { const m = document.querySelector('input[name=moneda]:checked'); return MONEDAS[m ? m.value : 'PEN'].simbolo; }
+function destino() { const d = document.querySelector('input[name=destino]:checked'); return d ? d.value : ''; }
+function pintarNumero() {
+    const t = document.querySelector('input[name=tipo]:checked');
+    if (t && porId('numPrev')) porId('numPrev').textContent = `${t.value} N° ${String(SIGUIENTE[t.value]).padStart(6, '0')}`;
+}
+function pintarEntrega() {
+    const recojo = porId('em_RECOJO').checked;
+    porId('boxEmpresa').style.display = recojo ? 'none' : 'block';
+    porId('boxRecojo').style.display = recojo ? 'block' : 'none';
+    const et = document.querySelector('input[name=entrega_tipo]:checked').value;
+    porId('boxDias').style.display = et === 'DIAS' ? 'block' : 'none';
+    porId('boxFecha').style.display = et === 'FECHA' ? 'block' : 'none';
+}
+
+// ---------- Ítems ----------
+function numerar() { document.querySelectorAll('#items .item').forEach((f, i) => f.querySelector('.n').textContent = 'ÍTEM ' + (i + 1)); }
+function recalcular() {
+    let sub = 0;
+    document.querySelectorAll('#items .item').forEach(f => {
+        const t = r2((parseFloat(f.querySelector('.i-cant').value) || 0) * (parseFloat(f.querySelector('.i-pu').value) || 0));
+        f.querySelector('.i-tot').textContent = `${moneda()} ${fmt(t)}`;
+        sub += t;
+    });
+    sub = r2(sub); const igv = r2(sub * IGV);
+    porId('tSub').textContent = `${moneda()} ${fmt(sub)}`;
+    porId('tIgv').textContent = `${moneda()} ${fmt(igv)}`;
+    porId('tTot').textContent = `${moneda()} ${fmt(sub + igv)}`;
+}
+function opcionesUM(sel, valor) {
+    const lista = UMS.slice(); if (valor && !lista.includes(valor)) lista.push(valor);
+    sel.innerHTML = '<option value="">—</option>' + lista.map(u => `<option value="${esc(u)}">${esc(u)}</option>`).join('');
+    sel.value = valor || '';
+}
+function vincular(fila, p) {
+    fila.querySelector('.i-origen').value = p ? p.origen : '';
+    fila.querySelector('.i-codigo').value = p ? p.codigo : '';
+    fila.querySelector('.i-insumo').value = p && p.insumo_id ? p.insumo_id : '';
+    const v = fila.querySelector('.vinculo');
+    if (p) {
+        const nom = { ANCLAJES: 'Anclajes', IMPORTBOLTS: 'Import Bolts', INSUMO: 'Insumo' }[p.origen] || p.origen;
+        v.innerHTML = `<i class="bi bi-link-45deg"></i> Vinculado: <b>${esc(p.codigo)}</b> (${nom}) <button type="button" title="Quitar vínculo"><i class="bi bi-x-circle"></i></button>`
+            + (p.ultimo ? `<div class="text-muted">Último precio: <b>${esc(p.ultimo.moneda)} ${fmt(p.ultimo.precio)}</b> / ${esc(p.ultimo.um)} · ${esc(p.ultimo.orden)} · ${esc(p.ultimo.proveedor)}</div>` : '');
+        v.querySelector('button').onclick = () => vincular(fila, null);
+        v.style.display = 'block';
+    } else { v.style.display = 'none'; v.innerHTML = ''; }
+}
+function agregarItem(datos) {
+    datos = datos || {};
+    const fila = porId('tplItem').content.firstElementChild.cloneNode(true);
+    porId('items').appendChild(fila);
+    const desc = fila.querySelector('.i-desc'), sug = fila.querySelector('.prod-sug');
+    opcionesUM(fila.querySelector('.i-um'), datos.um);
+    desc.value = datos.descripcion || '';
+    fila.querySelector('.i-cant').value = datos.cantidad || '';
+    fila.querySelector('.i-pu').value = (datos.precio_unitario === 0 || datos.precio_unitario) ? datos.precio_unitario : '';
+    if (datos.codigo) vincular(fila, { origen: datos.origen, codigo: datos.codigo, insumo_id: datos.insumo_id });
+    let t = null;
+    desc.addEventListener('input', () => {
+        if (fila.querySelector('.i-codigo').value) vincular(fila, null);   // si cambia el texto, deja de estar vinculado
+        clearTimeout(t);
+        const q = desc.value.trim();
+        if (q.length < 2) { sug.style.display = 'none'; return; }
+        t = setTimeout(() => fetch(`{{ url_for('oc_api_productos') }}?q=${encodeURIComponent(q)}&destino=${destino()}`).then(r => r.json()).then(d => {
+            const res = d.results || [];
+            if (document.activeElement !== desc) return;      // ya salió del campo: no mostrar la lista
+            sug.innerHTML = res.length ? '' : '<div class="list-group-item small text-muted">Sin coincidencias: se usará lo que escribiste.</div>';
+            let grupo = '';
+            res.forEach(p => {
+                if (p.origen !== grupo) { grupo = p.origen; sug.insertAdjacentHTML('beforeend', `<div class="grupo">${GRUPOS_PROD[grupo]}</div>`); }
+                const b = document.createElement('button'); b.type = 'button'; b.className = 'list-group-item list-group-item-action py-1 px-2 small';
+                b.innerHTML = `<span class="origen ${p.origen}">${esc(p.codigo)}</span> ${esc(p.descripcion)}` +
+                    (p.ultimo ? `<div class="text-muted" style="font-size:.68rem;">Últ. precio ${esc(p.ultimo.moneda)} ${fmt(p.ultimo.precio)} / ${esc(p.ultimo.um)} (${esc(p.ultimo.orden)})</div>` : '');
+                b.onmousedown = e => e.preventDefault();
+                b.onclick = () => {
+                    desc.value = p.descripcion.toUpperCase(); vincular(fila, p); sug.style.display = 'none';
+                    const um = fila.querySelector('.i-um');
+                    if (!um.value) { const u = (p.ultimo && p.ultimo.um) || (UMS.includes((p.um || '').toUpperCase()) ? p.um.toUpperCase() : ''); if (u) opcionesUM(um, u); }
+                    fila.querySelector('.i-cant').focus();
+                };
+                sug.appendChild(b);
+            });
+            sug.style.display = 'block';
+        }).catch(() => {}), 250);
+    });
+    desc.addEventListener('blur', () => setTimeout(() => sug.style.display = 'none', 150));
+    fila.querySelectorAll('.i-cant, .i-pu').forEach(i => i.addEventListener('input', recalcular));
+    fila.querySelector('.quitar').addEventListener('click', () => {
+        if (document.querySelectorAll('#items .item').length === 1) { fila.querySelectorAll('input').forEach(i => i.value = ''); vincular(fila, null); recalcular(); return; }
+        fila.remove(); numerar(); recalcular();
+    });
+    numerar(); recalcular();
+    return fila;
+}
+
+// ---------- Proveedor ----------
+let tSug = null;
+function sugerirProv(t) {
+    clearTimeout(tSug);
+    const cont = porId('sugProv');
+    tSug = setTimeout(() => fetch(`{{ url_for('oc_api_proveedores') }}?q=${encodeURIComponent(t.trim())}`).then(r => r.json()).then(d => {
+        cont.innerHTML = '';
+        const g = d.guardados || [], o = d.otros || [];
+        if (g.length) cont.insertAdjacentHTML('beforeend', '<div class="grupo"><i class="bi bi-bookmark-star-fill"></i> Usados en órdenes</div>');
+        g.forEach(p => {
+            const b = document.createElement('button'); b.type = 'button'; b.className = 'list-group-item list-group-item-action py-1 px-2 small';
+            b.innerHTML = `<div><b>${esc(p.razon_social)}</b></div><div class="text-muted"><span class="ruc">${esc(p.ruc)}</span>` +
+                `${p.contacto ? ' · ' + esc(p.contacto) : ''}${p.telefono ? ' · ' + esc(p.telefono) : ''}${p.ultima ? ' · últ. ' + p.ultima : ''}</div>`;
+            b.onclick = () => elegir(p, 'guardado');
+            cont.appendChild(b);
+        });
+        if (o.length) cont.insertAdjacentHTML('beforeend', '<div class="grupo"><i class="bi bi-building"></i> Otros proveedores del sistema</div>');
+        o.forEach(p => {
+            const b = document.createElement('button'); b.type = 'button'; b.className = 'list-group-item list-group-item-action py-1 px-2 small';
+            b.innerHTML = `<span class="ruc">${esc(p.ruc)}</span> — ${esc(p.razon_social)}`;
+            b.onclick = () => elegir(p, 'sistema');
+            cont.appendChild(b);
+        });
+        if (!g.length && !o.length) cont.innerHTML = `<div class="list-group-item small text-muted">${t.trim() ? 'No hay guardados con ese dato. Si es un RUC, pulsa <b>SUNAT</b>.' : 'Todavía no hay proveedores usados en órdenes.'}</div>`;
+        cont.style.display = 'block';
+    }).catch(() => {}), t ? 250 : 0);
+}
+document.addEventListener('click', e => { if (!e.target.closest('#provBuscar')) porId('sugProv').style.display = 'none'; });
+function bloquearProv(si) { ['ruc', 'razon_social', 'direccion'].forEach(id => porId(id).readOnly = si); }
+function elegir(p, origen) {
+    porId('oc_proveedor_id').value = origen === 'guardado' ? p.id : '';
+    porId('proveedor_id').value = p.proveedor_id || '';
+    porId('ruc').value = p.ruc || ''; porId('razon_social').value = p.razon_social || ''; porId('direccion').value = p.direccion || '';
+    if (p.contacto) porId('contacto').value = p.contacto;
+    if (p.telefono) porId('telefono').value = p.telefono;
+    if (p.email) porId('email').value = p.email;
+    bloquearProv(true);
+    const etq = { guardado: '<i class="bi bi-bookmark-star-fill"></i> usado antes', sistema: '<i class="bi bi-building"></i> del sistema', sunat: '<i class="bi bi-patch-check-fill"></i> validado en SUNAT' }[origen];
+    porId('pe_nombre').textContent = p.razon_social;
+    porId('pe_det').innerHTML = `RUC <b>${esc(p.ruc)}</b> · <span class="text-success">${etq}</span>`;
+    porId('provElegido').style.display = 'block'; porId('provBuscar').style.display = 'none'; porId('sugProv').style.display = 'none';
+    porId('provMsg').innerHTML = (!porId('contacto').value || !porId('telefono').value) ? '<span class="text-warning"><i class="bi bi-exclamation-triangle-fill"></i> Completa el contacto y el teléfono.</span>' : '';
+}
+function cambiarProv() {
+    ['oc_proveedor_id', 'proveedor_id', 'ruc', 'razon_social', 'direccion', 'contacto', 'telefono', 'email'].forEach(id => porId(id).value = '');
+    bloquearProv(true);
+    porId('provElegido').style.display = 'none'; porId('provBuscar').style.display = 'block'; porId('provMsg').innerHTML = '';
+    porId('buscaProv').value = ''; porId('buscaProv').focus();
+}
+function buscarSunat() {
+    const n = porId('buscaProv').value.replace(/\D/g, ''), msg = porId('provMsg');
+    if (n.length !== 8 && n.length !== 11) { msg.innerHTML = '<span class="text-danger">Escribe un RUC (11 dígitos) o DNI (8) y pulsa SUNAT.</span>'; return; }
+    msg.innerHTML = '<span class="text-muted"><span class="spinner-border spinner-border-sm"></span> Consultando SUNAT...</span>';
+    fetch('/api/consultar_proveedor', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: `numero=${encodeURIComponent(n)}&force=false` })
+        .then(r => r.json()).then(d => {
+            if (d.status === 'success') {
+                // si ya lo usamos antes, se traen también su contacto y teléfono
+                fetch(`{{ url_for('oc_api_proveedores') }}?q=${n}`).then(r => r.json()).then(x => {
+                    const g = (x.guardados || []).find(p => p.ruc === n);
+                    elegir(g || { proveedor_id: d.proveedor_id, ruc: n, razon_social: d.razon_social, direccion: d.direccion, telefono: d.telefono }, g ? 'guardado' : 'sunat');
+                });
+            } else msg.innerHTML = `<span class="text-danger"><i class="bi bi-x-circle-fill"></i> ${esc(d.msg)}</span>`;
+        }).catch(() => msg.innerHTML = '<span class="text-danger">Error de conexión.</span>');
+}
+function aMano() {
+    bloquearProv(false);
+    porId('oc_proveedor_id').value = ''; porId('proveedor_id').value = '';
+    porId('provBuscar').style.display = 'none'; porId('provElegido').style.display = 'none';
+    porId('provMsg').innerHTML = '<span class="text-muted">Escribe RUC y razón social tal como figuran en la cotización.</span>';
+    porId('ruc').focus();
+}
+
+// ---------- Validación y envío ----------
+let accionPulsada = 'guardar';
+document.querySelectorAll('#formOC button[type=submit]').forEach(b => b.addEventListener('click', () => accionPulsada = b.dataset.accion));
+porId('formOC').addEventListener('submit', function (e) {
+    const err = [];
+    const ruc = porId('ruc').value.replace(/\D/g, '');
+    if (!destino()) err.push('Elige si el material es para el Inventario General o para Insumos.');
+    if (ruc.length !== 11 && ruc.length !== 8) err.push('Elige o busca el proveedor (RUC de 11 dígitos).');
+    if (porId('razon_social').value.trim().length < 3) err.push('Falta la razón social del proveedor.');
+    if (porId('contacto').value.trim().length < 3) err.push('El CONTACTO es obligatorio.');
+    if (porId('telefono').value.replace(/\D/g, '').length < 6) err.push('El TELÉFONO es obligatorio.');
+    if (!porId('condicion_pago').value) err.push('Elige la condición de pago.');
+    if (porId('em_RECOJO').checked && porId('lugar_recojo').value.trim().length < 5) err.push('Escribe dónde se recoge el material.');
+    const et = document.querySelector('input[name=entrega_tipo]:checked').value;
+    if (et === 'DIAS' && !(parseInt(porId('entrega_dias').value) >= 1)) err.push('Escribe en cuántos días se entrega.');
+    if (et === 'FECHA' && !porId('fecha_entrega').value) err.push('Escribe la fecha de entrega.');
+    const filas = [...document.querySelectorAll('#items .item')].filter(f => f.querySelector('.i-desc').value.trim() || f.querySelector('.i-cant').value || f.querySelector('.i-pu').value);
+    if (!filas.length) err.push('Agrega al menos un ítem.');
+    filas.forEach((f, i) => {
+        if (f.querySelector('.i-desc').value.trim().length < 2 || !(parseFloat(f.querySelector('.i-cant').value) > 0) || !f.querySelector('.i-um').value || f.querySelector('.i-pu').value === '')
+            err.push(`Ítem ${i + 1}: completa descripción, cantidad, U.M. y precio.`);
+    });
+    if (err.length) { e.preventDefault(); Swal.fire({ icon: 'warning', title: 'Falta información', html: [...new Set(err)].map(esc).join('<br>') }); return; }
+    if (accionPulsada === 'enviar' && !this.dataset.confirmado) {
+        e.preventDefault();
+        Swal.fire({ icon: 'question', title: '¿Enviar a Gerencia?', text: `Total: ${porId('tTot').textContent}. Ya no se podrá editar salvo que la retires.`,
+                    showCancelButton: true, confirmButtonText: 'Sí, enviar', cancelButtonText: 'Revisar' })
+            .then(r => { if (r.isConfirmed) { this.dataset.confirmado = '1'; porId('accion').value = 'enviar'; this.requestSubmit ? this.requestSubmit() : this.submit(); } });
+        return;
+    }
+    porId('accion').value = accionPulsada;
+    this.querySelectorAll('button[type=submit]').forEach(b => b.disabled = true);
+});
+
+// ---------- Inicio ----------
+pintarNumero(); pintarEntrega();
+if (ITEMS_PREVIOS.length) ITEMS_PREVIOS.forEach(it => agregarItem(it)); else agregarItem();
+if (porId('ruc').value && porId('razon_social').value) {
+    porId('pe_nombre').textContent = porId('razon_social').value;
+    porId('pe_det').innerHTML = `RUC <b>${esc(porId('ruc').value)}</b>`;
+    porId('provElegido').style.display = 'block'; porId('provBuscar').style.display = 'none';
+}
+</script>
+{% endblock %}

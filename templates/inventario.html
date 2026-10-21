@@ -243,13 +243,13 @@
         
         <!-- CAMBIO: flex-wrap para que los botones se acomoden en celular -->
         <div class="d-flex flex-wrap gap-2 w-100 justify-content-md-end">
-            {% if session.get('role') in ['admin', 'almacen', 'administracion'] %}
+            {% if session.get('role') in ['admin', 'almacen', 'logistica', 'administracion'] %}
             <a href="{{ url_for('ver_kardex') }}" class="btn btn-outline-dark shadow-sm flex-grow-1 flex-md-grow-0">
                 <i class="bi bi-clock-history"></i> Kardex
             </a>
             {% endif %}
 
-            {% if session.get('role') in ['admin', 'almacen'] %}
+            {% if session.get('role') in ['admin', 'almacen', 'logistica'] %}
             <button class="btn btn-secondary shadow-sm flex-grow-1 flex-md-grow-0" data-bs-toggle="modal" data-bs-target="#modalConfigMasiva" title="Ajustar Stock Mínimo">
                 <i class="bi bi-gear-wide-connected"></i> Mínimos
             </button>
@@ -332,7 +332,7 @@
                     </select>
                 </div>
 
-                {% if session.get('role') in ['admin', 'almacen'] %}
+                {% if session.get('role') in ['admin', 'almacen', 'logistica'] %}
                 <div class="col-6 col-md-2">
                     <select name="estado_activo" class="form-select" onchange="document.getElementById('formFiltros').submit()">
                         <option value="activos" {% if estado_activo == 'activos' %}selected{% endif %}>Solo Activos</option>
@@ -412,7 +412,7 @@
                         <span class="stock-num {{ 'bajo' if p.stock_actual <= p.stock_minimo else '' }}"
                               title="{{ 'Stock bajo' if p.stock_actual <= p.stock_minimo else 'Stock OK' }} (mínimo {{ p.stock_minimo }})">{{ "{:,}".format(p.stock_actual or 0) }}</span>
                         
-                        {% if session.get('role') in ['admin', 'almacen'] %}
+                        {% if session.get('role') in ['admin', 'almacen', 'logistica'] %}
                         <button class="btn btn-sm btn-light border ms-1" style="color: var(--theme-primary);" title="Registrar Ingreso/Salida"
                                 onclick="abrirAjuste('{{p.id}}', '{{p.nombre}}', '{{p.stock_actual}}')">
                             <i class="bi bi-arrow-left-right"></i>
@@ -425,7 +425,7 @@
                     
                     <td class="text-center pe-3">
                         <div class="btn-group shadow-sm">
-                            {% if session.get('role') in ['admin', 'almacen'] %}
+                            {% if session.get('role') in ['admin', 'almacen', 'logistica'] %}
                             <button class="btn btn-sm btn-outline-primary py-0" title="Editar producto" 
                                     onclick="abrirEditar({{ (p.id)|string|tojson|forceescape }}, {{ (p.nombre)|string|tojson|forceescape }}, {{ (p.stock_actual)|string|tojson|forceescape }}, {{ (p.precio_unidad)|string|tojson|forceescape }}, {{ (p.precio_caja)|string|tojson|forceescape }}, {{ (p.ubicacion|default('', true))|string|tojson|forceescape }}, {{ (p.categoria)|string|tojson|forceescape }}, {{ (p.calidad|default('', true))|string|tojson|forceescape }}, {{ (p.stock_minimo)|string|tojson|forceescape }}, {{ (p.estado|default('', true))|string|tojson|forceescape }}, {{ (p.peso_kg|default(0, true))|string|tojson|forceescape }}, {{ (p.activo|lower)|string|tojson|forceescape }}, {{ (p.sku)|string|tojson|forceescape }})">
                                 <i class="bi bi-pencil-fill"></i>
@@ -441,7 +441,7 @@
                                 <i class="bi bi-trash-fill"></i>
                             </button>
                             {% endif %}
-                            {% if session.get('role') in ['admin', 'almacen'] %}
+                            {% if session.get('role') in ['admin', 'almacen', 'logistica'] %}
                             <button type="button" class="btn btn-sm py-0 {{ 'btn-outline-success' if not p.activo else 'btn-outline-secondary' }}" 
                                     title="{{ 'Activar producto' if not p.activo else 'Desactivar producto' }}"
                                     onclick="toggleActivoProducto({{ p.id }}, 'ANCLAJES')">
@@ -865,7 +865,7 @@
                             <select id="stock_select_motivo" class="form-select form-select-sm shadow-sm" required onchange="seleccionarMotivo()">
                                 <option value="" selected disabled>-- Seleccione un motivo --</option>
                             </select>
-                            {% if session.get('role') in ['admin', 'almacen'] %}
+                            {% if session.get('role') in ['admin', 'almacen', 'logistica'] %}
                             <button type="button" class="btn btn-sm btn-outline-secondary" title="Agregar nuevo motivo" onclick="abrirNuevoMotivo()">
                                 <i class="bi bi-plus-lg"></i>
                             </button>
@@ -986,7 +986,7 @@
                             <select name="presentacion" id="stock_select_presentacion" class="form-select form-select-sm shadow-sm">
                                 <option value="" selected disabled>-- Seleccione --</option>
                             </select>
-                            {% if session.get('role') in ['admin', 'almacen'] %}
+                            {% if session.get('role') in ['admin', 'almacen', 'logistica'] %}
                             <button type="button" class="btn btn-sm btn-outline-secondary" title="Agregar presentación" onclick="abrirNuevaPresentacion()">
                                 <i class="bi bi-plus-lg"></i>
                             </button>
@@ -1173,7 +1173,7 @@
                 <button class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                {% if session.get('role') in ['admin', 'almacen'] %}
+                {% if session.get('role') in ['admin', 'almacen', 'logistica'] %}
                 <div id="galeria_dropzone" class="p-3 mb-3 text-center">
                     <i class="bi bi-cloud-arrow-up fs-3 text-muted d-block mb-2"></i>
                     <label class="small fw-bold text-muted mb-2 d-block">
@@ -1893,7 +1893,7 @@ function cargarFotosGaleria() {
             }
 
             data.fotos.forEach((f, idx) => {
-                const esAdminAlmacen = {{ 'true' if session.get('role') in ['admin', 'almacen'] else 'false' }};
+                const esAdminAlmacen = {{ 'true' if session.get('role') in ['admin', 'almacen', 'logistica'] else 'false' }};
                 grid.innerHTML += `
                     <div class="col-6 col-md-4">
                         <div class="foto-card shadow-sm">

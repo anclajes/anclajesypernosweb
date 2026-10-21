@@ -36,6 +36,16 @@
         <a class="small" href="{{ url_for('insumos_gasto', empresa=empresa) }}">Ver por área</a></div></div></div>
 </div>
 
+{% if oc_pendientes %}
+<div class="alert d-flex flex-wrap gap-2 align-items-center py-2 small" style="background:#fffbeb; border:1px solid #fde68a;">
+    <i class="bi bi-cart-check-fill fs-5 text-warning"></i>
+    <b>{{ oc_pendientes|length }} orden(es) de compra conforme(s) pendiente(s) de ingresar a Insumos:</b>
+    {% for o in oc_pendientes %}
+        {% if puede_editar %}<a class="btn btn-sm btn-warning py-0 fw-semibold" href="{{ url_for('insumos_ingreso_nuevo', oc=o.id) }}"><i class="bi bi-box-arrow-in-down"></i> {{ oc_codigo(o) }} · {{ o.razon_social[:26] }}</a>
+        {% else %}<span class="badge text-bg-light border">{{ oc_codigo(o) }} · {{ o.razon_social[:26] }}</span>{% endif %}
+    {% endfor %}
+</div>
+{% endif %}
 <form method="GET" class="row g-2 align-items-center mb-3">
     <input type="hidden" name="empresa" value="{{ empresa }}">
     <div class="col-12 col-md-4">

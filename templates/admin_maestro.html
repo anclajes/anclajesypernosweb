@@ -77,7 +77,7 @@
 <div class="card border-0 shadow-sm mb-3">
     <div class="card-header bg-white fw-bold d-flex justify-content-between align-items-center flex-wrap gap-2">
         <span><i class="bi bi-collection"></i> Catálogo Maestro <span class="badge bg-light text-dark border">{{ total_maestro }}</span></span>
-        {% if session.get('role') in ['admin', 'almacen'] %}
+        {% if session.get('role') in ['admin', 'almacen', 'logistica'] %}
         <div class="d-flex gap-2 flex-wrap align-items-center">
             <small class="text-muted d-none d-md-inline">La selección se mantiene aunque cambies de página o de filtro</small>
             <button type="button" class="btn btn-outline-secondary btn-sm" id="btnLimpiarSeleccionMaestro" onclick="limpiarSeleccionMaestro()" title="Vaciar toda la selección (de todas las páginas)">
@@ -133,18 +133,18 @@
             <table class="table table-sm table-hover align-middle mb-0 small">
                 <thead class="table-light">
                     <tr>
-                        {% if session.get('role') in ['admin', 'almacen'] %}
+                        {% if session.get('role') in ['admin', 'almacen', 'logistica'] %}
                         <th style="width:28px;"><input type="checkbox" id="chkSeleccionarTodoMaestro" onchange="toggleSeleccionarTodoMaestro(this)"></th>
                         {% endif %}
                         <th>Código</th><th>Descripción</th><th>Calidad</th><th>Familia</th>
                         <th class="text-end">Peso Nominal (Kg)</th><th>Origen</th><th>Creado por</th>
-                        {% if session.get('role') in ['admin', 'almacen'] %}<th class="text-end pe-3">Acciones</th>{% endif %}
+                        {% if session.get('role') in ['admin', 'almacen', 'logistica'] %}<th class="text-end pe-3">Acciones</th>{% endif %}
                     </tr>
                 </thead>
                 <tbody>
                     {% for m in productos %}
                     <tr id="fila-maestro-{{ m.sku }}">
-                        {% if session.get('role') in ['admin', 'almacen'] %}
+                        {% if session.get('role') in ['admin', 'almacen', 'logistica'] %}
                         <td><input type="checkbox" class="chk-maestro-sku" value="{{ m.sku }}" onchange="alCambiarCheckboxMaestro(this)"></td>
                         {% endif %}
                         <td class="fw-bold text-primary">{{ m.sku }}</td>
@@ -154,7 +154,7 @@
                         <td class="text-end" id="fila-maestro-{{ m.sku }}-peso">{{ '%.4f'|format(m.peso_nominal_kg or 0) }}</td>
                         <td><span class="badge bg-light text-dark border">{{ m.origen }}</span></td>
                         <td class="text-muted">{{ m.creado_por }}<br><small>{{ m.fecha_creacion.strftime('%d/%m/%y') if m.fecha_creacion else '' }}</small></td>
-                        {% if session.get('role') in ['admin', 'almacen'] %}
+                        {% if session.get('role') in ['admin', 'almacen', 'logistica'] %}
                         <td class="text-end pe-3">
                             <a class="btn btn-sm btn-outline-secondary" title="Ver info / código QR" target="_blank"
                                href="{{ url_for('producto_info', sku=m.sku) }}">
@@ -175,12 +175,12 @@
                         {% endif %}
                     </tr>
                     {% else %}
-                    <tr><td colspan="{{ 9 if session.get('role') in ['admin', 'almacen'] else 7 }}" class="text-center text-muted py-4">No hay productos que coincidan con este filtro.</td></tr>
+                    <tr><td colspan="{{ 9 if session.get('role') in ['admin', 'almacen', 'logistica'] else 7 }}" class="text-center text-muted py-4">No hay productos que coincidan con este filtro.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>
 
-            {% if session.get('role') in ['admin', 'almacen'] %}
+            {% if session.get('role') in ['admin', 'almacen', 'logistica'] %}
             <form id="formImprimirCodigosMaestro" method="POST" action="{{ url_for('admin_maestro_imprimir_codigos') }}" target="_blank">
                 <input type="hidden" name="skus" id="inputSkusImprimirMaestro">
             </form>
@@ -354,7 +354,7 @@
     </div>
 </div>
 
-{% if session.get('role') in ['admin', 'almacen'] %}
+{% if session.get('role') in ['admin', 'almacen', 'logistica'] %}
 <script>
 // --- Selección de productos (checkboxes) para imprimir su código QR + descripción en una
 // hoja de etiquetas. La selección se guarda en este navegador (localStorage) y SOBREVIVE

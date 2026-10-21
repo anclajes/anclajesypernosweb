@@ -28,7 +28,23 @@
     .prov-elegido .nom { font-weight: 800; color: #14532d; }
 </style>
 
+{% if oc_prefill %}
+<div class="alert d-flex gap-2 align-items-start py-2" style="background:#eff6ff; border:1px solid #bfdbfe;">
+    <i class="bi bi-cart-check-fill fs-4 text-primary"></i>
+    <div class="small"><b>Ingreso desde la {{ oc_prefill.codigo }}</b> (conforme). Ya se llenaron el proveedor, la fecha de llegada, la factura y los ítems.
+        Revisa los datos{% if oc_prefill.moneda == 'USD' %} y <b class="text-danger">escribe los precios en SOLES con IGV</b> (la orden está en dólares){% else %}: los precios ya incluyen el <b>IGV</b>{% endif %}.
+        Si algún ítem no está en el maestro de insumos, créalo con <b>"Nuevo insumo"</b> y elígelo en su fila.</div>
+</div>
+{% elif oc_pendientes %}
+<div class="alert py-2 small" style="background:#fffbeb; border:1px solid #fde68a;">
+    <i class="bi bi-bell-fill text-warning"></i> <b>Órdenes de compra conformes pendientes de ingresar:</b>
+    {% for o in oc_pendientes %}<a class="badge text-bg-light border text-decoration-none ms-1" href="{{ url_for('insumos_ingreso_nuevo', oc=o.id) }}">{{ oc_codigo(o) }} · {{ o.razon_social[:28] }}</a>{% endfor %}
+    <span class="text-muted">— toca una para llenar el ingreso con sus datos.</span>
+</div>
+{% endif %}
 <form method="POST" action="{{ url_for('insumos_ingreso_guardar') }}" enctype="multipart/form-data" id="formIngreso">
+<input type="hidden" name="oc_id" value="{{ oc_prefill.oc_id if oc_prefill else '' }}">
+<input type="hidden" name="ruc_manual" id="ruc_manual" value="">
 <div class="row g-3">
     <div class="col-12 col-lg-5">
         <div class="card border-0 shadow-sm mb-3"><div class="card-body">
@@ -41,7 +57,7 @@
             </div>
             <div class="row g-2">
                 <div class="col-6"><label class="small fw-bold">Fecha *</label>
-                    <input type="date" name="fecha" class="form-control" value="{{ hoy.isoformat() }}" max="{{ hoy.isoformat() }}" required>
+                    <input type="date" name="fecha" id="fecha_ingreso" class="form-control" value="{{ hoy.isoformat() }}" max="{{ hoy.isoformat() }}" required>
                     <div class="form-text" style="font-size:.68rem;">Puede ser una fecha anterior.</div></div>
                 <div class="col-6"><label class="small fw-bold"># Factura *</label>
                     <input type="text" name="numero_factura" id="numero_factura" class="form-control text-uppercase" maxlength="50" placeholder="F001-12345" required>
@@ -128,6 +144,7 @@
 <template id="tplFila">
     <div class="fila-item">
         <span class="n"></span>
+        <div class="oc-desc small fw-semibold text-primary mb-1" style="display:none;"></div>
         <button type="button" class="quitar" title="Quitar"><i class="bi bi-x-circle-fill"></i></button>
         <div class="row g-2">
             <div class="col-12 col-md-4"><label><i class="bi bi-funnel"></i> Categoría</label><select class="form-select form-select-sm sel-cat"></select></div>
@@ -144,6 +161,7 @@
 
 <script>
 const INSUMOS = {{ insumos_json|tojson }};
+const PREFILL = {{ (oc_prefill or none)|tojson }};
 const CATEGORIAS = {{ categorias_filtro|tojson }};
 function empresaActual() { return document.querySelector('input[name=empresa]:checked').value; }
 function datoInsumo(id) { return (INSUMOS[empresaActual()] || []).find(i => String(i.id) === String(id)); }
@@ -331,6 +349,27 @@ document.getElementById('formIngreso').addEventListener('submit', function (e) {
     if (error) { e.preventDefault(); return Swal.fire('Falta información', error, 'warning'); }
     const btn = document.getElementById('btnGuardar'); btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Guardando...';
 });
-agregarFila();
+if (PREFILL) {
+    porId('fecha_ingreso').value = PREFILL.fecha;
+    porId('numero_factura').value = PREFILL.numero_factura || '';
+    const p = PREFILL.proveedor;
+    if (p.modo === 'guardado') elegirGuardado(p);
+    else if (p.modo === 'sunat') elegirSunat(p, 'de la orden de compra');
+    else {
+        porId('sinRuc').checked = true; modoSinRuc();
+        porId('razon_social').value = p.razon_social; porId('direccion').value = p.direccion || ''; porId('ruc_manual').value = p.ruc || '';
+    }
+    porId('contacto_nombre').value = p.contacto_nombre || ''; porId('contacto_telefono').value = p.contacto_telefono || '';
+    PREFILL.items.forEach(it => {
+        const fila = agregarFila(it.insumo_id || null);
+        const d = fila.querySelector('.oc-desc');
+        d.textContent = `De la orden: ${it.descripcion} (${it.cantidad} ${it.um})` + (it.insumo_id ? '' : ' — elige el insumo');
+        d.style.display = 'block';
+        if (window.jQuery && it.insumo_id) jQuery(fila.querySelector('.sel-insumo')).trigger('change');
+        fila.querySelector('.c-cant').value = it.cantidad;
+        if (it.precio_unitario !== '') { fila.querySelector('.c-pu').value = it.precio_unitario; fila.dataset.ultimo = 'unit'; fila.querySelector('.c-pu').dispatchEvent(new Event('input')); }
+        pintarInfo(fila);
+    });
+} else agregarFila();
 </script>
 {% endblock %}

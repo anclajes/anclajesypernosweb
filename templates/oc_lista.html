@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}Órdenes de compra{% endblock %}
+{% block subtitle %}{{ vistas[vista][0] }}{% endblock %}
+{% block content %}
+{% include '_oc_nav.html' %}
+<style>
+    .vistas { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+    .vistas a { font-size: .78rem; font-weight: 700; border-radius: 20px; padding: 4px 12px; text-decoration: none; border: 1px solid #e2e8f0; color: #475569; background: #fff; }
+    .vistas a.on { background: #0f172a; color: #fff; border-color: #0f172a; }
+    .vistas a .c { opacity: .7; margin-left: 3px; }
+    .tabla-oc th { font-size: .72rem; white-space: nowrap; text-transform: uppercase; letter-spacing: .02em; }
+    .tabla-oc td { vertical-align: middle; font-size: .82rem; }
+    .entrega { font-size: .74rem; line-height: 1.25; }
+    .atrasada { color: #b91c1c; font-weight: 700; }
+    .doc-chip { display: inline-flex; align-items: center; gap: 3px; font-size: .68rem; font-weight: 700; border-radius: 6px; padding: 1px 6px; text-decoration: none; margin: 1px; }
+    .doc-chip.GUIA { background: #ede9fe; color: #5b21b6; } .doc-chip.FACTURA { background: #dcfce7; color: #166534; }
+    .doc-chip.COTIZACION { background: #e0f2fe; color: #075985; } .doc-chip.OTRO { background: #f1f5f9; color: #334155; }
+    .card-oc { border: 1px solid #e2e8f0; border-radius: 12px; padding: 10px 12px; background: #fff; margin-bottom: 8px; border-left: 4px solid var(--c); }
+    .card-oc .fila { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; }
+    .card-oc .prov { font-weight: 700; font-size: .88rem; line-height: 1.2; }
+    .card-oc .det { font-size: .74rem; color: #64748b; }
+</style>
+
+<div class="vistas">
+    {% for k, v in vistas.items() %}
+    <a href="{{ url_for('oc_lista', vista=k, tipo=tipo, destino=destino, q=buscar) }}" class="{{ 'on' if k == vista }}">{{ v[0] }}<span class="c">{{ conteo[k] }}</span></a>
+    {% endfor %}
+</div>
+
+<form method="GET" class="row g-2 align-items-end mb-3">
+    <input type="hidden" name="vista" value="{{ vista }}">
+    <div class="col-12 col-md-4"><label class="small fw-bold text-muted">Buscar</label>
+        <div class="input-group input-group-sm"><input type="text" name="q" class="form-control" value="{{ buscar }}" placeholder="N°, proveedor, RUC, cotización o producto">
+            <button class="btn btn-primary"><i class="bi bi-search"></i></button></div></div>
+    <div class="col-6 col-md-2"><label class="small fw-bold text-muted">Tipo</label>
+        <select name="tipo" class="form-select form-select-sm" onchange="this.form.submit()"><option value="">OC y OS</option>
+            {% for k, t in tipos.items() %}<option value="{{ k }}" {{ 'selected' if k == tipo }}>{{ t }}</option>{% endfor %}</select></div>
+    <div class="col-6 col-md-2"><label class="small fw-bold text-muted">Destino</label>
+        <select name="destino" class="form-select form-select-sm" onchange="this.form.submit()"><option value="">Todos</option>
+            {% for k, t in destinos.items() %}<option value="{{ k }}" {{ 'selected' if k == destino }}>{{ t }}</option>{% endfor %}</select></div>
+    <div class="col-6 col-md-2"><label class="small fw-bold text-muted">Desde</label><input type="date" name="desde" class="form-control form-control-sm" value="{{ desde.isoformat() if desde else '' }}"></div>
+    <div class="col-6 col-md-2"><label class="small fw-bold text-muted">Hasta</label><input type="date" name="hasta" class="form-control form-control-sm" value="{{ hasta.isoformat() if hasta else '' }}"></div>
+</form>
+
+{% if vista == 'conformes' %}
+<div class="alert alert-light border small py-2"><i class="bi bi-check2-all text-success"></i> Órdenes cuyo material <b>llegó y fue revisado</b> (estado, cantidad y documentos OK).
+    Aquí quedan sus <b>guías y facturas</b>. Las de <b>Insumos</b> aparecen como pendientes en Insumos internos hasta registrarlas.</div>
+{% elif vista == 'aprobar' and session.get('role') == 'admin' %}
+<div class="alert py-2 small" style="background:#fffbeb; border:1px solid #fde68a;"><i class="bi bi-pen text-warning"></i> Revisa cada orden y apruébala (el PDF llevará tu <b>firma y sello</b>) o recházala con el motivo.</div>
+{% endif %}
+
+{% macro estado_badge(o) %}{% set e = estados[o.estado] %}<span class="oc-estado" style="color: {{ e.color }}; background: {{ e.fondo }};"><i class="bi {{ e.icono }}"></i> {{ e.txt }}</span>{% endmacro %}
+{% macro aprobacion(o) %}
+    {% if o.aprobado_por %}<span class="aprob si" title="Aprobada el {{ o.fecha_aprobacion.strftime('%d/%m/%Y %H:%M') }}"><i class="bi bi-patch-check-fill"></i> {{ o.aprobado_por.nombre_completo }}</span>
+    {% elif o.estado == 'RECHAZADA' %}<span class="aprob no" title="{{ o.motivo_rechazo }}"><i class="bi bi-x-octagon-fill"></i> Rechazó {{ o.rechazado_por.nombre_completo if o.rechazado_por else '' }}</span>
+    {% elif o.estado == 'ANULADA' %}<span class="aprob no" title="{{ o.motivo_anulacion }}"><i class="bi bi-slash-circle"></i> Anuló {{ o.anulado_por.nombre_completo if o.anulado_por else '' }}</span>
+    {% elif o.estado == 'ENVIADA' %}<span class="aprob pend"><i class="bi bi-hourglass-split"></i> En revisión</span>
+    {% else %}<span class="aprob pend"><i class="bi bi-dash-circle"></i> Sin enviar</span>{% endif %}
+{% endmacro %}
+{% macro entrega(o) %}
+    {% set esp = oc_fecha_esperada(o) %}
+    <div class="entrega">{% if o.entrega_modo == 'RECOJO' %}<i class="bi bi-person-walking"></i> Recoger en: {{ o.lugar_recojo }}{% else %}<i class="bi bi-building"></i> Llega a la empresa{% endif %}
+        <div class="{{ 'atrasada' if esp and esp < hoy and o.estado in ['APROBADA'] }}">{{ esp.strftime('%d/%m/%Y') if esp else oc_entrega_txt(o) }}{% if esp and esp < hoy and o.estado == 'APROBADA' %} · atrasada{% endif %}</div></div>
+{% endmacro %}
+
+<!-- Escritorio -->
+<div class="card border-0 shadow-sm d-none d-md-block">
+    <div class="card-body p-0 table-responsive">
+        <table class="table table-hover align-middle mb-0 tabla-oc">
+            <thead class="table-dark"><tr>
+                <th class="ps-3">N°</th><th>Fecha</th><th>Proveedor</th><th>Para</th><th>Entrega / llegada</th><th class="text-end">Total</th>
+                {% if vista != 'conformes' %}<th>Estado</th>{% endif %}<th>Aprobación</th>{% if vista == 'conformes' %}<th>Documentos</th><th>Seguimiento</th>{% endif %}<th class="pe-3"></th></tr></thead>
+            <tbody>
+            {% for o in ordenes %}
+                <tr>
+                    <td class="ps-3 text-nowrap"><span class="oc-tipo {{ o.tipo }}">{{ o.tipo }}</span> <a class="oc-num" href="{{ url_for('oc_detalle', orden_id=o.id) }}">{{ '%06d'|format(o.numero) }}</a>
+                        {% if o.cotizacion %}<div class="text-muted" style="font-size:.68rem;">Cot. {{ o.cotizacion }}</div>{% endif %}</td>
+                    <td class="text-nowrap">{{ o.fecha.strftime('%d/%m/%Y') }}<div class="text-muted" style="font-size:.68rem;">{{ o.creado_por.nombre_completo if o.creado_por else '' }}</div></td>
+                    <td><b>{{ o.razon_social }}</b><div class="text-muted" style="font-size:.7rem;">{{ o.ruc }} · {{ o.items|length }} ítem(s)</div></td>
+                    <td><span class="oc-dest {{ o.destino }}">{{ 'Inv. General' if o.destino == 'GENERAL' else 'Insumos' }}</span></td>
+                    <td>{% if o.fecha_llegada %}<div class="entrega"><i class="bi bi-box-seam"></i> Llegó {{ o.fecha_llegada.strftime('%d/%m/%Y %H:%M') }}</div>{% else %}{{ entrega(o) }}{% endif %}</td>
+                    <td class="text-end text-nowrap num fw-bold">{{ monedas[o.moneda].simbolo }} {{ '{:,.2f}'.format(o.total or 0) }}</td>
+                    {% if vista != 'conformes' %}<td>{{ estado_badge(o) }}</td>{% endif %}
+                    <td>{{ aprobacion(o) }}</td>
+                    {% if vista == 'conformes' %}
+                    <td>{% for d in docs.get(o.id, []) %}<a class="doc-chip {{ d.tipo }}" href="{{ url_for('oc_documento_ver', doc_id=d.id) }}" target="_blank"><i class="bi {{ 'bi-file-earmark-pdf' if d.content_type == 'application/pdf' else 'bi-image' }}"></i> {{ {'GUIA': 'Guía', 'FACTURA': 'Factura', 'COTIZACION': 'Cotiz.', 'OTRO': 'Otro'}[d.tipo] }}</a>{% else %}<span class="text-muted">—</span>{% endfor %}</td>
+                    <td>{% if o.destino == 'INSUMOS' %}{% if o.insumo_ingreso_id %}<span class="aprob si"><i class="bi bi-check2"></i> En Insumos</span>{% else %}<span class="aprob pend">Pendiente en Insumos</span>{% endif %}
+                        {% else %}{% if o.fecha_kardex %}<span class="aprob si"><i class="bi bi-check2"></i> En Kardex</span>{% else %}<span class="aprob pend">Falta Kardex</span>{% endif %}{% endif %}</td>
+                    {% endif %}
+                    <td class="pe-3 text-end text-nowrap">
+                        <a class="btn btn-sm btn-outline-primary py-0" href="{{ url_for('oc_detalle', orden_id=o.id) }}"><i class="bi bi-eye"></i> Ver</a>
+                        <a class="btn btn-sm btn-outline-danger py-0" href="{{ url_for('oc_pdf', orden_id=o.id, ver=1) }}" target="_blank" title="PDF"><i class="bi bi-file-earmark-pdf"></i></a>
+                    </td>
+                </tr>
+            {% else %}
+                <tr><td colspan="11" class="text-center text-muted py-5"><i class="bi bi-cart display-6 opacity-25"></i>
+                    <p class="mt-2 mb-0">No hay órdenes {{ 'con estos filtros' if buscar or tipo or destino or desde or hasta else 'en esta vista' }}.
+                    {% if puede_editar and vista == 'curso' %}<br><a href="{{ url_for('oc_nueva') }}">Crear la primera orden</a>{% endif %}</p></td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Celular -->
+<div class="d-md-none">
+    {% for o in ordenes %}
+    <div class="card-oc" style="--c: {{ estados[o.estado].color }};">
+        <div class="fila">
+            <div><span class="oc-tipo {{ o.tipo }}">{{ o.tipo }}</span> <a class="oc-num" href="{{ url_for('oc_detalle', orden_id=o.id) }}">N° {{ '%06d'|format(o.numero) }}</a>
+                <span class="text-muted small">· {{ o.fecha.strftime('%d/%m/%Y') }}</span></div>
+            <div class="num fw-bold text-nowrap">{{ monedas[o.moneda].simbolo }} {{ '{:,.2f}'.format(o.total or 0) }}</div>
+        </div>
+        <div class="prov mt-1">{{ o.razon_social }}</div>
+        <div class="det">{{ o.ruc }} · <span class="oc-dest {{ o.destino }}">{{ 'Inv. General' if o.destino == 'GENERAL' else 'Insumos' }}</span></div>
+        <div class="mt-1">{% if o.fecha_llegada %}<div class="entrega"><i class="bi bi-box-seam"></i> Llegó {{ o.fecha_llegada.strftime('%d/%m/%Y %H:%M') }}</div>{% else %}{{ entrega(o) }}{% endif %}</div>
+        <div class="d-flex flex-wrap gap-1 align-items-center mt-2">{{ estado_badge(o) }} {{ aprobacion(o) }}</div>
+        <div class="d-flex gap-2 mt-2">
+            <a class="btn btn-sm btn-outline-primary flex-fill" href="{{ url_for('oc_detalle', orden_id=o.id) }}"><i class="bi bi-eye"></i> Ver</a>
+            <a class="btn btn-sm btn-outline-danger flex-fill" href="{{ url_for('oc_pdf', orden_id=o.id, ver=1) }}" target="_blank"><i class="bi bi-file-earmark-pdf"></i> PDF</a>
+        </div>
+    </div>
+    {% else %}
+    <div class="text-center text-muted py-5">No hay órdenes en esta vista.</div>
+    {% endfor %}
+</div>
+{% endblock %}

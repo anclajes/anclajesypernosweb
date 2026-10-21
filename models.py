@@ -1229,3 +1229,149 @@ class InsumoDocumento(db.Model):
     tamano_bytes = db.Column(db.Integer)
     subido_por = db.Column(db.String(100))
     fecha = db.Column(db.DateTime, default=hora_peru)
+
+
+# =====================================================================================
+# ÓRDENES DE COMPRA / ÓRDENES DE SERVICIO (Logística)
+# =====================================================================================
+class OCProveedor(db.Model):
+    """Proveedores usados en órdenes de compra, con su contacto y teléfono, para elegirlos rápido."""
+    __tablename__ = 'oc_proveedor'
+    id = db.Column(db.Integer, primary_key=True)
+    ruc = db.Column(db.String(20), index=True)
+    razon_social = db.Column(db.String(200), nullable=False)
+    direccion = db.Column(db.String(250))
+    contacto = db.Column(db.String(120))
+    telefono = db.Column(db.String(40))
+    email = db.Column(db.String(120))
+    proveedor_id = db.Column(db.Integer, db.ForeignKey('proveedor.id'), nullable=True)
+    creado_por = db.Column(db.String(100))
+    fecha_creacion = db.Column(db.DateTime, default=hora_peru)
+    ultima_orden = db.Column(db.DateTime, nullable=True)
+
+
+class OrdenCompra(db.Model):
+    """Orden de Compra (OC) u Orden de Servicio (OS). Numeración correlativa propia por tipo.
+    Flujo: BORRADOR -> ENVIADA (a Gerencia) -> APROBADA / RECHAZADA -> RECIBIDA (llegó) -> CONFORME.
+    Se puede ANULAR (con motivo) mientras el material no haya llegado."""
+    __tablename__ = 'orden_compra'
+    id = db.Column(db.Integer, primary_key=True)
+    tipo = db.Column(db.String(2), nullable=False, default='OC')          # OC / OS
+    numero = db.Column(db.Integer, nullable=False)
+    fecha = db.Column(db.Date, nullable=False)
+    estado = db.Column(db.String(12), nullable=False, default='BORRADOR', index=True)
+    destino = db.Column(db.String(10), nullable=False, default='GENERAL')  # GENERAL / INSUMOS
+    # Proveedor (copia de los datos al momento de la orden)
+    oc_proveedor_id = db.Column(db.Integer, db.ForeignKey('oc_proveedor.id'), nullable=True)
+    proveedor_id = db.Column(db.Integer, db.ForeignKey('proveedor.id'), nullable=True)
+    ruc = db.Column(db.String(20))
+    razon_social = db.Column(db.String(200), nullable=False)
+    direccion = db.Column(db.String(250))
+    contacto = db.Column(db.String(120), nullable=False)
+    telefono = db.Column(db.String(40), nullable=False)
+    email = db.Column(db.String(120))
+    cotizacion = db.Column(db.String(60))
+    # Condiciones
+    moneda = db.Column(db.String(3), nullable=False, default='PEN')       # PEN / USD
+    condicion_pago = db.Column(db.String(120))
+    entrega_modo = db.Column(db.String(10), nullable=False, default='EMPRESA')   # EMPRESA (llega) / RECOJO
+    lugar_recojo = db.Column(db.String(250))
+    entrega_tipo = db.Column(db.String(10), nullable=False, default='A_TRATAR')  # A_TRATAR / DIAS / FECHA
+    entrega_dias = db.Column(db.Integer)
+    fecha_entrega = db.Column(db.Date)
+    observaciones = db.Column(db.String(500))
+    subtotal = db.Column(db.Float, default=0)
+    igv = db.Column(db.Float, default=0)
+    total = db.Column(db.Float, default=0)
+    # Auditoría del flujo
+    creado_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    fecha_registro = db.Column(db.DateTime, default=hora_peru)
+    editado_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    fecha_edicion = db.Column(db.DateTime, nullable=True)
+    enviado_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    fecha_envio = db.Column(db.DateTime, nullable=True)
+    aprobado_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    fecha_aprobacion = db.Column(db.DateTime, nullable=True)
+    rechazado_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    fecha_rechazo = db.Column(db.DateTime, nullable=True)
+    motivo_rechazo = db.Column(db.String(300))
+    anulado_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    fecha_anulacion = db.Column(db.DateTime, nullable=True)
+    motivo_anulacion = db.Column(db.String(300))
+    # Recepción del material
+    fecha_llegada = db.Column(db.DateTime, nullable=True)
+    recibido_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    numero_guia = db.Column(db.String(60))
+    numero_factura = db.Column(db.String(60))
+    nota_recepcion = db.Column(db.String(500))
+    conforme_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    fecha_conforme = db.Column(db.DateTime, nullable=True)
+    nota_conforme = db.Column(db.String(500))
+    # Seguimiento en inventarios
+    insumo_ingreso_id = db.Column(db.Integer, db.ForeignKey('insumo_ingreso.id'), nullable=True)
+    kardex_registrado_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    fecha_kardex = db.Column(db.DateTime, nullable=True)
+    duplicada_de_id = db.Column(db.Integer, nullable=True)
+
+    items = db.relationship('OrdenCompraItem', backref='orden', order_by='OrdenCompraItem.item', cascade='all, delete-orphan')
+    creado_por = db.relationship('User', foreign_keys=[creado_por_id])
+    editado_por = db.relationship('User', foreign_keys=[editado_por_id])
+    enviado_por = db.relationship('User', foreign_keys=[enviado_por_id])
+    aprobado_por = db.relationship('User', foreign_keys=[aprobado_por_id])
+    rechazado_por = db.relationship('User', foreign_keys=[rechazado_por_id])
+    anulado_por = db.relationship('User', foreign_keys=[anulado_por_id])
+    recibido_por = db.relationship('User', foreign_keys=[recibido_por_id])
+    conforme_por = db.relationship('User', foreign_keys=[conforme_por_id])
+    kardex_registrado_por = db.relationship('User', foreign_keys=[kardex_registrado_por_id])
+    __table_args__ = (db.UniqueConstraint('tipo', 'numero', name='uq_orden_compra_tipo_numero'),)
+
+
+class OrdenCompraItem(db.Model):
+    __tablename__ = 'orden_compra_item'
+    id = db.Column(db.Integer, primary_key=True)
+    orden_id = db.Column(db.Integer, db.ForeignKey('orden_compra.id'), nullable=False, index=True)
+    item = db.Column(db.Integer, nullable=False)
+    descripcion = db.Column(db.String(400), nullable=False)
+    cantidad = db.Column(db.Float, nullable=False)
+    um = db.Column(db.String(30), nullable=False)
+    precio_unitario = db.Column(db.Float, nullable=False)      # SIN IGV
+    total = db.Column(db.Float, nullable=False)                # SIN IGV
+    origen = db.Column(db.String(12))                          # ANCLAJES / IMPORTBOLTS / INSUMO / vacío (escrito a mano)
+    codigo = db.Column(db.String(60))                          # SKU o código del insumo
+    insumo_id = db.Column(db.Integer, db.ForeignKey('insumo.id'), nullable=True)
+
+
+class OrdenCompraEvento(db.Model):
+    """Historial (auditoría) de cada orden: quién hizo qué y cuándo."""
+    __tablename__ = 'orden_compra_evento'
+    id = db.Column(db.Integer, primary_key=True)
+    orden_id = db.Column(db.Integer, db.ForeignKey('orden_compra.id'), nullable=False, index=True)
+    fecha = db.Column(db.DateTime, default=hora_peru)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    accion = db.Column(db.String(20), nullable=False)
+    detalle = db.Column(db.String(500))
+
+    usuario = db.relationship('User')
+
+
+class OrdenCompraDocumento(db.Model):
+    """Guía, factura u otros documentos de la orden (PDF o foto en S3)."""
+    __tablename__ = 'orden_compra_documento'
+    id = db.Column(db.Integer, primary_key=True)
+    orden_id = db.Column(db.Integer, db.ForeignKey('orden_compra.id'), nullable=False, index=True)
+    tipo = db.Column(db.String(15), nullable=False)           # GUIA / FACTURA / COTIZACION / OTRO
+    s3_key = db.Column(db.String(300), nullable=False)
+    nombre_original = db.Column(db.String(200))
+    content_type = db.Column(db.String(50))
+    tamano_bytes = db.Column(db.Integer)
+    subido_por = db.Column(db.String(100))
+    fecha = db.Column(db.DateTime, default=hora_peru)
+
+
+class OCConfig(db.Model):
+    """Datos de la empresa y textos del PDF de órdenes (términos, horario...), editables en Configuración."""
+    __tablename__ = 'oc_config'
+    clave = db.Column(db.String(40), primary_key=True)
+    valor = db.Column(db.Text)
+    actualizado_por = db.Column(db.String(100))
+    fecha = db.Column(db.DateTime, default=hora_peru)

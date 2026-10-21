@@ -8,6 +8,7 @@ from models import ProcesoOC, MovimientoDocumento
 from models import ActividadUsuario, ActividadHora, AlertaSeguridad
 from models import (InsumoArea, InsumoTrabajador, Insumo, InsumoStock, InsumoIngreso, InsumoIngresoDetalle,
                     InsumoSalida, InsumoSalidaDetalle, InsumoMovimiento, InsumoDocumento, InsumoProveedor)
+from models import OCProveedor, OrdenCompra, OrdenCompraItem, OrdenCompraEvento, OrdenCompraDocumento, OCConfig
 from flask import g
 from models import ProductMovement
 from models import Payment
@@ -57,6 +58,7 @@ ROLE_LABELS = {
     'administracion': 'Administración',
     'vendedor': 'Vendedor',
     'almacen': 'Almacén',
+    'logistica': 'Logística',
     'chofer': 'Chofer',
     'auditor_stock': 'Auditor de Stock',
     'almacen_visor': 'Visor de Inventario'  # rol de solo lectura: Inventario (General/Anclajes/ImportBolts) y Kardex
@@ -482,7 +484,7 @@ def _copiar_fotos_auditoria_a_producto(registro, prod, origen, cantidad_actual):
     return copiadas, omitidas, cantidad_actual
 
 
-ROLES_EDITAN_PRODUCTO = ['admin', 'almacen']   # Gerencia y Jefe de Almacén
+ROLES_EDITAN_PRODUCTO = ['admin', 'almacen', 'logistica']   # Gerencia y Jefe de Almacén
 
 # --- ESTADO FÍSICO: lista única (Catálogos > Estado Físico). "BUEN ESTADO (OK)" es la primera
 # opción y en la ficha del producto se guarda VACÍO (así estaba ya en todo el sistema).
@@ -533,7 +535,7 @@ def _log_edicion_producto(prod, antes, etiqueta_inv=''):
             if k == 'activo':
                 a, d = ('Sí' if a else 'No'), ('Sí' if d else 'No')
             cambios.append(f"{etq}: {a if a not in (None, '') else '-'} → {d if d not in (None, '') else '-'}")
-    rol = {'admin': 'Gerencia', 'almacen': 'Jefe de Almacén'}.get(session.get('role'), session.get('role') or '')
+    rol = {'admin': 'Gerencia', 'almacen': 'Jefe de Almacén', 'logistica': 'Logística'}.get(session.get('role'), session.get('role') or '')
     texto = f"Editó producto {etiqueta_inv}{prod.sku} ({rol}): " + ('; '.join(cambios) if cambios else 'sin cambios')
     registrar_log(texto if len(texto) <= 255 else texto[:254] + '…', "bi-pencil-fill", "text-warning")
 
@@ -646,6 +648,8 @@ def index():
         return redirect(url_for('auditoria_inicio'))
     if rol == 'almacen_visor':
         return redirect(url_for('inventario_general'))
+    if rol == 'logistica':
+        return redirect(url_for('oc_lista'))
     if rol in ['admin', 'administracion']:
         # A. KPIs Financieros
         ventas_hoy = db.session.query(func.sum(Order.total)).filter(func.date(Order.fecha) == hoy).scalar() or 0
@@ -2023,6 +2027,13 @@ NOMBRES_PAGINA = {
     'insumos_kardex': ('Insumos', 'Insumos: kardex valorizado'),
     'insumos_gasto': ('Insumos', 'Insumos: gasto por área'),
     'insumos_config': ('Insumos', 'Insumos: configuración'),
+    'oc_lista': ('Órdenes de compra', 'Órdenes de compra: lista'),
+    'oc_nueva': ('Órdenes de compra', 'Nueva orden de compra'),
+    'oc_editar': ('Órdenes de compra', 'Editar orden de compra'),
+    'oc_detalle': ('Órdenes de compra', 'Detalle de orden de compra'),
+    'oc_pdf': ('Órdenes de compra', 'PDF de orden de compra'),
+    'oc_documento_ver': ('Órdenes de compra', 'Documento de orden de compra'),
+    'oc_config': ('Órdenes de compra', 'Órdenes de compra: configuración'),
 }
 # Descargas de DATOS del sistema (las que importan para una posible fuga de información)
 EXPORTACIONES_DATOS = {
@@ -2415,7 +2426,7 @@ def _productividad(u, ini, fin, horas_activas):
         items.append(('Conteos registrados', RegistroAuditoria.query.filter(
             RegistroAuditoria.trabajador_id == u.id, RegistroAuditoria.fecha_registro >= ini,
             RegistroAuditoria.fecha_registro < fin).count()))
-    elif u.role in ('almacen', 'almacen_visor'):
+    elif u.role in ('almacen', 'logistica', 'almacen_visor'):
         n = sum(M.query.filter(M.user_id == u.id, M.fecha >= ini, M.fecha < fin).count()
                 for M in (ProductMovement, ProductMovementImportBolts))
         items.append(('Movimientos de Kardex', n))
@@ -2707,7 +2718,7 @@ def inject_notifications():
 def exportar_excel():
     import gc # Importamos el recolector de basura
     
-    if session.get('role') not in ['admin', 'almacen', 'administracion']: return "No autorizado", 403
+    if session.get('role') not in ['admin', 'almacen', 'logistica', 'administracion']: return "No autorizado", 403
     
     # 1. OPTIMIZACIÓN EXTREMA: En lugar de cargar Objetos pesados (Product.query.all()),
     # pedimos solo las columnas exactas (Tuplas ligeras). Esto reduce el uso de RAM un 90%.
@@ -3461,7 +3472,7 @@ def inventario():
     # 2. Query Base
     query = Product.query
 
-    puede_ver_inactivos = session.get('role') in ['admin', 'almacen']
+    puede_ver_inactivos = session.get('role') in ['admin', 'almacen', 'logistica']
 
     if not puede_ver_inactivos:
         query = query.filter(Product.activo.is_(True))
@@ -3601,7 +3612,7 @@ def inventario_respaldo():
     """Descarga un respaldo JSON SOLO de Anclajes (productos + categorías + Kardex + fotos),
     sin borrar nada. Pensado para bajarlo justo antes de una importación masiva o un cambio
     grande en este inventario, sin tener que mover el respaldo del sistema completo."""
-    if session.get('role') not in ['admin', 'almacen']:
+    if session.get('role') not in ['admin', 'almacen', 'logistica']:
         return "Acceso denegado", 403
     backup = _generar_backup_inventario_json('ANCLAJES')
     buffer = io.BytesIO(json.dumps(backup, ensure_ascii=False, default=str).encode('utf-8'))
@@ -4962,7 +4973,7 @@ def ver_oc(filename):
 
 @app.route('/categoria/nueva', methods=['POST'])
 def nueva_categoria():
-    if session.get('role') not in ['admin', 'almacen']: return "No autorizado", 403
+    if session.get('role') not in ['admin', 'almacen', 'logistica']: return "No autorizado", 403
     
     nombre = request.form.get('cat_nombre', '').strip().upper()
     
@@ -5296,7 +5307,7 @@ def preview_minimos():
 @app.route('/config/minimos_masivos', methods=['POST'])
 def actualizar_minimos_masivos():
     # Permitimos a admin y almacen (que son los que tienen el botón)
-    if session.get('role') not in ['admin', 'almacen']: 
+    if session.get('role') not in ['admin', 'almacen', 'logistica']: 
         return {'status': 'error', 'msg': 'No autorizado'}, 403
     
     data = request.get_json()
@@ -5337,7 +5348,7 @@ def importar_excel():
     import traceback
     from openpyxl import load_workbook
 
-    if session.get('role') not in ['admin', 'almacen']:
+    if session.get('role') not in ['admin', 'almacen', 'logistica']:
         return "No autorizado", 403
 
     if 'archivo_excel' not in request.files:
@@ -5655,7 +5666,7 @@ def importar_excel_importbolts():
     import traceback
     from openpyxl import load_workbook
 
-    if session.get('role') not in ['admin', 'almacen']:
+    if session.get('role') not in ['admin', 'almacen', 'logistica']:
         return "No autorizado", 403
 
     if 'archivo_excel' not in request.files:
@@ -6271,7 +6282,7 @@ def admin_maestro():
     crear productos nuevos a mano, y navegar/buscar el catálogo maestro completo (mismos
     filtros flexibles que los inventarios: búsqueda por código/descripción y Familia/Calidad
     cruzados entre sí)."""
-    if session.get('role') not in ['admin', 'almacen']:
+    if session.get('role') not in ['admin', 'almacen', 'logistica']:
         return "Acceso denegado", 403
     info_maestro = SystemConfig.query.get('ultima_importacion_maestro')
     ultimos_cambios = MaestroCambioLog.query.order_by(MaestroCambioLog.fecha.desc()).limit(15).all()
@@ -6350,7 +6361,7 @@ def admin_maestro():
                            .filter(MaestroProducto.calidad.isnot(None), MaestroProducto.calidad != '')
                            .distinct().order_by(MaestroProducto.calidad).all()]
 
-    textos_danados = _detalle_textos_con_entidades() if session.get('role') in ['admin', 'almacen'] else []
+    textos_danados = _detalle_textos_con_entidades() if session.get('role') in ['admin', 'almacen', 'logistica'] else []
     return render_template('admin_maestro.html', info_maestro=info_maestro, ultimos_cambios=ultimos_cambios,
                             textos_danados=textos_danados, productos_log=_detalle_productos_log(ultimos_cambios),
                             pagination=pagination, productos=pagination.items, search=search,
@@ -6444,7 +6455,7 @@ def admin_maestro_importar():
     vuelve a leer desde ahí (así no hay que reenviar el Excel ni confiar en datos del navegador)."""
     import traceback
 
-    if session.get('role') not in ['admin', 'almacen']:
+    if session.get('role') not in ['admin', 'almacen', 'logistica']:
         return "Acceso denegado", 403
 
     archivo = request.files.get('archivo_maestro')
@@ -6481,7 +6492,7 @@ def admin_maestro_importar_confirmar():
     archivo (por su token) y recién aquí se escriben los cambios en la base de datos."""
     import traceback
 
-    if session.get('role') not in ['admin', 'almacen']:
+    if session.get('role') not in ['admin', 'almacen', 'logistica']:
         return "Acceso denegado", 403
 
     token = request.form.get('token', '').strip()
@@ -6530,7 +6541,7 @@ def admin_maestro_importar_cancelar():
     """El usuario revisó la vista previa y decidió NO continuar (por ejemplo, porque vio un
     código con un error de tipeo). No se aplicó ningún cambio; solo se borra el archivo
     temporal de la vista previa."""
-    if session.get('role') not in ['admin', 'almacen']:
+    if session.get('role') not in ['admin', 'almacen', 'logistica']:
         return "Acceso denegado", 403
     token = request.form.get('token', '').strip()
     if token:
@@ -6545,7 +6556,7 @@ def admin_maestro_importar_cancelar():
 def admin_maestro_auditoria():
     """Historial de TODOS los cambios de peso que ha hecho el Maestro, con filtro por código
     y por lote (una misma subida de archivo)."""
-    if session.get('role') not in ['admin', 'almacen']:
+    if session.get('role') not in ['admin', 'almacen', 'logistica']:
         return "Acceso denegado", 403
 
     sku_filtro = request.args.get('sku', '').strip()
@@ -6569,7 +6580,7 @@ def api_maestro_codigos_similares():
     """Typeahead: mientras se escribe un código nuevo en 'Nuevo Producto' del Maestro,
     muestra códigos parecidos ya existentes (para evitar duplicados y para ver el patrón
     de nombres que ya se usa en esa familia)."""
-    if session.get('role') not in ['admin', 'almacen']:
+    if session.get('role') not in ['admin', 'almacen', 'logistica']:
         return {'codigos': []}, 403
     q = request.args.get('q', '').strip()
     if len(q) < 2:
@@ -6586,7 +6597,7 @@ def api_maestro_verificar_codigo():
     """Validación en vivo del código mientras se escribe en 'Nuevo Producto' del Maestro:
     dice si ya existe (en el Maestro o en cualquiera de los dos inventarios) para que el
     usuario no lo descubra recién al intentar guardar."""
-    if session.get('role') not in ['admin', 'almacen']:
+    if session.get('role') not in ['admin', 'almacen', 'logistica']:
         return {'existe': False}, 403
     codigo = _limpiar_codigo_maestro(request.args.get('q', ''))
     if not codigo:
@@ -6610,7 +6621,7 @@ def api_maestro_productos_similares():
     productos ya existentes parecidos — para que el usuario revise si lo que está por crear
     no es, en realidad, un producto que ya existe con otro código (misma lógica que ya
     usábamos para esto en Anclajes/ImportBolts, aplicada ahora sobre el catálogo Maestro)."""
-    if session.get('role') not in ['admin', 'almacen']:
+    if session.get('role') not in ['admin', 'almacen', 'logistica']:
         return {'status': 'error'}, 403
     familia = request.form.get('familia', '').strip()
     calidad = request.form.get('calidad', '').strip()
@@ -6654,7 +6665,7 @@ def admin_maestro_nuevo():
     nuevos en el sistema — al guardar, se crea la ficha en el Maestro y se reparte
     automáticamente a Anclajes e ImportBolts (con stock en 0, listo para editar en cada
     inventario y completar ahí Stock Mínimo, Precio y Fotos)."""
-    if session.get('role') not in ['admin', 'almacen']:
+    if session.get('role') not in ['admin', 'almacen', 'logistica']:
         return "Acceso denegado", 403
 
     familias = [c.nombre for c in Category.query.order_by(Category.nombre).all()]
@@ -6913,7 +6924,7 @@ def admin_maestro_editar(sku):
     el cambio se refleja también en Product y ProductImportBolts (si el código existe en esos
     inventarios), y queda auditado en MaestroCambioLog (una fila por cada campo que sí cambió,
     para no arriesgar los VARCHAR(100) de esa tabla con descripciones largas)."""
-    if session.get('role') not in ['admin', 'almacen']:
+    if session.get('role') not in ['admin', 'almacen', 'logistica']:
         return {'status': 'error', 'msg': 'No autorizado'}, 403
 
     sku = sku.strip().upper()
@@ -7104,7 +7115,7 @@ def admin_maestro_imprimir_codigos():
     para los productos del Maestro que el admin/almacén seleccionó con los checkboxes de la
     tabla: una etiqueta por fila, centrada (algo más de media hoja de ancho, ~4 por hoja carta),
     lista para imprimir, recortar y pegar junto a cada producto físico en el almacén."""
-    if session.get('role') not in ['admin', 'almacen']:
+    if session.get('role') not in ['admin', 'almacen', 'logistica']:
         return "Acceso denegado", 403
 
     skus_raw = request.form.get('skus', '')
@@ -7189,7 +7200,7 @@ def nuevo_producto():
     # borrarla, por si algo la sigue llamando directamente.
     return {'status': 'error', 'msg': 'La creación de productos nuevos ahora se hace desde el Maestro de Productos '
                                        '(Gestión de Inventario > Maestro de Productos > Nuevo Producto).'}, 400
-    if session.get('role') not in ['admin', 'almacen']:
+    if session.get('role') not in ['admin', 'almacen', 'logistica']:
         return {'status': 'error', 'msg': 'No autorizado'}, 403
 
     try:
@@ -7355,7 +7366,7 @@ def eliminar_producto(prod_id):
 # --- ACTIVAR Y DESACTIVAR PRODUCTO ---
 @app.route('/producto/toggle_activo/<int:prod_id>', methods=['POST'])
 def toggle_activo_producto(prod_id):
-    if session.get('role') not in ['admin', 'almacen']:
+    if session.get('role') not in ['admin', 'almacen', 'logistica']:
         return {'status': 'error', 'msg': 'No autorizado'}, 403
 
     prod = Product.query.get_or_404(prod_id)
@@ -7372,7 +7383,7 @@ def toggle_activo_producto(prod_id):
 
 @app.route('/producto_importbolts/toggle_activo/<int:prod_id>', methods=['POST'])
 def toggle_activo_producto_importbolts(prod_id):
-    if session.get('role') not in ['admin', 'almacen']:
+    if session.get('role') not in ['admin', 'almacen', 'logistica']:
         return {'status': 'error', 'msg': 'No autorizado'}, 403
 
     prod = ProductImportBolts.query.get_or_404(prod_id)
@@ -7413,8 +7424,8 @@ TIPOS_DOCUMENTO_MOV = {'ORDEN_COMPRA': 'Orden de Compra', 'NOTA_SALIDA': 'Nota d
 MAX_BYTES_DOCUMENTO = 5 * 1024 * 1024
 LIMITE_PETICION_MOVIMIENTO = 17 * 1024 * 1024     # 3 documentos de 5MB + el resto del formulario
 ETAPAS_PROCESO = {'SALIDA_PROCESO': 'Salida a proceso', 'REINGRESO': 'Reingreso', 'SALIDA_FINAL': 'Salida final'}
-ROLES_VEN_DOCUMENTOS_KARDEX = ['admin', 'almacen', 'almacen_visor', 'administracion']
-ROLES_GESTIONAN_PROCESOS = ['admin', 'almacen']
+ROLES_VEN_DOCUMENTOS_KARDEX = ['admin', 'almacen', 'logistica', 'almacen_visor', 'administracion']
+ROLES_GESTIONAN_PROCESOS = ['admin', 'almacen', 'logistica']
 MOTIVO_CONSUMO_INTERNO = 'CONSUMO INTERNO'
 OPCIONES_CONSUMO_INTERNO_INICIALES = ['MEJORA DE INFRAESTRUCTURA', 'MANTENIMIENTO / MEJORA DE MÁQUINAS', 'OTRO']
 _COLUMNAS_MOV_NUEVAS = [('proceso_oc_id', 'INTEGER'), ('etapa_proceso', 'VARCHAR(20)'),
@@ -7845,7 +7856,7 @@ def api_procesos_oc_abiertos():
 
 @app.route('/api/consumo_interno/opciones')
 def api_consumo_interno_opciones():
-    if session.get('role') not in ['admin', 'almacen']:
+    if session.get('role') not in ['admin', 'almacen', 'logistica']:
         return {'opciones': []}, 403
     valores = CatalogoValor.query.filter_by(tipo='CONSUMO_INTERNO', activo=True).all()
     return {'opciones': sorted((v.valor for v in valores), key=_clave_alfabetica)}
@@ -7879,7 +7890,7 @@ def subir_documento_movimiento(origen, mov_id):
     """Adjuntar un documento a un movimiento ya registrado (ej. la guía llegó después)."""
     origen = origen.upper()
     destino = request.referrer or url_for('ver_kardex_importbolts' if origen == 'IMPORTBOLTS' else 'ver_kardex')
-    if session.get('role') not in ['admin', 'almacen'] or origen not in ('ANCLAJES', 'IMPORTBOLTS'):
+    if session.get('role') not in ['admin', 'almacen', 'logistica'] or origen not in ('ANCLAJES', 'IMPORTBOLTS'):
         flash('⛔ No autorizado para adjuntar documentos.')
         return redirect(destino)
     request.max_content_length = LIMITE_PETICION_MOVIMIENTO
@@ -8003,7 +8014,7 @@ def _filtro_kardex_por_oc(query, Modelo):
 
 @app.route('/producto/ajustar_stock', methods=['POST'])
 def ajustar_stock():
-    if session.get('role') not in ['admin', 'almacen']: return "No autorizado", 403
+    if session.get('role') not in ['admin', 'almacen', 'logistica']: return "No autorizado", 403
     # Puede traer hasta 3 documentos de 5MB (Orden de Compra, Nota de Salida, Guía)
     request.max_content_length = LIMITE_PETICION_MOVIMIENTO
 
@@ -8315,7 +8326,7 @@ def ver_kardex():
                            proceso_filtro=proceso_filtro,
                            etapas_proceso=ETAPAS_PROCESO,
                            tipos_doc=TIPOS_DOCUMENTO_MOV,
-                           puede_adjuntar=session.get('role') in ['admin', 'almacen'],
+                           puede_adjuntar=session.get('role') in ['admin', 'almacen', 'logistica'],
                            puede_ver_docs=session.get('role') in ROLES_VEN_DOCUMENTOS_KARDEX)
 
 
@@ -9597,7 +9608,7 @@ def inventario_importbolts():
 
     query = ProductImportBolts.query
 
-    puede_ver_inactivos = session.get('role') in ['admin', 'almacen']
+    puede_ver_inactivos = session.get('role') in ['admin', 'almacen', 'logistica']
 
     if not puede_ver_inactivos:
         query = query.filter(ProductImportBolts.activo.is_(True))
@@ -9723,7 +9734,7 @@ def inventario_importbolts():
 def inventario_importbolts_respaldo():
     """Descarga un respaldo JSON SOLO de ImportBolts (productos + categorías + Kardex +
     fotos), sin borrar nada. Mismo propósito que /inventario/respaldo pero para este inventario."""
-    if session.get('role') not in ['admin', 'almacen']:
+    if session.get('role') not in ['admin', 'almacen', 'logistica']:
         return "Acceso denegado", 403
     backup = _generar_backup_inventario_json('IMPORTBOLTS')
     buffer = io.BytesIO(json.dumps(backup, ensure_ascii=False, default=str).encode('utf-8'))
@@ -9734,7 +9745,7 @@ def inventario_importbolts_respaldo():
 
 @app.route('/producto_importbolts/ajustar_stock', methods=['POST'])
 def ajustar_stock_importbolts():
-    if session.get('role') not in ['admin', 'almacen']: return "No autorizado", 403
+    if session.get('role') not in ['admin', 'almacen', 'logistica']: return "No autorizado", 403
     # Puede traer hasta 3 documentos de 5MB (Orden de Compra, Nota de Salida, Guía)
     request.max_content_length = LIMITE_PETICION_MOVIMIENTO
 
@@ -9894,7 +9905,7 @@ def nuevo_producto_importbolts():
     # Maestro. Se deja gateada en vez de borrarla por si algo la sigue llamando directamente.
     return {'status': 'error', 'msg': 'La creación de productos nuevos ahora se hace desde el Maestro de Productos '
                                        '(Gestión de Inventario > Maestro de Productos > Nuevo Producto).'}, 400
-    if session.get('role') not in ['admin', 'almacen']:
+    if session.get('role') not in ['admin', 'almacen', 'logistica']:
         return {'status': 'error', 'msg': 'No autorizado'}, 403
 
     try:
@@ -10047,7 +10058,7 @@ def exportar_excel_importbolts():
     import gc
     import io
     import pandas as pd
-    if session.get('role') not in ['admin', 'almacen', 'administracion']: return "No autorizado", 403
+    if session.get('role') not in ['admin', 'almacen', 'logistica', 'administracion']: return "No autorizado", 403
     
     productos = db.session.query(
         ProductImportBolts.sku, ProductImportBolts.nombre, ProductImportBolts.categoria, ProductImportBolts.calidad, 
@@ -10092,7 +10103,7 @@ def exportar_excel_importbolts():
 
 @app.route('/categoria_importbolts/nueva', methods=['POST'])
 def nueva_categoria_importbolts():
-    if session.get('role') not in ['admin', 'almacen']: return "No autorizado", 403
+    if session.get('role') not in ['admin', 'almacen', 'logistica']: return "No autorizado", 403
     
     nombre = request.form.get('cat_nombre', '').strip().upper()
     
@@ -10186,7 +10197,7 @@ def preview_minimos_importbolts():
 
 @app.route('/config/minimos_masivos_importbolts', methods=['POST'])
 def actualizar_minimos_masivos_importbolts():
-    if session.get('role') not in ['admin', 'almacen']:
+    if session.get('role') not in ['admin', 'almacen', 'logistica']:
         return {'status': 'error', 'msg': 'No autorizado'}, 403
     data = request.get_json()
     if not data: return {'status': 'error', 'msg': 'No se recibieron datos.'}
@@ -10353,7 +10364,7 @@ def ver_kardex_importbolts():
                            proceso_filtro=proceso_filtro,
                            etapas_proceso=ETAPAS_PROCESO,
                            tipos_doc=TIPOS_DOCUMENTO_MOV,
-                           puede_adjuntar=session.get('role') in ['admin', 'almacen'],
+                           puede_adjuntar=session.get('role') in ['admin', 'almacen', 'logistica'],
                            puede_ver_docs=session.get('role') in ROLES_VEN_DOCUMENTOS_KARDEX)
 
 
@@ -10495,7 +10506,7 @@ def _ordenar_lista_rotacion(lista, orden):
 @app.route('/reportes/rotacion_stock')
 def rotacion_stock():
     if session.get('user_id') is None: return redirect(url_for('login'))
-    if session.get('role') not in ['admin', 'almacen', 'administracion', 'vendedor']:
+    if session.get('role') not in ['admin', 'almacen', 'logistica', 'administracion', 'vendedor']:
         return "Acceso denegado", 403
 
     origen_filtro = request.args.get('origen', 'todos')
@@ -10610,7 +10621,7 @@ def rotacion_stock():
 @app.route('/reportes/rotacion_stock/exportar')
 def exportar_rotacion_stock():
     import gc
-    if session.get('role') not in ['admin', 'almacen', 'administracion']:
+    if session.get('role') not in ['admin', 'almacen', 'logistica', 'administracion']:
         return "No autorizado", 403
 
     origen_filtro = request.args.get('origen', 'todos')
@@ -10682,7 +10693,7 @@ def inventario_general():
 
     resultados = []
 
-    puede_ver_inactivos = session.get('role') in ['admin', 'almacen']
+    puede_ver_inactivos = session.get('role') in ['admin', 'almacen', 'logistica']
     if not puede_ver_inactivos:
         estado_activo = 'activos'
 
@@ -11146,7 +11157,7 @@ def ver_foto_producto(foto_id):
 
 @app.route('/api/producto/<int:product_id>/subir_foto', methods=['POST'])
 def subir_foto_producto(product_id):
-    if session.get('role') not in ['admin', 'almacen']:
+    if session.get('role') not in ['admin', 'almacen', 'logistica']:
         return {'status': 'error', 'msg': 'No autorizado'}, 403
 
     origen = request.form.get('origen', 'ANCLAJES')
@@ -11231,7 +11242,7 @@ def subir_foto_producto(product_id):
 
 @app.route('/api/foto/<int:foto_id>/eliminar', methods=['POST'])
 def eliminar_foto_producto(foto_id):
-    if session.get('role') not in ['admin', 'almacen']:
+    if session.get('role') not in ['admin', 'almacen', 'logistica']:
         return {'status': 'error', 'msg': 'No autorizado'}, 403
 
     foto = ProductImage.query.get_or_404(foto_id)
@@ -11418,7 +11429,7 @@ def listar_motivos_movimiento(tipo):
 
 @app.route('/api/motivos_movimiento/nuevo', methods=['POST'])
 def crear_motivo_movimiento():
-    if session.get('role') not in ['admin', 'almacen']:
+    if session.get('role') not in ['admin', 'almacen', 'logistica']:
         return {'status': 'error', 'msg': 'No autorizado para agregar motivos'}, 403
 
     nombre = request.form.get('nombre', '').strip().upper()
@@ -11445,7 +11456,7 @@ def listar_presentaciones():
 
 @app.route('/api/presentaciones/nueva', methods=['POST'])
 def crear_presentacion():
-    if session.get('role') not in ['admin', 'almacen']:
+    if session.get('role') not in ['admin', 'almacen', 'logistica']:
         return {'status': 'error', 'msg': 'No autorizado para agregar presentaciones'}, 403
 
     nombre = request.form.get('nombre', '').strip().upper()
@@ -11515,7 +11526,7 @@ def listar_proveedores_guardados():
 
 @app.route('/reporte_precios_proveedores')
 def reporte_precios_proveedores():
-    if session.get('role') not in ['admin', 'administracion', 'almacen']:
+    if session.get('role') not in ['admin', 'administracion', 'almacen', 'logistica']:
         return "Acceso denegado", 403
 
     origen = request.args.get('origen', 'ANCLAJES')
@@ -11761,7 +11772,7 @@ def auditoria_api_verificar_duplicado(origen):
 @app.route('/api/catalogo/<tipo>')
 def api_catalogo_valores(tipo):
     # 'almacen' también: Editar Producto usa los mismos Anaqueles/Casilleros para la ubicación
-    if session.get('role') not in ['auditor_stock', 'admin', 'administracion', 'almacen']: return {'valores': []}, 403
+    if session.get('role') not in ['auditor_stock', 'admin', 'administracion', 'almacen', 'logistica']: return {'valores': []}, 403
     tipo = tipo.upper()
     valores_q = CatalogoValor.query.filter_by(tipo=tipo, activo=True).all()
     valores = sorted(valores_q, key=lambda v: orden_natural_ubicacion(v.valor))
@@ -12462,7 +12473,7 @@ def admin_auditoria_resolver_correccion(reg_id):
 # ============================================
 @app.route('/admin/catalogos')
 def admin_catalogos():
-    if session.get('role') not in ['admin', 'almacen']: return "Acceso denegado", 403
+    if session.get('role') not in ['admin', 'almacen', 'logistica']: return "Acceso denegado", 403
     tipos = ['ESTADO_FISICO', 'UNIDAD_MEDIDA', 'ANAQUEL', 'NICHO', 'CONSUMO_INTERNO']
     catalogos = {}
     for t in tipos:
@@ -12530,7 +12541,7 @@ def _texto_motivo_nuevo(texto, origen, destino):
 
 @app.route('/admin/motivos/<int:motivo_id>/reasignar', methods=['POST'])
 def admin_motivo_reasignar(motivo_id):
-    if session.get('role') not in ['admin', 'almacen']: return {'status': 'error', 'msg': 'No autorizado'}, 403
+    if session.get('role') not in ['admin', 'almacen', 'logistica']: return {'status': 'error', 'msg': 'No autorizado'}, 403
     origen = MotivoMovimiento.query.get_or_404(motivo_id)
     destino = MotivoMovimiento.query.get(request.form.get('destino_id', type=int) or 0)
     eliminar = request.form.get('eliminar_origen') == '1'
@@ -12623,7 +12634,7 @@ def _productos_con_estado(clave):
 
 @app.route('/admin/catalogos/estado/productos')
 def admin_catalogo_estado_productos():
-    if session.get('role') not in ['admin', 'almacen']: return {'status': 'error', 'msg': 'No autorizado'}, 403
+    if session.get('role') not in ['admin', 'almacen', 'logistica']: return {'status': 'error', 'msg': 'No autorizado'}, 403
     clave = _normalizar_estado_producto(request.args.get('valor', ''))
     if not clave:
         return {'status': 'error', 'msg': 'Para BUEN ESTADO (OK) no se listan productos (son la mayoría).'}
@@ -12638,7 +12649,7 @@ def admin_catalogo_estado_productos():
 def admin_catalogo_estado_reasignar():
     """Pasa productos de un estado a otro de la lista. Sin 'claves' pasa TODOS los de ese estado.
     Con eliminar_origen=1, después borra ese estado del catálogo (si ya nadie lo usa)."""
-    if session.get('role') not in ['admin', 'almacen']: return {'status': 'error', 'msg': 'No autorizado'}, 403
+    if session.get('role') not in ['admin', 'almacen', 'logistica']: return {'status': 'error', 'msg': 'No autorizado'}, 403
     origen = _normalizar_estado_producto(request.form.get('origen', ''))
     destino = _normalizar_estado_producto(request.form.get('destino', ''))
     claves = set(request.form.getlist('claves'))
@@ -12686,7 +12697,7 @@ def admin_catalogo_estado_reasignar():
 @app.route('/admin/catalogos/estado/<int:val_id>/renombrar', methods=['POST'])
 def admin_catalogo_estado_renombrar(val_id):
     """Corrige cómo está escrito un estado del catálogo y lo cambia también en los productos que lo usan."""
-    if session.get('role') not in ['admin', 'almacen']: return {'status': 'error', 'msg': 'No autorizado'}, 403
+    if session.get('role') not in ['admin', 'almacen', 'logistica']: return {'status': 'error', 'msg': 'No autorizado'}, 403
     v = CatalogoValor.query.get_or_404(val_id)
     if v.tipo != 'ESTADO_FISICO':
         return {'status': 'error', 'msg': 'Solo se pueden renombrar estados físicos.'}
@@ -12718,7 +12729,7 @@ def admin_catalogo_estado_renombrar(val_id):
 
 @app.route('/admin/catalogos/fotos_auditoria/toggle', methods=['POST'])
 def admin_catalogos_fotos_toggle():
-    if session.get('role') not in ['admin', 'almacen']: return {'status': 'error', 'msg': 'No autorizado'}, 403
+    if session.get('role') not in ['admin', 'almacen', 'logistica']: return {'status': 'error', 'msg': 'No autorizado'}, 403
     activar = request.form.get('activo') == '1'
     cfg = SystemConfig.query.get('auditoria_fotos_obligatorias')
     if not cfg:
@@ -12733,7 +12744,7 @@ def admin_catalogos_fotos_toggle():
 
 @app.route('/admin/catalogos/valor/nuevo', methods=['POST'])
 def admin_catalogo_valor_nuevo():
-    if session.get('role') not in ['admin', 'almacen']: return {'status': 'error', 'msg': 'No autorizado'}, 403
+    if session.get('role') not in ['admin', 'almacen', 'logistica']: return {'status': 'error', 'msg': 'No autorizado'}, 403
     tipo = request.form.get('tipo', '').strip().upper()
     valor = ' '.join(request.form.get('valor', '').split()).upper()
 
@@ -12755,7 +12766,7 @@ def admin_catalogo_valor_nuevo():
 
 @app.route('/admin/catalogos/valor/<int:val_id>/toggle', methods=['POST'])
 def admin_catalogo_valor_toggle(val_id):
-    if session.get('role') not in ['admin', 'almacen']: return {'status': 'error'}, 403
+    if session.get('role') not in ['admin', 'almacen', 'logistica']: return {'status': 'error'}, 403
     v = CatalogoValor.query.get_or_404(val_id)
     v.activo = not v.activo
     registrar_log(f"{'Activó' if v.activo else 'Desactivó'} '{v.valor}' del catálogo {v.tipo}", "bi-tag-fill", "text-info")
@@ -12765,7 +12776,7 @@ def admin_catalogo_valor_toggle(val_id):
 
 @app.route('/admin/catalogos/valor/<int:val_id>/eliminar', methods=['POST'])
 def admin_catalogo_valor_eliminar(val_id):
-    if session.get('role') not in ['admin', 'almacen']: return {'status': 'error', 'msg': 'No autorizado'}, 403
+    if session.get('role') not in ['admin', 'almacen', 'logistica']: return {'status': 'error', 'msg': 'No autorizado'}, 403
     v = CatalogoValor.query.get_or_404(val_id)
 
     if v.es_predeterminado:
@@ -12793,7 +12804,7 @@ def admin_catalogo_valor_eliminar(val_id):
 def admin_motivo_etapa_oc(motivo_id):
     """Qué hace el motivo en el proceso por OC: INICIO (salida que crea/usa una OC), REINGRESO (entrada que
     vuelve a una OC) o nada. Solo cambia lo que se pide de aquí en adelante; el historial no se toca."""
-    if session.get('role') not in ['admin', 'almacen']:
+    if session.get('role') not in ['admin', 'almacen', 'logistica']:
         return {'status': 'error', 'msg': 'No autorizado'}, 403
     m = MotivoMovimiento.query.get_or_404(motivo_id)
     etapa = (request.form.get('etapa_oc') or '').upper() or None
@@ -12808,7 +12819,7 @@ def admin_motivo_etapa_oc(motivo_id):
 
 @app.route('/admin/motivos/<int:motivo_id>/editar', methods=['POST'])
 def admin_motivo_editar(motivo_id):
-    if session.get('role') not in ['admin', 'almacen']: return {'status': 'error', 'msg': 'No autorizado'}, 403
+    if session.get('role') not in ['admin', 'almacen', 'logistica']: return {'status': 'error', 'msg': 'No autorizado'}, 403
     m = MotivoMovimiento.query.get_or_404(motivo_id)
     nombre_nuevo = request.form.get('nombre', '').strip().upper()
     if not nombre_nuevo:
@@ -12831,7 +12842,7 @@ def admin_motivo_editar(motivo_id):
 
 @app.route('/admin/motivos/<int:motivo_id>/toggle', methods=['POST'])
 def admin_motivo_toggle(motivo_id):
-    if session.get('role') not in ['admin', 'almacen']: return {'status': 'error'}, 403
+    if session.get('role') not in ['admin', 'almacen', 'logistica']: return {'status': 'error'}, 403
     m = MotivoMovimiento.query.get_or_404(motivo_id)
     m.activo = not m.activo
     registrar_log(f"{'Activó' if m.activo else 'Desactivó'} el motivo '{m.nombre}' ({m.tipo})", "bi-tag-fill", "text-info")
@@ -12841,7 +12852,7 @@ def admin_motivo_toggle(motivo_id):
 
 @app.route('/admin/motivos/<int:motivo_id>/eliminar', methods=['POST'])
 def admin_motivo_eliminar(motivo_id):
-    if session.get('role') not in ['admin', 'almacen']: return {'status': 'error', 'msg': 'No autorizado'}, 403
+    if session.get('role') not in ['admin', 'almacen', 'logistica']: return {'status': 'error', 'msg': 'No autorizado'}, 403
     m = MotivoMovimiento.query.get_or_404(motivo_id)
     if m.es_predeterminado and session.get('role') != 'admin':
         return {'status': 'error', 'msg': 'Este motivo es predeterminado del sistema: solo Gerencia puede eliminarlo. Puede desactivarlo en su lugar.'}
@@ -12859,7 +12870,7 @@ def admin_motivo_eliminar(motivo_id):
 
 @app.route('/admin/presentaciones/<int:pres_id>/editar', methods=['POST'])
 def admin_presentacion_editar(pres_id):
-    if session.get('role') not in ['admin', 'almacen']: return {'status': 'error', 'msg': 'No autorizado'}, 403
+    if session.get('role') not in ['admin', 'almacen', 'logistica']: return {'status': 'error', 'msg': 'No autorizado'}, 403
     p = Presentacion.query.get_or_404(pres_id)
     nombre_nuevo = request.form.get('nombre', '').strip().upper()
     if not nombre_nuevo:
@@ -12881,7 +12892,7 @@ def admin_presentacion_editar(pres_id):
 
 @app.route('/admin/presentaciones/<int:pres_id>/toggle', methods=['POST'])
 def admin_presentacion_toggle(pres_id):
-    if session.get('role') not in ['admin', 'almacen']: return {'status': 'error'}, 403
+    if session.get('role') not in ['admin', 'almacen', 'logistica']: return {'status': 'error'}, 403
     p = Presentacion.query.get_or_404(pres_id)
     p.activo = not p.activo
     registrar_log(f"{'Activó' if p.activo else 'Desactivó'} la presentación '{p.nombre}'", "bi-tag-fill", "text-info")
@@ -12891,7 +12902,7 @@ def admin_presentacion_toggle(pres_id):
 
 @app.route('/admin/presentaciones/<int:pres_id>/eliminar', methods=['POST'])
 def admin_presentacion_eliminar(pres_id):
-    if session.get('role') not in ['admin', 'almacen']: return {'status': 'error', 'msg': 'No autorizado'}, 403
+    if session.get('role') not in ['admin', 'almacen', 'logistica']: return {'status': 'error', 'msg': 'No autorizado'}, 403
     p = Presentacion.query.get_or_404(pres_id)
     if p.es_predeterminado:
         return {'status': 'error', 'msg': 'Esta presentación es predeterminada del sistema y no se puede eliminar. Puede desactivarla en su lugar.'}
@@ -12906,7 +12917,7 @@ def admin_presentacion_eliminar(pres_id):
 
 @app.route('/admin/catalogos/campo/nuevo', methods=['POST'])
 def admin_campo_personalizado_nuevo():
-    if session.get('role') not in ['admin', 'almacen']: return {'status': 'error', 'msg': 'No autorizado'}, 403
+    if session.get('role') not in ['admin', 'almacen', 'logistica']: return {'status': 'error', 'msg': 'No autorizado'}, 403
     etiqueta = request.form.get('etiqueta', '').strip()
     tipo_campo = request.form.get('tipo_campo', 'TEXTO').strip().upper()
 
@@ -12943,7 +12954,7 @@ def admin_campo_personalizado_nuevo():
 
 @app.route('/admin/catalogos/campo/<int:campo_id>/opcion/nueva', methods=['POST'])
 def admin_campo_opcion_nueva(campo_id):
-    if session.get('role') not in ['admin', 'almacen']: return {'status': 'error', 'msg': 'No autorizado'}, 403
+    if session.get('role') not in ['admin', 'almacen', 'logistica']: return {'status': 'error', 'msg': 'No autorizado'}, 403
     campo = CampoPersonalizado.query.get_or_404(campo_id)
     valor = request.form.get('valor', '').strip()
 
@@ -12960,7 +12971,7 @@ def admin_campo_opcion_nueva(campo_id):
 
 @app.route('/admin/catalogos/campo/<int:campo_id>/toggle', methods=['POST'])
 def admin_campo_toggle(campo_id):
-    if session.get('role') not in ['admin', 'almacen']: return {'status': 'error'}, 403
+    if session.get('role') not in ['admin', 'almacen', 'logistica']: return {'status': 'error'}, 403
     campo = CampoPersonalizado.query.get_or_404(campo_id)
     campo.activo = not campo.activo
     registrar_log(f"{'Activó' if campo.activo else 'Desactivó'} campo personalizado '{campo.etiqueta}'", "bi-input-cursor-text", "text-info")
@@ -12973,7 +12984,7 @@ def admin_campo_toggle(campo_id):
 
 @app.route('/admin/catalogos/campo/<int:campo_id>/editar', methods=['POST'])
 def admin_campo_editar(campo_id):
-    if session.get('role') not in ['admin', 'almacen']: return {'status': 'error', 'msg': 'No autorizado'}, 403
+    if session.get('role') not in ['admin', 'almacen', 'logistica']: return {'status': 'error', 'msg': 'No autorizado'}, 403
     campo = CampoPersonalizado.query.get_or_404(campo_id)
     nueva_etiqueta = request.form.get('etiqueta', '').strip()
 
@@ -12995,7 +13006,7 @@ def admin_campo_editar(campo_id):
 
 @app.route('/admin/catalogos/campo/<int:campo_id>/eliminar', methods=['POST'])
 def admin_campo_eliminar(campo_id):
-    if session.get('role') not in ['admin', 'almacen']: return {'status': 'error', 'msg': 'No autorizado'}, 403
+    if session.get('role') not in ['admin', 'almacen', 'logistica']: return {'status': 'error', 'msg': 'No autorizado'}, 403
     campo = CampoPersonalizado.query.get_or_404(campo_id)
 
     en_uso = RegistroAuditoriaValorExtra.query.filter_by(campo_id=campo.id).count()
@@ -13010,7 +13021,7 @@ def admin_campo_eliminar(campo_id):
 
 @app.route('/admin/catalogos/opcion/<int:opcion_id>/editar', methods=['POST'])
 def admin_opcion_editar(opcion_id):
-    if session.get('role') not in ['admin', 'almacen']: return {'status': 'error', 'msg': 'No autorizado'}, 403
+    if session.get('role') not in ['admin', 'almacen', 'logistica']: return {'status': 'error', 'msg': 'No autorizado'}, 403
     opcion = CampoPersonalizadoOpcion.query.get_or_404(opcion_id)
     nuevo_valor = request.form.get('valor', '').strip()
 
@@ -13032,7 +13043,7 @@ def admin_opcion_editar(opcion_id):
 
 @app.route('/admin/catalogos/opcion/<int:opcion_id>/eliminar', methods=['POST'])
 def admin_opcion_eliminar(opcion_id):
-    if session.get('role') not in ['admin', 'almacen']: return {'status': 'error', 'msg': 'No autorizado'}, 403
+    if session.get('role') not in ['admin', 'almacen', 'logistica']: return {'status': 'error', 'msg': 'No autorizado'}, 403
     opcion = CampoPersonalizadoOpcion.query.get_or_404(opcion_id)
     db.session.delete(opcion)
     db.session.commit()
@@ -13042,7 +13053,7 @@ def admin_opcion_eliminar(opcion_id):
 @app.route('/admin/catalogos/campos_listado')
 def admin_campos_listado_parcial():
     """Devuelve el HTML actualizado de la tabla de campos (para refrescar sin recargar la página)."""
-    if session.get('role') not in ['admin', 'almacen']: return {'status': 'error'}, 403
+    if session.get('role') not in ['admin', 'almacen', 'logistica']: return {'status': 'error'}, 403
     campo = CampoPersonalizado.query.get_or_404(request.args.get('id'))
     return {'status': 'success', 'opciones': [{'id': o.id, 'valor': o.valor} for o in campo.opciones]}
 
@@ -14239,6 +14250,11 @@ def _es_superadmin():
 # Los catálogos de configuración (motivo_movimiento, presentacion, catalogo_valor,
 # campo_personalizado/opcion, system_config) NO están aquí a propósito: no se borran.
 TABLAS_RESET_ORDEN = [
+    ('orden_compra_documento', OrdenCompraDocumento),   # órdenes de compra: hijas primero
+    ('orden_compra_evento', OrdenCompraEvento),
+    ('orden_compra_item', OrdenCompraItem),
+    ('orden_compra', OrdenCompra),
+    ('oc_proveedor', OCProveedor),
     ('insumo_documento', InsumoDocumento),          # insumos internos: hijos primero
     ('insumo_movimiento', InsumoMovimiento),
     ('insumo_salida_detalle', InsumoSalidaDetalle),
@@ -14335,6 +14351,12 @@ TABLAS_TODAS_ORDEN = [
     ('insumo_salida_detalle', InsumoSalidaDetalle),
     ('insumo_movimiento', InsumoMovimiento),
     ('insumo_documento', InsumoDocumento),
+    ('oc_proveedor', OCProveedor),
+    ('orden_compra', OrdenCompra),
+    ('orden_compra_item', OrdenCompraItem),
+    ('orden_compra_evento', OrdenCompraEvento),
+    ('orden_compra_documento', OrdenCompraDocumento),
+    ('oc_config', OCConfig),
 ]
 
 
@@ -14355,6 +14377,11 @@ def _asegurar_tablas_correccion_seguro():
     except Exception:
         db.session.rollback()
         app.logger.exception("No se pudieron verificar las tablas de Insumos")
+    try:
+        _asegurar_oc()
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("No se pudieron verificar las tablas de Órdenes de Compra")
 
 
 def _fila_a_dict(obj):
@@ -15565,8 +15592,8 @@ EMPRESAS_INSUMOS = {
     'ANCLAJES': {'nombre': 'Anclajes y Pernos SAC', 'corto': 'Anclajes', 'logo': 'logo.png', 'color': '#0B3D91'},
     'IMPORTBOLTS': {'nombre': 'Import Bolts SAC', 'corto': 'Import Bolts', 'logo': 'logo_import.png', 'color': '#004b87'},
 }
-ROLES_INSUMOS_EDITAN = ['admin', 'almacen']
-ROLES_INSUMOS_VEN = ['admin', 'almacen', 'administracion']
+ROLES_INSUMOS_EDITAN = ['admin', 'almacen', 'logistica']
+ROLES_INSUMOS_VEN = ['admin', 'almacen', 'logistica', 'administracion']
 CATALOGOS_INSUMOS = {'INSUMO_CATEGORIA': 'Categorías', 'INSUMO_UNIDAD': 'Unidades de medida',
                      'INSUMO_MOTIVO': 'Necesario para (motivos)', 'INSUMO_ALMACEN': 'Almacenes / ubicaciones'}
 _INSUMOS_INICIALES = {
@@ -15787,7 +15814,8 @@ def insumos_inventario():
     return render_template('insumos_inventario.html', empresa=empresa, empresas=EMPRESAS_INSUMOS, filas=filas, kpi=kpi,
                            q=q, categoria=categoria, bajo=bajo, ver=ver, categorias=_categorias_insumos(),
                            almacenes=_catalogo_insumos('INSUMO_ALMACEN'), puede_editar=session.get('role') in ROLES_INSUMOS_EDITAN,
-                           puede_ajustar=session.get('role') == 'admin', seccion='inventario')
+                           puede_ajustar=session.get('role') == 'admin', oc_pendientes=_ordenes_pendientes_insumos() if _oc_ok else [],
+                           seccion='inventario')
 
 
 @app.route('/insumos/stock/<int:insumo_id>/<empresa>', methods=['POST'])
@@ -15905,6 +15933,7 @@ def _datos_proveedor_ingreso(f):
                  direccion=_limpio(sunat.direccion, 250))
     elif f.get('sin_ruc') == '1':
         d['insumo_proveedor_id'] = None
+        d['ruc'] = re.sub(r'\D', '', f.get('ruc_manual') or '')[:20]      # solo viene lleno desde una Orden de Compra
         if len(d['razon_social']) < 3:
             return None, 'Escribe el nombre del proveedor (compra sin RUC).'
     else:
@@ -15983,11 +16012,57 @@ def insumos_api_proveedores():
 
 
 # ---------------------------- INGRESOS ----------------------------
+def _oc_pendiente_insumos(oc_id):
+    """Orden de compra CONFORME, con destino Insumos y todavía sin ingresar. None si no aplica."""
+    try:
+        o = OrdenCompra.query.get(int(oc_id)) if oc_id else None
+    except (TypeError, ValueError):
+        return None
+    if o and o.estado == 'CONFORME' and o.destino == 'INSUMOS' and not o.insumo_ingreso_id:
+        return o
+    return None
+
+
+def _ordenes_pendientes_insumos():
+    try:
+        return OrdenCompra.query.filter(OrdenCompra.estado == 'CONFORME', OrdenCompra.destino == 'INSUMOS',
+                                        OrdenCompra.insumo_ingreso_id.is_(None)).order_by(OrdenCompra.fecha_conforme).all()
+    except Exception:
+        db.session.rollback()
+        return []
+
+
+def _prefill_ingreso_desde_oc(o):
+    """Datos de la OC para llenar el ingreso de insumos (proveedor, factura, fecha de llegada, ítems y precios con IGV)."""
+    guardado = InsumoProveedor.query.filter(InsumoProveedor.ruc == o.ruc).first() if o.ruc else None
+    sunat = Proveedor.query.filter_by(documento=o.ruc).first() if o.ruc and not guardado else None
+    if guardado:
+        prov = {'modo': 'guardado', 'id': guardado.id, 'ruc': guardado.ruc or '', 'razon_social': guardado.razon_social,
+                'direccion': guardado.direccion or '', 'contacto_nombre': o.contacto or guardado.contacto_nombre or '',
+                'contacto_telefono': o.telefono or guardado.contacto_telefono or ''}
+    elif sunat:
+        prov = {'modo': 'sunat', 'proveedor_id': sunat.id, 'ruc': sunat.documento, 'razon_social': sunat.razon_social,
+                'direccion': sunat.direccion or '', 'telefono': o.telefono or ''}
+    else:
+        prov = {'modo': 'manual', 'ruc': o.ruc or '', 'razon_social': o.razon_social, 'direccion': o.direccion or ''}
+    prov.setdefault('contacto_nombre', o.contacto or '')
+    prov.setdefault('contacto_telefono', o.telefono or '')
+    items = [{'insumo_id': it.insumo_id or '', 'descripcion': it.descripcion, 'um': it.um, 'cantidad': it.cantidad,
+              'precio_unitario': round(it.precio_unitario * (1 + IGV_OC), 4) if o.moneda == 'PEN' else ''} for it in o.items]
+    return {'oc_id': o.id, 'codigo': _oc_codigo(o), 'fecha': (o.fecha_llegada or o.fecha_conforme or hora_peru()).date().isoformat(),
+            'numero_factura': o.numero_factura or '', 'moneda': o.moneda, 'proveedor': prov, 'items': items}
+
+
 @app.route('/insumos/ingreso/nuevo')
 @_ruta_insumos(editar=True)
 def insumos_ingreso_nuevo():
     empresa = _empresa_param()
-    return render_template('insumos_ingreso_form.html', empresa=empresa, empresas=EMPRESAS_INSUMOS,
+    _asegurar_oc()
+    oc = _oc_pendiente_insumos(request.args.get('oc'))
+    if request.args.get('oc') and not oc:
+        flash('Esa orden de compra ya fue ingresada o todavía no está conforme.')
+    return render_template('insumos_ingreso_form.html', empresa='ANCLAJES' if oc else empresa, empresas=EMPRESAS_INSUMOS,
+                           oc_prefill=_prefill_ingreso_desde_oc(oc) if oc else None, oc_pendientes=_ordenes_pendientes_insumos(),
                            insumos_json={e: _datos_formulario_insumos(e) for e in EMPRESAS_INSUMOS},
                            categorias=_catalogo_insumos('INSUMO_CATEGORIA'), unidades=_catalogo_insumos('INSUMO_UNIDAD'),
                            categorias_filtro=_categorias_insumos(),
@@ -15999,7 +16074,14 @@ def insumos_ingreso_nuevo():
 def insumos_ingreso_guardar():
     request.max_content_length = LIMITE_PETICION_MOVIMIENTO
     f = request.form
-    volver = url_for('insumos_ingreso_nuevo', empresa=f.get('empresa'))
+    volver = url_for('insumos_ingreso_nuevo', empresa=f.get('empresa'), oc=f.get('oc_id') or None)
+    orden_oc = None
+    if f.get('oc_id'):
+        _asegurar_oc()
+        orden_oc = _oc_pendiente_insumos(f.get('oc_id'))
+        if not orden_oc:
+            flash('⛔ Esa orden de compra ya fue ingresada o no está conforme.')
+            return redirect(url_for('insumos_ingreso_nuevo'))
     empresa = (f.get('empresa') or '').upper()
     if empresa not in EMPRESAS_INSUMOS:
         flash('⛔ Elige la empresa del ingreso.')
@@ -16093,6 +16175,10 @@ def insumos_ingreso_guardar():
                 fecha_registro=ahora))
         for tipo, a, info in archivos:
             _subir_doc_insumo(f"{empresa.lower()}/ingresos/{ing.id}", a, info, tipo, claves, ingreso_id=ing.id)
+        if orden_oc:
+            orden_oc.insumo_ingreso_id = ing.id
+            ing.observacion = (f"{_oc_codigo(orden_oc)}" + (f" · {ing.observacion}" if ing.observacion else ''))[:300]
+            _oc_evento(orden_oc, 'INSUMOS', f"Ingresado en Insumos internos (ingreso #{ing.id}, {EMPRESAS_INSUMOS[empresa]['corto']})")
         registrar_log(f"Ingreso de insumos {EMPRESAS_INSUMOS[empresa]['corto']} #{ing.id} ({ref}, {len(items)} ítem(s), S/ {ing.total:,.2f})",
                       'bi-box-arrow-in-down', 'text-success')
         db.session.commit()
@@ -16195,6 +16281,12 @@ def insumos_ingreso_anular(ingreso_id):
             costo_prom_despues=st.costo_promedio, referencia=f'Anulación ingreso #{ing.id}', ingreso_id=ing.id,
             observacion=motivo, user_id=session.get('user_id'), fecha_registro=ahora))
     ing.estado, ing.anulado_por, ing.fecha_anulacion, ing.motivo_anulacion = 'ANULADO', session.get('nombre', ''), ahora, motivo
+    try:
+        for o in OrdenCompra.query.filter(OrdenCompra.insumo_ingreso_id == ing.id).all():
+            o.insumo_ingreso_id = None
+            _oc_evento(o, 'INSUMOS', f"Se anuló el ingreso #{ing.id} en Insumos: la orden vuelve a quedar pendiente de ingresar")
+    except Exception:
+        app.logger.exception("No se pudo liberar la OC del ingreso anulado")
     registrar_log(f"Anuló el ingreso de insumos #{ing.id}: {motivo}", 'bi-x-octagon', 'text-danger')
     db.session.commit()
     flash('Ingreso anulado: el stock y el costo promedio se revirtieron.')
@@ -17008,6 +17100,11 @@ def insumos_vaciar():
     claves += [x.firma_s3_key for x in InsumoSalida.query.filter(InsumoSalida.firma_s3_key.isnot(None)).all()]
     resumen = {'ingresos': InsumoIngreso.query.count(), 'salidas': InsumoSalida.query.count()}
     try:
+        try:
+            OrdenCompra.query.filter(OrdenCompra.insumo_ingreso_id.isnot(None)).update({'insumo_ingreso_id': None}, synchronize_session=False)
+        except Exception:
+            db.session.rollback()
+            app.logger.exception("No se pudo soltar las OC de los ingresos de insumos")
         for modelo in (InsumoDocumento, InsumoMovimiento, InsumoSalidaDetalle, InsumoSalida, InsumoIngresoDetalle, InsumoIngreso, InsumoStock):
             modelo.query.delete(synchronize_session=False)
         if maestro:
@@ -17038,6 +17135,1118 @@ def insumos_vaciar():
     flash(f'✅ Módulo de insumos vaciado: {resumen["ingresos"]} ingreso(s), {resumen["salidas"]} salida(s) y {len(claves)} archivo(s) '
           f'(PDF/fotos/firmas) borrados{", además: " + ", ".join(extra) if extra else ""}.')
     return redirect(destino)
+
+
+# =====================================================================================
+# ÓRDENES DE COMPRA (OC) Y ÓRDENES DE SERVICIO (OS) — módulo de Logística
+# Flujo:  BORRADOR (Logística la arma; PDF con "PENDIENTE DE APROBACIÓN")
+#         -> ENVIADA a Gerencia -> APROBADA (el PDF lleva firma y sello) / RECHAZADA (el PDF dice RECHAZADA)
+#         -> RECIBIDA (Logística registra la llegada + guía/factura) -> CONFORME (check verde: estado,
+#            cantidad y documentos OK) -> queda en "Conformes / en almacén".
+#         Se puede ANULAR (con motivo) mientras el material no haya llegado. La numeración es correlativa
+#         por tipo (OC N° 000001, OS N° 000001) y un número anulado no se reutiliza.
+# Precios: se ingresan SIN IGV; el sistema calcula IGV 18% y el total.
+# Las tablas se crean solas al arrancar (no hace falta ninguna ruta /fix_).
+# =====================================================================================
+ROLES_OC_EDITAN = ['admin', 'logistica']
+ROLES_OC_VEN = ['admin', 'logistica', 'administracion', 'almacen']
+ROLES_OC_APRUEBAN = ['admin']
+IGV_OC = 0.18
+TIPOS_OC = {'OC': 'Orden de Compra', 'OS': 'Orden de Servicio'}
+DESTINOS_OC = {'GENERAL': 'Inventario General', 'INSUMOS': 'Insumos internos'}
+MONEDAS_OC = {'PEN': {'simbolo': 'S/', 'nombre': 'Soles', 'letras': ('SOL', 'SOLES')},
+              'USD': {'simbolo': 'US$', 'nombre': 'Dólares', 'letras': ('DÓLAR AMERICANO', 'DÓLARES AMERICANOS')}}
+ESTADOS_OC = {
+    'BORRADOR': {'txt': 'Borrador', 'color': '#64748b', 'fondo': '#f1f5f9', 'icono': 'bi-pencil-square'},
+    'ENVIADA': {'txt': 'Por aprobar', 'color': '#b45309', 'fondo': '#fffbeb', 'icono': 'bi-hourglass-split'},
+    'APROBADA': {'txt': 'Aprobada · por recibir', 'color': '#1d4ed8', 'fondo': '#eff6ff', 'icono': 'bi-patch-check'},
+    'RECHAZADA': {'txt': 'Rechazada', 'color': '#b91c1c', 'fondo': '#fef2f2', 'icono': 'bi-x-octagon'},
+    'ANULADA': {'txt': 'Anulada', 'color': '#334155', 'fondo': '#e2e8f0', 'icono': 'bi-slash-circle'},
+    'RECIBIDA': {'txt': 'Recibida · en revisión', 'color': '#0e7490', 'fondo': '#ecfeff', 'icono': 'bi-box-seam'},
+    'CONFORME': {'txt': 'Conforme · en almacén', 'color': '#15803d', 'fondo': '#f0fdf4', 'icono': 'bi-check-circle-fill'},
+}
+VISTAS_OC = {
+    'curso': ('En curso', ['BORRADOR', 'ENVIADA', 'APROBADA', 'RECIBIDA']),
+    'aprobar': ('Por aprobar', ['ENVIADA']),
+    'recibir': ('Por recibir', ['APROBADA', 'RECIBIDA']),
+    'conformes': ('Conformes / en almacén', ['CONFORME']),
+    'cerradas': ('Rechazadas y anuladas', ['RECHAZADA', 'ANULADA']),
+    'todas': ('Todas', list(ESTADOS_OC)),
+}
+CATALOGOS_OC = {'OC_UM': 'Unidades de medida (U.M.)', 'OC_CONDICION_PAGO': 'Condiciones de pago'}
+_OC_INICIALES = {
+    'OC_UM': ['UN', 'PZA', 'PAR', 'JGO', 'CJA-10', 'CJA-25', 'CJA-50', 'CJA-100', 'KG', 'MT', 'ROLLO', 'GLN', 'LT', 'SERV'],
+    'OC_CONDICION_PAGO': ['CONTADO', 'CONTRA ENTREGA', 'ADELANTO 50% - SALDO CONTRA ENTREGA', 'CRÉDITO 15 DÍAS',
+                          'CRÉDITO 30 DÍAS', 'CRÉDITO 45 DÍAS', 'CRÉDITO 60 DÍAS'],
+}
+OC_CONFIG_DEF = {
+    'razon_social': 'ANCLAJES Y PERNOS PERÚ SAC',
+    'ruc': '',
+    'direccion': 'JE E CORRE 407 SANTA LUZMILA - COMAS',
+    'email': 'victorm@anclajesperu.com',
+    'telefono': '940479303',
+    'lugar_entrega': 'AV. SANTA ANA NRO. 386 OTR. CHACRA CERRO LIMA - LIMA - COMAS',
+    'terminos': ("1. La entrega de materiales se realizará junto al **CERTIFICADO DE CALIDAD**.\n"
+                 "2. Los **MATERIALES QUE NO COINCIDAN** con las especificaciones de la presente O/C **SERÁN DEVUELTOS**.\n"
+                 "3. Las facturas se enviarán por correo **logistica@anclajesperu.com**\n"
+                 "4. Adjuntar **GUÍA, FACTURA y ORDEN DE COMPRA**\n"
+                 "5. Todo personal está obligado a **INGRESAR CON SU RESPECTIVA EPP y su SCTR**, de lo contrario no ingresará."),
+    'horario': "LUNES A VIERNES 8:00 AM - 5:00 PM\nSÁBADOS 8:00 AM - 4:00 PM\nREFRIGERIO 1:00 PM - 2:00 PM",
+}
+OC_CONFIG_ETIQUETAS = {'razon_social': 'Razón social (título del PDF)', 'ruc': 'RUC de la empresa', 'direccion': 'Dirección',
+                       'email': 'Correo', 'telefono': 'Teléfono', 'lugar_entrega': 'Lugar de entrega (fijo)',
+                       'terminos': 'Términos y condiciones', 'horario': 'Horario de atención'}
+FIRMA_GERENCIA_OC = 'GerenciaAnclajes.jpeg'
+_oc_ok = False
+
+
+def _sembrar_catalogos_oc():
+    for tipo, valores in _OC_INICIALES.items():
+        if not CatalogoValor.query.filter_by(tipo=tipo).first():
+            for v in valores:
+                db.session.add(CatalogoValor(tipo=tipo, valor=v, activo=True, es_predeterminado=False))
+
+
+def _asegurar_oc():
+    """Crea las tablas del módulo si faltan y siembra UNA vez los catálogos (U.M. y condiciones de pago)."""
+    global _oc_ok
+    if _oc_ok:
+        return
+    for modelo in (OCProveedor, OrdenCompra, OrdenCompraItem, OrdenCompraEvento, OrdenCompraDocumento, OCConfig):
+        modelo.__table__.create(bind=db.engine, checkfirst=True)
+    if not SystemConfig.query.get('oc_sembrado'):
+        try:
+            _sembrar_catalogos_oc()
+            db.session.add(SystemConfig(key='oc_sembrado', value='1', updated_by='Sistema'))
+            db.session.commit()
+        except IntegrityError:
+            db.session.rollback()
+    _oc_ok = True
+
+
+try:
+    with app.app_context():
+        _asegurar_insumos()
+        _asegurar_oc()
+except Exception as _e_oc:
+    print(f"Aviso: no se pudo preparar el módulo de Órdenes de Compra al arrancar: {_e_oc}")
+
+
+def _ruta_oc(nivel='ver', como_json=False):
+    """Permisos: ver (Gerencia, Logística, Administración, Almacén) / editar (Gerencia y Logística) / aprobar (Gerencia)."""
+    def deco(f):
+        @_wraps_insumos(f)
+        def envoltura(*args, **kwargs):
+            permitidos = {'ver': ROLES_OC_VEN, 'editar': ROLES_OC_EDITAN, 'aprobar': ROLES_OC_APRUEBAN, 'admin': ['admin']}[nivel]
+            if session.get('role') not in permitidos:
+                if como_json:
+                    return {'status': 'error', 'msg': 'No autorizado'}, 403
+                return "Acceso denegado", 403
+            _asegurar_insumos()
+            _asegurar_oc()
+            return f(*args, **kwargs)
+        return envoltura
+    return deco
+
+
+def _oc_cfg():
+    cfg = dict(OC_CONFIG_DEF)
+    for c in OCConfig.query.all():
+        if c.clave in cfg and c.valor is not None:
+            cfg[c.clave] = c.valor
+    return cfg
+
+
+def _oc_evento(orden, accion, detalle=''):
+    db.session.add(OrdenCompraEvento(orden_id=orden.id, fecha=hora_peru(), user_id=session.get('user_id'), accion=accion,
+                                     detalle=(detalle or '')[:500]))
+
+
+def _oc_codigo(orden):
+    return f"{orden.tipo} N° {orden.numero:06d}"
+
+
+def _siguiente_numero_oc(tipo):
+    ultimo = db.session.query(func.max(OrdenCompra.numero)).filter(OrdenCompra.tipo == tipo).scalar()
+    return int(ultimo or 0) + 1
+
+
+from markupsafe import Markup
+
+
+def _oc_resaltado(texto):
+    """'texto **importante**' -> HTML seguro con lo importante sombreado (para el PDF y la vista previa)."""
+    partes = re.split(r'\*\*(.+?)\*\*', html.escape(texto or ''))
+    return Markup(''.join(f'<span class="resaltado">{p}</span>' if i % 2 else p for i, p in enumerate(partes)))
+
+
+_UNIDADES_L = ['', 'UNO', 'DOS', 'TRES', 'CUATRO', 'CINCO', 'SEIS', 'SIETE', 'OCHO', 'NUEVE', 'DIEZ', 'ONCE', 'DOCE', 'TRECE',
+               'CATORCE', 'QUINCE', 'DIECISÉIS', 'DIECISIETE', 'DIECIOCHO', 'DIECINUEVE', 'VEINTE', 'VEINTIUNO', 'VEINTIDÓS',
+               'VEINTITRÉS', 'VEINTICUATRO', 'VEINTICINCO', 'VEINTISÉIS', 'VEINTISIETE', 'VEINTIOCHO', 'VEINTINUEVE']
+_DECENAS_L = ['', '', '', 'TREINTA', 'CUARENTA', 'CINCUENTA', 'SESENTA', 'SETENTA', 'OCHENTA', 'NOVENTA']
+_CENTENAS_L = ['', 'CIENTO', 'DOSCIENTOS', 'TRESCIENTOS', 'CUATROCIENTOS', 'QUINIENTOS', 'SEISCIENTOS', 'SETECIENTOS',
+               'OCHOCIENTOS', 'NOVECIENTOS']
+
+
+def _letras_999(n):
+    if n == 0:
+        return ''
+    if n == 100:
+        return 'CIEN'
+    c, r = divmod(n, 100)
+    if r < 30:
+        resto = _UNIDADES_L[r]
+    else:
+        d, u = divmod(r, 10)
+        resto = _DECENAS_L[d] + (f' Y {_UNIDADES_L[u]}' if u else '')
+    return ' '.join(x for x in (_CENTENAS_L[c], resto) if x)
+
+
+def _numero_a_letras(n):
+    """Entero -> texto en español (hasta 999 millones). 1 -> UNO, 21000 -> VEINTIÚN MIL."""
+    n = int(n)
+    if n == 0:
+        return 'CERO'
+    millones, resto = divmod(n, 1_000_000)
+    miles, unidades = divmod(resto, 1000)
+    partes = []
+    if millones:
+        partes.append('UN MILLÓN' if millones == 1 else f'{_letras_999(millones)} MILLONES'.replace('UNO MILLONES', 'UN MILLONES'))
+    if miles:
+        partes.append('MIL' if miles == 1 else f'{_letras_999(miles)} MIL')
+    if unidades:
+        partes.append(_letras_999(unidades))
+    texto = ' '.join(partes)
+    texto = re.sub(r'\bUNO (MIL|MILLONES)\b', r'UN \1', texto).replace('VEINTIUNO MIL', 'VEINTIÚN MIL')
+    return texto
+
+
+def _monto_en_letras(monto, moneda):
+    centimos = int(round(float(monto or 0) * 100))
+    entero, cent = divmod(centimos, 100)
+    sing, plur = MONEDAS_OC.get(moneda, MONEDAS_OC['PEN'])['letras']
+    return f"SON: {_numero_a_letras(entero)} CON {cent:02d}/100 {sing if entero == 1 else plur}"
+
+
+def _oc_entrega_txt(orden):
+    if orden.entrega_tipo == 'DIAS' and orden.entrega_dias:
+        return f"{orden.entrega_dias} DÍA{'S' if orden.entrega_dias != 1 else ''} (luego de aprobada la O/C)"
+    if orden.entrega_tipo == 'FECHA' and orden.fecha_entrega:
+        return orden.fecha_entrega.strftime('%d/%m/%Y')
+    return 'A TRATAR'
+
+
+def _oc_fecha_esperada(orden):
+    """Fecha estimada de llegada (para la lista): fecha fija, o días contados desde la aprobación (o la emisión)."""
+    if orden.entrega_tipo == 'FECHA' and orden.fecha_entrega:
+        return orden.fecha_entrega
+    if orden.entrega_tipo == 'DIAS' and orden.entrega_dias:
+        base = (orden.fecha_aprobacion.date() if orden.fecha_aprobacion else orden.fecha)
+        return base + timedelta(days=orden.entrega_dias)
+    return None
+
+
+app.add_template_global(_oc_entrega_txt, 'oc_entrega_txt')
+app.add_template_global(_oc_fecha_esperada, 'oc_fecha_esperada')
+app.add_template_global(_oc_codigo, 'oc_codigo')
+app.add_template_filter(_oc_resaltado, 'resaltado')
+
+
+def _oc_permisos(orden):
+    """Qué puede hacer el usuario actual con esta orden (para mostrar solo los botones que corresponden)."""
+    rol = session.get('role')
+    edita, aprueba = rol in ROLES_OC_EDITAN, rol in ROLES_OC_APRUEBAN
+    e = orden.estado
+    return {
+        'editar': edita and e == 'BORRADOR',
+        'enviar': edita and e == 'BORRADOR',
+        'retirar': edita and e == 'ENVIADA',
+        'aprobar': aprueba and e == 'ENVIADA',
+        'rechazar': aprueba and e == 'ENVIADA',
+        'anular': edita and e in ('BORRADOR', 'ENVIADA', 'APROBADA'),
+        'llegada': edita and e == 'APROBADA',
+        'conforme': edita and e == 'RECIBIDA',
+        'observar': edita and e in ('APROBADA', 'RECIBIDA'),
+        'documentos': edita and e not in ('ANULADA',),
+        'borrar_docs': edita and e not in ('CONFORME', 'ANULADA'),
+        'kardex': edita and e == 'CONFORME' and orden.destino == 'GENERAL' and not orden.fecha_kardex,
+        'insumos': edita and e == 'CONFORME' and orden.destino == 'INSUMOS' and not orden.insumo_ingreso_id,
+        'duplicar': edita and e != 'BORRADOR',
+    }
+
+
+def _oc_catalogo(tipo, incluir_inactivos=False):
+    q = CatalogoValor.query.filter_by(tipo=tipo)
+    if not incluir_inactivos:
+        q = q.filter_by(activo=True)
+    return sorted(q.all(), key=lambda v: _clave_alfabetica(v.valor)) if tipo != 'OC_UM' else sorted(q.all(), key=lambda v: v.id)
+
+
+def _leer_orden_form(f, orden=None):
+    """Valida el formulario de la orden. Devuelve (datos, items, errores). Los totales se calculan aquí (no se confía en el navegador)."""
+    errores = []
+    datos = {}
+    tipo = (orden.tipo if orden else (f.get('tipo') or 'OC')).upper()
+    if tipo not in TIPOS_OC:
+        errores.append('Elige si es Orden de Compra u Orden de Servicio.')
+    datos['tipo'] = tipo
+    try:
+        fecha = datetime.strptime((f.get('fecha') or '').strip(), '%Y-%m-%d').date()
+        if fecha > hora_peru().date():
+            errores.append('La fecha de la orden no puede ser futura.')
+    except ValueError:
+        fecha = None
+        errores.append('La fecha de la orden no es válida.')
+    datos['fecha'] = fecha
+    destino = (f.get('destino') or '').upper()
+    if destino not in DESTINOS_OC:
+        errores.append('Elige el destino: Inventario General o Insumos internos.')
+    datos['destino'] = destino
+    ruc = re.sub(r'\D', '', f.get('ruc') or '')
+    if len(ruc) not in (8, 11):
+        errores.append('El RUC del proveedor debe tener 11 dígitos (o DNI de 8).')
+    datos['ruc'] = ruc[:20]
+    datos['razon_social'] = _limpio(f.get('razon_social'), 200)
+    if len(datos['razon_social']) < 3:
+        errores.append('Falta la razón social del proveedor (búscalo por RUC).')
+    datos['direccion'] = _limpio(f.get('direccion'), 250)
+    datos['contacto'] = _limpio(f.get('contacto'), 120)
+    datos['telefono'] = _limpio(f.get('telefono'), 40)
+    datos['email'] = _limpio(f.get('email'), 120).lower()
+    if len(datos['contacto']) < 3:
+        errores.append('El CONTACTO del proveedor es obligatorio.')
+    if len(re.sub(r'\D', '', datos['telefono'])) < 6:
+        errores.append('El TELÉFONO del proveedor es obligatorio (mínimo 6 dígitos).')
+    if datos['email'] and not re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', datos['email']):
+        errores.append('El correo del proveedor no es válido.')
+    datos['proveedor_id'] = f.get('proveedor_id', type=int)
+    datos['oc_proveedor_id'] = f.get('oc_proveedor_id', type=int)
+    datos['cotizacion'] = _limpio(f.get('cotizacion'), 60).upper()
+    moneda = (f.get('moneda') or 'PEN').upper()
+    if moneda not in MONEDAS_OC:
+        errores.append('Moneda no válida.')
+    datos['moneda'] = moneda
+    condiciones = {v.valor for v in _oc_catalogo('OC_CONDICION_PAGO', incluir_inactivos=True)}
+    cond = (f.get('condicion_pago') or '').strip()
+    if cond not in condiciones and not (orden and cond == orden.condicion_pago):
+        errores.append('Elige la condición de pago.')
+    datos['condicion_pago'] = cond[:120]
+    modo = (f.get('entrega_modo') or 'EMPRESA').upper()
+    datos['entrega_modo'] = modo if modo in ('EMPRESA', 'RECOJO') else 'EMPRESA'
+    datos['lugar_recojo'] = _limpio(f.get('lugar_recojo'), 250) if datos['entrega_modo'] == 'RECOJO' else None
+    if datos['entrega_modo'] == 'RECOJO' and len(datos['lugar_recojo'] or '') < 5:
+        errores.append('Si el material se recoge, escribe DÓNDE se recoge.')
+    et = (f.get('entrega_tipo') or 'A_TRATAR').upper()
+    datos['entrega_tipo'] = et if et in ('A_TRATAR', 'DIAS', 'FECHA') else 'A_TRATAR'
+    datos['entrega_dias'], datos['fecha_entrega'] = None, None
+    if datos['entrega_tipo'] == 'DIAS':
+        dias = f.get('entrega_dias', type=int)
+        if not dias or not 1 <= dias <= 365:
+            errores.append('Los días de entrega deben estar entre 1 y 365.')
+        datos['entrega_dias'] = dias
+    elif datos['entrega_tipo'] == 'FECHA':
+        try:
+            datos['fecha_entrega'] = datetime.strptime((f.get('fecha_entrega') or '').strip(), '%Y-%m-%d').date()
+            if fecha and datos['fecha_entrega'] < fecha:
+                errores.append('La fecha de entrega no puede ser anterior a la fecha de la orden.')
+        except ValueError:
+            errores.append('Escribe la fecha de entrega.')
+    datos['observaciones'] = ' '.join((f.get('observaciones') or '').split())[:500] or None
+    # Ítems
+    ums = {v.valor for v in _oc_catalogo('OC_UM', incluir_inactivos=True)}
+    ums_previas = {i.um for i in orden.items} if orden else set()
+    items = []
+    filas = zip(f.getlist('descripcion[]'), f.getlist('cantidad[]'), f.getlist('um[]'), f.getlist('precio_unitario[]'),
+                f.getlist('origen[]'), f.getlist('codigo[]'), f.getlist('insumo_id[]'))
+    for n, (desc, cant, um, pu, origen, codigo, insumo_id) in enumerate(filas, start=1):
+        desc = ' '.join((desc or '').split()).upper()[:400]
+        if not desc and not (cant or '').strip() and not (pu or '').strip():
+            continue
+        cantidad, precio = _num(cant), _num(pu)
+        if len(desc) < 2:
+            errores.append(f'Ítem {n}: escribe la descripción.')
+            continue
+        if cantidad is None or cantidad <= 0:
+            errores.append(f'Ítem {n}: la cantidad debe ser mayor a 0.')
+            continue
+        if um not in ums and um not in ums_previas:
+            errores.append(f'Ítem {n}: elige la unidad de medida.')
+            continue
+        if precio is None or precio < 0:
+            errores.append(f'Ítem {n}: escribe el precio unitario (sin IGV).')
+            continue
+        ins_id = int(insumo_id) if (insumo_id or '').isdigit() and Insumo.query.get(int(insumo_id)) else None
+        origen = (origen or '').upper()
+        items.append({'descripcion': desc, 'cantidad': round(cantidad, 4), 'um': um, 'precio_unitario': round(precio, 4),
+                      'total': round(cantidad * precio, 2), 'origen': origen if origen in ('ANCLAJES', 'IMPORTBOLTS', 'INSUMO') else None,
+                      'codigo': _limpio(codigo, 60) or None, 'insumo_id': ins_id})
+    if not items:
+        errores.append('Agrega al menos un ítem.')
+    if len(items) > 60:
+        errores.append('Máximo 60 ítems por orden.')
+    subtotal = round(sum(i['total'] for i in items), 2)
+    datos['subtotal'] = subtotal
+    datos['igv'] = round(subtotal * IGV_OC, 2)
+    datos['total'] = round(subtotal + datos['igv'], 2)
+    return datos, items, errores
+
+
+def _guardar_proveedor_oc(d):
+    """Guarda/actualiza el proveedor (con su contacto y teléfono) para elegirlo rápido la próxima vez."""
+    p = OCProveedor.query.get(d['oc_proveedor_id']) if d.get('oc_proveedor_id') else None
+    if not p or (p.ruc or '') != d['ruc']:
+        p = OCProveedor.query.filter(OCProveedor.ruc == d['ruc']).first()
+    if not p:
+        p = OCProveedor(ruc=d['ruc'], razon_social=d['razon_social'], creado_por=session.get('nombre', ''), fecha_creacion=hora_peru())
+        db.session.add(p)
+    p.razon_social = d['razon_social']
+    for campo in ('direccion', 'contacto', 'telefono', 'email'):
+        if d.get(campo):
+            setattr(p, campo, d[campo])
+    if d.get('proveedor_id') and Proveedor.query.get(d['proveedor_id']):
+        p.proveedor_id = d['proveedor_id']
+    elif not p.proveedor_id:
+        sunat = Proveedor.query.filter_by(documento=d['ruc']).first()
+        p.proveedor_id = sunat.id if sunat else None
+    p.ultima_orden = hora_peru()
+    db.session.flush()
+    return p
+
+
+def _aplicar_datos_orden(orden, datos, items, prov):
+    for campo in ('fecha', 'destino', 'ruc', 'razon_social', 'direccion', 'contacto', 'telefono', 'email', 'cotizacion', 'moneda',
+                  'condicion_pago', 'entrega_modo', 'lugar_recojo', 'entrega_tipo', 'entrega_dias', 'fecha_entrega', 'observaciones',
+                  'subtotal', 'igv', 'total'):
+        setattr(orden, campo, datos[campo] if datos[campo] != '' else None)
+    orden.razon_social = datos['razon_social']
+    orden.contacto, orden.telefono = datos['contacto'], datos['telefono']
+    orden.oc_proveedor_id = prov.id
+    orden.proveedor_id = prov.proveedor_id
+    for viejo in list(orden.items):
+        db.session.delete(viejo)
+    db.session.flush()
+    for n, it in enumerate(items, start=1):
+        db.session.add(OrdenCompraItem(orden_id=orden.id, item=n, **it))
+
+
+def _resumen_cambios_orden(antes, orden):
+    cambios = []
+    for campo, etq in (('razon_social', 'Proveedor'), ('total', 'Total'), ('moneda', 'Moneda'), ('condicion_pago', 'Pago'),
+                       ('destino', 'Destino'), ('entrega_modo', 'Entrega')):
+        if antes.get(campo) != getattr(orden, campo):
+            cambios.append(f"{etq}: {antes.get(campo)} → {getattr(orden, campo)}")
+    return '; '.join(cambios)
+
+
+# ---------------------------- LISTA ----------------------------
+@app.route('/ordenes')
+@_ruta_oc()
+def oc_lista():
+    rol = session.get('role')
+    defecto = 'aprobar' if rol == 'admin' and OrdenCompra.query.filter_by(estado='ENVIADA').count() else 'curso'
+    vista = request.args.get('vista', defecto)
+    vista = vista if vista in VISTAS_OC else 'curso'
+    q = OrdenCompra.query.filter(OrdenCompra.estado.in_(VISTAS_OC[vista][1]))
+    tipo = request.args.get('tipo', '')
+    if tipo in TIPOS_OC:
+        q = q.filter(OrdenCompra.tipo == tipo)
+    destino = request.args.get('destino', '')
+    if destino in DESTINOS_OC:
+        q = q.filter(OrdenCompra.destino == destino)
+    desde, hasta = _fecha_param('desde', None), _fecha_param('hasta', None)
+    if desde:
+        q = q.filter(OrdenCompra.fecha >= desde)
+    if hasta:
+        q = q.filter(OrdenCompra.fecha <= hasta)
+    ordenes = q.order_by(OrdenCompra.fecha.desc(), OrdenCompra.id.desc()).limit(500).all()
+    buscar = ' '.join((request.args.get('q') or '').split())
+    if buscar:
+        b = buscar.upper()
+        ordenes = [o for o in ordenes if b in f"{o.tipo} {o.numero:06d} {o.razon_social} {o.ruc or ''} {o.cotizacion or ''} "
+                                              f"{' '.join(i.descripcion for i in o.items)}".upper()]
+    conteo = {}
+    for estado, n in db.session.query(OrdenCompra.estado, func.count(OrdenCompra.id)).group_by(OrdenCompra.estado).all():
+        conteo[estado] = n
+    conteo_vista = {k: sum(conteo.get(e, 0) for e in v[1]) for k, v in VISTAS_OC.items()}
+    docs = {}
+    for d in OrdenCompraDocumento.query.filter(OrdenCompraDocumento.orden_id.in_([o.id for o in ordenes] or [0])).all():
+        docs.setdefault(d.orden_id, []).append(d)
+    hoy = hora_peru().date()
+    return render_template('oc_lista.html', ordenes=ordenes, vista=vista, vistas=VISTAS_OC, conteo=conteo_vista, docs=docs,
+                           tipo=tipo, destino=destino, desde=desde, hasta=hasta, buscar=buscar, hoy=hoy,
+                           estados=ESTADOS_OC, tipos=TIPOS_OC, destinos=DESTINOS_OC, monedas=MONEDAS_OC,
+                           puede_editar=rol in ROLES_OC_EDITAN, seccion='lista')
+
+
+# ---------------------------- CREAR / EDITAR ----------------------------
+def _contexto_form_oc(orden=None, datos_previos=None):
+    return dict(orden=orden, previo=datos_previos, tipos=TIPOS_OC, destinos=DESTINOS_OC, monedas=MONEDAS_OC,
+                ums=[v.valor for v in _oc_catalogo('OC_UM')], condiciones=[v.valor for v in _oc_catalogo('OC_CONDICION_PAGO')],
+                cfg=_oc_cfg(), igv=IGV_OC, hoy=hora_peru().date(), seccion='nueva',
+                siguiente={t: _siguiente_numero_oc(t) for t in TIPOS_OC})
+
+
+def _orden_a_previo(o, items=None):
+    """Datos de una orden para precargar el formulario (editar o duplicar)."""
+    d = {c: getattr(o, c) for c in ('tipo', 'destino', 'ruc', 'razon_social', 'direccion', 'contacto', 'telefono', 'email', 'cotizacion',
+                                    'moneda', 'condicion_pago', 'entrega_modo', 'lugar_recojo', 'entrega_tipo', 'entrega_dias',
+                                    'observaciones', 'proveedor_id', 'oc_proveedor_id')}
+    d['fecha'] = o.fecha.isoformat() if o.fecha else ''
+    d['fecha_entrega'] = o.fecha_entrega.isoformat() if o.fecha_entrega else ''
+    d['items'] = [{'descripcion': i.descripcion, 'cantidad': i.cantidad, 'um': i.um, 'precio_unitario': i.precio_unitario,
+                   'origen': i.origen or '', 'codigo': i.codigo or '', 'insumo_id': i.insumo_id or ''} for i in (items or o.items)]
+    return d
+
+
+@app.route('/ordenes/nueva')
+@_ruta_oc('editar')
+def oc_nueva():
+    previo = None
+    base = OrdenCompra.query.get(request.args.get('duplicar', type=int)) if request.args.get('duplicar', type=int) else None
+    if base:
+        previo = _orden_a_previo(base)
+        previo['fecha'] = hora_peru().date().isoformat()
+        previo['duplicada_de'] = base.id
+        previo['duplicada_txt'] = _oc_codigo(base)
+    else:
+        previo = {'tipo': request.args.get('tipo', 'OC') if request.args.get('tipo') in TIPOS_OC else 'OC'}
+    return render_template('oc_form.html', **_contexto_form_oc(None, previo))
+
+
+@app.route('/ordenes/<int:orden_id>/editar')
+@_ruta_oc('editar')
+def oc_editar(orden_id):
+    orden = OrdenCompra.query.get_or_404(orden_id)
+    if orden.estado != 'BORRADOR':
+        flash('Solo se puede editar una orden en BORRADOR. Si está enviada a Gerencia, primero "Retírala para corregir".')
+        return redirect(url_for('oc_detalle', orden_id=orden.id))
+    return render_template('oc_form.html', **_contexto_form_oc(orden, _orden_a_previo(orden)))
+
+
+@app.route('/ordenes/guardar', methods=['POST'])
+@_ruta_oc('editar')
+def oc_guardar():
+    f = request.form
+    orden = OrdenCompra.query.get(f.get('id', type=int)) if f.get('id', type=int) else None
+    volver = url_for('oc_editar', orden_id=orden.id) if orden else url_for('oc_nueva', tipo=f.get('tipo'))
+    if orden and orden.estado != 'BORRADOR':
+        flash('⛔ Esta orden ya no está en borrador: no se puede editar.')
+        return redirect(url_for('oc_detalle', orden_id=orden.id))
+    datos, items, errores = _leer_orden_form(f, orden)
+    if errores:
+        # se vuelve a mostrar el formulario con lo escrito (no se pierde nada) y la lista de lo que falta
+        previo = {k: (v.isoformat() if hasattr(v, 'isoformat') else v) for k, v in datos.items()}
+        previo.update(items=[{'descripcion': ' '.join((d or '').split()).upper(), 'cantidad': c, 'um': u, 'precio_unitario': pu, 'origen': o_,
+                              'codigo': cod, 'insumo_id': ii}
+                             for d, c, u, pu, o_, cod, ii in zip(f.getlist('descripcion[]'), f.getlist('cantidad[]'), f.getlist('um[]'),
+                                                                f.getlist('precio_unitario[]'), f.getlist('origen[]'), f.getlist('codigo[]'),
+                                                                f.getlist('insumo_id[]')) if (d or c or pu)],
+                      duplicada_de=f.get('duplicada_de'), entrega_dias=f.get('entrega_dias'), fecha_entrega=f.get('fecha_entrega'))
+        return render_template('oc_form.html', errores=errores, **_contexto_form_oc(orden, previo))
+    enviar = f.get('accion') == 'enviar'
+    ahora = hora_peru()
+    es_nueva = orden is None
+    for intento in range(3):
+        try:
+            prov = _guardar_proveedor_oc(datos)
+            if orden:
+                antes = {c: getattr(orden, c) for c in ('razon_social', 'total', 'moneda', 'condicion_pago', 'destino', 'entrega_modo')}
+                _aplicar_datos_orden(orden, datos, items, prov)
+                orden.editado_por_id, orden.fecha_edicion = session.get('user_id'), ahora
+                _oc_evento(orden, 'EDITADA', _resumen_cambios_orden(antes, orden) or 'Ítems o datos actualizados')
+            else:
+                orden = OrdenCompra(tipo=datos['tipo'], numero=_siguiente_numero_oc(datos['tipo']), estado='BORRADOR', fecha=datos['fecha'],
+                                    razon_social=datos['razon_social'], contacto=datos['contacto'], telefono=datos['telefono'],
+                                    creado_por_id=session.get('user_id'), fecha_registro=ahora,
+                                    duplicada_de_id=f.get('duplicada_de', type=int))
+                db.session.add(orden)
+                db.session.flush()
+                _aplicar_datos_orden(orden, datos, items, prov)
+                origen = OrdenCompra.query.get(orden.duplicada_de_id) if orden.duplicada_de_id else None
+                _oc_evento(orden, 'CREADA', f"{len(items)} ítem(s) · {MONEDAS_OC[orden.moneda]['simbolo']} {orden.total:,.2f}"
+                                           + (f" · copia de {_oc_codigo(origen)}" if origen else ''))
+            if enviar:
+                orden.estado, orden.enviado_por_id, orden.fecha_envio = 'ENVIADA', session.get('user_id'), ahora
+                _oc_evento(orden, 'ENVIADA', 'Enviada a Gerencia para aprobación')
+            registrar_log(f"{'Envió a Gerencia' if enviar else 'Guardó'} la {TIPOS_OC[orden.tipo]} {_oc_codigo(orden)} "
+                          f"({orden.razon_social}, {MONEDAS_OC[orden.moneda]['simbolo']} {orden.total:,.2f})", 'bi-cart-check', 'text-primary')
+            db.session.commit()
+            break
+        except IntegrityError:
+            db.session.rollback()
+            if es_nueva:
+                orden = None
+            if intento == 2:
+                flash('⛔ Otro usuario registró una orden al mismo tiempo. Vuelve a intentarlo.')
+                return redirect(volver)
+    flash(f"✅ {_oc_codigo(orden)} {'enviada a Gerencia para aprobación' if enviar else 'guardada como borrador'}.")
+    return redirect(url_for('oc_detalle', orden_id=orden.id))
+
+
+# ---------------------------- DETALLE Y FLUJO ----------------------------
+@app.route('/ordenes/<int:orden_id>')
+@_ruta_oc()
+def oc_detalle(orden_id):
+    orden = OrdenCompra.query.get_or_404(orden_id)
+    eventos = OrdenCompraEvento.query.filter_by(orden_id=orden.id).order_by(OrdenCompraEvento.fecha.desc(), OrdenCompraEvento.id.desc()).all()
+    docs = OrdenCompraDocumento.query.filter_by(orden_id=orden.id).order_by(OrdenCompraDocumento.id).all()
+    ingreso = InsumoIngreso.query.get(orden.insumo_ingreso_id) if orden.insumo_ingreso_id else None
+    duplicada_de = OrdenCompra.query.get(orden.duplicada_de_id) if orden.duplicada_de_id else None
+    return render_template('oc_detalle.html', orden=orden, eventos=eventos, docs=docs, ingreso=ingreso, duplicada_de=duplicada_de,
+                           p=_oc_permisos(orden), estados=ESTADOS_OC, tipos=TIPOS_OC, destinos=DESTINOS_OC, monedas=MONEDAS_OC,
+                           cfg=_oc_cfg(), igv=IGV_OC, ahora=hora_peru(), seccion='lista')
+
+
+def _accion_oc(orden_id, permiso):
+    orden = OrdenCompra.query.get_or_404(orden_id)
+    if not _oc_permisos(orden)[permiso]:
+        flash(f'⛔ No se puede hacer eso: la orden está "{ESTADOS_OC[orden.estado]["txt"]}" o no tienes permiso.')
+        return orden, redirect(url_for('oc_detalle', orden_id=orden.id))
+    return orden, None
+
+
+@app.route('/ordenes/<int:orden_id>/enviar', methods=['POST'])
+@_ruta_oc('editar')
+def oc_enviar(orden_id):
+    orden, no = _accion_oc(orden_id, 'enviar')
+    if no:
+        return no
+    orden.estado, orden.enviado_por_id, orden.fecha_envio = 'ENVIADA', session.get('user_id'), hora_peru()
+    _oc_evento(orden, 'ENVIADA', 'Enviada a Gerencia para aprobación')
+    registrar_log(f"Envió a Gerencia la {_oc_codigo(orden)}", 'bi-send', 'text-primary')
+    db.session.commit()
+    flash(f'✅ {_oc_codigo(orden)} enviada a Gerencia. Queda "Por aprobar".')
+    return redirect(url_for('oc_detalle', orden_id=orden.id))
+
+
+@app.route('/ordenes/<int:orden_id>/retirar', methods=['POST'])
+@_ruta_oc('editar')
+def oc_retirar(orden_id):
+    orden, no = _accion_oc(orden_id, 'retirar')
+    if no:
+        return no
+    orden.estado = 'BORRADOR'
+    _oc_evento(orden, 'RETIRADA', 'Retirada de aprobación para corregir')
+    db.session.commit()
+    flash('La orden volvió a BORRADOR: ya puedes corregirla y enviarla otra vez.')
+    return redirect(url_for('oc_editar', orden_id=orden.id))
+
+
+@app.route('/ordenes/<int:orden_id>/aprobar', methods=['POST'])
+@_ruta_oc('aprobar')
+def oc_aprobar(orden_id):
+    orden, no = _accion_oc(orden_id, 'aprobar')
+    if no:
+        return no
+    orden.estado, orden.aprobado_por_id, orden.fecha_aprobacion = 'APROBADA', session.get('user_id'), hora_peru()
+    _oc_evento(orden, 'APROBADA', ' '.join((request.form.get('comentario') or '').split())[:300] or 'Aprobada con firma y sello de Gerencia')
+    registrar_log(f"APROBÓ la {_oc_codigo(orden)} ({orden.razon_social}, {MONEDAS_OC[orden.moneda]['simbolo']} {orden.total:,.2f})",
+                  'bi-patch-check-fill', 'text-success')
+    db.session.commit()
+    flash(f'✅ {_oc_codigo(orden)} APROBADA. El PDF ya lleva la firma y sello de Gerencia.')
+    return redirect(url_for('oc_detalle', orden_id=orden.id))
+
+
+@app.route('/ordenes/<int:orden_id>/rechazar', methods=['POST'])
+@_ruta_oc('aprobar')
+def oc_rechazar(orden_id):
+    orden, no = _accion_oc(orden_id, 'rechazar')
+    if no:
+        return no
+    motivo = ' '.join((request.form.get('motivo') or '').split())[:300]
+    if len(motivo) < 5:
+        flash('⛔ Escribe el motivo del rechazo.')
+        return redirect(url_for('oc_detalle', orden_id=orden.id))
+    orden.estado, orden.rechazado_por_id, orden.fecha_rechazo, orden.motivo_rechazo = 'RECHAZADA', session.get('user_id'), hora_peru(), motivo
+    _oc_evento(orden, 'RECHAZADA', motivo)
+    registrar_log(f"RECHAZÓ la {_oc_codigo(orden)}: {motivo}", 'bi-x-octagon-fill', 'text-danger')
+    db.session.commit()
+    flash(f'{_oc_codigo(orden)} rechazada. Logística puede "Duplicarla" para corregirla con un número nuevo.')
+    return redirect(url_for('oc_detalle', orden_id=orden.id))
+
+
+@app.route('/ordenes/<int:orden_id>/anular', methods=['POST'])
+@_ruta_oc('editar')
+def oc_anular(orden_id):
+    orden, no = _accion_oc(orden_id, 'anular')
+    if no:
+        return no
+    motivo = ' '.join((request.form.get('motivo') or '').split())[:300]
+    if len(motivo) < 5:
+        flash('⛔ Escribe la razón de la anulación.')
+        return redirect(url_for('oc_detalle', orden_id=orden.id))
+    estado_antes = orden.estado
+    orden.estado, orden.anulado_por_id, orden.fecha_anulacion, orden.motivo_anulacion = 'ANULADA', session.get('user_id'), hora_peru(), motivo
+    _oc_evento(orden, 'ANULADA', f"{motivo} (estaba: {ESTADOS_OC[estado_antes]['txt']})")
+    registrar_log(f"ANULÓ la {_oc_codigo(orden)}: {motivo}", 'bi-slash-circle', 'text-danger')
+    db.session.commit()
+    flash(f'{_oc_codigo(orden)} anulada. Su número no se vuelve a usar.')
+    return redirect(url_for('oc_detalle', orden_id=orden.id))
+
+
+@app.route('/ordenes/<int:orden_id>/duplicar', methods=['POST'])
+@_ruta_oc('editar')
+def oc_duplicar(orden_id):
+    orden, no = _accion_oc(orden_id, 'duplicar')
+    if no:
+        return no
+    return redirect(url_for('oc_nueva', duplicar=orden.id))
+
+
+def _subir_docs_orden(orden, claves, tipos=('GUIA', 'FACTURA', 'COTIZACION', 'OTRO')):
+    """Sube los archivos doc_<TIPO> (pueden ser varios por tipo). Devuelve (cantidad, errores)."""
+    archivos, errores = [], []
+    for tipo in tipos:
+        for a in request.files.getlist(f'doc_{tipo}'):
+            if a and a.filename:
+                ok, info = _validar_documento_kardex(a)
+                if ok:
+                    archivos.append((tipo, a, info))
+                else:
+                    errores.append(info)
+    if errores or len(archivos) > 10:
+        return 0, errores or ['Máximo 10 archivos por vez.']
+    for tipo, a, (ext, mime, tamano) in archivos:
+        s3_key = f"ordenes/{orden.tipo.lower()}_{orden.numero:06d}/{tipo.lower()}_{uuid.uuid4().hex}.{ext}"
+        a.stream.seek(0)
+        s3_client.upload_fileobj(a.stream, S3_BUCKET_NAME, s3_key, ExtraArgs={'ContentType': mime})
+        claves.append(s3_key)
+        db.session.add(OrdenCompraDocumento(orden_id=orden.id, tipo=tipo, s3_key=s3_key,
+                                            nombre_original=secure_filename(a.filename)[:200] or f'documento.{ext}',
+                                            content_type=mime, tamano_bytes=tamano, subido_por=session.get('nombre', ''), fecha=hora_peru()))
+    return len(archivos), []
+
+
+@app.route('/ordenes/<int:orden_id>/llegada', methods=['POST'])
+@_ruta_oc('editar')
+def oc_llegada(orden_id):
+    """Logística informa que el material llegó (fecha y hora de ahora, u otra) y adjunta guía / factura."""
+    request.max_content_length = LIMITE_PETICION_MOVIMIENTO
+    orden, no = _accion_oc(orden_id, 'llegada')
+    if no:
+        return no
+    f = request.form
+    destino = url_for('oc_detalle', orden_id=orden.id)
+    ahora = hora_peru()
+    if f.get('cuando') == 'otra':
+        try:
+            llegada = datetime.strptime((f.get('fecha_llegada') or '').strip(), '%Y-%m-%dT%H:%M')
+        except ValueError:
+            flash('⛔ Escribe la fecha y hora de llegada.')
+            return redirect(destino)
+        if llegada > ahora + timedelta(minutes=5):
+            flash('⛔ La fecha de llegada no puede ser futura.')
+            return redirect(destino)
+        if llegada.date() < orden.fecha:
+            flash('⛔ La llegada no puede ser anterior a la fecha de la orden.')
+            return redirect(destino)
+    else:
+        llegada = ahora
+    claves = []
+    try:
+        n, errores = _subir_docs_orden(orden, claves, ('GUIA', 'FACTURA', 'OTRO'))
+        if errores:
+            flash('⛔ ' + ' '.join(errores))
+            return redirect(destino)
+        orden.estado, orden.fecha_llegada, orden.recibido_por_id = 'RECIBIDA', llegada, session.get('user_id')
+        orden.numero_guia = _limpio(f.get('numero_guia'), 60).upper() or None
+        orden.numero_factura = _limpio(f.get('numero_factura'), 60).upper() or None
+        orden.nota_recepcion = ' '.join((f.get('nota') or '').split())[:500] or None
+        _oc_evento(orden, 'LLEGADA', f"Llegó el {llegada.strftime('%d/%m/%Y %H:%M')}"
+                                    + (f" · Guía {orden.numero_guia}" if orden.numero_guia else '')
+                                    + (f" · Factura {orden.numero_factura}" if orden.numero_factura else '')
+                                    + (f" · {n} documento(s)" if n else '') + (f" · {orden.nota_recepcion}" if orden.nota_recepcion else ''))
+        registrar_log(f"Registró la llegada del material de la {_oc_codigo(orden)}", 'bi-truck', 'text-info')
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        _borrar_de_s3(claves)
+        app.logger.exception("No se pudo registrar la llegada de la orden")
+        flash(f'⛔ No se pudo registrar la llegada (no se guardó nada): {e}')
+        return redirect(destino)
+    flash('✅ Llegada registrada. Revisa el material y, si todo está bien, da la CONFORMIDAD.')
+    return redirect(destino)
+
+
+@app.route('/ordenes/<int:orden_id>/conforme', methods=['POST'])
+@_ruta_oc('editar')
+def oc_conforme(orden_id):
+    """Check verde de Logística: material en buen estado, cantidad correcta y documentos (guía/factura) correctos."""
+    orden, no = _accion_oc(orden_id, 'conforme')
+    if no:
+        return no
+    f = request.form
+    destino = url_for('oc_detalle', orden_id=orden.id)
+    faltan = [t for k, t in (('chk_estado', 'el material llegó en buen estado'), ('chk_cantidad', 'la cantidad es la correcta'),
+                             ('chk_documentos', 'la guía / factura son correctas')) if f.get(k) != '1']
+    if faltan:
+        flash('⛔ Para dar conformidad confirma que ' + ', '.join(faltan) + '.')
+        return redirect(destino)
+    if not OrdenCompraDocumento.query.filter(OrdenCompraDocumento.orden_id == orden.id,
+                                             OrdenCompraDocumento.tipo.in_(['GUIA', 'FACTURA'])).first():
+        flash('⛔ Adjunta al menos la GUÍA o la FACTURA antes de dar la conformidad.')
+        return redirect(destino)
+    orden.estado, orden.conforme_por_id, orden.fecha_conforme = 'CONFORME', session.get('user_id'), hora_peru()
+    orden.nota_conforme = ' '.join((f.get('nota') or '').split())[:500] or None
+    _oc_evento(orden, 'CONFORME', 'Material en buen estado, cantidad correcta y documentos OK' +
+               (f" · {orden.nota_conforme}" if orden.nota_conforme else ''))
+    registrar_log(f"Dio CONFORMIDAD a la {_oc_codigo(orden)} (material en almacén)", 'bi-check-circle-fill', 'text-success')
+    db.session.commit()
+    sig = ('Ahora regístralo en Insumos internos (aparece como pendiente).' if orden.destino == 'INSUMOS'
+           else 'Recuerda registrar el ingreso en el Kardex y marcarlo aquí.')
+    flash(f'✅ {_oc_codigo(orden)} CONFORME: pasó a "Conformes / en almacén". {sig}')
+    return redirect(destino)
+
+
+@app.route('/ordenes/<int:orden_id>/observacion', methods=['POST'])
+@_ruta_oc('editar')
+def oc_observacion(orden_id):
+    orden, no = _accion_oc(orden_id, 'observar')
+    if no:
+        return no
+    texto = ' '.join((request.form.get('texto') or '').split())[:500]
+    if len(texto) < 3:
+        flash('⛔ Escribe la observación.')
+    else:
+        _oc_evento(orden, 'OBSERVACION', texto)
+        db.session.commit()
+        flash('Observación registrada en el historial de la orden.')
+    return redirect(url_for('oc_detalle', orden_id=orden.id))
+
+
+@app.route('/ordenes/<int:orden_id>/documento', methods=['POST'])
+@_ruta_oc('editar')
+def oc_documento(orden_id):
+    request.max_content_length = LIMITE_PETICION_MOVIMIENTO
+    orden, no = _accion_oc(orden_id, 'documentos')
+    if no:
+        return no
+    tipo = (request.form.get('tipo') or 'OTRO').upper()
+    tipo = tipo if tipo in ('GUIA', 'FACTURA', 'COTIZACION', 'OTRO') else 'OTRO'
+    claves = []
+    try:
+        n, errores = _subir_docs_orden(orden, claves, (tipo,))
+        if errores or not n:
+            flash('⛔ ' + (' '.join(errores) or 'Elige un archivo.'))
+            return redirect(url_for('oc_detalle', orden_id=orden.id))
+        _oc_evento(orden, 'DOCUMENTO', f"Adjuntó {n} archivo(s): {tipo.title()}")
+        db.session.commit()
+        flash('✅ Documento adjuntado.')
+    except Exception as e:
+        db.session.rollback()
+        _borrar_de_s3(claves)
+        flash(f'⛔ No se pudo subir el documento: {e}')
+    return redirect(url_for('oc_detalle', orden_id=orden.id))
+
+
+@app.route('/ordenes/documento/<int:doc_id>/borrar', methods=['POST'])
+@_ruta_oc('editar')
+def oc_documento_borrar(doc_id):
+    doc = OrdenCompraDocumento.query.get_or_404(doc_id)
+    orden = OrdenCompra.query.get_or_404(doc.orden_id)
+    if not _oc_permisos(orden)['borrar_docs']:
+        flash('⛔ Con la orden conforme o anulada, sus documentos ya no se borran.')
+        return redirect(url_for('oc_detalle', orden_id=orden.id))
+    clave = doc.s3_key
+    _oc_evento(orden, 'DOC_BORRADO', f"Borró {doc.tipo.title()}: {doc.nombre_original}")
+    db.session.delete(doc)
+    db.session.commit()
+    _borrar_de_s3([clave])
+    flash('Documento borrado.')
+    return redirect(url_for('oc_detalle', orden_id=orden.id))
+
+
+@app.route('/ordenes/documento/<int:doc_id>')
+@_ruta_oc()
+def oc_documento_ver(doc_id):
+    doc = OrdenCompraDocumento.query.get_or_404(doc_id)
+    try:
+        obj = s3_client.get_object(Bucket=S3_BUCKET_NAME, Key=doc.s3_key)
+    except Exception as e:
+        return f"<h3>No se pudo recuperar el documento</h3><p>{html.escape(str(e))}</p>", 404
+    ext = doc.s3_key.rsplit('.', 1)[-1].lower()
+    resp = send_file(io.BytesIO(obj['Body'].read()), mimetype=doc.content_type or 'application/octet-stream',
+                     as_attachment=request.args.get('download') == '1',
+                     download_name=secure_filename(f"{doc.tipo.lower()}_orden{doc.orden_id}_{doc.id}.{ext}"))
+    resp.headers['X-Content-Type-Options'] = 'nosniff'
+    return resp
+
+
+@app.route('/ordenes/<int:orden_id>/kardex', methods=['POST'])
+@_ruta_oc('editar')
+def oc_marcar_kardex(orden_id):
+    """Destino Inventario General: Logística marca que ya registró el ingreso en el Kardex (seguimiento)."""
+    orden, no = _accion_oc(orden_id, 'kardex')
+    if no:
+        return no
+    orden.kardex_registrado_por_id, orden.fecha_kardex = session.get('user_id'), hora_peru()
+    _oc_evento(orden, 'KARDEX', ' '.join((request.form.get('detalle') or '').split())[:300] or 'Ingreso registrado en el Kardex')
+    db.session.commit()
+    flash('✅ Marcada como ingresada en el Kardex.')
+    return redirect(url_for('oc_detalle', orden_id=orden.id))
+
+
+# ---------------------------- PDF ----------------------------
+_IMG_OC = {}
+
+
+def _firma_gerencia_oc():
+    if 'firma' not in _IMG_OC:
+        try:
+            with open(os.path.join(app.root_path, 'static', 'img', FIRMA_GERENCIA_OC), 'rb') as fh:
+                _IMG_OC['firma'] = _imagen_pdf(fh.read(), 78, 230)
+        except Exception:
+            app.logger.exception("No se encontró la firma/sello de Gerencia (static/img/%s)", FIRMA_GERENCIA_OC)
+            return None
+    return _IMG_OC['firma']
+
+
+@app.route('/ordenes/<int:orden_id>/pdf')
+@_ruta_oc()
+def oc_pdf(orden_id):
+    orden = OrdenCompra.query.get_or_404(orden_id)
+    filas = list(orden.items) + [None] * max(0, 7 - len(orden.items))
+    html_pdf = render_template('pdf_orden_compra.html', o=orden, cfg=_oc_cfg(), logo=_logo_pdf_insumos('ANCLAJES'),
+                               firma=_firma_gerencia_oc() if orden.estado in ('APROBADA', 'RECIBIDA', 'CONFORME') else None,
+                               filas=filas, mon=MONEDAS_OC[orden.moneda], letras=_monto_en_letras(orden.total, orden.moneda),
+                               tipos=TIPOS_OC, igv_pct=int(IGV_OC * 100))
+    nombre = f"{orden.tipo}_{orden.numero:06d}_{secure_filename(orden.razon_social)[:30]}.pdf"
+    resp = _generar_respuesta_pdf(html_pdf, nombre, "el PDF de la orden")
+    if request.args.get('ver') == '1' and not isinstance(resp, tuple):
+        resp.headers['Content-Disposition'] = f'inline; filename="{nombre}"'
+    return resp
+
+
+# ---------------------------- BUSCADORES ----------------------------
+@app.route('/ordenes/api/proveedores')
+@_ruta_oc('editar', como_json=True)
+def oc_api_proveedores():
+    """Primero los proveedores ya usados en órdenes (con contacto y teléfono); luego otros proveedores del sistema."""
+    q = ' '.join((request.args.get('q') or '').split()).upper()
+    guardados = OCProveedor.query.all()
+    if q:
+        guardados = [p for p in guardados if all(t in f"{p.ruc or ''} {p.razon_social} {p.contacto or ''}".upper() for t in q.split())]
+    guardados.sort(key=lambda p: (p.ultima_orden or datetime.min), reverse=True)
+    otros = []
+    if len(q) >= 2:
+        rucs = {p.ruc for p in OCProveedor.query.all() if p.ruc}
+        vistos = set()
+        for p in Proveedor.query.filter(or_(Proveedor.documento.ilike(f'%{q}%'), Proveedor.razon_social.ilike(f'%{q}%'))).limit(15).all():
+            if p.documento and p.documento not in rucs:
+                vistos.add(p.documento)
+                otros.append({'proveedor_id': p.id, 'ruc': p.documento, 'razon_social': p.razon_social, 'direccion': p.direccion or '',
+                              'telefono': p.telefono or '', 'contacto': ''})
+        for p in InsumoProveedor.query.all():
+            if p.ruc and p.ruc not in rucs and p.ruc not in vistos and all(t in f"{p.ruc} {p.razon_social}".upper() for t in q.split()):
+                otros.append({'proveedor_id': p.proveedor_id, 'ruc': p.ruc, 'razon_social': p.razon_social, 'direccion': p.direccion or '',
+                              'telefono': p.contacto_telefono or '', 'contacto': p.contacto_nombre or ''})
+    return {'status': 'success', 'guardados': [{'id': p.id, 'ruc': p.ruc or '', 'razon_social': p.razon_social, 'direccion': p.direccion or '',
+                                                'contacto': p.contacto or '', 'telefono': p.telefono or '', 'email': p.email or '',
+                                                'proveedor_id': p.proveedor_id,
+                                                'ultima': p.ultima_orden.strftime('%d/%m/%Y') if p.ultima_orden else ''} for p in guardados[:20]],
+            'otros': otros[:10]}
+
+
+@app.route('/ordenes/api/productos')
+@_ruta_oc('editar', como_json=True)
+def oc_api_productos():
+    """Buscar productos que ya tenemos (Inventario Anclajes, Import Bolts e Insumos) para listarlos rápido."""
+    q = ' '.join((request.args.get('q') or '').split()).upper()
+    if len(q) < 2:
+        return {'results': []}
+    terminos = q.split()
+    res = []
+    if request.args.get('destino') == 'INSUMOS':
+        fuentes = [('INSUMO', None)]
+    else:
+        fuentes = [('ANCLAJES', Product), ('IMPORTBOLTS', ProductImportBolts), ('INSUMO', None)]
+    for origen, Modelo in fuentes:
+        if Modelo is None:
+            candidatos = [(i.codigo, i.descripcion, i.unidad or '', i.id) for i in Insumo.query.filter_by(activo=True).all()]
+        else:
+            filtro = Modelo.query
+            for t in terminos:
+                filtro = filtro.filter(or_(Modelo.sku.ilike(f'%{t}%'), Modelo.nombre.ilike(f'%{t}%')))
+            candidatos = [(p.sku, p.nombre, '', None) for p in filtro.limit(15).all()]
+        for codigo, nombre, unidad, ins_id in candidatos:
+            if all(t in f"{codigo} {nombre}".upper() for t in terminos):
+                res.append({'origen': origen, 'codigo': codigo, 'descripcion': nombre, 'um': unidad, 'insumo_id': ins_id})
+                if len([r for r in res if r['origen'] == origen]) >= 12:
+                    break
+    # Último precio pagado (en órdenes anteriores) por cada producto
+    for r in res:
+        ult = (OrdenCompraItem.query.join(OrdenCompra, OrdenCompra.id == OrdenCompraItem.orden_id)
+               .filter(OrdenCompraItem.codigo == r['codigo'], OrdenCompraItem.origen == r['origen'],
+                       OrdenCompra.estado.notin_(['ANULADA', 'RECHAZADA']))
+               .order_by(OrdenCompra.fecha.desc(), OrdenCompra.id.desc()).first())
+        if ult:
+            r['ultimo'] = {'precio': ult.precio_unitario, 'um': ult.um, 'moneda': MONEDAS_OC[ult.orden.moneda]['simbolo'],
+                           'orden': _oc_codigo(ult.orden), 'proveedor': ult.orden.razon_social}
+    return {'results': res[:30]}
+
+
+# ---------------------------- CONFIGURACIÓN ----------------------------
+@app.route('/ordenes/config')
+@_ruta_oc('editar')
+def oc_config():
+    es_admin = session.get('role') == 'admin'
+    conteo = None
+    if es_admin:
+        conteo = {'ordenes': OrdenCompra.query.count(), 'documentos': OrdenCompraDocumento.query.count(),
+                  'proveedores': OCProveedor.query.count()}
+    uso_um = {}
+    for (um, n) in db.session.query(OrdenCompraItem.um, func.count(OrdenCompraItem.id)).group_by(OrdenCompraItem.um).all():
+        uso_um[um] = n
+    uso_cond = {}
+    for (c, n) in db.session.query(OrdenCompra.condicion_pago, func.count(OrdenCompra.id)).group_by(OrdenCompra.condicion_pago).all():
+        uso_cond[c] = n
+    return render_template('oc_config.html', catalogos={t: _oc_catalogo(t, incluir_inactivos=True) for t in CATALOGOS_OC},
+                           nombres_catalogo=CATALOGOS_OC, uso={'OC_UM': uso_um, 'OC_CONDICION_PAGO': uso_cond},
+                           cfg=_oc_cfg(), cfg_def=OC_CONFIG_DEF, etiquetas=OC_CONFIG_ETIQUETAS, es_admin=es_admin, conteo=conteo,
+                           proveedores=sorted(OCProveedor.query.all(), key=lambda p: _clave_alfabetica(p.razon_social or '')),
+                           tab=request.args.get('tab', 'OC_UM'), seccion='config')
+
+
+@app.route('/ordenes/config/catalogo', methods=['POST'])
+@_ruta_oc('editar', como_json=True)
+def oc_config_catalogo():
+    """U.M. y condiciones de pago: agregar, renombrar, activar/desactivar y borrar. Las órdenes ya hechas guardan su texto,
+    así que cambiar o borrar una opción no altera órdenes anteriores."""
+    f = request.form
+    accion = f.get('accion')
+    if accion in ('toggle', 'editar', 'borrar'):
+        v = CatalogoValor.query.get_or_404(f.get('id', type=int))
+        if v.tipo not in CATALOGOS_OC:
+            return {'status': 'error', 'msg': 'No autorizado'}, 403
+        if accion == 'toggle':
+            v.activo = not v.activo
+        elif accion == 'borrar':
+            registrar_log(f"Borró de {CATALOGOS_OC[v.tipo]} (órdenes): {v.valor}", 'bi-trash', 'text-danger')
+            db.session.delete(v)
+        else:
+            nuevo = ' '.join((f.get('valor') or '').split()).upper()[:100]
+            if not nuevo:
+                return {'status': 'error', 'msg': 'Escribe el nuevo nombre.'}
+            if any(x.id != v.id and (x.valor or '').upper() == nuevo for x in CatalogoValor.query.filter_by(tipo=v.tipo).all()):
+                return {'status': 'error', 'msg': f'"{nuevo}" ya existe.'}
+            registrar_log(f"Renombró en {CATALOGOS_OC[v.tipo]} (órdenes): {v.valor} → {nuevo}", 'bi-pencil', 'text-warning')
+            v.valor = nuevo
+        db.session.commit()
+        return {'status': 'success'}
+    tipo = (f.get('tipo') or '').upper()
+    valor = ' '.join((f.get('valor') or '').split()).upper()[:100]
+    if tipo not in CATALOGOS_OC or not valor:
+        return {'status': 'error', 'msg': 'Escribe un valor.'}
+    if any((x.valor or '').upper() == valor for x in CatalogoValor.query.filter_by(tipo=tipo).all()):
+        return {'status': 'error', 'msg': f'"{valor}" ya existe.'}
+    db.session.add(CatalogoValor(tipo=tipo, valor=valor, activo=True, es_predeterminado=False, creado_por_id=session.get('user_id')))
+    db.session.commit()
+    return {'status': 'success'}
+
+
+@app.route('/ordenes/config/proveedor', methods=['POST'])
+@_ruta_oc('editar', como_json=True)
+def oc_config_proveedor():
+    f = request.form
+    p = OCProveedor.query.get_or_404(f.get('id', type=int))
+    if f.get('accion') == 'borrar':
+        OrdenCompra.query.filter(OrdenCompra.oc_proveedor_id == p.id).update({'oc_proveedor_id': None}, synchronize_session=False)
+        registrar_log(f"Borró el proveedor de órdenes {p.razon_social}", 'bi-trash', 'text-danger')
+        db.session.delete(p)
+        db.session.commit()
+        return {'status': 'success'}
+    razon = _limpio(f.get('razon_social'), 200)
+    if len(razon) < 3:
+        return {'status': 'error', 'msg': 'Escribe la razón social.'}
+    p.razon_social = razon
+    for campo, largo in (('direccion', 250), ('contacto', 120), ('telefono', 40), ('email', 120)):
+        setattr(p, campo, _limpio(f.get(campo), largo) or None)
+    db.session.commit()
+    return {'status': 'success'}
+
+
+@app.route('/ordenes/config/datos', methods=['POST'])
+@_ruta_oc('admin')
+def oc_config_datos():
+    """Datos de la empresa y textos del PDF (solo Gerencia)."""
+    destino = url_for('oc_config', tab='datos')
+    if request.form.get('accion') == 'restablecer':
+        OCConfig.query.delete()
+        db.session.commit()
+        flash('✅ Datos del PDF restablecidos a los valores iniciales.')
+        return redirect(destino)
+    for clave in OC_CONFIG_DEF:
+        valor = (request.form.get(clave) or '').strip()
+        valor = '\n'.join(' '.join(l.split()) for l in valor.splitlines() if l.strip()) if clave in ('terminos', 'horario') else ' '.join(valor.split())
+        if clave == 'lugar_entrega' and len(valor) < 5:
+            flash('⛔ El lugar de entrega no puede quedar vacío.')
+            return redirect(destino)
+        c = OCConfig.query.get(clave)
+        if valor == OC_CONFIG_DEF[clave]:
+            if c:
+                db.session.delete(c)
+            continue
+        if not c:
+            c = OCConfig(clave=clave)
+            db.session.add(c)
+        c.valor, c.actualizado_por, c.fecha = valor[:3000], session.get('nombre', ''), hora_peru()
+    registrar_log("Actualizó los datos del PDF de órdenes de compra", 'bi-gear', 'text-info')
+    db.session.commit()
+    flash('✅ Datos del PDF guardados.')
+    return redirect(destino)
+
+
+@app.route('/ordenes/config/vaciar', methods=['POST'])
+@_ruta_oc('admin')
+def oc_vaciar():
+    """Borra SOLO los datos de Órdenes de Compra/Servicio (y sus archivos en S3). No toca ningún otro módulo."""
+    f = request.form
+    destino = url_for('oc_config', tab='vaciar')
+    if (f.get('confirmacion') or '').strip().upper() != 'BORRAR ORDENES':
+        flash('⛔ Escribe BORRAR ORDENES para confirmar.')
+        return redirect(destino)
+    claves = [d.s3_key for d in OrdenCompraDocumento.query.all() if d.s3_key]
+    n = OrdenCompra.query.count()
+    extra = []
+    try:
+        for modelo in (OrdenCompraDocumento, OrdenCompraEvento, OrdenCompraItem, OrdenCompra):
+            modelo.query.delete(synchronize_session=False)
+        if f.get('proveedores') == '1':
+            OCProveedor.query.delete(synchronize_session=False)
+            extra.append('proveedores guardados')
+        if f.get('catalogos') == '1':
+            CatalogoValor.query.filter(CatalogoValor.tipo.in_(list(CATALOGOS_OC))).delete(synchronize_session=False)
+            OCConfig.query.delete(synchronize_session=False)
+            db.session.flush()
+            _sembrar_catalogos_oc()
+            extra.append('U.M., condiciones de pago y datos del PDF')
+        registrar_log(f"VACIÓ los datos de Órdenes de Compra: {n} orden(es), {len(claves)} archivo(s)"
+                      + (f" + {', '.join(extra)}" if extra else ''), 'bi-trash3-fill', 'text-danger')
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        app.logger.exception("No se pudo vaciar el módulo de órdenes")
+        flash(f'⛔ No se pudo vaciar (no se borró nada): {e}')
+        return redirect(destino)
+    _borrar_de_s3(claves)
+    flash(f"✅ Órdenes vaciadas: {n} orden(es) y {len(claves)} archivo(s) borrados. La numeración vuelve a empezar en 000001"
+          + (f"; además: {', '.join(extra)}" if extra else '') + '.')
+    return redirect(destino)
+
+
+@app.context_processor
+def _contador_ordenes():
+    """Números para el menú: órdenes por aprobar (Gerencia) y aprobadas por recibir (Logística)."""
+    rol = session.get('role')
+    if rol not in ROLES_OC_VEN or not _oc_ok:
+        return {}
+    try:
+        return {'oc_por_aprobar': OrdenCompra.query.filter_by(estado='ENVIADA').count() if rol == 'admin' else 0,
+                'oc_por_recibir': OrdenCompra.query.filter(OrdenCompra.estado.in_(['APROBADA', 'RECIBIDA'])).count()
+                if rol in ROLES_OC_EDITAN else 0}
+    except Exception:
+        db.session.rollback()
+        return {}
 
 
 # --- ARRANQUE DE LA APLICACIÓN ---

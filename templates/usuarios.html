@@ -112,6 +112,8 @@
                             <span class="badge bg-success mb-1"><i class="bi bi-shop"></i> Ventas</span>
                         {% elif u.role == 'almacen' %}
                             <span class="badge bg-info text-dark mb-1"><i class="bi bi-box-seam"></i> Almacén</span>
+                        {% elif u.role == 'logistica' %}
+                            <span class="badge mb-1 text-white" style="background-color:#0f766e;"><i class="bi bi-truck-flatbed"></i> Logística</span>
                         {% elif u.role == 'chofer' %}
                             <span class="badge bg-secondary mb-1"><i class="bi bi-truck"></i> Chofer</span>
                         {% elif u.role == 'almacen_visor' %}
@@ -267,6 +269,7 @@
                             <option value="" disabled selected>-- Seleccionar Rol --</option>
                             <option value="vendedor">Vendedor</option>
                             <option value="almacen">Jefe de Almacén</option>
+                            <option value="logistica">Logística (Inventarios, Kardex, Insumos y Órdenes de Compra)</option>
                             <option value="chofer">Chofer / Transportista</option>
                             <option value="administracion">Administración</option>
                             <option value="auditor_stock">Auditor de Stock (Conteo Físico)</option>
