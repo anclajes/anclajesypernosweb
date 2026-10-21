@@ -35,21 +35,27 @@
 
 {% if vista == 'pendientes' %}
 <div class="pasos-ing mb-3">
-    <div><b class="nro">1</b> El material llegó y Logística dio la <b>conformidad</b> (estado, cantidad y documentos).</div>
-    <div><b class="nro">2</b> Haz el <b>movimiento de ingreso</b> en el Kardex del inventario. Si dice <span class="tag nuevo">NUEVO</span>, primero <b>crea el producto</b>.</div>
-    <div><b class="nro">3</b> Márcalo aquí como <b>ingresado</b>: queda tu nombre, fecha y hora.</div>
+    <div><b class="nro">1</b> Aquí aparece el material que <b>llegó con OC</b> y Logística ya revisó y dio <b>conforme</b>.</div>
+    <div><b class="nro">2</b> Ve al <b>inventario</b>, busca el producto (botón <i class="bi bi-search"></i> si tiene código) y <b>súmale</b> la cantidad. Si es <span class="tag nuevo">NUEVO</span>, créalo y súmalo.</div>
+    <div><b class="nro">3</b> Vuelve y pulsa <b>Marcar ingresado</b>: queda tu nombre, la fecha y la hora, y pasa a "Ya ingresados".</div>
 </div>
 {% endif %}
 
 {% for o, items in grupos %}
 <div class="oc-card shadow-sm" id="oc{{ o.id }}">
     <div class="cab">
-        <a class="oc-num" href="{{ url_for('oc_detalle', orden_id=o.id) }}"><span class="oc-tipo {{ o.tipo }}">{{ o.tipo }}</span> N° {{ '%06d'|format(o.numero) }}</a>
+        {% if puede_ver_oc %}<a class="oc-num" href="{{ url_for('oc_detalle', orden_id=o.id) }}">{% else %}<span class="oc-num">{% endif %}<span class="oc-tipo {{ o.tipo }}">{{ o.tipo }}</span> N° {{ '%06d'|format(o.numero) }}{% if puede_ver_oc %}</a>{% else %}</span>{% endif %}
         <span class="prov" title="{{ o.razon_social }}">{{ o.razon_social }}</span>
         <span class="oc-dest GENERAL">Inv. {{ empresas_oc[o.empresa or 'ANCLAJES'].corto }}</span>
         <span class="small text-muted"><i class="bi bi-box-seam"></i> Llegó {{ o.fecha_llegada.strftime('%d/%m/%Y %H:%M') if o.fecha_llegada else '-' }}
             · conforme {{ o.conforme_por.nombre_completo if o.conforme_por else '' }}</span>
-        <span class="small ms-auto">{% if o.numero_guia %}Guía <b>{{ o.numero_guia }}</b>{% endif %}{% if o.numero_factura %} · Factura <b>{{ o.numero_factura }}</b>{% endif %}</span>
+        <span class="small ms-auto d-flex flex-wrap gap-1 align-items-center">
+            {% for d in docs.get(o.id, []) if d.tipo in ['GUIA', 'FACTURA'] %}
+            <a class="badge text-decoration-none {{ 'text-bg-light border' }}" href="{{ url_for('oc_documento_ver', doc_id=d.id) }}" target="_blank">
+                <i class="bi {{ 'bi-truck' if d.tipo == 'GUIA' else 'bi-receipt' }}"></i> {{ 'Guía' if d.tipo == 'GUIA' else 'Factura' }}
+                {{ (o.numero_guia if d.tipo == 'GUIA' else o.numero_factura) or '' }}</a>
+            {% else %}{% if o.numero_guia %}Guía <b>{{ o.numero_guia }}</b>{% endif %}{% if o.numero_factura %} · Factura <b>{{ o.numero_factura }}</b>{% endif %}{% endfor %}
+        </span>
     </div>
     {% for i in items %}
     <div class="it">
@@ -58,11 +64,12 @@
             <div class="meta"><span class="cant text-dark">{{ i.cantidad|cant }}</span> {{ i.um }}
                 {% if i.es_nuevo and i.fecha_ingreso %}· <span class="tag vinc">Producto nuevo (creado)</span>
                 {% elif i.es_nuevo %}· <span class="tag nuevo">NUEVO: crearlo en el inventario</span>
-                {% elif i.codigo %}· <span class="tag vinc">{{ i.codigo }}</span> stock actual <b>{{ stock.get(i.codigo|upper, '—') }}</b>{% endif %}
-                {% if i.familia or i.calidad %}· {{ [i.familia, i.calidad]|select|join(' · ') }}{% endif %}</div>
+                {% elif i.codigo %}· <span class="tag vinc">{{ i.codigo }}</span> stock actual <b>{{ stock.get(i.codigo|upper, '—') }}</b>
+                    <a class="ms-1" href="{{ url_for('inventario', busqueda=i.codigo) }}" target="_blank" title="Buscar en el inventario"><i class="bi bi-search"></i> buscar</a>{% endif %}
+                {% if i.familia or i.calidad or i.estado_producto %}· {{ [i.familia, i.calidad, i.estado_producto]|select|join(' · ') }}{% endif %}</div>
         </div>
         {% if i.fecha_ingreso %}
-        <div class="hecho"><span class="aprob si"><i class="bi bi-check2"></i> Ingresado · SKU {{ i.sku_ingreso }}</span>
+        <div class="hecho"><span class="aprob si"><i class="bi bi-check2"></i> Ingresado{% if i.sku_ingreso %} · {{ i.sku_ingreso }}{% endif %}</span>
             <div class="text-muted mt-1">por <b>{{ i.ingresado_por.nombre_completo if i.ingresado_por else '' }}</b> el {{ i.fecha_ingreso.strftime('%d/%m/%Y %H:%M') }}</div>
             {% if i.nota_ingreso %}<div class="text-muted">{{ i.nota_ingreso }}</div>{% endif %}
             {% if es_admin %}<form method="POST" action="{{ url_for('oc_item_deshacer', item_id=i.id) }}" class="d-inline" onsubmit="return quitarMarca(this)">
@@ -72,7 +79,7 @@
         <form method="POST" action="{{ url_for('oc_item_ingresar', item_id=i.id) }}" class="form-ing position-relative" onsubmit="return confirmarIngreso(this, {{ 'true' if i.es_nuevo else 'false' }})">
             <input type="hidden" name="volver" value="{{ url_for('oc_ingresos_pendientes') }}">
             <input type="text" name="sku" class="form-control form-control-sm text-uppercase sku-in" autocomplete="off" value="{{ '' if i.es_nuevo else (i.codigo or '') }}"
-                   placeholder="{{ 'SKU del producto creado' if i.es_nuevo else 'SKU' }}" {{ 'required' if i.es_nuevo }}>
+                   placeholder="Código (opcional)" title="Opcional: el código con el que quedó en el inventario">
             <input type="text" name="nota" class="form-control form-control-sm" maxlength="300" placeholder="Nota (opcional)">
             <button class="btn btn-success btn-sm fw-bold"><i class="bi bi-box-arrow-in-down"></i> Marcar ingresado</button>
             <div class="list-group position-absolute shadow sku-sug" style="top: 100%;"></div>
@@ -91,8 +98,7 @@ function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'
 function confirmarIngreso(form, nuevo) {
     if (form.dataset.ok) return true;
     const sku = form.sku.value.trim();
-    if (!sku) { Swal.fire('Falta el SKU', nuevo ? 'Primero crea el producto en el inventario y escribe aquí su código.' : 'Escribe el SKU.', 'warning'); return false; }
-    Swal.fire({ icon: 'question', title: '¿Ya hiciste el movimiento en el Kardex?', html: `Se marcará como <b>ingresado</b> con el SKU <b>${esc(sku.toUpperCase())}</b>, a tu nombre y con la fecha y hora de ahora.`,
+    Swal.fire({ icon: 'question', title: '¿Ya lo sumaste en el inventario?', html: `Se marcará como <b>ingresado</b> a tu nombre, con la fecha y hora de ahora` + (sku ? ` (código <b>${esc(sku.toUpperCase())}</b>).` : '.'),
                 showCancelButton: true, confirmButtonText: 'Sí, ya ingresó', cancelButtonText: 'Todavía no' })
         .then(r => { if (r.isConfirmed) { form.dataset.ok = '1'; form.submit(); } });
     return false;

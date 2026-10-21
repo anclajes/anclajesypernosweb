@@ -17153,7 +17153,7 @@ def insumos_vaciar():
 # Las tablas se crean solas al arrancar (no hace falta ninguna ruta /fix_).
 # =====================================================================================
 ROLES_OC_EDITAN = ['admin', 'logistica']
-ROLES_OC_VEN = ['admin', 'logistica', 'administracion', 'almacen']
+ROLES_OC_VEN = ['admin', 'logistica', 'administracion']
 ROLES_OC_APRUEBAN = ['admin']
 ROLES_OC_INGRESAN = ['admin', 'logistica', 'almacen']      # marcan el ingreso del material al inventario
 EMPRESAS_OC = {'ANCLAJES': {'nombre': 'Anclajes y Pernos Perú SAC', 'corto': 'Anclajes', 'habilitada': True},
@@ -17249,7 +17249,8 @@ def _asegurar_oc():
                                                  ('actualizado_por', 'VARCHAR(100)'), ('fecha_actualizacion', 'TIMESTAMP')])
     _agregar_columnas_si_faltan('orden_compra', [('empresa', "VARCHAR(15) DEFAULT 'ANCLAJES'"), ('contacto_id', 'INTEGER'),
                                                  ('rechazo_categoria', 'VARCHAR(60)'), ('rechazo_opcion', 'VARCHAR(150)')])
-    _agregar_columnas_si_faltan('orden_compra_item', [('familia', 'VARCHAR(200)'), ('calidad', 'VARCHAR(200)'), ('es_nuevo', 'BOOLEAN DEFAULT FALSE'),
+    _agregar_columnas_si_faltan('orden_compra_item', [('familia', 'VARCHAR(200)'), ('calidad', 'VARCHAR(200)'), ('estado_producto', 'VARCHAR(100)'),
+                                                      ('es_nuevo', 'BOOLEAN DEFAULT FALSE'),
                                                       ('ingresado_por_id', 'INTEGER'), ('fecha_ingreso', 'TIMESTAMP'),
                                                       ('sku_ingreso', 'VARCHAR(60)'), ('nota_ingreso', 'VARCHAR(300)')])
     if not SystemConfig.query.get('oc_motivos_sembrado'):
@@ -17290,7 +17291,7 @@ def _ruta_oc(nivel='ver', como_json=False):
         @_wraps_insumos(f)
         def envoltura(*args, **kwargs):
             permitidos = {'ver': ROLES_OC_VEN, 'editar': ROLES_OC_EDITAN, 'aprobar': ROLES_OC_APRUEBAN, 'admin': ['admin'],
-                  'ingresar': ROLES_OC_INGRESAN}[nivel]
+                  'ingresar': ROLES_OC_INGRESAN, 'docs': list(set(ROLES_OC_VEN + ROLES_OC_INGRESAN))}[nivel]
             if session.get('role') not in permitidos:
                 if como_json:
                     return {'status': 'error', 'msg': 'No autorizado'}, 403
@@ -17543,9 +17544,10 @@ def _leer_orden_form(f, orden=None):
     n_filas = len(f.getlist('descripcion[]'))
     familias = f.getlist('familia[]') + [''] * n_filas
     calidades = f.getlist('calidad[]') + [''] * n_filas
+    estados = f.getlist('estado_producto[]') + [''] * n_filas
     filas = zip(f.getlist('descripcion[]'), f.getlist('cantidad[]'), f.getlist('um[]'), f.getlist('precio_unitario[]'),
-                f.getlist('origen[]'), f.getlist('codigo[]'), f.getlist('insumo_id[]'), familias, calidades)
-    for n, (desc, cant, um, pu, origen, codigo, insumo_id, familia, calidad) in enumerate(filas, start=1):
+                f.getlist('origen[]'), f.getlist('codigo[]'), f.getlist('insumo_id[]'), familias, calidades, estados)
+    for n, (desc, cant, um, pu, origen, codigo, insumo_id, familia, calidad, estado_p) in enumerate(filas, start=1):
         desc = ' '.join((desc or '').split()).upper()[:400]
         if not desc and not (cant or '').strip() and not (pu or '').strip():
             continue
@@ -17572,7 +17574,8 @@ def _leer_orden_form(f, orden=None):
         es_nuevo = tipo == 'OC' and datos.get('destino') == 'GENERAL' and origen != empresa
         items.append({'descripcion': desc, 'cantidad': round(cantidad, 4), 'um': um, 'precio_unitario': round(precio, 4),
                       'total': round(cantidad * precio, 2), 'origen': origen, 'codigo': codigo, 'insumo_id': ins_id,
-                      'familia': _limpio(familia, 200) or None, 'calidad': _limpio(calidad, 200) or None, 'es_nuevo': es_nuevo})
+                      'familia': _limpio(familia, 200) or None, 'calidad': _limpio(calidad, 200) or None,
+                      'estado_producto': (_limpio(estado_p, 100) or None) if codigo else None, 'es_nuevo': es_nuevo})
     if not items:
         errores.append('Agrega al menos un ítem.')
     if len(items) > 60:
@@ -17707,7 +17710,7 @@ def _orden_a_previo(o, items=None):
     d['fecha_entrega'] = o.fecha_entrega.isoformat() if o.fecha_entrega else ''
     d['items'] = [{'descripcion': i.descripcion, 'cantidad': i.cantidad, 'um': i.um, 'precio_unitario': i.precio_unitario,
                    'origen': i.origen or '', 'codigo': i.codigo or '', 'insumo_id': i.insumo_id or '', 'familia': i.familia or '',
-                   'calidad': i.calidad or ''} for i in (items or o.items)]
+                   'calidad': i.calidad or '', 'estado': i.estado_producto or ''} for i in (items or o.items)]
     return d
 
 
@@ -17750,11 +17753,11 @@ def oc_guardar():
         # se vuelve a mostrar el formulario con lo escrito (no se pierde nada) y la lista de lo que falta
         previo = {k: (v.isoformat() if hasattr(v, 'isoformat') else v) for k, v in datos.items()}
         previo.update(items=[{'descripcion': ' '.join((d or '').split()).upper(), 'cantidad': c, 'um': u, 'precio_unitario': pu, 'origen': o_,
-                              'codigo': cod, 'insumo_id': ii, 'familia': fa, 'calidad': ca}
-                             for d, c, u, pu, o_, cod, ii, fa, ca in zip(f.getlist('descripcion[]'), f.getlist('cantidad[]'), f.getlist('um[]'),
+                              'codigo': cod, 'insumo_id': ii, 'familia': fa, 'calidad': ca, 'estado': es}
+                             for d, c, u, pu, o_, cod, ii, fa, ca, es in zip(f.getlist('descripcion[]'), f.getlist('cantidad[]'), f.getlist('um[]'),
                                                                 f.getlist('precio_unitario[]'), f.getlist('origen[]'), f.getlist('codigo[]'),
                                                                 f.getlist('insumo_id[]'), f.getlist('familia[]') + [''] * 99,
-                                                                f.getlist('calidad[]') + [''] * 99) if (d or c or pu)],
+                                                                f.getlist('calidad[]') + [''] * 99, f.getlist('estado_producto[]') + [''] * 99) if (d or c or pu)],
                       duplicada_de=f.get('duplicada_de'), entrega_dias=f.get('entrega_dias'), fecha_entrega=f.get('fecha_entrega'))
         return render_template('oc_form.html', errores=errores, **_contexto_form_oc(orden, previo))
     enviar = f.get('accion') == 'enviar'
@@ -18006,9 +18009,29 @@ def oc_conforme(orden_id):
     if faltan:
         flash('⛔ Para dar conformidad confirma que ' + ', '.join(faltan) + '.')
         return redirect(destino)
-    if not OrdenCompraDocumento.query.filter(OrdenCompraDocumento.orden_id == orden.id,
-                                             OrdenCompraDocumento.tipo.in_(['GUIA', 'FACTURA'])).first():
-        flash('⛔ Adjunta al menos la GUÍA o la FACTURA antes de dar la conformidad.')
+    request.max_content_length = LIMITE_PETICION_MOVIMIENTO
+    claves = []
+    try:
+        n_docs, errores = _subir_docs_orden(orden, claves, ('GUIA', 'FACTURA'))
+        if errores:
+            flash('⛔ ' + ' '.join(errores))
+            return redirect(destino)
+        for campo in ('numero_guia', 'numero_factura'):
+            if (f.get(campo) or '').strip():
+                setattr(orden, campo, _limpio(f.get(campo), 60).upper())
+        db.session.flush()
+        if not OrdenCompraDocumento.query.filter(OrdenCompraDocumento.orden_id == orden.id,
+                                                 OrdenCompraDocumento.tipo.in_(['GUIA', 'FACTURA'])).first():
+            db.session.rollback()
+            _borrar_de_s3(claves)
+            flash('⛔ Falta adjuntar la GUÍA o la FACTURA (PDF o foto): es obligatoria para dar la conformidad.')
+            return redirect(destino)
+        if n_docs:
+            _oc_evento(orden, 'DOCUMENTO', f"Adjuntó {n_docs} documento(s) al dar la conformidad")
+    except Exception as e:
+        db.session.rollback()
+        _borrar_de_s3(claves)
+        flash(f'⛔ No se pudo guardar: {e}')
         return redirect(destino)
     orden.estado, orden.conforme_por_id, orden.fecha_conforme = 'CONFORME', session.get('user_id'), hora_peru()
     orden.nota_conforme = ' '.join((f.get('nota') or '').split())[:500] or None
@@ -18063,6 +18086,27 @@ def oc_documento(orden_id):
     return redirect(url_for('oc_detalle', orden_id=orden.id))
 
 
+@app.route('/ordenes/<int:orden_id>/numeros', methods=['POST'])
+@_ruta_oc('editar')
+def oc_numeros_documento(orden_id):
+    """N° de guía y N° de factura (se pueden completar en cualquier momento antes de que la orden se anule)."""
+    orden, no = _accion_oc(orden_id, 'documentos')
+    if no:
+        return no
+    cambios = []
+    for campo, etq in (('numero_guia', 'Guía'), ('numero_factura', 'Factura')):
+        if campo in request.form:
+            nuevo = _limpio(request.form.get(campo), 60).upper() or None
+            if nuevo != getattr(orden, campo):
+                cambios.append(f"{etq}: {getattr(orden, campo) or '-'} → {nuevo or '-'}")
+                setattr(orden, campo, nuevo)
+    if cambios:
+        _oc_evento(orden, 'DOCUMENTO', 'N° de documento: ' + '; '.join(cambios))
+        db.session.commit()
+        flash('✅ Número guardado.')
+    return redirect(url_for('oc_detalle', orden_id=orden.id))
+
+
 @app.route('/ordenes/documento/<int:doc_id>/borrar', methods=['POST'])
 @_ruta_oc('editar')
 def oc_documento_borrar(doc_id):
@@ -18081,7 +18125,7 @@ def oc_documento_borrar(doc_id):
 
 
 @app.route('/ordenes/documento/<int:doc_id>')
-@_ruta_oc()
+@_ruta_oc('docs')
 def oc_documento_ver(doc_id):
     doc = OrdenCompraDocumento.query.get_or_404(doc_id)
     try:
@@ -18121,7 +18165,10 @@ def oc_ingresos_pendientes():
         for p in Product.query.filter(func.upper(Product.sku).in_(list(skus))).all():
             stock[(p.sku or '').upper()] = p.stock_actual or 0
     pendientes = len(_items_por_ingresar())
-    return render_template('oc_ingresos.html', grupos=grupos, vista=vista, stock=stock, n_pendientes=pendientes, monedas=MONEDAS_OC,
+    docs = {}
+    for d in OrdenCompraDocumento.query.filter(OrdenCompraDocumento.orden_id.in_([o.id for o, _ in grupos] or [0])).all():
+        docs.setdefault(d.orden_id, []).append(d)
+    return render_template('oc_ingresos.html', grupos=grupos, docs=docs, puede_ver_oc=session.get('role') in ROLES_OC_VEN, vista=vista, stock=stock, n_pendientes=pendientes, monedas=MONEDAS_OC,
                            empresas_oc=EMPRESAS_OC, es_admin=session.get('role') == 'admin', seccion='ingresos')
 
 
@@ -18139,23 +18186,24 @@ def oc_item_ingresar(item_id):
     if item.fecha_ingreso:
         flash('Ese ítem ya estaba marcado como ingresado.')
         return redirect(volver)
-    sku = _limpio(request.form.get('sku'), 60).upper() or (item.codigo or '').upper()
-    Modelo = Product if (orden.empresa or 'ANCLAJES') == 'ANCLAJES' else ProductImportBolts
-    prod = Modelo.query.filter(func.upper(Modelo.sku) == sku).first() if sku else None
-    if not prod:
-        flash(f'⛔ {"Ese producto es NUEVO: primero créalo en el inventario y escribe aquí su código (SKU)." if item.es_nuevo else "No se encontró el SKU en el inventario."}')
-        return redirect(volver)
+    # El SKU es OPCIONAL: ayuda a ubicar el producto, pero no impide marcarlo (Almacén pudo crearlo con otro código).
+    sku = _limpio(request.form.get('sku'), 60).upper() or (item.codigo or '').upper() or None
+    if sku:
+        Modelo = Product if (orden.empresa or 'ANCLAJES') == 'ANCLAJES' else ProductImportBolts
+        prod = Modelo.query.filter(func.upper(Modelo.sku) == sku).first()
+        sku = prod.sku if prod else sku
     ahora = hora_peru()
-    item.ingresado_por_id, item.fecha_ingreso, item.sku_ingreso = session.get('user_id'), ahora, prod.sku
+    item.ingresado_por_id, item.fecha_ingreso, item.sku_ingreso = session.get('user_id'), ahora, sku
     item.nota_ingreso = ' '.join((request.form.get('nota') or '').split())[:300] or None
     _oc_evento(orden, 'INGRESO_ITEM', f"Ítem {item.item} ({item.descripcion[:60]}) ingresado al inventario {EMPRESAS_OC[orden.empresa or 'ANCLAJES']['corto']}"
-                                     f" con SKU {prod.sku}" + (f" · {item.nota_ingreso}" if item.nota_ingreso else ''))
+                                     f" por {session.get('nombre', '')}" + (f" · SKU {sku}" if sku else '') + (f" · {item.nota_ingreso}" if item.nota_ingreso else ''))
     if all(i.fecha_ingreso for i in orden.items):
         orden.kardex_registrado_por_id, orden.fecha_kardex = session.get('user_id'), ahora
         _oc_evento(orden, 'KARDEX', 'Todos los ítems quedaron ingresados al inventario')
-    registrar_log(f"Marcó como ingresado al inventario: {item.descripcion[:60]} (SKU {prod.sku}) de la {_oc_codigo(orden)}", 'bi-box-arrow-in-down', 'text-success')
+    registrar_log(f"Marcó como ingresado al inventario: {item.descripcion[:60]}{f' (SKU {sku})' if sku else ''} de la {_oc_codigo(orden)}",
+                  'bi-box-arrow-in-down', 'text-success')
     db.session.commit()
-    flash(f'✅ Ítem {item.item} de la {_oc_codigo(orden)} marcado como ingresado (SKU {prod.sku}).')
+    flash(f'✅ Ítem {item.item} de la {_oc_codigo(orden)} marcado como ingresado por {session.get("nombre", "")}.')
     return redirect(volver)
 
 
@@ -18382,10 +18430,10 @@ def _catalogo_productos_oc(empresa):
             q = q.filter(Product.es_shadow_importbolts.isnot(True))
         for p in q.all():
             d = datos.setdefault((p.sku or '').upper(), {'sku': p.sku, 'descripcion': p.nombre, 'familia': p.categoria or '', 'calidad': p.calidad or '',
-                                                       'stock_ANCLAJES': None, 'stock_IMPORTBOLTS': None})
+                                                       'estado': p.estado or '', 'stock_ANCLAJES': None, 'stock_IMPORTBOLTS': None})
             d[f'stock_{origen}'] = p.stock_actual or 0
             if origen == empresa:
-                d.update(descripcion=p.nombre, familia=p.categoria or '', calidad=p.calidad or '')
+                d.update(descripcion=p.nombre, familia=p.categoria or '', calidad=p.calidad or '', estado=p.estado or '')
     return list(datos.values())
 
 
@@ -18409,7 +18457,7 @@ def oc_api_productos():
         for d in base:
             d['origen'] = empresa if d[f'stock_{empresa}'] is not None else 'IMPORTBOLTS' if empresa == 'ANCLAJES' else 'ANCLAJES'
             d['en_empresa'] = d[f'stock_{empresa}'] is not None
-    por_texto = [d for d in base if all(t in f"{d['sku']} {d['descripcion']}".upper() for t in terminos)]
+    por_texto = [d for d in base if all(t in f"{d['sku']} {d['descripcion']} {d.get('estado', '')}".upper() for t in terminos)]
     con_familia = [d for d in por_texto if not familia or familia in d['familia'].upper()]
     con_calidad = [d for d in por_texto if not calidad or calidad in d['calidad'].upper()]
     res = [d for d in con_familia if not calidad or calidad in d['calidad'].upper()]
@@ -18638,7 +18686,7 @@ def oc_vaciar():
 def _contador_ordenes():
     """Números para el menú: órdenes por aprobar (Gerencia) y aprobadas por recibir (Logística)."""
     rol = session.get('role')
-    if rol not in ROLES_OC_VEN or not _oc_ok:
+    if (rol not in ROLES_OC_VEN and rol not in ROLES_OC_INGRESAN) or not _oc_ok:
         return {}
     try:
         return {'oc_por_aprobar': OrdenCompra.query.filter_by(estado='ENVIADA').count() if rol == 'admin' else 0,

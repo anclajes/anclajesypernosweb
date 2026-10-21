@@ -48,6 +48,7 @@
     .ficha.vinc { background: #f0fdf4; border: 1px solid #bbf7d0; color: #14532d; }
     .ficha.nuevo { background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412; }
     .ficha .x { border: 0; background: none; color: #94a3b8; padding: 0 3px; }
+    .est { display: inline-block; font-weight: 800; border-radius: 6px; padding: 0 6px; background: #fef3c7; color: #92400e; }
     .stk { display: inline-block; font-weight: 800; border-radius: 6px; padding: 0 6px; background: #fff; border: 1px solid #e2e8f0; color: #0f172a; }
     .res-prod { border: 1px solid #e2e8f0; border-radius: 10px; padding: 8px 10px; margin-bottom: 6px; cursor: pointer; background: #fff; }
     .res-prod:hover { border-color: #0B3D91; background: #f8fbff; }
@@ -247,7 +248,7 @@
         <span class="n"></span>
         <button type="button" class="quitar" title="Quitar"><i class="bi bi-x-circle-fill"></i></button>
         <input type="hidden" name="origen[]" class="i-origen"><input type="hidden" name="codigo[]" class="i-codigo"><input type="hidden" name="insumo_id[]" class="i-insumo">
-        <input type="hidden" name="familia[]" class="i-familia"><input type="hidden" name="calidad[]" class="i-calidad">
+        <input type="hidden" name="familia[]" class="i-familia"><input type="hidden" name="calidad[]" class="i-calidad"><input type="hidden" name="estado_producto[]" class="i-estado">
         <div class="row g-2">
             <div class="col-12 position-relative"><label>Descripción *</label>
                 <div class="input-group input-group-sm">
@@ -341,7 +342,7 @@ function pintarFicha(fila) {
     if (p) {
         const enEmpresa = p.origen === 'INSUMO' || p.origen === empresa();
         box.innerHTML = `<div class="ficha ${enEmpresa || destino() !== 'GENERAL' ? 'vinc' : 'nuevo'}"><i class="bi bi-link-45deg"></i> <b>${esc(p.sku)}</b>` +
-            (p.familia ? ` · ${esc(p.familia)}` : '') + (p.calidad ? ` · ${esc(p.calidad)}` : '') + textoStock(p) +
+            (p.familia ? ` · ${esc(p.familia)}` : '') + (p.calidad ? ` · ${esc(p.calidad)}` : '') + (p.estado ? ` · <span class="est">${esc(p.estado)}</span>` : '') + textoStock(p) +
             ` <button type="button" class="x" title="Quitar vínculo"><i class="bi bi-x-circle"></i></button>` +
             (!enEmpresa && destino() === 'GENERAL' && tipo() === 'OC' ? `<div><b>NUEVO en ${esc(corto())}:</b> existe solo en ${p.origen === 'IMPORTBOLTS' ? 'Import Bolts' : 'otro inventario'}; Almacén deberá crearlo.</div>` : '') +
             (p.ultimo ? `<div class="text-muted">Último precio: <b>${esc(p.ultimo.moneda)} ${fmt(p.ultimo.precio)}</b> / ${esc(p.ultimo.um)} · ${esc(p.ultimo.orden)} · ${esc(p.ultimo.proveedor)}</div>` : '') + '</div>';
@@ -360,6 +361,7 @@ function vincular(fila, p) {
     fila.querySelector('.i-insumo').value = p && p.insumo_id ? p.insumo_id : '';
     fila.querySelector('.i-familia').value = p ? (p.familia || '') : '';
     fila.querySelector('.i-calidad').value = p ? (p.calidad || '') : '';
+    fila.querySelector('.i-estado').value = p ? (p.estado || '') : '';
     pintarFicha(fila);
 }
 function elegirProducto(fila, p) {
@@ -373,7 +375,7 @@ function elegirProducto(fila, p) {
 function tarjetaProducto(p) {
     const nom = { ANCLAJES: 'Anclajes', IMPORTBOLTS: 'Import Bolts', INSUMO: 'Insumo' }[p.origen] || '';
     return `<div class="sku">${esc(p.sku)} <span class="text-muted fw-normal">· ${nom}</span></div><div class="ds">${esc(p.descripcion)}</div>` +
-        `<div class="mt">${p.familia ? 'Familia: <b>' + esc(p.familia) + '</b>' : ''}${p.calidad ? ' · Calidad: <b>' + esc(p.calidad) + '</b>' : ''}${textoStock(p)}</div>` +
+        `<div class="mt">${p.familia ? 'Familia: <b>' + esc(p.familia) + '</b>' : ''}${p.calidad ? ' · Calidad: <b>' + esc(p.calidad) + '</b>' : ''}${p.estado ? ' · Estado: <span class="est">' + esc(p.estado) + '</span>' : ''}${textoStock(p)}</div>` +
         (p.ultimo ? `<div class="mt">Últ. precio ${esc(p.ultimo.moneda)} ${fmt(p.ultimo.precio)} / ${esc(p.ultimo.um)} (${esc(p.ultimo.orden)})</div>` : '');
 }
 function urlProductos(q, familia, calidad) {
@@ -388,7 +390,7 @@ function agregarItem(datos) {
     desc.value = datos.descripcion || '';
     fila.querySelector('.i-cant').value = datos.cantidad || '';
     fila.querySelector('.i-pu').value = (datos.precio_unitario === 0 || datos.precio_unitario) ? datos.precio_unitario : '';
-    if (datos.codigo) vincular(fila, { origen: datos.origen, sku: datos.codigo, insumo_id: datos.insumo_id, familia: datos.familia, calidad: datos.calidad });
+    if (datos.codigo) vincular(fila, { origen: datos.origen, sku: datos.codigo, insumo_id: datos.insumo_id, familia: datos.familia, calidad: datos.calidad, estado: datos.estado });
     let t = null;
     desc.addEventListener('input', () => {
         if (fila._prod) vincular(fila, null);

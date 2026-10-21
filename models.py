@@ -1383,6 +1383,7 @@ class OrdenCompraItem(db.Model):
     insumo_id = db.Column(db.Integer, db.ForeignKey('insumo.id'), nullable=True)
     familia = db.Column(db.String(200))
     calidad = db.Column(db.String(200))
+    estado_producto = db.Column(db.String(100))                # estado del producto en el inventario (nacional, oxidado...)
     es_nuevo = db.Column(db.Boolean, default=False)            # producto que NO está en el inventario: hay que crearlo
     # Ingreso al inventario (lo marca Almacén cuando hizo el movimiento en el Kardex)
     ingresado_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)

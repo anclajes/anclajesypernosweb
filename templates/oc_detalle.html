@@ -57,6 +57,25 @@
     .acciones .btn { font-weight: 700; }
     .check-conf { border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 8px 10px; margin-bottom: 6px; }
     .check-conf:has(input:checked) { border-color: #16a34a; background: #f0fdf4; }
+    .motivo-cat { font-size: .68rem; font-weight: 800; letter-spacing: .05em; color: #b91c1c; text-transform: uppercase; margin: 10px 0 4px; }
+    .motivo-op { display: flex; gap: 10px; align-items: flex-start; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 8px 10px; margin-bottom: 5px; cursor: pointer; font-size: .86rem; }
+    .motivo-op:hover { border-color: #fca5a5; }
+    .motivo-op:has(input:checked) { border-color: #dc2626; background: #fef2f2; font-weight: 600; }
+    .docs-grid { display: grid; grid-template-columns: 1fr; gap: 8px; }
+    .doc-tipo { border: 1px solid #e2e8f0; border-radius: 12px; padding: 8px 10px; }
+    .doc-tipo .cab { display: flex; align-items: center; gap: 8px; }
+    .doc-tipo .ico { width: 32px; height: 32px; border-radius: 9px; display: flex; align-items: center; justify-content: center; font-size: 1.05rem; flex: 0 0 auto; }
+    .doc-tipo.GUIA .ico { background: #ede9fe; color: #5b21b6; } .doc-tipo.FACTURA .ico { background: #dcfce7; color: #166534; }
+    .doc-tipo.COTIZACION .ico { background: #e0f2fe; color: #075985; } .doc-tipo.OTRO .ico { background: #f1f5f9; color: #334155; }
+    .doc-tipo .nom { font-weight: 800; font-size: .84rem; line-height: 1.1; }
+    .doc-tipo .nro { font-size: .72rem; color: #475569; }
+    .doc-tipo .falta { font-size: .66rem; font-weight: 800; color: #b45309; background: #fef3c7; border-radius: 10px; padding: 0 7px; }
+    .doc-tipo .ok { font-size: .66rem; font-weight: 800; color: #166534; background: #dcfce7; border-radius: 10px; padding: 0 7px; }
+    .archivo { display: flex; align-items: center; gap: 6px; font-size: .74rem; border-top: 1px dashed #e2e8f0; margin-top: 6px; padding-top: 6px; }
+    .archivo .n { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .subir { display: inline-flex; align-items: center; gap: 4px; font-size: .72rem; font-weight: 700; color: #0B3D91; cursor: pointer; margin: 0; }
+    .subir input { display: none; }
+    .tag.estado { background: #fef3c7; color: #92400e; }
     .obs { border-left: 3px solid #7c3aed; background: #faf5ff; border-radius: 8px; padding: 6px 10px; margin-bottom: 6px; font-size: .8rem; }
 </style>
 
@@ -174,6 +193,7 @@
                     <tr><td class="ps-3 text-muted">{{ i.item }}</td>
                         <td>{{ i.descripcion }}
                             <div style="font-size:.7rem;">{% if i.codigo %}<span class="tag vinc">{{ i.codigo }}</span>{% endif %}
+                                {% if i.estado_producto %}<span class="tag estado">{{ i.estado_producto }}</span>{% endif %}
                                 {% if i.es_nuevo %}<span class="tag nuevo">NUEVO en {{ (orden.empresa or 'ANCLAJES')|title }}</span>{% endif %}
                                 <span class="text-muted">{{ [i.familia, i.calidad]|select|join(' · ') }}</span></div></td>
                         <td class="text-end num">{{ i.cantidad|cant }}</td><td>{{ i.um }}</td>
@@ -231,25 +251,44 @@
     <div class="col-12 col-lg-4">
         <div class="panel">
             <div class="panel-t"><i class="bi bi-paperclip"></i> Documentos</div>
-            {% for d in docs %}
-            <div class="doc {{ d.tipo }}">
-                <span class="ico"><i class="bi {{ 'bi-file-earmark-pdf' if d.content_type == 'application/pdf' else 'bi-image' }}"></i></span>
-                <div class="flex-grow-1 small" style="min-width:0;"><b>{{ {'GUIA': 'Guía de remisión', 'FACTURA': 'Factura', 'COTIZACION': 'Cotización', 'OTRO': 'Otro'}[d.tipo] }}</b>
-                    <div class="text-muted text-truncate">{{ d.nombre_original }} · {{ d.subido_por }} · {{ d.fecha.strftime('%d/%m %H:%M') }}</div></div>
-                <a class="btn btn-sm btn-outline-primary py-0" href="{{ url_for('oc_documento_ver', doc_id=d.id) }}" target="_blank" title="Ver"><i class="bi bi-eye"></i></a>
-                {% if p.borrar_docs %}<form method="POST" action="{{ url_for('oc_documento_borrar', doc_id=d.id) }}" onsubmit="return confirmar(this, '¿Borrar este documento?')"><button class="btn btn-sm btn-outline-danger py-0" title="Borrar"><i class="bi bi-trash"></i></button></form>{% endif %}
-            </div>
-            {% else %}<div class="text-muted small mb-2">Sin documentos todavía.</div>{% endfor %}
-            {% if p.documentos %}
-            <form method="POST" action="{{ url_for('oc_documento', orden_id=orden.id) }}" enctype="multipart/form-data" class="mt-2"
-                  onsubmit="this.querySelector('input[type=file]').name = 'doc_' + this.tipo.value;">
-                <div class="row g-1">
-                    <div class="col-5"><select name="tipo" class="form-select form-select-sm"><option value="GUIA">Guía</option><option value="FACTURA">Factura</option><option value="COTIZACION">Cotización</option><option value="OTRO">Otro</option></select></div>
-                    <div class="col-7"><button class="btn btn-primary btn-sm w-100"><i class="bi bi-upload"></i> Adjuntar</button></div>
-                    <div class="col-12"><input type="file" name="doc_GUIA" class="form-control form-control-sm" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*" required></div>
+            <div class="form-text mb-2" style="font-size:.7rem;">Se pueden subir <b>en cualquier momento</b> (la cotización desde el inicio; guía y factura apenas lleguen).
+                La <b>guía o la factura es obligatoria</b> para dar la conformidad. PDF o foto, máx. 5MB.</div>
+            <div class="docs-grid">
+            {% for tipo, nombre, icono, campo in [('GUIA', 'Guía de remisión', 'bi-truck', 'numero_guia'), ('FACTURA', 'Factura', 'bi-receipt', 'numero_factura'),
+                                                   ('COTIZACION', 'Cotización', 'bi-file-earmark-text', None), ('OTRO', 'Otros', 'bi-paperclip', None)] %}
+            {% set lista = docs|selectattr('tipo', 'equalto', tipo)|list %}
+            <div class="doc-tipo {{ tipo }}">
+                <div class="cab">
+                    <span class="ico"><i class="bi {{ icono }}"></i></span>
+                    <div class="flex-grow-1" style="min-width:0;">
+                        <div class="nom">{{ nombre }}
+                            {% if tipo in ['GUIA', 'FACTURA'] %}{% if lista %}<span class="ok">adjunta</span>{% elif orden.estado in ['RECIBIDA'] %}<span class="falta">falta</span>{% endif %}{% endif %}</div>
+                        {% if campo %}<div class="nro">N° <b>{{ orden[campo] or '—' }}</b>
+                            {% if p.documentos %}<button type="button" class="btn btn-link btn-sm p-0 ms-1" style="font-size:.7rem;" onclick="editarNumero('{{ campo }}', '{{ nombre }}', {{ (orden[campo] or '')|tojson|forceescape }})"><i class="bi bi-pencil"></i></button>{% endif %}</div>
+                        {% elif tipo == 'COTIZACION' and orden.cotizacion %}<div class="nro">N° <b>{{ orden.cotizacion }}</b></div>{% endif %}
+                    </div>
+                    {% if p.documentos %}
+                    <form method="POST" action="{{ url_for('oc_documento', orden_id=orden.id) }}" enctype="multipart/form-data" class="m-0">
+                        <input type="hidden" name="tipo" value="{{ tipo }}">
+                        <label class="subir btn btn-sm btn-outline-primary py-0"><i class="bi bi-upload"></i> Subir
+                            <input type="file" name="doc_{{ tipo }}" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*" onchange="this.form.submit()"></label>
+                    </form>
+                    {% endif %}
                 </div>
-                <div class="form-text" style="font-size:.68rem;">PDF o foto · máx. 5MB</div>
-            </form>
+                {% for d in lista %}
+                <div class="archivo">
+                    <i class="bi {{ 'bi-file-earmark-pdf text-danger' if d.content_type == 'application/pdf' else 'bi-image text-primary' }}"></i>
+                    <span class="n" title="{{ d.nombre_original }}">{{ d.nombre_original }}<br><span class="text-muted">{{ d.subido_por }} · {{ d.fecha.strftime('%d/%m %H:%M') }}</span></span>
+                    <a class="btn btn-sm btn-outline-primary py-0" href="{{ url_for('oc_documento_ver', doc_id=d.id) }}" target="_blank" title="Ver"><i class="bi bi-eye"></i></a>
+                    <a class="btn btn-sm btn-outline-secondary py-0" href="{{ url_for('oc_documento_ver', doc_id=d.id, download=1) }}" title="Descargar"><i class="bi bi-download"></i></a>
+                    {% if p.borrar_docs %}<form method="POST" action="{{ url_for('oc_documento_borrar', doc_id=d.id) }}" class="m-0" onsubmit="return confirmar(this, '¿Borrar este documento?')"><button class="btn btn-sm btn-outline-danger py-0" title="Borrar"><i class="bi bi-trash"></i></button></form>{% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            {% endfor %}
+            </div>
+            {% if p.documentos %}
+            <form method="POST" action="{{ url_for('oc_numeros_documento', orden_id=orden.id) }}" id="formNumero" class="d-none"><input type="hidden" name="x" id="numCampo"></form>
             {% endif %}
         </div>
 
@@ -280,11 +319,12 @@
 
 {% if p.rechazar %}{% call modal('mRechazar', 'Rechazar ' ~ oc_codigo(orden), '#b91c1c') %}
 <form method="POST" action="{{ url_for('oc_rechazar', orden_id=orden.id) }}"><div class="modal-body">
-    <label class="small fw-bold">Motivo del rechazo *</label>
-    <select name="motivo_id" class="form-select mb-2" required><option value="">— Elige el motivo —</option>
-        {% for cat, lista in motivos.items() %}<optgroup label="{{ cat }}">{% for m in lista %}<option value="{{ m.id }}">{{ m.motivo }}</option>{% endfor %}</optgroup>{% endfor %}
-    </select>
-    <label class="small fw-bold">Explicación adicional</label>
+    <div class="small fw-bold">Motivo del rechazo *</div>
+    {% for cat, lista in motivos.items() %}
+    <div class="motivo-cat">{{ cat }}</div>
+    {% for m in lista %}<label class="motivo-op"><input class="form-check-input mt-1" type="radio" name="motivo_id" value="{{ m.id }}" required><span>{{ m.motivo }}</span></label>{% endfor %}
+    {% else %}<div class="text-muted small">No hay motivos configurados (Órdenes → Configuración).</div>{% endfor %}
+    <label class="small fw-bold mt-2">Explicación adicional (opcional)</label>
     <textarea name="motivo" class="form-control" rows="3" maxlength="300" placeholder="Ej: la cotización de otro proveedor sale S/ 50 menos"></textarea>
     <div class="form-text">El PDF quedará marcado como RECHAZADA con este motivo. Los motivos se configuran en Órdenes → Configuración.</div>
 </div><div class="modal-footer p-2"><button class="btn btn-danger w-100 fw-bold">Rechazar</button></div></form>
@@ -318,14 +358,25 @@
 {% endcall %}{% endif %}
 
 {% if p.conforme %}{% call modal('mConforme', 'Conformidad del material', '#15803d') %}
-<form method="POST" action="{{ url_for('oc_conforme', orden_id=orden.id) }}" id="formConforme"><div class="modal-body">
+<form method="POST" action="{{ url_for('oc_conforme', orden_id=orden.id) }}" id="formConforme" enctype="multipart/form-data"><div class="modal-body">
+    {% set hay_doc = docs|selectattr('tipo', 'in', ['GUIA', 'FACTURA'])|list %}
+    <div class="small fw-bold mb-1"><i class="bi bi-paperclip"></i> Documentos de la entrega</div>
+    <div class="row g-2 mb-2">
+        <div class="col-6"><label class="small">N° de guía</label><input name="numero_guia" class="form-control form-control-sm text-uppercase" maxlength="60" value="{{ orden.numero_guia or '' }}"></div>
+        <div class="col-6"><label class="small">N° de factura</label><input name="numero_factura" class="form-control form-control-sm text-uppercase" maxlength="60" value="{{ orden.numero_factura or '' }}"></div>
+        <div class="col-12 col-sm-6"><label class="small">Guía (PDF o foto) {% if docs|selectattr('tipo', 'equalto', 'GUIA')|list %}<span class="text-success fw-bold">✓ ya adjunta</span>{% endif %}</label>
+            <input type="file" name="doc_GUIA" class="form-control form-control-sm" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*"></div>
+        <div class="col-12 col-sm-6"><label class="small">Factura (PDF o foto) {% if docs|selectattr('tipo', 'equalto', 'FACTURA')|list %}<span class="text-success fw-bold">✓ ya adjunta</span>{% endif %}</label>
+            <input type="file" name="doc_FACTURA" class="form-control form-control-sm" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*"></div>
+    </div>
+    {% if not hay_doc %}<div class="alert alert-warning py-1 px-2 small mb-2"><i class="bi bi-exclamation-triangle-fill"></i> Obligatorio: adjunta aquí la <b>guía o la factura</b>.</div>{% endif %}
+    <div class="small fw-bold mb-1"><i class="bi bi-check2-square"></i> Revisión</div>
     <p class="small text-muted mb-2">Marca solo si revisaste todo. Queda registrado con tu nombre, fecha y hora.</p>
     {% for k, t, d in [('chk_estado', 'El material llegó en buen estado', 'Sin daños, óxido ni piezas abiertas'), ('chk_cantidad', 'La cantidad es la correcta', 'Coincide con lo pedido en la orden'),
                         ('chk_documentos', 'Guía y factura correctas', 'Datos, cantidades y precios coinciden con la orden')] %}
     <label class="check-conf d-flex gap-2 align-items-start w-100"><input class="form-check-input mt-1" type="checkbox" name="{{ k }}" value="1">
         <span><b class="small">{{ t }}</b><div class="text-muted" style="font-size:.72rem;">{{ d }}</div></span></label>
     {% endfor %}
-    {% if not (docs|selectattr('tipo', 'in', ['GUIA', 'FACTURA'])|list) %}<div class="alert alert-warning py-1 px-2 small mt-2 mb-1"><i class="bi bi-exclamation-triangle-fill"></i> Primero adjunta la guía o la factura.</div>{% endif %}
     <label class="small fw-bold mt-2">Nota (opcional)</label><textarea name="nota" class="form-control" rows="2" maxlength="500"></textarea>
 </div><div class="modal-footer p-2"><button class="btn btn-success w-100 fw-bold"><i class="bi bi-check-circle-fill"></i> Todo conforme</button></div></form>
 {% endcall %}{% endif %}
@@ -345,10 +396,19 @@ function confirmar(form, texto) {
         .then(r => { if (r.isConfirmed) { form.dataset.ok = '1'; form.submit(); } });
     return false;
 }
+const HAY_DOC = {{ 'true' if docs|selectattr('tipo', 'in', ['GUIA', 'FACTURA'])|list else 'false' }};
 document.getElementById('formConforme')?.addEventListener('submit', function (e) {
     if ([...this.querySelectorAll('input[type=checkbox]')].some(c => !c.checked)) {
-        e.preventDefault(); Swal.fire('Falta confirmar', 'Marca las tres casillas: estado, cantidad y documentos.', 'warning');
+        e.preventDefault(); return Swal.fire('Falta confirmar', 'Marca las tres casillas: estado, cantidad y documentos.', 'warning');
+    }
+    if (!HAY_DOC && !this.doc_GUIA.files.length && !this.doc_FACTURA.files.length) {
+        e.preventDefault(); return Swal.fire('Falta un documento', 'Adjunta la guía o la factura (PDF o foto).', 'warning');
     }
 });
+function editarNumero(campo, nombre, valor) {
+    Swal.fire({ title: `N° de ${nombre}`, input: 'text', inputValue: valor, showCancelButton: true, confirmButtonText: 'Guardar', cancelButtonText: 'Cancelar' })
+        .then(r => { if (!r.isConfirmed) return; const f = document.getElementById('formNumero'); const i = document.getElementById('numCampo');
+                     i.name = campo; i.value = (r.value || '').toUpperCase(); f.submit(); });
+}
 </script>
 {% endblock %}

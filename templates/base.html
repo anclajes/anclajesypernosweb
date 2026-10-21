@@ -175,8 +175,8 @@
                 </div>
                 {% endif %}
 
-                {% if session.get('role') in ['admin', 'logistica', 'administracion', 'almacen'] %}
-                {% set en_oc = (request.endpoint or '').startswith('oc_') %}
+                {% if session.get('role') in ['admin', 'logistica', 'administracion'] %}
+                {% set en_oc = (request.endpoint or '').startswith('oc_') and request.endpoint != 'oc_ingresos_pendientes' %}
                 <a class="nav-link" data-bs-toggle="collapse" href="#collapseOC" role="button" aria-expanded="{{ 'true' if en_oc else 'false' }}" aria-controls="collapseOC">
                     <i class="bi bi-cart-check me-2"></i> <span>Órdenes de Compra</span>
                     {% if oc_por_aprobar %}<span class="badge rounded-pill bg-warning text-dark ms-1" title="Órdenes esperando tu aprobación">{{ oc_por_aprobar }}</span>{% endif %}
