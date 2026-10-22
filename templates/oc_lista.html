@@ -4,6 +4,13 @@
 {% block content %}
 {% include '_oc_nav.html' %}
 <style>
+    .empresas { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+    .empresas a { display: inline-flex; align-items: center; gap: 8px; border: 2px solid #e2e8f0; background: #fff; border-radius: 12px; padding: 6px 12px; text-decoration: none; color: #334155; font-weight: 800; font-size: .84rem; }
+    .empresas a img { height: 22px; width: 64px; object-fit: contain; }
+    .empresas a .c { font-size: .7rem; background: #f1f5f9; border-radius: 10px; padding: 0 7px; color: #475569; }
+    .empresas a.on { border-color: var(--e); color: var(--e); box-shadow: 0 0 0 3px color-mix(in srgb, var(--e) 15%, transparent); }
+    .empresas a.on .c { background: var(--e); color: #fff; }
+    .emp-chip { display: inline-block; font-size: .58rem; font-weight: 800; border-radius: 5px; padding: 0 5px; color: #fff; letter-spacing: .02em; }
     .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-bottom: 12px; }
     .kpi { display: flex; gap: 10px; align-items: center; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 9px 12px; text-decoration: none; color: #0f172a; border-left: 4px solid var(--k); }
     .kpi:hover { box-shadow: 0 2px 8px rgba(15,23,42,.08); color: #0f172a; }
@@ -47,6 +54,16 @@
 
 {% macro url_vista(v) %}{{ url_for('oc_lista', vista=v, tipo=tipo, destino=destino, proveedor=prov_id or '', solicitante=solicitante, motivo=motivo, pago=pago_f, docs=docs_f, q=buscar,
                                     desde=desde.isoformat() if desde else '', hasta=hasta.isoformat() if hasta else '') }}{% endmacro %}
+
+<div class="empresas">
+    {% for e, info in empresas_oc.items() %}
+    <a href="{{ url_for('oc_lista', empresa=e, vista=vista) }}" class="{{ 'on' if emp_sel == e }}" style="--e: {{ info.color }};">
+        <img src="{{ url_for('static', filename='img/' ~ info.logo) }}" alt="" width="64" height="22"> {{ info.corto }} <span class="c">{{ conteo_emp[e] }}</span></a>
+    {% endfor %}
+    <a href="{{ url_for('oc_lista', empresa='TODAS', vista=vista) }}" class="{{ 'on' if emp_sel == 'TODAS' }}" style="--e: #0f172a;"><i class="bi bi-collection"></i> Las dos <span class="c">{{ conteo_emp['TODAS'] }}</span></a>
+    {% if puede_editar and emp_sel != 'TODAS' %}<a href="{{ url_for('oc_nueva', empresa=emp_sel, tipo='OC') }}" class="ms-auto" style="border-style: dashed;"><i class="bi bi-plus-circle"></i> Nueva OC</a>
+    <a href="{{ url_for('oc_nueva', empresa=emp_sel, tipo='OS') }}" style="border-style: dashed;"><i class="bi bi-tools"></i> Nueva OS</a>{% endif %}
+</div>
 
 <div class="kpis">
     {% if session.get('role') == 'admin' or kpi.aprobar %}
@@ -170,7 +187,8 @@
             <tbody>
             {% for o in ordenes %}
                 <tr>
-                    <td class="ps-3 text-nowrap"><span class="oc-tipo {{ o.tipo }}">{{ o.tipo }}</span> <a class="oc-num" href="{{ url_for('oc_detalle', orden_id=o.id) }}">{{ '%06d'|format(o.numero) }}</a>
+                    <td class="ps-3 text-nowrap">{% if emp_sel == 'TODAS' %}<span class="emp-chip" style="background: {{ empresas_oc[o.empresa or 'ANCLAJES'].color }};">{{ empresas_oc[o.empresa or 'ANCLAJES'].corto|upper }}</span><br>{% endif %}
+                        <span class="oc-tipo {{ o.tipo }}">{{ o.tipo }}</span> <a class="oc-num" href="{{ url_for('oc_detalle', orden_id=o.id) }}">{{ oc_numero_txt(o) }}</a>
                         <div class="sub">{{ o.fecha.strftime('%d/%m/%Y') }}</div>
                         <span class="oc-dest {{ o.destino }}" style="font-size:.6rem;">{{ oc_destino_txt(o)|replace('Inventario', 'Inv.') }}</span></td>
                     <td><div class="prov-cel" title="{{ o.razon_social }}"><b>{{ o.razon_social }}</b>
@@ -204,7 +222,7 @@
     {% for o in ordenes %}
     <div class="card-oc" style="--c: {{ '#dc2626' if atrasos[o.id] or pagos[o.id].nivel == 'vencida' else estados[o.estado].color }};">
         <div class="fila">
-            <div><span class="oc-tipo {{ o.tipo }}">{{ o.tipo }}</span> <a class="oc-num" href="{{ url_for('oc_detalle', orden_id=o.id) }}">N° {{ '%06d'|format(o.numero) }}</a>
+            <div>{% if emp_sel == 'TODAS' %}<span class="emp-chip" style="background: {{ empresas_oc[o.empresa or 'ANCLAJES'].color }};">{{ empresas_oc[o.empresa or 'ANCLAJES'].corto|upper }}</span> {% endif %}<span class="oc-tipo {{ o.tipo }}">{{ o.tipo }}</span> <a class="oc-num" href="{{ url_for('oc_detalle', orden_id=o.id) }}">N° {{ oc_numero_txt(o) }}</a>
                 <span class="text-muted small">· {{ o.fecha.strftime('%d/%m/%Y') }}</span></div>
             <div class="num fw-bold text-nowrap">{{ monedas[o.moneda].simbolo }} {{ '{:,.2f}'.format(o.total or 0) }}</div>
         </div>

@@ -91,12 +91,30 @@
     .sol-chip.mot { background: #ede9fe; color: #5b21b6; } .sol-chip.cli { background: #e0f2fe; color: #075985; }
     .sello.atraso { background: #fef2f2; border: 1.5px solid #fca5a5; color: #7f1d1d; }
     .peso { font-size: .7rem; color: #475569; white-space: nowrap; }
+    .cdoc { border: 1.5px dashed #cbd5e1; border-radius: 10px; padding: 7px 9px; margin-bottom: 8px; background: #fff; }
+    .cdoc.tiene { border-style: solid; border-color: #86efac; background: #f0fdf4; }
+    .cdoc.falta { border-color: #fca5a5; background: #fff7f7; }
+    .cdoc-cab { font-size: .8rem; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .cdoc-ok { font-size: .66rem; font-weight: 800; color: #166534; background: #dcfce7; border-radius: 10px; padding: 0 7px; }
+    .cdoc-oblig { font-size: .66rem; font-weight: 800; color: #b91c1c; background: #fee2e2; border-radius: 10px; padding: 0 7px; }
+    .cdoc-opc { font-size: .66rem; font-weight: 700; color: #64748b; background: #f1f5f9; border-radius: 10px; padding: 0 7px; }
+    .cdoc-arch { display: flex; align-items: center; gap: 6px; font-size: .76rem; margin-top: 4px; text-decoration: none; color: #0f172a; min-width: 0; }
+    .cdoc-arch span { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+    .cdoc-arch small { color: #64748b; white-space: nowrap; }
+    .cdoc-nota { font-size: .66rem; color: #64748b; margin-top: 3px; }
+    .doc-tipo .lim { font-size: .62rem; color: #94a3b8; font-weight: 600; }
+    .emp-badge { display: inline-flex; align-items: center; gap: 6px; font-size: .7rem; font-weight: 800; color: #fff; border-radius: 6px; padding: 1px 8px; letter-spacing: .03em; }
+    /* modales con formulario: el cuerpo se desplaza y el botón queda abajo */
+    .modal-dialog-scrollable .modal-content > form { display: flex; flex-direction: column; min-height: 0; max-height: 100%; overflow: hidden; }
+    .modal-dialog-scrollable .modal-content > form > .modal-body { overflow-y: auto; }
     .obs { border-left: 3px solid #7c3aed; background: #faf5ff; border-radius: 8px; padding: 6px 10px; margin-bottom: 6px; font-size: .8rem; }
 </style>
 
 <div class="cab-oc shadow-sm mb-3">
     <div class="d-flex flex-wrap justify-content-between gap-2 align-items-start">
         <div style="min-width:0; flex: 1 1 280px;">
+            {% set emp_info = empresas_oc[orden.empresa or 'ANCLAJES'] %}
+            <span class="emp-badge" style="background: {{ emp_info.color }};">{{ emp_info.nombre|upper }}</span>
             <span class="oc-tipo {{ orden.tipo }}">{{ tipos[orden.tipo]|upper }}</span>
             <span class="oc-dest {{ orden.destino }}">{{ oc_destino_txt(orden) }}</span>
             <div class="cod mt-1">{{ oc_codigo(orden) }}</div>
@@ -116,7 +134,7 @@
     </div>
 
     {% set pasos = [('CREADA', 'Creada', orden.fecha_registro, orden.creado_por), ('ENVIADA', 'Enviada a Gerencia', orden.fecha_envio, orden.enviado_por),
-                    ('APROBADA', 'Aprobada', orden.fecha_aprobacion, orden.aprobado_por), ('RECIBIDA', 'Material llegó', orden.fecha_llegada, orden.recibido_por),
+                    ('APROBADA', 'Aprobada', orden.fecha_aprobacion, orden.aprobado_por), ('RECIBIDA', 'Servicio entregado' if orden.tipo == 'OS' else 'Material llegó', orden.fecha_llegada, orden.recibido_por),
                     ('CONFORME', 'Conforme', orden.fecha_conforme, orden.conforme_por)] %}
     {% set orden_estados = {'BORRADOR': 0, 'ENVIADA': 1, 'APROBADA': 2, 'RECIBIDA': 3, 'CONFORME': 4, 'RECHAZADA': 1, 'ANULADA': -1} %}
     {% set nivel = orden_estados[orden.estado] %}
@@ -162,9 +180,9 @@
         {% if p.enviar %}<form method="POST" action="{{ url_for('oc_enviar', orden_id=orden.id) }}" onsubmit="return confirmar(this, '¿Enviar a Gerencia para aprobación?')"><button class="btn btn-success"><i class="bi bi-send-check"></i> Enviar a Gerencia</button></form>{% endif %}
         {% if p.aprobar %}<form method="POST" action="{{ url_for('oc_aprobar', orden_id=orden.id) }}" onsubmit="return confirmar(this, '¿Aprobar {{ oc_codigo(orden) }} por {{ mon.simbolo }} {{ '{:,.2f}'.format(orden.total) }}? El PDF llevará tu firma y sello.')"><button class="btn btn-success"><i class="bi bi-patch-check-fill"></i> Aprobar</button></form>{% endif %}
         {% if p.rechazar %}<button class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#mRechazar"><i class="bi bi-x-octagon"></i> Rechazar</button>{% endif %}
-        {% if p.llegada %}<button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#mLlegada"><i class="bi bi-truck"></i> Registrar llegada</button>{% endif %}
+        {% if p.llegada %}<button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#mLlegada"><i class="bi bi-truck"></i> {{ 'Registrar entrega del servicio' if orden.tipo == 'OS' else 'Registrar llegada' }}</button>{% endif %}
         {% if p.conforme %}<button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#mConforme"><i class="bi bi-check-circle-fill"></i> Dar conformidad</button>{% endif %}
-        {% if p.insumos %}<a class="btn btn-warning" href="{{ url_for('insumos_ingreso_nuevo', oc=orden.id) }}"><i class="bi bi-box-arrow-in-down"></i> Ingresar a Insumos</a>{% endif %}
+        {% if p.insumos %}<a class="btn btn-warning" href="{{ url_for('insumos_ingreso_nuevo', oc=orden.id, empresa=orden.empresa or 'ANCLAJES') }}"><i class="bi bi-box-arrow-in-down"></i> Ingresar a Insumos</a>{% endif %}
         {% if p.ingresar %}<a class="btn btn-warning" href="{{ url_for('oc_ingresos_pendientes') }}#oc{{ orden.id }}"><i class="bi bi-box-arrow-in-down"></i> Ingreso al inventario (Almacén)</a>{% endif %}
         {% if p.pagar %}<button class="btn btn-outline-success" data-bs-toggle="modal" data-bs-target="#mPagar"><i class="bi bi-cash-coin"></i> Marcar pagada</button>{% endif %}
         {% if docs|selectattr('tipo', 'equalto', 'FACTURA')|list %}<a class="btn btn-outline-primary" href="{{ url_for('oc_comparar', orden_id=orden.id) }}"><i class="bi bi-layout-split"></i> Factura vs OC</a>{% endif %}
@@ -230,12 +248,12 @@
             <div class="table-responsive">
             <table class="table mb-0 tabla-items">
                 <thead><tr><th class="ps-3">#</th><th>Descripción</th><th class="text-end">Cant.</th><th>U.M.</th>{% if hay_peso %}<th class="text-end">Peso</th>{% endif %}<th class="text-end">P. Unit.</th><th class="text-end">Total</th>
-                    {% if orden.destino == 'GENERAL' and orden.estado == 'CONFORME' %}<th class="pe-3">Ingreso</th>{% endif %}</tr></thead>
+                    {% if orden.destino == 'GENERAL' and orden.tipo == 'OC' and orden.estado == 'CONFORME' %}<th class="pe-3">Ingreso</th>{% endif %}</tr></thead>
                 <tbody>
                 {% for i in orden.items %}
                     <tr><td class="ps-3 text-muted">{{ i.item }}</td>
                         <td>{{ i.descripcion }}
-                            <div style="font-size:.7rem;">{% if i.codigo %}<span class="tag vinc">{{ i.codigo }}</span>{% endif %}
+                            <div style="font-size:.7rem;">{% if i.tipo_servicio %}<span class="tag" style="background:#ede9fe; color:#5b21b6;"><i class="bi bi-tools"></i> {{ i.tipo_servicio }}</span>{% endif %}{% if i.codigo %}<span class="tag vinc">{{ i.codigo }}</span>{% endif %}
                                 {% if i.estado_producto %}<span class="tag estado">{{ i.estado_producto }}</span>{% endif %}
                                 {% if i.es_nuevo %}<span class="tag nuevo">NUEVO en {{ (orden.empresa or 'ANCLAJES')|title }}</span>{% endif %}
                                 <span class="text-muted">{{ [i.familia, i.calidad]|select|join(' · ') }}</span></div></td>
@@ -243,7 +261,7 @@
                         {% if hay_peso %}<td class="text-end num peso">{% if i.peso_total %}{{ '{:,.3f}'.format(i.peso_total).rstrip('0').rstrip('.') }} kg<div class="text-muted">{{ '{:,.4f}'.format(i.peso_unitario).rstrip('0').rstrip('.') }} kg/u</div>{% else %}—{% endif %}</td>{% endif %}
                         <td class="text-end num">{{ '{:,.2f}'.format(i.precio_unitario) if (i.precio_unitario * 100)|round == i.precio_unitario * 100 else '{:,.4f}'.format(i.precio_unitario) }}</td>
                         <td class="text-end num fw-semibold">{{ '{:,.2f}'.format(i.total) }}</td>
-                        {% if orden.destino == 'GENERAL' and orden.estado == 'CONFORME' %}
+                        {% if orden.destino == 'GENERAL' and orden.tipo == 'OC' and orden.estado == 'CONFORME' %}
                         <td class="pe-3" style="font-size:.72rem;">{% if i.fecha_ingreso %}<span class="aprob si"><i class="bi bi-check2"></i> {{ i.sku_ingreso }}</span>
                             <div class="text-muted">{{ i.ingresado_por.nombre_completo if i.ingresado_por else '' }} · {{ i.fecha_ingreso.strftime('%d/%m %H:%M') }}</div>
                             {% else %}<span class="aprob pend">Pendiente</span>{% endif %}</td>{% endif %}</tr>
@@ -263,9 +281,9 @@
 
         {% if orden.fecha_llegada %}
         <div class="panel">
-            <div class="panel-t"><i class="bi bi-box-seam"></i> Recepción del material</div>
+            <div class="panel-t"><i class="bi bi-box-seam"></i> {{ 'Entrega del servicio' if orden.tipo == 'OS' else 'Recepción del material' }}</div>
             <div class="grid-datos">
-                <div class="dato-c"><div class="k">Llegó</div><div class="v">{{ orden.fecha_llegada.strftime('%d/%m/%Y %H:%M') }}</div></div>
+                <div class="dato-c"><div class="k">{{ 'Entregado' if orden.tipo == 'OS' else 'Llegó' }}</div><div class="v">{{ orden.fecha_llegada.strftime('%d/%m/%Y %H:%M') }}</div></div>
                 <div class="dato-c"><div class="k">Registró</div><div class="v">{{ orden.recibido_por.nombre_completo if orden.recibido_por else '-' }}</div></div>
                 <div class="dato-c"><div class="k">N° Guía</div><div class="v">{{ orden.numero_guia or '—' }}</div></div>
                 <div class="dato-c"><div class="k">N° Factura</div><div class="v">{{ orden.numero_factura or '—' }}</div></div>
@@ -277,6 +295,7 @@
                 {% if orden.destino == 'INSUMOS' %}
                     {% if ingreso %}<span class="aprob si"><i class="bi bi-check2"></i> Ingresado en Insumos</span> <a href="{{ url_for('insumos_ingreso_detalle', ingreso_id=ingreso.id) }}">ver ingreso #{{ ingreso.id }}</a>
                     {% else %}<span class="aprob pend"><i class="bi bi-hourglass"></i> Pendiente de ingresar en Insumos internos</span>{% endif %}
+                {% elif orden.tipo == 'OS' %}<span class="aprob si"><i class="bi bi-check2"></i> Servicio conforme</span>
                 {% else %}{% set ie = oc_ingreso_estado(orden) %}
                     {% if ie.completo %}<span class="aprob si"><i class="bi bi-check2-all"></i> Todo ingresado al inventario {{ (orden.empresa or 'ANCLAJES')|title }}</span>
                         <span class="text-muted">· último: {{ ie.ultimo.ingresado_por.nombre_completo if ie.ultimo.ingresado_por else '' }}, {{ ie.ultimo.fecha_ingreso.strftime('%d/%m/%Y %H:%M') }}</span>
@@ -357,12 +376,16 @@
                             {% if p.documentos %}<button type="button" class="btn btn-link btn-sm p-0 ms-1" style="font-size:.7rem;" onclick="editarNumero('{{ campo }}', '{{ nombre }}', {{ (orden[campo] or '')|tojson|forceescape }})"><i class="bi bi-pencil"></i></button>{% endif %}</div>
                         {% elif tipo == 'COTIZACION' and orden.cotizacion %}<div class="nro">N° <b>{{ orden.cotizacion }}</b></div>{% endif %}
                     </div>
+                    {% set maximo = 1 if tipo in docs_unicos else max_docs.get(tipo, 1) %}
                     {% if p.documentos %}
-                    <form method="POST" action="{{ url_for('oc_documento', orden_id=orden.id) }}" enctype="multipart/form-data" class="m-0">
+                    {% if lista|length < maximo or maximo == 1 %}
+                    <form method="POST" action="{{ url_for('oc_documento', orden_id=orden.id) }}" enctype="multipart/form-data" class="m-0 text-end">
                         <input type="hidden" name="tipo" value="{{ tipo }}">
-                        <label class="subir btn btn-sm btn-outline-primary py-0"><i class="bi bi-upload"></i> Subir
-                            <input type="file" name="doc_{{ tipo }}" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*" onchange="this.form.submit()"></label>
+                        <label class="subir btn btn-sm {{ 'btn-outline-secondary' if lista and maximo == 1 else 'btn-outline-primary' }} py-0"><i class="bi {{ 'bi-arrow-repeat' if lista and maximo == 1 else 'bi-upload' }}"></i> {{ 'Reemplazar' if lista and maximo == 1 else 'Subir' }}
+                            <input type="file" name="doc_{{ tipo }}" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*" data-reemplaza="{{ '1' if lista and maximo == 1 else '' }}" onchange="subirDoc(this)"></label>
+                        <div class="lim">{{ '1 archivo' if maximo == 1 else (lista|length ~ ' de ' ~ maximo ~ ' archivos') }}</div>
                     </form>
+                    {% else %}<span class="lim text-end">{{ maximo }} de {{ maximo }}<br>(máximo)</span>{% endif %}
                     {% endif %}
                 </div>
                 {% for d in lista %}
@@ -400,6 +423,25 @@
     </div>
 </div>
 
+{% macro campo_doc(tipo, etiqueta, oblig=False, icono='bi-paperclip') %}
+{% set lista = docs|selectattr('tipo', 'equalto', tipo)|list %}
+{% set maximo = 1 if tipo in docs_unicos else max_docs.get(tipo, 1) %}
+<div class="cdoc {{ 'tiene' if lista else ('falta' if oblig else '') }}">
+    <div class="cdoc-cab"><i class="bi {{ icono }}"></i> <b>{{ etiqueta }}</b>
+        {% if lista %}<span class="cdoc-ok">✓ ya subido{% if maximo > 1 %} · {{ lista|length }} de {{ maximo }}{% endif %}</span>{% elif oblig %}<span class="cdoc-oblig">obligatorio</span>{% else %}<span class="cdoc-opc">opcional</span>{% endif %}</div>
+    {% for d in lista %}<a class="cdoc-arch" href="{{ url_for('oc_documento_ver', doc_id=d.id) }}" target="_blank" title="Ver {{ d.nombre_original }}">
+        <i class="bi {{ 'bi-file-earmark-pdf text-danger' if d.content_type == 'application/pdf' else 'bi-image text-primary' }}"></i><span>{{ d.nombre_original }}</span><small>{{ d.subido_por }} · {{ d.fecha.strftime('%d/%m %H:%M') }}</small></a>{% endfor %}
+    {% if lista and maximo == 1 %}
+        <button type="button" class="btn btn-link btn-sm p-0 mt-1" onclick="mostrarArchivo(this)"><i class="bi bi-arrow-repeat"></i> Reemplazar por otro archivo</button>
+        <input type="file" name="doc_{{ tipo }}" class="form-control form-control-sm mt-1 d-none" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*">
+    {% elif lista|length < maximo %}
+        {% if lista %}<button type="button" class="btn btn-link btn-sm p-0 mt-1" onclick="mostrarArchivo(this)"><i class="bi bi-plus-lg"></i> Agregar otro archivo</button>{% endif %}
+        <input type="file" name="doc_{{ tipo }}" class="form-control form-control-sm mt-1 {{ 'd-none' if lista }}" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*">
+        <div class="cdoc-nota">{{ 'Un solo archivo (PDF o foto)' if maximo == 1 else 'Hasta ' ~ maximo ~ ' archivos (PDF o foto)' }}</div>
+    {% else %}<div class="cdoc-nota">Ya tiene el máximo de {{ maximo }} archivos.</div>{% endif %}
+</div>
+{% endmacro %}
+
 {% macro modal(id, titulo, color='#0F172A') %}
 <div class="modal fade" id="{{ id }}" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable"><div class="modal-content border-0 shadow">
     <div class="modal-header py-2 text-white" style="background: {{ color }};"><h6 class="modal-title fw-bold">{{ titulo }}</h6>
@@ -429,50 +471,48 @@
 </div><div class="modal-footer p-2"><button class="btn btn-dark w-100 fw-bold">Anular orden</button></div></form>
 {% endcall %}{% endif %}
 
-{% if p.llegada %}{% call modal('mLlegada', 'Registrar llegada del material', '#1d4ed8') %}
+{% if p.llegada %}{% call modal('mLlegada', ('Registrar entrega del servicio' if orden.tipo == 'OS' else 'Registrar llegada del material'), '#1d4ed8') %}
 <form method="POST" action="{{ url_for('oc_llegada', orden_id=orden.id) }}" enctype="multipart/form-data"><div class="modal-body">
-    <label class="small fw-bold d-block mb-1">¿Cuándo llegó?</label>
+    <label class="small fw-bold d-block mb-1">{{ '¿Cuándo se entregó el servicio?' if orden.tipo == 'OS' else '¿Cuándo llegó?' }}</label>
     <div class="form-check"><input class="form-check-input" type="radio" name="cuando" value="ahora" id="c_ahora" checked onchange="document.getElementById('boxOtra').style.display='none'">
         <label class="form-check-label small" for="c_ahora">Ahora ({{ ahora.strftime('%d/%m/%Y %H:%M') }})</label></div>
     <div class="form-check mb-2"><input class="form-check-input" type="radio" name="cuando" value="otra" id="c_otra" onchange="document.getElementById('boxOtra').style.display='block'">
         <label class="form-check-label small" for="c_otra">Otra fecha y hora</label></div>
     <div id="boxOtra" style="display:none;" class="mb-2"><input type="datetime-local" name="fecha_llegada" class="form-control" max="{{ ahora.strftime('%Y-%m-%dT%H:%M') }}"></div>
     <div class="row g-2 mb-2">
-        <div class="col-6"><label class="small fw-bold">N° de guía</label><input name="numero_guia" class="form-control text-uppercase" maxlength="60" placeholder="T001-00123"></div>
-        <div class="col-6"><label class="small fw-bold">N° de factura</label><input name="numero_factura" class="form-control text-uppercase" maxlength="60" placeholder="F001-4567"></div>
+        <div class="col-6"><label class="small fw-bold">N° de guía</label><input name="numero_guia" class="form-control text-uppercase" maxlength="60" placeholder="T001-00123" value="{{ orden.numero_guia or '' }}"></div>
+        <div class="col-6"><label class="small fw-bold">N° de factura</label><input name="numero_factura" class="form-control text-uppercase" maxlength="60" placeholder="F001-4567" value="{{ orden.numero_factura or '' }}"></div>
     </div>
-    <label class="small fw-bold">Guía de remisión (PDF o foto)</label><input type="file" name="doc_GUIA" class="form-control form-control-sm mb-2" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*" multiple>
-    <label class="small fw-bold">Factura (PDF o foto)</label><input type="file" name="doc_FACTURA" class="form-control form-control-sm mb-2" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*" multiple>
-    <label class="small fw-bold">Certificado de calidad {% if orden.requiere_certificado %}<span class="text-danger">(obligatorio para la conformidad)</span>{% else %}(si lo trajo){% endif %}</label>
-    <input type="file" name="doc_CERTIFICADO" class="form-control form-control-sm mb-2" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*" multiple>
+    {% if orden.numero_guia or orden.numero_factura %}<div class="form-text mb-1" style="margin-top:-4px;"><i class="bi bi-check2"></i> Los números que ya se guardaron aparecen escritos; cámbialos solo si están mal.</div>{% endif %}
+    {{ campo_doc('GUIA', 'Guía de remisión', icono='bi-truck') }}
+    {{ campo_doc('FACTURA', 'Factura', icono='bi-receipt') }}
+    {% if orden.tipo == 'OC' %}{{ campo_doc('CERTIFICADO', 'Certificado de calidad' ~ (' (obligatorio para la conformidad)' if orden.requiere_certificado else ''), icono='bi-award') }}{% endif %}
     <label class="small fw-bold">Nota (opcional)</label><textarea name="nota" class="form-control" rows="2" maxlength="500" placeholder="Ej: llegaron en 2 cajas, transportista Juan"></textarea>
-    <div class="form-text">Después de revisar el material, da la <b>conformidad</b>. Si la factura llega después, adjúntala luego.</div>
-</div><div class="modal-footer p-2"><button class="btn btn-primary w-100 fw-bold"><i class="bi bi-truck"></i> Registrar llegada</button></div></form>
+    <div class="form-text">Después de revisar{{ ' el servicio' if orden.tipo == 'OS' else ' el material' }}, da la <b>conformidad</b>. Si la factura llega después, adjúntala luego.</div>
+</div><div class="modal-footer p-2"><button class="btn btn-primary w-100 fw-bold"><i class="bi bi-truck"></i> {{ 'Registrar entrega' if orden.tipo == 'OS' else 'Registrar llegada' }}</button></div></form>
 {% endcall %}{% endif %}
 
-{% if p.conforme %}{% call modal('mConforme', 'Conformidad del material', '#15803d') %}
+{% if p.conforme %}{% call modal('mConforme', ('Conformidad del servicio' if orden.tipo == 'OS' else 'Conformidad del material'), '#15803d') %}
 <form method="POST" action="{{ url_for('oc_conforme', orden_id=orden.id) }}" id="formConforme" enctype="multipart/form-data"><div class="modal-body">
     {% set hay_doc = docs|selectattr('tipo', 'in', ['GUIA', 'FACTURA'])|list %}
     <div class="small fw-bold mb-1"><i class="bi bi-paperclip"></i> Documentos de la entrega</div>
     <div class="row g-2 mb-2">
         <div class="col-6"><label class="small">N° de guía</label><input name="numero_guia" class="form-control form-control-sm text-uppercase" maxlength="60" value="{{ orden.numero_guia or '' }}"></div>
         <div class="col-6"><label class="small">N° de factura</label><input name="numero_factura" class="form-control form-control-sm text-uppercase" maxlength="60" value="{{ orden.numero_factura or '' }}"></div>
-        <div class="col-12 col-sm-6"><label class="small">Guía (PDF o foto) {% if docs|selectattr('tipo', 'equalto', 'GUIA')|list %}<span class="text-success fw-bold">✓ ya adjunta</span>{% endif %}</label>
-            <input type="file" name="doc_GUIA" class="form-control form-control-sm" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*"></div>
-        <div class="col-12 col-sm-6"><label class="small">Factura (PDF o foto) {% if docs|selectattr('tipo', 'equalto', 'FACTURA')|list %}<span class="text-success fw-bold">✓ ya adjunta</span>{% endif %}</label>
-            <input type="file" name="doc_FACTURA" class="form-control form-control-sm" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*"></div>
     </div>
     {% set hay_cert = docs|selectattr('tipo', 'equalto', 'CERTIFICADO')|list %}
-    {% if orden.requiere_certificado %}
-    <div class="mb-2"><label class="small">Certificado de calidad (PDF o foto) {% if hay_cert %}<span class="text-success fw-bold">✓ ya adjunto</span>{% else %}<span class="text-danger fw-bold">obligatorio</span>{% endif %}</label>
-        <input type="file" name="doc_CERTIFICADO" class="form-control form-control-sm" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*"></div>
-    {% endif %}
+    {{ campo_doc('GUIA', 'Guía de remisión', oblig=not hay_doc, icono='bi-truck') }}
+    {{ campo_doc('FACTURA', 'Factura', oblig=not hay_doc, icono='bi-receipt') }}
+    {% if orden.requiere_certificado %}{{ campo_doc('CERTIFICADO', 'Certificado de calidad', oblig=not hay_cert, icono='bi-award') }}{% endif %}
     {% if not hay_doc or (orden.requiere_certificado and not hay_cert) %}<div class="alert alert-warning py-1 px-2 small mb-2"><i class="bi bi-exclamation-triangle-fill"></i> Obligatorio: adjunta aquí
         {% if not hay_doc %}la <b>guía o la factura</b>{% endif %}{% if not hay_doc and orden.requiere_certificado and not hay_cert %} y {% endif %}{% if orden.requiere_certificado and not hay_cert %}el <b>certificado de calidad</b> (compra para el inventario){% endif %}.</div>{% endif %}
     <div class="small fw-bold mb-1"><i class="bi bi-check2-square"></i> Revisión</div>
     <p class="small text-muted mb-2">Marca solo si revisaste todo. Queda registrado con tu nombre, fecha y hora.</p>
-    {% for k, t, d in [('chk_estado', 'El material llegó en buen estado', 'Sin daños, óxido ni piezas abiertas'), ('chk_cantidad', 'La cantidad es la correcta', 'Coincide con lo pedido en la orden'),
-                        ('chk_documentos', 'Guía y factura correctas', 'Datos, cantidades y precios coinciden con la orden')] %}
+    {% set chks = [('chk_estado', 'El servicio se hizo bien', 'Medidas, acabado y calidad como se pidió'), ('chk_cantidad', 'La cantidad es la correcta', 'Coincide con lo pedido en la orden'),
+                   ('chk_documentos', 'Guía y factura correctas', 'Datos, cantidades y precios coinciden con la orden')] if orden.tipo == 'OS' else
+                  [('chk_estado', 'El material llegó en buen estado', 'Sin daños, óxido ni piezas abiertas'), ('chk_cantidad', 'La cantidad es la correcta', 'Coincide con lo pedido en la orden'),
+                   ('chk_documentos', 'Guía y factura correctas', 'Datos, cantidades y precios coinciden con la orden')] %}
+    {% for k, t, d in chks %}
     <label class="check-conf d-flex gap-2 align-items-start w-100"><input class="form-check-input mt-1" type="checkbox" name="{{ k }}" value="1">
         <span><b class="small">{{ t }}</b><div class="text-muted" style="font-size:.72rem;">{{ d }}</div></span></label>
     {% endfor %}
@@ -498,17 +538,16 @@
     <div class="small fw-bold mb-1"><i class="bi bi-bank"></i> Cuentas del proveedor <span class="fw-normal text-muted">— toca <b>Copiar</b> y pega en tu banco; marca la que usaste (opcional)</span></div>
     <div id="ctasPago" class="mb-2"></div>
     <div class="row g-2 mb-2">
-        <div class="col-6"><label class="small fw-bold">Fecha de pago *</label><input type="date" name="fecha_pago" class="form-control form-control-sm" value="{{ hoy.isoformat() }}" max="{{ hoy.isoformat() }}" min="{{ orden.fecha.isoformat() }}" required></div>
+        <div class="col-6"><label class="small fw-bold">Fecha de pago *</label><input type="date" name="fecha_pago" class="form-control form-control-sm" value="{{ hoy.isoformat() }}" max="{{ hoy.isoformat() }}" min="{{ fecha_pago_min.isoformat() }}" required>
+            <div class="form-text" style="font-size:.66rem;">Si pagaste otro día, cámbiala (no puede ser futura).</div></div>
         <div class="col-6"><label class="small fw-bold">N° de operación</label><input name="operacion" class="form-control form-control-sm text-uppercase" maxlength="80" placeholder="Opcional"></div>
     </div>
-    <div class="small fw-bold mb-1"><i class="bi bi-receipt"></i> Factura {% if facturas %}<span class="text-success">✓ ya adjunta</span>{% else %}<span class="text-danger">obligatoria</span>{% endif %}</div>
+    {{ campo_doc('FACTURA', 'Factura', oblig=not facturas, icono='bi-receipt') }}
     <div class="row g-2 mb-2">
-        {% if not facturas %}<div class="col-12"><input type="file" name="doc_FACTURA" class="form-control form-control-sm" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*"></div>{% endif %}
         <div class="col-6"><label class="small">N° de factura</label><input name="numero_factura" class="form-control form-control-sm text-uppercase" maxlength="60" value="{{ orden.numero_factura or '' }}"></div>
         <div class="col-6"><label class="small">Fecha de emisión</label><input type="date" name="fecha_factura" class="form-control form-control-sm" max="{{ hoy.isoformat() }}" value="{{ orden.fecha_factura.isoformat() if orden.fecha_factura else '' }}"></div>
     </div>
-    <label class="small fw-bold">Constancia de pago / voucher (opcional)</label>
-    <input type="file" name="doc_PAGO" class="form-control form-control-sm mb-2" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*">
+    {{ campo_doc('PAGO', 'Constancia de pago / voucher', icono='bi-cash-coin') }}
     <label class="small fw-bold">Nota (opcional)</label><textarea name="nota" class="form-control" rows="2" maxlength="300" placeholder="Ej: pagado con detracción 12%"></textarea>
     <div class="form-text">Queda registrado quién la marcó como pagada, con fecha y hora. Solo Gerencia puede quitar la marca.</div>
 </div><div class="modal-footer p-2"><button class="btn btn-success w-100 fw-bold"><i class="bi bi-cash-coin"></i> Marcar como pagada</button></div></form>
@@ -561,6 +600,17 @@ function pintarCuentas(lista) {
     OCC.render(document.getElementById('ctasPago'), CUENTAS, { seleccionar: 'cuenta_id', vacio: 'El proveedor no tiene cuentas guardadas.' });
 }
 pintarCuentas();
+function mostrarArchivo(btn) {
+    const inp = btn.parentElement.querySelector('input[type=file]');
+    inp.classList.remove('d-none'); btn.remove(); inp.click();
+}
+function subirDoc(inp) {
+    if (!inp.files.length) return;
+    if (!inp.dataset.reemplaza) return inp.form.submit();
+    Swal.fire({ icon: 'question', title: '¿Reemplazar el archivo?', html: `El archivo actual se cambia por <b>${inp.files[0].name.replace(/</g, '&lt;')}</b>.<br><span class="small">Queda registrado en el historial.</span>`,
+                showCancelButton: true, confirmButtonText: 'Sí, reemplazar', cancelButtonText: 'Cancelar' })
+        .then(r => { if (r.isConfirmed) inp.form.submit(); else inp.value = ''; });
+}
 function editarNumero(campo, nombre, valor) {
     Swal.fire({ title: `N° de ${nombre}`, input: 'text', inputValue: valor, showCancelButton: true, confirmButtonText: 'Guardar', cancelButtonText: 'Cancelar' })
         .then(r => { if (!r.isConfirmed) return; const f = document.getElementById('formNumero'); const i = document.getElementById('numCampo');

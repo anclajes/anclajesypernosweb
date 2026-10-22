@@ -19,6 +19,8 @@
     .resaltado { background: #fde68a; font-weight: 700; padding: 0 2px; }
     .preview-terminos { font-size: .8rem; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 10px; white-space: pre-line; }
     .zona-peligro { border: 2px solid #fecaca; border-radius: 12px; background: #fff; }
+    .emp-btn { border: 2px solid #e2e8f0; background: #fff; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; }
+    .emp-btn.on { border-color: var(--e); box-shadow: 0 0 0 3px color-mix(in srgb, var(--e) 18%, transparent); color: var(--e); }
 </style>
 <ul class="nav nav-tabs cfg-tabs mb-3 border-0" id="cfgTabs">
     {% for t, nombre in nombres_catalogo.items() %}
@@ -27,18 +29,20 @@
     <li class="nav-item"><button class="nav-link {{ 'active' if tab == 'motivos_compra' }}" data-bs-toggle="tab" data-bs-target="#c-mcompra"><i class="bi bi-bullseye"></i> Motivos de compra</button></li>
     <li class="nav-item"><button class="nav-link {{ 'active' if tab == 'motivos' }}" data-bs-toggle="tab" data-bs-target="#c-motivos"><i class="bi bi-x-octagon"></i> Motivos de rechazo</button></li>
     <li class="nav-item"><button class="nav-link {{ 'active' if tab == 'proveedores' }}" data-bs-toggle="tab" data-bs-target="#c-prov"><i class="bi bi-building"></i> Proveedores, contactos y cuentas</button></li>
-    <li class="nav-item"><button class="nav-link {{ 'active' if tab == 'datos' }}" data-bs-toggle="tab" data-bs-target="#c-datos"><i class="bi bi-file-earmark-pdf"></i> Datos del PDF</button></li>
+    <li class="nav-item"><button class="nav-link {{ 'active' if tab == 'datos' }}" data-bs-toggle="tab" data-bs-target="#c-datos"><i class="bi bi-file-earmark-pdf"></i> Datos del PDF y numeración</button></li>
     {% if es_admin %}<li class="nav-item"><button class="nav-link peligro {{ 'active' if tab == 'vaciar' }}" data-bs-toggle="tab" data-bs-target="#c-vaciar"><i class="bi bi-trash3"></i> Vaciar datos del módulo</button></li>{% endif %}
 </ul>
 <div class="tab-content">
     {% for t, nombre in nombres_catalogo.items() %}
     <div class="tab-pane fade {{ 'show active' if tab == t }}" id="c-{{ t }}">
         <div class="card border-0 shadow-sm" style="max-width: 680px;"><div class="card-body">
-            <div class="input-group mb-2"><input id="nuevo_{{ t }}" class="form-control text-uppercase" placeholder="{{ {'OC_UM': 'Ej: CJA-200', 'OC_CONDICION_PAGO': 'Ej: CRÉDITO 90 DÍAS', 'OC_AREA': 'Ej: MANTENIMIENTO', 'OC_SOLICITANTE': 'Ej: JUAN PÉREZ (TALLER)'}[t] }}"
+            <div class="input-group mb-2"><input id="nuevo_{{ t }}" class="form-control text-uppercase" placeholder="{{ {'OC_UM': 'Ej: CJA-200', 'OC_CONDICION_PAGO': 'Ej: CRÉDITO 90 DÍAS', 'OC_AREA': 'Ej: MANTENIMIENTO', 'OC_SOLICITANTE': 'Ej: JUAN PÉREZ (TALLER)', 'OC_SERVICIO': 'Ej: ARENADO'}[t] }}"
                    onkeydown="if(event.key==='Enter'){event.preventDefault(); post('catalogo', {tipo: '{{ t }}', valor: this.value}, '{{ t }}');}">
                 <button class="btn btn-primary" onclick="post('catalogo', {tipo: '{{ t }}', valor: document.getElementById('nuevo_{{ t }}').value}, '{{ t }}')"><i class="bi bi-plus-lg"></i> Agregar</button></div>
             {% if t == 'OC_SOLICITANTE' %}<div class="alert alert-light border small py-2 mb-2"><i class="bi bi-person-raised-hand text-primary"></i> En "Solicitó" ya aparecen solas las <b>cuentas del sistema</b>
                 (Gerencia, Administración, Vendedores, Logística y Almacén). Aquí agrega <b>otras personas</b> que piden compras y no tienen usuario.</div>
+            {% elif t == 'OC_SERVICIO' %}<div class="alert alert-light border small py-2 mb-2"><i class="bi bi-tools text-primary"></i> En una <b>Orden de Servicio</b> cada ítem lleva su tipo de servicio
+                (corte, roscado, galvanizado...). Sale en el PDF delante de la descripción.</div>
             {% elif t == 'OC_CONDICION_PAGO' %}<div class="alert alert-light border small py-2 mb-2"><i class="bi bi-cash-coin text-success"></i> Si el nombre tiene <b>"N DÍAS"</b> (ej: CRÉDITO 30 DÍAS) el sistema calcula el
                 <b>vencimiento</b> y avisa cuando falta poco o se vence. Contado, contra entrega o adelanto no tienen vencimiento.</div>{% endif %}
             <div class="form-text mb-2"><i class="bi bi-info-circle"></i> Las órdenes ya hechas guardan su texto: renombrar o borrar una opción no cambia órdenes anteriores.
@@ -109,7 +113,8 @@
 
     <div class="tab-pane fade {{ 'show active' if tab == 'proveedores' }}" id="c-prov">
         <div class="alert alert-light border small py-2"><i class="bi bi-shield-check text-primary"></i> <b>Lista propia de órdenes</b> (no se mezcla con clientes ni con otros proveedores).
-            Los <b>contactos no se borran: se archivan</b>, así no se pierde con quién se trató cada orden. Solo Gerencia puede borrar definitivamente un contacto que <b>nunca se usó</b>.</div>
+            Los datos del proveedor vienen de <b>SUNAT</b> y no se editan a mano (usa <b>Actualizar SUNAT</b>); solo se corrigen los que se escribieron a mano porque SUNAT no respondió.
+            Un proveedor con órdenes <b>no se puede borrar</b>. Los <b>contactos y cuentas no se borran: se archivan</b>.</div>
         {% for p in proveedores %}{% set cs = contactos_prov.get(p.id, [])|sort(attribute='id', reverse=True) %}
         <div class="card border-0 shadow-sm mb-2"><div class="card-body py-2">
             <div class="d-flex flex-wrap gap-2 justify-content-between align-items-start">
@@ -117,8 +122,10 @@
                     <div class="uso">RUC {{ p.ruc }}{% if p.direccion %} · {{ p.direccion }}{% endif %}{% if p.sunat_fecha %} · SUNAT {{ p.sunat_estado or '' }} {{ p.sunat_condicion or '' }} ({{ p.sunat_fecha.strftime('%d/%m/%Y') }}){% endif %}
                         · {{ ordenes_prov.get(p.id, 0) }} orden(es)</div></div>
                 <div class="acciones">
-                    <button class="btn btn-sm btn-outline-primary" title="Editar" onclick="editarProv({{ {'id': p.id, 'razon_social': p.razon_social, 'direccion': p.direccion or ''}|tojson|forceescape }})"><i class="bi bi-pencil"></i></button>
-                    <button class="btn btn-sm btn-outline-danger" title="Borrar" onclick="borrar('proveedor', {{ p.id }}, {{ p.razon_social|tojson|forceescape }}, 'proveedores')"><i class="bi bi-trash"></i></button></div>
+                    {% if p.sunat_fecha %}<span class="badge text-bg-light border me-1" title="Datos oficiales de SUNAT"><i class="bi bi-patch-check-fill text-success"></i> SUNAT</span>{% else %}
+                    <button class="btn btn-sm btn-outline-secondary" title="Se escribió a mano (SUNAT no respondió): corregir" onclick="editarProv({{ {'id': p.id, 'razon_social': p.razon_social, 'direccion': p.direccion or ''}|tojson|forceescape }})"><i class="bi bi-pencil"></i> Corregir</button>{% endif %}
+                    <button class="btn btn-sm btn-outline-primary" title="Volver a traer los datos de SUNAT" onclick="actualizarSunat({{ p.ruc|tojson|forceescape }})"><i class="bi bi-cloud-arrow-down"></i> Actualizar SUNAT</button>
+                    {% if es_admin and not ordenes_prov.get(p.id) %}<button class="btn btn-sm btn-outline-danger" title="Borrar (no tiene órdenes)" onclick="borrar('proveedor', {{ p.id }}, {{ p.razon_social|tojson|forceescape }}, 'proveedores')"><i class="bi bi-trash"></i></button>{% endif %}</div>
             </div>
             <div class="d-flex justify-content-between align-items-center mt-2 mb-1">
                 <div class="small fw-bold text-muted"><i class="bi bi-bank"></i> Cuentas bancarias</div>
@@ -146,29 +153,50 @@
     </div>
 
     <div class="tab-pane fade {{ 'show active' if tab == 'datos' }}" id="c-datos">
-        <form method="POST" action="{{ url_for('oc_config_datos') }}" class="card border-0 shadow-sm" style="max-width: 820px;">
+        <div class="d-flex flex-wrap gap-2 mb-2" id="empDatos">
+            {% for e, info in empresas_oc.items() %}
+            <button type="button" class="btn btn-sm emp-btn {{ 'on' if e == empresa_cfg }}" style="--e: {{ info.color }};" onclick="verEmpresa('{{ e }}')">
+                <img src="{{ url_for('static', filename='img/' ~ info.logo) }}" alt="" width="54" height="20" style="object-fit: contain;"> {{ info.corto }}</button>
+            {% endfor %}
+        </div>
+        {% for e, info in empresas_oc.items() %}{% set cfg = cfgs[e] %}
+        <form method="POST" action="{{ url_for('oc_config_datos') }}" class="card border-0 shadow-sm form-emp" data-emp="{{ e }}" style="max-width: 820px; border-top: 4px solid {{ info.color }} !important; {{ '' if e == empresa_cfg else 'display:none;' }}">
+            <input type="hidden" name="empresa" value="{{ e }}">
             <div class="card-body">
-                <p class="small text-muted">Lo que sale en el encabezado y al pie del PDF. {% if not es_admin %}<b>Solo Gerencia puede cambiarlo.</b>{% endif %}
-                    En los términos, encierra entre <code>**</code> lo que quieres <span class="resaltado">resaltar</span> (ej: <code>**CERTIFICADO DE CALIDAD**</code>).</p>
+                <div class="fw-bold mb-1" style="color: {{ info.color }};">{{ info.nombre }}</div>
+                <p class="small text-muted">Lo que sale en el encabezado y al pie del PDF de las órdenes de <b>{{ info.corto }}</b>. {% if not es_admin %}<b>Solo Gerencia puede cambiarlo.</b>{% endif %}
+                    En los términos, encierra entre <code>**</code> lo que quieres <span class="resaltado">resaltar</span>. Firma de aprobación: <code>static/img/{{ info.firma }}</code>.</p>
                 <div class="row g-2">
                 {% for k, etq in etiquetas.items() %}
                     <div class="{{ 'col-12' if k in ['terminos', 'horario', 'lugar_entrega', 'direccion', 'razon_social'] else 'col-12 col-md-4' }}">
                         <label class="small fw-bold">{{ etq }}</label>
                         {% if k in ['terminos', 'horario'] %}
-                        <textarea name="{{ k }}" class="form-control" rows="{{ 6 if k == 'terminos' else 3 }}" {{ 'readonly' if not es_admin }} {% if k == 'terminos' %}oninput="previa(this.value)"{% endif %}>{{ cfg[k] }}</textarea>
+                        <textarea name="{{ k }}" class="form-control" rows="{{ 6 if k == 'terminos' else 3 }}" {{ 'readonly' if not es_admin }} {% if k == 'terminos' %}oninput="previa(this)"{% endif %}>{{ cfg[k] }}</textarea>
                         {% else %}<input name="{{ k }}" class="form-control" value="{{ cfg[k] }}" {{ 'readonly' if not es_admin }}>{% endif %}
-                        {% if k == 'terminos' %}<div class="small fw-bold mt-2 text-muted">Vista previa</div><div class="preview-terminos" id="prevTerm">{{ cfg.terminos|resaltado }}</div>{% endif %}
+                        {% if k == 'terminos' %}<div class="small fw-bold mt-2 text-muted">Vista previa</div><div class="preview-terminos">{{ cfg.terminos|resaltado }}</div>{% endif %}
                     </div>
                 {% endfor %}
+                </div>
+                <div class="border rounded p-2 mt-3" style="background:#f8fafc;">
+                    <div class="small fw-bold mb-1"><i class="bi bi-123"></i> Numeración de {{ info.corto }}</div>
+                    <div class="row g-2">
+                    {% for t, tn in tipos.items() %}
+                        <div class="col-6"><label class="small">{{ tn }}: la próxima será <b>{{ t }} N° {{ siguientes[e][t] }}</b></label>
+                            <input name="num_{{ t }}" class="form-control form-control-sm" inputmode="numeric" value="{{ cfg['num_' ~ t] }}" placeholder="Seguir desde el N°... (opcional)" {{ 'readonly' if not es_admin }}></div>
+                    {% endfor %}
+                    </div>
+                    <div class="form-text">Para continuar la numeración que ya traían (ej: 248). Solo avanza: nunca repite un número ya usado.{% if e == 'IMPORTBOLTS' %} Formato: año-número (2026-00248).{% endif %}</div>
                 </div>
             </div>
             {% if es_admin %}
             <div class="card-footer bg-white d-flex justify-content-between">
-                <button class="btn btn-outline-secondary btn-sm" name="accion" value="restablecer" onclick="return confirm('¿Volver a los datos y textos iniciales?')"><i class="bi bi-arrow-counterclockwise"></i> Restablecer</button>
+                <button class="btn btn-outline-secondary btn-sm" name="accion" value="restablecer" onclick="return confirm('¿Volver a los datos y textos iniciales de {{ info.corto }}?')"><i class="bi bi-arrow-counterclockwise"></i> Restablecer</button>
+                <a class="btn btn-outline-danger btn-sm" href="{{ url_for('oc_pdf_muestra', empresa=e) }}" target="_blank"><i class="bi bi-file-earmark-pdf"></i> Ver PDF de muestra</a>
                 <button class="btn btn-primary btn-sm fw-bold"><i class="bi bi-save"></i> Guardar</button>
             </div>
             {% endif %}
         </form>
+        {% endfor %}
     </div>
 
     {% if es_admin %}
@@ -278,9 +306,19 @@ function renombrarMotivoCompra(id, valor) {
         .then(r => { if (r.isConfirmed) post('motivo_compra', { id: id, nombre: r.value }, 'motivos_compra'); });
 }
 document.querySelectorAll('.ctas-prov').forEach(el => OCC.render(el, JSON.parse(el.dataset.cuentas || '[]'), { editable: true, alGuardar: () => ir('proveedores'), provTxt: el.dataset.prov }));
-function previa(t) {
+function previa(el) {
     const esc = s => s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-    document.getElementById('prevTerm').innerHTML = esc(t).split(/\*\*(.+?)\*\*/).map((p, i) => i % 2 ? `<span class="resaltado">${p}</span>` : p).join('');
+    el.parentElement.querySelector('.preview-terminos').innerHTML = esc(el.value).split(/\*\*(.+?)\*\*/).map((p, i) => i % 2 ? `<span class="resaltado">${p}</span>` : p).join('');
+}
+function verEmpresa(e) {
+    document.querySelectorAll('.form-emp').forEach(f => f.style.display = f.dataset.emp === e ? '' : 'none');
+    document.querySelectorAll('#empDatos .emp-btn').forEach(b => b.classList.toggle('on', b.getAttribute('onclick').includes(`'${e}'`)));
+}
+function actualizarSunat(ruc) {
+    const fd = new FormData(); fd.append('numero', ruc); fd.append('actualizar', '1');
+    Swal.fire({ title: 'Consultando SUNAT...', didOpen: () => Swal.showLoading(), allowOutsideClick: false });
+    fetch('{{ url_for('oc_api_sunat') }}', { method: 'POST', body: fd }).then(r => r.json())
+        .then(d => d.status === 'success' ? ir('proveedores') : Swal.fire('No se pudo', d.msg, 'warning')).catch(() => Swal.fire('Error de conexión', '', 'error'));
 }
 document.getElementById('formVaciar')?.addEventListener('submit', function (e) {
     if (this.confirmacion.value.trim().toUpperCase() !== 'BORRAR ORDENES') { e.preventDefault(); return Swal.fire('Falta confirmar', 'Escribe BORRAR ORDENES para continuar.', 'warning'); }

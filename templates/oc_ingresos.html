@@ -6,6 +6,9 @@
 <style>
     .vistas a { font-size: .8rem; font-weight: 700; border-radius: 20px; padding: 5px 14px; text-decoration: none; border: 1px solid #e2e8f0; color: #475569; background: #fff; white-space: nowrap; }
     .vistas a.on { background: #0f172a; color: #fff; border-color: #0f172a; }
+    .vistas a.emp { display: inline-flex; align-items: center; gap: 6px; border-width: 2px; }
+    .vistas a.emp img { object-fit: contain; }
+    .vistas a.on-e { border-color: var(--e); color: var(--e); box-shadow: 0 0 0 3px color-mix(in srgb, var(--e) 15%, transparent); }
     .como { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 10px 14px; margin-bottom: 12px; }
     .como summary { font-weight: 800; font-size: .84rem; color: #0B3D91; cursor: pointer; }
     .pasos-ing { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; margin-top: 8px; }
@@ -48,10 +51,19 @@
 </style>
 
 <div class="d-flex flex-wrap gap-2 align-items-center mb-2 vistas">
+    {% for e, info in empresas_oc.items() %}
+    <a href="{{ url_for('oc_ingresos_pendientes', empresa=e, vista=vista) }}" class="emp {{ 'on-e' if emp_sel == e }}" style="--e: {{ info.color }};">
+        <img src="{{ url_for('static', filename='img/' ~ info.logo) }}" alt="" width="56" height="18"> {{ info.corto }} <span class="opacity-75">{{ pend_emp[e] }}</span></a>
+    {% endfor %}
+    <a href="{{ url_for('oc_ingresos_pendientes', empresa='TODAS', vista=vista) }}" class="emp {{ 'on-e' if emp_sel == 'TODAS' }}" style="--e:#0f172a;">Las dos <span class="opacity-75">{{ pend_emp['TODAS'] }}</span></a>
+</div>
+<div class="d-flex flex-wrap gap-2 align-items-center mb-2 vistas">
     <a href="{{ url_for('oc_ingresos_pendientes') }}" class="{{ 'on' if vista == 'pendientes' }}"><i class="bi bi-hourglass-split"></i> Pendientes <span class="opacity-75">{{ n_pendientes }}</span></a>
     <a href="{{ url_for('oc_ingresos_pendientes', vista='hechos') }}" class="{{ 'on' if vista == 'hechos' }}"><i class="bi bi-check2-all"></i> Ya ingresados <span class="opacity-75">{{ n_hechos }}</span></a>
-    <a href="{{ url_for('ver_kardex') }}" class="ms-auto"><i class="bi bi-clock-history"></i> Kardex Anclajes</a>
-    <a href="{{ url_for('inventario') }}"><i class="bi bi-boxes"></i> Inventario Anclajes</a>
+    {% if emp_sel != 'IMPORTBOLTS' %}<a href="{{ url_for('ver_kardex') }}" class="ms-auto"><i class="bi bi-clock-history"></i> Kardex Anclajes</a>
+    <a href="{{ url_for('inventario') }}"><i class="bi bi-boxes"></i> Inventario Anclajes</a>{% endif %}
+    {% if emp_sel != 'ANCLAJES' %}<a href="{{ url_for('ver_kardex_importbolts') }}" class="{{ 'ms-auto' if emp_sel == 'IMPORTBOLTS' }}"><i class="bi bi-clock-history"></i> Kardex Import Bolts</a>
+    <a href="{{ url_for('inventario_importbolts') }}"><i class="bi bi-boxes"></i> Inventario Import Bolts</a>{% endif %}
 </div>
 
 <details class="como" {{ 'open' if vista == 'pendientes' and n_pendientes }}>
@@ -64,6 +76,7 @@
     <div class="nota-cod"><b><i class="bi bi-upc-scan"></i> ¿Qué es el "Código en el inventario"?</b> Es el <b>SKU</b> con el que el producto quedó en el inventario. Sirve para <b>enlazar</b> la orden con el producto (trazabilidad).
         <ul class="mb-0 mt-1 ps-3">
             <li>Si el producto <b>ya existía</b>, el código ya viene puesto: no tienes que hacer nada.</li>
+            <li>Cada orden se ingresa al inventario de <b>su empresa</b> (Anclajes o Import Bolts): fíjate en el color y el nombre arriba de cada orden.</li>
             <li>Si es <b>NUEVO</b>, escribe (o busca) el código con el que lo <b>acabas de crear</b>. Si todavía no tiene código, puedes dejarlo vacío: <b>no impide marcarlo</b>.</li>
         </ul></div>
 </details>
@@ -78,13 +91,13 @@
 
 {% for o, items in grupos %}
 {% set espera = ((ahora - o.fecha_conforme).days) if o.fecha_conforme else 0 %}
-{% set ds = docs.get(o.id, []) %}
-<div class="oc-card shadow-sm" id="oc{{ o.id }}" data-buscar="{{ (o.tipo ~ ' ' ~ '%06d'|format(o.numero) ~ ' ' ~ o.razon_social ~ ' ' ~ (items|map(attribute='descripcion')|join(' ')) ~ ' ' ~ (items|map(attribute='codigo')|select|join(' ')))|upper }}">
+{% set ds = docs.get(o.id, []) %}{% set emp = o.empresa or 'ANCLAJES' %}
+<div style="border-top: 4px solid {{ empresas_oc[emp].color }};" class="oc-card shadow-sm" id="oc{{ o.id }}" data-buscar="{{ (o.tipo ~ ' ' ~ oc_numero_txt(o) ~ ' ' ~ o.razon_social ~ ' ' ~ (items|map(attribute='descripcion')|join(' ')) ~ ' ' ~ (items|map(attribute='codigo')|select|join(' ')))|upper }}">
     <div class="cab">
         <div class="d-flex flex-wrap gap-2 align-items-center">
-            {% if puede_ver_oc %}<a class="oc-num" href="{{ url_for('oc_detalle', orden_id=o.id) }}">{% else %}<span class="oc-num">{% endif %}<span class="oc-tipo {{ o.tipo }}">{{ o.tipo }}</span> N° {{ '%06d'|format(o.numero) }}{% if puede_ver_oc %}</a>{% else %}</span>{% endif %}
+            {% if puede_ver_oc %}<a class="oc-num" href="{{ url_for('oc_detalle', orden_id=o.id) }}">{% else %}<span class="oc-num">{% endif %}<span class="oc-tipo {{ o.tipo }}">{{ o.tipo }}</span> N° {{ oc_numero_txt(o) }}{% if puede_ver_oc %}</a>{% else %}</span>{% endif %}
             <span class="prov">{{ o.razon_social }}</span>
-            <span class="oc-dest GENERAL">Inv. {{ empresas_oc[o.empresa or 'ANCLAJES'].corto }}</span>
+            <span class="oc-dest GENERAL" style="background: {{ empresas_oc[emp].color }}; color: #fff;">Inventario {{ empresas_oc[emp].corto }}</span>
             {% if vista == 'pendientes' %}<span class="espera {{ 'larga' if espera >= 3 }} ms-auto"><i class="bi bi-hourglass-split"></i> {{ 'Conforme hoy' if espera == 0 else 'Esperando ingreso hace ' ~ espera ~ ' día' ~ ('s' if espera != 1 else '') }}</span>{% endif %}
         </div>
         {% if o.solicitante_nombre or o.motivo_compra %}
@@ -110,7 +123,7 @@
         </div>
     </div>
     {% for i in items %}
-    {% set cod = (i.sku_ingreso or i.codigo or '')|upper %}
+    {% set cod = (i.sku_ingreso or i.codigo or '')|upper %}{% set emp = o.empresa or 'ANCLAJES' %}
     <div class="it" data-nuevo="{{ '1' if i.es_nuevo else '0' }}" data-buscar="{{ (i.descripcion ~ ' ' ~ (i.codigo or '') ~ ' ' ~ (i.sku_ingreso or ''))|upper }}">
         <div>
             <div class="desc">{{ i.item }}. {{ i.descripcion }}</div>
@@ -119,13 +132,13 @@
                 <span><span class="cant">{{ i.cantidad|cant }}</span> {{ i.um }}</span>
                 {% if i.es_nuevo and i.fecha_ingreso %}<span class="tag vinc">Producto nuevo (creado)</span>
                 {% elif i.es_nuevo %}<span class="tag nuevo">NUEVO: crearlo en el inventario</span>
-                {% elif i.codigo %}<span class="tag vinc">{{ i.codigo }}</span> <span>stock actual <b>{{ stock.get(i.codigo|upper, '—') }}</b></span>
-                    <a href="{{ url_for('inventario', busqueda=i.codigo) }}" target="_blank" title="Buscar en el inventario"><i class="bi bi-search"></i> buscar</a>{% endif %}
+                {% elif i.codigo %}<span class="tag vinc">{{ i.codigo }}</span> <span>stock actual <b>{{ stock.get((emp, i.codigo|upper), '—') }}</b></span>
+                    <a href="{{ url_for('inventario_importbolts' if emp == 'IMPORTBOLTS' else 'inventario', busqueda=i.codigo) }}" target="_blank" title="Buscar en el inventario"><i class="bi bi-search"></i> buscar</a>{% endif %}
                 {% if i.estado_producto %}<span class="tag est">{{ i.estado_producto }}</span>{% endif %}
                 {% if i.familia or i.calidad %}<span>{{ [i.familia, i.calidad]|select|join(' · ') }}</span>{% endif %}
             </div>
             {% if i.peso_total %}
-            {% set pinv = peso_inv.get(cod, 0) %}
+            {% set pinv = peso_inv.get((emp, cod), 0) %}
             <div class="meta"><span class="peso-l"><i class="bi bi-speedometer2"></i> Peso según OC: <b>{{ '{:,.4f}'.format(i.peso_unitario).rstrip('0').rstrip('.') }} kg/u</b> · {{ '{:,.3f}'.format(i.peso_total).rstrip('0').rstrip('.') }} kg en total</span>
                 {% if cod and pinv %}<span class="peso-l {{ 'dif' if (pinv - i.peso_unitario)|abs > 0.0005 }}">En el inventario: {{ '{:,.4f}'.format(pinv).rstrip('0').rstrip('.') }} kg/u{% if (pinv - i.peso_unitario)|abs > 0.0005 %} (distinto){% endif %}</span>
                 {% elif cod %}<span class="peso-l dif">El inventario no tiene peso: puedes cargarlo</span>{% endif %}</div>
@@ -146,7 +159,7 @@
             <input type="hidden" name="volver" value="{{ url_for('oc_ingresos_pendientes') }}">
             <div class="position-relative">
                 <label>Código en el inventario <span class="text-lowercase fw-normal">(opcional)</span></label>
-                <input type="text" name="sku" class="form-control form-control-sm text-uppercase sku-in" autocomplete="off" value="{{ '' if i.es_nuevo else (i.codigo or '') }}"
+                <input type="text" name="sku" class="form-control form-control-sm text-uppercase sku-in" data-empresa="{{ emp }}" autocomplete="off" value="{{ '' if i.es_nuevo else (i.codigo or '') }}"
                        placeholder="{{ 'Código con el que lo creaste' if i.es_nuevo else 'SKU' }}">
                 <div class="list-group position-absolute shadow sku-sug" style="top: 100%;"></div>
                 {% if i.es_nuevo %}<div class="ayuda nuevo"><i class="bi bi-stars"></i> Producto NUEVO: créalo en el inventario y escribe aquí su código (búscalo). Si aún no tiene, déjalo vacío.</div>
@@ -190,7 +203,7 @@ document.querySelectorAll('.sku-in').forEach(inp => {
     inp.addEventListener('input', () => {
         clearTimeout(t); const q = inp.value.trim();
         if (q.length < 2) { sug.style.display = 'none'; return; }
-        t = setTimeout(() => fetch(`{{ url_for('oc_api_sku') }}?q=${encodeURIComponent(q)}`).then(r => r.json()).then(d => {
+        t = setTimeout(() => fetch(`{{ url_for('oc_api_sku') }}?q=${encodeURIComponent(q)}&empresa=${inp.dataset.empresa}`).then(r => r.json()).then(d => {
             if (document.activeElement !== inp) return;
             sug.innerHTML = (d.results || []).map(p => `<button type="button" class="list-group-item list-group-item-action py-1 px-2 small" data-sku="${esc(p.sku)}"><b>${esc(p.sku)}</b> — ${esc(p.descripcion)} <span class="text-muted">(stock ${p.stock})</span></button>`).join('')
                 || '<div class="list-group-item small text-muted">No existe en el inventario: créalo primero (o déjalo vacío).</div>';

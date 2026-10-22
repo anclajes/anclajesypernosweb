@@ -13,31 +13,31 @@
     table { width: 100%; border-collapse: collapse; }
     td, th { padding: 1px 3px; vertical-align: top; }
     .empresa { font-size: 12.5pt; font-weight: bold; }
-    .azul { color: #1f4e9c; }
-    .dir { font-size: 6.8pt; font-weight: bold; color: #1f4e9c; }
-    .mail { font-size: 7.4pt; color: #1f4e9c; text-decoration: underline; }
-    .tef { font-size: 6.8pt; color: #1f4e9c; font-weight: bold; }
+    .azul { color: {{ tema.azul }}; }
+    .dir { font-size: 6.8pt; font-weight: bold; color: {{ tema.azul }}; }
+    .mail { font-size: 7.4pt; color: {{ tema.azul }}; text-decoration: underline; }
+    .tef { font-size: 6.8pt; color: {{ tema.azul }}; font-weight: bold; }
     td.caja-ruc { border-top: 1px solid #111; border-left: 1px solid #111; border-right: 1px solid #111; text-align: center; font-size: 10.5pt; }
-    td.caja-tipo { background-color: #7f7f7f; color: #fff; text-align: center; font-size: 11pt; font-weight: bold; border-left: 1px solid #111; border-right: 1px solid #111; }
+    td.caja-tipo { background-color: {{ tema.caja }}; color: #fff; text-align: center; font-size: 11pt; font-weight: bold; border-left: 1px solid #111; border-right: 1px solid #111; }
     td.caja-num { border-bottom: 1px solid #111; border-left: 1px solid #111; border-right: 1px solid #111; text-align: center; font-size: 11pt; }
-    td.linea { border-top: 2px solid #1f4e9c; font-size: 1pt; padding: 0; }
+    td.linea { border-top: 2px solid {{ tema.azul }}; font-size: 1pt; padding: 0; }
     td.k { font-weight: bold; font-size: 7.6pt; white-space: nowrap; }
     td.dp { font-weight: bold; font-size: 7.6pt; text-align: center; }
     td.v { font-size: 7.8pt; }
-    td.k-res { font-weight: bold; font-size: 7.6pt; background-color: #bdd7ee; }
-    th.cab { background-color: #7f7f7f; color: #fff; font-size: 7.6pt; font-weight: bold; padding: 2px 3px; }
+    td.k-res { font-weight: bold; font-size: 7.6pt; background-color: {{ tema.res }}; }
+    th.cab { background-color: {{ tema.cab }}; color: #fff; font-size: 7.6pt; font-weight: bold; padding: 2px 3px; }
     td.it { font-size: 7.6pt; padding-top: 2px; padding-bottom: 1px; }
     td.itb { font-size: 7.6pt; font-weight: bold; padding-top: 2px; padding-bottom: 1px; }
     .c { text-align: center; } .r { text-align: right; } .b { font-weight: bold; }
     td.tk { font-weight: bold; font-size: 7.6pt; }
     td.tv { font-size: 7.6pt; text-align: right; }
-    td.neto-k { background-color: #404040; color: #fff; font-weight: bold; font-size: 8pt; padding-top: 2px; padding-bottom: 1px; }
-    td.neto-v { background-color: #fff; color: #111; font-weight: bold; font-size: 8pt; text-align: right; border: 1px solid #404040; padding-top: 2px; padding-bottom: 1px; }
+    td.neto-k { background-color: {{ tema.neto }}; color: #fff; font-weight: bold; font-size: 8pt; padding-top: 2px; padding-bottom: 1px; }
+    td.neto-v { background-color: #fff; color: #111; font-weight: bold; font-size: 8pt; text-align: right; border: 1px solid {{ tema.neto }}; padding-top: 2px; padding-bottom: 1px; }
     .letras { font-size: 7pt; font-style: italic; }
     .titulo { font-weight: bold; text-decoration: underline; font-size: 7.8pt; }
     .terminos { font-size: 7.2pt; }
-    .resaltado { color: #1f4e9c; font-weight: bold; background-color: #e8f0fe; }
-    td.hor-cab { background-color: #7f7f7f; color: #fff; text-align: center; font-weight: bold; font-size: 7.4pt; border: 1px solid #555; }
+    .resaltado { color: {{ tema.azul }}; font-weight: bold; background-color: {{ tema.resaltado_fondo }}; }
+    td.hor-cab { background-color: {{ tema.cab }}; color: #fff; text-align: center; font-weight: bold; font-size: 7.4pt; border: 1px solid #555; }
     td.hor { text-align: center; font-size: 7.2pt; border-left: 1px solid #555; border-right: 1px solid #555; }
     td.hor-fin { text-align: center; font-size: 7.2pt; border-left: 1px solid #555; border-right: 1px solid #555; border-bottom: 1px solid #555; }
     td.aviso-pend { color: #b45309; font-weight: bold; font-size: 8pt; text-align: center; background-color: #fff7e6; }
@@ -64,7 +64,7 @@
             <table>
                 <tr><td class="caja-ruc">RUC: {{ cfg.ruc or '-' }}</td></tr>
                 <tr><td class="caja-tipo">{{ tipos[o.tipo]|upper }}</td></tr>
-                <tr><td class="caja-num">N° {{ '%06d'|format(o.numero) }}</td></tr>
+                <tr><td class="caja-num">N° {{ oc_numero_txt(o) }}</td></tr>
             </table>
         </td>
     </tr>
@@ -98,7 +98,7 @@
     {% for i in filas %}
     <tr>
         {% if i %}
-        <td class="it">{{ i.item }}</td><td class="itb">{{ i.descripcion }}</td><td class="itb c">{{ i.cantidad|cant }}</td><td class="itb c">{{ i.um }}</td>
+        <td class="it">{{ i.item }}</td><td class="itb">{% if i.tipo_servicio %}[{{ i.tipo_servicio }}] {% endif %}{{ i.descripcion }}</td><td class="itb c">{{ i.cantidad|cant }}</td><td class="itb c">{{ i.um }}</td>
         <td class="itb r">{{ '{:,.2f}'.format(i.precio_unitario) if (i.precio_unitario * 100)|round == i.precio_unitario * 100 else '{:,.4f}'.format(i.precio_unitario) }}</td>
         <td class="it r">{{ mon.simbolo }} {{ '{:,.2f}'.format(i.total) }}</td>
         {% else %}
@@ -130,7 +130,7 @@
 <table>
     <tr><td class="k" style="width: 19%;">CONDICION DE PAGO</td><td class="dp" style="width: 2%;">:</td><td class="v" style="width: 45%;">{{ o.condicion_pago }}</td>
         <td class="k" style="width: 10%;">MONEDA</td><td class="dp" style="width: 2%;">:</td><td class="v c" style="width: 22%;">{{ mon.nombre|upper }}</td></tr>
-    <tr><td class="k-res">FECHA DE ENTREGA</td><td class="dp">:</td><td class="v" colspan="4"><span style="background-color: #bdd7ee;">&nbsp;{{ oc_entrega_txt(o) }}&nbsp;</span></td></tr>
+    <tr><td class="k-res">FECHA DE ENTREGA</td><td class="dp">:</td><td class="v" colspan="4"><span style="background-color: {{ tema.res }};">&nbsp;{{ oc_entrega_txt(o) }}&nbsp;</span></td></tr>
     <tr><td class="k">{{ 'LUGAR DE RECOJO' if o.entrega_modo == 'RECOJO' else 'LUGAR DE ENTREGA' }}</td><td class="dp">:</td>
         <td class="v" colspan="4">{{ o.lugar_recojo if o.entrega_modo == 'RECOJO' else cfg.lugar_entrega }}</td></tr>
 </table>

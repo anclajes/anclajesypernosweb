@@ -61,6 +61,7 @@
     .entrega-fija { background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 6px 10px; font-size: .78rem; }
     .num-prev { font-weight: 800; color: #0B3D91; font-variant-numeric: tabular-nums; }
     #modalProd .select2-container { width: 100% !important; }
+    .pag-mp { display: flex; flex-wrap: wrap; gap: 6px; justify-content: space-between; align-items: center; margin: 6px 0; }
     .motivos label { flex: 1 1 calc(50% - 8px); min-width: 130px; }
     .motivos label small { font-size: .64rem; }
     .cliente-box { border: 1.5px dashed #7dd3fc; background: #f0f9ff; border-radius: 10px; padding: 8px 10px; }
@@ -109,7 +110,7 @@
                 <div class="position-relative" id="cliBuscar">
                     <div class="input-group input-group-sm">
                         <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
-                        <input type="text" id="buscaCli" class="form-control" placeholder="RUC o nombre del cliente" autocomplete="off" oninput="sugerirCli(false)"
+                        <input type="text" id="buscaCli" class="form-control" placeholder="Escribe el RUC o el nombre: te sugiere clientes" autocomplete="off" oninput="sugerirCli(false)" onfocus="sugerirCli(false)"
                                onkeydown="if(event.key==='Enter'){event.preventDefault(); sugerirCli(true);}">
                         <button type="button" class="btn btn-outline-primary" onclick="sugerirCli(true)" title="Buscar en la cartera y, si no está, en SUNAT">Buscar</button>
                     </div>
@@ -133,15 +134,15 @@
             <div class="lbl">Empresa que compra</div>
             <div class="seg chico mb-2">
                 {% for k, e in empresas_oc.items() %}
-                <input type="radio" name="empresa" id="emp_{{ k }}" value="{{ k }}" {{ 'checked' if (pv.empresa or 'ANCLAJES') == k }} {{ 'disabled' if not e.habilitada or orden }} onchange="pintarDestino()">
-                <label for="emp_{{ k }}" style="--c:#0B3D91;"><span><b>{{ e.corto }}</b>{% if not e.habilitada %}<small>Próximamente</small>{% endif %}</span></label>
+                <input type="radio" name="empresa" id="emp_{{ k }}" value="{{ k }}" {{ 'checked' if (pv.empresa or 'ANCLAJES') == k }} {{ 'disabled' if not e.habilitada or orden }} onchange="pintarDestino(); pintarNumero()">
+                <label for="emp_{{ k }}" style="--c: {{ e.color }};"><img src="{{ url_for('static', filename='img/' ~ e.logo) }}" alt="" width="58" height="22" style="object-fit: contain;"><span><b>{{ e.corto }}</b>{% if not e.habilitada %}<small>Próximamente</small>{% endif %}</span></label>
                 {% endfor %}
             </div>
             {% if orden %}<input type="hidden" name="empresa" value="{{ orden.empresa or 'ANCLAJES' }}">{% endif %}
             {% if not orden %}
             <div class="seg chico mb-2">
                 {% for k, t in tipos.items() %}
-                <input type="radio" name="tipo" id="tipo_{{ k }}" value="{{ k }}" {{ 'checked' if (pv.tipo or 'OC') == k }} onchange="pintarNumero(); pintarFichas()">
+                <input type="radio" name="tipo" id="tipo_{{ k }}" value="{{ k }}" {{ 'checked' if (pv.tipo or 'OC') == k }} onchange="pintarNumero(); pintarTipo(); pintarFichas()">
                 <label for="tipo_{{ k }}" style="--c: {{ '#0B3D91' if k == 'OC' else '#7c3aed' }};"><i class="bi {{ 'bi-cart3' if k == 'OC' else 'bi-tools' }}"></i><span><b>{{ t }}</b></span></label>
                 {% endfor %}
             </div>
@@ -150,13 +151,15 @@
                 <div class="col-6"><div class="lbl req">Fecha</div><input type="date" name="fecha" class="form-control" value="{{ pv.fecha or hoy.isoformat() }}" max="{{ hoy.isoformat() }}" required></div>
                 <div class="col-6"><div class="lbl">Cotización N°</div><input type="text" name="cotizacion" class="form-control text-uppercase" maxlength="60" value="{{ pv.cotizacion or '' }}" placeholder="Ej: COT-0158"></div>
             </div>
-            <div class="lbl req mt-2">Este material es para</div>
+            <div class="lbl req mt-2" id="lblDestino">Este material es para</div>
             <div class="seg">
                 <input type="radio" name="destino" id="dest_GENERAL" value="GENERAL" {{ 'checked' if pv.destino == 'GENERAL' }} onchange="pintarFichas()">
-                <label for="dest_GENERAL" style="--c:#0369a1;"><i class="bi bi-boxes"></i><span><b id="destInvTxt">Inventario Anclajes</b><small>Al terminar, Almacén lo ingresa al Kardex</small></span></label>
+                <label for="dest_GENERAL" style="--c:#0369a1;"><i class="bi bi-boxes"></i><span><b id="destInvTxt">Inventario Anclajes</b><small id="destInvSub">Al terminar, Almacén lo ingresa al Kardex</small></span></label>
                 <input type="radio" name="destino" id="dest_INSUMOS" value="INSUMOS" {{ 'checked' if pv.destino == 'INSUMOS' }} onchange="pintarFichas()">
-                <label for="dest_INSUMOS" style="--c:#b45309;"><i class="bi bi-tools"></i><span><b>Insumos internos</b><small>Inventario pequeño: quedará pendiente de ingresar</small></span></label>
+                <label id="lblInsumos" for="dest_INSUMOS" style="--c:#b45309;"><i class="bi bi-tools"></i><span><b>Insumos internos</b><small>Inventario pequeño: quedará pendiente de ingresar</small></span></label>
             </div>
+            <div class="aviso-cert" id="avisoOS" style="display:none; background:#f5f3ff; border-color:#ddd6fe; color:#4c1d95;"><i class="bi bi-tools"></i> <b>Orden de Servicio</b>: corte, roscado, galvanizado...
+                En cada ítem elige el <b>tipo de servicio</b>. No va a Insumos ni pasa por "Ingresos pendientes": al terminar se da la conformidad y queda el pago.</div>
             <div class="aviso-cert" id="avisoCert" style="display:none;"><i class="bi bi-award-fill"></i> Compra para el <b>inventario</b>: al dar la conformidad será <b>obligatorio subir el CERTIFICADO DE CALIDAD</b> (pídeselo al proveedor).</div>
         </div></div>
 
@@ -260,7 +263,7 @@
                 <input type="radio" name="entrega_modo" id="em_RECOJO" value="RECOJO" {{ 'checked' if pv.entrega_modo == 'RECOJO' }} onchange="pintarEntrega()">
                 <label for="em_RECOJO" style="--c:#0B3D91;"><i class="bi bi-person-walking"></i><span><b>Lo recogemos</b><small>Indicar dónde</small></span></label>
             </div>
-            <div id="boxEmpresa" class="entrega-fija"><i class="bi bi-geo-alt-fill text-danger"></i> <b>Lugar de entrega:</b> {{ cfg.lugar_entrega }}</div>
+            <div id="boxEmpresa" class="entrega-fija"><i class="bi bi-geo-alt-fill text-danger"></i> <b>Lugar de entrega:</b> <span id="lugarEmp">{{ cfg.lugar_entrega }}</span></div>
             <div id="boxRecojo" style="display:none;"><input type="text" name="lugar_recojo" id="lugar_recojo" class="form-control" maxlength="250" value="{{ pv.lugar_recojo or '' }}" placeholder="¿Dónde se recoge? Ej: almacén del proveedor, Av. ..."></div>
             <div class="lbl mt-3">Fecha de entrega</div>
             <div class="seg chico mb-2">
@@ -311,6 +314,8 @@
         <input type="hidden" name="origen[]" class="i-origen"><input type="hidden" name="codigo[]" class="i-codigo"><input type="hidden" name="insumo_id[]" class="i-insumo">
         <input type="hidden" name="familia[]" class="i-familia"><input type="hidden" name="calidad[]" class="i-calidad"><input type="hidden" name="estado_producto[]" class="i-estado">
         <div class="row g-2">
+            <div class="col-12 i-serv-box" style="display:none;"><label>Tipo de servicio *</label>
+                <select name="servicio[]" class="form-select form-select-sm i-serv"></select></div>
             <div class="col-12 position-relative"><label>Descripción *</label>
                 <div class="input-group input-group-sm">
                     <input type="text" name="descripcion[]" class="form-control text-uppercase i-desc" maxlength="400" autocomplete="off" placeholder="Escribe o busca en el inventario...">
@@ -358,6 +363,9 @@ const ITEMS_PREVIOS = {{ (pv.get('items') or [])|tojson }};
 const IGV = {{ igv }};
 const MONEDAS = {{ monedas|tojson }};
 const EMPRESAS = {{ empresas_oc|tojson }};
+const LUGAR = {{ cfgs|dictsort|map('last')|map(attribute='lugar_entrega')|list|tojson }};
+const EMP_ORDEN = {{ cfgs|dictsort|map('first')|list|tojson }};
+const SERVICIOS = {{ servicios|tojson }};
 const ES_ADMIN = {{ 'true' if session.get('role') == 'admin' else 'false' }};
 const porId = id => document.getElementById(id);
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
@@ -371,8 +379,27 @@ function empresa() { return valorRadio('empresa') || 'ANCLAJES'; }
 function tipo() { return valorRadio('tipo') || '{{ orden.tipo if orden else 'OC' }}'; }
 function corto() { return EMPRESAS[empresa()].corto; }
 function post(url, datos) { const fd = new FormData(); Object.entries(datos).forEach(([k, v]) => fd.append(k, v == null ? '' : v)); return fetch(url, { method: 'POST', body: fd }).then(r => r.json()); }
-function pintarNumero() { const t = tipo(); if (porId('numPrev')) porId('numPrev').textContent = `${t} N° ${String(SIGUIENTE[t]).padStart(6, '0')}`; }
-function pintarDestino() { porId('destInvTxt').textContent = 'Inventario ' + corto(); pintarFichas(); }
+function pintarNumero() { const t = tipo(); if (porId('numPrev')) porId('numPrev').textContent = `${t} N° ${SIGUIENTE[empresa() + '|' + t]}`; }
+function pintarDestino() {
+    porId('destInvTxt').textContent = (tipo() === 'OS' ? 'Servicio para ' : 'Inventario ') + corto();
+    porId('lugarEmp').textContent = LUGAR[EMP_ORDEN.indexOf(empresa())] || '';
+    porId('destInvSub').textContent = tipo() === 'OS' ? 'Servicio a nuestro material (no entra al inventario)' : 'Al terminar, Almacén lo ingresa al Kardex';
+    pintarFichas();
+}
+function opcionesServicio(sel, valor) {
+    const lista = SERVICIOS.slice(); if (valor && !lista.includes(valor)) lista.push(valor);
+    sel.innerHTML = '<option value="">— Elige el servicio —</option>' + lista.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+    sel.value = valor || '';
+}
+function pintarTipo() {
+    const os = tipo() === 'OS';
+    porId('lblInsumos').style.display = os ? 'none' : '';
+    if (os) { porId('dest_GENERAL').checked = true; }
+    porId('avisoOS').style.display = os ? 'block' : 'none';
+    porId('lblDestino').textContent = os ? 'Este servicio es para' : 'Este material es para';
+    document.querySelectorAll('#items .i-serv-box').forEach(b => b.style.display = os ? 'block' : 'none');
+    pintarDestino();
+}
 function pintarEntrega() {
     const recojo = porId('em_RECOJO').checked;
     porId('boxEmpresa').style.display = recojo ? 'none' : 'block';
@@ -474,6 +501,8 @@ function agregarItem(datos) {
     desc.value = datos.descripcion || '';
     fila.querySelector('.i-cant').value = datos.cantidad || '';
     fila.querySelector('.i-pu').value = (datos.precio_unitario === 0 || datos.precio_unitario) ? datos.precio_unitario : '';
+    opcionesServicio(fila.querySelector('.i-serv'), datos.servicio || '');
+    fila.querySelector('.i-serv-box').style.display = tipo() === 'OS' ? 'block' : 'none';
     fila.querySelector('.i-pmodo').value = datos.peso_modo === 'T' ? 'T' : 'U';
     fila.querySelector('.i-pval').value = datos.peso_valor || '';
     if (datos.codigo) vincular(fila, { origen: datos.origen, sku: datos.codigo, insumo_id: datos.insumo_id, familia: datos.familia, calidad: datos.calidad, estado: datos.estado });
@@ -522,20 +551,35 @@ function llenarSelect(sel, lista, valor) {
     sel.value = valor || '';
     if (window.jQuery && jQuery(sel).data('select2')) jQuery(sel).trigger('change.select2');
 }
-function buscarModal() {
+let paginaMp = 1;
+function paginador(d) {
+    if (!d.paginas || d.paginas < 2) return '';
+    const p = d.pagina, n = d.paginas, ini = (p - 1) * d.por_pagina + 1, fin = Math.min(p * d.por_pagina, d.total);
+    let nums = [];
+    for (let i = 1; i <= n; i++) if (i === 1 || i === n || Math.abs(i - p) <= 2) nums.push(i); else if (nums[nums.length - 1] !== '…') nums.push('…');
+    return `<div class="pag-mp"><span class="small text-muted">${ini}–${fin} de ${d.total}</span><div class="btn-group btn-group-sm">` +
+        `<button type="button" class="btn btn-outline-primary" data-p="${p - 1}" ${p === 1 ? 'disabled' : ''}>‹ Anterior</button>` +
+        nums.map(i => i === '…' ? '<button type="button" class="btn btn-outline-secondary" disabled>…</button>'
+                                : `<button type="button" class="btn ${i === p ? 'btn-primary' : 'btn-outline-primary'}" data-p="${i}">${i}</button>`).join('') +
+        `<button type="button" class="btn btn-outline-primary" data-p="${p + 1}" ${p === n ? 'disabled' : ''}>Siguiente ›</button></div></div>`;
+}
+function buscarModal(pagina) {
     clearTimeout(tMp);
+    paginaMp = typeof pagina === 'number' ? pagina : 1;
     tMp = setTimeout(() => {
         const fam = porId('mp_familia').value, cal = porId('mp_calidad').value, q = porId('mp_q').value.trim();
-        fetch(urlProductos(q, fam, cal)).then(r => r.json()).then(d => {
+        fetch(urlProductos(q, fam, cal) + `&pagina=${paginaMp}`).then(r => r.json()).then(d => {
             llenarSelect(porId('mp_familia'), d.familias || [], fam);
             llenarSelect(porId('mp_calidad'), d.calidades || [], cal);
             const res = d.results || [];
-            porId('mp_total').textContent = (q || fam || cal) ? `${d.total} producto(s)${d.total > res.length ? ' — se muestran los primeros ' + res.length + '; usa más filtros' : ''}` : 'Elige una familia, una calidad o escribe para buscar.';
-            const cont = porId('mp_res'); cont.innerHTML = '';
+            porId('mp_total').innerHTML = (q || fam || cal) ? `<b>${d.total}</b> producto(s)${d.paginas > 1 ? ` · página ${d.pagina} de ${d.paginas}` : ''}` : 'Elige una familia, una calidad o escribe para buscar.';
+            const cont = porId('mp_res'); cont.innerHTML = paginador(d);
             res.forEach(p => { const div = document.createElement('div'); div.className = 'res-prod'; div.innerHTML = tarjetaProducto(p);
                 div.onclick = () => { elegirProducto(filaBuscando, p); bootstrap.Modal.getOrCreateInstance(porId('modalProd')).hide(); }; cont.appendChild(div); });
+            if (d.paginas > 1) cont.insertAdjacentHTML('beforeend', paginador(d));
+            cont.querySelectorAll('.pag-mp [data-p]').forEach(b => b.onclick = () => { buscarModal(parseInt(b.dataset.p)); porId('mp_res').scrollIntoView({ block: 'start' }); });
         });
-    }, 200);
+    }, typeof pagina === 'number' ? 0 : 200);
 }
 function abrirBuscador(fila) {
     filaBuscando = fila;
@@ -545,7 +589,7 @@ function abrirBuscador(fila) {
     setTimeout(() => porId('mp_q').focus(), 300);
 }
 s2(porId('mp_familia'), 'Todas las familias'); s2(porId('mp_calidad'), 'Todas las calidades');
-porId('mp_q').addEventListener('input', buscarModal);
+porId('mp_q').addEventListener('input', () => buscarModal());
 
 // ================= PROVEEDOR =================
 let tSug = null, provActual = null, contactos = [];
@@ -633,11 +677,13 @@ let tCli = null;
 function sugerirCli(sunat) {
     clearTimeout(tCli);
     const q = porId('buscaCli').value.trim(), cont = porId('sugCli');
-    if (q.length < 3) { cont.style.display = 'none'; return; }
+    if (q.length === 1) { cont.style.display = 'none'; return; }
     tCli = setTimeout(() => fetch(`{{ url_for('oc_api_cliente') }}?q=${encodeURIComponent(q)}&sunat=${sunat ? 1 : 0}`).then(r => r.json()).then(d => {
         if (d.status !== 'success') { cont.innerHTML = `<div class="list-group-item small text-danger">${esc(d.msg)}</div>`; cont.style.display = 'block'; return; }
         const lista = d.clientes || [];
-        cont.innerHTML = lista.length ? '' : `<div class="list-group-item small text-muted">${sunat ? 'No se encontró.' : 'No está en la cartera. Si es un RUC, pulsa <b>Buscar</b> (SUNAT) o escríbelo abajo.'}</div>`;
+        cont.innerHTML = lista.length ? (d.recientes ? '<div class="list-group-item small text-muted py-1">Clientes usados hace poco en órdenes:</div>' : '')
+            : (d.recientes ? '' : `<div class="list-group-item small text-muted">${sunat ? 'No se encontró.' : 'No está en la cartera de clientes. Si es un RUC, pulsa <b>Buscar</b> (SUNAT) o escríbelo abajo.'}</div>`);
+        if (!lista.length && d.recientes) { cont.style.display = 'none'; return; }
         lista.forEach(c => {
             const b = document.createElement('button'); b.type = 'button'; b.className = 'list-group-item list-group-item-action py-1 px-2 small';
             b.innerHTML = `<b>${esc(c.razon)}</b> <span class="text-muted">· ${esc(c.ruc)} · ${esc(c.origen)}</span>`;
@@ -744,6 +790,7 @@ porId('formOC').addEventListener('submit', function (e) {
     filas.forEach((f, i) => {
         if (f.querySelector('.i-desc').value.trim().length < 2 || !(parseFloat(f.querySelector('.i-cant').value) > 0) || !f.querySelector('.i-um').value || f.querySelector('.i-pu').value === '')
             err.push(`Ítem ${i + 1}: completa descripción, cantidad, U.M. y precio.`);
+        if (tipo() === 'OS' && !f.querySelector('.i-serv').value) err.push(`Ítem ${i + 1}: elige el tipo de servicio.`);
     });
     if (err.length) { e.preventDefault(); Swal.fire({ icon: 'warning', title: 'Falta información', html: [...new Set(err)].map(esc).join('<br>') }); return; }
     if (accionPulsada === 'enviar' && !this.dataset.confirmado) {
@@ -759,7 +806,7 @@ porId('formOC').addEventListener('submit', function (e) {
 });
 
 // ================= INICIO =================
-pintarNumero(); pintarEntrega(); porId('destInvTxt').textContent = 'Inventario ' + corto(); pintarMotivo(); pintarFichas();
+pintarNumero(); pintarEntrega(); pintarMotivo(); pintarTipo();
 if (porId('solicitante').value && !porId('area_solicitante').value) pintarArea();
 if (ITEMS_PREVIOS.length) ITEMS_PREVIOS.forEach(it => agregarItem(it)); else agregarItem();
 if (porId('oc_proveedor_id').value) cargarProveedor(porId('oc_proveedor_id').value);

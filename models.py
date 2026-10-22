@@ -1388,7 +1388,7 @@ class OrdenCompra(db.Model):
     kardex_registrado_por = db.relationship('User', foreign_keys=[kardex_registrado_por_id])
     solicitante = db.relationship('User', foreign_keys=[solicitante_user_id])
     pagado_por = db.relationship('User', foreign_keys=[pagado_por_id])
-    __table_args__ = (db.UniqueConstraint('tipo', 'numero', name='uq_orden_compra_tipo_numero'),)
+    __table_args__ = (db.UniqueConstraint('empresa', 'tipo', 'numero', name='uq_orden_compra_emp_tipo_num'),)   # numeración propia por empresa
 
 
 class OrdenCompraItem(db.Model):
@@ -1409,6 +1409,7 @@ class OrdenCompraItem(db.Model):
     estado_producto = db.Column(db.String(100))                # estado del producto en el inventario (nacional, oxidado...)
     es_nuevo = db.Column(db.Boolean, default=False)            # producto que NO está en el inventario: hay que crearlo
     # Peso (opcional): por unidad o total, como lo dé el proveedor. Se guardan los dos (el otro se calcula).
+    tipo_servicio = db.Column(db.String(80))                   # solo en Órdenes de Servicio: CORTE, ROSCADO, GALVANIZADO...
     peso_modo = db.Column(db.String(1))                        # U = por unidad / T = total
     peso_unitario = db.Column(db.Float)                        # kg por unidad
     peso_total = db.Column(db.Float)                           # kg del ítem
