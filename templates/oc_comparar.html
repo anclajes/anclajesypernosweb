@@ -1,0 +1,181 @@
+{% extends "base.html" %}
+{% block title %}Factura vs {{ oc_codigo(orden) }}{% endblock %}
+{% block subtitle %}Comparar documentos lado a lado · {{ orden.razon_social[:60] }}{% endblock %}
+{% block content %}
+{% set vista = '' %}
+{% include '_oc_nav.html' %}
+{% set mon = monedas[orden.moneda] %}
+<style>
+    .cmp-datos { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
+    .cmp-dato { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 6px 10px; }
+    .cmp-dato .k { font-size: .62rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: #64748b; }
+    .cmp-dato .v { font-size: .92rem; font-weight: 800; font-variant-numeric: tabular-nums; color: #0f172a; overflow-wrap: anywhere; }
+    .cmp-dato.ok { border-color: #86efac; background: #f0fdf4; } .cmp-dato.mal { border-color: #fca5a5; background: #fef2f2; }
+    .cmp { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .pane { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
+    .pane-cab { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 6px 8px; border-bottom: 1px solid #e2e8f0; background: #f8fafc; }
+    .pane-cab select { flex: 1 1 200px; min-width: 0; font-size: .8rem; }
+    .pane-cab .btn { padding: 2px 8px; }
+    .pane-cab .pag { font-size: .72rem; color: #64748b; font-variant-numeric: tabular-nums; min-width: 58px; text-align: center; }
+    .pane-cuerpo { height: calc(100vh - 290px); min-height: 420px; overflow: auto; background: #525659; padding: 10px; text-align: center; scroll-behavior: auto; }
+    .pane-cuerpo canvas, .pane-cuerpo img { display: block; margin: 0 auto 10px; box-shadow: 0 2px 10px rgba(0,0,0,.35); background: #fff; max-width: none; }
+    .pane-cuerpo iframe { width: 100%; height: 100%; border: 0; background: #fff; }
+    .pane-cuerpo .msg { color: #e2e8f0; font-size: .85rem; padding: 30px 10px; }
+    .pane-lado { font-size: .66rem; font-weight: 800; color: #fff; background: #0B3D91; border-radius: 6px; padding: 1px 7px; }
+    .pane-lado.d { background: #15803d; }
+    .tabs-cel { display: none; }
+    @media (max-width: 991.98px) {
+        .cmp { grid-template-columns: 1fr; }
+        .tabs-cel { display: flex; gap: 6px; margin-bottom: 8px; }
+        .tabs-cel button { flex: 1 1 0; }
+        .cmp.ver-izq #paneD, .cmp.ver-der #paneI { display: none; }
+        .pane-cuerpo { height: calc(100vh - 250px); min-height: 380px; }
+    }
+</style>
+
+<div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+    <a href="{{ url_for('oc_detalle', orden_id=orden.id) }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> Volver a la orden</a>
+    <b class="ms-1">{{ oc_codigo(orden) }}</b><span class="text-muted small">· {{ orden.razon_social }}</span>
+    <label class="ms-auto small d-flex align-items-center gap-1"><input type="checkbox" class="form-check-input mt-0" id="sincro"> Mover los dos juntos</label>
+</div>
+
+{% set dif = ((orden.monto_factura or 0) - (orden.total or 0))|round(2) if orden.monto_factura is not none else none %}
+<div class="cmp-datos mb-2">
+    <div class="cmp-dato"><div class="k">Total de la orden</div><div class="v">{{ mon.simbolo }} {{ '{:,.2f}'.format(orden.total or 0) }}</div></div>
+    <div class="cmp-dato"><div class="k">Subtotal · IGV</div><div class="v" style="font-size:.8rem;">{{ '{:,.2f}'.format(orden.subtotal or 0) }} · {{ '{:,.2f}'.format(orden.igv or 0) }}</div></div>
+    <div class="cmp-dato"><div class="k">Ítems de la orden</div><div class="v">{{ orden.items|length }}</div></div>
+    <div class="cmp-dato"><div class="k">N° factura</div><div class="v">{{ orden.numero_factura or '—' }}</div></div>
+    <div class="cmp-dato"><div class="k">Total de la factura</div><div class="v">{{ (mon.simbolo ~ ' ' ~ '{:,.2f}'.format(orden.monto_factura)) if orden.monto_factura is not none else '—' }}</div></div>
+    <div class="cmp-dato {{ '' if dif is none else ('ok' if dif == 0 else 'mal') }}"><div class="k">Diferencia</div>
+        <div class="v">{% if dif is none %}<span class="text-muted fw-normal small">registra el total</span>{% elif dif == 0 %}<i class="bi bi-check-circle-fill text-success"></i> Coincide{% else %}{{ mon.simbolo }} {{ '{:,.2f}'.format(dif) }}{% endif %}</div></div>
+</div>
+{% if p.factura %}
+<form method="POST" action="{{ url_for('oc_factura_datos', orden_id=orden.id) }}" class="row g-2 align-items-end mb-2">
+    <input type="hidden" name="volver" value="{{ url_for('oc_comparar', orden_id=orden.id) }}">
+    <div class="col-6 col-md-3"><label class="small fw-bold">N° de factura</label><input name="numero_factura" class="form-control form-control-sm text-uppercase" maxlength="60" value="{{ orden.numero_factura or '' }}"></div>
+    <div class="col-6 col-md-3"><label class="small fw-bold">Fecha de emisión</label><input type="date" name="fecha_factura" class="form-control form-control-sm" value="{{ orden.fecha_factura.isoformat() if orden.fecha_factura else '' }}"></div>
+    <div class="col-8 col-md-3"><label class="small fw-bold">Total de la factura ({{ mon.simbolo }})</label><input type="number" step="0.01" min="0" name="monto_factura" class="form-control form-control-sm" value="{{ orden.monto_factura if orden.monto_factura is not none else '' }}" placeholder="Con IGV"></div>
+    <div class="col-4 col-md-3"><button class="btn btn-sm btn-primary w-100 fw-bold"><i class="bi bi-save"></i> Guardar</button></div>
+</form>
+{% endif %}
+{% if not hay_factura %}<div class="alert alert-warning py-2 small"><i class="bi bi-exclamation-triangle-fill"></i> Esta orden todavía no tiene la <b>factura</b> subida. Súbela en la orden para compararla.</div>{% endif %}
+
+<div class="tabs-cel">
+    <button type="button" class="btn btn-sm btn-primary" id="tabI" onclick="verLado('izq')">Izquierda</button>
+    <button type="button" class="btn btn-sm btn-outline-success" id="tabD" onclick="verLado('der')">Derecha</button>
+</div>
+<div class="cmp ver-izq" id="cmp">
+    {% for lado, id_, defecto in [('Izquierda', 'paneI', 'oc'), ('Derecha', 'paneD', derecha)] %}
+    <div class="pane" id="{{ id_ }}">
+        <div class="pane-cab">
+            <span class="pane-lado {{ 'd' if id_ == 'paneD' }}">{{ lado }}</span>
+            <select class="form-select form-select-sm fuente" aria-label="Documento ({{ lado }})">
+                {% for f in fuentes %}<option value="{{ f.id }}" {{ 'selected' if f.id == defecto }}>{{ f.txt }}</option>{% endfor %}
+            </select>
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-a="arriba" title="Subir"><i class="bi bi-chevron-up"></i></button>
+            <span class="pag">—</span>
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-a="abajo" title="Bajar"><i class="bi bi-chevron-down"></i></button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-a="menos" title="Alejar"><i class="bi bi-zoom-out"></i></button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-a="ancho" title="Ajustar al ancho"><i class="bi bi-arrows-expand-vertical"></i></button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-a="mas" title="Acercar"><i class="bi bi-zoom-in"></i></button>
+            <a class="btn btn-sm btn-outline-primary abrir" target="_blank" title="Abrir en otra pestaña"><i class="bi bi-box-arrow-up-right"></i></a>
+        </div>
+        <div class="pane-cuerpo"><div class="msg">Cargando…</div></div>
+    </div>
+    {% endfor %}
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+<script>
+const FUENTES = {{ fuentes|tojson }};
+if (window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+function verLado(l) {
+    const c = document.getElementById('cmp'); c.classList.toggle('ver-izq', l === 'izq'); c.classList.toggle('ver-der', l === 'der');
+    document.getElementById('tabI').className = 'btn btn-sm ' + (l === 'izq' ? 'btn-primary' : 'btn-outline-primary');
+    document.getElementById('tabD').className = 'btn btn-sm ' + (l === 'der' ? 'btn-success' : 'btn-outline-success');
+    PANELES.forEach(p => p.ajustar());
+}
+function Panel(el) {
+    const cuerpo = el.querySelector('.pane-cuerpo'), sel = el.querySelector('.fuente'), pag = el.querySelector('.pag');
+    const st = { zoom: null, pdf: null, img: null, fuente: null, token: 0 };
+    const anchoUtil = () => Math.max(200, cuerpo.clientWidth - 24);
+    function paginaActual() {
+        const hijos = [...cuerpo.querySelectorAll('canvas, img')];
+        if (!hijos.length) { pag.textContent = '—'; return; }
+        const top = cuerpo.scrollTop + 20;
+        let n = 1; hijos.forEach((h, i) => { if (h.offsetTop <= top) n = i + 1; });
+        pag.textContent = `${n} / ${hijos.length}`;
+    }
+    async function pintarPdf() {
+        const token = ++st.token;
+        const dpr = window.devicePixelRatio || 1;
+        const primera = await st.pdf.getPage(1);
+        if (st.zoom == null) { st.zoom = anchoUtil() / primera.getViewport({ scale: 1 }).width; st.ancho = cuerpo.clientWidth; }
+        const arriba = cuerpo.scrollHeight ? cuerpo.scrollTop / cuerpo.scrollHeight : 0;
+        cuerpo.innerHTML = '';
+        for (let i = 1; i <= st.pdf.numPages; i++) {
+            if (token !== st.token) return;
+            const page = i === 1 ? primera : await st.pdf.getPage(i);
+            const vp = page.getViewport({ scale: st.zoom * dpr });
+            const cv = document.createElement('canvas'); cv.width = vp.width; cv.height = vp.height;
+            cv.style.width = (vp.width / dpr) + 'px'; cv.style.height = (vp.height / dpr) + 'px';
+            cuerpo.appendChild(cv);
+            await page.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
+        }
+        cuerpo.scrollTop = arriba * cuerpo.scrollHeight;
+        paginaActual();
+    }
+    function pintarImg() {
+        const img = st.img;
+        if (st.zoom == null) { st.zoom = Math.min(1, anchoUtil() / img.naturalWidth); st.ancho = cuerpo.clientWidth; }
+        img.style.width = (img.naturalWidth * st.zoom) + 'px';
+        paginaActual();
+    }
+    function pintar() { if (st.pdf) return pintarPdf(); if (st.img) return pintarImg(); }
+    function cargar(id) {
+        const f = FUENTES.find(x => x.id === id); if (!f) return;
+        st.fuente = f; st.zoom = null; st.pdf = null; st.img = null; st.token++;
+        el.querySelector('.abrir').href = f.url;
+        cuerpo.innerHTML = '<div class="msg"><span class="spinner-border spinner-border-sm"></span> Cargando…</div>';
+        if (f.pdf) {
+            if (!window.pdfjsLib) { cuerpo.innerHTML = `<iframe src="${f.url}#view=FitH" title="${f.txt.replace(/"/g, '')}"></iframe>`; pag.textContent = 'PDF'; return; }
+            pdfjsLib.getDocument(f.url).promise.then(pdf => { st.pdf = pdf; return pintarPdf(); })
+                .catch(() => { cuerpo.innerHTML = `<iframe src="${f.url}#view=FitH"></iframe>`; pag.textContent = 'PDF'; });
+        } else {
+            const img = new Image(); img.alt = f.txt;
+            img.onload = () => { cuerpo.innerHTML = ''; cuerpo.appendChild(img); st.img = img; pintarImg(); };
+            img.onerror = () => { cuerpo.innerHTML = '<div class="msg">No se pudo abrir el archivo. Usa el botón de abrir en otra pestaña.</div>'; };
+            img.src = f.url;
+        }
+    }
+    el.querySelectorAll('[data-a]').forEach(b => b.addEventListener('click', () => {
+        const a = b.dataset.a;
+        if (a === 'arriba' || a === 'abajo') { const d = (a === 'abajo' ? 1 : -1) * cuerpo.clientHeight * 0.85; cuerpo.scrollBy({ top: d, behavior: 'smooth' }); return; }
+        if (st.zoom == null) return;
+        if (a === 'mas') st.zoom = Math.min(st.zoom * 1.25, 6);
+        if (a === 'menos') st.zoom = Math.max(st.zoom / 1.25, 0.15);
+        if (a === 'ancho') st.zoom = null;
+        pintar();
+    }));
+    sel.addEventListener('change', () => cargar(sel.value));
+    let sincronizando = false;
+    cuerpo.addEventListener('scroll', () => {
+        paginaActual();
+        if (sincronizando || !document.getElementById('sincro').checked) return;
+        const r = cuerpo.scrollTop / Math.max(1, cuerpo.scrollHeight - cuerpo.clientHeight);
+        PANELES.filter(p => p.cuerpo !== cuerpo).forEach(p => p.irA(r));
+    });
+    function irA(r) { sincronizando = true; cuerpo.scrollTop = r * (cuerpo.scrollHeight - cuerpo.clientHeight); setTimeout(() => sincronizando = false, 50); }
+    function ajustar() {
+        if (!st.fuente || !cuerpo.clientWidth || cuerpo.clientWidth === st.ancho) return;
+        st.ancho = cuerpo.clientWidth;
+        if (st.pdf || st.img) { st.zoom = null; pintar(); }
+    }
+    cargar(sel.value);
+    return { cuerpo, irA, ajustar };
+}
+const PANELES = [Panel(document.getElementById('paneI')), Panel(document.getElementById('paneD'))];
+let tRes = null;
+window.addEventListener('resize', () => { clearTimeout(tRes); tRes = setTimeout(() => PANELES.forEach(p => p.ajustar()), 300); });
+</script>
+{% endblock %}

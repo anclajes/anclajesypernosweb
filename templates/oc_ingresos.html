@@ -4,85 +4,158 @@
 {% block content %}
 {% include '_oc_nav.html' %}
 <style>
-    .vistas a { font-size: .8rem; font-weight: 700; border-radius: 20px; padding: 5px 14px; text-decoration: none; border: 1px solid #e2e8f0; color: #475569; background: #fff; }
+    .vistas a { font-size: .8rem; font-weight: 700; border-radius: 20px; padding: 5px 14px; text-decoration: none; border: 1px solid #e2e8f0; color: #475569; background: #fff; white-space: nowrap; }
     .vistas a.on { background: #0f172a; color: #fff; border-color: #0f172a; }
-    .pasos-ing { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 8px; }
-    .pasos-ing div { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 8px 12px; font-size: .78rem; }
-    .pasos-ing b.nro { display: inline-flex; width: 22px; height: 22px; border-radius: 50%; background: #0B3D91; color: #fff; align-items: center; justify-content: center; font-size: .72rem; margin-right: 4px; }
+    .como { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 10px 14px; margin-bottom: 12px; }
+    .como summary { font-weight: 800; font-size: .84rem; color: #0B3D91; cursor: pointer; }
+    .pasos-ing { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; margin-top: 8px; }
+    .pasos-ing div { background: #f8fafc; border-radius: 10px; padding: 8px 10px; font-size: .76rem; }
+    .pasos-ing b.nro { display: inline-flex; width: 20px; height: 20px; border-radius: 50%; background: #0B3D91; color: #fff; align-items: center; justify-content: center; font-size: .68rem; margin-right: 4px; }
+    .nota-cod { font-size: .76rem; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px; padding: 8px 10px; margin-top: 8px; color: #1e3a8a; }
     .oc-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; margin-bottom: 14px; overflow: hidden; }
-    .oc-card .cab { padding: 10px 14px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; }
-    .oc-card .prov { font-weight: 700; font-size: .86rem; max-width: 420px; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
-    .it { padding: 10px 14px; border-bottom: 1px solid #f1f5f9; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 14px; align-items: center; }
+    .oc-card .cab { padding: 10px 14px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; }
+    .oc-card .prov { font-weight: 700; font-size: .86rem; overflow-wrap: anywhere; }
+    .espera { font-size: .7rem; font-weight: 800; border-radius: 20px; padding: 2px 9px; background: #fef3c7; color: #92400e; white-space: nowrap; }
+    .espera.larga { background: #fee2e2; color: #991b1b; }
+    .traza { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+    .traza .t { display: flex; align-items: center; gap: 6px; font-size: .68rem; background: #fff; border: 1px solid #e2e8f0; border-radius: 9px; padding: 4px 8px; line-height: 1.15; }
+    .traza .t i { font-size: .95rem; }
+    .traza .t.ok i { color: #16a34a; } .traza .t.pend i { color: #d97706; }
+    .traza .t b { display: block; font-size: .7rem; }
+    .traza .flecha { color: #cbd5e1; align-self: center; }
+    .doc-b { display: inline-flex; align-items: center; gap: 4px; font-size: .7rem; font-weight: 700; border-radius: 7px; padding: 2px 7px; text-decoration: none; border: 1px solid #e2e8f0; background: #fff; color: #334155; }
+    .doc-b:hover { border-color: #0B3D91; color: #0B3D91; }
+    .sol-l { font-size: .72rem; color: #475569; margin-top: 4px; }
+    .mot { font-size: .64rem; font-weight: 800; border-radius: 5px; padding: 0 6px; background: #ede9fe; color: #5b21b6; }
+    .it { padding: 12px 14px; border-bottom: 1px solid #f1f5f9; display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 390px); gap: 10px 16px; align-items: start; }
     .it:last-child { border-bottom: 0; }
-    .it .desc { font-weight: 700; font-size: .86rem; overflow-wrap: anywhere; }
-    .it .meta { font-size: .72rem; color: #64748b; }
+    .it .desc { font-weight: 700; font-size: .88rem; overflow-wrap: anywhere; }
+    .it .meta { font-size: .72rem; color: #64748b; margin-top: 3px; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
     .tag { display: inline-block; font-size: .64rem; font-weight: 800; border-radius: 5px; padding: 0 6px; }
-    .tag.nuevo { background: #ffedd5; color: #9a3412; } .tag.vinc { background: #dcfce7; color: #166534; }
-    .cant { font-size: 1.05rem; font-weight: 800; font-variant-numeric: tabular-nums; }
-    .form-ing { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; justify-content: flex-end; }
-    .form-ing input { max-width: 170px; }
-    .hecho { font-size: .74rem; text-align: right; }
-    .sku-sug { z-index: 1050; max-height: 240px; overflow-y: auto; display: none; min-width: 280px; right: 0; }
-    @media (max-width: 767.98px) { .it { grid-template-columns: 1fr; } .form-ing, .hecho { justify-content: flex-start; text-align: left; } .form-ing input { max-width: none; flex: 1 1 140px; } }
+    .tag.nuevo { background: #ffedd5; color: #9a3412; } .tag.vinc { background: #dcfce7; color: #166534; } .tag.est { background: #fef3c7; color: #92400e; }
+    .tag.espera-i { background: #fef3c7; color: #92400e; } .tag.listo { background: #dcfce7; color: #166534; }
+    .cant { font-size: 1.1rem; font-weight: 800; font-variant-numeric: tabular-nums; color: #0f172a; }
+    .peso-l { font-size: .7rem; color: #475569; background: #f8fafc; border-radius: 7px; padding: 2px 7px; }
+    .peso-l.dif { background: #fff7ed; color: #9a3412; }
+    .form-ing { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 8px 10px; }
+    .form-ing label { font-size: .66rem; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: .03em; margin-bottom: 1px; }
+    .form-ing .ayuda { font-size: .68rem; color: #64748b; line-height: 1.2; margin-top: 2px; }
+    .form-ing .ayuda.nuevo { color: #9a3412; }
+    .hecho { font-size: .74rem; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 8px 10px; }
+    .sku-sug { z-index: 1050; max-height: 240px; overflow-y: auto; display: none; left: 0; right: 0; }
+    .oculto { display: none !important; }
+    @media (max-width: 767.98px) { .it { grid-template-columns: 1fr; } }
 </style>
 
-<div class="d-flex flex-wrap gap-2 align-items-center mb-3 vistas">
+<div class="d-flex flex-wrap gap-2 align-items-center mb-2 vistas">
     <a href="{{ url_for('oc_ingresos_pendientes') }}" class="{{ 'on' if vista == 'pendientes' }}"><i class="bi bi-hourglass-split"></i> Pendientes <span class="opacity-75">{{ n_pendientes }}</span></a>
-    <a href="{{ url_for('oc_ingresos_pendientes', vista='hechos') }}" class="{{ 'on' if vista == 'hechos' }}"><i class="bi bi-check2-all"></i> Ya ingresados</a>
+    <a href="{{ url_for('oc_ingresos_pendientes', vista='hechos') }}" class="{{ 'on' if vista == 'hechos' }}"><i class="bi bi-check2-all"></i> Ya ingresados <span class="opacity-75">{{ n_hechos }}</span></a>
     <a href="{{ url_for('ver_kardex') }}" class="ms-auto"><i class="bi bi-clock-history"></i> Kardex Anclajes</a>
     <a href="{{ url_for('inventario') }}"><i class="bi bi-boxes"></i> Inventario Anclajes</a>
 </div>
 
-{% if vista == 'pendientes' %}
-<div class="pasos-ing mb-3">
-    <div><b class="nro">1</b> Aquí aparece el material que <b>llegó con OC</b> y Logística ya revisó y dio <b>conforme</b>.</div>
-    <div><b class="nro">2</b> Ve al <b>inventario</b>, busca el producto (botón <i class="bi bi-search"></i> si tiene código) y <b>súmale</b> la cantidad. Si es <span class="tag nuevo">NUEVO</span>, créalo y súmalo.</div>
-    <div><b class="nro">3</b> Vuelve y pulsa <b>Marcar ingresado</b>: queda tu nombre, la fecha y la hora, y pasa a "Ya ingresados".</div>
+<details class="como" {{ 'open' if vista == 'pendientes' and n_pendientes }}>
+    <summary><i class="bi bi-info-circle"></i> ¿Cómo funciona este apartado?</summary>
+    <div class="pasos-ing">
+        <div><b class="nro">1</b> Aquí aparece cada producto que <b>llegó con una OC</b> y que Logística revisó y dio <b>conforme</b> (buen estado, cantidad y documentos). Está <b>esperando ser ingresado</b>.</div>
+        <div><b class="nro">2</b> Ve al <b>inventario</b> y <b>súmale</b> la cantidad al producto (botón <i class="bi bi-search"></i> buscar). Si es <span class="tag nuevo">NUEVO</span>, primero <b>créalo</b> y luego súmalo.</div>
+        <div><b class="nro">3</b> Vuelve y pulsa <b>Marcar ingresado</b>: queda tu nombre, la fecha y la hora, y pasa a "Ya ingresados" con toda su historia.</div>
+    </div>
+    <div class="nota-cod"><b><i class="bi bi-upc-scan"></i> ¿Qué es el "Código en el inventario"?</b> Es el <b>SKU</b> con el que el producto quedó en el inventario. Sirve para <b>enlazar</b> la orden con el producto (trazabilidad).
+        <ul class="mb-0 mt-1 ps-3">
+            <li>Si el producto <b>ya existía</b>, el código ya viene puesto: no tienes que hacer nada.</li>
+            <li>Si es <b>NUEVO</b>, escribe (o busca) el código con el que lo <b>acabas de crear</b>. Si todavía no tiene código, puedes dejarlo vacío: <b>no impide marcarlo</b>.</li>
+        </ul></div>
+</details>
+
+{% if grupos %}
+<div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+    <div class="input-group input-group-sm" style="max-width: 420px;"><span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+        <input type="search" id="filtroIng" class="form-control" placeholder="Filtrar por OC, proveedor, producto o código"></div>
+    {% if vista == 'pendientes' %}<label class="small d-flex align-items-center gap-1"><input type="checkbox" class="form-check-input mt-0" id="soloNuevos"> Solo productos nuevos</label>{% endif %}
 </div>
 {% endif %}
 
 {% for o, items in grupos %}
-<div class="oc-card shadow-sm" id="oc{{ o.id }}">
+{% set espera = ((ahora - o.fecha_conforme).days) if o.fecha_conforme else 0 %}
+{% set ds = docs.get(o.id, []) %}
+<div class="oc-card shadow-sm" id="oc{{ o.id }}" data-buscar="{{ (o.tipo ~ ' ' ~ '%06d'|format(o.numero) ~ ' ' ~ o.razon_social ~ ' ' ~ (items|map(attribute='descripcion')|join(' ')) ~ ' ' ~ (items|map(attribute='codigo')|select|join(' ')))|upper }}">
     <div class="cab">
-        {% if puede_ver_oc %}<a class="oc-num" href="{{ url_for('oc_detalle', orden_id=o.id) }}">{% else %}<span class="oc-num">{% endif %}<span class="oc-tipo {{ o.tipo }}">{{ o.tipo }}</span> N° {{ '%06d'|format(o.numero) }}{% if puede_ver_oc %}</a>{% else %}</span>{% endif %}
-        <span class="prov" title="{{ o.razon_social }}">{{ o.razon_social }}</span>
-        <span class="oc-dest GENERAL">Inv. {{ empresas_oc[o.empresa or 'ANCLAJES'].corto }}</span>
-        <span class="small text-muted"><i class="bi bi-box-seam"></i> Llegó {{ o.fecha_llegada.strftime('%d/%m/%Y %H:%M') if o.fecha_llegada else '-' }}
-            · conforme {{ o.conforme_por.nombre_completo if o.conforme_por else '' }}</span>
-        <span class="small ms-auto d-flex flex-wrap gap-1 align-items-center">
-            {% for d in docs.get(o.id, []) if d.tipo in ['GUIA', 'FACTURA'] %}
-            <a class="badge text-decoration-none {{ 'text-bg-light border' }}" href="{{ url_for('oc_documento_ver', doc_id=d.id) }}" target="_blank">
-                <i class="bi {{ 'bi-truck' if d.tipo == 'GUIA' else 'bi-receipt' }}"></i> {{ 'Guía' if d.tipo == 'GUIA' else 'Factura' }}
-                {{ (o.numero_guia if d.tipo == 'GUIA' else o.numero_factura) or '' }}</a>
-            {% else %}{% if o.numero_guia %}Guía <b>{{ o.numero_guia }}</b>{% endif %}{% if o.numero_factura %} · Factura <b>{{ o.numero_factura }}</b>{% endif %}{% endfor %}
-        </span>
+        <div class="d-flex flex-wrap gap-2 align-items-center">
+            {% if puede_ver_oc %}<a class="oc-num" href="{{ url_for('oc_detalle', orden_id=o.id) }}">{% else %}<span class="oc-num">{% endif %}<span class="oc-tipo {{ o.tipo }}">{{ o.tipo }}</span> N° {{ '%06d'|format(o.numero) }}{% if puede_ver_oc %}</a>{% else %}</span>{% endif %}
+            <span class="prov">{{ o.razon_social }}</span>
+            <span class="oc-dest GENERAL">Inv. {{ empresas_oc[o.empresa or 'ANCLAJES'].corto }}</span>
+            {% if vista == 'pendientes' %}<span class="espera {{ 'larga' if espera >= 3 }} ms-auto"><i class="bi bi-hourglass-split"></i> {{ 'Conforme hoy' if espera == 0 else 'Esperando ingreso hace ' ~ espera ~ ' día' ~ ('s' if espera != 1 else '') }}</span>{% endif %}
+        </div>
+        {% if o.solicitante_nombre or o.motivo_compra %}
+        <div class="sol-l"><i class="bi bi-person-raised-hand"></i> Solicitó <b>{{ oc_solicitante_txt(o) or '—' }}</b>{% if o.area_solicitante %} ({{ o.area_solicitante|title }}){% endif %}
+            {% if o.motivo_compra %}· <span class="mot">{{ o.motivo_compra|capitalize }}</span>{% endif %}{% if o.cliente_razon %} · cliente <b>{{ o.cliente_razon }}</b>{% endif %}</div>
+        {% endif %}
+        <div class="traza">
+            <span class="t ok"><i class="bi bi-patch-check-fill"></i><span><b>Aprobada</b>{{ o.aprobado_por.nombre_completo if o.aprobado_por else '' }}{% if o.fecha_aprobacion %} · {{ o.fecha_aprobacion.strftime('%d/%m %H:%M') }}{% endif %}</span></span>
+            <i class="bi bi-chevron-right flecha"></i>
+            <span class="t ok"><i class="bi bi-truck"></i><span><b>Llegó</b>{{ o.recibido_por.nombre_completo if o.recibido_por else '' }}{% if o.fecha_llegada %} · {{ o.fecha_llegada.strftime('%d/%m %H:%M') }}{% endif %}</span></span>
+            <i class="bi bi-chevron-right flecha"></i>
+            <span class="t ok"><i class="bi bi-check-circle-fill"></i><span><b>Conforme</b>{{ o.conforme_por.nombre_completo if o.conforme_por else '' }}{% if o.fecha_conforme %} · {{ o.fecha_conforme.strftime('%d/%m %H:%M') }}{% endif %}</span></span>
+            <i class="bi bi-chevron-right flecha"></i>
+            {% set ie = oc_ingreso_estado(o) %}
+            <span class="t {{ 'ok' if ie.completo else 'pend' }}"><i class="bi {{ 'bi-box-arrow-in-down' if ie.completo else 'bi-hourglass-split' }}"></i><span><b>Ingreso al inventario</b>{{ ie.hechos }} de {{ ie.total }} ítem(s)</span></span>
+        </div>
+        <div class="d-flex flex-wrap gap-1 mt-2">
+            {% for d in ds if d.tipo in ['GUIA', 'FACTURA', 'CERTIFICADO'] %}
+            <a class="doc-b" href="{{ url_for('oc_documento_ver', doc_id=d.id) }}" target="_blank">
+                <i class="bi {{ {'GUIA': 'bi-truck', 'FACTURA': 'bi-receipt', 'CERTIFICADO': 'bi-award'}[d.tipo] }}"></i> {{ {'GUIA': 'Guía', 'FACTURA': 'Factura', 'CERTIFICADO': 'Certificado de calidad'}[d.tipo] }}
+                {{ {'GUIA': o.numero_guia, 'FACTURA': o.numero_factura}.get(d.tipo) or '' }}</a>
+            {% else %}<span class="small text-muted">{% if o.numero_guia %}Guía <b>{{ o.numero_guia }}</b>{% endif %}{% if o.numero_factura %} · Factura <b>{{ o.numero_factura }}</b>{% endif %}</span>{% endfor %}
+        </div>
     </div>
     {% for i in items %}
-    <div class="it">
+    {% set cod = (i.sku_ingreso or i.codigo or '')|upper %}
+    <div class="it" data-nuevo="{{ '1' if i.es_nuevo else '0' }}" data-buscar="{{ (i.descripcion ~ ' ' ~ (i.codigo or '') ~ ' ' ~ (i.sku_ingreso or ''))|upper }}">
         <div>
             <div class="desc">{{ i.item }}. {{ i.descripcion }}</div>
-            <div class="meta"><span class="cant text-dark">{{ i.cantidad|cant }}</span> {{ i.um }}
-                {% if i.es_nuevo and i.fecha_ingreso %}· <span class="tag vinc">Producto nuevo (creado)</span>
-                {% elif i.es_nuevo %}· <span class="tag nuevo">NUEVO: crearlo en el inventario</span>
-                {% elif i.codigo %}· <span class="tag vinc">{{ i.codigo }}</span> stock actual <b>{{ stock.get(i.codigo|upper, '—') }}</b>
-                    <a class="ms-1" href="{{ url_for('inventario', busqueda=i.codigo) }}" target="_blank" title="Buscar en el inventario"><i class="bi bi-search"></i> buscar</a>{% endif %}
-                {% if i.familia or i.calidad or i.estado_producto %}· {{ [i.familia, i.calidad, i.estado_producto]|select|join(' · ') }}{% endif %}</div>
+            <div class="meta">
+                {% if i.fecha_ingreso %}<span class="tag listo"><i class="bi bi-check2-all"></i> Ingresado</span>{% else %}<span class="tag espera-i"><i class="bi bi-check-circle"></i> Conforme · esperando ingreso</span>{% endif %}
+                <span><span class="cant">{{ i.cantidad|cant }}</span> {{ i.um }}</span>
+                {% if i.es_nuevo and i.fecha_ingreso %}<span class="tag vinc">Producto nuevo (creado)</span>
+                {% elif i.es_nuevo %}<span class="tag nuevo">NUEVO: crearlo en el inventario</span>
+                {% elif i.codigo %}<span class="tag vinc">{{ i.codigo }}</span> <span>stock actual <b>{{ stock.get(i.codigo|upper, '—') }}</b></span>
+                    <a href="{{ url_for('inventario', busqueda=i.codigo) }}" target="_blank" title="Buscar en el inventario"><i class="bi bi-search"></i> buscar</a>{% endif %}
+                {% if i.estado_producto %}<span class="tag est">{{ i.estado_producto }}</span>{% endif %}
+                {% if i.familia or i.calidad %}<span>{{ [i.familia, i.calidad]|select|join(' · ') }}</span>{% endif %}
+            </div>
+            {% if i.peso_total %}
+            {% set pinv = peso_inv.get(cod, 0) %}
+            <div class="meta"><span class="peso-l"><i class="bi bi-speedometer2"></i> Peso según OC: <b>{{ '{:,.4f}'.format(i.peso_unitario).rstrip('0').rstrip('.') }} kg/u</b> · {{ '{:,.3f}'.format(i.peso_total).rstrip('0').rstrip('.') }} kg en total</span>
+                {% if cod and pinv %}<span class="peso-l {{ 'dif' if (pinv - i.peso_unitario)|abs > 0.0005 }}">En el inventario: {{ '{:,.4f}'.format(pinv).rstrip('0').rstrip('.') }} kg/u{% if (pinv - i.peso_unitario)|abs > 0.0005 %} (distinto){% endif %}</span>
+                {% elif cod %}<span class="peso-l dif">El inventario no tiene peso: puedes cargarlo</span>{% endif %}</div>
+            {% endif %}
         </div>
         {% if i.fecha_ingreso %}
-        <div class="hecho"><span class="aprob si"><i class="bi bi-check2"></i> Ingresado{% if i.sku_ingreso %} · {{ i.sku_ingreso }}{% endif %}</span>
-            <div class="text-muted mt-1">por <b>{{ i.ingresado_por.nombre_completo if i.ingresado_por else '' }}</b> el {{ i.fecha_ingreso.strftime('%d/%m/%Y %H:%M') }}</div>
-            {% if i.nota_ingreso %}<div class="text-muted">{{ i.nota_ingreso }}</div>{% endif %}
+        <div class="hecho">
+            <div><i class="bi bi-check-circle-fill text-success"></i> Conforme {{ o.fecha_conforme.strftime('%d/%m/%Y %H:%M') if o.fecha_conforme else '' }} · {{ o.conforme_por.nombre_completo if o.conforme_por else '' }}</div>
+            <div><i class="bi bi-box-arrow-in-down text-success"></i> <b>Ingresado {{ i.fecha_ingreso.strftime('%d/%m/%Y %H:%M') }}</b> por <b>{{ i.ingresado_por.nombre_completo if i.ingresado_por else '' }}</b></div>
+            {% if o.fecha_conforme %}{% set h = ((i.fecha_ingreso - o.fecha_conforme).total_seconds() / 3600)|round(0, 'floor')|int %}<div class="text-muted">Esperó {{ (h // 24) ~ ' día(s)' if h >= 24 else h ~ ' hora(s)' }} desde la conformidad</div>{% endif %}
+            {% if i.sku_ingreso %}<div>Código en el inventario: <b>{{ i.sku_ingreso }}</b></div>{% endif %}
+            {% if i.nota_ingreso %}<div class="text-muted">Nota: {{ i.nota_ingreso }}</div>{% endif %}
             {% if es_admin %}<form method="POST" action="{{ url_for('oc_item_deshacer', item_id=i.id) }}" class="d-inline" onsubmit="return quitarMarca(this)">
                 <input type="hidden" name="motivo"><button class="btn btn-link btn-sm p-0 text-danger">Quitar marca</button></form>{% endif %}
         </div>
         {% else %}
-        <form method="POST" action="{{ url_for('oc_item_ingresar', item_id=i.id) }}" class="form-ing position-relative" onsubmit="return confirmarIngreso(this, {{ 'true' if i.es_nuevo else 'false' }})">
+        <form method="POST" action="{{ url_for('oc_item_ingresar', item_id=i.id) }}" class="form-ing" onsubmit="return confirmarIngreso(this, {{ 'true' if i.es_nuevo else 'false' }})">
             <input type="hidden" name="volver" value="{{ url_for('oc_ingresos_pendientes') }}">
-            <input type="text" name="sku" class="form-control form-control-sm text-uppercase sku-in" autocomplete="off" value="{{ '' if i.es_nuevo else (i.codigo or '') }}"
-                   placeholder="Código (opcional)" title="Opcional: el código con el que quedó en el inventario">
-            <input type="text" name="nota" class="form-control form-control-sm" maxlength="300" placeholder="Nota (opcional)">
-            <button class="btn btn-success btn-sm fw-bold"><i class="bi bi-box-arrow-in-down"></i> Marcar ingresado</button>
-            <div class="list-group position-absolute shadow sku-sug" style="top: 100%;"></div>
+            <div class="position-relative">
+                <label>Código en el inventario <span class="text-lowercase fw-normal">(opcional)</span></label>
+                <input type="text" name="sku" class="form-control form-control-sm text-uppercase sku-in" autocomplete="off" value="{{ '' if i.es_nuevo else (i.codigo or '') }}"
+                       placeholder="{{ 'Código con el que lo creaste' if i.es_nuevo else 'SKU' }}">
+                <div class="list-group position-absolute shadow sku-sug" style="top: 100%;"></div>
+                {% if i.es_nuevo %}<div class="ayuda nuevo"><i class="bi bi-stars"></i> Producto NUEVO: créalo en el inventario y escribe aquí su código (búscalo). Si aún no tiene, déjalo vacío.</div>
+                {% elif i.codigo %}<div class="ayuda"><i class="bi bi-link-45deg"></i> Ya existe en el inventario con este código. No tienes que cambiarlo.</div>
+                {% else %}<div class="ayuda">No vino con código: si lo ubicaste en el inventario, escríbelo.</div>{% endif %}
+            </div>
+            <label class="mt-2">Nota <span class="text-lowercase fw-normal">(opcional)</span></label>
+            <input type="text" name="nota" class="form-control form-control-sm" maxlength="300" placeholder="Ej: ubicado en anaquel A-3, mov. kardex 21/10">
+            <button class="btn btn-success btn-sm fw-bold w-100 mt-2"><i class="bi bi-box-arrow-in-down"></i> Marcar ingresado</button>
         </form>
         {% endif %}
     </div>
@@ -98,7 +171,8 @@ function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'
 function confirmarIngreso(form, nuevo) {
     if (form.dataset.ok) return true;
     const sku = form.sku.value.trim();
-    Swal.fire({ icon: 'question', title: '¿Ya lo sumaste en el inventario?', html: `Se marcará como <b>ingresado</b> a tu nombre, con la fecha y hora de ahora` + (sku ? ` (código <b>${esc(sku.toUpperCase())}</b>).` : '.'),
+    Swal.fire({ icon: 'question', title: '¿Ya lo sumaste en el inventario?', html: `Se marcará como <b>ingresado</b> a tu nombre, con la fecha y hora de ahora` + (sku ? ` (código <b>${esc(sku.toUpperCase())}</b>).` : '.') +
+                (nuevo && !sku ? '<br><span class="small text-muted">Es un producto nuevo y no escribiste su código: puedes marcarlo igual.</span>' : ''),
                 showCancelButton: true, confirmButtonText: 'Sí, ya ingresó', cancelButtonText: 'Todavía no' })
         .then(r => { if (r.isConfirmed) { form.dataset.ok = '1'; form.submit(); } });
     return false;
@@ -110,21 +184,37 @@ function quitarMarca(form) {
         .then(r => { if (r.isConfirmed) { form.motivo.value = r.value; form.dataset.ok = '1'; form.submit(); } });
     return false;
 }
-// buscador de SKU (para productos nuevos ya creados en el inventario)
+// buscador de código (para productos nuevos ya creados en el inventario)
 document.querySelectorAll('.sku-in').forEach(inp => {
-    const sug = inp.form.querySelector('.sku-sug'); let t = null;
+    const sug = inp.parentElement.querySelector('.sku-sug'); let t = null;
     inp.addEventListener('input', () => {
         clearTimeout(t); const q = inp.value.trim();
         if (q.length < 2) { sug.style.display = 'none'; return; }
         t = setTimeout(() => fetch(`{{ url_for('oc_api_sku') }}?q=${encodeURIComponent(q)}`).then(r => r.json()).then(d => {
             if (document.activeElement !== inp) return;
             sug.innerHTML = (d.results || []).map(p => `<button type="button" class="list-group-item list-group-item-action py-1 px-2 small" data-sku="${esc(p.sku)}"><b>${esc(p.sku)}</b> — ${esc(p.descripcion)} <span class="text-muted">(stock ${p.stock})</span></button>`).join('')
-                || '<div class="list-group-item small text-muted">No existe en el inventario: créalo primero.</div>';
+                || '<div class="list-group-item small text-muted">No existe en el inventario: créalo primero (o déjalo vacío).</div>';
             sug.querySelectorAll('button').forEach(b => { b.onmousedown = e => e.preventDefault(); b.onclick = () => { inp.value = b.dataset.sku; sug.style.display = 'none'; }; });
             sug.style.display = 'block';
         }), 250);
     });
     inp.addEventListener('blur', () => setTimeout(() => sug.style.display = 'none', 150));
 });
+// filtros en la página
+function filtrar() {
+    const q = (document.getElementById('filtroIng')?.value || '').trim().toUpperCase().split(/\s+/).filter(Boolean);
+    const nuevos = document.getElementById('soloNuevos')?.checked;
+    document.querySelectorAll('.oc-card').forEach(card => {
+        const enCab = q.every(t => card.dataset.buscar.includes(t));
+        let visibles = 0;
+        card.querySelectorAll('.it').forEach(it => {
+            const ver = (enCab || q.every(t => it.dataset.buscar.includes(t))) && (!nuevos || it.dataset.nuevo === '1');
+            it.classList.toggle('oculto', !ver); if (ver) visibles++;
+        });
+        card.classList.toggle('oculto', !visibles);
+    });
+}
+document.getElementById('filtroIng')?.addEventListener('input', filtrar);
+document.getElementById('soloNuevos')?.addEventListener('change', filtrar);
 </script>
 {% endblock %}

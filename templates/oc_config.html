@@ -24,8 +24,9 @@
     {% for t, nombre in nombres_catalogo.items() %}
     <li class="nav-item"><button class="nav-link {{ 'active' if tab == t }}" data-bs-toggle="tab" data-bs-target="#c-{{ t }}">{{ nombre }}</button></li>
     {% endfor %}
+    <li class="nav-item"><button class="nav-link {{ 'active' if tab == 'motivos_compra' }}" data-bs-toggle="tab" data-bs-target="#c-mcompra"><i class="bi bi-bullseye"></i> Motivos de compra</button></li>
     <li class="nav-item"><button class="nav-link {{ 'active' if tab == 'motivos' }}" data-bs-toggle="tab" data-bs-target="#c-motivos"><i class="bi bi-x-octagon"></i> Motivos de rechazo</button></li>
-    <li class="nav-item"><button class="nav-link {{ 'active' if tab == 'proveedores' }}" data-bs-toggle="tab" data-bs-target="#c-prov"><i class="bi bi-building"></i> Proveedores y contactos</button></li>
+    <li class="nav-item"><button class="nav-link {{ 'active' if tab == 'proveedores' }}" data-bs-toggle="tab" data-bs-target="#c-prov"><i class="bi bi-building"></i> Proveedores, contactos y cuentas</button></li>
     <li class="nav-item"><button class="nav-link {{ 'active' if tab == 'datos' }}" data-bs-toggle="tab" data-bs-target="#c-datos"><i class="bi bi-file-earmark-pdf"></i> Datos del PDF</button></li>
     {% if es_admin %}<li class="nav-item"><button class="nav-link peligro {{ 'active' if tab == 'vaciar' }}" data-bs-toggle="tab" data-bs-target="#c-vaciar"><i class="bi bi-trash3"></i> Vaciar datos del módulo</button></li>{% endif %}
 </ul>
@@ -33,9 +34,13 @@
     {% for t, nombre in nombres_catalogo.items() %}
     <div class="tab-pane fade {{ 'show active' if tab == t }}" id="c-{{ t }}">
         <div class="card border-0 shadow-sm" style="max-width: 680px;"><div class="card-body">
-            <div class="input-group mb-2"><input id="nuevo_{{ t }}" class="form-control text-uppercase" placeholder="{{ 'Ej: CJA-200' if t == 'OC_UM' else 'Ej: CRÉDITO 90 DÍAS' }}"
+            <div class="input-group mb-2"><input id="nuevo_{{ t }}" class="form-control text-uppercase" placeholder="{{ {'OC_UM': 'Ej: CJA-200', 'OC_CONDICION_PAGO': 'Ej: CRÉDITO 90 DÍAS', 'OC_AREA': 'Ej: MANTENIMIENTO', 'OC_SOLICITANTE': 'Ej: JUAN PÉREZ (TALLER)'}[t] }}"
                    onkeydown="if(event.key==='Enter'){event.preventDefault(); post('catalogo', {tipo: '{{ t }}', valor: this.value}, '{{ t }}');}">
                 <button class="btn btn-primary" onclick="post('catalogo', {tipo: '{{ t }}', valor: document.getElementById('nuevo_{{ t }}').value}, '{{ t }}')"><i class="bi bi-plus-lg"></i> Agregar</button></div>
+            {% if t == 'OC_SOLICITANTE' %}<div class="alert alert-light border small py-2 mb-2"><i class="bi bi-person-raised-hand text-primary"></i> En "Solicitó" ya aparecen solas las <b>cuentas del sistema</b>
+                (Gerencia, Administración, Vendedores, Logística y Almacén). Aquí agrega <b>otras personas</b> que piden compras y no tienen usuario.</div>
+            {% elif t == 'OC_CONDICION_PAGO' %}<div class="alert alert-light border small py-2 mb-2"><i class="bi bi-cash-coin text-success"></i> Si el nombre tiene <b>"N DÍAS"</b> (ej: CRÉDITO 30 DÍAS) el sistema calcula el
+                <b>vencimiento</b> y avisa cuando falta poco o se vence. Contado, contra entrega o adelanto no tienen vencimiento.</div>{% endif %}
             <div class="form-text mb-2"><i class="bi bi-info-circle"></i> Las órdenes ya hechas guardan su texto: renombrar o borrar una opción no cambia órdenes anteriores.
                 Desactiva para que deje de aparecer sin borrarla.</div>
             <table class="table table-sm align-middle mb-0 small"><tbody>
@@ -51,6 +56,30 @@
         </div></div>
     </div>
     {% endfor %}
+
+    <div class="tab-pane fade {{ 'show active' if tab == 'motivos_compra' }}" id="c-mcompra">
+        <div class="card border-0 shadow-sm" style="max-width: 760px;"><div class="card-body">
+            <p class="small text-muted mb-2">Para qué se compra (se elige al crear la orden). Si marcas <b>"Pide cliente"</b>, la orden pedirá el RUC y la razón social del cliente.</p>
+            <div class="row g-2 mb-3 align-items-end">
+                <div class="col-12 col-sm-7"><label class="small fw-bold">Motivo</label><input id="mc_nombre" class="form-control text-uppercase" placeholder="Ej: STOCK DE SEGURIDAD"></div>
+                <div class="col-6 col-sm-3"><div class="form-check mt-4"><input class="form-check-input" type="checkbox" id="mc_cli"><label class="form-check-label small" for="mc_cli">Pide cliente</label></div></div>
+                <div class="col-6 col-sm-2"><button class="btn btn-primary w-100" onclick="post('motivo_compra', {nombre: document.getElementById('mc_nombre').value, pide_cliente: document.getElementById('mc_cli').checked ? '1' : ''}, 'motivos_compra')"><i class="bi bi-plus-lg"></i> Agregar</button></div>
+            </div>
+            <table class="table table-sm align-middle mb-0 small"><tbody>
+            {% for m in motivos_compra %}
+                <tr class="{{ 'opacity-50' if not m.activo }}"><td class="fw-semibold">{{ m.nombre }}{% if uso_mc.get(m.nombre) %}<div class="uso">usado en {{ uso_mc[m.nombre] }} orden(es)</div>{% endif %}</td>
+                    <td class="text-center" style="width:120px;"><button class="btn btn-sm {{ 'btn-info text-white' if m.pide_cliente else 'btn-outline-secondary' }} py-0" title="Pedir o no el cliente" onclick="post('motivo_compra', {accion: 'cliente', id: {{ m.id }}}, 'motivos_compra')">
+                        <i class="bi {{ 'bi-person-check' if m.pide_cliente else 'bi-person-dash' }}"></i> {{ 'Pide cliente' if m.pide_cliente else 'Sin cliente' }}</button></td>
+                    <td class="text-center" style="width:80px;">{% if m.activo %}<span class="badge bg-success">Activo</span>{% else %}<span class="badge bg-secondary">Inactivo</span>{% endif %}</td>
+                    <td class="acciones" style="width:120px;">
+                        <button class="btn btn-sm btn-outline-primary" title="Renombrar" onclick="renombrarMotivoCompra({{ m.id }}, {{ m.nombre|tojson|forceescape }})"><i class="bi bi-pencil"></i></button>
+                        <button class="btn btn-sm btn-outline-secondary" title="Activar/desactivar" onclick="post('motivo_compra', {accion: 'toggle', id: {{ m.id }}}, 'motivos_compra')"><i class="bi {{ 'bi-toggle-on' if m.activo else 'bi-toggle-off' }}"></i></button>
+                        <button class="btn btn-sm btn-outline-danger" title="Borrar" onclick="borrar('motivo_compra', {{ m.id }}, {{ m.nombre|tojson|forceescape }}, 'motivos_compra')"><i class="bi bi-trash"></i></button></td></tr>
+            {% else %}<tr><td class="text-muted">Sin motivos.</td></tr>{% endfor %}
+            </tbody></table>
+            <div class="form-text">Las órdenes ya hechas guardan el texto del motivo: renombrarlo o borrarlo no cambia órdenes anteriores.</div>
+        </div></div>
+    </div>
 
     <div class="tab-pane fade {{ 'show active' if tab == 'motivos' }}" id="c-motivos">
         <div class="card border-0 shadow-sm" style="max-width: 760px;"><div class="card-body">
@@ -91,6 +120,12 @@
                     <button class="btn btn-sm btn-outline-primary" title="Editar" onclick="editarProv({{ {'id': p.id, 'razon_social': p.razon_social, 'direccion': p.direccion or ''}|tojson|forceescape }})"><i class="bi bi-pencil"></i></button>
                     <button class="btn btn-sm btn-outline-danger" title="Borrar" onclick="borrar('proveedor', {{ p.id }}, {{ p.razon_social|tojson|forceescape }}, 'proveedores')"><i class="bi bi-trash"></i></button></div>
             </div>
+            <div class="d-flex justify-content-between align-items-center mt-2 mb-1">
+                <div class="small fw-bold text-muted"><i class="bi bi-bank"></i> Cuentas bancarias</div>
+                <button class="btn btn-sm btn-outline-primary py-0" onclick="OCC.abrir({{ p.id }}, null, () => ir('proveedores'), {{ p.razon_social|tojson|forceescape }})"><i class="bi bi-plus-lg"></i> Cuenta</button>
+            </div>
+            <div class="ctas-prov" data-cuentas="{{ cuentas_prov.get(p.id, [])|tojson|forceescape }}" data-prov="{{ p.razon_social }}"></div>
+            <div class="small fw-bold text-muted mt-2"><i class="bi bi-person-lines-fill"></i> Contactos</div>
             <table class="table table-sm align-middle mb-0 mt-1 small">
                 {% for c in cs %}
                 <tr class="{{ 'opacity-50' if not c.activo }}">
@@ -156,6 +191,8 @@
     </div>
     {% endif %}
 </div>
+
+{% include '_oc_cuentas.html' %}
 
 <div class="modal fade" id="modalProv" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><form class="modal-content border-0 shadow" id="formProv" onsubmit="return guardarProv(event)">
     <div class="modal-header py-2 text-white" style="background: var(--theme-primary, #0F172A);"><h6 class="modal-title fw-bold">Editar proveedor</h6>
@@ -236,6 +273,11 @@ function guardarProv(ev) {
     enviar('proveedor', new FormData(document.getElementById('formProv'))).then(d => d.status === 'success' ? ir('proveedores') : Swal.fire('No se pudo', d.msg, 'warning'));
     return false;
 }
+function renombrarMotivoCompra(id, valor) {
+    Swal.fire({ title: 'Renombrar motivo', input: 'text', inputValue: valor, showCancelButton: true, confirmButtonText: 'Guardar', cancelButtonText: 'Cancelar' })
+        .then(r => { if (r.isConfirmed) post('motivo_compra', { id: id, nombre: r.value }, 'motivos_compra'); });
+}
+document.querySelectorAll('.ctas-prov').forEach(el => OCC.render(el, JSON.parse(el.dataset.cuentas || '[]'), { editable: true, alGuardar: () => ir('proveedores'), provTxt: el.dataset.prov }));
 function previa(t) {
     const esc = s => s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     document.getElementById('prevTerm').innerHTML = esc(t).split(/\*\*(.+?)\*\*/).map((p, i) => i % 2 ? `<span class="resaltado">${p}</span>` : p).join('');

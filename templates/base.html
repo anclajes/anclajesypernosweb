@@ -180,16 +180,18 @@
                 <a class="nav-link" data-bs-toggle="collapse" href="#collapseOC" role="button" aria-expanded="{{ 'true' if en_oc else 'false' }}" aria-controls="collapseOC">
                     <i class="bi bi-cart-check me-2"></i> <span>Órdenes de Compra</span>
                     {% if oc_por_aprobar %}<span class="badge rounded-pill bg-warning text-dark ms-1" title="Órdenes esperando tu aprobación">{{ oc_por_aprobar }}</span>{% endif %}
+                    {% if oc_alertas %}<span class="badge rounded-pill bg-danger ms-1" title="Atrasadas o con pago por vencer / vencido">{{ oc_alertas }}</span>{% endif %}
                     <i class="bi bi-chevron-down ms-auto" style="font-size: 0.8rem;"></i>
                 </a>
                 <div class="collapse {{ 'show' if en_oc else '' }}" id="collapseOC">
                     <ul class="nav flex-column ms-2 mb-2" style="border-left: 1px solid rgba(255,255,255,0.1);">
-                        <li><a href="{{ url_for('oc_lista', vista='curso') }}" class="nav-link py-2 ps-3 {{ 'active' if request.endpoint in ['oc_lista', 'oc_detalle'] and request.args.get('vista') not in ['aprobar', 'conformes'] }}"><i class="bi bi-list-task fs-6 me-2"></i> <span>Órdenes</span></a></li>
+                        <li><a href="{{ url_for('oc_lista', vista='curso') }}" class="nav-link py-2 ps-3 {{ 'active' if request.endpoint in ['oc_lista', 'oc_detalle', 'oc_comparar'] and request.args.get('vista') not in ['aprobar', 'conformes', 'por_pagar'] }}"><i class="bi bi-list-task fs-6 me-2"></i> <span>Órdenes</span></a></li>
                         {% if session.get('role') in ['admin', 'logistica'] %}
                         <li><a href="{{ url_for('oc_nueva') }}" class="nav-link py-2 ps-3 {{ 'active' if request.endpoint in ['oc_nueva', 'oc_editar'] }}"><i class="bi bi-plus-circle fs-6 me-2"></i> <span>Nueva orden</span></a></li>
                         {% endif %}
                         <li><a href="{{ url_for('oc_lista', vista='aprobar') }}" class="nav-link py-2 ps-3 {{ 'active' if request.endpoint == 'oc_lista' and request.args.get('vista') == 'aprobar' }}"><i class="bi bi-hourglass-split fs-6 me-2"></i> <span>Por aprobar</span>
                             {% if oc_por_aprobar %}<span class="badge rounded-pill bg-warning text-dark ms-1">{{ oc_por_aprobar }}</span>{% endif %}</a></li>
+                        <li><a href="{{ url_for('oc_lista', vista='por_pagar') }}" class="nav-link py-2 ps-3 {{ 'active' if request.endpoint == 'oc_lista' and request.args.get('vista') == 'por_pagar' }}"><i class="bi bi-cash-coin fs-6 me-2"></i> <span>Por pagar</span></a></li>
                         <li><a href="{{ url_for('oc_lista', vista='conformes') }}" class="nav-link py-2 ps-3 {{ 'active' if request.endpoint == 'oc_lista' and request.args.get('vista') == 'conformes' }}"><i class="bi bi-check2-all fs-6 me-2"></i> <span>Conformes / en almacén</span></a></li>
                         {% if session.get('role') in ['admin', 'logistica'] %}
                         <li><a href="{{ url_for('oc_config') }}" class="nav-link py-2 ps-3 {{ 'active' if request.endpoint == 'oc_config' }}"><i class="bi bi-gear fs-6 me-2"></i> <span>Configuración</span></a></li>

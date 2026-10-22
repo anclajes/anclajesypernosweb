@@ -1,0 +1,171 @@
+{# Cuentas bancarias del proveedor (cuenta, CCI, detracciones) con logos y copiado rápido.
+   Se incluye una vez por página. Espera: bancos, tipos_cuenta. JS: OCC.render(contenedor, cuentas, opciones) y OCC.abrir(provId, cuenta, alGuardar) #}
+<style>
+    .cta-lista { display: grid; gap: 6px; }
+    .cta { display: flex; gap: 10px; align-items: center; border: 1px solid #e2e8f0; border-radius: 12px; padding: 8px 10px; background: #fff; }
+    .cta.arch { opacity: .55; }
+    .cta.sel { cursor: pointer; }
+    .cta.sel:has(input:checked) { border-color: #15803d; background: #f0fdf4; box-shadow: 0 0 0 2px #bbf7d0; }
+    .cta-logo { width: 76px; height: 30px; flex: 0 0 auto; border-radius: 7px; background: #fff; border: 1px solid #eef2f7; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+    .cta-logo img { max-width: 68px; max-height: 24px; object-fit: contain; }
+    .cta-logo span { font-size: .62rem; font-weight: 800; color: #fff; padding: 2px 6px; border-radius: 5px; text-align: center; line-height: 1.1; }
+    .cta-info { flex: 1 1 auto; min-width: 0; }
+    .cta-tipo { font-size: .68rem; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; color: #64748b; }
+    .cta-tipo .t { border-radius: 5px; padding: 0 5px; color: #fff; }
+    .cta-tipo .t.CUENTA { background: #0B3D91; } .cta-tipo .t.CCI { background: #7c3aed; } .cta-tipo .t.DETRACCION { background: #b91c1c; }
+    .cta-num { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .95rem; font-weight: 700; color: #0f172a; letter-spacing: .02em; overflow-wrap: anywhere; }
+    .cta-sub { font-size: .66rem; color: #94a3b8; overflow-wrap: anywhere; }
+    .cta-copiar { flex: 0 0 auto; font-weight: 700; white-space: nowrap; }
+    .cta-copiar.ok { background: #15803d !important; border-color: #15803d !important; color: #fff !important; }
+    .cta-acc { display: flex; flex-direction: column; gap: 2px; }
+    .cta-acc button { border: 0; background: none; color: #94a3b8; padding: 1px 4px; }
+    .cta-acc button:hover { color: #0B3D91; }
+    #formCuenta .seg { display: flex; gap: 6px; flex-wrap: wrap; }
+    #formCuenta .seg input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+    #formCuenta .seg label { flex: 1 1 0; min-width: 90px; border: 2px solid #e2e8f0; border-radius: 10px; padding: 6px 8px; cursor: pointer; background: #fff; display: flex; margin: 0; font-size: .8rem; }
+    #formCuenta .seg input:checked + label { border-color: var(--c); background: color-mix(in srgb, var(--c) 7%, #fff); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 15%, transparent); }
+    #formCuenta .seg input:focus-visible + label { outline: 2px solid #2563eb; outline-offset: 2px; }
+    .banco-op { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+    .banco-op input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+    .banco-op label { border: 2px solid #e2e8f0; border-radius: 10px; height: 48px; display: flex; align-items: center; justify-content: center; cursor: pointer; background: #fff; margin: 0; padding: 4px; }
+    .banco-op label img { max-width: 92%; max-height: 30px; object-fit: contain; }
+    .banco-op label span { font-size: .72rem; font-weight: 800; text-align: center; line-height: 1.1; }
+    .banco-op input:checked + label { border-color: #0B3D91; box-shadow: 0 0 0 3px #dbeafe; }
+    .banco-op input:disabled + label { opacity: .35; cursor: not-allowed; }
+    .banco-op input:focus-visible + label { outline: 2px solid #2563eb; outline-offset: 2px; }
+    @media (max-width: 575.98px) { .cta { flex-wrap: wrap; } .cta-info { flex-basis: calc(100% - 90px); } .cta-copiar { flex: 1 1 auto; } }
+</style>
+
+<div class="modal fade" id="modalCuenta" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable"><form class="modal-content border-0 shadow" id="formCuenta" autocomplete="off">
+    <div class="modal-header py-2 text-white" style="background: #0B3D91;"><h6 class="modal-title fw-bold" id="cta_titulo"><i class="bi bi-bank"></i> Nueva cuenta bancaria</h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+        <input type="hidden" name="id" id="cta_id"><input type="hidden" name="oc_proveedor_id" id="cta_prov"><input type="hidden" name="accion" value="guardar">
+        <div class="small text-muted mb-2" id="cta_prov_txt"></div>
+        <label class="small fw-bold mb-1">Tipo *</label>
+        <div class="seg chico mb-2">
+            {% for k, t in tipos_cuenta.items() %}
+            <input type="radio" name="tipo" id="cta_t_{{ k }}" value="{{ k }}" {{ 'checked' if loop.first }}>
+            <label for="cta_t_{{ k }}" style="--c: {{ {'CUENTA': '#0B3D91', 'CCI': '#7c3aed', 'DETRACCION': '#b91c1c'}[k] }}; justify-content:center;"><span><b>{{ t }}</b></span></label>
+            {% endfor %}
+        </div>
+        <label class="small fw-bold mb-1">Banco *</label>
+        <div class="banco-op mb-2">
+            {% for k, b in bancos.items() %}
+            <input type="radio" name="banco" id="cta_b_{{ k }}" value="{{ k }}">
+            <label for="cta_b_{{ k }}" title="{{ b.nombre }}">{% if b.logo %}<img src="{{ url_for('static', filename='img/' ~ b.logo) }}" alt="{{ b.nombre }}" width="90" height="30">{% else %}<span style="color: {{ b.color }};">{{ b.nombre }}</span>{% endif %}</label>
+            {% endfor %}
+        </div>
+        <div id="cta_otro_box" class="mb-2" style="display:none;"><label class="small fw-bold">Nombre del banco *</label><input name="banco_otro" id="cta_otro" class="form-control text-uppercase" maxlength="80" placeholder="Ej: BANBIF, PICHINCHA"></div>
+        <div class="row g-2">
+            <div class="col-5"><label class="small fw-bold">Moneda *</label>
+                <select name="moneda" id="cta_moneda" class="form-select"><option value="PEN">S/ Soles</option><option value="USD">US$ Dólares</option></select></div>
+            <div class="col-7"><label class="small fw-bold">Número *</label><input name="numero" id="cta_numero" class="form-control" maxlength="40" inputmode="numeric" placeholder="Solo números (guiones opcionales)">
+                <div class="form-text" id="cta_cuenta_digitos" style="font-size:.7rem;"></div></div>
+            <div class="col-12"><label class="small fw-bold">Titular (opcional)</label><input name="titular" id="cta_titular" class="form-control text-uppercase" maxlength="200" placeholder="Si no es la razón social del proveedor"></div>
+        </div>
+        <div class="form-text mt-2" id="cta_ayuda"></div>
+    </div>
+    <div class="modal-footer p-2"><button class="btn btn-primary w-100 fw-bold"><i class="bi bi-save"></i> Guardar cuenta</button></div>
+</form></div></div>
+
+<script>
+const OCC = (() => {
+    const URL_GUARDAR = '{{ url_for('oc_api_cuenta') }}';
+    const AYUDA = { CUENTA: 'Número de cuenta del banco (para transferir dentro del mismo banco).',
+                    CCI: 'Código de Cuenta Interbancario: 20 dígitos. Sirve para transferir desde cualquier banco.',
+                    DETRACCION: 'Cuenta de detracciones: siempre en el Banco de la Nación y en soles.' };
+    let alGuardar = null;
+    const e = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const f = id => document.getElementById(id);
+    function copiar(texto, btn) {
+        const listo = () => { if (!btn) return; const html = btn.innerHTML; btn.classList.add('ok'); btn.innerHTML = '<i class="bi bi-check2"></i> Copiado';
+                              setTimeout(() => { btn.classList.remove('ok'); btn.innerHTML = html; }, 1600); };
+        if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(texto).then(listo).catch(() => viejo());
+        viejo();
+        function viejo() { const t = document.createElement('textarea'); t.value = texto; t.style.position = 'fixed'; t.style.opacity = '0'; document.body.appendChild(t);
+                           t.select(); try { document.execCommand('copy'); listo(); } catch (x) { Swal.fire('Copia manual', texto, 'info'); } t.remove(); }
+    }
+    function logo(c) {
+        return c.logo ? `<span class="cta-logo"><img src="${e(c.logo)}" alt="${e(c.banco_nombre)}" width="68" height="24"></span>`
+                      : `<span class="cta-logo"><span style="background:${e(c.color)};">${e(c.banco_nombre)}</span></span>`;
+    }
+    function render(cont, cuentas, op) {
+        op = op || {};
+        if (!cont) return;
+        cont.classList.add('cta-lista');
+        if (!cuentas.length) { cont.innerHTML = `<div class="small text-muted">${op.vacio || 'Sin cuentas bancarias guardadas.'}</div>`; return; }
+        cont.innerHTML = '';
+        cuentas.forEach(c => {
+            const el = document.createElement(op.seleccionar ? 'label' : 'div');
+            el.className = 'cta' + (c.activo ? '' : ' arch') + (op.seleccionar ? ' sel' : '');
+            el.innerHTML = (op.seleccionar ? `<input type="radio" class="form-check-input mt-0" name="${e(op.seleccionar)}" value="${c.id}">` : '') + logo(c) +
+                `<div class="cta-info"><div class="cta-tipo"><span class="t ${e(c.tipo)}">${e(c.tipo_txt)}</span> ${e(c.banco_nombre)} · ${e(c.moneda_txt)}${c.activo ? '' : ' · archivada'}</div>
+                 <div class="cta-num">${e(c.numero)}</div>${c.titular ? `<div class="cta-sub">Titular: ${e(c.titular)}</div>` : ''}${op.editable ? `<div class="cta-sub">${e(c.guardado)}</div>` : ''}</div>
+                 <button type="button" class="btn btn-sm btn-outline-primary cta-copiar" title="Copia solo los números"><i class="bi bi-clipboard"></i> Copiar</button>` +
+                (op.editable ? `<div class="cta-acc"><button type="button" data-a="editar" title="Editar"><i class="bi bi-pencil"></i></button>` +
+                    (c.activo ? `<button type="button" data-a="archivar" title="Archivar (deja de aparecer)"><i class="bi bi-archive"></i></button>`
+                              : `<button type="button" data-a="restaurar" title="Restaurar"><i class="bi bi-arrow-counterclockwise"></i></button>`) + `</div>` : '');
+            el.querySelector('.cta-copiar').onclick = ev => { ev.preventDefault(); ev.stopPropagation(); copiar(c.copiar, ev.currentTarget); };
+            if (op.editable) {
+                el.querySelector('[data-a=editar]').onclick = () => abrir(c.oc_proveedor_id, c, op.alGuardar, op.provTxt);
+                const a = el.querySelector('[data-a=archivar], [data-a=restaurar]');
+                a.onclick = () => accion(a.dataset.a, c, op.alGuardar);
+            }
+            cont.appendChild(el);
+        });
+    }
+    function accion(a, c, cb) {
+        Swal.fire({ icon: 'question', title: a === 'archivar' ? '¿Archivar esta cuenta?' : '¿Restaurar esta cuenta?',
+                    html: `${e(c.banco_nombre)} · ${e(c.tipo_txt)}<br><b>${e(c.numero)}</b>` + (a === 'archivar' ? '<br><span class="small">Deja de aparecer, pero no se pierde.</span>' : ''),
+                    showCancelButton: true, confirmButtonText: 'Sí', cancelButtonText: 'Cancelar' }).then(r => {
+            if (!r.isConfirmed) return;
+            const fd = new FormData(); fd.append('accion', a); fd.append('id', c.id); fd.append('todas', '1');
+            fetch(URL_GUARDAR, { method: 'POST', body: fd }).then(x => x.json()).then(d => d.status === 'success' ? (cb && cb(d.cuentas)) : Swal.fire('No se pudo', d.msg, 'warning'));
+        });
+    }
+    function pintarTipo() {
+        const t = (document.querySelector('#formCuenta input[name=tipo]:checked') || {}).value;
+        const det = t === 'DETRACCION';
+        document.querySelectorAll('#formCuenta input[name=banco]').forEach(b => { b.disabled = det && b.value !== 'NACION'; if (det && b.value === 'NACION') b.checked = true; });
+        if (det) f('cta_moneda').value = 'PEN';
+        f('cta_moneda').disabled = det;
+        f('cta_ayuda').textContent = AYUDA[t] || '';
+        f('cta_otro_box').style.display = (document.querySelector('#formCuenta input[name=banco]:checked') || {}).value === 'OTRO' ? 'block' : 'none';
+        contar();
+    }
+    function contar() {
+        const n = f('cta_numero').value.replace(/\D/g, '').length, t = (document.querySelector('#formCuenta input[name=tipo]:checked') || {}).value;
+        f('cta_cuenta_digitos').innerHTML = n ? `${n} dígito(s)` + (t === 'CCI' ? (n === 20 ? ' <span class="text-success">✓</span>' : ' <span class="text-danger">(deben ser 20)</span>') : '') : '';
+    }
+    function abrir(provId, c, cb, provTxt) {
+        alGuardar = cb;
+        f('formCuenta').reset();
+        f('cta_id').value = c ? c.id : ''; f('cta_prov').value = provId;
+        f('cta_prov_txt').textContent = provTxt ? 'Proveedor: ' + provTxt : '';
+        f('cta_titulo').innerHTML = `<i class="bi bi-bank"></i> ${c ? 'Editar cuenta' : 'Nueva cuenta bancaria'}`;
+        const tipo = c ? c.tipo : 'CUENTA';
+        f('cta_t_' + tipo).checked = true;
+        if (c) { const b = f('cta_b_' + c.banco); if (b) b.checked = true; f('cta_moneda').value = c.moneda; f('cta_numero').value = c.numero; f('cta_titular').value = c.titular; f('cta_otro').value = c.banco_otro; }
+        pintarTipo();
+        bootstrap.Modal.getOrCreateInstance(f('modalCuenta')).show();
+        setTimeout(() => f('cta_numero').focus(), 350);
+    }
+    document.querySelectorAll('#formCuenta input[name=tipo], #formCuenta input[name=banco]').forEach(i => i.addEventListener('change', pintarTipo));
+    f('cta_numero').addEventListener('input', contar);
+    f('formCuenta').addEventListener('submit', ev => {
+        ev.preventDefault();
+        if (!document.querySelector('#formCuenta input[name=banco]:checked')) return Swal.fire('Falta el banco', 'Elige el banco.', 'warning');
+        f('cta_moneda').disabled = false;
+        const fd = new FormData(f('formCuenta')); fd.append('todas', '1');
+        pintarTipo();
+        fetch(URL_GUARDAR, { method: 'POST', body: fd }).then(x => x.json()).then(d => {
+            if (d.status !== 'success') return Swal.fire('No se pudo guardar', d.msg, 'warning');
+            bootstrap.Modal.getOrCreateInstance(f('modalCuenta')).hide();
+            Swal.fire({ icon: 'success', title: 'Cuenta guardada', timer: 1100, showConfirmButton: false });
+            if (alGuardar) alGuardar(d.cuentas);
+        }).catch(() => Swal.fire('Error de conexión', '', 'error'));
+    });
+    return { render, abrir, copiar };
+})();
+</script>

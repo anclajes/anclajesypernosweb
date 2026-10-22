@@ -51,7 +51,7 @@
     .linea::before { content: ''; position: absolute; left: 6px; top: 16px; bottom: -14px; width: 2px; background: #e2e8f0; }
     .linea:last-child::before { display: none; }
     .linea .pt { position: absolute; left: 0; top: 3px; width: 14px; height: 14px; border-radius: 50%; background: #cbd5e1; border: 3px solid #fff; box-shadow: 0 0 0 1px #cbd5e1; }
-    .linea .pt.APROBADA, .linea .pt.CONFORME, .linea .pt.KARDEX, .linea .pt.INGRESO_ITEM { background: #16a34a; } .linea .pt.RECHAZADA, .linea .pt.ANULADA { background: #dc2626; }
+    .linea .pt.APROBADA, .linea .pt.CONFORME, .linea .pt.KARDEX, .linea .pt.INGRESO_ITEM, .linea .pt.PAGO { background: #16a34a; } .linea .pt.RECHAZADA, .linea .pt.ANULADA { background: #dc2626; }
     .linea .pt.ENVIADA { background: #f59e0b; } .linea .pt.LLEGADA { background: #0891b2; } .linea .pt.CREADA { background: #0B3D91; } .linea .pt.OBSERVACION { background: #7c3aed; }
     .linea .t { font-size: .8rem; font-weight: 700; } .linea .s { font-size: .74rem; color: #64748b; }
     .acciones .btn { font-weight: 700; }
@@ -76,6 +76,21 @@
     .subir { display: inline-flex; align-items: center; gap: 4px; font-size: .72rem; font-weight: 700; color: #0B3D91; cursor: pointer; margin: 0; }
     .subir input { display: none; }
     .tag.estado { background: #fef3c7; color: #92400e; }
+    .doc-tipo.CERTIFICADO .ico { background: #fef3c7; color: #92400e; } .doc-tipo.PAGO .ico { background: #ecfdf5; color: #047857; }
+    .doc-tipo .oblig { font-size: .62rem; font-weight: 800; color: #b91c1c; background: #fee2e2; border-radius: 10px; padding: 0 7px; }
+    .pago-box { border-radius: 12px; padding: 10px 12px; border: 1.5px solid; }
+    .pago-box.pagada { background: #f0fdf4; border-color: #86efac; color: #14532d; }
+    .pago-box.vencida { background: #fef2f2; border-color: #fca5a5; color: #7f1d1d; }
+    .pago-box.por_vencer { background: #fffbeb; border-color: #fcd34d; color: #78350f; }
+    .pago-box.al_dia, .pago-box.contado { background: #eff6ff; border-color: #bfdbfe; color: #1e3a8a; }
+    .pago-box.na { background: #f8fafc; border-color: #e2e8f0; color: #475569; }
+    .pago-box .grande { font-size: 1.05rem; font-weight: 800; }
+    .pago-fila { display: flex; justify-content: space-between; gap: 8px; font-size: .78rem; border-top: 1px dashed rgba(0,0,0,.08); padding-top: 4px; margin-top: 4px; }
+    .pago-fila span:last-child { font-weight: 700; text-align: right; overflow-wrap: anywhere; }
+    .sol-chip { display: inline-flex; align-items: center; gap: 4px; font-size: .72rem; font-weight: 700; border-radius: 20px; padding: 2px 9px; background: #f1f5f9; color: #334155; }
+    .sol-chip.mot { background: #ede9fe; color: #5b21b6; } .sol-chip.cli { background: #e0f2fe; color: #075985; }
+    .sello.atraso { background: #fef2f2; border: 1.5px solid #fca5a5; color: #7f1d1d; }
+    .peso { font-size: .7rem; color: #475569; white-space: nowrap; }
     .obs { border-left: 3px solid #7c3aed; background: #faf5ff; border-radius: 8px; padding: 6px 10px; margin-bottom: 6px; font-size: .8rem; }
 </style>
 
@@ -88,6 +103,10 @@
             <div class="prov-nom mt-1" title="{{ orden.razon_social }}">{{ orden.razon_social }}</div>
             <div class="small text-muted">{{ orden.fecha.strftime('%d/%m/%Y') }} · elaborada por <b>{{ orden.creado_por.nombre_completo if orden.creado_por else '-' }}</b>
                 {% if duplicada_de %}· copia de <a href="{{ url_for('oc_detalle', orden_id=duplicada_de.id) }}">{{ oc_codigo(duplicada_de) }}</a>{% endif %}</div>
+            {% if orden.solicitante_nombre %}<div class="d-flex flex-wrap gap-1 mt-1">
+                <span class="sol-chip"><i class="bi bi-person-raised-hand"></i> Solicitó: {{ oc_solicitante_txt(orden) }}{% if orden.area_solicitante %} · {{ orden.area_solicitante|title }}{% endif %}</span>
+                {% if orden.motivo_compra %}<span class="sol-chip mot"><i class="bi bi-bullseye"></i> {{ orden.motivo_compra|capitalize }}</span>{% endif %}
+                {% if orden.cliente_razon %}<span class="sol-chip cli"><i class="bi bi-person-badge"></i> {{ orden.cliente_razon }}</span>{% endif %}</div>{% endif %}
         </div>
         <div class="text-end">
             <span class="oc-estado fs-6" style="color: {{ e.color }}; background: {{ e.fondo }};"><i class="bi {{ e.icono }}"></i> {{ e.txt }}</span>
@@ -114,6 +133,10 @@
     {% endif %}
 
     <div class="mt-2">
+    {% if atraso %}
+        <div class="sello atraso mb-2"><i class="bi bi-alarm-fill"></i><div><b>ATRASADA {{ atraso }} día{{ 's' if atraso != 1 }}</b>
+            <div class="small">Debía llegar el {{ oc_fecha_esperada(orden).strftime('%d/%m/%Y') }} y aún no se registra la llegada. Llama al proveedor y deja una observación.</div></div></div>
+    {% endif %}
     {% if orden.estado in ['APROBADA', 'RECIBIDA', 'CONFORME'] %}
         <div class="sello ok"><i class="bi bi-patch-check-fill"></i><div><b>APROBADA por {{ orden.aprobado_por.nombre_completo if orden.aprobado_por else 'Gerencia' }}</b>
             <div class="small">el {{ orden.fecha_aprobacion.strftime('%d/%m/%Y a las %H:%M') }} · el PDF lleva la firma y sello de Gerencia</div></div></div>
@@ -143,6 +166,8 @@
         {% if p.conforme %}<button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#mConforme"><i class="bi bi-check-circle-fill"></i> Dar conformidad</button>{% endif %}
         {% if p.insumos %}<a class="btn btn-warning" href="{{ url_for('insumos_ingreso_nuevo', oc=orden.id) }}"><i class="bi bi-box-arrow-in-down"></i> Ingresar a Insumos</a>{% endif %}
         {% if p.ingresar %}<a class="btn btn-warning" href="{{ url_for('oc_ingresos_pendientes') }}#oc{{ orden.id }}"><i class="bi bi-box-arrow-in-down"></i> Ingreso al inventario (Almacén)</a>{% endif %}
+        {% if p.pagar %}<button class="btn btn-outline-success" data-bs-toggle="modal" data-bs-target="#mPagar"><i class="bi bi-cash-coin"></i> Marcar pagada</button>{% endif %}
+        {% if docs|selectattr('tipo', 'equalto', 'FACTURA')|list %}<a class="btn btn-outline-primary" href="{{ url_for('oc_comparar', orden_id=orden.id) }}"><i class="bi bi-layout-split"></i> Factura vs OC</a>{% endif %}
         {% if p.observar %}<button class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#mObs"><i class="bi bi-chat-left-text"></i> Observación</button>{% endif %}
         {% if p.retirar %}<form method="POST" action="{{ url_for('oc_retirar', orden_id=orden.id) }}" onsubmit="return confirmar(this, '¿Retirarla de aprobación para corregirla?')"><button class="btn btn-outline-warning"><i class="bi bi-arrow-counterclockwise"></i> Retirar para corregir</button></form>{% endif %}
         {% if p.duplicar %}<form method="POST" action="{{ url_for('oc_duplicar', orden_id=orden.id) }}"><button class="btn btn-outline-secondary"><i class="bi bi-files"></i> Duplicar</button></form>{% endif %}
@@ -166,7 +191,25 @@
                     </div>
                 </div>
             </div>
+            <div class="d-flex justify-content-between align-items-center mt-3 mb-1">
+                <div class="panel-t mb-0"><i class="bi bi-bank"></i> Cuentas bancarias</div>
+                {% if p.cuentas %}<button type="button" class="btn btn-sm btn-outline-primary py-0" onclick="OCC.abrir({{ orden.oc_proveedor_id }}, null, pintarCuentas, {{ orden.razon_social|tojson|forceescape }})"><i class="bi bi-plus-lg"></i> Cuenta</button>{% endif %}
+            </div>
+            <div id="ctasDetalle"></div>
         </div>
+
+        {% if orden.solicitante_nombre or orden.motivo_compra %}
+        <div class="panel">
+            <div class="panel-t"><i class="bi bi-person-raised-hand"></i> ¿Quién lo pidió y para qué?</div>
+            <div class="grid-datos">
+                <div class="dato-c"><div class="k"><i class="bi bi-person"></i> Solicitó</div><div class="v">{{ oc_solicitante_txt(orden) or '—' }}</div>
+                    {% if orden.area_solicitante %}<div class="h">Área: {{ orden.area_solicitante|title }}</div>{% endif %}</div>
+                <div class="dato-c"><div class="k"><i class="bi bi-bullseye"></i> Motivo</div><div class="v">{{ (orden.motivo_compra or '—')|capitalize }}</div></div>
+                {% if orden.cliente_razon %}<div class="dato-c"><div class="k"><i class="bi bi-person-badge"></i> Cliente</div><div class="v">{{ orden.cliente_razon }}</div><div class="h">RUC {{ orden.cliente_ruc }}</div></div>{% endif %}
+            </div>
+            {% if orden.motivo_detalle %}<div class="small mt-2"><b>Detalle:</b> {{ orden.motivo_detalle }}</div>{% endif %}
+        </div>
+        {% endif %}
 
         <div class="panel">
             <div class="panel-t"><i class="bi bi-sliders"></i> Condiciones</div>
@@ -186,7 +229,7 @@
             <div class="panel-t px-3 pt-3"><i class="bi bi-list-ol"></i> Productos / servicios</div>
             <div class="table-responsive">
             <table class="table mb-0 tabla-items">
-                <thead><tr><th class="ps-3">#</th><th>Descripción</th><th class="text-end">Cant.</th><th>U.M.</th><th class="text-end">P. Unit.</th><th class="text-end">Total</th>
+                <thead><tr><th class="ps-3">#</th><th>Descripción</th><th class="text-end">Cant.</th><th>U.M.</th>{% if hay_peso %}<th class="text-end">Peso</th>{% endif %}<th class="text-end">P. Unit.</th><th class="text-end">Total</th>
                     {% if orden.destino == 'GENERAL' and orden.estado == 'CONFORME' %}<th class="pe-3">Ingreso</th>{% endif %}</tr></thead>
                 <tbody>
                 {% for i in orden.items %}
@@ -197,6 +240,7 @@
                                 {% if i.es_nuevo %}<span class="tag nuevo">NUEVO en {{ (orden.empresa or 'ANCLAJES')|title }}</span>{% endif %}
                                 <span class="text-muted">{{ [i.familia, i.calidad]|select|join(' · ') }}</span></div></td>
                         <td class="text-end num">{{ i.cantidad|cant }}</td><td>{{ i.um }}</td>
+                        {% if hay_peso %}<td class="text-end num peso">{% if i.peso_total %}{{ '{:,.3f}'.format(i.peso_total).rstrip('0').rstrip('.') }} kg<div class="text-muted">{{ '{:,.4f}'.format(i.peso_unitario).rstrip('0').rstrip('.') }} kg/u</div>{% else %}—{% endif %}</td>{% endif %}
                         <td class="text-end num">{{ '{:,.2f}'.format(i.precio_unitario) if (i.precio_unitario * 100)|round == i.precio_unitario * 100 else '{:,.4f}'.format(i.precio_unitario) }}</td>
                         <td class="text-end num fw-semibold">{{ '{:,.2f}'.format(i.total) }}</td>
                         {% if orden.destino == 'GENERAL' and orden.estado == 'CONFORME' %}
@@ -207,7 +251,8 @@
                 </tbody>
             </table>
             </div>
-            <div class="d-flex justify-content-end p-3 pt-2">
+            <div class="d-flex justify-content-between align-items-end flex-wrap gap-2 p-3 pt-2">
+                <div class="small text-muted">{% if hay_peso %}<i class="bi bi-speedometer2"></i> Peso total: <b class="text-dark">{{ '{:,.3f}'.format(peso_total).rstrip('0').rstrip('.') }} kg</b>{% endif %}</div>
                 <div style="min-width: 240px;" class="small">
                     <div class="d-flex justify-content-between"><span class="text-muted">Subtotal</span><span class="num">{{ mon.simbolo }} {{ '{:,.2f}'.format(orden.subtotal or 0) }}</span></div>
                     <div class="d-flex justify-content-between"><span class="text-muted">IGV {{ (igv * 100)|int }}%</span><span class="num">{{ mon.simbolo }} {{ '{:,.2f}'.format(orden.igv or 0) }}</span></div>
@@ -249,20 +294,65 @@
     </div>
 
     <div class="col-12 col-lg-4">
+        <div class="panel" id="panelPago">
+            <div class="panel-t"><i class="bi bi-cash-coin"></i> Pago</div>
+            <div class="pago-box {{ pago.nivel }}">
+                {% if pago.nivel == 'pagada' %}
+                <div class="grande"><i class="bi bi-check-circle-fill"></i> PAGADA</div>
+                <div class="small">el {{ orden.fecha_pago.strftime('%d/%m/%Y') if orden.fecha_pago else '-' }} · marcó <b>{{ orden.pagado_por.nombre_completo if orden.pagado_por else '-' }}</b>
+                    {% if orden.fecha_marca_pago %}({{ orden.fecha_marca_pago.strftime('%d/%m/%Y %H:%M') }}){% endif %}</div>
+                {% elif pago.nivel == 'na' %}
+                <div class="grande"><i class="bi bi-lock"></i> {{ pago.txt }}</div>
+                <div class="small">El control de pago se habilita cuando Gerencia aprueba la orden.</div>
+                {% else %}
+                <div class="grande"><i class="bi {{ 'bi-exclamation-octagon-fill' if pago.nivel == 'vencida' else ('bi-alarm' if pago.nivel == 'por_vencer' else 'bi-hourglass-split') }}"></i> PENDIENTE · {{ pago.txt }}</div>
+                {% endif %}
+                <div class="pago-fila"><span>Condición</span><span>{{ orden.condicion_pago or '—' }}</span></div>
+                <div class="pago-fila"><span>Monto</span><span>{{ mon.simbolo }} {{ '{:,.2f}'.format(orden.total or 0) }}</span></div>
+                {% if pago.credito %}
+                <div class="pago-fila"><span>Vence</span><span>{{ pago.vence.strftime('%d/%m/%Y') }}{% if pago.estimado %} <span class="fw-normal">(estimado)</span>{% endif %}</span></div>
+                <div class="pago-fila"><span>Se cuenta desde</span><span class="fw-normal">{{ pago.base.strftime('%d/%m/%Y') }} · {{ pago.base_txt }}</span></div>
+                {% endif %}
+                {% if orden.pago_operacion %}<div class="pago-fila"><span>N° operación</span><span>{{ orden.pago_operacion }}</span></div>{% endif %}
+                {% if orden.pago_cuenta %}<div class="pago-fila"><span>Cuenta</span><span>{{ orden.pago_cuenta }}</span></div>{% endif %}
+                {% if orden.pago_nota %}<div class="pago-fila"><span>Nota</span><span class="fw-normal">{{ orden.pago_nota }}</span></div>{% endif %}
+            </div>
+            {% if pago.credito and pago.estimado and pago.nivel not in ['pagada', 'na'] %}<div class="form-text" style="font-size:.7rem;"><i class="bi bi-info-circle"></i> Registra la <b>fecha de emisión de la factura</b> para que el vencimiento sea exacto.</div>{% endif %}
+            {% if p.pagar %}<button class="btn btn-success w-100 fw-bold mt-2" data-bs-toggle="modal" data-bs-target="#mPagar"><i class="bi bi-cash-coin"></i> Marcar como pagada</button>{% endif %}
+            {% if p.deshacer_pago %}<form method="POST" action="{{ url_for('oc_pago_deshacer', orden_id=orden.id) }}" class="mt-1 text-end" onsubmit="return quitarPago(this)"><input type="hidden" name="motivo">
+                <button class="btn btn-link btn-sm text-danger p-0">Quitar marca de pagada</button></form>{% endif %}
+            {% if p.factura %}
+            <details class="mt-2 small"><summary class="fw-bold text-primary" style="cursor:pointer;">Datos de la factura{% if orden.fecha_factura or orden.monto_factura %} · {{ orden.fecha_factura.strftime('%d/%m/%Y') if orden.fecha_factura else '' }}{% endif %}</summary>
+                <form method="POST" action="{{ url_for('oc_factura_datos', orden_id=orden.id) }}" class="row g-2 mt-1">
+                    <div class="col-6"><label class="small">N° factura</label><input name="numero_factura" class="form-control form-control-sm text-uppercase" maxlength="60" value="{{ orden.numero_factura or '' }}"></div>
+                    <div class="col-6"><label class="small">Emisión</label><input type="date" name="fecha_factura" class="form-control form-control-sm" max="{{ hoy.isoformat() }}" value="{{ orden.fecha_factura.isoformat() if orden.fecha_factura else '' }}"></div>
+                    <div class="col-8"><label class="small">Total de la factura ({{ mon.simbolo }})</label><input type="number" step="0.01" min="0" name="monto_factura" class="form-control form-control-sm" value="{{ orden.monto_factura if orden.monto_factura is not none else '' }}"></div>
+                    <div class="col-4 d-flex align-items-end"><button class="btn btn-sm btn-primary w-100">Guardar</button></div>
+                    {% if orden.monto_factura is not none %}{% set dif = (orden.monto_factura - (orden.total or 0))|round(2) %}
+                    <div class="col-12"><span class="aprob {{ 'si' if dif == 0 else 'no' }}">{{ 'Coincide con la orden' if dif == 0 else ('Diferencia ' ~ mon.simbolo ~ ' ' ~ '{:,.2f}'.format(dif)) }}</span></div>{% endif %}
+                </form>
+            </details>
+            {% endif %}
+        </div>
+
         <div class="panel">
-            <div class="panel-t"><i class="bi bi-paperclip"></i> Documentos</div>
-            <div class="form-text mb-2" style="font-size:.7rem;">Se pueden subir <b>en cualquier momento</b> (la cotización desde el inicio; guía y factura apenas lleguen).
-                La <b>guía o la factura es obligatoria</b> para dar la conformidad. PDF o foto, máx. 5MB.</div>
+            <div class="panel-t"><i class="bi bi-paperclip"></i> Documentos
+                {% if docs|selectattr('tipo', 'equalto', 'FACTURA')|list %}<a class="ms-auto btn btn-sm btn-outline-primary py-0" style="text-transform:none; letter-spacing:0;" href="{{ url_for('oc_comparar', orden_id=orden.id) }}"><i class="bi bi-layout-split"></i> Factura vs OC</a>{% endif %}</div>
+            <div class="form-text mb-2" style="font-size:.7rem;">Se pueden subir <b>en cualquier momento</b> (la cotización desde el inicio; guía, factura y certificado apenas lleguen).
+                Para la conformidad es obligatoria la <b>guía o la factura</b>{% if orden.requiere_certificado %} y el <b>certificado de calidad</b>{% endif %}; para marcarla pagada, la <b>factura</b>. PDF o foto, máx. 5MB.</div>
             <div class="docs-grid">
             {% for tipo, nombre, icono, campo in [('GUIA', 'Guía de remisión', 'bi-truck', 'numero_guia'), ('FACTURA', 'Factura', 'bi-receipt', 'numero_factura'),
-                                                   ('COTIZACION', 'Cotización', 'bi-file-earmark-text', None), ('OTRO', 'Otros', 'bi-paperclip', None)] %}
+                                                   ('CERTIFICADO', 'Certificado de calidad', 'bi-award', None), ('COTIZACION', 'Cotización', 'bi-file-earmark-text', None),
+                                                   ('PAGO', 'Constancia de pago', 'bi-cash-coin', None), ('OTRO', 'Otros', 'bi-paperclip', None)] %}
             {% set lista = docs|selectattr('tipo', 'equalto', tipo)|list %}
+            {% if tipo != 'PAGO' or lista or pago.habilitado %}
             <div class="doc-tipo {{ tipo }}">
                 <div class="cab">
                     <span class="ico"><i class="bi {{ icono }}"></i></span>
                     <div class="flex-grow-1" style="min-width:0;">
                         <div class="nom">{{ nombre }}
-                            {% if tipo in ['GUIA', 'FACTURA'] %}{% if lista %}<span class="ok">adjunta</span>{% elif orden.estado in ['RECIBIDA'] %}<span class="falta">falta</span>{% endif %}{% endif %}</div>
+                            {% if tipo in ['GUIA', 'FACTURA'] %}{% if lista %}<span class="ok">adjunta</span>{% elif orden.estado in ['RECIBIDA'] %}<span class="falta">falta</span>{% endif %}{% endif %}
+                            {% if tipo == 'CERTIFICADO' and orden.requiere_certificado %}{% if lista %}<span class="ok">adjunto</span>{% else %}<span class="oblig">obligatorio</span>{% endif %}{% endif %}</div>
                         {% if campo %}<div class="nro">N° <b>{{ orden[campo] or '—' }}</b>
                             {% if p.documentos %}<button type="button" class="btn btn-link btn-sm p-0 ms-1" style="font-size:.7rem;" onclick="editarNumero('{{ campo }}', '{{ nombre }}', {{ (orden[campo] or '')|tojson|forceescape }})"><i class="bi bi-pencil"></i></button>{% endif %}</div>
                         {% elif tipo == 'COTIZACION' and orden.cotizacion %}<div class="nro">N° <b>{{ orden.cotizacion }}</b></div>{% endif %}
@@ -285,6 +375,7 @@
                 </div>
                 {% endfor %}
             </div>
+            {% endif %}
             {% endfor %}
             </div>
             {% if p.documentos %}
@@ -300,7 +391,7 @@
                                    'RECHAZADA': 'RECHAZADA', 'ANULADA': 'ANULADA', 'LLEGADA': 'Llegó el material', 'CONFORME': 'Conformidad (check verde)',
                                    'OBSERVACION': 'Observación', 'DOCUMENTO': 'Documento adjuntado', 'DOC_BORRADO': 'Documento borrado',
                                    'KARDEX': 'Todo ingresado al inventario', 'INGRESO_ITEM': 'Ítem ingresado al inventario', 'INGRESO_DESHECHO': 'Se quitó una marca de ingreso',
-                                   'INSUMOS': 'Insumos internos'}.get(ev.accion, ev.accion) }}</div>
+                                   'INSUMOS': 'Insumos internos', 'PAGO': 'Marcada como PAGADA', 'PAGO_DESHECHO': 'Se quitó la marca de pagada'}.get(ev.accion, ev.accion) }}</div>
                 <div class="s">{{ ev.fecha.strftime('%d/%m/%Y %H:%M') }} · <b>{{ ev.usuario.nombre_completo if ev.usuario else 'Sistema' }}</b></div>
                 {% if ev.detalle %}<div class="s">{{ ev.detalle }}</div>{% endif %}
             </div>
@@ -352,6 +443,8 @@
     </div>
     <label class="small fw-bold">Guía de remisión (PDF o foto)</label><input type="file" name="doc_GUIA" class="form-control form-control-sm mb-2" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*" multiple>
     <label class="small fw-bold">Factura (PDF o foto)</label><input type="file" name="doc_FACTURA" class="form-control form-control-sm mb-2" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*" multiple>
+    <label class="small fw-bold">Certificado de calidad {% if orden.requiere_certificado %}<span class="text-danger">(obligatorio para la conformidad)</span>{% else %}(si lo trajo){% endif %}</label>
+    <input type="file" name="doc_CERTIFICADO" class="form-control form-control-sm mb-2" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*" multiple>
     <label class="small fw-bold">Nota (opcional)</label><textarea name="nota" class="form-control" rows="2" maxlength="500" placeholder="Ej: llegaron en 2 cajas, transportista Juan"></textarea>
     <div class="form-text">Después de revisar el material, da la <b>conformidad</b>. Si la factura llega después, adjúntala luego.</div>
 </div><div class="modal-footer p-2"><button class="btn btn-primary w-100 fw-bold"><i class="bi bi-truck"></i> Registrar llegada</button></div></form>
@@ -369,7 +462,13 @@
         <div class="col-12 col-sm-6"><label class="small">Factura (PDF o foto) {% if docs|selectattr('tipo', 'equalto', 'FACTURA')|list %}<span class="text-success fw-bold">✓ ya adjunta</span>{% endif %}</label>
             <input type="file" name="doc_FACTURA" class="form-control form-control-sm" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*"></div>
     </div>
-    {% if not hay_doc %}<div class="alert alert-warning py-1 px-2 small mb-2"><i class="bi bi-exclamation-triangle-fill"></i> Obligatorio: adjunta aquí la <b>guía o la factura</b>.</div>{% endif %}
+    {% set hay_cert = docs|selectattr('tipo', 'equalto', 'CERTIFICADO')|list %}
+    {% if orden.requiere_certificado %}
+    <div class="mb-2"><label class="small">Certificado de calidad (PDF o foto) {% if hay_cert %}<span class="text-success fw-bold">✓ ya adjunto</span>{% else %}<span class="text-danger fw-bold">obligatorio</span>{% endif %}</label>
+        <input type="file" name="doc_CERTIFICADO" class="form-control form-control-sm" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*"></div>
+    {% endif %}
+    {% if not hay_doc or (orden.requiere_certificado and not hay_cert) %}<div class="alert alert-warning py-1 px-2 small mb-2"><i class="bi bi-exclamation-triangle-fill"></i> Obligatorio: adjunta aquí
+        {% if not hay_doc %}la <b>guía o la factura</b>{% endif %}{% if not hay_doc and orden.requiere_certificado and not hay_cert %} y {% endif %}{% if orden.requiere_certificado and not hay_cert %}el <b>certificado de calidad</b> (compra para el inventario){% endif %}.</div>{% endif %}
     <div class="small fw-bold mb-1"><i class="bi bi-check2-square"></i> Revisión</div>
     <p class="small text-muted mb-2">Marca solo si revisaste todo. Queda registrado con tu nombre, fecha y hora.</p>
     {% for k, t, d in [('chk_estado', 'El material llegó en buen estado', 'Sin daños, óxido ni piezas abiertas'), ('chk_cantidad', 'La cantidad es la correcta', 'Coincide con lo pedido en la orden'),
@@ -389,6 +488,34 @@
 </div><div class="modal-footer p-2"><button class="btn btn-primary w-100 fw-bold">Guardar</button></div></form>
 {% endcall %}{% endif %}
 
+{% if p.pagar %}{% call modal('mPagar', 'Marcar como pagada · ' ~ oc_codigo(orden), '#15803d') %}
+{% set facturas = docs|selectattr('tipo', 'equalto', 'FACTURA')|list %}
+<form method="POST" action="{{ url_for('oc_pagar', orden_id=orden.id) }}" id="formPagar" enctype="multipart/form-data"><div class="modal-body">
+    <div class="pago-box {{ pago.nivel }} mb-2">
+        <div class="d-flex justify-content-between align-items-baseline gap-2"><span class="small">Monto de la orden</span><span class="grande num">{{ mon.simbolo }} {{ '{:,.2f}'.format(orden.total or 0) }}</span></div>
+        <div class="small">{{ orden.razon_social }} · {{ orden.condicion_pago }}{% if pago.credito %} · vence {{ pago.vence.strftime('%d/%m/%Y') }}{% endif %}</div>
+    </div>
+    <div class="small fw-bold mb-1"><i class="bi bi-bank"></i> Cuentas del proveedor <span class="fw-normal text-muted">— toca <b>Copiar</b> y pega en tu banco; marca la que usaste (opcional)</span></div>
+    <div id="ctasPago" class="mb-2"></div>
+    <div class="row g-2 mb-2">
+        <div class="col-6"><label class="small fw-bold">Fecha de pago *</label><input type="date" name="fecha_pago" class="form-control form-control-sm" value="{{ hoy.isoformat() }}" max="{{ hoy.isoformat() }}" min="{{ orden.fecha.isoformat() }}" required></div>
+        <div class="col-6"><label class="small fw-bold">N° de operación</label><input name="operacion" class="form-control form-control-sm text-uppercase" maxlength="80" placeholder="Opcional"></div>
+    </div>
+    <div class="small fw-bold mb-1"><i class="bi bi-receipt"></i> Factura {% if facturas %}<span class="text-success">✓ ya adjunta</span>{% else %}<span class="text-danger">obligatoria</span>{% endif %}</div>
+    <div class="row g-2 mb-2">
+        {% if not facturas %}<div class="col-12"><input type="file" name="doc_FACTURA" class="form-control form-control-sm" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*"></div>{% endif %}
+        <div class="col-6"><label class="small">N° de factura</label><input name="numero_factura" class="form-control form-control-sm text-uppercase" maxlength="60" value="{{ orden.numero_factura or '' }}"></div>
+        <div class="col-6"><label class="small">Fecha de emisión</label><input type="date" name="fecha_factura" class="form-control form-control-sm" max="{{ hoy.isoformat() }}" value="{{ orden.fecha_factura.isoformat() if orden.fecha_factura else '' }}"></div>
+    </div>
+    <label class="small fw-bold">Constancia de pago / voucher (opcional)</label>
+    <input type="file" name="doc_PAGO" class="form-control form-control-sm mb-2" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*">
+    <label class="small fw-bold">Nota (opcional)</label><textarea name="nota" class="form-control" rows="2" maxlength="300" placeholder="Ej: pagado con detracción 12%"></textarea>
+    <div class="form-text">Queda registrado quién la marcó como pagada, con fecha y hora. Solo Gerencia puede quitar la marca.</div>
+</div><div class="modal-footer p-2"><button class="btn btn-success w-100 fw-bold"><i class="bi bi-cash-coin"></i> Marcar como pagada</button></div></form>
+{% endcall %}{% endif %}
+
+{% include '_oc_cuentas.html' %}
+
 <script>
 function confirmar(form, texto) {
     if (form.dataset.ok) return true;
@@ -397,6 +524,8 @@ function confirmar(form, texto) {
     return false;
 }
 const HAY_DOC = {{ 'true' if docs|selectattr('tipo', 'in', ['GUIA', 'FACTURA'])|list else 'false' }};
+const PIDE_CERT = {{ 'true' if orden.requiere_certificado and not (docs|selectattr('tipo', 'equalto', 'CERTIFICADO')|list) else 'false' }};
+const HAY_FACTURA = {{ 'true' if docs|selectattr('tipo', 'equalto', 'FACTURA')|list else 'false' }};
 document.getElementById('formConforme')?.addEventListener('submit', function (e) {
     if ([...this.querySelectorAll('input[type=checkbox]')].some(c => !c.checked)) {
         e.preventDefault(); return Swal.fire('Falta confirmar', 'Marca las tres casillas: estado, cantidad y documentos.', 'warning');
@@ -404,7 +533,34 @@ document.getElementById('formConforme')?.addEventListener('submit', function (e)
     if (!HAY_DOC && !this.doc_GUIA.files.length && !this.doc_FACTURA.files.length) {
         e.preventDefault(); return Swal.fire('Falta un documento', 'Adjunta la guía o la factura (PDF o foto).', 'warning');
     }
+    if (PIDE_CERT && !this.doc_CERTIFICADO.files.length) {
+        e.preventDefault(); return Swal.fire('Falta el certificado de calidad', 'Es una compra para el inventario: adjunta el certificado de calidad (PDF o foto).', 'warning');
+    }
 });
+document.getElementById('formPagar')?.addEventListener('submit', function (e) {
+    if (!HAY_FACTURA && !this.doc_FACTURA.files.length) {
+        e.preventDefault(); return Swal.fire('Falta la factura', 'Para marcarla como pagada adjunta la factura (PDF o foto).', 'warning');
+    }
+    if (this.dataset.ok) return;
+    e.preventDefault();
+    Swal.fire({ icon: 'question', title: '¿Marcar como PAGADA?', html: 'Quedará registrado tu nombre, la fecha y la hora.', showCancelButton: true, confirmButtonText: 'Sí, está pagada', cancelButtonText: 'Revisar' })
+        .then(r => { if (r.isConfirmed) { this.dataset.ok = '1'; this.querySelector('button.btn-success').disabled = true; this.submit(); } });
+});
+function quitarPago(form) {
+    if (form.dataset.ok) return true;
+    Swal.fire({ title: 'Quitar la marca de pagada', input: 'text', inputLabel: '¿Por qué? (queda en el historial)', showCancelButton: true,
+                confirmButtonText: 'Quitar', cancelButtonText: 'Cancelar', inputValidator: v => (v || '').trim().length < 5 ? 'Escribe el motivo' : null })
+        .then(r => { if (r.isConfirmed) { form.motivo.value = r.value; form.dataset.ok = '1'; form.submit(); } });
+    return false;
+}
+let CUENTAS = {{ cuentas|tojson }};
+function pintarCuentas(lista) {
+    if (lista) CUENTAS = lista.filter(c => c.activo);
+    OCC.render(document.getElementById('ctasDetalle'), CUENTAS, { editable: {{ 'true' if p.cuentas else 'false' }}, alGuardar: pintarCuentas, provTxt: {{ orden.razon_social|tojson }},
+               vacio: 'Sin cuentas guardadas.{{ ' Agrégalas para tenerlas a la mano al pagar.' if p.cuentas else '' }}' });
+    OCC.render(document.getElementById('ctasPago'), CUENTAS, { seleccionar: 'cuenta_id', vacio: 'El proveedor no tiene cuentas guardadas.' });
+}
+pintarCuentas();
 function editarNumero(campo, nombre, valor) {
     Swal.fire({ title: `N° de ${nombre}`, input: 'text', inputValue: valor, showCancelButton: true, confirmButtonText: 'Guardar', cancelButtonText: 'Cancelar' })
         .then(r => { if (!r.isConfirmed) return; const f = document.getElementById('formNumero'); const i = document.getElementById('numCampo');

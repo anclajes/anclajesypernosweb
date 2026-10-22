@@ -61,6 +61,14 @@
     .entrega-fija { background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 6px 10px; font-size: .78rem; }
     .num-prev { font-weight: 800; color: #0B3D91; font-variant-numeric: tabular-nums; }
     #modalProd .select2-container { width: 100% !important; }
+    .motivos label { flex: 1 1 calc(50% - 8px); min-width: 130px; }
+    .motivos label small { font-size: .64rem; }
+    .cliente-box { border: 1.5px dashed #7dd3fc; background: #f0f9ff; border-radius: 10px; padding: 8px 10px; }
+    .aviso-cert { background: #fffbeb; border: 1px solid #fde68a; color: #78350f; border-radius: 8px; padding: 6px 10px; font-size: .74rem; margin-top: 8px; }
+    .peso-linea { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: .72rem; color: #475569; background: #f8fafc; border-radius: 8px; padding: 4px 8px; }
+    .peso-linea select { width: auto; flex: 0 0 auto; }
+    .peso-linea input { width: 96px; flex: 0 0 auto; }
+    .peso-linea .usar { border: 0; background: #e0f2fe; color: #075985; border-radius: 6px; font-weight: 700; padding: 0 6px; }
 </style>
 
 {% if errores %}<div class="alert alert-danger py-2" id="erroresOC"><b><i class="bi bi-exclamation-triangle-fill"></i> No se guardó. Revisa:</b>
@@ -73,6 +81,50 @@
 <input type="hidden" name="accion" id="accion" value="guardar">
 <div class="row g-3">
     <div class="col-12 col-xl-5">
+        <!-- QUIÉN LO PIDE Y PARA QUÉ -->
+        <div class="card border-0 shadow-sm mb-3" id="cardSolicitud"><div class="card-body">
+            <div class="card-t"><i class="bi bi-person-raised-hand"></i> ¿Quién lo pide y para qué?</div>
+            <div class="row g-2">
+                <div class="col-12 col-sm-7"><div class="lbl req">Solicitó</div>
+                    <select name="solicitante" id="solicitante" class="form-select" onchange="pintarArea()"><option value="">— Elige quién lo pidió —</option>
+                        {% for grupo, ops in solicitantes %}<optgroup label="{{ grupo }}">
+                            {% for o in ops %}<option value="{{ o.valor }}" data-area="{{ o.area }}" {{ 'selected' if o.valor == pv.solicitante }}>{{ o.txt }}</option>{% endfor %}
+                        </optgroup>{% endfor %}
+                    </select></div>
+                <div class="col-12 col-sm-5"><div class="lbl req">Área</div>
+                    <select name="area_solicitante" id="area_solicitante" class="form-select"><option value="">— Elige —</option>
+                        {% for a in areas %}<option value="{{ a }}" {{ 'selected' if a == pv.area_solicitante }}>{{ a|title }}</option>{% endfor %}
+                        {% if pv.area_solicitante and pv.area_solicitante not in areas %}<option value="{{ pv.area_solicitante }}" selected>{{ pv.area_solicitante|title }}</option>{% endif %}
+                    </select></div>
+            </div>
+            <div class="lbl req mt-2">Motivo de la compra</div>
+            <div class="seg chico motivos">
+                {% for m in motivos_compra %}
+                <input type="radio" name="motivo_compra" id="mc_{{ loop.index }}" value="{{ m.nombre }}" data-cliente="{{ '1' if m.pide_cliente else '0' }}" {{ 'checked' if m.nombre == (pv.motivo_compra or '')|upper }} onchange="pintarMotivo()">
+                <label for="mc_{{ loop.index }}" style="--c:#7c3aed;"><span><b>{{ m.nombre|capitalize }}</b>{% if m.pide_cliente %}<small>Se indica el cliente</small>{% endif %}</span></label>
+                {% endfor %}
+            </div>
+            <div id="boxCliente" class="cliente-box mt-2" style="display:none;">
+                <div class="lbl req">Cliente</div>
+                <div class="position-relative" id="cliBuscar">
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+                        <input type="text" id="buscaCli" class="form-control" placeholder="RUC o nombre del cliente" autocomplete="off" oninput="sugerirCli(false)"
+                               onkeydown="if(event.key==='Enter'){event.preventDefault(); sugerirCli(true);}">
+                        <button type="button" class="btn btn-outline-primary" onclick="sugerirCli(true)" title="Buscar en la cartera y, si no está, en SUNAT">Buscar</button>
+                    </div>
+                    <div id="sugCli" class="list-group position-absolute w-100 shadow sug"></div>
+                </div>
+                <div class="row g-2 mt-1">
+                    <div class="col-5"><input type="text" name="cliente_ruc" id="cliente_ruc" class="form-control form-control-sm" maxlength="11" inputmode="numeric" placeholder="RUC / DNI" value="{{ pv.cliente_ruc or '' }}"></div>
+                    <div class="col-7"><input type="text" name="cliente_razon" id="cliente_razon" class="form-control form-control-sm text-uppercase" maxlength="200" placeholder="Razón social" value="{{ pv.cliente_razon or '' }}"></div>
+                </div>
+            </div>
+            <div class="lbl mt-2">Detalle o referencia (opcional)</div>
+            <input type="text" name="motivo_detalle" class="form-control" maxlength="300" value="{{ pv.motivo_detalle or '' }}" placeholder="Ej: cotización de venta N° 245, obra en Ate, llegó al stock mínimo...">
+            {% if session.get('role') in ['admin', 'logistica'] %}<div class="form-text" style="font-size:.68rem;">¿Falta un nombre, área o motivo? Agrégalo en <a href="{{ url_for('oc_config', tab='OC_SOLICITANTE') }}" target="_blank">Configuración</a>.</div>{% endif %}
+        </div></div>
+
         <!-- DATOS DE LA ORDEN -->
         <div class="card border-0 shadow-sm mb-3"><div class="card-body">
             <div class="card-t"><i class="bi bi-file-earmark-text"></i> Datos de la orden
@@ -105,6 +157,7 @@
                 <input type="radio" name="destino" id="dest_INSUMOS" value="INSUMOS" {{ 'checked' if pv.destino == 'INSUMOS' }} onchange="pintarFichas()">
                 <label for="dest_INSUMOS" style="--c:#b45309;"><i class="bi bi-tools"></i><span><b>Insumos internos</b><small>Inventario pequeño: quedará pendiente de ingresar</small></span></label>
             </div>
+            <div class="aviso-cert" id="avisoCert" style="display:none;"><i class="bi bi-award-fill"></i> Compra para el <b>inventario</b>: al dar la conformidad será <b>obligatorio subir el CERTIFICADO DE CALIDAD</b> (pídeselo al proveedor).</div>
         </div></div>
 
         <!-- PROVEEDOR -->
@@ -174,6 +227,13 @@
                     <div class="form-text" id="fc_nota" style="display:none;">Se guardará junto con la orden.</div>
                 </div>
             </div>
+            <div id="boxCuentas" class="mt-3" style="display:none;">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <div class="lbl mb-0"><i class="bi bi-bank"></i> Cuentas bancarias</div>
+                    {% if puede_cuentas %}<button type="button" class="btn btn-sm btn-outline-primary py-0" onclick="OCC.abrir(provActual.id, null, l => { provActual.cuentas = l.filter(c => c.activo); pintarCuentasForm(); }, provActual.razon_social)"><i class="bi bi-plus-lg"></i> Cuenta</button>{% endif %}
+                </div>
+                <div id="listaCuentas"></div>
+            </div>
         </div></div>
 
         <!-- CONDICIONES -->
@@ -228,6 +288,7 @@
             <div class="fila small"><span>Subtotal</span><span id="tSub">0.00</span></div>
             <div class="fila small"><span>IGV ({{ (igv * 100)|int }}%)</span><span id="tIgv">0.00</span></div>
             <div class="fila mt-1 align-items-baseline"><span>TOTAL</span><span class="grande" id="tTot">0.00</span></div>
+            <div class="fila small mt-1" id="tPesoFila" style="display:none; opacity:.8;"><span><i class="bi bi-speedometer2"></i> Peso total</span><span id="tPeso"></span></div>
         </div>
 
         <div class="card border-0 shadow-sm"><div class="card-body">
@@ -261,6 +322,10 @@
             <div class="col-4 col-md-3"><label>U.M. *</label><select name="um[]" class="form-select form-select-sm i-um"></select></div>
             <div class="col-4 col-md-3"><label>P. Unit. *</label><input type="number" name="precio_unitario[]" step="any" min="0" class="form-control form-control-sm i-pu" inputmode="decimal"></div>
             <div class="col-12 col-md-4 text-end"><label>Total</label><div class="tot i-tot">0.00</div></div>
+            <div class="col-12"><div class="peso-linea"><i class="bi bi-speedometer2"></i> Peso <span class="text-muted">(opcional)</span>
+                <select name="peso_modo[]" class="form-select form-select-sm i-pmodo"><option value="U">kg por unidad</option><option value="T">kg total del ítem</option></select>
+                <input type="number" name="peso_valor[]" step="any" min="0" class="form-control form-control-sm i-pval" placeholder="kg" inputmode="decimal">
+                <span class="i-pcalc"></span><span class="i-pinv ms-auto"></span></div></div>
         </div>
     </div>
 </template>
@@ -283,6 +348,8 @@
         <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cerrar</button>
     </div>
 </div></div></div>
+
+{% include '_oc_cuentas.html' %}
 
 <script>
 const UMS = {{ ums|tojson }};
@@ -317,14 +384,24 @@ function pintarEntrega() {
 
 // ================= ÍTEMS =================
 function numerar() { document.querySelectorAll('#items .item').forEach((f, i) => f.querySelector('.n').textContent = 'ÍTEM ' + (i + 1)); }
+function fmtKg(n) { return Number(n || 0).toLocaleString('es-PE', { maximumFractionDigits: 4 }); }
+function pesoFila(f) {
+    const cant = parseFloat(f.querySelector('.i-cant').value) || 0, v = parseFloat(f.querySelector('.i-pval').value) || 0, modo = f.querySelector('.i-pmodo').value;
+    const calc = f.querySelector('.i-pcalc');
+    if (!v) { calc.textContent = ''; return 0; }
+    if (modo === 'T') { calc.innerHTML = cant ? `= <b>${fmtKg(v / cant)}</b> kg por unidad` : ''; return v; }
+    calc.innerHTML = cant ? `= <b>${fmtKg(v * cant)}</b> kg en total` : ''; return v * cant;
+}
 function recalcular() {
-    let sub = 0;
+    let sub = 0, peso = 0;
     document.querySelectorAll('#items .item').forEach(f => {
         const t = r2((parseFloat(f.querySelector('.i-cant').value) || 0) * (parseFloat(f.querySelector('.i-pu').value) || 0));
         f.querySelector('.i-tot').textContent = `${moneda()} ${fmt(t)}`; sub += t;
+        peso += pesoFila(f);
     });
     sub = r2(sub); const igv = r2(sub * IGV);
     porId('tSub').textContent = `${moneda()} ${fmt(sub)}`; porId('tIgv').textContent = `${moneda()} ${fmt(igv)}`; porId('tTot').textContent = `${moneda()} ${fmt(sub + igv)}`;
+    porId('tPesoFila').style.display = peso ? 'flex' : 'none'; porId('tPeso').textContent = fmtKg(peso) + ' kg';
 }
 function opcionesUM(sel, valor) {
     const lista = UMS.slice(); if (valor && !lista.includes(valor)) lista.push(valor);
@@ -347,13 +424,20 @@ function pintarFicha(fila) {
             (!enEmpresa && destino() === 'GENERAL' && tipo() === 'OC' ? `<div><b>NUEVO en ${esc(corto())}:</b> existe solo en ${p.origen === 'IMPORTBOLTS' ? 'Import Bolts' : 'otro inventario'}; Almacén deberá crearlo.</div>` : '') +
             (p.ultimo ? `<div class="text-muted">Último precio: <b>${esc(p.ultimo.moneda)} ${fmt(p.ultimo.precio)}</b> / ${esc(p.ultimo.um)} · ${esc(p.ultimo.orden)} · ${esc(p.ultimo.proveedor)}</div>` : '') + '</div>';
         box.querySelector('.x').onclick = () => vincular(fila, null);
+        const inv = fila.querySelector('.i-pinv');
+        inv.innerHTML = p.peso ? `Inventario: ${fmtKg(p.peso)} kg/u <button type="button" class="usar">usar</button>` : '';
+        if (p.peso) inv.querySelector('.usar').onclick = () => { fila.querySelector('.i-pmodo').value = 'U'; fila.querySelector('.i-pval').value = p.peso; recalcular(); };
     } else if (desc && tipo() === 'OC' && destino() === 'GENERAL') {
         box.innerHTML = `<div class="ficha nuevo"><i class="bi bi-stars"></i> <b>PRODUCTO NUEVO</b>: no está en el inventario ${esc(corto())}. Almacén lo creará al ingresarlo.</div>`;
     } else if (desc && destino() === 'INSUMOS') {
         box.innerHTML = `<div class="ficha nuevo"><i class="bi bi-info-circle"></i> No está vinculado al maestro de insumos: se elegirá al ingresarlo.</div>`;
     } else box.innerHTML = '';
+    if (!p) fila.querySelector('.i-pinv').innerHTML = '';
 }
-function pintarFichas() { document.querySelectorAll('#items .item').forEach(pintarFicha); }
+function pintarFichas() {
+    document.querySelectorAll('#items .item').forEach(pintarFicha);
+    porId('avisoCert').style.display = tipo() === 'OC' && destino() === 'GENERAL' ? 'block' : 'none';
+}
 function vincular(fila, p) {
     fila._prod = p || null;
     fila.querySelector('.i-origen').value = p ? p.origen : '';
@@ -390,6 +474,8 @@ function agregarItem(datos) {
     desc.value = datos.descripcion || '';
     fila.querySelector('.i-cant').value = datos.cantidad || '';
     fila.querySelector('.i-pu').value = (datos.precio_unitario === 0 || datos.precio_unitario) ? datos.precio_unitario : '';
+    fila.querySelector('.i-pmodo').value = datos.peso_modo === 'T' ? 'T' : 'U';
+    fila.querySelector('.i-pval').value = datos.peso_valor || '';
     if (datos.codigo) vincular(fila, { origen: datos.origen, sku: datos.codigo, insumo_id: datos.insumo_id, familia: datos.familia, calidad: datos.calidad, estado: datos.estado });
     let t = null;
     desc.addEventListener('input', () => {
@@ -412,7 +498,8 @@ function agregarItem(datos) {
     });
     desc.addEventListener('blur', () => setTimeout(() => sug.style.display = 'none', 150));
     fila.querySelector('.i-buscar').addEventListener('click', () => abrirBuscador(fila));
-    fila.querySelectorAll('.i-cant, .i-pu').forEach(i => i.addEventListener('input', recalcular));
+    fila.querySelectorAll('.i-cant, .i-pu, .i-pval').forEach(i => i.addEventListener('input', recalcular));
+    fila.querySelector('.i-pmodo').addEventListener('change', recalcular);
     fila.querySelector('.quitar').addEventListener('click', () => {
         if (document.querySelectorAll('#items .item').length === 1) { fila.querySelectorAll('input').forEach(i => i.value = ''); vincular(fila, null); recalcular(); return; }
         fila.remove(); numerar(); recalcular();
@@ -490,6 +577,7 @@ function mostrarProveedor(p, msg) {
     porId('btnAMano').style.display = 'none'; porId('sugProv').style.display = 'none';
     porId('provMsg').innerHTML = msg || '';
     contactos = p.contactos || [];
+    pintarCuentasForm();
     porId('btnNuevoContacto').style.display = '';
     porId('fc_botones').style.display = 'flex'; porId('fc_nota').style.display = 'none';
     pintarContactos();
@@ -498,7 +586,7 @@ function cambiarProv() {
     provActual = null; contactos = [];
     ['oc_proveedor_id', 'ruc', 'razon_social', 'direccion', 'contacto_id', 'contacto', 'telefono', 'email'].forEach(id => porId(id).value = '');
     porId('provCard').style.display = 'none'; porId('provBuscar').style.display = 'block'; porId('provManual').style.display = 'none';
-    porId('btnAMano').style.display = ''; porId('boxContactos').style.display = 'none'; porId('provMsg').innerHTML = '';
+    porId('btnAMano').style.display = ''; porId('boxContactos').style.display = 'none'; porId('boxCuentas').style.display = 'none'; porId('provMsg').innerHTML = '';
     porId('buscaProv').value = ''; porId('buscaProv').focus();
 }
 function buscarSunat(actualizar) {
@@ -517,6 +605,7 @@ function aMano() {
     provActual = null; contactos = [];
     porId('oc_proveedor_id').value = ''; porId('contacto_id').value = '';
     porId('provBuscar').style.display = 'none'; porId('provCard').style.display = 'none'; porId('provManual').style.display = 'block'; porId('btnAMano').style.display = 'none';
+    porId('boxCuentas').style.display = 'none';
     porId('m_ruc').value = porId('buscaProv').value.replace(/\D/g, '');
     porId('provMsg').innerHTML = '<span class="text-muted">Escribe los datos tal como figuran en la cotización. Se guardará en la lista al guardar la orden.</span>';
     // sin proveedor guardado, el contacto se escribe aquí y se guarda junto con la orden
@@ -524,6 +613,41 @@ function aMano() {
     formContacto(null); porId('fc_botones').style.display = 'none'; porId('fc_nota').style.display = 'block'; porId('fc_titulo').textContent = 'Contacto';
     porId('m_ruc').focus();
 }
+
+function pintarCuentasForm() {
+    porId('boxCuentas').style.display = 'block';
+    OCC.render(porId('listaCuentas'), (provActual && provActual.cuentas) || [], { vacio: 'Sin cuentas guardadas.' + ({{ 'true' if puede_cuentas else 'false' }} ? ' Agrégalas para tenerlas a la mano al pagar.' : '') });
+}
+
+// ================= SOLICITUD =================
+let areaAuto = '';
+function pintarArea() {
+    const op = porId('solicitante').selectedOptions[0], area = op ? (op.dataset.area || '') : '', sel = porId('area_solicitante');
+    if (area && (!sel.value || sel.value === areaAuto) && [...sel.options].some(o => o.value === area)) { sel.value = area; areaAuto = area; }
+}
+function pintarMotivo() {
+    const m = document.querySelector('input[name=motivo_compra]:checked');
+    porId('boxCliente').style.display = m && m.dataset.cliente === '1' ? 'block' : 'none';
+}
+let tCli = null;
+function sugerirCli(sunat) {
+    clearTimeout(tCli);
+    const q = porId('buscaCli').value.trim(), cont = porId('sugCli');
+    if (q.length < 3) { cont.style.display = 'none'; return; }
+    tCli = setTimeout(() => fetch(`{{ url_for('oc_api_cliente') }}?q=${encodeURIComponent(q)}&sunat=${sunat ? 1 : 0}`).then(r => r.json()).then(d => {
+        if (d.status !== 'success') { cont.innerHTML = `<div class="list-group-item small text-danger">${esc(d.msg)}</div>`; cont.style.display = 'block'; return; }
+        const lista = d.clientes || [];
+        cont.innerHTML = lista.length ? '' : `<div class="list-group-item small text-muted">${sunat ? 'No se encontró.' : 'No está en la cartera. Si es un RUC, pulsa <b>Buscar</b> (SUNAT) o escríbelo abajo.'}</div>`;
+        lista.forEach(c => {
+            const b = document.createElement('button'); b.type = 'button'; b.className = 'list-group-item list-group-item-action py-1 px-2 small';
+            b.innerHTML = `<b>${esc(c.razon)}</b> <span class="text-muted">· ${esc(c.ruc)} · ${esc(c.origen)}</span>`;
+            b.onclick = () => { porId('cliente_ruc').value = c.ruc; porId('cliente_razon').value = c.razon; cont.style.display = 'none'; porId('buscaCli').value = ''; };
+            cont.appendChild(b);
+        });
+        cont.style.display = 'block';
+    }).catch(() => {}), sunat ? 0 : 300);
+}
+document.addEventListener('click', e => { if (!e.target.closest('#cliBuscar')) porId('sugCli').style.display = 'none'; });
 
 // ---- contactos ----
 function pintarContactos() {
@@ -596,6 +720,14 @@ porId('formOC').addEventListener('submit', function (e) {
         porId('contacto').value = porId('fc_nombre').value.trim(); porId('telefono').value = porId('fc_tel').value.trim(); porId('email').value = porId('fc_mail').value.trim();
     }
     const err = [];
+    if (!porId('solicitante').value) err.push('Elige QUIÉN SOLICITÓ la compra.');
+    if (!porId('area_solicitante').value) err.push('Elige el ÁREA que solicita.');
+    const mot = document.querySelector('input[name=motivo_compra]:checked');
+    if (!mot) err.push('Elige el MOTIVO de la compra.');
+    else if (mot.dataset.cliente === '1') {
+        const cr = porId('cliente_ruc').value.replace(/\D/g, '');
+        if ((cr.length !== 11 && cr.length !== 8) || porId('cliente_razon').value.trim().length < 3) err.push('Indica el RUC y la razón social del CLIENTE.');
+    }
     const ruc = porId('ruc').value.replace(/\D/g, '');
     if (!destino()) err.push('Elige si el material es para el inventario o para Insumos.');
     if (ruc.length !== 11 && ruc.length !== 8) err.push('Elige o busca el proveedor (RUC de 11 dígitos).');
@@ -627,7 +759,8 @@ porId('formOC').addEventListener('submit', function (e) {
 });
 
 // ================= INICIO =================
-pintarNumero(); pintarEntrega(); porId('destInvTxt').textContent = 'Inventario ' + corto();
+pintarNumero(); pintarEntrega(); porId('destInvTxt').textContent = 'Inventario ' + corto(); pintarMotivo(); pintarFichas();
+if (porId('solicitante').value && !porId('area_solicitante').value) pintarArea();
 if (ITEMS_PREVIOS.length) ITEMS_PREVIOS.forEach(it => agregarItem(it)); else agregarItem();
 if (porId('oc_proveedor_id').value) cargarProveedor(porId('oc_proveedor_id').value);
 else if (porId('ruc').value && porId('razon_social').value) {

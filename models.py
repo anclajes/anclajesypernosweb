@@ -1354,6 +1354,27 @@ class OrdenCompra(db.Model):
     kardex_registrado_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     fecha_kardex = db.Column(db.DateTime, nullable=True)
     duplicada_de_id = db.Column(db.Integer, nullable=True)
+    # Quién pidió la compra y para qué
+    solicitante_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    solicitante_nombre = db.Column(db.String(120))       # copia del nombre (o un nombre de la lista de Configuración)
+    area_solicitante = db.Column(db.String(80))
+    motivo_compra = db.Column(db.String(120))
+    motivo_detalle = db.Column(db.String(300))
+    cliente_ruc = db.Column(db.String(20))               # si es pedido de un cliente
+    cliente_razon = db.Column(db.String(200))
+    # Certificado de calidad obligatorio al dar conformidad (compras para el inventario)
+    requiere_certificado = db.Column(db.Boolean, default=False)
+    # Factura (para comparar con la orden y contar el crédito)
+    fecha_factura = db.Column(db.Date)
+    monto_factura = db.Column(db.Float)
+    # Control de pago (después de la aprobación de Gerencia)
+    estado_pago = db.Column(db.String(12), default='PENDIENTE')   # PENDIENTE / PAGADO
+    fecha_pago = db.Column(db.Date)                      # fecha en que se pagó (la que indica quien marca)
+    pagado_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    fecha_marca_pago = db.Column(db.DateTime)            # cuándo se marcó como pagada (auditoría)
+    pago_operacion = db.Column(db.String(80))
+    pago_cuenta = db.Column(db.String(200))
+    pago_nota = db.Column(db.String(300))
 
     items = db.relationship('OrdenCompraItem', backref='orden', order_by='OrdenCompraItem.item', cascade='all, delete-orphan')
     creado_por = db.relationship('User', foreign_keys=[creado_por_id])
@@ -1365,6 +1386,8 @@ class OrdenCompra(db.Model):
     recibido_por = db.relationship('User', foreign_keys=[recibido_por_id])
     conforme_por = db.relationship('User', foreign_keys=[conforme_por_id])
     kardex_registrado_por = db.relationship('User', foreign_keys=[kardex_registrado_por_id])
+    solicitante = db.relationship('User', foreign_keys=[solicitante_user_id])
+    pagado_por = db.relationship('User', foreign_keys=[pagado_por_id])
     __table_args__ = (db.UniqueConstraint('tipo', 'numero', name='uq_orden_compra_tipo_numero'),)
 
 
@@ -1385,6 +1408,10 @@ class OrdenCompraItem(db.Model):
     calidad = db.Column(db.String(200))
     estado_producto = db.Column(db.String(100))                # estado del producto en el inventario (nacional, oxidado...)
     es_nuevo = db.Column(db.Boolean, default=False)            # producto que NO está en el inventario: hay que crearlo
+    # Peso (opcional): por unidad o total, como lo dé el proveedor. Se guardan los dos (el otro se calcula).
+    peso_modo = db.Column(db.String(1))                        # U = por unidad / T = total
+    peso_unitario = db.Column(db.Float)                        # kg por unidad
+    peso_total = db.Column(db.Float)                           # kg del ítem
     # Ingreso al inventario (lo marca Almacén cuando hizo el movimiento en el Kardex)
     ingresado_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     fecha_ingreso = db.Column(db.DateTime, nullable=True)
@@ -1419,6 +1446,35 @@ class OrdenCompraDocumento(db.Model):
     tamano_bytes = db.Column(db.Integer)
     subido_por = db.Column(db.String(100))
     fecha = db.Column(db.DateTime, default=hora_peru)
+
+
+class OCCuentaBancaria(db.Model):
+    """Cuentas bancarias de un proveedor de órdenes (cuenta, CCI o cuenta de detracciones). Se archivan, no se borran si se usaron."""
+    __tablename__ = 'oc_cuenta_bancaria'
+    id = db.Column(db.Integer, primary_key=True)
+    oc_proveedor_id = db.Column(db.Integer, db.ForeignKey('oc_proveedor.id'), nullable=False, index=True)
+    banco = db.Column(db.String(20), nullable=False)          # BCP / INTERBANK / SCOTIABANK / BBVA / NACION / OTRO
+    banco_otro = db.Column(db.String(80))                     # nombre del banco si es OTRO
+    tipo = db.Column(db.String(12), nullable=False)           # CUENTA / CCI / DETRACCION
+    moneda = db.Column(db.String(3), default='PEN')           # PEN / USD
+    numero = db.Column(db.String(40), nullable=False)
+    titular = db.Column(db.String(200))
+    activo = db.Column(db.Boolean, default=True)
+    creado_por = db.Column(db.String(100))
+    fecha_creacion = db.Column(db.DateTime, default=hora_peru)
+    actualizado_por = db.Column(db.String(100))
+    fecha_actualizacion = db.Column(db.DateTime)
+    archivado_por = db.Column(db.String(100))
+    fecha_archivo = db.Column(db.DateTime)
+
+
+class OCMotivoCompra(db.Model):
+    """Para qué se compra (reposición de stock, pedido de cliente, uso interno...). Configurable."""
+    __tablename__ = 'oc_motivo_compra'
+    id = db.Column(db.Integer, primary_key=True)
+    nombre = db.Column(db.String(120), nullable=False)
+    pide_cliente = db.Column(db.Boolean, default=False)       # si se elige, se pide RUC y razón social del cliente
+    activo = db.Column(db.Boolean, default=True)
 
 
 class OCConfig(db.Model):

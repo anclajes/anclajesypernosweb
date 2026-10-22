@@ -22,22 +22,11 @@
     .aprob.no { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
     .aprob.pend { background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
 </style>
-<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-    {% if seccion == 'ingresos' %}
-    <h4 class="fw-bold mb-0"><i class="bi bi-box-arrow-in-down"></i> Ingreso de material al inventario</h4>
-    <span class="text-muted small">Material que llegó con Orden de Compra y ya está conforme</span>
-    {% else %}
-    <h4 class="fw-bold mb-0"><i class="bi bi-cart-check"></i> Órdenes de Compra y Servicio</h4>
-    <span class="text-muted small">Anclajes y Pernos Perú SAC · precios sin IGV + IGV 18%</span>
-    {% endif %}
-</div>
-<nav class="oc-nav">
+<nav class="oc-nav" aria-label="Órdenes de compra">
     {% if session.get('role') in ['admin', 'logistica', 'administracion'] %}
-    <a href="{{ url_for('oc_lista', vista='curso') }}" class="{{ 'activa' if seccion == 'lista' and vista in ['curso', 'todas', 'cerradas'] }}"><i class="bi bi-list-task"></i> Órdenes</a>
-    <a href="{{ url_for('oc_lista', vista='aprobar') }}" class="{{ 'activa' if seccion == 'lista' and vista == 'aprobar' }}"><i class="bi bi-hourglass-split"></i> Por aprobar
-        {% if oc_por_aprobar %}<span class="cnt">{{ oc_por_aprobar }}</span>{% endif %}</a>
-    <a href="{{ url_for('oc_lista', vista='recibir') }}" class="{{ 'activa' if seccion == 'lista' and vista == 'recibir' }}"><i class="bi bi-truck"></i> Por recibir</a>
-    <a href="{{ url_for('oc_lista', vista='conformes') }}" class="{{ 'activa' if seccion == 'lista' and vista == 'conformes' }}"><i class="bi bi-check2-all"></i> Conformes / en almacén</a>
+    <a href="{{ url_for('oc_lista') }}" class="{{ 'activa' if seccion == 'lista' }}"><i class="bi bi-list-task"></i> Órdenes
+        {% if oc_por_aprobar %}<span class="cnt" style="background:#f59e0b;" title="Por aprobar">{{ oc_por_aprobar }}</span>{% endif %}
+        {% if oc_alertas %}<span class="cnt" title="Atrasadas o pagos por vencer / vencidos">{{ oc_alertas }}</span>{% endif %}</a>
     {% endif %}
     {% if session.get('role') in ['admin', 'logistica', 'almacen'] %}
     <a href="{{ url_for('oc_ingresos_pendientes') }}" class="{{ 'activa' if seccion == 'ingresos' }}"><i class="bi bi-box-arrow-in-down"></i> Ingresos pendientes
