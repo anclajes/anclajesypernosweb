@@ -176,6 +176,7 @@
     <div class="it" data-nuevo="{{ '1' if i.es_nuevo else '0' }}" data-buscar="{{ (i.descripcion ~ ' ' ~ (i.codigo or '') ~ ' ' ~ (i.sku_ingreso or ''))|upper }}">
         <div>
             <div class="desc">{{ i.item }}. {{ i.descripcion }}</div>
+            {% set rqi = req_de_item_oc(i) %}{% if rqi %}<div class="meta"><span class="tag" style="background:#ede9fe; color:#5b21b6;"><i class="bi bi-clipboard-check"></i> Pedido en {{ req_codigo(rqi) }} · {{ rqi.solicitante_nombre }}</span></div>{% endif %}
             <div class="meta">
                 {% if i.fecha_ingreso %}<span class="tag listo"><i class="bi bi-check2-all"></i> Ingresado</span>{% else %}<span class="tag espera-i"><i class="bi bi-check-circle"></i> Conforme · esperando ingreso</span>{% endif %}
                 <span><span class="cant">{{ i.cantidad|cant }}</span> {{ i.um }}</span>

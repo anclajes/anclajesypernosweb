@@ -1,0 +1,246 @@
+{% extends "base.html" %}
+{% block title %}Requerimiento de compra{% endblock %}
+{% block subtitle %}Pedir a Logística los productos que faltan{% endblock %}
+{% block content %}
+{% include '_oc_nav.html' %}
+{% set pv = previo %}
+<style>
+    .rq-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 14px 16px; margin-bottom: 14px; }
+    .rq-t { font-size: .74rem; font-weight: 800; color: #475569; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+    .lbl { font-size: .74rem; font-weight: 700; color: #334155; margin-bottom: 3px; }
+    .lbl.req::after { content: ' *'; color: #dc2626; }
+    .seg { display: flex; flex-wrap: wrap; gap: 6px; }
+    .seg input { position: absolute; opacity: 0; pointer-events: none; }
+    .seg label { flex: 1 1 140px; border: 2px solid #e2e8f0; border-radius: 10px; padding: 7px 10px; cursor: pointer; background: #fff; display: flex; align-items: center; gap: 8px; font-size: .84rem; }
+    .seg label small { display: block; font-size: .66rem; color: #64748b; font-weight: 400; }
+    .seg input:checked + label { border-color: var(--c, #0B3D91); background: color-mix(in srgb, var(--c, #0B3D91) 8%, #fff); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c, #0B3D91) 15%, transparent); }
+    .rq-item { border: 1px solid #e2e8f0; border-radius: 12px; padding: 9px 10px; margin-bottom: 8px; position: relative; background: #fff; }
+    .rq-item .n { font-size: .66rem; font-weight: 800; background: #0B3D91; color: #fff; border-radius: 6px; padding: 1px 7px; }
+    .rq-item .quitar { position: absolute; top: 6px; right: 8px; border: 0; background: none; color: #94a3b8; font-size: 1.1rem; }
+    .rq-item .prod { font-size: .78rem; border-radius: 8px; padding: 5px 8px; margin-top: 6px; }
+    .rq-item .prod.ok { background: #f0fdf4; border: 1px solid #bbf7d0; color: #14532d; }
+    .rq-item .prod.falta { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+    .rq-item label { font-size: .64rem; font-weight: 800; color: #64748b; text-transform: uppercase; margin-bottom: 1px; }
+    .sug { z-index: 1050; max-height: 280px; overflow-y: auto; display: none; }
+    .ayuda { font-size: .74rem; background: #eff6ff; border: 1px solid #bfdbfe; color: #1e3a8a; border-radius: 10px; padding: 7px 10px; }
+    .stk { font-weight: 800; }
+    .docs-zona { border: 2px dashed #cbd5e1; border-radius: 12px; padding: 10px; background: #f8fafc; }
+    .doc-sel { font-size: .74rem; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 3px 8px; display: inline-flex; gap: 6px; align-items: center; margin: 3px 3px 0 0; }
+</style>
+
+{% if errores %}<div class="alert alert-danger py-2"><b><i class="bi bi-exclamation-triangle-fill"></i> No se envió. Revisa:</b>
+    <ul class="mb-0 small">{% for e in errores %}<li>{{ e }}</li>{% endfor %}</ul></div>{% endif %}
+
+<form method="POST" action="{{ url_for('oc_req_nuevo') }}" enctype="multipart/form-data" id="formReq" novalidate>
+<div class="row g-3">
+    <div class="col-12 col-lg-5">
+        <div class="rq-card">
+            <div class="rq-t"><i class="bi bi-person-raised-hand"></i> ¿Quién lo pide y para qué?</div>
+            <div class="lbl req">Inventario al que le faltan</div>
+            <div class="seg mb-2">
+                {% for k, e in empresas_oc.items() if e.habilitada %}
+                <input type="radio" name="empresa" id="emp_{{ k }}" value="{{ k }}" {{ 'checked' if (pv.empresa or 'ANCLAJES') == k }} onchange="cambioEmpresa()">
+                <label for="emp_{{ k }}" style="--c: {{ e.color }};"><img src="{{ url_for('static', filename='img/' ~ e.logo) }}" alt="" width="54" height="20" style="object-fit: contain;"><b>{{ e.corto }}</b></label>
+                {% endfor %}
+            </div>
+            <div class="row g-2">
+                <div class="col-12 col-sm-7"><div class="lbl req">Solicita</div>
+                    <input type="text" name="solicitante_nombre" class="form-control" maxlength="120" value="{{ pv.solicitante_nombre or mi_nombre }}" placeholder="Nombre de quien pide">
+                    <div class="form-text" style="font-size:.66rem;">Queda registrado con tu cuenta. Si lo pides a nombre de otra persona, escribe su nombre.</div></div>
+                <div class="col-12 col-sm-5"><div class="lbl req">Área</div>
+                    <select name="area" class="form-select"><option value="">— Elige —</option>
+                        {% for a in areas %}<option value="{{ a }}" {{ 'selected' if a == pv.area }}>{{ a|title }}</option>{% endfor %}</select></div>
+            </div>
+            <div class="lbl req mt-2">Motivo (para qué se necesitan)</div>
+            <div class="seg">
+                {% for m in motivos_compra %}
+                <input type="radio" name="motivo" id="mo_{{ loop.index }}" value="{{ m.nombre }}" data-cliente="{{ '1' if m.pide_cliente else '0' }}" {{ 'checked' if m.nombre|upper == (pv.motivo or '')|upper }} onchange="pintarMotivo()">
+                <label for="mo_{{ loop.index }}" style="--c:#7c3aed;"><span><b>{{ m.nombre|capitalize }}</b>{% if m.pide_cliente %}<small>Se indica el cliente</small>{% endif %}</span></label>
+                {% endfor %}
+            </div>
+            <div id="boxCliente" class="mt-2" style="display:none;">
+                <div class="lbl req">Cliente</div>
+                <div class="position-relative" id="cliBuscar">
+                    <input type="text" id="buscaCli" class="form-control form-control-sm" placeholder="Escribe el RUC o el nombre: te sugiere clientes" autocomplete="off" oninput="sugerirCli()" onfocus="sugerirCli()">
+                    <div id="sugCli" class="list-group position-absolute w-100 shadow sug"></div>
+                </div>
+                <div class="row g-2 mt-1">
+                    <div class="col-5"><input type="text" name="cliente_ruc" id="cliente_ruc" class="form-control form-control-sm" maxlength="11" inputmode="numeric" placeholder="RUC / DNI" value="{{ pv.cliente_ruc or '' }}"></div>
+                    <div class="col-7"><input type="text" name="cliente_razon" id="cliente_razon" class="form-control form-control-sm text-uppercase" maxlength="200" placeholder="Razón social" value="{{ pv.cliente_razon or '' }}"></div>
+                </div>
+            </div>
+            <div class="row g-2 mt-1">
+                <div class="col-12 col-sm-6"><div class="lbl">N° de OC del cliente</div>
+                    <input type="text" name="oc_cliente" class="form-control text-uppercase" maxlength="60" value="{{ pv.oc_cliente or '' }}" placeholder="Ej: OC-4512 (si aplica)"></div>
+                <div class="col-12 col-sm-6"><div class="lbl">¿Para cuándo?</div>
+                    <input type="date" name="necesita_para" class="form-control" min="{{ hoy.isoformat() }}" value="{{ pv.necesita_para or '' }}"></div>
+            </div>
+            <div class="lbl mt-2">Prioridad</div>
+            <div class="seg">
+                {% for k, t in prioridades.items() %}
+                <input type="radio" name="prioridad" id="pr_{{ k }}" value="{{ k }}" {{ 'checked' if (pv.prioridad or 'NORMAL') == k }}>
+                <label for="pr_{{ k }}" style="--c: {{ '#dc2626' if k == 'URGENTE' else '#0B3D91' }};"><b>{{ t }}</b></label>
+                {% endfor %}
+            </div>
+            <div class="lbl mt-2">Nota para Logística <span class="fw-normal text-muted">(opcional)</span></div>
+            <textarea name="nota" class="form-control" rows="2" maxlength="500" placeholder="Ej: el cliente recoge el viernes; si no hay grado 8, sirve grado 5">{{ pv.nota or '' }}</textarea>
+        </div>
+
+        <div class="rq-card">
+            <div class="rq-t"><i class="bi bi-paperclip"></i> OC del cliente u otro sustento <span class="fw-normal text-muted" style="text-transform:none;">(opcional, máx. {{ max_docs }})</span></div>
+            <div class="docs-zona">
+                <div class="d-flex flex-wrap gap-2">
+                    <label class="btn btn-outline-primary btn-sm mb-0"><i class="bi bi-file-earmark-arrow-up"></i> Subir PDF o foto
+                        <input type="file" name="docs" id="inDocs" multiple accept="application/pdf,image/jpeg,image/png,image/webp" class="d-none" onchange="pintarDocs()"></label>
+                    <label class="btn btn-outline-success btn-sm mb-0"><i class="bi bi-camera"></i> Tomar foto
+                        <input type="file" name="foto" id="inFoto" accept="image/*" capture="environment" class="d-none" onchange="pintarDocs()"></label>
+                </div>
+                <div id="docsSel" class="mt-1 small text-muted">Ningún archivo. PDF o foto (JPG, PNG), máx. 5 MB cada uno.</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-lg-7">
+        <div class="rq-card">
+            <div class="rq-t"><i class="bi bi-boxes"></i> Productos que faltan</div>
+            <div class="ayuda mb-2"><i class="bi bi-info-circle"></i> Solo productos del inventario <b id="empTxt"></b>: escribe el código o la descripción y elígelo de la lista.
+                Si un producto no existe, pide al encargado que lo cree en el Maestro.</div>
+            <div id="items"></div>
+            <button type="button" class="btn btn-outline-primary w-100" onclick="agregarItem()"><i class="bi bi-plus-circle"></i> Agregar producto</button>
+        </div>
+        <button type="submit" class="btn btn-success btn-lg w-100 fw-bold" id="btnEnviar"><i class="bi bi-send-check"></i> Enviar requerimiento a Logística</button>
+        <div class="form-text mt-1">Logística lo ve en su bandeja y arma la orden de compra. Tú ves el avance: OC creada, aprobada, llegada y conformidad.</div>
+    </div>
+</div>
+</form>
+
+<template id="tplItem">
+    <div class="rq-item">
+        <span class="n"></span>
+        <button type="button" class="quitar" title="Quitar"><i class="bi bi-x-circle-fill"></i></button>
+        <input type="hidden" name="codigo[]" class="i-cod">
+        <div class="position-relative mt-2">
+            <input type="text" class="form-control form-control-sm text-uppercase i-busca" autocomplete="off" placeholder="Busca por código o descripción...">
+            <div class="list-group position-absolute w-100 shadow sug i-sug"></div>
+        </div>
+        <div class="i-prod"></div>
+        <div class="row g-2 mt-1">
+            <div class="col-4"><label>Cantidad *</label><input type="number" name="cantidad[]" step="any" min="0" class="form-control form-control-sm i-cant" inputmode="decimal"></div>
+            <div class="col-4"><label>U.M. *</label><select name="um[]" class="form-select form-select-sm i-um"></select></div>
+            <div class="col-4"><label>Nota</label><input type="text" name="nota_item[]" maxlength="200" class="form-control form-control-sm i-nota" placeholder="opcional"></div>
+        </div>
+    </div>
+</template>
+
+<script>
+const UMS = {{ ums|tojson }};
+const PREVIOS = {{ (pv.get('items') or [])|tojson }};
+const EMPRESAS = {{ empresas_oc|tojson }};
+const porId = id => document.getElementById(id);
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function nf(n) { return Number(n || 0).toLocaleString('es-PE', { maximumFractionDigits: 3 }); }
+function empresa() { const r = document.querySelector('#formReq input[name=empresa]:checked'); return r ? r.value : 'ANCLAJES'; }
+function pintarMotivo() {
+    const r = document.querySelector('#formReq input[name=motivo]:checked');
+    porId('boxCliente').style.display = r && r.dataset.cliente === '1' ? 'block' : 'none';
+}
+function numerar() { document.querySelectorAll('#items .rq-item').forEach((f, i) => f.querySelector('.n').textContent = 'PRODUCTO ' + (i + 1)); }
+function opcionesUM(sel, v) { const l = UMS.slice(); if (v && !l.includes(v)) l.push(v); sel.innerHTML = '<option value="">—</option>' + l.map(u => `<option>${esc(u)}</option>`).join(''); sel.value = v || ''; }
+function fichaProd(fila, p) {
+    fila._p = p || null;
+    fila.querySelector('.i-cod').value = p ? p.sku : '';
+    const box = fila.querySelector('.i-prod'), busca = fila.querySelector('.i-busca');
+    if (p) {
+        busca.value = p.descripcion; busca.readOnly = true;
+        const stk = p[`stock_${empresa()}`];
+        box.innerHTML = `<div class="prod ok"><i class="bi bi-link-45deg"></i> <b>${esc(p.sku)}</b>${p.familia ? ' · ' + esc(p.familia) : ''}${p.calidad ? ' · ' + esc(p.calidad) : ''}` +
+            (stk != null ? ` · stock actual <span class="stk">${nf(stk)}</span>` : '') + ` <button type="button" class="btn btn-link btn-sm p-0 ms-1 cambiar">cambiar</button></div>`;
+        box.querySelector('.cambiar').onclick = () => { fichaProd(fila, null); busca.value = ''; busca.focus(); };
+    } else {
+        busca.readOnly = false;
+        box.innerHTML = busca.value.trim() ? '<div class="prod falta"><i class="bi bi-x-octagon-fill"></i> <b>No elegido.</b> Elige el producto de la lista.</div>' : '';
+    }
+}
+function agregarItem(d) {
+    d = d || {};
+    const fila = porId('tplItem').content.firstElementChild.cloneNode(true);
+    porId('items').appendChild(fila);
+    opcionesUM(fila.querySelector('.i-um'), d.um || '');
+    fila.querySelector('.i-cant').value = d.cantidad || '';
+    fila.querySelector('.i-nota').value = d.nota || '';
+    const busca = fila.querySelector('.i-busca'), sug = fila.querySelector('.i-sug');
+    if (d.codigo) { fila.querySelector('.i-cod').value = d.codigo; busca.value = d.codigo; buscarCodigo(fila, d.codigo); }
+    let t = null;
+    busca.addEventListener('input', () => {
+        if (fila._p) fichaProd(fila, null);
+        clearTimeout(t); const q = busca.value.trim();
+        if (q.length < 2) { sug.style.display = 'none'; fichaProd(fila, null); return; }
+        t = setTimeout(() => fetch(urlProd(q)).then(r => r.json()).then(res => {
+            if (document.activeElement !== busca) return;
+            const lista = (res.results || []).slice(0, 15);
+            sug.innerHTML = lista.length ? '' : `<div class="list-group-item small text-danger">No está en el inventario ${esc(EMPRESAS[empresa()].corto)}. Pide al encargado que lo cree en el Maestro.</div>`;
+            lista.forEach(p => {
+                const b = document.createElement('button'); b.type = 'button'; b.className = 'list-group-item list-group-item-action py-1 px-2 small';
+                const stk = p[`stock_${empresa()}`];
+                b.innerHTML = `<b>${esc(p.sku)}</b> — ${esc(p.descripcion)}<div class="text-muted">${esc([p.familia, p.calidad].filter(Boolean).join(' · '))}${stk != null ? ' · stock ' + nf(stk) : ''}</div>`;
+                b.onmousedown = e => e.preventDefault();
+                b.onclick = () => { fichaProd(fila, p); sug.style.display = 'none'; if (!fila.querySelector('.i-um').value && UMS.includes((p.um || '').toUpperCase())) opcionesUM(fila.querySelector('.i-um'), p.um.toUpperCase()); fila.querySelector('.i-cant').focus(); };
+                sug.appendChild(b);
+            });
+            sug.style.display = 'block';
+        }).catch(() => {}), 280);
+    });
+    busca.addEventListener('blur', () => setTimeout(() => { sug.style.display = 'none'; if (!fila._p) fichaProd(fila, null); }, 180));
+    fila.querySelector('.quitar').onclick = () => { if (document.querySelectorAll('#items .rq-item').length > 1) { fila.remove(); numerar(); } else { busca.value = ''; fichaProd(fila, null); fila.querySelector('.i-cant').value = ''; } };
+    numerar();
+    return fila;
+}
+function urlProd(q) { return `{{ url_for('oc_api_productos') }}?q=${encodeURIComponent(q)}&empresa=${empresa()}&solo_empresa=1&destino=GENERAL&por_pagina=30`; }
+function buscarCodigo(fila, cod) {
+    fetch(urlProd(cod)).then(r => r.json()).then(res => { const p = (res.results || []).find(x => (x.sku || '').toUpperCase() === cod.toUpperCase()); fichaProd(fila, p || null); });
+}
+function cambioEmpresa() {
+    porId('empTxt').textContent = EMPRESAS[empresa()].corto;
+    // los productos elegidos eran de otro inventario: se revisan otra vez
+    document.querySelectorAll('#items .rq-item').forEach(f => { const c = f.querySelector('.i-cod').value; if (c) buscarCodigo(f, c); });
+}
+function pintarDocs() {
+    const archivos = [...porId('inDocs').files, ...porId('inFoto').files];
+    porId('docsSel').innerHTML = archivos.length ? archivos.map(a => `<span class="doc-sel"><i class="bi ${a.type === 'application/pdf' ? 'bi-file-earmark-pdf' : 'bi-image'}"></i> ${esc(a.name)} <span class="text-muted">${(a.size / 1048576).toFixed(1)} MB</span></span>`).join('')
+        + (archivos.length > {{ max_docs }} ? `<div class="text-danger">Máximo {{ max_docs }} archivos.</div>` : '')
+        : 'Ningún archivo. PDF o foto (JPG, PNG), máx. 5 MB cada uno.';
+}
+let tCli = null;
+function sugerirCli() {
+    clearTimeout(tCli);
+    const q = porId('buscaCli').value.trim(), cont = porId('sugCli');
+    tCli = setTimeout(() => fetch(`{{ url_for('oc_api_cliente') }}?q=${encodeURIComponent(q)}&sunat=${/^\d{8}(\d{3})?$/.test(q) ? 1 : 0}`).then(r => r.json()).then(d => {
+        const lista = d.clientes || [];
+        if (!lista.length) { cont.style.display = q.length > 1 ? 'block' : 'none'; cont.innerHTML = '<div class="list-group-item small text-muted">No se encontró: escríbelo abajo.</div>'; return; }
+        cont.innerHTML = '';
+        lista.forEach(c => { const b = document.createElement('button'); b.type = 'button'; b.className = 'list-group-item list-group-item-action py-1 px-2 small';
+            b.innerHTML = `<b>${esc(c.razon)}</b> <span class="text-muted">· ${esc(c.ruc)}</span>`;
+            b.onclick = () => { porId('cliente_ruc').value = c.ruc; porId('cliente_razon').value = c.razon; cont.style.display = 'none'; porId('buscaCli').value = ''; };
+            cont.appendChild(b); });
+        cont.style.display = 'block';
+    }).catch(() => {}), 300);
+}
+document.addEventListener('click', e => { if (!e.target.closest('#cliBuscar')) porId('sugCli').style.display = 'none'; });
+porId('formReq').addEventListener('submit', function (e) {
+    const err = [];
+    if (!document.querySelector('#formReq input[name=motivo]:checked')) err.push('Elige el motivo.');
+    if (!this.area.value) err.push('Elige el área.');
+    const filas = [...document.querySelectorAll('#items .rq-item')].filter(f => f.querySelector('.i-busca').value.trim() || f.querySelector('.i-cant').value);
+    if (!filas.length) err.push('Agrega al menos un producto.');
+    filas.forEach((f, i) => {
+        if (!f.querySelector('.i-cod').value || !f._p) err.push(`Producto ${i + 1}: elígelo de la lista del inventario.`);
+        if (!(parseFloat(f.querySelector('.i-cant').value) > 0) || !f.querySelector('.i-um').value) err.push(`Producto ${i + 1}: escribe la cantidad y la U.M.`);
+    });
+    if (porId('inDocs').files.length + porId('inFoto').files.length > {{ max_docs }}) err.push('Máximo {{ max_docs }} archivos.');
+    if (err.length) { e.preventDefault(); Swal.fire({ icon: 'warning', title: 'Falta información', html: [...new Set(err)].map(esc).join('<br>') }); return; }
+    porId('btnEnviar').disabled = true;
+});
+pintarMotivo(); cambioEmpresa();
+if (PREVIOS.length) PREVIOS.forEach(agregarItem); else agregarItem();
+</script>
+{% endblock %}

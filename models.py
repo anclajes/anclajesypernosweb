@@ -1432,6 +1432,7 @@ class OrdenCompraItem(db.Model):
     fecha_ingreso = db.Column(db.DateTime, nullable=True)
     sku_ingreso = db.Column(db.String(60))                     # SKU con el que se ingresó (obligatorio si era nuevo)
     nota_ingreso = db.Column(db.String(300))
+    req_item_id = db.Column(db.Integer, index=True)            # ítem del requerimiento de Almacén que atiende (si vino de uno)
     kardex_mov_id = db.Column(db.Integer)                      # movimiento del Kardex creado desde Ingresos pendientes
     cantidad_kardex = db.Column(db.Integer)                    # cantidad que entró al Kardex (puede diferir de la OC)
 
@@ -1492,6 +1493,77 @@ class OCMotivoCompra(db.Model):
     nombre = db.Column(db.String(120), nullable=False)
     pide_cliente = db.Column(db.Boolean, default=False)       # si se elige, se pide RUC y razón social del cliente
     activo = db.Column(db.Boolean, default=True)
+
+
+class RequerimientoCompra(db.Model):
+    """Pedido de productos que faltan (lo hace Almacén u otra área) para que Logística arme la Orden de Compra.
+    El avance (en OC, aprobada, llegó, conforme, ingresado) se calcula de las órdenes enlazadas a cada ítem."""
+    __tablename__ = 'requerimiento_compra'
+    id = db.Column(db.Integer, primary_key=True)
+    numero = db.Column(db.Integer, nullable=False, unique=True)
+    empresa = db.Column(db.String(15), nullable=False, default='ANCLAJES')     # inventario al que hacen falta
+    estado = db.Column(db.String(12), nullable=False, default='PENDIENTE', index=True)   # PENDIENTE / RECHAZADO / ANULADO (el resto se calcula)
+    prioridad = db.Column(db.String(10), default='NORMAL')                      # NORMAL / URGENTE
+    fecha_registro = db.Column(db.DateTime, default=hora_peru)
+    creado_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    solicitante_nombre = db.Column(db.String(120))
+    area = db.Column(db.String(80))
+    motivo = db.Column(db.String(120))
+    cliente_ruc = db.Column(db.String(20))
+    cliente_razon = db.Column(db.String(200))
+    oc_cliente = db.Column(db.String(60))              # N° de la orden de compra del CLIENTE
+    necesita_para = db.Column(db.Date)
+    nota = db.Column(db.String(500))
+    rechazado_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    fecha_rechazo = db.Column(db.DateTime)
+    motivo_rechazo = db.Column(db.String(300))
+    anulado_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    fecha_anulacion = db.Column(db.DateTime)
+
+    items = db.relationship('RequerimientoItem', backref='requerimiento', order_by='RequerimientoItem.item', cascade='all, delete-orphan')
+    creado_por = db.relationship('User', foreign_keys=[creado_por_id])
+    rechazado_por = db.relationship('User', foreign_keys=[rechazado_por_id])
+    anulado_por = db.relationship('User', foreign_keys=[anulado_por_id])
+
+
+class RequerimientoItem(db.Model):
+    __tablename__ = 'requerimiento_item'
+    id = db.Column(db.Integer, primary_key=True)
+    req_id = db.Column(db.Integer, db.ForeignKey('requerimiento_compra.id'), nullable=False, index=True)
+    item = db.Column(db.Integer, nullable=False)
+    codigo = db.Column(db.String(60), nullable=False)          # SKU del inventario de la empresa
+    descripcion = db.Column(db.String(400), nullable=False)
+    familia = db.Column(db.String(200))
+    calidad = db.Column(db.String(200))
+    um = db.Column(db.String(30))
+    cantidad = db.Column(db.Float, nullable=False)
+    nota = db.Column(db.String(200))
+    stock_al_pedir = db.Column(db.Integer)                     # stock que había cuando se pidió
+
+
+class RequerimientoDocumento(db.Model):
+    """OC del cliente u otro sustento (PDF o foto)."""
+    __tablename__ = 'requerimiento_documento'
+    id = db.Column(db.Integer, primary_key=True)
+    req_id = db.Column(db.Integer, db.ForeignKey('requerimiento_compra.id'), nullable=False, index=True)
+    s3_key = db.Column(db.String(300), nullable=False)
+    nombre_original = db.Column(db.String(200))
+    content_type = db.Column(db.String(50))
+    tamano_bytes = db.Column(db.Integer)
+    subido_por = db.Column(db.String(100))
+    fecha = db.Column(db.DateTime, default=hora_peru)
+
+
+class RequerimientoEvento(db.Model):
+    __tablename__ = 'requerimiento_evento'
+    id = db.Column(db.Integer, primary_key=True)
+    req_id = db.Column(db.Integer, db.ForeignKey('requerimiento_compra.id'), nullable=False, index=True)
+    fecha = db.Column(db.DateTime, default=hora_peru)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    accion = db.Column(db.String(20), nullable=False)
+    detalle = db.Column(db.String(500))
+
+    usuario = db.relationship('User')
 
 
 class OCConfig(db.Model):

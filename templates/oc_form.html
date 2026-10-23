@@ -48,6 +48,16 @@
     .ficha.vinc { background: #f0fdf4; border: 1px solid #bbf7d0; color: #14532d; }
     .ficha.nuevo { background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412; }
     .ficha.falta { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+    .req-panel { background: #faf5ff; border: 1px solid #ddd6fe; border-radius: 14px; padding: 10px 12px; margin-bottom: 12px; }
+    .req-panel summary { font-weight: 800; color: #5b21b6; cursor: pointer; font-size: .86rem; }
+    .req-b { background: #fff; border: 1px solid #e9d5ff; border-radius: 12px; padding: 8px 10px; margin-top: 8px; }
+    .req-b .cab { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: .78rem; }
+    .req-b .cod { font-weight: 800; color: #5b21b6; text-decoration: none; }
+    .req-b .urg { font-size: .62rem; font-weight: 800; background: #dc2626; color: #fff; border-radius: 6px; padding: 0 6px; }
+    .req-b .meta { font-size: .7rem; color: #475569; }
+    .req-b .ri { display: flex; gap: 8px; align-items: center; font-size: .76rem; border-top: 1px dashed #ede9fe; padding: 4px 0; }
+    .req-b .ri .d { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+    .req-tag { display: inline-block; font-size: .66rem; font-weight: 800; background: #ede9fe; color: #5b21b6; border-radius: 6px; padding: 0 6px; margin-top: 3px; }
     .ayuda-inv { font-size: .72rem; background: #eff6ff; border: 1px solid #bfdbfe; color: #1e3a8a; border-radius: 10px; padding: 7px 10px; }
     .i-desc[readonly] { background: #f0fdf4; cursor: default; }
     .reedit { background: #fff7ed; border: 2px solid #fdba74; border-radius: 14px; padding: 12px 14px; margin-bottom: 14px; }
@@ -315,13 +325,18 @@
                 <span class="ms-auto fw-normal text-muted" style="text-transform:none; letter-spacing:0; font-size:.72rem;">Precios <b>SIN IGV</b></span></div>
             <div class="ayuda-inv mb-2" id="ayudaInv"><i class="bi bi-funnel-fill"></i> <span id="ayudaInvTxt"></span>
                 <div class="mt-1" id="ayudaInvPedir"><b>¿No encuentras el producto?</b> No se puede escribir a mano: pide al <b>encargado del inventario</b> que lo cree en el
-                    <b>Maestro de Productos</b> indicándole <b>descripción, familia y calidad</b>.
-                    <button type="button" class="btn btn-sm btn-outline-primary py-0 ms-1" onclick="pedirProducto(null)"><i class="bi bi-chat-dots"></i> Armar el pedido</button>
-                    {% if session.get('role') == 'admin' %}<a href="{{ url_for('admin_maestro_nuevo') }}" target="_blank" class="btn btn-sm btn-link py-0">Crear en el Maestro</a>{% endif %}</div></div>
+                    <b>Maestro de Productos</b> indicándole <b>descripción, familia y calidad</b>.</div></div>
             <div class="ayuda-ins mb-2" id="ayudaIns" style="display:none;"><i class="bi bi-lightbulb-fill"></i> <b>Compra para Insumos internos:</b> pulsa <b>Insumos</b> en cada ítem para buscar por <b>categoría</b> o descripción.
                 <b>Si no lo encuentras, primero créalo</b> con <b>"Nuevo insumo (maestro)"</b> (te muestra los parecidos que ya existen para no duplicarlo) y luego elígelo. Así, al llegar, el ingreso a Insumos queda enlazado solo.
                 <div class="mt-1">¿Falta una categoría? Agrégala en <a href="{{ url_for('insumos_config') }}" target="_blank">Insumos → Configuración</a> · Ver el <a href="{{ url_for('insumos_maestro') }}" target="_blank">Maestro de insumos</a>.
                     <b>No se puede escribir un insumo a mano:</b> elígelo de la lista o créalo en el maestro.</div></div>
+            {% if session.get('role') in ['admin', 'logistica'] %}
+            <details class="req-panel" id="reqPanel" style="display:none;" open>
+                <summary><i class="bi bi-clipboard-plus"></i> Requerimientos de Almacén <span id="reqCnt"></span></summary>
+                <div class="small text-muted mt-1">Productos que pidieron y aún no están en una orden. Agrégalos a esta OC (si son de este proveedor); lo demás puede ir en otra orden.</div>
+                <div id="reqLista"></div>
+            </details>
+            {% endif %}
             <div id="items"></div>
             <button type="button" class="btn btn-outline-primary w-100" onclick="agregarItem()"><i class="bi bi-plus-circle"></i> Agregar ítem</button>
         </div></div>
@@ -361,6 +376,7 @@
         <button type="button" class="quitar" title="Quitar"><i class="bi bi-x-circle-fill"></i></button>
         <input type="hidden" name="origen[]" class="i-origen"><input type="hidden" name="codigo[]" class="i-codigo"><input type="hidden" name="insumo_id[]" class="i-insumo">
         <input type="hidden" name="familia[]" class="i-familia"><input type="hidden" name="calidad[]" class="i-calidad"><input type="hidden" name="estado_producto[]" class="i-estado">
+        <input type="hidden" name="req_item[]" class="i-req"><input type="hidden" name="req_txt[]" class="i-reqtxt">
         <div class="row g-2">
             <div class="col-12 i-serv-box" style="display:none;"><label>Tipo de servicio *</label>
                 <select name="servicio[]" class="form-select form-select-sm i-serv"></select></div>
@@ -397,7 +413,7 @@
         <div id="mp_res"></div>
     </div>
     <div class="modal-footer p-2 justify-content-between">
-        <span class="small text-muted" id="mp_pie">¿No está? Pide al encargado que lo cree en el Maestro <button type="button" class="btn btn-link btn-sm p-0 align-baseline" onclick="pedirProducto(filaBuscando)">(armar el pedido)</button>.</span>
+        <span class="small text-muted" id="mp_pie">¿No está? Pide al encargado que lo cree en el Maestro (descripción, familia y calidad).</span>
         <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cerrar</button>
     </div>
 </div></div></div>
@@ -419,6 +435,8 @@ const ES_ADMIN = {{ 'true' if session.get('role') == 'admin' else 'false' }};
 const PUEDE_INSUMOS = {{ 'true' if puede_insumos else 'false' }};
 const ES_EDICION = {{ 'true' if orden else 'false' }};
 const ES_REAPROBACION = {{ 'true' if reaprob else 'false' }};
+const REQS = {{ reqs_pendientes|tojson }};
+const REQ_INICIAL = {{ req_inicial|tojson if req_inicial else 'null' }};
 window.INSUMO_ELEGIBLE = true;
 let filaInsumo = null;
 function crearInsumo(fila) {
@@ -484,24 +502,48 @@ function pintarEntrega() {
     porId('boxFecha').style.display = et === 'FECHA' ? 'block' : 'none';
 }
 
-// Pedido al encargado para crear un producto que no existe (texto listo para copiar y mandar por WhatsApp o correo)
-function pedirProducto(fila) {
-    const d = fila ? fila.querySelector('.i-desc').value.trim() : '';
-    Swal.fire({ title: 'Pedir que creen el producto', confirmButtonText: '<i class="bi bi-clipboard"></i> Copiar pedido', showCancelButton: true, cancelButtonText: 'Cerrar',
-        html: `<div class="text-start small">Llena lo que sepas; se copia un mensaje para el encargado del inventario.</div>
-               <input id="pp_desc" class="swal2-input text-uppercase" placeholder="Descripción *" value="${esc(d)}">
-               <input id="pp_fam" class="swal2-input text-uppercase" placeholder="Familia (ej. PERNOS)">
-               <input id="pp_cal" class="swal2-input text-uppercase" placeholder="Calidad (ej. GRADO 5)">`,
-        preConfirm: () => {
-            const v = k => document.getElementById(k).value.trim().toUpperCase();
-            if (v('pp_desc').length < 3) { Swal.showValidationMessage('Escribe la descripción'); return false; }
-            return `Hola, para una orden de compra (${corto()}) necesito que se cree en el Maestro de Productos:\n• Descripción: ${v('pp_desc')}\n• Familia: ${v('pp_fam') || '-'}\n• Calidad: ${v('pp_cal') || '-'}\nGracias.`;
-        } }).then(r => {
-            if (!r.isConfirmed) return;
-            (navigator.clipboard ? navigator.clipboard.writeText(r.value) : Promise.reject()).then(
-                () => Swal.fire({ icon: 'success', title: 'Copiado', text: 'Pégalo en WhatsApp o en un correo al encargado.', timer: 1800, showConfirmButton: false }),
-                () => Swal.fire({ title: 'Copia este mensaje', html: `<textarea class="form-control" rows="6">${esc(r.value)}</textarea>` }));
-        });
+// ================= REQUERIMIENTOS DE ALMACÉN =================
+function reqEnForm() { return new Set([...document.querySelectorAll('#items .i-req')].map(i => i.value).filter(Boolean)); }
+function pintarReqs() {
+    const panel = porId('reqPanel'); if (!panel) return;
+    const lista = REQS.filter(r => r.empresa === empresa());
+    const ver = tipo() === 'OC' && destino() !== 'INSUMOS' && lista.length > 0;
+    panel.style.display = ver ? '' : 'none';
+    if (!ver) return;
+    const usados = reqEnForm();
+    porId('reqCnt').textContent = `(${lista.length})`;
+    porId('reqLista').innerHTML = lista.map(r => {
+        const libres = r.items.filter(i => !usados.has(String(i.id)));
+        return `<div class="req-b"><div class="cab"><a class="cod" href="${r.url}" target="_blank">${esc(r.codigo)}</a>${r.prioridad === 'URGENTE' ? '<span class="urg">URGENTE</span>' : ''}
+            <span><b>${esc(r.solicitante)}</b>${r.area ? ' (' + esc(r.area) + ')' : ''} · ${esc(r.fecha)}</span>
+            ${libres.length ? `<button type="button" class="btn btn-sm btn-success py-0 ms-auto" data-todo="${r.id}"><i class="bi bi-plus-lg"></i> Agregar todo (${libres.length})</button>` : '<span class="ms-auto small text-success fw-bold">Todo en esta orden</span>'}</div>
+            <div class="meta">${esc(r.motivo)}${r.cliente_razon ? ' · cliente <b>' + esc(r.cliente_razon) + '</b>' : ''}${r.oc_cliente ? ' · OC cliente <b>' + esc(r.oc_cliente) + '</b>' : ''}${r.necesita ? ' · para el <b>' + esc(r.necesita) + '</b>' : ''}
+                ${r.docs.map(d => ` · <a href="${d.url}" target="_blank"><i class="bi bi-paperclip"></i>${esc(d.nombre)}</a>`).join('')}${r.nota ? '<div><i class="bi bi-chat-left-text"></i> ' + esc(r.nota) + '</div>' : ''}</div>
+            ${r.items.map(i => `<div class="ri"><span class="d"><b>${esc(i.codigo)}</b> ${esc(i.descripcion)} — <b>${fmtCant(i.cantidad)} ${esc(i.um)}</b>${i.nota ? ' <span class="text-muted">· ' + esc(i.nota) + '</span>' : ''}${i.caida ? '<div class="text-muted">antes en ' + esc(i.caida) + '</div>' : ''}</span>
+                ${usados.has(String(i.id)) ? '<span class="small text-success fw-bold">En esta orden</span>' : `<button type="button" class="btn btn-sm btn-outline-success py-0" data-item="${r.id}:${i.id}"><i class="bi bi-plus-lg"></i></button>`}</div>`).join('')}</div>`;
+    }).join('');
+    porId('reqLista').querySelectorAll('[data-todo]').forEach(b => b.onclick = () => { const r = REQS.find(x => x.id == b.dataset.todo); r.items.forEach(i => jalarReq(r, i)); pintarReqs(); });
+    porId('reqLista').querySelectorAll('[data-item]').forEach(b => b.onclick = () => { const [rid, iid] = b.dataset.item.split(':'); const r = REQS.find(x => x.id == rid); jalarReq(r, r.items.find(i => i.id == iid)); pintarReqs(); });
+}
+function jalarReq(r, i) {
+    if (reqEnForm().has(String(i.id))) return;
+    // si la única fila está vacía, se usa esa
+    const filas = [...document.querySelectorAll('#items .item')];
+    if (filas.length === 1 && !filas[0].querySelector('.i-desc').value.trim() && !filas[0].querySelector('.i-cant').value) filas[0].remove();
+    agregarItem({ descripcion: i.descripcion, cantidad: i.cantidad, um: UMS.includes(i.um) ? i.um : '', origen: r.empresa, codigo: i.codigo, familia: i.familia,
+                  calidad: i.calidad, req_item: i.id, req_txt: `${r.codigo} · ${r.solicitante}` });
+    // ¿quién lo pide y para qué? se llena con los datos del requerimiento si está vacío
+    const sol = porId('solicitante');
+    if (!sol.value && r.user_id && [...sol.options].some(o => o.value === 'u:' + r.user_id)) { sol.value = 'u:' + r.user_id; pintarArea(); }
+    const area = porId('area_solicitante');
+    if (r.area && (!area.value || area.value === areaAuto) && [...area.options].some(o => o.value === r.area)) area.value = r.area;
+    if (!document.querySelector('input[name=motivo_compra]:checked')) {
+        const m = [...document.querySelectorAll('input[name=motivo_compra]')].find(x => x.value.toUpperCase() === (r.motivo || '').toUpperCase());
+        if (m) { m.checked = true; pintarMotivo(); }
+    }
+    if (r.cliente_ruc && !porId('cliente_ruc').value) { porId('cliente_ruc').value = r.cliente_ruc; porId('cliente_razon').value = r.cliente_razon; }
+    const det = document.querySelector('input[name=motivo_detalle]');
+    if (det && !det.value.includes(r.codigo)) det.value = (det.value ? det.value + ' · ' : '') + r.codigo + (r.oc_cliente ? ' (OC cliente ' + r.oc_cliente + ')' : '');
 }
 
 // ================= ÍTEMS =================
@@ -558,19 +600,20 @@ function pintarFicha(fila) {
     } else if (desc && fila._legado && tipo() === 'OC') {
         box.innerHTML = `<div class="ficha nuevo"><i class="bi bi-clock-history"></i> Ítem antiguo escrito a mano: se respeta, pero si lo cambias tendrás que elegirlo de la lista.</div>`;
     } else if (desc && tipo() === 'OC' && destino() !== 'INSUMOS') {
-        box.innerHTML = `<div class="ficha falta"><i class="bi bi-x-octagon-fill"></i> <b>No elegido.</b> Elige el producto de la lista (escribe para buscar o pulsa <b>Inventario</b>). No se puede escribir un producto que no esté en el inventario ${esc(corto())}.` +
-            ` <button type="button" class="btn btn-sm btn-outline-danger py-0 ms-1 pedir"><i class="bi bi-chat-dots"></i> No existe: pedir que lo creen</button></div>`;
-        box.querySelector('.pedir').onclick = () => pedirProducto(fila);
+        box.innerHTML = `<div class="ficha falta"><i class="bi bi-x-octagon-fill"></i> <b>No elegido.</b> Elige el producto de la lista (escribe para buscar o pulsa <b>Inventario</b>). No se puede escribir un producto que no esté en el inventario ${esc(corto())}.</div>`;
     } else if (desc && destino() === 'INSUMOS') {
         box.innerHTML = `<div class="ficha falta sin-insumo"><i class="bi bi-x-octagon-fill"></i> <b>No elegido del maestro de insumos.</b> Búscalo con <b>Insumos</b> o créalo ahora.` +
             (PUEDE_INSUMOS ? ` <button type="button" class="btn btn-sm btn-outline-success py-0 ms-1 crear-ins"><i class="bi bi-plus-lg"></i> Crear en el maestro</button>` : '') + `</div>`;
         const b = box.querySelector('.crear-ins'); if (b) b.onclick = () => crearInsumo(fila);
     } else box.innerHTML = '';
     fila.querySelector('.i-desc').readOnly = !!(p && tipo() === 'OC');
+    const rq = fila.querySelector('.i-reqtxt').value;
+    if (rq) box.insertAdjacentHTML('beforeend', `<span class="req-tag"><i class="bi bi-clipboard-check"></i> Pedido en ${esc(rq)}</span>`);
     if (!p) fila.querySelector('.i-pinv').innerHTML = '';
 }
 function pintarFichas() {
     document.querySelectorAll('#items .item').forEach(pintarFicha);
+    pintarReqs();
     const ins = destino() === 'INSUMOS' && tipo() === 'OC';
     porId('ayudaInv').style.display = ins ? 'none' : '';
     const compra = tipo() === 'OC';
@@ -584,6 +627,7 @@ function pintarFichas() {
 }
 function vincular(fila, p) {
     fila._prod = p || null;
+    if (!p) { fila.querySelector('.i-req').value = ''; fila.querySelector('.i-reqtxt').value = ''; }
     fila.querySelector('.i-origen').value = p ? p.origen : '';
     fila.querySelector('.i-codigo').value = p ? p.sku : '';
     fila.querySelector('.i-insumo').value = p && p.insumo_id ? p.insumo_id : '';
@@ -624,6 +668,7 @@ function agregarItem(datos) {
     fila.querySelector('.i-pval').value = datos.peso_valor || '';
     if (datos.codigo) vincular(fila, { origen: datos.origen, sku: datos.codigo, insumo_id: datos.insumo_id, familia: datos.familia, calidad: datos.calidad, estado: datos.estado });
     else if (ES_EDICION && datos.descripcion) fila._legado = datos.descripcion;
+    if (datos.req_item) { fila.querySelector('.i-req').value = datos.req_item; fila.querySelector('.i-reqtxt').value = datos.req_txt || ''; }
     let t = null;
     desc.addEventListener('input', () => {
         if (fila._legado && desc.value.trim().toUpperCase() !== fila._legado.toUpperCase()) fila._legado = null;
@@ -651,7 +696,7 @@ function agregarItem(datos) {
     fila.querySelector('.i-pmodo').addEventListener('change', recalcular);
     fila.querySelector('.quitar').addEventListener('click', () => {
         if (document.querySelectorAll('#items .item').length === 1) { fila.querySelectorAll('input').forEach(i => i.value = ''); vincular(fila, null); recalcular(); return; }
-        fila.remove(); numerar(); recalcular();
+        fila.remove(); numerar(); recalcular(); pintarReqs();
     });
     numerar(); recalcular(); pintarFicha(fila);
     return fila;
@@ -936,6 +981,11 @@ porId('formOC').addEventListener('submit', function (e) {
 pintarNumero(); pintarEntrega(); pintarMotivo(); pintarTipo();
 if (porId('solicitante').value && !porId('area_solicitante').value) pintarArea();
 if (ITEMS_PREVIOS.length) ITEMS_PREVIOS.forEach(it => agregarItem(it)); else agregarItem();
+if (REQ_INICIAL) {
+    const r = REQS.find(x => x.id === REQ_INICIAL);
+    if (r) { const e = porId('emp_' + r.empresa); if (e && !e.disabled) { e.checked = true; pintarDestino(); pintarNumero(); } r.items.forEach(i => jalarReq(r, i)); }
+}
+pintarReqs();
 if (porId('oc_proveedor_id').value) cargarProveedor(porId('oc_proveedor_id').value);
 else if (porId('ruc').value && porId('razon_social').value) {
     aMano(); porId('m_ruc').value = porId('ruc').value; porId('m_razon').value = porId('razon_social').value; porId('m_dir').value = porId('direccion').value;

@@ -85,7 +85,7 @@
                 <!-- ================================== -->
                 <!-- MENÚ NORMAL (resto de roles)        -->
                 <!-- ================================== -->
-                {% set grupo_inventario = ['inventario_general', 'inventario', 'inventario_importbolts', 'crear_producto', 'editar_producto', 'ver_kardex', 'ver_kardex_importbolts', 'oc_ingresos_pendientes', 'procesos_oc', 'proceso_oc_detalle', 'rotacion_stock', 'admin_maestro', 'admin_maestro_auditoria', 'producto_info'] %}
+                {% set grupo_inventario = ['inventario_general', 'inventario', 'inventario_importbolts', 'crear_producto', 'editar_producto', 'ver_kardex', 'ver_kardex_importbolts', 'oc_ingresos_pendientes', 'procesos_oc', 'proceso_oc_detalle', 'rotacion_stock', 'admin_maestro', 'admin_maestro_auditoria', 'producto_info'] + (['oc_req_lista', 'oc_req_nuevo', 'oc_req_detalle'] if session.get('role') == 'almacen' else []) %}
                 <div class="nav-title">Principal</div>
                 <a href="{{ url_for('index') }}" class="nav-link {{ 'active' if request.endpoint == 'index' }}">
                     <i class="bi bi-grid-1x2 me-2"></i> <span>Dashboard</span>
@@ -132,6 +132,13 @@
                                 {% if oc_por_ingresar %}<span class="badge rounded-pill bg-warning text-dark ms-1">{{ oc_por_ingresar }}</span>{% endif %}
                             </a>
                         </li>
+                        {% if session.get('role') == 'almacen' %}
+                        <li>
+                            <a href="{{ url_for('oc_req_lista') }}" class="nav-link py-2 ps-3 {{ 'active' if (request.endpoint or '').startswith('oc_req_') }}">
+                                <i class="bi bi-clipboard-plus fs-6 me-2"></i> <span>Requerimientos de compra</span>
+                            </a>
+                        </li>
+                        {% endif %}
                         <li>
                             <a href="{{ url_for('procesos_oc') }}" class="nav-link py-2 ps-3 {{ 'active' if request.endpoint in ['procesos_oc', 'proceso_oc_detalle'] }}">
                                 <i class="bi bi-diagram-3 fs-6 me-2"></i> <span>Procesos por OC</span>
@@ -189,6 +196,8 @@
                         {% if session.get('role') in ['admin', 'logistica'] %}
                         <li><a href="{{ url_for('oc_nueva') }}" class="nav-link py-2 ps-3 {{ 'active' if request.endpoint in ['oc_nueva', 'oc_editar'] }}"><i class="bi bi-plus-circle fs-6 me-2"></i> <span>Nueva orden</span></a></li>
                         {% endif %}
+                        <li><a href="{{ url_for('oc_req_lista') }}" class="nav-link py-2 ps-3 {{ 'active' if (request.endpoint or '').startswith('oc_req_') }}"><i class="bi bi-clipboard-plus fs-6 me-2"></i> <span>Requerimientos</span>
+                            {% if oc_req_pendientes %}<span class="badge rounded-pill ms-1" style="background:#7c3aed;">{{ oc_req_pendientes }}</span>{% endif %}</a></li>
                         <li><a href="{{ url_for('oc_lista', vista='aprobar') }}" class="nav-link py-2 ps-3 {{ 'active' if request.endpoint == 'oc_lista' and request.args.get('vista') == 'aprobar' }}"><i class="bi bi-hourglass-split fs-6 me-2"></i> <span>Por aprobar</span>
                             {% if oc_por_aprobar %}<span class="badge rounded-pill bg-warning text-dark ms-1">{{ oc_por_aprobar }}</span>{% endif %}</a></li>
                         <li><a href="{{ url_for('oc_lista', vista='por_pagar') }}" class="nav-link py-2 ps-3 {{ 'active' if request.endpoint == 'oc_lista' and request.args.get('vista') == 'por_pagar' }}"><i class="bi bi-cash-coin fs-6 me-2"></i> <span>Por pagar</span></a></li>

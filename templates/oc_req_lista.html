@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Requerimientos de compra{% endblock %}
+{% block subtitle %}Productos que faltan: Almacén pide, Logística arma la OC{% endblock %}
+{% block content %}
+{% include '_oc_nav.html' %}
+{% import '_req_macros.html' as rq with context %}
+{{ rq.estilos() }}
+<style>
+    .vistas a { font-size: .8rem; font-weight: 700; border-radius: 20px; padding: 5px 14px; text-decoration: none; border: 1px solid #e2e8f0; color: #475569; background: #fff; white-space: nowrap; }
+    .vistas a.on { background: #0f172a; color: #fff; border-color: #0f172a; }
+    .vistas a.nuevo-rq { background: #16a34a; color: #fff; border-color: #16a34a; }
+    .req-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; margin-bottom: 12px; overflow: hidden; }
+    .req-card .cab { padding: 10px 14px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; }
+    .req-card .cod { font-weight: 800; color: #0f172a; text-decoration: none; font-size: 1rem; }
+    .req-card .meta { font-size: .74rem; color: #475569; margin-top: 3px; }
+    .req-card .it { padding: 8px 14px; border-bottom: 1px solid #f1f5f9; }
+    .req-card .it:last-child { border-bottom: 0; }
+    .req-card .ds { font-weight: 700; font-size: .84rem; overflow-wrap: anywhere; }
+    .tag-sku { font-size: .66rem; font-weight: 800; background: #dcfce7; color: #166534; border-radius: 5px; padding: 0 6px; }
+    .como { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 10px 14px; margin-bottom: 12px; font-size: .78rem; }
+    .como summary { font-weight: 800; color: #0B3D91; cursor: pointer; font-size: .84rem; }
+</style>
+
+<div class="d-flex flex-wrap gap-2 align-items-center mb-2 vistas">
+    {% for k, t in [('abiertos', 'Abiertos'), ('mios', 'Pedidos por mí'), ('completados', 'Completados'), ('cerrados', 'Rechazados / anulados'), ('todos', 'Todos')] %}
+    <a href="{{ url_for('oc_req_lista', vista=k, empresa=emp_sel) }}" class="{{ 'on' if vista == k }}">{{ t }} <span class="opacity-75">{{ cuenta[k] }}</span></a>
+    {% endfor %}
+    <select class="form-select form-select-sm ms-auto" style="max-width: 170px;" onchange="location.href='{{ url_for('oc_req_lista', vista=vista) }}&empresa=' + this.value">
+        <option value="TODAS">Las dos empresas</option>
+        {% for e, info in empresas_oc.items() %}<option value="{{ e }}" {{ 'selected' if emp_sel == e }}>{{ info.corto }}</option>{% endfor %}
+    </select>
+    {% if puede_crear %}<a href="{{ url_for('oc_req_nuevo') }}" class="nuevo-rq"><i class="bi bi-plus-circle"></i> Nuevo requerimiento</a>{% endif %}
+</div>
+
+<details class="como" {{ 'open' if not filas }}>
+    <summary><i class="bi bi-info-circle"></i> ¿Cómo funciona?</summary>
+    <ol class="mb-0 mt-1 ps-3">
+        <li><b>Almacén</b> (u otra área) crea el requerimiento: elige del inventario los productos que faltan, la cantidad, para qué son (cliente y N° de su OC) y adjunta la OC del cliente o una foto.</li>
+        <li><b>Logística</b> lo ve aquí y en <b>Nueva orden</b> (panel "Requerimientos de Almacén"): jala los productos a la orden de compra del proveedor que elija. Puede repartirlos en varias órdenes.</li>
+        <li>Quien lo pidió ve el <b>avance de cada producto</b>: OC creada → aprobada por Gerencia → llegó → conforme → ingresado al inventario. Si una orden se anula o rechaza, el producto vuelve a "Esperando OC".</li>
+    </ol>
+</details>
+
+{% for r, sg, res in filas %}
+<div class="req-card shadow-sm" style="border-left: 4px solid {{ empresas_oc[r.empresa].color }};">
+    <div class="cab">
+        <div class="d-flex flex-wrap gap-2 align-items-center">
+            <a class="cod" href="{{ url_for('oc_req_detalle', req_id=r.id) }}">{{ req_codigo(r) }}</a>
+            <span class="small fw-bold" style="color: {{ empresas_oc[r.empresa].color }};">Inventario {{ empresas_oc[r.empresa].corto }}</span>
+            {% if r.prioridad == 'URGENTE' %}<span class="rq-urg">URGENTE</span>{% endif %}
+            <span class="rq-estado ms-auto" style="color: {{ res.color }};"><i class="bi {{ res.icono }}"></i> {{ res.txt }}</span>
+        </div>
+        <div class="meta"><i class="bi bi-person"></i> <b>{{ r.solicitante_nombre }}</b>{% if r.area %} ({{ r.area|title }}){% endif %} · {{ r.fecha_registro.strftime('%d/%m/%Y %H:%M') }}
+            {% if r.motivo %}· {{ r.motivo|capitalize }}{% endif %}{% if r.cliente_razon %} · cliente <b>{{ r.cliente_razon }}</b>{% endif %}{% if r.oc_cliente %} · OC cliente <b>{{ r.oc_cliente }}</b>{% endif %}
+            {% if r.necesita_para %}· para el <b class="{{ 'text-danger' if r.necesita_para <= hoy and res.paso < 6 }}">{{ r.necesita_para.strftime('%d/%m/%Y') }}</b>{% endif %}</div>
+        {% if r.estado == 'RECHAZADO' %}<div class="meta text-danger"><i class="bi bi-x-octagon"></i> Rechazado: {{ r.motivo_rechazo }}</div>{% endif %}
+    </div>
+    {% for i in r.items %}{% set s = sg[i.id] %}
+    <div class="it">
+        <div class="d-flex flex-wrap gap-2 align-items-center"><span class="ds">{{ i.descripcion }}</span> <span class="tag-sku">{{ i.codigo }}</span>
+            <span class="ms-auto fw-bold">{{ i.cantidad|cant }} {{ i.um }}</span></div>
+        <div class="d-flex flex-wrap gap-1 mt-1">{{ rq.ordenes_de(s, puede_ver_oc) }}</div>
+        {% if r.estado == 'PENDIENTE' %}{{ rq.avance(s) }}{% endif %}
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="text-center text-muted py-5 bg-white rounded-3 border"><i class="bi bi-clipboard-check display-6 opacity-25"></i>
+    <p class="mt-2 mb-0">No hay requerimientos en esta vista.</p>
+    {% if puede_crear %}<a href="{{ url_for('oc_req_nuevo') }}" class="btn btn-success btn-sm mt-2"><i class="bi bi-plus-circle"></i> Pedir productos que faltan</a>{% endif %}</div>
+{% endfor %}
+{% endblock %}

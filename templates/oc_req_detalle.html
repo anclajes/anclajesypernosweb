@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}{{ req_codigo(r) }}{% endblock %}
+{% block subtitle %}Requerimiento de compra · {{ r.solicitante_nombre }}{% endblock %}
+{% block content %}
+{% include '_oc_nav.html' %}
+{% import '_req_macros.html' as rq with context %}
+{{ rq.estilos() }}
+<style>
+    .panel { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 14px 16px; margin-bottom: 14px; }
+    .panel-t { font-size: .74rem; font-weight: 800; color: #475569; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 8px; }
+    .dato { font-size: .8rem; margin-bottom: 4px; } .dato b { color: #0f172a; }
+    .it { border: 1px solid #e2e8f0; border-radius: 12px; padding: 9px 12px; margin-bottom: 8px; }
+    .it .ds { font-weight: 700; font-size: .86rem; overflow-wrap: anywhere; }
+    .tag-sku { font-size: .66rem; font-weight: 800; background: #dcfce7; color: #166534; border-radius: 5px; padding: 0 6px; }
+    .doc-b { display: inline-flex; align-items: center; gap: 4px; font-size: .74rem; font-weight: 700; border-radius: 7px; padding: 3px 8px; text-decoration: none; border: 1px solid #e2e8f0; background: #fff; color: #334155; margin: 0 4px 4px 0; }
+    .linea { border-left: 2px solid #e2e8f0; padding: 0 0 10px 12px; position: relative; font-size: .78rem; }
+    .linea::before { content: ''; position: absolute; left: -6px; top: 3px; width: 10px; height: 10px; border-radius: 50%; background: #0B3D91; }
+    .linea .s { color: #64748b; font-size: .72rem; }
+</style>
+
+<div class="panel" style="border-top: 4px solid {{ empresas_oc[r.empresa].color }};">
+    <div class="d-flex flex-wrap gap-2 align-items-center">
+        <span class="fs-4 fw-bold">{{ req_codigo(r) }}</span>
+        <span class="small fw-bold" style="color: {{ empresas_oc[r.empresa].color }};">Inventario {{ empresas_oc[r.empresa].corto }}</span>
+        {% if r.prioridad == 'URGENTE' %}<span class="rq-urg">URGENTE</span>{% endif %}
+        <span class="rq-estado ms-auto" style="color: {{ res.color }};"><i class="bi {{ res.icono }}"></i> {{ res.txt }}</span>
+    </div>
+    <div class="row g-2 mt-1">
+        <div class="col-12 col-md-6">
+            <div class="dato"><i class="bi bi-person"></i> Solicita: <b>{{ r.solicitante_nombre }}</b>{% if r.area %} · {{ r.area|title }}{% endif %}</div>
+            <div class="dato"><i class="bi bi-clock"></i> Registrado el {{ r.fecha_registro.strftime('%d/%m/%Y %H:%M') }} por {{ r.creado_por.nombre_completo if r.creado_por else '-' }}</div>
+            <div class="dato"><i class="bi bi-bullseye"></i> Motivo: <b>{{ (r.motivo or '—')|capitalize }}</b></div>
+        </div>
+        <div class="col-12 col-md-6">
+            {% if r.cliente_razon %}<div class="dato"><i class="bi bi-person-badge"></i> Cliente: <b>{{ r.cliente_razon }}</b> · {{ r.cliente_ruc }}</div>{% endif %}
+            {% if r.oc_cliente %}<div class="dato"><i class="bi bi-receipt"></i> OC del cliente: <b>{{ r.oc_cliente }}</b></div>{% endif %}
+            {% if r.necesita_para %}<div class="dato"><i class="bi bi-calendar-event"></i> Para el: <b class="{{ 'text-danger' if r.necesita_para <= hoy and res.paso < 6 }}">{{ r.necesita_para.strftime('%d/%m/%Y') }}</b></div>{% endif %}
+        </div>
+    </div>
+    {% if r.nota %}<div class="dato mt-1 p-2 rounded" style="background:#f8fafc;"><i class="bi bi-chat-left-text"></i> {{ r.nota }}</div>{% endif %}
+    {% if r.estado == 'RECHAZADO' %}<div class="alert alert-danger py-2 small mt-2 mb-0"><b>Rechazado</b> por {{ r.rechazado_por.nombre_completo if r.rechazado_por else '-' }} el {{ r.fecha_rechazo.strftime('%d/%m/%Y %H:%M') }}: {{ r.motivo_rechazo }}</div>{% endif %}
+    {% if r.estado == 'ANULADO' %}<div class="alert alert-secondary py-2 small mt-2 mb-0"><b>Anulado</b> por {{ r.anulado_por.nombre_completo if r.anulado_por else '-' }} el {{ r.fecha_anulacion.strftime('%d/%m/%Y %H:%M') }}</div>{% endif %}
+    {% if docs %}<div class="mt-2">{% for d in docs %}
+        <a class="doc-b" href="{{ url_for('oc_req_documento', doc_id=d.id) }}" target="_blank"><i class="bi {{ 'bi-file-earmark-pdf' if d.content_type == 'application/pdf' else 'bi-image' }}"></i> {{ d.nombre_original }}</a>{% endfor %}</div>{% endif %}
+    <div class="d-flex flex-wrap gap-2 mt-2">
+        {% if p.armar %}<a class="btn btn-success fw-bold" href="{{ url_for('oc_nueva', tipo='OC', empresa=r.empresa, req=r.id) }}"><i class="bi bi-cart-plus"></i> Armar OC con estos productos</a>{% endif %}
+        {% if p.rechazar %}<form method="POST" action="{{ url_for('oc_req_rechazar', req_id=r.id) }}" onsubmit="return pedirMotivo(this, 'Rechazar el requerimiento', '¿Por qué? (lo verá quien lo pidió)', true)">
+            <input type="hidden" name="motivo"><button class="btn btn-outline-danger"><i class="bi bi-x-octagon"></i> Rechazar</button></form>{% endif %}
+        {% if p.anular %}<form method="POST" action="{{ url_for('oc_req_anular', req_id=r.id) }}" onsubmit="return pedirMotivo(this, 'Anular el requerimiento', '¿Por qué ya no se necesita? (opcional)', false)">
+            <input type="hidden" name="motivo"><button class="btn btn-outline-dark"><i class="bi bi-slash-circle"></i> Anular</button></form>{% endif %}
+        <a class="btn btn-outline-secondary ms-auto" href="{{ url_for('oc_req_lista') }}"><i class="bi bi-arrow-left"></i> Requerimientos</a>
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-12 col-lg-8">
+        <div class="panel">
+            <div class="panel-t"><i class="bi bi-boxes"></i> Productos y avance</div>
+            {% for i in r.items %}{% set s = seg[i.id] %}
+            <div class="it">
+                <div class="d-flex flex-wrap gap-2 align-items-center"><span class="ds">{{ i.item }}. {{ i.descripcion }}</span> <span class="tag-sku">{{ i.codigo }}</span>
+                    <span class="ms-auto fw-bold">{{ i.cantidad|cant }} {{ i.um }}</span></div>
+                <div class="small text-muted">{{ [i.familia, i.calidad]|select|join(' · ') }}{% if i.stock_al_pedir is not none %} · stock al pedir: {{ i.stock_al_pedir }}{% endif %}{% if i.nota %} · {{ i.nota }}{% endif %}</div>
+                <div class="d-flex flex-wrap gap-1 mt-1">{{ rq.ordenes_de(s, p.ver_oc) }}
+                    {% if s.activos and (s.ordenado - i.cantidad)|abs > 0.0001 %}<span class="small text-muted">· en orden: {{ s.ordenado|cant }} (se pidió {{ i.cantidad|cant }})</span>{% endif %}</div>
+                {% if r.estado == 'PENDIENTE' %}{{ rq.avance(s) }}{% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    <div class="col-12 col-lg-4">
+        {% if ordenes %}
+        <div class="panel">
+            <div class="panel-t"><i class="bi bi-cart-check"></i> Órdenes que lo atienden</div>
+            {% for o in ordenes %}
+            <div class="dato">{% if p.ver_oc %}<a href="{{ url_for('oc_detalle', orden_id=o.id) }}"><b>{{ oc_codigo(o) }}</b></a>{% else %}<b>{{ oc_codigo(o) }}</b>{% endif %}
+                · {{ o.razon_social }}<br><span class="rq-estado" style="color: {{ estados[o.estado].color }}; font-size: .66rem;">{{ estados[o.estado].txt }}</span>
+                {% if o.fecha_aprobacion %}<span class="small text-muted">aprobada {{ o.fecha_aprobacion.strftime('%d/%m') }}</span>{% endif %}
+                {% if o.fecha_llegada %}<span class="small text-muted">· llegó {{ o.fecha_llegada.strftime('%d/%m') }}</span>{% endif %}
+                {% if o.fecha_conforme %}<span class="small text-muted">· conforme {{ o.fecha_conforme.strftime('%d/%m') }}</span>{% endif %}</div>
+            {% endfor %}
+        </div>
+        {% endif %}
+        <div class="panel">
+            <div class="panel-t"><i class="bi bi-clock-history"></i> Historial</div>
+            {% for ev in eventos %}
+            <div class="linea"><b>{{ {'CREADO': 'Requerimiento enviado', 'EN_OC': 'Puesto en una orden', 'QUITADO_OC': 'Quitado de una orden', 'RECHAZADO': 'Rechazado', 'ANULADO': 'Anulado'}.get(ev.accion, ev.accion) }}</b>
+                <div class="s">{{ ev.fecha.strftime('%d/%m/%Y %H:%M') }} · {{ ev.usuario.nombre_completo if ev.usuario else 'Sistema' }}</div>
+                {% if ev.detalle %}<div>{{ ev.detalle }}</div>{% endif %}</div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+<script>
+function pedirMotivo(form, titulo, etiqueta, obligatorio) {
+    if (form.dataset.ok) return true;
+    Swal.fire({ title: titulo, input: 'text', inputLabel: etiqueta, showCancelButton: true, confirmButtonText: 'Confirmar', cancelButtonText: 'Cancelar',
+                inputValidator: v => obligatorio && (v || '').trim().length < 5 ? 'Escribe el motivo' : null })
+        .then(x => { if (x.isConfirmed) { form.motivo.value = x.value || ''; form.dataset.ok = '1'; form.submit(); } });
+    return false;
+}
+</script>
+{% endblock %}

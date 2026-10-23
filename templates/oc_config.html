@@ -218,6 +218,7 @@
                 <div class="form-check"><input class="form-check-input" type="checkbox" checked disabled><label class="form-check-label fw-bold">Órdenes (siempre)</label></div>
                 <div class="text-muted">{{ conteo.ordenes }} orden(es) (OC y OS de las dos empresas) con sus ítems, historial, pagos y re-aprobaciones, y <b>{{ conteo.documentos }} archivo(s)</b> subidos (guías, facturas, certificados, pagos).
                     También desaparecen de <b>Ingresos pendientes</b> y de <b>Insumos → Pendientes de OC</b>.
+                    Además se borran los <b>{{ conteo.requerimientos }} requerimiento(s) de Almacén</b>{% if conteo.docs_req %} y sus {{ conteo.docs_req }} archivo(s){% endif %}.
                     La numeración vuelve a 000001{% if conteo.inicio %}, salvo el número inicial configurado
                     ({% for k, v in conteo.inicio.items() %}{{ k }}: {{ v }}{{ ', ' if not loop.last }}{% endfor %}) — se reinicia también si marcas la 3ª opción{% endif %}.</div>
             </div>
