@@ -27,7 +27,7 @@
     </div>
     <div class="row g-2 mt-1">
         <div class="col-12 col-md-6">
-            <div class="dato"><i class="bi bi-person"></i> Solicita: <b>{{ r.solicitante_nombre }}</b>{% if r.area %} · {{ r.area|title }}{% endif %}</div>
+            <div class="dato"><i class="bi bi-person"></i> Lo pide: <b>{{ r.solicitante_nombre }}</b>{% if r.solicitante and r.solicitante.role %} <span class="text-muted">({{ {'vendedor': 'Vendedor', 'almacen': 'Almacén', 'almacen_visor': 'Visor de inventario', 'logistica': 'Logística', 'admin': 'Gerencia', 'administracion': 'Administración'}.get(r.solicitante.role, r.solicitante.role) }})</span>{% endif %}{% if r.area %} · {{ r.area|title }}{% endif %}</div>
             <div class="dato"><i class="bi bi-clock"></i> Registrado el {{ r.fecha_registro.strftime('%d/%m/%Y %H:%M') }} por {{ r.creado_por.nombre_completo if r.creado_por else '-' }}</div>
             <div class="dato"><i class="bi bi-bullseye"></i> Motivo: <b>{{ (r.motivo or '—')|capitalize }}</b></div>
         </div>
@@ -38,16 +38,14 @@
         </div>
     </div>
     {% if r.nota %}<div class="dato mt-1 p-2 rounded" style="background:#f8fafc;"><i class="bi bi-chat-left-text"></i> {{ r.nota }}</div>{% endif %}
-    {% if r.estado == 'RECHAZADO' %}<div class="alert alert-danger py-2 small mt-2 mb-0"><b>Rechazado</b> por {{ r.rechazado_por.nombre_completo if r.rechazado_por else '-' }} el {{ r.fecha_rechazo.strftime('%d/%m/%Y %H:%M') }}: {{ r.motivo_rechazo }}</div>{% endif %}
-    {% if r.estado == 'ANULADO' %}<div class="alert alert-secondary py-2 small mt-2 mb-0"><b>Anulado</b> por {{ r.anulado_por.nombre_completo if r.anulado_por else '-' }} el {{ r.fecha_anulacion.strftime('%d/%m/%Y %H:%M') }}</div>{% endif %}
+    {% if r.estado == 'RECHAZADO' %}<div class="alert alert-danger py-2 small mt-2 mb-0"><b>Rechazado</b> por {{ r.rechazado_por.nombre_completo if r.rechazado_por else '-' }} el {{ r.fecha_rechazo.strftime('%d/%m/%Y %H:%M') }}: {{ req_motivo_txt(r.rechazo_categoria, r.rechazo_opcion, r.motivo_rechazo) }}</div>{% endif %}
+    {% if r.estado == 'ANULADO' %}<div class="alert alert-secondary py-2 small mt-2 mb-0"><b>Anulado</b> por {{ r.anulado_por.nombre_completo if r.anulado_por else '-' }} el {{ r.fecha_anulacion.strftime('%d/%m/%Y %H:%M') }}{% if r.anulacion_opcion or r.motivo_anulacion %}: {{ req_motivo_txt(r.anulacion_categoria, r.anulacion_opcion, r.motivo_anulacion) }}{% endif %}</div>{% endif %}
     {% if docs %}<div class="mt-2">{% for d in docs %}
         <a class="doc-b" href="{{ url_for('oc_req_documento', doc_id=d.id) }}" target="_blank"><i class="bi {{ 'bi-file-earmark-pdf' if d.content_type == 'application/pdf' else 'bi-image' }}"></i> {{ d.nombre_original }}</a>{% endfor %}</div>{% endif %}
     <div class="d-flex flex-wrap gap-2 mt-2">
         {% if p.armar %}<a class="btn btn-success fw-bold" href="{{ url_for('oc_nueva', tipo='OC', empresa=r.empresa, req=r.id) }}"><i class="bi bi-cart-plus"></i> Armar OC con estos productos</a>{% endif %}
-        {% if p.rechazar %}<form method="POST" action="{{ url_for('oc_req_rechazar', req_id=r.id) }}" onsubmit="return pedirMotivo(this, 'Rechazar el requerimiento', '¿Por qué? (lo verá quien lo pidió)', true)">
-            <input type="hidden" name="motivo"><button class="btn btn-outline-danger"><i class="bi bi-x-octagon"></i> Rechazar</button></form>{% endif %}
-        {% if p.anular %}<form method="POST" action="{{ url_for('oc_req_anular', req_id=r.id) }}" onsubmit="return pedirMotivo(this, 'Anular el requerimiento', '¿Por qué ya no se necesita? (opcional)', false)">
-            <input type="hidden" name="motivo"><button class="btn btn-outline-dark"><i class="bi bi-slash-circle"></i> Anular</button></form>{% endif %}
+        {% if p.rechazar %}<button class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#mRechazar"><i class="bi bi-x-octagon"></i> Rechazar</button>{% endif %}
+        {% if p.anular %}<button class="btn btn-outline-dark" data-bs-toggle="modal" data-bs-target="#mAnular"><i class="bi bi-slash-circle"></i> Anular</button>{% endif %}
         <a class="btn btn-outline-secondary ms-auto" href="{{ url_for('oc_req_lista') }}"><i class="bi bi-arrow-left"></i> Requerimientos</a>
     </div>
 </div>
@@ -91,13 +89,23 @@
         </div>
     </div>
 </div>
+{% for clave, titulo, accion, opciones, color, ayuda in [('mRechazar', 'Rechazar ' ~ req_codigo(r), 'oc_req_rechazar', motivos_rech, '#b91c1c', 'Lo verá quien lo pidió. Solo se rechaza si todavía no está en ninguna orden.'),
+                                                       ('mAnular', 'Anular ' ~ req_codigo(r), 'oc_req_anular', motivos_anul, '#334155', 'Úsalo si ya no se necesita. Solo mientras Logística no haya armado una orden con él.')] %}
+<div class="modal fade" id="{{ clave }}" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><form method="POST" action="{{ url_for(accion, req_id=r.id) }}" class="modal-content border-0 shadow">
+    <div class="modal-header py-2 text-white" style="background: {{ color }};"><h6 class="modal-title fw-bold">{{ titulo }}</h6><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+        <div class="small text-muted mb-2">{{ ayuda }}</div>
+        <label class="small fw-bold">Motivo *</label>
+        <select name="motivo_id" class="form-select mb-2" required><option value="">— Elige el motivo —</option>
+            {% for cat, lista in opciones.items() %}<optgroup label="{{ cat }}">{% for m in lista %}<option value="{{ m.id }}">{{ m.motivo }}</option>{% endfor %}</optgroup>{% endfor %}</select>
+        <label class="small fw-bold">Descripción <span class="fw-normal text-muted">(opcional)</span></label>
+        <textarea name="motivo" class="form-control" rows="2" maxlength="300" placeholder="Detalle que ayude a entender"></textarea>
+        {% if session.get('role') in ['admin', 'logistica'] %}<div class="form-text">Las opciones se configuran en <a href="{{ url_for('oc_config', tab='motivos') }}" target="_blank">Órdenes → Configuración → Motivos</a> (para "Requerimientos").</div>{% endif %}
+    </div>
+    <div class="modal-footer p-2"><button class="btn fw-bold w-100 text-white" style="background: {{ color }};">Confirmar</button></div>
+</form></div></div>
+{% endfor %}
 <script>
-function pedirMotivo(form, titulo, etiqueta, obligatorio) {
-    if (form.dataset.ok) return true;
-    Swal.fire({ title: titulo, input: 'text', inputLabel: etiqueta, showCancelButton: true, confirmButtonText: 'Confirmar', cancelButtonText: 'Cancelar',
-                inputValidator: v => obligatorio && (v || '').trim().length < 5 ? 'Escribe el motivo' : null })
-        .then(x => { if (x.isConfirmed) { form.motivo.value = x.value || ''; form.dataset.ok = '1'; form.submit(); } });
-    return false;
-}
+document.querySelectorAll('#mRechazar, #mAnular').forEach(m => m.addEventListener('hidden.bs.modal', () => m.querySelector('form').reset()));
 </script>
 {% endblock %}

@@ -175,6 +175,8 @@
         {% if orden.revision %}{% set ev_ed = eventos|selectattr('accion', 'equalto', 'EDITADA_APROBADA')|first %}
         <div class="sello reaprob mb-2"><i class="bi bi-arrow-repeat"></i><div><b>RE-APROBACIÓN · Rev. {{ orden.revision }}</b> — esta orden ya estaba aprobada y se editó
             <div class="small mt-1"><b>Motivo de la edición:</b> {{ orden.motivo_edicion or '—' }}</div>
+            {% if orden.fecha_llegada %}<div class="small"><i class="bi bi-truck"></i> El material ya llegó el {{ orden.fecha_llegada.strftime('%d/%m/%Y') }}{% if orden.fecha_conforme %} y tiene conformidad{% endif %}:
+                al aprobar vuelve a "{{ 'Conforme' if orden.fecha_conforme else 'Material llegó' }}".</div>{% endif %}
             {% if ev_ed %}<div class="small">Editó <b>{{ ev_ed.usuario.nombre_completo if ev_ed.usuario else '-' }}</b> el {{ ev_ed.fecha.strftime('%d/%m/%Y %H:%M') }}
                 {% set cmb = (ev_ed.detalle or '').split(' · Cambios: ') %}{% if cmb|length > 1 %}<div class="mt-1"><b>Cambios:</b> {{ cmb[1] }}</div>{% endif %}</div>{% endif %}
         </div></div>

@@ -79,6 +79,8 @@ RUTAS_PERMITIDAS_ALMACEN_VISOR = {
     'listar_fotos_producto', 'ver_foto_producto',
     'ver_documento_kardex', 'procesos_oc', 'proceso_oc_detalle',
     'actividad_pulso',
+    # Requerimientos de compra: el visor pide los productos que faltan y ve su avance (sin precios)
+    'oc_req_lista', 'oc_req_nuevo', 'oc_req_detalle', 'oc_req_anular', 'oc_req_documento', 'oc_api_productos', 'oc_api_cliente',
 }
 
 def orden_natural_ubicacion(valor):
@@ -17257,12 +17259,12 @@ ROLES_OC_EDITAN = ['admin', 'logistica']
 ROLES_OC_VEN = ['admin', 'logistica', 'administracion']
 ROLES_OC_APRUEBAN = ['admin']
 ROLES_OC_INGRESAN = ['admin', 'logistica', 'almacen']      # marcan el ingreso del material al inventario
-ROLES_REQ_CREAN = ['admin', 'logistica', 'almacen']        # piden productos que faltan (requerimientos de compra)
-ROLES_REQ_VEN = ['admin', 'logistica', 'almacen', 'administracion']
+ROLES_REQ_CREAN = ['admin', 'logistica', 'almacen', 'almacen_visor']   # piden productos que faltan (requerimientos de compra)
+ROLES_REQ_VEN = ['admin', 'logistica', 'almacen', 'administracion', 'almacen_visor']
 ROLES_REQ_ATIENDEN = ['admin', 'logistica']                # arman la OC con lo pedido o rechazan el requerimiento
 ROLES_OC_PAGAN = ['admin', 'logistica', 'administracion']  # marcan la orden como pagada y guardan cuentas bancarias
-ROLES_SOLICITANTES_OC = ['admin', 'administracion', 'vendedor', 'logistica', 'almacen']   # cuentas que pueden figurar como "solicitó"
-AREA_POR_ROL_OC = {'admin': 'GERENCIA', 'administracion': 'ADMINISTRACIÓN', 'vendedor': 'VENTAS', 'logistica': 'LOGÍSTICA', 'almacen': 'ALMACÉN'}
+ROLES_SOLICITANTES_OC = ['admin', 'administracion', 'vendedor', 'logistica', 'almacen', 'almacen_visor']   # cuentas que pueden figurar como "solicitó"
+AREA_POR_ROL_OC = {'admin': 'GERENCIA', 'administracion': 'ADMINISTRACIÓN', 'vendedor': 'VENTAS', 'logistica': 'LOGÍSTICA', 'almacen': 'ALMACÉN', 'almacen_visor': 'ALMACÉN'}
 DIAS_AVISO_PAGO = 5            # "por vencer": faltan 5 días o menos
 BANCOS_OC = {'BCP': {'nombre': 'BCP', 'logo': 'bcp.png', 'color': '#002a8d'},
              'INTERBANK': {'nombre': 'Interbank', 'logo': 'interbank.png', 'color': '#05be50'},
@@ -17376,8 +17378,22 @@ _OC_MOTIVOS_V2 = [
     ('ANULACION', 'OC', 'CALIDAD', 'El material ofrecido no cumple la calidad pedida'),
     ('ANULACION', 'OS', 'CALIDAD', 'El servicio no se puede hacer con la calidad pedida'),
 ]
+_OC_MOTIVOS_RQ = [      # motivos para rechazar (Logística) o anular (quien lo pidió) un REQUERIMIENTO de compra
+    ('RECHAZO', 'RQ', 'STOCK', 'Hay stock suficiente en el inventario'),
+    ('RECHAZO', 'RQ', 'STOCK', 'Se puede atender con un producto equivalente'),
+    ('RECHAZO', 'RQ', 'PEDIDO', 'Pedido duplicado (ya está en otro requerimiento)'),
+    ('RECHAZO', 'RQ', 'PEDIDO', 'Cantidad no justificada'),
+    ('RECHAZO', 'RQ', 'DATOS', 'Falta información (cliente, OC, cantidades o producto)'),
+    ('RECHAZO', 'RQ', 'PRESUPUESTO', 'No hay presupuesto por ahora'),
+    ('RECHAZO', 'RQ', 'PROVEEDOR', 'Ningún proveedor lo tiene disponible'),
+    ('ANULACION', 'RQ', 'PEDIDO', 'Ya no se necesita'),
+    ('ANULACION', 'RQ', 'PEDIDO', 'El cliente canceló su pedido'),
+    ('ANULACION', 'RQ', 'PEDIDO', 'Se pidió por error'),
+    ('ANULACION', 'RQ', 'STOCK', 'Se consiguió en stock o llegó por otro lado'),
+    ('ANULACION', 'RQ', 'DATOS', 'Se volverá a pedir con otros datos'),
+]
 USOS_MOTIVO_OC = {'RECHAZO': 'Rechazo (Gerencia)', 'ANULACION': 'Anulación'}
-APLICA_MOTIVO_OC = {'AMBAS': 'OC y OS', 'OC': 'Solo OC', 'OS': 'Solo OS'}
+APLICA_MOTIVO_OC = {'AMBAS': 'OC y OS', 'OC': 'Solo OC', 'OS': 'Solo OS', 'RQ': 'Requerimientos'}
 DETRACCION_DEF = 12.0       # % de detracción sugerido (se cambia en cada orden)
 _oc_ok = False
 
@@ -17442,6 +17458,9 @@ def _asegurar_oc():
                                                       ('peso_modo', 'VARCHAR(1)'), ('peso_unitario', 'FLOAT'), ('peso_total', 'FLOAT'),
                                                       ('tipo_servicio', 'VARCHAR(80)'), ('kardex_mov_id', 'INTEGER'), ('cantidad_kardex', 'INTEGER'),
                                                       ('req_item_id', 'INTEGER')])
+    _agregar_columnas_si_faltan('requerimiento_compra', [('solicitante_user_id', 'INTEGER'), ('rechazo_categoria', 'VARCHAR(60)'),
+                                                         ('rechazo_opcion', 'VARCHAR(150)'), ('motivo_anulacion', 'VARCHAR(300)'),
+                                                         ('anulacion_categoria', 'VARCHAR(60)'), ('anulacion_opcion', 'VARCHAR(150)')])
     if not SystemConfig.query.get('oc_numeracion_empresa'):
         # Numeración propia por empresa: la restricción única pasa de (tipo, número) a (empresa, tipo, número)
         try:
@@ -17486,6 +17505,14 @@ def _asegurar_oc():
             db.session.commit()
         except IntegrityError:
             db.session.rollback()
+    if not SystemConfig.query.get('oc_motivos_rq'):      # motivos de rechazo / anulación de los requerimientos
+        try:
+            for uso, aplica, cat, mot in _OC_MOTIVOS_RQ:
+                db.session.add(OCMotivoRechazo(categoria=cat, motivo=mot, activo=True, uso=uso, aplica=aplica))
+            db.session.add(SystemConfig(key='oc_motivos_rq', value='1', updated_by='Sistema'))
+            db.session.commit()
+        except IntegrityError:
+            db.session.rollback()
     if not SystemConfig.query.get('oc_sembrado_v3'):      # tipos de servicio (Órdenes de Servicio)
         try:
             _sembrar_catalogos_oc()
@@ -17519,7 +17546,7 @@ def _ruta_oc(nivel='ver', como_json=False):
         def envoltura(*args, **kwargs):
             permitidos = {'ver': ROLES_OC_VEN, 'editar': ROLES_OC_EDITAN, 'aprobar': ROLES_OC_APRUEBAN, 'admin': ['admin'],
                   'ingresar': ROLES_OC_INGRESAN, 'docs': list(set(ROLES_OC_VEN + ROLES_OC_INGRESAN)), 'pagar': ROLES_OC_PAGAN,
-                  'req_ver': ROLES_REQ_VEN, 'req_crear': ROLES_REQ_CREAN}[nivel]
+                  'req_ver': ROLES_REQ_VEN, 'req_crear': ROLES_REQ_CREAN, 'buscar': list(set(ROLES_OC_INGRESAN + ROLES_REQ_CREAN))}[nivel]
             if session.get('role') not in permitidos:
                 if como_json:
                     return {'status': 'error', 'msg': 'No autorizado'}, 403
@@ -17658,7 +17685,9 @@ def _oc_motivos(uso, tipo=None, incluir_inactivos=False):
     for m in sorted(OCMotivoRechazo.query.all(), key=lambda m: (_clave_alfabetica(m.categoria), _clave_alfabetica(m.motivo))):
         if (m.uso or 'RECHAZO') != uso or (not incluir_inactivos and not m.activo):
             continue
-        if tipo and (m.aplica or 'AMBAS') not in ('AMBAS', tipo):
+        if tipo == 'RQ' and (m.aplica or 'AMBAS') != 'RQ':
+            continue
+        if tipo and tipo != 'RQ' and (m.aplica or 'AMBAS') not in ('AMBAS', tipo):
             continue
         res.setdefault(m.categoria, []).append(m)
     return res
@@ -17822,17 +17851,23 @@ app.add_template_global(_oc_numero_txt, 'oc_numero_txt')
 app.add_template_filter(_oc_resaltado, 'resaltado')
 
 
+ESTADOS_REEDITABLES_OC = ('APROBADA', 'RECIBIDA', 'CONFORME')
+
+
 def _oc_bloqueo_reedicion(orden):
-    """Una orden YA APROBADA se puede editar (vuelve a Gerencia) mientras no haya llegado el material, no tenga factura
-    subida y no esté pagada. Devuelve None si se puede, o el motivo por el que ya no."""
-    if orden.estado != 'APROBADA':
-        return 'Solo se edita una orden en borrador o aprobada.'
-    if orden.fecha_llegada:
-        return 'el material ya llegó'
+    """Una orden YA APROBADA se puede editar (vuelve a Gerencia) para cuadrarla con lo que de verdad pasó (llegó menos,
+    cambió el precio...) mientras NO esté pagada y NO se haya ingresado nada al inventario o a Insumos.
+    Devuelve None si se puede, o el motivo por el que ya no."""
+    if orden.estado not in ESTADOS_REEDITABLES_OC:
+        return 'solo se edita una orden en borrador, aprobada, con material llegado o conforme'
     if (orden.estado_pago or 'PENDIENTE') == 'PAGADO':
         return 'ya está pagada'
-    if OrdenCompraDocumento.query.filter_by(orden_id=orden.id, tipo='FACTURA').first():
-        return 'ya tiene la factura subida'
+    if orden.insumo_ingreso_id:
+        return 'ya se ingresó a Insumos internos'
+    if orden.tipo == 'OS' and orden.fecha_kardex:
+        return 'Almacén ya marcó el seguimiento del servicio'
+    if any(i.fecha_ingreso for i in orden.items):
+        return 'Almacén ya ingresó productos de esta orden al Kardex'
     return None
 
 
@@ -17841,16 +17876,16 @@ def _oc_permisos(orden):
     rol = session.get('role')
     edita, aprueba = rol in ROLES_OC_EDITAN, rol in ROLES_OC_APRUEBAN
     e = orden.estado
-    reeditar = edita and e == 'APROBADA' and _oc_bloqueo_reedicion(orden) is None
+    reeditar = edita and e in ESTADOS_REEDITABLES_OC and _oc_bloqueo_reedicion(orden) is None
     return {
         'editar': edita and e == 'BORRADOR',
         'reeditar': reeditar,
-        'reeditar_bloqueo': (_oc_bloqueo_reedicion(orden) if edita and e == 'APROBADA' and not reeditar else None),
+        'reeditar_bloqueo': (_oc_bloqueo_reedicion(orden) if edita and e in ESTADOS_REEDITABLES_OC and not reeditar else None),
         'enviar': edita and e == 'BORRADOR',
         'retirar': edita and e == 'ENVIADA',
         'aprobar': aprueba and e == 'ENVIADA',
         'rechazar': aprueba and e == 'ENVIADA',
-        'anular': edita and e in ('BORRADOR', 'ENVIADA', 'APROBADA'),
+        'anular': edita and e in ('BORRADOR', 'ENVIADA', 'APROBADA') and not orden.fecha_llegada,
         'llegada': edita and e == 'APROBADA',
         'conforme': edita and e == 'RECIBIDA',
         'observar': edita and e in ('APROBADA', 'RECIBIDA'),
@@ -18407,13 +18442,13 @@ def oc_nueva():
 @_ruta_oc('editar')
 def oc_editar(orden_id):
     orden = OrdenCompra.query.get_or_404(orden_id)
-    if orden.estado == 'APROBADA':
+    if orden.estado in ESTADOS_REEDITABLES_OC:
         bloqueo = _oc_bloqueo_reedicion(orden)
         if bloqueo:
             flash(f'⛔ Esta orden ya no se puede editar: {bloqueo}. Si hay que cambiarla, anúlala (si corresponde) y crea una nueva con "Duplicar".')
             return redirect(url_for('oc_detalle', orden_id=orden.id))
     elif orden.estado != 'BORRADOR':
-        flash('Solo se puede editar una orden en BORRADOR o APROBADA. Si está enviada a Gerencia, primero "Retírala para corregir".')
+        flash('Esta orden no se puede editar en su estado actual. Si está enviada a Gerencia, primero "Retírala para corregir".')
         return redirect(url_for('oc_detalle', orden_id=orden.id))
     return render_template('oc_form.html', **_contexto_form_oc(orden, _orden_a_previo(orden)))
 
@@ -18424,7 +18459,7 @@ def oc_guardar():
     f = request.form
     orden = OrdenCompra.query.get(f.get('id', type=int)) if f.get('id', type=int) else None
     volver = url_for('oc_editar', orden_id=orden.id) if orden else url_for('oc_nueva', tipo=f.get('tipo'))
-    reaprobacion = bool(orden) and orden.estado == 'APROBADA'
+    reaprobacion = bool(orden) and orden.estado in ESTADOS_REEDITABLES_OC
     if reaprobacion:
         bloqueo = _oc_bloqueo_reedicion(orden)
         if bloqueo:
@@ -18580,7 +18615,9 @@ def oc_aprobar(orden_id):
     orden, no = _accion_oc(orden_id, 'aprobar')
     if no:
         return no
-    orden.estado, orden.aprobado_por_id, orden.fecha_aprobacion = 'APROBADA', session.get('user_id'), hora_peru()
+    # Si se re-aprueba una orden cuyo material ya llegó (se editó para cuadrarla), vuelve a la etapa en la que estaba
+    etapa = 'CONFORME' if orden.fecha_conforme else ('RECIBIDA' if orden.fecha_llegada else 'APROBADA')
+    orden.estado, orden.aprobado_por_id, orden.fecha_aprobacion = etapa, session.get('user_id'), hora_peru()
     _oc_evento(orden, 'APROBADA', ' '.join((request.form.get('comentario') or '').split())[:300]
                or (f'Re-aprobada (Rev. {orden.revision}) con firma y sello de Gerencia' if orden.revision else 'Aprobada con firma y sello de Gerencia'))
     registrar_log(f"APROBÓ la {_oc_codigo(orden)} ({orden.razon_social}, {MONEDAS_OC[orden.moneda]['simbolo']} {orden.total:,.2f})",
@@ -19745,7 +19782,7 @@ def _catalogo_productos_oc(empresa):
 
 
 @app.route('/ordenes/api/productos')
-@_ruta_oc('ingresar', como_json=True)
+@_ruta_oc('buscar', como_json=True)
 def oc_api_productos():
     """Búsqueda de productos que ya tenemos: texto + Familia + Calidad (filtros flexibles, igual que en los inventarios).
     Devuelve también las familias y calidades disponibles según lo ya elegido, el stock en Anclajes e Import Bolts
@@ -19796,7 +19833,7 @@ def oc_api_productos():
                 ultimos[it.codigo] = {'precio': it.precio_unitario, 'um': it.um, 'moneda': MONEDAS_OC[it.orden.moneda]['simbolo'],
                                       'orden': _oc_codigo(it.orden), 'proveedor': it.orden.razon_social}
         for d in res:
-            if d['sku'] in ultimos:
+            if d['sku'] in ultimos and session.get('role') in ROLES_OC_VEN:      # el último precio solo lo ve quien ve las órdenes
                 d['ultimo'] = ultimos[d['sku']]
     return {'results': res, 'total': total, 'familias': familias, 'calidades': calidades, 'pagina': pagina, 'paginas': paginas, 'por_pagina': por_pagina,
             'insumos': es_insumos}
@@ -20132,7 +20169,8 @@ def _req_json_para_oc(empresa):
     datos = []
     for r, libres, seg in _req_pendientes_de_oc(empresa):
         datos.append({'id': r.id, 'codigo': _req_codigo(r), 'empresa': r.empresa, 'solicitante': r.solicitante_nombre or '',
-                      'user_id': r.creado_por_id, 'area': r.area or '', 'motivo': r.motivo or '', 'cliente_ruc': r.cliente_ruc or '',
+                      'sol_valor': f'u:{r.solicitante_user_id}' if r.solicitante_user_id else (f'n:{r.solicitante_nombre}' if r.solicitante_nombre else ''),
+                      'registro': (r.creado_por.nombre_completo or r.creado_por.username) if r.creado_por else '', 'area': r.area or '', 'motivo': r.motivo or '', 'cliente_ruc': r.cliente_ruc or '',
                       'cliente_razon': r.cliente_razon or '', 'oc_cliente': r.oc_cliente or '', 'prioridad': r.prioridad or 'NORMAL',
                       'necesita': r.necesita_para.strftime('%d/%m/%Y') if r.necesita_para else '', 'nota': r.nota or '',
                       'fecha': r.fecha_registro.strftime('%d/%m/%Y') if r.fecha_registro else '',
@@ -20169,24 +20207,32 @@ app.add_template_global(_req_de_item_oc, 'req_de_item_oc')
 @app.route('/ordenes/requerimientos')
 @_ruta_oc('req_ver')
 def oc_req_lista():
-    vista = request.args.get('vista', 'abiertos')
-    vista = vista if vista in ('abiertos', 'mios', 'completados', 'cerrados', 'todos') else 'abiertos'
+    defecto = 'mios' if session.get('role') == 'almacen_visor' else 'abiertos'
+    vista = request.args.get('vista', defecto)
+    vista = vista if vista in ('abiertos', 'mios', 'completados', 'cerrados', 'todos') else defecto
+    yo = session.get('user_id')
     emp_sel = (request.args.get('empresa') or 'TODAS').upper()
     emp_sel = emp_sel if emp_sel in EMPRESAS_OC or emp_sel == 'TODAS' else 'TODAS'
     q = RequerimientoCompra.query
     if emp_sel != 'TODAS':
         q = q.filter(RequerimientoCompra.empresa == emp_sel)
     todos = q.order_by(RequerimientoCompra.id.desc()).limit(400).all()
-    filas, cuenta = [], {'abiertos': 0, 'mios': 0, 'completados': 0, 'cerrados': 0, 'todos': len(todos)}
+    filas, cuenta = [], {'abiertos': 0, 'mios': 0, 'completados': 0, 'cerrados': 0, 'todos': len(todos), 'esperando': 0, 'en_proceso': 0, 'urgentes': 0}
     for r in todos:
         seg = _req_seguimiento(r.items)
         res = _req_resumen(r, seg)
         abierto = res['clave'] in ('PENDIENTE', 'EN_PROCESO')
+        mio = yo in (r.creado_por_id, r.solicitante_user_id)
         cuenta['abiertos'] += abierto
-        cuenta['mios'] += r.creado_por_id == session.get('user_id')
+        cuenta['mios'] += mio
+        if vista != 'mios' or mio:          # los indicadores siguen a "Pedidos por mí" cuando se mira solo lo propio
+            cuenta['esperando'] += res['clave'] == 'PENDIENTE'
+            cuenta['en_proceso'] += res['clave'] == 'EN_PROCESO'
+            cuenta['urgentes'] += abierto and r.prioridad == 'URGENTE'
+            cuenta['completados_k'] = cuenta.get('completados_k', 0) + (res['clave'] == 'COMPLETADO')
         cuenta['completados'] += res['clave'] == 'COMPLETADO'
         cuenta['cerrados'] += res['clave'] in ('RECHAZADO', 'ANULADO')
-        if (vista == 'todos' or (vista == 'abiertos' and abierto) or (vista == 'mios' and r.creado_por_id == session.get('user_id'))
+        if (vista == 'todos' or (vista == 'abiertos' and abierto) or (vista == 'mios' and mio)
                 or (vista == 'completados' and res['clave'] == 'COMPLETADO') or (vista == 'cerrados' and res['clave'] in ('RECHAZADO', 'ANULADO'))):
             filas.append((r, seg, res))
     return render_template('oc_req_lista.html', filas=filas, vista=vista, cuenta=cuenta, emp_sel=emp_sel, empresas_oc=EMPRESAS_OC,
@@ -20199,6 +20245,7 @@ def _contexto_form_req(previo=None, errores=None):
     motivos = sorted([m for m in OCMotivoCompra.query.all() if m.activo], key=lambda m: m.id)
     yo = User.query.get(session.get('user_id')) if session.get('user_id') else None
     return dict(previo=previo or {}, errores=errores or [], empresas_oc=EMPRESAS_OC, ums=[v.valor for v in _oc_catalogo('OC_UM')],
+                solicitantes=_solicitantes_oc(), yo_valor=f"u:{session.get('user_id')}",
                 areas=[v.valor for v in _oc_catalogo('OC_AREA')], motivos_compra=[{'nombre': m.nombre, 'pide_cliente': bool(m.pide_cliente)} for m in motivos],
                 prioridades=PRIORIDADES_REQ, max_docs=MAX_DOCS_REQ, seccion='req_nuevo', hoy=hora_peru().date(),
                 mi_nombre=(yo.nombre_completo or yo.username) if yo else session.get('nombre', ''))
@@ -20217,9 +20264,18 @@ def oc_req_nuevo():
         errores.append('Elige para qué inventario son los productos (Anclajes o Import Bolts).')
         empresa = 'ANCLAJES'
     d['empresa'] = empresa
-    d['solicitante_nombre'] = ' '.join((f.get('solicitante_nombre') or '').split())[:120]
-    if len(d['solicitante_nombre']) < 3:
-        errores.append('Escribe QUIÉN SOLICITA.')
+    d['solicitante_user_id'], d['solicitante_nombre'] = None, None
+    sol = (f.get('solicitante') or '').strip()
+    if sol.startswith('u:') and sol[2:].isdigit():
+        u = User.query.get(int(sol[2:]))
+        if u and u.role in ROLES_SOLICITANTES_OC and not getattr(u, 'desactivado', False):
+            d['solicitante_user_id'], d['solicitante_nombre'] = u.id, (u.nombre_completo or u.username or '')[:120]
+    elif sol.startswith('n:'):
+        nombre = ' '.join(sol[2:].split()).upper()[:120]
+        if nombre and nombre in {(v.valor or '').upper() for v in _oc_catalogo('OC_SOLICITANTE')}:
+            d['solicitante_nombre'] = nombre
+    if not d['solicitante_nombre']:
+        errores.append('Elige QUIÉN LO PIDE (el vendedor, trabajador o persona que te informó).')
     areas = {(v.valor or '').upper() for v in _oc_catalogo('OC_AREA')}
     d['area'] = ' '.join((f.get('area') or '').split()).upper()[:80]
     if d['area'] not in areas:
@@ -20287,7 +20343,7 @@ def oc_req_nuevo():
         else:
             validos.append((a, info))
     if errores:
-        previo = {**{k: (v.isoformat() if hasattr(v, 'isoformat') else v) for k, v in d.items()},
+        previo = {**{k: (v.isoformat() if hasattr(v, 'isoformat') else v) for k, v in d.items()}, 'solicitante': sol,
                   'items': [{'codigo': c, 'cantidad': ca, 'um': u, 'nota': no} for c, ca, u, no in filas if c or ca]}
         return render_template('oc_req_form.html', **_contexto_form_req(previo, errores))
     claves = []
@@ -20321,7 +20377,7 @@ def oc_req_nuevo():
         _borrar_de_s3(claves)
         app.logger.exception("No se pudo guardar el requerimiento")
         flash(f'⛔ No se pudo guardar el requerimiento (no se guardó nada): {e}')
-        return render_template('oc_req_form.html', **_contexto_form_req(d, []))
+        return render_template('oc_req_form.html', **_contexto_form_req({**d, 'solicitante': sol}, []))
     flash(f'✅ {_req_codigo(r)} enviado a Logística. Aquí verás cuándo arman la OC, si la aprueban, si llegó y si quedó conforme.')
     return redirect(url_for('oc_req_detalle', req_id=r.id))
 
@@ -20332,7 +20388,7 @@ def _req_permisos(r, seg):
     abierto = r.estado == 'PENDIENTE'
     return {'armar': rol in ROLES_REQ_ATIENDEN and abierto and any(not seg[i.id]['activos'] for i in r.items),
             'rechazar': rol in ROLES_REQ_ATIENDEN and abierto and not con_oc,
-            'anular': abierto and not con_oc and (rol == 'admin' or r.creado_por_id == session.get('user_id')),
+            'anular': abierto and not con_oc and (rol == 'admin' or session.get('user_id') in (r.creado_por_id, r.solicitante_user_id)),
             'ver_oc': rol in ROLES_OC_VEN}
 
 
@@ -20348,8 +20404,25 @@ def oc_req_detalle(req_id):
         for oi in seg[i.id]['activos'] + seg[i.id]['caidos']:
             ordenes[oi.orden.id] = oi.orden
     return render_template('oc_req_detalle.html', r=r, seg=seg, res=_req_resumen(r, seg), docs=docs, eventos=eventos, p=_req_permisos(r, seg),
+                           motivos_rech=_oc_motivos('RECHAZO', 'RQ'), motivos_anul=_oc_motivos('ANULACION', 'RQ'),
                            ordenes=sorted(ordenes.values(), key=lambda o: o.id), estados=ESTADOS_OC, empresas_oc=EMPRESAS_OC,
                            prioridades=PRIORIDADES_REQ, seccion='req', hoy=hora_peru().date())
+
+
+def _req_opcion_motivo(uso):
+    """(opción elegida, detalle) del formulario de rechazo/anulación de un requerimiento; opción None si no es válida."""
+    opcion = OCMotivoRechazo.query.get(request.form.get('motivo_id', type=int)) if request.form.get('motivo_id', type=int) else None
+    if not opcion or (opcion.uso or 'RECHAZO') != uso or (opcion.aplica or 'AMBAS') != 'RQ':
+        opcion = None
+    return opcion, ' '.join((request.form.get('motivo') or '').split())[:300]
+
+
+def _req_motivo_txt(categoria, opcion, detalle):
+    txt = ' · '.join(x for x in (categoria, opcion) if x)
+    return f"{txt} — {detalle}" if txt and detalle else (txt or detalle or '')
+
+
+app.add_template_global(_req_motivo_txt, 'req_motivo_txt')
 
 
 @app.route('/ordenes/requerimientos/<int:req_id>/rechazar', methods=['POST'])
@@ -20359,13 +20432,15 @@ def oc_req_rechazar(req_id):
     if not _req_permisos(r, _req_seguimiento(r.items))['rechazar']:
         flash('⛔ No se puede rechazar: ya tiene productos en una orden o no está pendiente.')
         return redirect(url_for('oc_req_detalle', req_id=r.id))
-    motivo = ' '.join((request.form.get('motivo') or '').split())[:300]
-    if len(motivo) < 5:
-        flash('⛔ Escribe por qué se rechaza (lo verá quien lo pidió).')
+    opcion, detalle = _req_opcion_motivo('RECHAZO')
+    if not opcion:
+        flash('⛔ Elige el motivo del rechazo (lo verá quien lo pidió).')
         return redirect(url_for('oc_req_detalle', req_id=r.id))
-    r.estado, r.rechazado_por_id, r.fecha_rechazo, r.motivo_rechazo = 'RECHAZADO', session.get('user_id'), hora_peru(), motivo
-    _req_evento(r, 'RECHAZADO', motivo)
-    registrar_log(f"Rechazó el requerimiento {_req_codigo(r)}: {motivo}", 'bi-x-octagon', 'text-danger')
+    r.estado, r.rechazado_por_id, r.fecha_rechazo = 'RECHAZADO', session.get('user_id'), hora_peru()
+    r.rechazo_categoria, r.rechazo_opcion, r.motivo_rechazo = opcion.categoria, opcion.motivo, detalle or None
+    texto = _req_motivo_txt(opcion.categoria, opcion.motivo, detalle)
+    _req_evento(r, 'RECHAZADO', texto)
+    registrar_log(f"Rechazó el requerimiento {_req_codigo(r)}: {texto}", 'bi-x-octagon', 'text-danger')
     db.session.commit()
     flash(f'{_req_codigo(r)} rechazado.')
     return redirect(url_for('oc_req_detalle', req_id=r.id))
@@ -20378,9 +20453,13 @@ def oc_req_anular(req_id):
     if not _req_permisos(r, _req_seguimiento(r.items))['anular']:
         flash('⛔ Solo quien lo pidió (o Gerencia) lo anula, y solo si Logística todavía no armó una orden con él.')
         return redirect(url_for('oc_req_detalle', req_id=r.id))
-    motivo = ' '.join((request.form.get('motivo') or '').split())[:300]
+    opcion, detalle = _req_opcion_motivo('ANULACION')
+    if not opcion:
+        flash('⛔ Elige el motivo de la anulación.')
+        return redirect(url_for('oc_req_detalle', req_id=r.id))
     r.estado, r.anulado_por_id, r.fecha_anulacion = 'ANULADO', session.get('user_id'), hora_peru()
-    _req_evento(r, 'ANULADO', motivo or 'Ya no se necesita')
+    r.anulacion_categoria, r.anulacion_opcion, r.motivo_anulacion = opcion.categoria, opcion.motivo, detalle or None
+    _req_evento(r, 'ANULADO', _req_motivo_txt(opcion.categoria, opcion.motivo, detalle))
     db.session.commit()
     flash(f'{_req_codigo(r)} anulado.')
     return redirect(url_for('oc_req_detalle', req_id=r.id))
@@ -20465,7 +20544,7 @@ def oc_vaciar():
             _sembrar_motivos_compra_oc()
             for cat, mot in _OC_MOTIVOS_INICIALES:
                 db.session.add(OCMotivoRechazo(categoria=cat, motivo=mot, activo=True, uso='RECHAZO', aplica='AMBAS'))
-            for uso, aplica, cat, mot in _OC_MOTIVOS_V2:
+            for uso, aplica, cat, mot in _OC_MOTIVOS_V2 + _OC_MOTIVOS_RQ:
                 db.session.add(OCMotivoRechazo(categoria=cat, motivo=mot, activo=True, uso=uso, aplica=aplica))
             extra.append('U.M., condiciones de pago, tipos de servicio, áreas, solicitantes, motivos de compra, rechazo y anulación, '
                          'datos del PDF y número inicial de cada empresa')

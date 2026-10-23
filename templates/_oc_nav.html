@@ -32,9 +32,12 @@
     <a href="{{ url_for('oc_ingresos_pendientes') }}" class="{{ 'activa' if seccion == 'ingresos' }}"><i class="bi bi-box-arrow-in-down"></i> Ingresos pendientes
         {% if oc_por_ingresar %}<span class="cnt">{{ oc_por_ingresar }}</span>{% endif %}</a>
     {% endif %}
-    {% if session.get('role') in ['admin', 'logistica', 'almacen', 'administracion'] %}
-    <a href="{{ url_for('oc_req_lista') }}" class="{{ 'activa' if seccion in ['req', 'req_nuevo'] }}"><i class="bi bi-clipboard-plus"></i> Requerimientos
+    {% if session.get('role') in ['admin', 'logistica', 'almacen', 'administracion', 'almacen_visor'] %}
+    <a href="{{ url_for('oc_req_lista') }}" class="{{ 'activa' if seccion == 'req' }}"><i class="bi bi-clipboard-plus"></i> Requerimientos
         {% if oc_req_pendientes %}<span class="cnt" style="background:#7c3aed;" title="Requerimientos de Almacén esperando OC">{{ oc_req_pendientes }}</span>{% endif %}</a>
+    {% if session.get('role') in ['admin', 'logistica', 'almacen', 'almacen_visor'] %}
+    <a href="{{ url_for('oc_req_nuevo') }}" class="nueva {{ 'activa' if seccion == 'req_nuevo' }}" style="background:#f5f3ff; border-color:#ddd6fe; color:#6d28d9;"><i class="bi bi-clipboard-plus"></i> Nuevo requerimiento</a>
+    {% endif %}
     {% endif %}
     {% if puede_editar_oc %}
     <a href="{{ url_for('oc_nueva', tipo='OC') }}" class="nueva {{ 'activa' if seccion == 'nueva' }}"><i class="bi bi-plus-circle"></i> Nueva orden</a>

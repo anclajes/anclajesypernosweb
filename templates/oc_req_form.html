@@ -25,6 +25,10 @@
     .ayuda { font-size: .74rem; background: #eff6ff; border: 1px solid #bfdbfe; color: #1e3a8a; border-radius: 10px; padding: 7px 10px; }
     .stk { font-weight: 800; }
     .docs-zona { border: 2px dashed #cbd5e1; border-radius: 12px; padding: 10px; background: #f8fafc; }
+    .res-prod { border: 1px solid #e2e8f0; border-radius: 10px; padding: 7px 10px; margin-bottom: 6px; cursor: pointer; font-size: .8rem; }
+    .res-prod:hover { border-color: #0B3D91; background: #eff6ff; }
+    .res-prod .sku { font-weight: 800; color: #0B3D91; }
+    .pag-mp { display: flex; flex-wrap: wrap; gap: 6px; justify-content: space-between; align-items: center; margin: 6px 0; }
     .doc-sel { font-size: .74rem; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 3px 8px; display: inline-flex; gap: 6px; align-items: center; margin: 3px 3px 0 0; }
 </style>
 
@@ -44,14 +48,20 @@
                 {% endfor %}
             </div>
             <div class="row g-2">
-                <div class="col-12 col-sm-7"><div class="lbl req">Solicita</div>
-                    <input type="text" name="solicitante_nombre" class="form-control" maxlength="120" value="{{ pv.solicitante_nombre or mi_nombre }}" placeholder="Nombre de quien pide">
-                    <div class="form-text" style="font-size:.66rem;">Queda registrado con tu cuenta. Si lo pides a nombre de otra persona, escribe su nombre.</div></div>
+                <div class="col-12 col-sm-7"><div class="lbl req">¿Quién lo pide?</div>
+                    {% set sel_sol = pv.solicitante if pv.solicitante is defined and pv.solicitante else yo_valor %}
+                    <select name="solicitante" id="solicitante" class="form-select" onchange="pintarArea()"><option value="">— Vendedor, trabajador o quien te informó —</option>
+                        {% for grupo, ops in solicitantes %}<optgroup label="{{ grupo }}">
+                            {% for o in ops %}<option value="{{ o.valor }}" data-area="{{ o.area }}" {{ 'selected' if o.valor == sel_sol }}>{{ o.txt }}</option>{% endfor %}
+                        </optgroup>{% endfor %}
+                    </select>
+                    <div class="form-text" style="font-size:.66rem;">Registra: <b>{{ mi_nombre }}</b> (tu cuenta). Aquí elige a quien lo pidió: el vendedor de la venta, el trabajador o tú mismo.</div></div>
                 <div class="col-12 col-sm-5"><div class="lbl req">Área</div>
-                    <select name="area" class="form-select"><option value="">— Elige —</option>
+                    <select name="area" id="area" class="form-select"><option value="">— Elige —</option>
                         {% for a in areas %}<option value="{{ a }}" {{ 'selected' if a == pv.area }}>{{ a|title }}</option>{% endfor %}</select></div>
             </div>
-            <div class="lbl req mt-2">Motivo (para qué se necesitan)</div>
+            <div class="lbl req mt-2 d-flex">Motivo (para qué se necesitan)
+                {% if session.get('role') in ['admin', 'logistica'] %}<a class="ms-auto fw-normal small" href="{{ url_for('oc_config', tab='motivos_compra') }}" target="_blank"><i class="bi bi-gear"></i> Configurar motivos</a>{% endif %}</div>
             <div class="seg">
                 {% for m in motivos_compra %}
                 <input type="radio" name="motivo" id="mo_{{ loop.index }}" value="{{ m.nombre }}" data-cliente="{{ '1' if m.pide_cliente else '0' }}" {{ 'checked' if m.nombre|upper == (pv.motivo or '')|upper }} onchange="pintarMotivo()">
@@ -120,7 +130,10 @@
         <button type="button" class="quitar" title="Quitar"><i class="bi bi-x-circle-fill"></i></button>
         <input type="hidden" name="codigo[]" class="i-cod">
         <div class="position-relative mt-2">
-            <input type="text" class="form-control form-control-sm text-uppercase i-busca" autocomplete="off" placeholder="Busca por código o descripción...">
+            <div class="input-group input-group-sm">
+                <input type="text" class="form-control text-uppercase i-busca" autocomplete="off" placeholder="Escribe código o descripción, o usa Familia / Calidad →">
+                <button type="button" class="btn btn-outline-primary i-filtro" title="Buscar con Familia y Calidad"><i class="bi bi-funnel"></i> Familia / Calidad</button>
+            </div>
             <div class="list-group position-absolute w-100 shadow sug i-sug"></div>
         </div>
         <div class="i-prod"></div>
@@ -131,6 +144,25 @@
         </div>
     </div>
 </template>
+
+<!-- Buscador con Familia y Calidad (como en las órdenes de compra y los inventarios) -->
+<div class="modal fade" id="modalProd" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg"><div class="modal-content border-0 shadow">
+    <div class="modal-header py-2 text-white" style="background: var(--theme-primary, #0F172A);"><h6 class="modal-title fw-bold"><i class="bi bi-funnel"></i> Buscar en el inventario <span id="mp_emp"></span></h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+        <div class="row g-2 mb-2">
+            <div class="col-12 col-md-4"><label class="small fw-bold">Familia</label><select id="mp_familia" class="form-select"></select></div>
+            <div class="col-12 col-md-4"><label class="small fw-bold">Calidad</label><select id="mp_calidad" class="form-select"></select></div>
+            <div class="col-12 col-md-4"><label class="small fw-bold">Código o descripción</label><input type="search" id="mp_q" class="form-control" placeholder="Ej: 1/2" autocomplete="off"></div>
+        </div>
+        <div class="small text-muted mb-2" id="mp_total"></div>
+        <div id="mp_res"></div>
+    </div>
+    <div class="modal-footer p-2 justify-content-between">
+        <span class="small text-muted">¿No está? Pide al encargado que lo cree en el Maestro.</span>
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cerrar</button>
+    </div>
+</div></div></div>
 
 <script>
 const UMS = {{ ums|tojson }};
@@ -184,13 +216,14 @@ function agregarItem(d) {
                 const stk = p[`stock_${empresa()}`];
                 b.innerHTML = `<b>${esc(p.sku)}</b> — ${esc(p.descripcion)}<div class="text-muted">${esc([p.familia, p.calidad].filter(Boolean).join(' · '))}${stk != null ? ' · stock ' + nf(stk) : ''}</div>`;
                 b.onmousedown = e => e.preventDefault();
-                b.onclick = () => { fichaProd(fila, p); sug.style.display = 'none'; if (!fila.querySelector('.i-um').value && UMS.includes((p.um || '').toUpperCase())) opcionesUM(fila.querySelector('.i-um'), p.um.toUpperCase()); fila.querySelector('.i-cant').focus(); };
+                b.onclick = () => { sug.style.display = 'none'; elegir(fila, p); };
                 sug.appendChild(b);
             });
             sug.style.display = 'block';
         }).catch(() => {}), 280);
     });
     busca.addEventListener('blur', () => setTimeout(() => { sug.style.display = 'none'; if (!fila._p) fichaProd(fila, null); }, 180));
+    fila.querySelector('.i-filtro').onclick = () => abrirBuscador(fila);
     fila.querySelector('.quitar').onclick = () => { if (document.querySelectorAll('#items .rq-item').length > 1) { fila.remove(); numerar(); } else { busca.value = ''; fichaProd(fila, null); fila.querySelector('.i-cant').value = ''; } };
     numerar();
     return fila;
@@ -210,6 +243,62 @@ function pintarDocs() {
         + (archivos.length > {{ max_docs }} ? `<div class="text-danger">Máximo {{ max_docs }} archivos.</div>` : '')
         : 'Ningún archivo. PDF o foto (JPG, PNG), máx. 5 MB cada uno.';
 }
+// ---- quién lo pide: el área se sugiere según la cuenta ----
+let areaAuto = '';
+function pintarArea() {
+    const op = porId('solicitante').selectedOptions[0], area = op ? (op.dataset.area || '') : '', sel = porId('area');
+    if (area && (!sel.value || sel.value === areaAuto) && [...sel.options].some(o => o.value === area)) { sel.value = area; areaAuto = area; }
+}
+// ---- buscador con Familia / Calidad ----
+let filaBuscando = null, tMp = null, paginaMp = 1;
+function llenarSelect(sel, lista, valor, todos) {
+    const vals = lista.slice(); if (valor && !vals.includes(valor)) vals.unshift(valor);
+    sel.innerHTML = `<option value="">${todos}</option>` + vals.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+    sel.value = valor || '';
+}
+function paginador(d) {
+    if (!d.paginas || d.paginas < 2) return '';
+    const p = d.pagina, n = d.paginas;
+    return `<div class="pag-mp"><span class="small text-muted">Página ${p} de ${n} · ${d.total} producto(s)</span><div class="btn-group btn-group-sm">` +
+        `<button type="button" class="btn btn-outline-primary" data-p="${p - 1}" ${p === 1 ? 'disabled' : ''}>‹ Anterior</button>` +
+        `<button type="button" class="btn btn-outline-primary" data-p="${p + 1}" ${p === n ? 'disabled' : ''}>Siguiente ›</button></div></div>`;
+}
+function buscarModal(pagina) {
+    clearTimeout(tMp); paginaMp = typeof pagina === 'number' ? pagina : 1;
+    tMp = setTimeout(() => {
+        const fam = porId('mp_familia').value, cal = porId('mp_calidad').value, q = porId('mp_q').value.trim();
+        fetch(`{{ url_for('oc_api_productos') }}?q=${encodeURIComponent(q)}&familia=${encodeURIComponent(fam)}&calidad=${encodeURIComponent(cal)}&empresa=${empresa()}&solo_empresa=1&destino=GENERAL&pagina=${paginaMp}`)
+            .then(r => r.json()).then(d => {
+                llenarSelect(porId('mp_familia'), d.familias || [], fam, 'Todas las familias');
+                llenarSelect(porId('mp_calidad'), d.calidades || [], cal, 'Todas las calidades');
+                porId('mp_total').innerHTML = (q || fam || cal) ? `<b>${d.total}</b> producto(s)` : 'Elige una familia, una calidad o escribe para buscar.';
+                const cont = porId('mp_res'); cont.innerHTML = paginador(d);
+                (d.results || []).forEach(p => {
+                    const div = document.createElement('div'); div.className = 'res-prod'; const stk = p[`stock_${empresa()}`];
+                    div.innerHTML = `<span class="sku">${esc(p.sku)}</span> — ${esc(p.descripcion)}<div class="text-muted small">${esc([p.familia, p.calidad, p.estado].filter(Boolean).join(' · '))}${stk != null ? ' · stock <b>' + nf(stk) + '</b>' : ''}</div>`;
+                    div.onclick = () => { elegir(filaBuscando, p); bootstrap.Modal.getOrCreateInstance(porId('modalProd')).hide(); };
+                    cont.appendChild(div);
+                });
+                if (d.paginas > 1) cont.insertAdjacentHTML('beforeend', paginador(d));
+                cont.querySelectorAll('[data-p]').forEach(b => b.onclick = () => buscarModal(parseInt(b.dataset.p)));
+            }).catch(() => {});
+    }, typeof pagina === 'number' ? 0 : 220);
+}
+function abrirBuscador(fila) {
+    filaBuscando = fila;
+    porId('mp_emp').textContent = EMPRESAS[empresa()].corto;
+    porId('mp_q').value = '';
+    bootstrap.Modal.getOrCreateInstance(porId('modalProd')).show();
+    buscarModal();
+}
+function elegir(fila, p) {
+    fichaProd(fila, p);
+    if (!fila.querySelector('.i-um').value && UMS.includes((p.um || '').toUpperCase())) opcionesUM(fila.querySelector('.i-um'), p.um.toUpperCase());
+    fila.querySelector('.i-cant').focus();
+}
+porId('mp_familia').addEventListener('change', () => buscarModal());
+porId('mp_calidad').addEventListener('change', () => buscarModal());
+porId('mp_q').addEventListener('input', () => buscarModal());
 let tCli = null;
 function sugerirCli() {
     clearTimeout(tCli);
@@ -228,6 +317,7 @@ function sugerirCli() {
 document.addEventListener('click', e => { if (!e.target.closest('#cliBuscar')) porId('sugCli').style.display = 'none'; });
 porId('formReq').addEventListener('submit', function (e) {
     const err = [];
+    if (!porId('solicitante').value) err.push('Elige quién lo pide.');
     if (!document.querySelector('#formReq input[name=motivo]:checked')) err.push('Elige el motivo.');
     if (!this.area.value) err.push('Elige el área.');
     const filas = [...document.querySelectorAll('#items .rq-item')].filter(f => f.querySelector('.i-busca').value.trim() || f.querySelector('.i-cant').value);
@@ -240,7 +330,7 @@ porId('formReq').addEventListener('submit', function (e) {
     if (err.length) { e.preventDefault(); Swal.fire({ icon: 'warning', title: 'Falta información', html: [...new Set(err)].map(esc).join('<br>') }); return; }
     porId('btnEnviar').disabled = true;
 });
-pintarMotivo(); cambioEmpresa();
+pintarMotivo(); cambioEmpresa(); pintarArea();
 if (PREVIOS.length) PREVIOS.forEach(agregarItem); else agregarItem();
 </script>
 {% endblock %}

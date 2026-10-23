@@ -63,7 +63,8 @@
 
     <div class="tab-pane fade {{ 'show active' if tab == 'motivos_compra' }}" id="c-mcompra">
         <div class="card border-0 shadow-sm" style="max-width: 760px;"><div class="card-body">
-            <p class="small text-muted mb-2">Para qué se compra (se elige al crear la orden). Si marcas <b>"Pide cliente"</b>, la orden pedirá el RUC y la razón social del cliente.</p>
+            <p class="small text-muted mb-2">Para qué se compra. Se elige al crear la orden <b>y también en los Requerimientos de Almacén</b> ("Motivo: para qué se necesitan"): es la misma lista, así al jalar un requerimiento a la OC el motivo pasa igual.
+                Si marcas <b>"Pide cliente"</b>, se pedirá el RUC y la razón social del cliente.</p>
             <div class="row g-2 mb-3 align-items-end">
                 <div class="col-12 col-sm-7"><label class="small fw-bold">Motivo</label><input id="mc_nombre" class="form-control text-uppercase" placeholder="Ej: STOCK DE SEGURIDAD"></div>
                 <div class="col-6 col-sm-3"><div class="form-check mt-4"><input class="form-check-input" type="checkbox" id="mc_cli"><label class="form-check-label small" for="mc_cli">Pide cliente</label></div></div>
@@ -91,7 +92,7 @@
         <div class="col-12 col-xl-6"><div class="card border-0 shadow-sm h-100" style="border-top: 4px solid {{ '#b91c1c' if uso == 'RECHAZO' else '#334155' }} !important;"><div class="card-body">
             <h6 class="fw-bold mb-1"><i class="bi {{ 'bi-x-octagon' if uso == 'RECHAZO' else 'bi-slash-circle' }}"></i> Motivos de {{ 'rechazo' if uso == 'RECHAZO' else 'anulación' }}</h6>
             <p class="small text-muted mb-2">{% if uso == 'RECHAZO' %}Los elige <b>Gerencia</b> al rechazar una orden.{% else %}Se eligen al <b>anular</b> una orden (antes de que llegue el material o se haga el servicio).{% endif %}
-                Cada motivo puede ser para <b>OC</b>, <b>OS</b> o <b>ambas</b>. Además se escribe una descripción.</p>
+                Cada motivo puede ser para <b>OC</b>, <b>OS</b>, <b>ambas</b> o para los <b>Requerimientos</b> de Almacén{% if uso == 'RECHAZO' %} (los elige Logística al rechazar uno){% else %} (los elige quien lo pidió al anularlo){% endif %}. Además se escribe una descripción.</p>
             <div class="row g-2 mb-3 align-items-end">
                 <div class="col-6 col-sm-3"><label class="small fw-bold">Categoría</label>
                     <input id="m_cat_{{ uso }}" class="form-control form-control-sm text-uppercase" list="cats_{{ uso }}" placeholder="Ej: PRECIO"><datalist id="cats_{{ uso }}">{% for c in motivos[uso] %}<option value="{{ c }}">{% endfor %}</datalist></div>
@@ -106,7 +107,7 @@
             <table class="table table-sm align-middle mb-2 small"><tbody>
                 {% for m in lista %}{% set usado = uso_motivo.get((uso, m.categoria, m.motivo)) %}
                 <tr class="{{ 'opacity-50' if not m.activo }}"><td>{{ m.motivo }}{% if usado %}<div class="uso">usado en {{ usado }} orden(es)</div>{% endif %}</td>
-                    <td class="text-center" style="width:80px;"><span class="badge {{ 'text-bg-light border' if (m.aplica or 'AMBAS') == 'AMBAS' else ('bg-primary' if m.aplica == 'OC' else 'bg-purple') }}" style="{{ 'background:#7c3aed;' if m.aplica == 'OS' }}">{{ 'OC y OS' if (m.aplica or 'AMBAS') == 'AMBAS' else m.aplica }}</span></td>
+                    <td class="text-center" style="width:80px;"><span class="badge {{ 'text-bg-light border' if (m.aplica or 'AMBAS') == 'AMBAS' else ('bg-primary' if m.aplica == 'OC' else 'bg-purple') }}" style="{{ 'background:#7c3aed;' if m.aplica == 'OS' }}{{ 'background:#c2410c;' if m.aplica == 'RQ' }}">{{ 'OC y OS' if (m.aplica or 'AMBAS') == 'AMBAS' else ('Requerim.' if m.aplica == 'RQ' else m.aplica) }}</span></td>
                     <td class="text-center" style="width:70px;">{% if m.activo %}<span class="badge bg-success">Activo</span>{% else %}<span class="badge bg-secondary">Inactivo</span>{% endif %}</td>
                     <td class="acciones" style="width:110px;">
                         <button class="btn btn-sm btn-outline-primary" title="Editar" onclick="editarMotivo({{ {'id': m.id, 'categoria': m.categoria, 'motivo': m.motivo, 'aplica': m.aplica or 'AMBAS', 'uso': m.uso or 'RECHAZO'}|tojson|forceescape }})"><i class="bi bi-pencil"></i></button>
@@ -301,7 +302,7 @@ function editarMotivo(m) {
     const op = (v, t) => `<option value="${v}" ${m.aplica === v ? 'selected' : ''}>${t}</option>`;
     Swal.fire({ title: 'Editar motivo', html: `<input id="sw_cat" class="swal2-input" value="${m.categoria.replace(/"/g, '&quot;')}" placeholder="Categoría">
         <input id="sw_mot" class="swal2-input" value="${m.motivo.replace(/"/g, '&quot;')}" placeholder="Motivo">
-        <select id="sw_apl" class="swal2-select">${op('AMBAS', 'OC y OS')}${op('OC', 'Solo OC')}${op('OS', 'Solo OS')}</select>`, showCancelButton: true, confirmButtonText: 'Guardar', cancelButtonText: 'Cancelar',
+        <select id="sw_apl" class="swal2-select">${op('AMBAS', 'OC y OS')}${op('OC', 'Solo OC')}${op('OS', 'Solo OS')}${op('RQ', 'Requerimientos')}</select>`, showCancelButton: true, confirmButtonText: 'Guardar', cancelButtonText: 'Cancelar',
         preConfirm: () => ({ categoria: document.getElementById('sw_cat').value, motivo: document.getElementById('sw_mot').value, aplica: document.getElementById('sw_apl').value }) })
         .then(r => { if (r.isConfirmed) post('motivo', { id: m.id, uso: m.uso, categoria: r.value.categoria, motivo: r.value.motivo, aplica: r.value.aplica }, 'motivos'); });
 }

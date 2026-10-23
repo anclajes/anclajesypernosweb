@@ -95,12 +95,14 @@
 
 <form method="POST" action="{{ url_for('oc_guardar') }}" id="formOC" novalidate>
 <input type="hidden" name="id" value="{{ orden.id if orden else '' }}">
-{% set reaprob = orden and orden.estado == 'APROBADA' %}
+{% set reaprob = orden and orden.estado in ['APROBADA', 'RECIBIDA', 'CONFORME'] %}
 {% if reaprob %}
 <div class="reedit">
     <div class="tit"><i class="bi bi-exclamation-diamond-fill"></i> Estás editando una orden YA APROBADA · quedará como Rev. {{ (orden.revision or 0) + 1 }}</div>
     <div class="small mb-2">Al guardar, la orden <b>vuelve a Gerencia</b> ("Por aprobar") y el PDF pierde la firma hasta que la aprueben otra vez.
-        Se puede editar mientras <b>no llegue el material</b>, <b>no tenga factura subida</b> y <b>no esté pagada</b>. Mantiene su número {{ oc_codigo(orden) }}.</div>
+        Se puede editar mientras <b>no esté pagada</b> y Almacén <b>no haya ingresado</b> nada al inventario. Mantiene su número {{ oc_codigo(orden) }}.
+        {% if orden.fecha_llegada %}<br><b>El material ya llegó</b> ({{ orden.fecha_llegada.strftime('%d/%m/%Y') }}): úsalo para <b>cuadrar la orden</b> con lo que llegó de verdad (ej. llegó menos y se aceptó).
+        Al re-aprobarla vuelve a "{{ 'Conforme' if orden.fecha_conforme else 'Material llegó' }}" con todo lo ya registrado (guía, factura, conformidad).{% endif %}</div>
     <label class="small fw-bold">Motivo de la edición * <span class="fw-normal text-muted">(lo verá el Gerente al re-aprobar)</span></label>
     <textarea name="motivo_edicion" id="motivo_edicion" class="form-control" rows="2" maxlength="300" required minlength="10"
               placeholder="Ej: el proveedor cambió el precio de los pernos 1/2 (nueva cotización C-152); se agregan 20 arandelas">{{ pv.motivo_edicion or '' }}</textarea>
@@ -515,7 +517,7 @@ function pintarReqs() {
     porId('reqLista').innerHTML = lista.map(r => {
         const libres = r.items.filter(i => !usados.has(String(i.id)));
         return `<div class="req-b"><div class="cab"><a class="cod" href="${r.url}" target="_blank">${esc(r.codigo)}</a>${r.prioridad === 'URGENTE' ? '<span class="urg">URGENTE</span>' : ''}
-            <span><b>${esc(r.solicitante)}</b>${r.area ? ' (' + esc(r.area) + ')' : ''} · ${esc(r.fecha)}</span>
+            <span><b>${esc(r.solicitante)}</b>${r.area ? ' (' + esc(r.area) + ')' : ''} · ${esc(r.fecha)}${r.registro && r.registro !== r.solicitante ? ' · registró ' + esc(r.registro) : ''}</span>
             ${libres.length ? `<button type="button" class="btn btn-sm btn-success py-0 ms-auto" data-todo="${r.id}"><i class="bi bi-plus-lg"></i> Agregar todo (${libres.length})</button>` : '<span class="ms-auto small text-success fw-bold">Todo en esta orden</span>'}</div>
             <div class="meta">${esc(r.motivo)}${r.cliente_razon ? ' · cliente <b>' + esc(r.cliente_razon) + '</b>' : ''}${r.oc_cliente ? ' · OC cliente <b>' + esc(r.oc_cliente) + '</b>' : ''}${r.necesita ? ' · para el <b>' + esc(r.necesita) + '</b>' : ''}
                 ${r.docs.map(d => ` · <a href="${d.url}" target="_blank"><i class="bi bi-paperclip"></i>${esc(d.nombre)}</a>`).join('')}${r.nota ? '<div><i class="bi bi-chat-left-text"></i> ' + esc(r.nota) + '</div>' : ''}</div>
@@ -534,7 +536,7 @@ function jalarReq(r, i) {
                   calidad: i.calidad, req_item: i.id, req_txt: `${r.codigo} · ${r.solicitante}` });
     // ¿quién lo pide y para qué? se llena con los datos del requerimiento si está vacío
     const sol = porId('solicitante');
-    if (!sol.value && r.user_id && [...sol.options].some(o => o.value === 'u:' + r.user_id)) { sol.value = 'u:' + r.user_id; pintarArea(); }
+    if (!sol.value && r.sol_valor && [...sol.options].some(o => o.value === r.sol_valor)) { sol.value = r.sol_valor; pintarArea(); }
     const area = porId('area_solicitante');
     if (r.area && (!area.value || area.value === areaAuto) && [...area.options].some(o => o.value === r.area)) area.value = r.area;
     if (!document.querySelector('input[name=motivo_compra]:checked')) {

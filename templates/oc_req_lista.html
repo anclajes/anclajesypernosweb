@@ -17,6 +17,11 @@
     .req-card .it:last-child { border-bottom: 0; }
     .req-card .ds { font-weight: 700; font-size: .84rem; overflow-wrap: anywhere; }
     .tag-sku { font-size: .66rem; font-weight: 800; background: #dcfce7; color: #166534; border-radius: 5px; padding: 0 6px; }
+    .kpis-rq { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+    .kpis-rq div { background: #fff; border: 1px solid #e2e8f0; border-left: 4px solid var(--c); border-radius: 12px; padding: 8px 12px; }
+    .kpis-rq b { display: block; font-size: 1.35rem; color: var(--c); line-height: 1.1; }
+    .kpis-rq span { font-size: .72rem; color: #475569; font-weight: 600; }
+    @media (max-width: 575.98px) { .kpis-rq { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
     .como { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 10px 14px; margin-bottom: 12px; font-size: .78rem; }
     .como summary { font-weight: 800; color: #0B3D91; cursor: pointer; font-size: .84rem; }
 </style>
@@ -29,9 +34,14 @@
         <option value="TODAS">Las dos empresas</option>
         {% for e, info in empresas_oc.items() %}<option value="{{ e }}" {{ 'selected' if emp_sel == e }}>{{ info.corto }}</option>{% endfor %}
     </select>
-    {% if puede_crear %}<a href="{{ url_for('oc_req_nuevo') }}" class="nuevo-rq"><i class="bi bi-plus-circle"></i> Nuevo requerimiento</a>{% endif %}
 </div>
 
+<div class="kpis-rq mb-2" title="{{ 'Solo los pedidos por ti' if vista == 'mios' else 'Todos los requerimientos' }}">
+    <div style="--c:#b45309;"><b>{{ cuenta.esperando }}</b><span>Esperando OC</span></div>
+    <div style="--c:#0B3D91;"><b>{{ cuenta.en_proceso }}</b><span>En proceso (con OC)</span></div>
+    <div style="--c:#dc2626;"><b>{{ cuenta.urgentes }}</b><span>Urgentes abiertos</span></div>
+    <div style="--c:#15803d;"><b>{{ cuenta.completados_k or 0 }}</b><span>Completados</span></div>
+</div>
 <details class="como" {{ 'open' if not filas }}>
     <summary><i class="bi bi-info-circle"></i> ¿Cómo funciona?</summary>
     <ol class="mb-0 mt-1 ps-3">
@@ -50,10 +60,11 @@
             {% if r.prioridad == 'URGENTE' %}<span class="rq-urg">URGENTE</span>{% endif %}
             <span class="rq-estado ms-auto" style="color: {{ res.color }};"><i class="bi {{ res.icono }}"></i> {{ res.txt }}</span>
         </div>
-        <div class="meta"><i class="bi bi-person"></i> <b>{{ r.solicitante_nombre }}</b>{% if r.area %} ({{ r.area|title }}){% endif %} · {{ r.fecha_registro.strftime('%d/%m/%Y %H:%M') }}
+        <div class="meta"><i class="bi bi-person"></i> Lo pide <b>{{ r.solicitante_nombre }}</b>{% if r.area %} ({{ r.area|title }}){% endif %}{% if r.creado_por and r.creado_por.id != r.solicitante_user_id %} · registró {{ r.creado_por.nombre_completo or r.creado_por.username }}{% endif %} · {{ r.fecha_registro.strftime('%d/%m/%Y %H:%M') }}
             {% if r.motivo %}· {{ r.motivo|capitalize }}{% endif %}{% if r.cliente_razon %} · cliente <b>{{ r.cliente_razon }}</b>{% endif %}{% if r.oc_cliente %} · OC cliente <b>{{ r.oc_cliente }}</b>{% endif %}
             {% if r.necesita_para %}· para el <b class="{{ 'text-danger' if r.necesita_para <= hoy and res.paso < 6 }}">{{ r.necesita_para.strftime('%d/%m/%Y') }}</b>{% endif %}</div>
-        {% if r.estado == 'RECHAZADO' %}<div class="meta text-danger"><i class="bi bi-x-octagon"></i> Rechazado: {{ r.motivo_rechazo }}</div>{% endif %}
+        {% if r.estado == 'RECHAZADO' %}<div class="meta text-danger"><i class="bi bi-x-octagon"></i> Rechazado: {{ req_motivo_txt(r.rechazo_categoria, r.rechazo_opcion, r.motivo_rechazo) }}</div>{% endif %}
+        {% if r.estado == 'ANULADO' and (r.anulacion_opcion or r.motivo_anulacion) %}<div class="meta text-muted"><i class="bi bi-slash-circle"></i> Anulado: {{ req_motivo_txt(r.anulacion_categoria, r.anulacion_opcion, r.motivo_anulacion) }}</div>{% endif %}
     </div>
     {% for i in r.items %}{% set s = sg[i.id] %}
     <div class="it">

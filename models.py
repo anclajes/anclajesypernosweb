@@ -1505,7 +1505,8 @@ class RequerimientoCompra(db.Model):
     estado = db.Column(db.String(12), nullable=False, default='PENDIENTE', index=True)   # PENDIENTE / RECHAZADO / ANULADO (el resto se calcula)
     prioridad = db.Column(db.String(10), default='NORMAL')                      # NORMAL / URGENTE
     fecha_registro = db.Column(db.DateTime, default=hora_peru)
-    creado_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    creado_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)     # quién lo registró (la cuenta)
+    solicitante_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)   # quién lo pide (vendedor, trabajador...)
     solicitante_nombre = db.Column(db.String(120))
     area = db.Column(db.String(80))
     motivo = db.Column(db.String(120))
@@ -1516,12 +1517,18 @@ class RequerimientoCompra(db.Model):
     nota = db.Column(db.String(500))
     rechazado_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     fecha_rechazo = db.Column(db.DateTime)
-    motivo_rechazo = db.Column(db.String(300))
+    motivo_rechazo = db.Column(db.String(300))                 # descripción escrita
+    rechazo_categoria = db.Column(db.String(60))
+    rechazo_opcion = db.Column(db.String(150))
     anulado_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     fecha_anulacion = db.Column(db.DateTime)
+    motivo_anulacion = db.Column(db.String(300))
+    anulacion_categoria = db.Column(db.String(60))
+    anulacion_opcion = db.Column(db.String(150))
 
     items = db.relationship('RequerimientoItem', backref='requerimiento', order_by='RequerimientoItem.item', cascade='all, delete-orphan')
     creado_por = db.relationship('User', foreign_keys=[creado_por_id])
+    solicitante = db.relationship('User', foreign_keys=[solicitante_user_id])
     rechazado_por = db.relationship('User', foreign_keys=[rechazado_por_id])
     anulado_por = db.relationship('User', foreign_keys=[anulado_por_id])
 

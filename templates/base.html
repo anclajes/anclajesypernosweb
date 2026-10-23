@@ -81,6 +81,13 @@
                 <a href="{{ url_for('procesos_oc') }}" class="nav-link {{ 'active' if request.endpoint in ['procesos_oc', 'proceso_oc_detalle'] }}">
                     <i class="bi bi-diagram-3 me-2"></i> <span>Procesos por OC</span>
                 </a>
+                <div class="nav-title mt-2">Pedir productos que faltan</div>
+                <a href="{{ url_for('oc_req_nuevo') }}" class="nav-link {{ 'active' if request.endpoint == 'oc_req_nuevo' }}">
+                    <i class="bi bi-clipboard-plus me-2"></i> <span>Nuevo requerimiento</span>
+                </a>
+                <a href="{{ url_for('oc_req_lista', vista='mios') }}" class="nav-link {{ 'active' if request.endpoint in ['oc_req_lista', 'oc_req_detalle'] }}">
+                    <i class="bi bi-list-check me-2"></i> <span>Mis requerimientos</span>
+                </a>
             {% else %}
                 <!-- ================================== -->
                 <!-- MENÚ NORMAL (resto de roles)        -->
