@@ -216,12 +216,27 @@
             <p class="small text-muted">Para empezar de cero después de probar. Borra <b>solo</b> este módulo; inventarios, Kardex, Insumos y demás <b>no se tocan</b>. No se puede deshacer.</p>
             <div class="border rounded p-2 mb-2 small" style="background:#fef2f2; border-color:#fecaca !important;">
                 <div class="form-check"><input class="form-check-input" type="checkbox" checked disabled><label class="form-check-label fw-bold">Órdenes (siempre)</label></div>
-                <div class="text-muted">{{ conteo.ordenes }} orden(es) con sus ítems e historial, y <b>{{ conteo.documentos }} archivo(s)</b> subidos (guías, facturas). La numeración vuelve a 000001.</div>
+                <div class="text-muted">{{ conteo.ordenes }} orden(es) (OC y OS de las dos empresas) con sus ítems, historial, pagos y re-aprobaciones, y <b>{{ conteo.documentos }} archivo(s)</b> subidos (guías, facturas, certificados, pagos).
+                    También desaparecen de <b>Ingresos pendientes</b> y de <b>Insumos → Pendientes de OC</b>.
+                    La numeración vuelve a 000001{% if conteo.inicio %}, salvo el número inicial configurado
+                    ({% for k, v in conteo.inicio.items() %}{{ k }}: {{ v }}{{ ', ' if not loop.last }}{% endfor %}) — se reinicia también si marcas la 3ª opción{% endif %}.</div>
             </div>
+            {% if conteo.movs_kardex or conteo.ingresos_insumos %}
+            <div class="border rounded p-2 mb-2 small" style="background:#fffbeb; border-color:#fde68a !important;">
+                <div class="fw-bold" style="color:#92400e;"><i class="bi bi-exclamation-triangle-fill"></i> Esto NO se borra (está en otros módulos y ya movió el stock):</div>
+                {% if conteo.movs_kardex %}<div class="mt-1"><b>{{ conteo.movs_kardex|length }} movimiento(s) del Kardex</b> registrados desde estas órdenes. Quedan en el Kardex sin enlace a la orden.
+                    Si eran de prueba, corrige el stock con una <b>salida de ajuste</b> en cada Kardex:</div>
+                <ul class="mb-1 ps-3" style="max-height: 160px; overflow-y: auto;">{% for m in conteo.movs_kardex %}
+                    <li>Kardex {{ m.kardex }} · <b>{{ m.sku }}</b> {{ '+' if m.tipo == 'ENTRADA' else '-' }}{{ m.cantidad }} · {{ m.fecha.strftime('%d/%m/%Y') if m.fecha else '' }} · mov. #{{ m.id }}</li>{% endfor %}</ul>{% endif %}
+                {% if conteo.ingresos_insumos %}<div><b>{{ conteo.ingresos_insumos }} ingreso(s) a Insumos</b> hechos desde órdenes: siguen en Insumos. Si eran de prueba, anúlalos allí.</div>{% endif %}
+            </div>
+            {% endif %}
             <div class="border rounded p-2 mb-2 small"><div class="form-check"><input class="form-check-input" type="checkbox" name="proveedores" value="1" id="v_prov">
-                <label class="form-check-label fw-bold" for="v_prov">También los proveedores ({{ conteo.proveedores }}) y sus contactos ({{ conteo.contactos }})</label></div></div>
+                <label class="form-check-label fw-bold" for="v_prov">También los proveedores ({{ conteo.proveedores }}), sus contactos ({{ conteo.contactos }}) y cuentas bancarias ({{ conteo.cuentas }})</label></div>
+                <div class="text-muted">Solo la lista propia de órdenes. Los proveedores del Kardex no se tocan.</div></div>
             <div class="border rounded p-2 mb-2 small"><div class="form-check"><input class="form-check-input" type="checkbox" name="catalogos" value="1" id="v_cat">
-                <label class="form-check-label fw-bold" for="v_cat">También U.M., condiciones de pago, motivos de rechazo y datos del PDF</label></div><div class="text-muted">Vuelven a los valores iniciales.</div></div>
+                <label class="form-check-label fw-bold" for="v_cat">También la configuración: U.M., condiciones de pago, tipos de servicio, áreas, solicitantes, motivos (compra, rechazo, anulación) y datos del PDF de las dos empresas</label></div>
+                <div class="text-muted">Vuelven a los valores iniciales (también el número inicial de cada empresa). Si ya dejaste lista la configuración real, <b>no marques esta</b>.</div></div>
             <label class="small fw-bold mt-2">Para confirmar, escribe <span class="text-danger">BORRAR ORDENES</span></label>
             <input name="confirmacion" class="form-control mb-2" autocomplete="off" placeholder="BORRAR ORDENES">
             <button class="btn btn-danger fw-bold w-100" id="btnVaciar"><i class="bi bi-trash3-fill"></i> Vaciar datos del módulo</button>

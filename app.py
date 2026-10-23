@@ -19751,7 +19751,8 @@ def oc_config():
     conteo = None
     if es_admin:
         conteo = {'ordenes': OrdenCompra.query.count(), 'documentos': OrdenCompraDocumento.query.count(),
-                  'proveedores': OCProveedor.query.count(), 'contactos': OCContacto.query.count()}
+                  'proveedores': OCProveedor.query.count(), 'contactos': OCContacto.query.count(),
+                  'cuentas': OCCuentaBancaria.query.count(), **_oc_vinculos_fuera()}
     uso_um = {}
     for (um, n) in db.session.query(OrdenCompraItem.um, func.count(OrdenCompraItem.id)).group_by(OrdenCompraItem.um).all():
         uso_um[um] = n
@@ -19986,6 +19987,28 @@ def oc_config_datos():
     return redirect(destino)
 
 
+def _oc_vinculos_fuera():
+    """Lo que las órdenes ya movieron en OTROS módulos (no se borra al vaciar): movimientos del Kardex hechos desde una orden,
+    ingresos a Insumos y el número inicial configurado de cada empresa."""
+    movs = []
+    for origen, Mov, Prod in (('Anclajes', ProductMovement, Product), ('Import Bolts', ProductMovementImportBolts, ProductImportBolts)):
+        try:
+            for m in Mov.query.filter(Mov.orden_compra_id.isnot(None)).order_by(Mov.id).all():
+                prod = Prod.query.get(m.product_id)
+                movs.append({'kardex': origen, 'id': m.id, 'sku': prod.sku if prod else '?', 'cantidad': m.cantidad,
+                             'fecha': m.fecha, 'tipo': m.tipo})
+        except Exception:
+            db.session.rollback()
+    ingresos_ins = OrdenCompra.query.filter(OrdenCompra.insumo_ingreso_id.isnot(None)).count()
+    inicio = {}
+    for e in EMPRESAS_OC:
+        for t in TIPOS_OC:
+            v = OCConfig.query.get(_oc_clave_cfg(e, f'num_{t}'))
+            if v and (v.valor or '').isdigit() and int(v.valor) > 1:
+                inicio[f"{t} {EMPRESAS_OC[e]['corto']}"] = _oc_numero_txt(None, int(v.valor), e)
+    return {'movs_kardex': movs, 'ingresos_insumos': ingresos_ins, 'inicio': inicio}
+
+
 @app.route('/ordenes/config/vaciar', methods=['POST'])
 @_ruta_oc('admin')
 def oc_vaciar():
@@ -19999,6 +20022,13 @@ def oc_vaciar():
     n = OrdenCompra.query.count()
     extra = []
     try:
+        # Los movimientos del Kardex hechos desde una orden NO se borran (el stock ya se movió): solo se les quita el enlace
+        n_movs = 0
+        for Mov in (ProductMovement, ProductMovementImportBolts):
+            n_movs += Mov.query.filter(Mov.orden_compra_id.isnot(None)).update(
+                {'orden_compra_id': None, 'orden_item_id': None}, synchronize_session=False) or 0
+        if n_movs:
+            extra.append(f'{n_movs} movimiento(s) del Kardex quedaron sin enlace a la orden (no se borran)')
         for modelo in (OrdenCompraDocumento, OrdenCompraEvento, OrdenCompraItem, OrdenCompra):
             modelo.query.delete(synchronize_session=False)
         if f.get('proveedores') == '1':
@@ -20018,7 +20048,8 @@ def oc_vaciar():
                 db.session.add(OCMotivoRechazo(categoria=cat, motivo=mot, activo=True, uso='RECHAZO', aplica='AMBAS'))
             for uso, aplica, cat, mot in _OC_MOTIVOS_V2:
                 db.session.add(OCMotivoRechazo(categoria=cat, motivo=mot, activo=True, uso=uso, aplica=aplica))
-            extra.append('U.M., condiciones de pago, áreas, solicitantes, motivos de compra y de rechazo, y datos del PDF')
+            extra.append('U.M., condiciones de pago, tipos de servicio, áreas, solicitantes, motivos de compra, rechazo y anulación, '
+                         'datos del PDF y número inicial de cada empresa')
         registrar_log(f"VACIÓ los datos de Órdenes de Compra: {n} orden(es), {len(claves)} archivo(s)"
                       + (f" + {', '.join(extra)}" if extra else ''), 'bi-trash3-fill', 'text-danger')
         db.session.commit()
@@ -20028,7 +20059,8 @@ def oc_vaciar():
         flash(f'⛔ No se pudo vaciar (no se borró nada): {e}')
         return redirect(destino)
     _borrar_de_s3(claves)
-    flash(f"✅ Órdenes vaciadas: {n} orden(es) y {len(claves)} archivo(s) borrados. La numeración vuelve a empezar en 000001"
+    flash(f"✅ Órdenes vaciadas: {n} orden(es) y {len(claves)} archivo(s) borrados. La numeración vuelve a empezar"
+          + (' en 000001' if f.get('catalogos') == '1' else ' (desde el número inicial configurado de cada empresa, si hay uno)')
           + (f"; además: {', '.join(extra)}" if extra else '') + '.')
     return redirect(destino)
 
