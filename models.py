@@ -1286,6 +1286,8 @@ class OCMotivoRechazo(db.Model):
     categoria = db.Column(db.String(60), nullable=False)
     motivo = db.Column(db.String(150), nullable=False)
     activo = db.Column(db.Boolean, default=True)
+    uso = db.Column(db.String(10), default='RECHAZO')      # RECHAZO (Gerencia) / ANULACION
+    aplica = db.Column(db.String(5), default='AMBAS')      # OC / OS / AMBAS
 
 
 class OrdenCompra(db.Model):
@@ -1339,7 +1341,10 @@ class OrdenCompra(db.Model):
     rechazo_opcion = db.Column(db.String(150))
     anulado_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     fecha_anulacion = db.Column(db.DateTime, nullable=True)
-    motivo_anulacion = db.Column(db.String(300))
+    motivo_anulacion = db.Column(db.String(300))           # descripción escrita
+    anulacion_categoria = db.Column(db.String(60))
+    anulacion_opcion = db.Column(db.String(150))
+    detraccion_pct = db.Column(db.Float)                    # % de detracción SUNAT (vacío = no aplica)
     # Recepción del material
     fecha_llegada = db.Column(db.DateTime, nullable=True)
     recibido_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)

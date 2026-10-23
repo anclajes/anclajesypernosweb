@@ -61,6 +61,8 @@
     .motivo-op { display: flex; gap: 10px; align-items: flex-start; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 8px 10px; margin-bottom: 5px; cursor: pointer; font-size: .86rem; }
     .motivo-op:hover { border-color: #fca5a5; }
     .motivo-op:has(input:checked) { border-color: #dc2626; background: #fef2f2; font-weight: 600; }
+    .motivo-op.anul:hover { border-color: #94a3b8; }
+    .motivo-op.anul:has(input:checked) { border-color: #334155; background: #f1f5f9; }
     .docs-grid { display: grid; grid-template-columns: 1fr; gap: 8px; }
     .doc-tipo { border: 1px solid #e2e8f0; border-radius: 12px; padding: 8px 10px; }
     .doc-tipo .cab { display: flex; align-items: center; gap: 8px; }
@@ -163,7 +165,7 @@
             <div class="small">Motivo: {{ oc_rechazo_txt(orden) }}</div></div></div>
     {% elif orden.estado == 'ANULADA' %}
         <div class="sello anul"><i class="bi bi-slash-circle"></i><div><b>ANULADA por {{ orden.anulado_por.nombre_completo if orden.anulado_por else '-' }}</b> · {{ orden.fecha_anulacion.strftime('%d/%m/%Y %H:%M') }}
-            <div class="small">Razón: {{ orden.motivo_anulacion }}</div></div></div>
+            <div class="small">Motivo: {{ oc_anulacion_txt(orden) }}</div></div></div>
     {% elif orden.estado == 'ENVIADA' %}
         <div class="sello pend"><i class="bi bi-hourglass-split"></i><div><b>Esperando aprobación de Gerencia</b>
             <div class="small">Enviada por {{ orden.enviado_por.nombre_completo if orden.enviado_por else '-' }} el {{ orden.fecha_envio.strftime('%d/%m/%Y %H:%M') }}. El PDF dice "PENDIENTE DE APROBACIÓN".</div></div></div>
@@ -235,6 +237,9 @@
                 <div class="dato-c"><div class="k"><i class="bi bi-credit-card"></i> Pago</div><div class="v">{{ orden.condicion_pago }}</div></div>
                 <div class="dato-c"><div class="k"><i class="bi bi-cash-coin"></i> Moneda</div><div class="v">{{ mon.simbolo }} {{ mon.nombre }}</div></div>
                 <div class="dato-c"><div class="k"><i class="bi bi-file-text"></i> Cotización</div><div class="v">{{ orden.cotizacion or '—' }}</div></div>
+                {% set det = oc_detraccion(orden) %}
+                <div class="dato-c"><div class="k"><i class="bi bi-bank2"></i> Detracción</div><div class="v">{% if det %}{{ det.pct_txt }}% · {{ mon.simbolo }} {{ '{:,.2f}'.format(det.monto) }}{% else %}No aplica{% endif %}</div>
+                    {% if det %}<div class="h">Neto al proveedor: {{ mon.simbolo }} {{ '{:,.2f}'.format(det.neto) }}</div>{% endif %}</div>
                 <div class="dato-c"><div class="k"><i class="bi bi-calendar-event"></i> Fecha de entrega</div><div class="v">{{ oc_entrega_txt(orden) }}</div>
                     {% set esp = oc_fecha_esperada(orden) %}{% if esp and orden.entrega_tipo == 'DIAS' %}<div class="h">≈ {{ esp.strftime('%d/%m/%Y') }}</div>{% endif %}</div>
                 <div class="dato-c" style="grid-column: 1 / -1;"><div class="k"><i class="bi {{ 'bi-person-walking' if orden.entrega_modo == 'RECOJO' else 'bi-truck' }}"></i> {{ 'Se recoge en' if orden.entrega_modo == 'RECOJO' else 'Llega a la empresa' }}</div>
@@ -328,6 +333,9 @@
                 {% endif %}
                 <div class="pago-fila"><span>Condición</span><span>{{ orden.condicion_pago or '—' }}</span></div>
                 <div class="pago-fila"><span>Monto</span><span>{{ mon.simbolo }} {{ '{:,.2f}'.format(orden.total or 0) }}</span></div>
+                {% set det = oc_detraccion(orden) %}{% if det %}
+                <div class="pago-fila"><span>Detracción {{ det.pct_txt }}% <span class="fw-normal">(Banco de la Nación)</span></span><span>{{ mon.simbolo }} {{ '{:,.2f}'.format(det.monto) }}</span></div>
+                <div class="pago-fila"><span>Pagar al proveedor</span><span>{{ mon.simbolo }} {{ '{:,.2f}'.format(det.neto) }}</span></div>{% endif %}
                 {% if pago.credito %}
                 <div class="pago-fila"><span>Vence</span><span>{{ pago.vence.strftime('%d/%m/%Y') }}{% if pago.estimado %} <span class="fw-normal">(estimado)</span>{% endif %}</span></div>
                 <div class="pago-fila"><span>Se cuenta desde</span><span class="fw-normal">{{ pago.base.strftime('%d/%m/%Y') }} · {{ pago.base_txt }}</span></div>
@@ -465,9 +473,14 @@
 
 {% if p.anular %}{% call modal('mAnular', 'Anular ' ~ oc_codigo(orden), '#334155') %}
 <form method="POST" action="{{ url_for('oc_anular', orden_id=orden.id) }}"><div class="modal-body">
-    <label class="small fw-bold">Razón de la anulación *</label>
-    <textarea name="motivo" class="form-control" rows="3" minlength="5" maxlength="300" required placeholder="Ej: el proveedor ya no tiene stock"></textarea>
-    <div class="form-text">Queda registrado quién la anuló y por qué. El número no se vuelve a usar.</div>
+    <div class="small fw-bold">Motivo de la anulación *</div>
+    {% for cat, lista in motivos_anul.items() %}
+    <div class="motivo-cat" style="color:#334155;">{{ cat }}</div>
+    {% for m in lista %}<label class="motivo-op anul"><input class="form-check-input mt-1" type="radio" name="motivo_id" value="{{ m.id }}" required><span>{{ m.motivo }}</span></label>{% endfor %}
+    {% else %}<div class="text-muted small">No hay motivos de anulación configurados (Órdenes → Configuración).</div>{% endfor %}
+    <label class="small fw-bold mt-2">Describe lo que pasó</label>
+    <textarea name="motivo" class="form-control" rows="3" maxlength="300" placeholder="Ej: llamamos el lunes y el proveedor ya no tiene stock hasta diciembre"></textarea>
+    <div class="form-text">Queda registrado quién la anuló, el motivo y la descripción. El número no se vuelve a usar.</div>
 </div><div class="modal-footer p-2"><button class="btn btn-dark w-100 fw-bold">Anular orden</button></div></form>
 {% endcall %}{% endif %}
 
@@ -534,6 +547,9 @@
     <div class="pago-box {{ pago.nivel }} mb-2">
         <div class="d-flex justify-content-between align-items-baseline gap-2"><span class="small">Monto de la orden</span><span class="grande num">{{ mon.simbolo }} {{ '{:,.2f}'.format(orden.total or 0) }}</span></div>
         <div class="small">{{ orden.razon_social }} · {{ orden.condicion_pago }}{% if pago.credito %} · vence {{ pago.vence.strftime('%d/%m/%Y') }}{% endif %}</div>
+        {% set det = oc_detraccion(orden) %}{% if det %}
+        <div class="small mt-1"><b>Detracción {{ det.pct_txt }}%: {{ mon.simbolo }} {{ '{:,.2f}'.format(det.monto) }}</b> a la cuenta de detracciones (Banco de la Nación) ·
+            <b>al proveedor: {{ mon.simbolo }} {{ '{:,.2f}'.format(det.neto) }}</b></div>{% endif %}
     </div>
     <div class="small fw-bold mb-1"><i class="bi bi-bank"></i> Cuentas del proveedor <span class="fw-normal text-muted">— toca <b>Copiar</b> y pega en tu banco; marca la que usaste (opcional)</span></div>
     <div id="ctasPago" class="mb-2"></div>
@@ -602,8 +618,18 @@ function pintarCuentas(lista) {
 pintarCuentas();
 function mostrarArchivo(btn) {
     const inp = btn.parentElement.querySelector('input[type=file]');
-    inp.classList.remove('d-none'); btn.remove(); inp.click();
+    inp.classList.remove('d-none'); inp.dataset.oculto = '1'; btn.classList.add('d-none'); inp.click();
 }
+// Al cerrar una ventana sin guardar, se descarta lo escrito: al abrirla otra vez muestra lo que está GUARDADO en el sistema.
+document.addEventListener('hidden.bs.modal', ev => {
+    ev.target.querySelectorAll('form').forEach(f => {
+        f.reset(); delete f.dataset.ok;
+        f.querySelectorAll('input[type=file][data-oculto]').forEach(i => { i.classList.add('d-none'); delete i.dataset.oculto; });
+        f.querySelectorAll('.cdoc button.d-none').forEach(b => b.classList.remove('d-none'));
+        f.querySelectorAll('button[disabled]').forEach(b => b.disabled = false);
+    });
+    const otra = document.getElementById('boxOtra'); if (otra) otra.style.display = 'none';
+});
 function subirDoc(inp) {
     if (!inp.files.length) return;
     if (!inp.dataset.reemplaza) return inp.form.submit();

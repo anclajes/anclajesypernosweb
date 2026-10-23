@@ -66,6 +66,7 @@
     .motivos label small { font-size: .64rem; }
     .cliente-box { border: 1.5px dashed #7dd3fc; background: #f0f9ff; border-radius: 10px; padding: 8px 10px; }
     .aviso-cert { background: #fffbeb; border: 1px solid #fde68a; color: #78350f; border-radius: 8px; padding: 6px 10px; font-size: .74rem; margin-top: 8px; }
+    .detr-box { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 10px; padding: 7px 10px; }
     .peso-linea { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: .72rem; color: #475569; background: #f8fafc; border-radius: 8px; padding: 4px 8px; }
     .peso-linea select { width: auto; flex: 0 0 auto; }
     .peso-linea input { width: 96px; flex: 0 0 auto; }
@@ -256,6 +257,18 @@
                         {% if pv.condicion_pago and pv.condicion_pago not in condiciones %}<option value="{{ pv.condicion_pago }}" selected>{{ pv.condicion_pago }}</option>{% endif %}
                     </select></div>
             </div>
+            <div class="detr-box mt-3">
+                <div class="form-check form-switch m-0">
+                    <input class="form-check-input" type="checkbox" role="switch" name="aplica_detraccion" value="1" id="aplica_detraccion"
+                           {{ 'checked' if pv.get('detraccion_pct') }} data-definido="{{ '1' if 'detraccion_pct' in pv else '' }}" onchange="this.dataset.tocado = '1'; pintarDetraccion()">
+                    <label class="form-check-label small fw-bold" for="aplica_detraccion">Afecta a detracción (SUNAT)</label>
+                </div>
+                <div id="boxDetr" class="d-flex align-items-center gap-2 mt-1" style="display:none !important;">
+                    <div class="input-group input-group-sm" style="max-width: 130px;"><input type="number" step="0.01" min="0.01" max="100" name="detraccion_pct" id="detraccion_pct" class="form-control"
+                        value="{{ pv.get('detraccion_pct') or detraccion_def }}" oninput="recalcular()"><span class="input-group-text">%</span></div>
+                    <span class="small text-muted">Sugerido {{ '%g' % detraccion_def }}% en servicios. Sale en el PDF y en el pago.</span>
+                </div>
+            </div>
             <div class="lbl req mt-3">Entrega del material</div>
             <div class="seg mb-2">
                 <input type="radio" name="entrega_modo" id="em_EMPRESA" value="EMPRESA" {{ 'checked' if (pv.entrega_modo or 'EMPRESA') == 'EMPRESA' }} onchange="pintarEntrega()">
@@ -291,6 +304,10 @@
             <div class="fila small"><span>Subtotal</span><span id="tSub">0.00</span></div>
             <div class="fila small"><span>IGV ({{ (igv * 100)|int }}%)</span><span id="tIgv">0.00</span></div>
             <div class="fila mt-1 align-items-baseline"><span>TOTAL</span><span class="grande" id="tTot">0.00</span></div>
+            <div id="tDetr" style="display:none;">
+                <div class="fila small mt-1" style="color:#fca5a5;"><span>Detracción (<span id="tDetrPct"></span>%)</span><span id="tDetrMonto"></span></div>
+                <div class="fila small"><span>Neto a pagar al proveedor</span><span id="tNeto"></span></div>
+            </div>
             <div class="fila small mt-1" id="tPesoFila" style="display:none; opacity:.8;"><span><i class="bi bi-speedometer2"></i> Peso total</span><span id="tPeso"></span></div>
         </div>
 
@@ -337,12 +354,12 @@
 
 <!-- Buscador de productos con Familia y Calidad -->
 <div class="modal fade" id="modalProd" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg"><div class="modal-content border-0 shadow">
-    <div class="modal-header py-2 text-white" style="background: var(--theme-primary, #0F172A);"><h6 class="modal-title fw-bold"><i class="bi bi-funnel"></i> Buscar en el inventario</h6>
+    <div class="modal-header py-2 text-white" style="background: var(--theme-primary, #0F172A);"><h6 class="modal-title fw-bold" id="mp_titulo"><i class="bi bi-funnel"></i> Buscar en el inventario</h6>
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
     <div class="modal-body">
         <div class="row g-2 mb-2">
-            <div class="col-12 col-md-4"><label class="small fw-bold">Familia</label><select id="mp_familia" class="form-select"></select></div>
-            <div class="col-12 col-md-4"><label class="small fw-bold">Calidad</label><select id="mp_calidad" class="form-select"></select></div>
+            <div class="col-12 col-md-4"><label class="small fw-bold" id="mp_lbl_fam">Familia</label><select id="mp_familia" class="form-select"></select></div>
+            <div class="col-12 col-md-4" id="mp_box_cal"><label class="small fw-bold">Calidad</label><select id="mp_calidad" class="form-select"></select></div>
             <div class="col-12 col-md-4"><label class="small fw-bold">Código o descripción</label><input type="search" id="mp_q" class="form-control" placeholder="Ej: perno 1/2" autocomplete="off"></div>
         </div>
         <div class="small text-muted mb-2" id="mp_total"></div>
@@ -391,8 +408,15 @@ function opcionesServicio(sel, valor) {
     sel.innerHTML = '<option value="">— Elige el servicio —</option>' + lista.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
     sel.value = valor || '';
 }
+function pintarDetraccion() {
+    porId('boxDetr').style.setProperty('display', porId('aplica_detraccion').checked ? 'flex' : 'none', 'important');
+    recalcular();
+}
 function pintarTipo() {
     const os = tipo() === 'OS';
+    const chk = porId('aplica_detraccion');
+    if (!chk.dataset.definido && !chk.dataset.tocado) chk.checked = os;     // servicios: detracción sugerida
+    pintarDetraccion();
     porId('lblInsumos').style.display = os ? 'none' : '';
     if (os) { porId('dest_GENERAL').checked = true; }
     porId('avisoOS').style.display = os ? 'block' : 'none';
@@ -428,6 +452,9 @@ function recalcular() {
     });
     sub = r2(sub); const igv = r2(sub * IGV);
     porId('tSub').textContent = `${moneda()} ${fmt(sub)}`; porId('tIgv').textContent = `${moneda()} ${fmt(igv)}`; porId('tTot').textContent = `${moneda()} ${fmt(sub + igv)}`;
+    const conDetr = porId('aplica_detraccion').checked, pct = parseFloat(porId('detraccion_pct').value) || 0;
+    porId('tDetr').style.display = conDetr && pct ? 'block' : 'none';
+    if (conDetr && pct) { const m = r2((sub + igv) * pct / 100); porId('tDetrPct').textContent = pct; porId('tDetrMonto').textContent = `- ${moneda()} ${fmt(m)}`; porId('tNeto').textContent = `${moneda()} ${fmt(r2(sub + igv - m))}`; }
     porId('tPesoFila').style.display = peso ? 'flex' : 'none'; porId('tPeso').textContent = fmtKg(peso) + ' kg';
 }
 function opcionesUM(sel, valor) {
@@ -436,7 +463,9 @@ function opcionesUM(sel, valor) {
     sel.value = valor || '';
 }
 function textoStock(p) {
-    if (p.origen === 'INSUMO') return '';
+    if (p.origen === 'INSUMO') return ` · Stock ${esc(corto())} <span class="stk">${fmtCant(p.stock_insumo || 0)}</span>` +
+        (p.costo_insumo ? ` · costo prom. S/ ${fmt(p.costo_insumo)} <span class="text-muted">c/IGV</span>` : '') +
+        ((p.stock_insumo || 0) <= (p.minimo_insumo || 0) ? ' <span class="est" style="background:#fee2e2; color:#991b1b;">por reponer</span>' : '');
     const a = p.stock_ANCLAJES, b = p.stock_IMPORTBOLTS;
     return ` · Stock Anclajes <span class="stk">${a == null ? '—' : fmtCant(a)}</span> · Import Bolts <span class="stk">${b == null ? '—' : fmtCant(b)}</span>`;
 }
@@ -486,7 +515,7 @@ function elegirProducto(fila, p) {
 function tarjetaProducto(p) {
     const nom = { ANCLAJES: 'Anclajes', IMPORTBOLTS: 'Import Bolts', INSUMO: 'Insumo' }[p.origen] || '';
     return `<div class="sku">${esc(p.sku)} <span class="text-muted fw-normal">· ${nom}</span></div><div class="ds">${esc(p.descripcion)}</div>` +
-        `<div class="mt">${p.familia ? 'Familia: <b>' + esc(p.familia) + '</b>' : ''}${p.calidad ? ' · Calidad: <b>' + esc(p.calidad) + '</b>' : ''}${p.estado ? ' · Estado: <span class="est">' + esc(p.estado) + '</span>' : ''}${textoStock(p)}</div>` +
+        `<div class="mt">${p.familia ? (p.origen === 'INSUMO' ? 'Categoría' : 'Familia') + ': <b>' + esc(p.familia) + '</b>' : ''}${p.calidad ? ' · Calidad: <b>' + esc(p.calidad) + '</b>' : ''}${p.estado ? ' · Estado: <span class="est">' + esc(p.estado) + '</span>' : ''}${textoStock(p)}</div>` +
         (p.ultimo ? `<div class="mt">Últ. precio ${esc(p.ultimo.moneda)} ${fmt(p.ultimo.precio)} / ${esc(p.ultimo.um)} (${esc(p.ultimo.orden)})</div>` : '');
 }
 function urlProductos(q, familia, calidad) {
@@ -572,7 +601,7 @@ function buscarModal(pagina) {
             llenarSelect(porId('mp_familia'), d.familias || [], fam);
             llenarSelect(porId('mp_calidad'), d.calidades || [], cal);
             const res = d.results || [];
-            porId('mp_total').innerHTML = (q || fam || cal) ? `<b>${d.total}</b> producto(s)${d.paginas > 1 ? ` · página ${d.pagina} de ${d.paginas}` : ''}` : 'Elige una familia, una calidad o escribe para buscar.';
+            porId('mp_total').innerHTML = (q || fam || cal || d.insumos) ? `<b>${d.total}</b> producto(s)${d.paginas > 1 ? ` · página ${d.pagina} de ${d.paginas}` : ''}` : 'Elige una familia, una calidad o escribe para buscar.';
             const cont = porId('mp_res'); cont.innerHTML = paginador(d);
             res.forEach(p => { const div = document.createElement('div'); div.className = 'res-prod'; div.innerHTML = tarjetaProducto(p);
                 div.onclick = () => { elegirProducto(filaBuscando, p); bootstrap.Modal.getOrCreateInstance(porId('modalProd')).hide(); }; cont.appendChild(div); });
@@ -583,6 +612,11 @@ function buscarModal(pagina) {
 }
 function abrirBuscador(fila) {
     filaBuscando = fila;
+    const ins = destino() === 'INSUMOS';
+    porId('mp_lbl_fam').textContent = ins ? 'Categoría' : 'Familia';
+    porId('mp_box_cal').style.display = ins ? 'none' : '';
+    porId('mp_titulo').innerHTML = ins ? '<i class="bi bi-tools"></i> Buscar en Insumos internos (' + esc(corto()) + ')' : '<i class="bi bi-funnel"></i> Buscar en el inventario';
+    if (ins) { llenarSelect(porId('mp_calidad'), [], ''); }
     porId('mp_q').value = '';
     bootstrap.Modal.getOrCreateInstance(porId('modalProd')).show();
     buscarModal();

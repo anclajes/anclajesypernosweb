@@ -10,6 +10,8 @@
     .ins-nav a.accion.salida { background: #fef2f2; border-color: #fecaca; color: #b91c1c; }
     .ins-nav a.accion.activa { color: #fff; background: #047857; border-color: #047857; }
     .ins-nav a.accion.salida.activa { background: #b91c1c; border-color: #b91c1c; }
+    .ins-nav a.pend-oc { background: #fffbeb; border-color: #fcd34d; color: #92400e; }
+    .ins-nav .cnt-oc { background: #dc2626; color: #fff; border-radius: 10px; font-size: .66rem; padding: 0 6px; font-weight: 800; }
     .ins-empresa { display: inline-flex; align-items: center; gap: 8px; }
     .ins-empresa img { height: 34px; object-fit: contain; }
     .ins-kpi { font-size: 1.3rem; font-weight: 800; font-variant-numeric: tabular-nums; color: #0f172a; line-height: 1.15; }
@@ -26,6 +28,8 @@
     <a href="{{ url_for('insumos_salida_nueva') }}" class="accion salida {{ 'activa' if seccion == 'salida' }}"><i class="bi bi-box-arrow-up"></i> Nueva salida</a>
     <a href="{{ url_for('insumos_ingreso_nuevo') }}" class="accion {{ 'activa' if seccion == 'ingreso' }}"><i class="bi bi-box-arrow-in-down"></i> Nuevo ingreso</a>
     {% endif %}
+    {% set n_pend_oc = n_oc_pendientes_insumos() %}
+    <a href="{{ url_for('insumos_pendientes_oc') }}" class="{{ 'activa' if seccion == 'oc_pend' }} {{ 'pend-oc' if n_pend_oc and seccion != 'oc_pend' }}"><i class="bi bi-cart-check"></i> Pendientes de OC{% if n_pend_oc %} <span class="cnt-oc">{{ n_pend_oc }}</span>{% endif %}</a>
     <a href="{{ url_for('insumos_salidas') }}" class="{{ 'activa' if seccion == 'salidas' }}"><i class="bi bi-journal-arrow-up"></i> Salidas</a>
     <a href="{{ url_for('insumos_ingresos') }}" class="{{ 'activa' if seccion == 'ingresos' }}"><i class="bi bi-journal-arrow-down"></i> Ingresos</a>
     <a href="{{ url_for('insumos_kardex') }}" class="{{ 'activa' if seccion == 'kardex' }}"><i class="bi bi-clock-history"></i> Kardex</a>

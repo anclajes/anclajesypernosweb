@@ -15818,7 +15818,7 @@ def insumos_inventario():
     return render_template('insumos_inventario.html', empresa=empresa, empresas=EMPRESAS_INSUMOS, filas=filas, kpi=kpi,
                            q=q, categoria=categoria, bajo=bajo, ver=ver, categorias=_categorias_insumos(),
                            almacenes=_catalogo_insumos('INSUMO_ALMACEN'), puede_editar=session.get('role') in ROLES_INSUMOS_EDITAN,
-                           puede_ajustar=session.get('role') == 'admin', oc_pendientes=_ordenes_pendientes_insumos() if _oc_ok else [],
+                           puede_ajustar=session.get('role') == 'admin', oc_pendientes=_ordenes_pendientes_insumos(empresa) if _oc_ok else [],
                            seccion='inventario')
 
 
@@ -16027,13 +16027,22 @@ def _oc_pendiente_insumos(oc_id):
     return None
 
 
-def _ordenes_pendientes_insumos():
+def _ordenes_pendientes_insumos(empresa=None):
+    """OC conformes para Insumos internos que todavía no se registran (de una empresa, o de las dos)."""
     try:
-        return OrdenCompra.query.filter(OrdenCompra.estado == 'CONFORME', OrdenCompra.destino == 'INSUMOS',
-                                        OrdenCompra.insumo_ingreso_id.is_(None)).order_by(OrdenCompra.fecha_conforme).all()
+        lista = OrdenCompra.query.filter(OrdenCompra.estado == 'CONFORME', OrdenCompra.destino == 'INSUMOS',
+                                         OrdenCompra.insumo_ingreso_id.is_(None)).order_by(OrdenCompra.fecha_conforme).all()
     except Exception:
         db.session.rollback()
         return []
+    return [o for o in lista if not empresa or (o.empresa or 'ANCLAJES') == empresa]
+
+
+def _n_oc_pendientes_insumos():
+    return len(_ordenes_pendientes_insumos()) if _oc_ok else 0
+
+
+app.add_template_global(_n_oc_pendientes_insumos, 'n_oc_pendientes_insumos')
 
 
 def _prefill_ingreso_desde_oc(o):
@@ -16052,9 +16061,14 @@ def _prefill_ingreso_desde_oc(o):
     prov.setdefault('contacto_nombre', o.contacto or '')
     prov.setdefault('contacto_telefono', o.telefono or '')
     items = [{'insumo_id': it.insumo_id or '', 'descripcion': it.descripcion, 'um': it.um, 'cantidad': it.cantidad,
+              'precio_oc': it.precio_unitario, 'simbolo': MONEDAS_OC[o.moneda]['simbolo'],
               'precio_unitario': round(it.precio_unitario * (1 + IGV_OC), 4) if o.moneda == 'PEN' else ''} for it in o.items]
+    docs = [{'id': d.id, 'tipo': d.tipo, 'nombre': d.nombre_original, 'url': url_for('oc_documento_ver', doc_id=d.id),
+             'tipo_txt': TIPOS_DOC_OC.get(d.tipo, d.tipo), 'numero': {'GUIA': o.numero_guia, 'FACTURA': o.numero_factura}.get(d.tipo) or ''}
+            for d in OrdenCompraDocumento.query.filter_by(orden_id=o.id).all() if d.tipo in ('GUIA', 'FACTURA', 'CERTIFICADO', 'OTRO')]
     return {'oc_id': o.id, 'codigo': _oc_codigo(o), 'fecha': (o.fecha_llegada or o.fecha_conforme or hora_peru()).date().isoformat(),
-            'numero_factura': o.numero_factura or '', 'moneda': o.moneda, 'proveedor': prov, 'items': items}
+            'numero_factura': o.numero_factura or '', 'moneda': o.moneda, 'proveedor': prov, 'items': items, 'docs': docs,
+            'empresa': o.empresa or 'ANCLAJES', 'numero_guia': o.numero_guia or ''}
 
 
 @app.route('/insumos/ingreso/nuevo')
@@ -16065,12 +16079,33 @@ def insumos_ingreso_nuevo():
     oc = _oc_pendiente_insumos(request.args.get('oc'))
     if request.args.get('oc') and not oc:
         flash('Esa orden de compra ya fue ingresada o todavía no está conforme.')
-    return render_template('insumos_ingreso_form.html', empresa='ANCLAJES' if oc else empresa, empresas=EMPRESAS_INSUMOS,
-                           oc_prefill=_prefill_ingreso_desde_oc(oc) if oc else None, oc_pendientes=_ordenes_pendientes_insumos(),
+    return render_template('insumos_ingreso_form.html', empresa=(oc.empresa or 'ANCLAJES') if oc else empresa, empresas=EMPRESAS_INSUMOS,
+                           oc_prefill=_prefill_ingreso_desde_oc(oc) if oc else None, oc_pendientes=_ordenes_pendientes_insumos(empresa),
                            insumos_json={e: _datos_formulario_insumos(e) for e in EMPRESAS_INSUMOS},
                            categorias=_catalogo_insumos('INSUMO_CATEGORIA'), unidades=_catalogo_insumos('INSUMO_UNIDAD'),
                            categorias_filtro=_categorias_insumos(),
                            almacenes=_catalogo_insumos('INSUMO_ALMACEN'), hoy=hora_peru().date(), seccion='ingreso')
+
+
+@app.route('/insumos/pendientes-oc')
+@_ruta_insumos()
+def insumos_pendientes_oc():
+    """Compras con Orden de Compra (destino Insumos) que ya llegaron y están conformes, esperando registrarse en el inventario de insumos.
+    Separadas por empresa; cada una se ingresa con sus datos ya llenos (proveedor, factura, ítems, precios y documentos)."""
+    _asegurar_oc()
+    empresa = _empresa_param()
+    session['insumos_empresa'] = empresa
+    ordenes = _ordenes_pendientes_insumos(empresa)
+    por_emp = {e: len(_ordenes_pendientes_insumos(e)) for e in EMPRESAS_INSUMOS}
+    stocks = {st.insumo_id: st for st in InsumoStock.query.filter_by(empresa=empresa).all()}
+    docs = {}
+    for d in OrdenCompraDocumento.query.filter(OrdenCompraDocumento.orden_id.in_([o.id for o in ordenes] or [0])).all():
+        docs.setdefault(d.orden_id, []).append(d)
+    ahora = hora_peru()
+    return render_template('insumos_pendientes_oc.html', ordenes=ordenes, empresa=empresa, empresas=EMPRESAS_INSUMOS, por_emp=por_emp,
+                           stocks=stocks, docs=docs, monedas=MONEDAS_OC, igv=IGV_OC, ahora=ahora, insumos={i.id: i for i in Insumo.query.all()},
+                           puede_editar=session.get('role') in ROLES_INSUMOS_EDITAN, puede_ver_oc=session.get('role') in ROLES_OC_VEN,
+                           tipos_doc=TIPOS_DOC_OC, seccion='oc_pend')
 
 
 @app.route('/insumos/ingreso/guardar', methods=['POST'])
@@ -16179,6 +16214,19 @@ def insumos_ingreso_guardar():
                 fecha_registro=ahora))
         for tipo, a, info in archivos:
             _subir_doc_insumo(f"{empresa.lower()}/ingresos/{ing.id}", a, info, tipo, claves, ingreso_id=ing.id)
+        if orden_oc and f.get('usar_docs_oc') == '1':
+            # documentos de la orden (guía, factura...): se COPIAN al ingreso (si se borran aquí, la orden conserva los suyos)
+            ya = {t for t, _, _ in archivos}
+            for d in OrdenCompraDocumento.query.filter_by(orden_id=orden_oc.id).all():
+                if d.tipo not in ('GUIA', 'FACTURA', 'CERTIFICADO', 'OTRO') or d.tipo in ya:
+                    continue
+                ext = d.s3_key.rsplit('.', 1)[-1].lower()
+                nueva = f"insumos/{empresa.lower()}/ingresos/{ing.id}/{d.tipo.lower()}_oc_{uuid.uuid4().hex}.{ext}"
+                s3_client.copy_object(Bucket=S3_BUCKET_NAME, Key=nueva, CopySource={'Bucket': S3_BUCKET_NAME, 'Key': d.s3_key})
+                claves.append(nueva)
+                db.session.add(InsumoDocumento(ingreso_id=ing.id, tipo=d.tipo if d.tipo in ('GUIA', 'FACTURA') else 'OTRO', s3_key=nueva,
+                                               nombre_original=d.nombre_original, content_type=d.content_type, tamano_bytes=d.tamano_bytes,
+                                               subido_por=session.get('nombre', ''), fecha=ahora))
         if orden_oc:
             orden_oc.insumo_ingreso_id = ing.id
             ing.observacion = (f"{_oc_codigo(orden_oc)}" + (f" · {ing.observacion}" if ing.observacion else ''))[:300]
@@ -17256,6 +17304,25 @@ _OC_MOTIVOS_INICIALES = [
     ('CONDICIONES', 'Condición de pago no aceptada'), ('CONDICIONES', 'Plazo de entrega muy largo'),
     ('DOCUMENTO', 'Falta la cotización'), ('DOCUMENTO', 'Error en la orden (corregir y volver a enviar)'),
 ]
+# (uso, aplica, categoría, motivo): motivos agregados después (anulación y propios de las Órdenes de Servicio)
+_OC_MOTIVOS_V2 = [
+    ('RECHAZO', 'OS', 'CALIDAD', 'El taller / proveedor no garantiza la calidad del servicio'),
+    ('RECHAZO', 'OS', 'TÉCNICO', 'Especificación incompleta (medidas, acabado, norma)'),
+    ('RECHAZO', 'OS', 'INTERNO', 'Se puede hacer en nuestro taller'),
+    ('ANULACION', 'AMBAS', 'PROVEEDOR', 'El proveedor no tiene stock o no puede atender'),
+    ('ANULACION', 'AMBAS', 'PROVEEDOR', 'El proveedor no confirmó / no respondió'),
+    ('ANULACION', 'AMBAS', 'PROVEEDOR', 'El proveedor no puede cumplir el plazo'),
+    ('ANULACION', 'AMBAS', 'PRECIO', 'El proveedor cambió el precio'),
+    ('ANULACION', 'AMBAS', 'PEDIDO', 'Ya no se necesita'),
+    ('ANULACION', 'AMBAS', 'PEDIDO', 'Se compró / contrató con otro proveedor'),
+    ('ANULACION', 'AMBAS', 'PEDIDO', 'El cliente canceló su pedido'),
+    ('ANULACION', 'AMBAS', 'DOCUMENTO', 'Error en la orden (se emitirá otra)'),
+    ('ANULACION', 'OC', 'CALIDAD', 'El material ofrecido no cumple la calidad pedida'),
+    ('ANULACION', 'OS', 'CALIDAD', 'El servicio no se puede hacer con la calidad pedida'),
+]
+USOS_MOTIVO_OC = {'RECHAZO': 'Rechazo (Gerencia)', 'ANULACION': 'Anulación'}
+APLICA_MOTIVO_OC = {'AMBAS': 'OC y OS', 'OC': 'Solo OC', 'OS': 'Solo OS'}
+DETRACCION_DEF = 12.0       # % de detracción sugerido (se cambia en cada orden)
 _oc_ok = False
 
 
@@ -17308,6 +17375,8 @@ def _asegurar_oc():
                                                  ('estado_pago', "VARCHAR(12) DEFAULT 'PENDIENTE'"), ('fecha_pago', 'DATE'), ('pagado_por_id', 'INTEGER'),
                                                  ('fecha_marca_pago', 'TIMESTAMP'), ('pago_operacion', 'VARCHAR(80)'), ('pago_cuenta', 'VARCHAR(200)'),
                                                  ('pago_nota', 'VARCHAR(300)')])
+    _agregar_columnas_si_faltan('oc_motivo_rechazo', [('uso', "VARCHAR(10) DEFAULT 'RECHAZO'"), ('aplica', "VARCHAR(5) DEFAULT 'AMBAS'")])
+    _agregar_columnas_si_faltan('orden_compra', [('anulacion_categoria', 'VARCHAR(60)'), ('anulacion_opcion', 'VARCHAR(150)'), ('detraccion_pct', 'FLOAT')])
     _agregar_columnas_si_faltan('orden_compra_item', [('familia', 'VARCHAR(200)'), ('calidad', 'VARCHAR(200)'), ('estado_producto', 'VARCHAR(100)'),
                                                       ('es_nuevo', 'BOOLEAN DEFAULT FALSE'),
                                                       ('ingresado_por_id', 'INTEGER'), ('fecha_ingreso', 'TIMESTAMP'),
@@ -17347,6 +17416,14 @@ def _asegurar_oc():
         try:
             _sembrar_catalogos_oc()
             db.session.add(SystemConfig(key='oc_sembrado', value='1', updated_by='Sistema'))
+            db.session.commit()
+        except IntegrityError:
+            db.session.rollback()
+    if not SystemConfig.query.get('oc_motivos_v2'):      # motivos de anulación y de las Órdenes de Servicio
+        try:
+            for uso, aplica, cat, mot in _OC_MOTIVOS_V2:
+                db.session.add(OCMotivoRechazo(categoria=cat, motivo=mot, activo=True, uso=uso, aplica=aplica))
+            db.session.add(SystemConfig(key='oc_motivos_v2', value='1', updated_by='Sistema'))
             db.session.commit()
         except IntegrityError:
             db.session.rollback()
@@ -17515,6 +17592,29 @@ def _oc_fecha_esperada(orden):
     return None
 
 
+def _oc_motivos(uso, tipo=None, incluir_inactivos=False):
+    """{categoría: [motivos]} de rechazo o de anulación que aplican al tipo de orden (OC / OS)."""
+    res = {}
+    for m in sorted(OCMotivoRechazo.query.all(), key=lambda m: (_clave_alfabetica(m.categoria), _clave_alfabetica(m.motivo))):
+        if (m.uso or 'RECHAZO') != uso or (not incluir_inactivos and not m.activo):
+            continue
+        if tipo and (m.aplica or 'AMBAS') not in ('AMBAS', tipo):
+            continue
+        res.setdefault(m.categoria, []).append(m)
+    return res
+
+
+def _oc_anulacion_txt(orden):
+    partes = [x for x in (orden.anulacion_categoria, orden.anulacion_opcion) if x]
+    txt = ' · '.join(partes)
+    if orden.motivo_anulacion:
+        txt = f"{txt} — {orden.motivo_anulacion}" if txt else orden.motivo_anulacion
+    return txt
+
+
+app.add_template_global(_oc_anulacion_txt, 'oc_anulacion_txt')
+
+
 def _oc_rechazo_txt(orden):
     partes = [x for x in (orden.rechazo_categoria, orden.rechazo_opcion) if x]
     txt = ' · '.join(partes)
@@ -17593,6 +17693,17 @@ def _oc_pago_info(orden, hoy=None):
     else:
         info['txt'] = f"Vence en {info['faltan']} día{'s' if info['faltan'] != 1 else ''}"
     return info
+
+
+def _oc_detraccion(orden):
+    """Detracción de la orden: % sobre el total con IGV, monto a depositar en el Banco de la Nación y neto a pagar al proveedor."""
+    if not getattr(orden, 'detraccion_pct', None):
+        return None
+    monto = round((orden.total or 0) * orden.detraccion_pct / 100, 2)
+    return {'pct': orden.detraccion_pct, 'pct_txt': ('%g' % orden.detraccion_pct), 'monto': monto, 'neto': round((orden.total or 0) - monto, 2)}
+
+
+app.add_template_global(_oc_detraccion, 'oc_detraccion')
 
 
 def _oc_atraso(orden, hoy=None):
@@ -17803,6 +17914,14 @@ def _leer_orden_form(f, orden=None):
         datos['cliente_ruc'], datos['cliente_razon'] = cruc[:20] or None, crazon or None
     # Compras para el inventario: el certificado de calidad es obligatorio al dar la conformidad
     datos['requiere_certificado'] = tipo == 'OC' and destino == 'GENERAL'
+    # Detracción SUNAT (sugerida en servicios: 12%; se puede cambiar o quitar)
+    datos['detraccion_pct'] = None
+    if f.get('aplica_detraccion') == '1':
+        pct = _num(f.get('detraccion_pct'))
+        if pct is None or not 0 < pct <= 100:
+            errores.append('El porcentaje de detracción debe estar entre 0.01 y 100.')
+        else:
+            datos['detraccion_pct'] = round(pct, 2)
     # Ítems
     ums = {v.valor for v in _oc_catalogo('OC_UM', incluir_inactivos=True)}
     ums_previas = {i.um for i in orden.items} if orden else set()
@@ -17917,7 +18036,7 @@ def _aplicar_datos_orden(orden, datos, items, prov, contacto=None):
     for campo in ('fecha', 'empresa', 'destino', 'ruc', 'razon_social', 'direccion', 'contacto', 'telefono', 'email', 'cotizacion', 'moneda',
                   'condicion_pago', 'entrega_modo', 'lugar_recojo', 'entrega_tipo', 'entrega_dias', 'fecha_entrega', 'observaciones',
                   'subtotal', 'igv', 'total', 'solicitante_user_id', 'solicitante_nombre', 'area_solicitante', 'motivo_compra', 'motivo_detalle',
-                  'cliente_ruc', 'cliente_razon', 'requiere_certificado'):
+                  'cliente_ruc', 'cliente_razon', 'requiere_certificado', 'detraccion_pct'):
         setattr(orden, campo, datos[campo] if datos[campo] != '' else None)
     orden.razon_social = datos['razon_social']
     orden.contacto, orden.telefono = datos['contacto'], datos['telefono']
@@ -18069,7 +18188,7 @@ def _contexto_form_oc(orden=None, datos_previos=None):
     return dict(orden=orden, previo=datos_previos, tipos=TIPOS_OC, destinos=DESTINOS_OC, monedas=MONEDAS_OC, empresas_oc=EMPRESAS_OC,
                 ums=[v.valor for v in _oc_catalogo('OC_UM')], condiciones=[v.valor for v in _oc_catalogo('OC_CONDICION_PAGO')],
                 cfg=_oc_cfg(orden.empresa if orden else 'ANCLAJES'), igv=IGV_OC, hoy=hora_peru().date(), seccion='nueva',
-                cfgs={e: _oc_cfg(e) for e in EMPRESAS_OC},
+                cfgs={e: _oc_cfg(e) for e in EMPRESAS_OC}, detraccion_def=DETRACCION_DEF,
                 siguiente={f'{e}|{t}': _oc_numero_txt(None, _siguiente_numero_oc(t, e), e) for e in EMPRESAS_OC for t in TIPOS_OC},
                 servicios=[v.valor for v in _oc_catalogo('OC_SERVICIO')],
                 solicitantes=_solicitantes_oc(orden), areas=[v.valor for v in _oc_catalogo('OC_AREA')],
@@ -18082,7 +18201,7 @@ def _orden_a_previo(o, items=None):
     d = {c: getattr(o, c) for c in ('tipo', 'empresa', 'destino', 'ruc', 'razon_social', 'direccion', 'contacto', 'telefono', 'email', 'cotizacion',
                                     'moneda', 'condicion_pago', 'entrega_modo', 'lugar_recojo', 'entrega_tipo', 'entrega_dias',
                                     'observaciones', 'oc_proveedor_id', 'contacto_id', 'area_solicitante', 'motivo_compra', 'motivo_detalle',
-                                    'cliente_ruc', 'cliente_razon')}
+                                    'cliente_ruc', 'cliente_razon', 'detraccion_pct')}
     d['solicitante'] = (f"u:{o.solicitante_user_id}" if o.solicitante_user_id else (f"n:{o.solicitante_nombre}" if o.solicitante_nombre else ''))
     d['fecha'] = o.fecha.isoformat() if o.fecha else ''
     d['fecha_entrega'] = o.fecha_entrega.isoformat() if o.fecha_entrega else ''
@@ -18197,14 +18316,13 @@ def oc_detalle(orden_id):
     docs = OrdenCompraDocumento.query.filter_by(orden_id=orden.id).order_by(OrdenCompraDocumento.id).all()
     ingreso = InsumoIngreso.query.get(orden.insumo_ingreso_id) if orden.insumo_ingreso_id else None
     duplicada_de = OrdenCompra.query.get(orden.duplicada_de_id) if orden.duplicada_de_id else None
-    motivos = {}
-    for m in OCMotivoRechazo.query.filter_by(activo=True).order_by(OCMotivoRechazo.categoria, OCMotivoRechazo.motivo).all():
-        motivos.setdefault(m.categoria, []).append(m)
+    motivos = _oc_motivos('RECHAZO', orden.tipo)
+    motivos_anul = _oc_motivos('ANULACION', orden.tipo)
     observaciones = [e for e in eventos if e.accion == 'OBSERVACION']
     contacto = OCContacto.query.get(orden.contacto_id) if orden.contacto_id else None
     ahora = hora_peru()
     return render_template('oc_detalle.html', orden=orden, eventos=eventos, docs=docs, ingreso=ingreso, duplicada_de=duplicada_de,
-                           motivos=motivos, observaciones=observaciones, contacto=contacto, empresas_oc=EMPRESAS_OC,
+                           motivos=motivos, motivos_anul=motivos_anul, observaciones=observaciones, contacto=contacto, empresas_oc=EMPRESAS_OC,
                            p=_oc_permisos(orden), estados=ESTADOS_OC, tipos=TIPOS_OC, destinos=DESTINOS_OC, monedas=MONEDAS_OC,
                            cfg=_oc_cfg(orden.empresa or 'ANCLAJES'), igv=IGV_OC, ahora=ahora, hoy=ahora.date(), seccion='lista',
                            cuentas=_cuentas_de(orden.oc_proveedor_id), pago=_oc_pago_info(orden, ahora.date()), atraso=_oc_atraso(orden, ahora.date()),
@@ -18271,7 +18389,7 @@ def oc_rechazar(orden_id):
         return no
     opcion = OCMotivoRechazo.query.get(request.form.get('motivo_id', type=int)) if request.form.get('motivo_id', type=int) else None
     detalle = ' '.join((request.form.get('motivo') or '').split())[:300]
-    if not opcion:
+    if not opcion or (opcion.uso or 'RECHAZO') != 'RECHAZO':
         flash('⛔ Elige el motivo del rechazo.')
         return redirect(url_for('oc_detalle', orden_id=orden.id))
     orden.estado, orden.rechazado_por_id, orden.fecha_rechazo = 'RECHAZADA', session.get('user_id'), hora_peru()
@@ -18290,12 +18408,15 @@ def oc_anular(orden_id):
     orden, no = _accion_oc(orden_id, 'anular')
     if no:
         return no
-    motivo = ' '.join((request.form.get('motivo') or '').split())[:300]
-    if len(motivo) < 5:
-        flash('⛔ Escribe la razón de la anulación.')
+    opcion = OCMotivoRechazo.query.get(request.form.get('motivo_id', type=int)) if request.form.get('motivo_id', type=int) else None
+    detalle = ' '.join((request.form.get('motivo') or '').split())[:300]
+    if not opcion or opcion.uso != 'ANULACION':
+        flash('⛔ Elige el motivo de la anulación.')
         return redirect(url_for('oc_detalle', orden_id=orden.id))
     estado_antes = orden.estado
-    orden.estado, orden.anulado_por_id, orden.fecha_anulacion, orden.motivo_anulacion = 'ANULADA', session.get('user_id'), hora_peru(), motivo
+    orden.estado, orden.anulado_por_id, orden.fecha_anulacion = 'ANULADA', session.get('user_id'), hora_peru()
+    orden.anulacion_categoria, orden.anulacion_opcion, orden.motivo_anulacion = opcion.categoria, opcion.motivo, detalle or None
+    motivo = _oc_anulacion_txt(orden)
     _oc_evento(orden, 'ANULADA', f"{motivo} (estaba: {ESTADOS_OC[estado_antes]['txt']})")
     registrar_log(f"ANULÓ la {_oc_codigo(orden)}: {motivo}", 'bi-slash-circle', 'text-danger')
     db.session.commit()
@@ -18999,7 +19120,7 @@ def oc_pdf_muestra(empresa):
            direccion='CAL. JAVIER HERAUD MZA. M LOTE 5 - LOS OLIVOS', items=items, observaciones=None, subtotal=sub, igv=round(sub * IGV_OC, 2),
            total=round(sub * (1 + IGV_OC), 2), condicion_pago='CONTADO', entrega_tipo='A_TRATAR', entrega_dias=None, fecha_entrega=None,
            entrega_modo='EMPRESA', lugar_recojo=None, moneda='USD', aprobado_por=NS(nombre_completo=session.get('nombre', 'Gerencia')),
-           fecha_aprobacion=ahora, creado_por=NS(nombre_completo=session.get('nombre', '')))
+           fecha_aprobacion=ahora, creado_por=NS(nombre_completo=session.get('nombre', '')), detraccion_pct=DETRACCION_DEF if tipo == 'OS' else None)
     filas = list(items) + [None] * (22 - len(items))
     html_pdf = render_template('pdf_orden_compra.html', o=o, cfg=_oc_cfg(empresa), logo=_logo_pdf_insumos(empresa), firma=_firma_gerencia_oc(empresa),
                                filas=filas, mon=MONEDAS_OC['USD'], letras=_monto_en_letras(o.total, 'USD'), tipos=TIPOS_OC,
@@ -19193,9 +19314,15 @@ def oc_api_productos():
     empresa = (request.args.get('empresa') or 'ANCLAJES').upper()
     empresa = empresa if empresa in EMPRESAS_OC else 'ANCLAJES'
     terminos = q.split()
-    if request.args.get('destino') == 'INSUMOS':
+    es_insumos = request.args.get('destino') == 'INSUMOS'
+    if es_insumos:
+        # Todos los insumos del maestro (también los que no tienen stock: se compra justamente para reponer)
+        stocks = {st.insumo_id: st for st in InsumoStock.query.filter_by(empresa=empresa).all()}
         base = [{'sku': i.codigo, 'descripcion': i.descripcion, 'familia': i.categoria or '', 'calidad': '', 'um': i.unidad or '',
-                 'insumo_id': i.id, 'origen': 'INSUMO'} for i in Insumo.query.filter_by(activo=True).all()]
+                 'insumo_id': i.id, 'origen': 'INSUMO', 'stock_insumo': (stocks[i.id].stock_actual or 0) if i.id in stocks else 0,
+                 'costo_insumo': (stocks[i.id].costo_promedio or 0) if i.id in stocks else 0,
+                 'minimo_insumo': (stocks[i.id].stock_minimo or 0) if i.id in stocks else 0}
+                for i in Insumo.query.all() if i.activo is not False]
     else:
         base = _catalogo_productos_oc(empresa)
         for d in base:
@@ -19208,7 +19335,7 @@ def oc_api_productos():
     familias = sorted({d['familia'] for d in con_calidad if d['familia']})
     calidades = sorted({d['calidad'] for d in con_familia if d['calidad']})
     total = len(res)
-    if not (terminos or familia or calidad):
+    if not (terminos or familia or calidad or es_insumos):
         res = []
     # por páginas: todo el resultado se puede recorrer (no se corta en 40)
     por_pagina = min(max(request.args.get('por_pagina', 25, type=int), 5), 60)
@@ -19227,7 +19354,8 @@ def oc_api_productos():
         for d in res:
             if d['sku'] in ultimos:
                 d['ultimo'] = ultimos[d['sku']]
-    return {'results': res, 'total': total, 'familias': familias, 'calidades': calidades, 'pagina': pagina, 'paginas': paginas, 'por_pagina': por_pagina}
+    return {'results': res, 'total': total, 'familias': familias, 'calidades': calidades, 'pagina': pagina, 'paginas': paginas, 'por_pagina': por_pagina,
+            'insumos': es_insumos}
 
 
 # ---------------------------- CONFIGURACIÓN ----------------------------
@@ -19245,12 +19373,15 @@ def oc_config():
     uso_cond = {}
     for (c, n) in db.session.query(OrdenCompra.condicion_pago, func.count(OrdenCompra.id)).group_by(OrdenCompra.condicion_pago).all():
         uso_cond[c] = n
-    motivos = {}
-    for m in OCMotivoRechazo.query.order_by(OCMotivoRechazo.categoria, OCMotivoRechazo.motivo).all():
-        motivos.setdefault(m.categoria, []).append(m)
+    motivos = {u: _oc_motivos(u, incluir_inactivos=True) for u in USOS_MOTIVO_OC}
     uso_motivo = {}
-    for o in OrdenCompra.query.filter(OrdenCompra.rechazo_opcion.isnot(None)).all():
-        uso_motivo[(o.rechazo_categoria, o.rechazo_opcion)] = uso_motivo.get((o.rechazo_categoria, o.rechazo_opcion), 0) + 1
+    for o in OrdenCompra.query.all():
+        if o.rechazo_opcion:
+            k = ('RECHAZO', o.rechazo_categoria, o.rechazo_opcion)
+            uso_motivo[k] = uso_motivo.get(k, 0) + 1
+        if o.anulacion_opcion:
+            k = ('ANULACION', o.anulacion_categoria, o.anulacion_opcion)
+            uso_motivo[k] = uso_motivo.get(k, 0) + 1
     ordenes_prov = {}
     for o in OrdenCompra.query.filter(OrdenCompra.oc_proveedor_id.isnot(None)).all():
         ordenes_prov[o.oc_proveedor_id] = ordenes_prov.get(o.oc_proveedor_id, 0) + 1
@@ -19274,7 +19405,7 @@ def oc_config():
         cuentas_prov.setdefault(cu.oc_proveedor_id, []).append(_cuenta_json(cu))
     return render_template('oc_config.html', catalogos={t: _oc_catalogo(t, incluir_inactivos=True) for t in CATALOGOS_OC},
                            motivos=motivos, uso_motivo=uso_motivo, ordenes_prov=ordenes_prov, contactos_prov=contactos_prov,
-                           cuentas_prov=cuentas_prov, bancos=BANCOS_OC, tipos_cuenta=TIPOS_CUENTA_OC, monedas=MONEDAS_OC,
+                           cuentas_prov=cuentas_prov, bancos=BANCOS_OC, usos_motivo=USOS_MOTIVO_OC, aplica_motivo=APLICA_MOTIVO_OC, tipos_cuenta=TIPOS_CUENTA_OC, monedas=MONEDAS_OC,
                            motivos_compra=sorted(OCMotivoCompra.query.all(), key=lambda m: m.id), uso_mc=uso_mc,
                            nombres_catalogo=CATALOGOS_OC, uso={'OC_UM': uso_um, 'OC_CONDICION_PAGO': uso_cond, 'OC_AREA': uso_area, 'OC_SOLICITANTE': uso_sol, 'OC_SERVICIO': uso_serv},
                            cfgs={e: _oc_cfg(e) for e in EMPRESAS_OC}, cfg_defs=OC_CONFIG_DEFS, etiquetas=OC_CONFIG_ETIQUETAS, es_admin=es_admin,
@@ -19352,7 +19483,7 @@ def oc_config_proveedor():
 @app.route('/ordenes/config/motivo', methods=['POST'])
 @_ruta_oc('editar', como_json=True)
 def oc_config_motivo():
-    """Motivos de rechazo por categoría: agregar, editar, activar/desactivar y borrar."""
+    """Motivos de rechazo y de anulación por categoría (para OC, OS o ambas): agregar, editar, activar/desactivar y borrar."""
     f = request.form
     accion = f.get('accion', 'guardar')
     m = OCMotivoRechazo.query.get(f.get('id', type=int)) if f.get('id', type=int) else None
@@ -19362,7 +19493,7 @@ def oc_config_motivo():
         if accion == 'toggle':
             m.activo = not m.activo
         else:
-            registrar_log(f"Borró el motivo de rechazo {m.categoria} · {m.motivo}", 'bi-trash', 'text-danger')
+            registrar_log(f"Borró el motivo de {USOS_MOTIVO_OC.get(m.uso or 'RECHAZO', '').lower()} {m.categoria} · {m.motivo}", 'bi-trash', 'text-danger')
             db.session.delete(m)
         db.session.commit()
         return {'status': 'success'}
@@ -19371,12 +19502,17 @@ def oc_config_motivo():
     if len(categoria) < 2 or len(motivo) < 3:
         return {'status': 'error', 'msg': 'Escribe la categoría y el motivo.'}
     motivo = motivo[0].upper() + motivo[1:]
-    if any(x.id != (m.id if m else 0) and x.categoria == categoria and x.motivo.upper() == motivo.upper() for x in OCMotivoRechazo.query.all()):
+    uso = (f.get('uso') or (m.uso if m else None) or 'RECHAZO').upper()
+    aplica = (f.get('aplica') or (m.aplica if m else None) or 'AMBAS').upper()
+    if uso not in USOS_MOTIVO_OC or aplica not in APLICA_MOTIVO_OC:
+        return {'status': 'error', 'msg': 'Elige para qué es el motivo.'}
+    if any(x.id != (m.id if m else 0) and (x.uso or 'RECHAZO') == uso and x.categoria == categoria and x.motivo.upper() == motivo.upper()
+           for x in OCMotivoRechazo.query.all()):
         return {'status': 'error', 'msg': 'Ese motivo ya existe en esa categoría.'}
     if not m:
         m = OCMotivoRechazo(activo=True)
         db.session.add(m)
-    m.categoria, m.motivo = categoria, motivo
+    m.categoria, m.motivo, m.uso, m.aplica = categoria, motivo, uso, aplica
     db.session.commit()
     return {'status': 'success'}
 
@@ -19494,7 +19630,9 @@ def oc_vaciar():
             _sembrar_catalogos_oc()
             _sembrar_motivos_compra_oc()
             for cat, mot in _OC_MOTIVOS_INICIALES:
-                db.session.add(OCMotivoRechazo(categoria=cat, motivo=mot, activo=True))
+                db.session.add(OCMotivoRechazo(categoria=cat, motivo=mot, activo=True, uso='RECHAZO', aplica='AMBAS'))
+            for uso, aplica, cat, mot in _OC_MOTIVOS_V2:
+                db.session.add(OCMotivoRechazo(categoria=cat, motivo=mot, activo=True, uso=uso, aplica=aplica))
             extra.append('U.M., condiciones de pago, áreas, solicitantes, motivos de compra y de rechazo, y datos del PDF')
         registrar_log(f"VACIÓ los datos de Órdenes de Compra: {n} orden(es), {len(claves)} archivo(s)"
                       + (f" + {', '.join(extra)}" if extra else ''), 'bi-trash3-fill', 'text-danger')

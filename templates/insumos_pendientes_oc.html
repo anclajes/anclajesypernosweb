@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Insumos internos{% endblock %}
+{% block subtitle %}Pendientes de Orden de Compra · {{ empresas[empresa].corto }}{% endblock %}
+{% block content %}
+{% include '_insumos_nav.html' %}
+<style>
+    .emp-sel { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+    .emp-sel a { display: inline-flex; align-items: center; gap: 8px; border: 2px solid #e2e8f0; background: #fff; border-radius: 12px; padding: 6px 12px; text-decoration: none; color: #334155; font-weight: 800; font-size: .84rem; }
+    .emp-sel a img { height: 22px; width: 60px; object-fit: contain; }
+    .emp-sel a .c { font-size: .7rem; background: #f1f5f9; border-radius: 10px; padding: 0 7px; }
+    .emp-sel a.on { border-color: var(--e); color: var(--e); box-shadow: 0 0 0 3px color-mix(in srgb, var(--e) 15%, transparent); }
+    .emp-sel a.on .c { background: var(--e); color: #fff; }
+    .oc-p { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; margin-bottom: 14px; overflow: hidden; }
+    .oc-p .cab { padding: 10px 14px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; }
+    .oc-p .cod { font-weight: 800; font-size: 1rem; color: #0f172a; }
+    .oc-p .prov { font-weight: 700; font-size: .88rem; overflow-wrap: anywhere; }
+    .traza { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+    .traza .t { font-size: .68rem; background: #fff; border: 1px solid #e2e8f0; border-radius: 9px; padding: 4px 8px; line-height: 1.15; }
+    .traza .t b { display: block; font-size: .7rem; }
+    .doc-b { display: inline-flex; align-items: center; gap: 4px; font-size: .72rem; font-weight: 700; border-radius: 7px; padding: 2px 8px; text-decoration: none; border: 1px solid #e2e8f0; background: #fff; color: #334155; }
+    .doc-b:hover { border-color: #0B3D91; color: #0B3D91; }
+    .falta-doc { font-size: .72rem; font-weight: 700; color: #b45309; }
+    .tabla-p th { font-size: .66rem; text-transform: uppercase; letter-spacing: .03em; color: #64748b; background: #fff; white-space: nowrap; }
+    .tabla-p td { font-size: .8rem; vertical-align: middle; }
+    .espera { font-size: .7rem; font-weight: 800; border-radius: 20px; padding: 2px 9px; background: #fef3c7; color: #92400e; white-space: nowrap; }
+    .nota-igv { font-size: .76rem; background: #eff6ff; border: 1px solid #bfdbfe; color: #1e3a8a; border-radius: 10px; padding: 8px 12px; margin-bottom: 12px; }
+</style>
+
+<div class="emp-sel">
+    {% for e, info in empresas.items() %}
+    <a href="{{ url_for('insumos_pendientes_oc', empresa=e) }}" class="{{ 'on' if e == empresa }}" style="--e: {{ info.color }};">
+        <img src="{{ url_for('static', filename='img/' ~ info.logo) }}" alt="" width="60" height="22"> Insumos {{ info.corto }} <span class="c">{{ por_emp[e] }}</span></a>
+    {% endfor %}
+</div>
+
+<div class="nota-igv"><i class="bi bi-info-circle-fill"></i> Aquí están las compras con <b>Orden de Compra para Insumos internos</b> que ya <b>llegaron y tienen conformidad</b>, esperando registrarse en el inventario de insumos de
+    <b>{{ empresas[empresa].corto }}</b>. Pulsa <b>Registrar ingreso</b>: el formulario se llena solo con el proveedor, la factura, los ítems, los precios y los documentos de la orden.
+    <br><b>Precios:</b> la orden se emite <b>sin IGV</b> (como la cotización); en Insumos se registran <b>con IGV</b>, porque en material de uso interno el IGV es parte del gasto. Por eso el precio unitario cambia (×1.18).</div>
+
+{% for o in ordenes %}
+{% set mon = monedas[o.moneda] %}
+{% set ds = docs.get(o.id, []) %}
+{% set espera = ((ahora - o.fecha_conforme).days) if o.fecha_conforme else 0 %}
+<div class="oc-p shadow-sm" style="border-top: 4px solid {{ empresas[o.empresa or 'ANCLAJES'].color }};">
+    <div class="cab">
+        <div class="d-flex flex-wrap gap-2 align-items-center">
+            {% if puede_ver_oc %}<a class="cod text-decoration-none" href="{{ url_for('oc_detalle', orden_id=o.id) }}">{{ oc_codigo(o) }}</a>{% else %}<span class="cod">{{ oc_codigo(o) }}</span>{% endif %}
+            <span class="prov">{{ o.razon_social }}</span><span class="small text-muted">RUC {{ o.ruc }}</span>
+            <span class="espera ms-auto"><i class="bi bi-hourglass-split"></i> {{ 'Conforme hoy' if espera == 0 else 'Esperando registro hace ' ~ espera ~ ' día' ~ ('s' if espera != 1 else '') }}</span>
+        </div>
+        {% if o.solicitante_nombre %}<div class="small text-muted mt-1"><i class="bi bi-person-raised-hand"></i> Solicitó <b>{{ oc_solicitante_txt(o) }}</b>{% if o.area_solicitante %} ({{ o.area_solicitante|title }}){% endif %}{% if o.motivo_compra %} · {{ o.motivo_compra|capitalize }}{% endif %}</div>{% endif %}
+        <div class="traza">
+            <span class="t"><b>Aprobada</b>{{ o.aprobado_por.nombre_completo if o.aprobado_por else '' }}{% if o.fecha_aprobacion %} · {{ o.fecha_aprobacion.strftime('%d/%m %H:%M') }}{% endif %}</span>
+            <span class="t"><b>Llegó</b>{{ o.recibido_por.nombre_completo if o.recibido_por else '' }}{% if o.fecha_llegada %} · {{ o.fecha_llegada.strftime('%d/%m/%Y %H:%M') }}{% endif %}</span>
+            <span class="t"><b>Conforme</b>{{ o.conforme_por.nombre_completo if o.conforme_por else '' }}{% if o.fecha_conforme %} · {{ o.fecha_conforme.strftime('%d/%m/%Y %H:%M') }}{% endif %}</span>
+            <span class="t"><b>Pago</b>{{ o.condicion_pago or '—' }} · {{ 'pagada' if o.estado_pago == 'PAGADO' else 'pendiente' }}</span>
+        </div>
+        <div class="d-flex flex-wrap gap-1 align-items-center mt-2">
+            {% for d in ds if d.tipo in ['GUIA', 'FACTURA', 'CERTIFICADO', 'OTRO'] %}
+            <a class="doc-b" href="{{ url_for('oc_documento_ver', doc_id=d.id) }}" target="_blank"><i class="bi {{ 'bi-file-earmark-pdf text-danger' if d.content_type == 'application/pdf' else 'bi-image text-primary' }}"></i>
+                {{ tipos_doc.get(d.tipo, d.tipo) }}{% if d.tipo == 'GUIA' and o.numero_guia %} {{ o.numero_guia }}{% elif d.tipo == 'FACTURA' and o.numero_factura %} {{ o.numero_factura }}{% endif %}</a>
+            {% endfor %}
+            {% if not (ds|selectattr('tipo', 'equalto', 'FACTURA')|list) %}<span class="falta-doc"><i class="bi bi-exclamation-triangle"></i> Sin factura en la orden{% if o.numero_factura %} (N° {{ o.numero_factura }}){% endif %}: súbela al registrar</span>{% endif %}
+        </div>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-sm mb-0 tabla-p">
+            <thead><tr><th class="ps-3">#</th><th>Insumo / descripción</th><th class="text-end">Cant.</th><th>U.M.</th><th class="text-end">P.U. orden (sin IGV)</th>
+                <th class="text-end">P.U. con IGV</th><th class="text-end">Total con IGV</th><th class="text-end pe-3">Stock {{ empresas[empresa].corto }}</th></tr></thead>
+            <tbody>
+            {% for i in o.items %}{% set ins = insumos.get(i.insumo_id) %}{% set st = stocks.get(i.insumo_id) %}
+            <tr><td class="ps-3 text-muted">{{ i.item }}</td>
+                <td>{% if ins %}<span class="badge text-bg-light border">{{ ins.codigo }}</span> {% endif %}{{ i.descripcion }}
+                    {% if not ins %}<div class="small text-warning-emphasis"><i class="bi bi-exclamation-circle"></i> No está vinculado al maestro: se elige (o se crea) al registrar.</div>{% endif %}</td>
+                <td class="text-end num">{{ i.cantidad|cant }}</td><td>{{ i.um }}</td>
+                <td class="text-end num">{{ mon.simbolo }} {{ '{:,.2f}'.format(i.precio_unitario) }}</td>
+                <td class="text-end num">{% if o.moneda == 'PEN' %}S/ {{ '{:,.2f}'.format(i.precio_unitario * (1 + igv)) }}{% else %}<span class="text-muted small">en soles al registrar</span>{% endif %}</td>
+                <td class="text-end num fw-semibold">{% if o.moneda == 'PEN' %}S/ {{ '{:,.2f}'.format(i.total * (1 + igv)) }}{% else %}—{% endif %}</td>
+                <td class="text-end num pe-3">{{ (st.stock_actual if st else 0)|cant }}</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 px-3 py-2 border-top">
+        <span class="small text-muted">Orden: {{ mon.simbolo }} {{ '{:,.2f}'.format(o.subtotal or 0) }} sin IGV · <b>{{ mon.simbolo }} {{ '{:,.2f}'.format(o.total or 0) }} con IGV</b></span>
+        {% if puede_editar %}<a class="btn btn-success fw-bold" href="{{ url_for('insumos_ingreso_nuevo', oc=o.id, empresa=o.empresa or 'ANCLAJES') }}"><i class="bi bi-box-arrow-in-down"></i> Registrar ingreso en Insumos {{ empresas[o.empresa or 'ANCLAJES'].corto }}</a>{% endif %}
+    </div>
+</div>
+{% else %}
+<div class="text-center text-muted py-5 bg-white rounded-3 border"><i class="bi bi-inbox display-6 opacity-25"></i>
+    <p class="mt-2 mb-0">No hay compras con orden pendientes de registrar en los insumos de {{ empresas[empresa].corto }}.</p></div>
+{% endfor %}
+{% endblock %}

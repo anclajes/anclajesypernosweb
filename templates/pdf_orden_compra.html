@@ -72,7 +72,7 @@
 {% if o.estado == 'RECHAZADA' %}
 <table><tr><td class="aviso-rech">ORDEN RECHAZADA por Gerencia el {{ o.fecha_rechazo.strftime('%d/%m/%Y') }} — {{ oc_rechazo_txt(o) }}. DOCUMENTO SIN VALIDEZ.</td></tr></table>
 {% elif o.estado == 'ANULADA' %}
-<table><tr><td class="aviso-anul">ORDEN ANULADA el {{ o.fecha_anulacion.strftime('%d/%m/%Y') }} — {{ o.motivo_anulacion }}. DOCUMENTO SIN VALIDEZ.</td></tr></table>
+<table><tr><td class="aviso-anul">ORDEN ANULADA el {{ o.fecha_anulacion.strftime("%d/%m/%Y") }} — {{ oc_anulacion_txt(o) }}. DOCUMENTO SIN VALIDEZ.</td></tr></table>
 {% elif o.estado in ['BORRADOR', 'ENVIADA'] %}
 <table><tr><td class="aviso-pend">PENDIENTE DE APROBACIÓN — aún no revisada ni aprobada por Gerencia. No válida sin firma y sello.</td></tr></table>
 {% endif %}
@@ -120,6 +120,9 @@
                 <tr><td class="tk">SUB-TOTAL</td><td class="tk">:</td><td class="tv">{{ mon.simbolo }}</td><td class="tv">{{ '{:,.2f}'.format(o.subtotal or 0) }}</td></tr>
                 <tr><td class="tk">IGV</td><td class="tk">:</td><td class="tv">{{ mon.simbolo }}</td><td class="tv">{{ '{:,.2f}'.format(o.igv or 0) }}</td></tr>
                 <tr><td class="neto-k">TOTAL NETO</td><td class="neto-k">:</td><td class="neto-k" style="text-align: right;">{{ mon.simbolo }}</td><td class="neto-v">{{ '{:,.2f}'.format(o.total or 0) }}</td></tr>
+                {% set det = oc_detraccion(o) %}{% if det %}
+                <tr><td class="tk">DETRACCIÓN ({{ det.pct_txt }}%)</td><td class="tk">:</td><td class="tv">{{ mon.simbolo }}</td><td class="tv">{{ '{:,.2f}'.format(det.monto) }}</td></tr>
+                <tr><td class="tk">NETO A PAGAR</td><td class="tk">:</td><td class="tv">{{ mon.simbolo }}</td><td class="tv b">{{ '{:,.2f}'.format(det.neto) }}</td></tr>{% endif %}
             </table>
         </td>
     </tr>

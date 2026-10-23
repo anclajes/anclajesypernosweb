@@ -145,7 +145,7 @@
 {% macro seguimiento(o) %}
     {% if o.estado in ['APROBADA', 'RECIBIDA'] and o.aprobado_por %}<div class="sub mt-1"><i class="bi bi-patch-check-fill text-success"></i> Aprobó {{ o.aprobado_por.nombre_completo }}</div>
     {% elif o.estado == 'RECHAZADA' %}<div class="sub mt-1 text-danger clamp2" title="{{ oc_rechazo_txt(o) }}">{{ oc_rechazo_txt(o) }}</div>
-    {% elif o.estado == 'ANULADA' %}<div class="sub mt-1 clamp2" title="{{ o.motivo_anulacion }}">{{ o.motivo_anulacion }}</div>
+    {% elif o.estado == 'ANULADA' %}<div class="sub mt-1 clamp2" title="{{ oc_anulacion_txt(o) }}">{{ oc_anulacion_txt(o) }}</div>
     {% elif o.estado == 'CONFORME' %}
         {% if o.destino == 'INSUMOS' %}<div class="sub mt-1">{{ 'En Insumos ✓' if o.insumo_ingreso_id else 'Pendiente en Insumos' }}</div>
         {% else %}{% set ie = oc_ingreso_estado(o) %}
@@ -161,10 +161,15 @@
     {% else %}<div class="entrega">{% if o.entrega_modo == 'RECOJO' %}<i class="bi bi-person-walking"></i> Recojo{% else %}<i class="bi bi-truck"></i> Llega{% endif %}
         <div class="{{ 'atrasada' if at }}">{{ esp.strftime('%d/%m/%Y') if esp else oc_entrega_txt(o) }}{% if at %} · {{ at }} d atraso{% endif %}</div></div>{% endif %}
 {% endmacro %}
-{% macro pago_chip(o) %}{% set pg = pagos[o.id] %}
-    <span class="pago {{ pg.nivel }}" title="{{ o.condicion_pago or '' }}">{% if pg.nivel == 'pagada' %}<i class="bi bi-check-circle-fill"></i>{% elif pg.nivel == 'vencida' %}<i class="bi bi-exclamation-octagon-fill"></i>{% elif pg.nivel == 'por_vencer' %}<i class="bi bi-alarm"></i>{% endif %}
-        {{ 'Pagada' if pg.nivel == 'pagada' else ('Vencida' if pg.nivel == 'vencida' else ('Por vencer' if pg.nivel == 'por_vencer' else ('Crédito' if pg.nivel == 'al_dia' else ('Contado' if pg.nivel == 'contado' else '—')))) }}</span>
-    <div class="sub mt-1">{% if pg.nivel == 'pagada' %}{{ o.fecha_pago.strftime('%d/%m/%Y') if o.fecha_pago else '' }}{% elif pg.credito and pg.nivel != 'na' %}vence {{ pg.vence.strftime('%d/%m') }}{% if pg.nivel in ['vencida', 'por_vencer'] %} · {{ pg.txt|lower }}{% endif %}{% elif pg.nivel == 'contado' and (o.condicion_pago or '')|upper != 'CONTADO' %}{{ (o.condicion_pago or '')|lower|truncate(22, True, '…') }}{% endif %}</div>
+{% macro pago_chip(o) %}{% set pg = pagos[o.id] %}{% set det = oc_detraccion(o) %}
+    {% if pg.nivel == 'na' %}<span class="pago na">{{ '—' if o.estado in ['RECHAZADA', 'ANULADA'] else 'Al aprobarse' }}</span>
+    {% else %}
+    <span class="pago {{ pg.nivel }}">{% if pg.nivel == 'pagada' %}<i class="bi bi-check-circle-fill"></i> PAGADA{% elif pg.nivel == 'vencida' %}<i class="bi bi-exclamation-octagon-fill"></i> VENCIDA
+        {% elif pg.nivel == 'por_vencer' %}<i class="bi bi-alarm"></i> POR VENCER{% else %}<i class="bi bi-hourglass-split"></i> PENDIENTE{% endif %}</span>
+    {% endif %}
+    <div class="sub mt-1 fw-bold text-dark" style="font-size:.66rem;">{{ o.condicion_pago or '' }}</div>
+    <div class="sub">{% if pg.nivel == 'pagada' %}el {{ o.fecha_pago.strftime('%d/%m/%Y') if o.fecha_pago else '' }}{% elif pg.credito and pg.nivel != 'na' %}vence {{ pg.vence.strftime('%d/%m/%Y') }}{% if pg.nivel in ['vencida', 'por_vencer'] %} · {{ pg.txt|lower }}{% elif pg.faltan is not none %} · faltan {{ pg.faltan }} d{% endif %}{% elif pg.nivel == 'contado' %}se paga al momento{% endif %}</div>
+    {% if det %}<div class="sub">detracción {{ det.pct_txt }}%</div>{% endif %}
 {% endmacro %}
 {% macro docs_mini(o) %}{% set ds = docs.get(o.id, []) %}{% set tp = ds|map(attribute='tipo')|list %}
     {% for t, ab, nom in [('GUIA', 'G', 'Guía'), ('FACTURA', 'F', 'Factura')] %}
@@ -175,6 +180,25 @@
     {% if o.requiere_certificado or 'CERTIFICADO' in tp %}{% set d = ds|selectattr('tipo', 'equalto', 'CERTIFICADO')|first %}
     {% if d %}<a class="dm ok" href="{{ url_for('oc_documento_ver', doc_id=d.id) }}" target="_blank" title="Certificado de calidad">CC</a>
     {% else %}<span class="dm {{ 'oblig' if o.estado in ['RECIBIDA'] else 'no' }}" title="Falta el certificado de calidad (obligatorio)">CC</span>{% endif %}{% endif %}
+    {% if vista == 'conformes' %}
+    {% if o.numero_guia %}<div class="sub">Guía {{ o.numero_guia }}</div>{% endif %}
+    {% if o.numero_factura %}<div class="sub">Fact. {{ o.numero_factura }}</div>{% endif %}
+    {% endif %}
+{% endmacro %}
+{% macro recepcion(o) %}
+    <div class="entrega" style="min-width: 120px;"><span class="text-nowrap"><i class="bi bi-box-seam"></i> {{ 'Entregado' if o.tipo == 'OS' else 'Llegó' }} {{ o.fecha_llegada.strftime('%d/%m/%y') if o.fecha_llegada else '—' }}</span>
+        <div class="sub">{{ (o.recibido_por.nombre_completo if o.recibido_por else '')|truncate(18, True, '…') }}</div>
+        <span class="text-nowrap"><i class="bi bi-check-circle-fill text-success"></i> Conforme {{ o.fecha_conforme.strftime('%d/%m/%y') if o.fecha_conforme else '' }}</span>
+        <div class="sub">{{ (o.conforme_por.nombre_completo if o.conforme_por else '')|truncate(18, True, '…') }}</div></div>
+{% endmacro %}
+{% macro destino_final(o) %}
+    {% if o.tipo == 'OS' %}<span class="aprob si"><i class="bi bi-tools"></i> Servicio conforme</span>
+    {% elif o.destino == 'INSUMOS' %}{% if o.insumo_ingreso_id %}<span class="aprob si"><i class="bi bi-check2"></i> En Insumos</span><div class="sub">ingreso #{{ o.insumo_ingreso_id }}</div>
+        {% else %}<span class="aprob pend"><i class="bi bi-hourglass"></i> Falta ingresar a Insumos</span>{% endif %}
+    {% else %}{% set ie = oc_ingreso_estado(o) %}
+        {% if ie.completo %}<span class="aprob si"><i class="bi bi-check2-all"></i> En inventario</span><div class="sub">{{ ie.ultimo.ingresado_por.nombre_completo if ie.ultimo.ingresado_por else '' }} · {{ ie.ultimo.fecha_ingreso.strftime('%d/%m %H:%M') }}</div>
+        {% else %}<span class="aprob pend"><i class="bi bi-hourglass"></i> Por ingresar {{ ie.hechos }}/{{ ie.total }}</span><div class="sub">Almacén lo suma al inventario</div>{% endif %}
+    {% endif %}
 {% endmacro %}
 
 <!-- Escritorio -->
@@ -182,8 +206,8 @@
     <div class="card-body p-0 table-responsive">
         <table class="table table-hover align-middle mb-0 tabla-oc">
             <thead class="table-dark"><tr>
-                <th class="ps-3">N° / fecha</th><th>Proveedor</th><th>Solicitó / motivo</th><th>Entrega</th><th class="text-end">Total</th>
-                <th>Estado</th><th>Pago</th><th>Docs</th><th class="pe-3"></th></tr></thead>
+                <th class="ps-3">N° / fecha</th><th>Proveedor</th><th>Solicitó / motivo</th><th>{{ 'Recepción' if vista == 'conformes' else 'Entrega' }}</th><th class="text-end">Total</th>
+                <th>{{ 'Ingreso / destino' if vista == 'conformes' else 'Estado' }}</th><th>Pago</th><th>Docs</th><th class="pe-3"></th></tr></thead>
             <tbody>
             {% for o in ordenes %}
                 <tr>
@@ -197,9 +221,9 @@
                         {% if o.motivo_compra %}<span class="mot" title="{{ o.motivo_compra }}">{{ o.motivo_compra|capitalize }}</span>{% endif %}
                         {% if o.cliente_razon %}<div class="sub clamp2" title="{{ o.cliente_razon }}">{{ o.cliente_razon }}</div>{% endif %}
                         {% else %}<span class="sub">—</span>{% endif %}</div></td>
-                    <td>{{ entrega(o) }}</td>
+                    <td>{% if vista == 'conformes' %}{{ recepcion(o) }}{% else %}{{ entrega(o) }}{% endif %}</td>
                     <td class="text-end text-nowrap num fw-bold">{{ monedas[o.moneda].simbolo }} {{ '{:,.2f}'.format(o.total or 0) }}</td>
-                    <td>{{ estado_badge(o) }}{{ seguimiento(o) }}</td>
+                    <td>{% if vista == 'conformes' %}{{ destino_final(o) }}{% else %}{{ estado_badge(o) }}{{ seguimiento(o) }}{% endif %}</td>
                     <td>{{ pago_chip(o) }}</td>
                     <td class="text-nowrap">{{ docs_mini(o) }}</td>
                     <td class="pe-3 text-end text-nowrap">
@@ -229,8 +253,8 @@
         <div class="prov mt-1" title="{{ o.razon_social }}">{{ o.razon_social }}</div>
         <div class="det">{{ o.ruc }} · <span class="oc-dest {{ o.destino }}">{{ oc_destino_txt(o)|replace('Inventario', 'Inv.') }}</span>
             {% if o.solicitante_nombre %}· <i class="bi bi-person"></i> {{ oc_solicitante_txt(o) }}{% endif %}{% if o.motivo_compra %} <span class="mot">{{ o.motivo_compra|capitalize }}</span>{% endif %}</div>
-        <div class="mt-1">{{ entrega(o) }}</div>
-        <div class="d-flex flex-wrap gap-1 align-items-center mt-2">{{ estado_badge(o) }} {{ pago_chip(o) }}</div>
+        <div class="mt-1">{% if vista == 'conformes' %}{{ recepcion(o) }}{% else %}{{ entrega(o) }}{% endif %}</div>
+        <div class="d-flex flex-wrap gap-2 align-items-start mt-2"><div>{% if vista == 'conformes' %}{{ destino_final(o) }}{% else %}{{ estado_badge(o) }}{% endif %}</div><div>{{ pago_chip(o) }}</div></div>
         <div class="d-flex flex-wrap gap-1 align-items-center mt-1">{{ docs_mini(o) }}</div>
         <div class="d-flex gap-2 mt-2">
             <a class="btn btn-sm btn-outline-primary flex-fill" href="{{ url_for('oc_detalle', orden_id=o.id) }}"><i class="bi bi-eye"></i> Ver</a>
