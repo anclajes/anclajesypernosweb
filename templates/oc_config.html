@@ -196,7 +196,7 @@
                             <input name="num_{{ t }}" class="form-control form-control-sm" inputmode="numeric" value="{{ cfg['num_' ~ t] }}" placeholder="Seguir desde el N°... (opcional)" {{ 'readonly' if not es_admin }}></div>
                     {% endfor %}
                     </div>
-                    <div class="form-text">Para continuar la numeración que ya traían (ej: 248). Solo avanza: nunca repite un número ya usado.{% if e == 'IMPORTBOLTS' %} Formato: año-número (2026-00248).{% endif %}</div>
+                    <div class="form-text">Para continuar la numeración que ya traían (ej: 248). Solo avanza: nunca repite un número ya usado. Formato de las dos empresas: año-número (2026-00248).</div>
                 </div>
             </div>
             {% if es_admin %}
@@ -220,7 +220,7 @@
                 <div class="text-muted">{{ conteo.ordenes }} orden(es) (OC y OS de las dos empresas) con sus ítems, historial, pagos y re-aprobaciones, y <b>{{ conteo.documentos }} archivo(s)</b> subidos (guías, facturas, certificados, pagos).
                     También desaparecen de <b>Ingresos pendientes</b> y de <b>Insumos → Pendientes de OC</b>.
                     Además se borran los <b>{{ conteo.requerimientos }} requerimiento(s) de Almacén</b>{% if conteo.docs_req %} y sus {{ conteo.docs_req }} archivo(s){% endif %}.
-                    La numeración vuelve a 000001{% if conteo.inicio %}, salvo el número inicial configurado
+                    La numeración vuelve a empezar (2026-00001){% if conteo.inicio %}, salvo el número inicial configurado
                     ({% for k, v in conteo.inicio.items() %}{{ k }}: {{ v }}{{ ', ' if not loop.last }}{% endfor %}) — se reinicia también si marcas la 3ª opción{% endif %}.</div>
             </div>
             {% if conteo.movs_kardex or conteo.ingresos_insumos %}

@@ -18,10 +18,11 @@
     .linea .s { color: #64748b; font-size: .72rem; }
 </style>
 
-<div class="panel" style="border-top: 4px solid {{ empresas_oc[r.empresa].color }};">
+{% set emp_r = empresas_oc.get(r.empresa) %}
+<div class="panel" style="border-top: 4px solid {{ emp_r.color if emp_r else '#7c3aed' }};">
     <div class="d-flex flex-wrap gap-2 align-items-center">
         <span class="fs-4 fw-bold">{{ req_codigo(r) }}</span>
-        <span class="small fw-bold" style="color: {{ empresas_oc[r.empresa].color }};">Inventario {{ empresas_oc[r.empresa].corto }}</span>
+        {% if emp_r %}<span class="small fw-bold" style="color: {{ emp_r.color }};">Inventario {{ emp_r.corto }}</span>{% endif %}
         {% if r.prioridad == 'URGENTE' %}<span class="rq-urg">URGENTE</span>{% endif %}
         <span class="rq-estado ms-auto" style="color: {{ res.color }};"><i class="bi {{ res.icono }}"></i> {{ res.txt }}</span>
     </div>
@@ -43,7 +44,7 @@
     {% if docs %}<div class="mt-2">{% for d in docs %}
         <a class="doc-b" href="{{ url_for('oc_req_documento', doc_id=d.id) }}" target="_blank"><i class="bi {{ 'bi-file-earmark-pdf' if d.content_type == 'application/pdf' else 'bi-image' }}"></i> {{ d.nombre_original }}</a>{% endfor %}</div>{% endif %}
     <div class="d-flex flex-wrap gap-2 mt-2">
-        {% if p.armar %}<a class="btn btn-success fw-bold" href="{{ url_for('oc_nueva', tipo='OC', empresa=r.empresa, req=r.id) }}"><i class="bi bi-cart-plus"></i> Armar OC con estos productos</a>{% endif %}
+        {% if p.armar %}<a class="btn btn-success fw-bold" href="{{ url_for('oc_nueva', tipo='OC', empresa=r.empresa, req=r.id) if emp_r else url_for('oc_nueva', tipo='OC', req=r.id) }}"><i class="bi bi-cart-plus"></i> Armar OC con estos productos</a>{% endif %}
         {% if p.rechazar %}<button class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#mRechazar"><i class="bi bi-x-octagon"></i> Rechazar</button>{% endif %}
         {% if p.anular %}<button class="btn btn-outline-dark" data-bs-toggle="modal" data-bs-target="#mAnular"><i class="bi bi-slash-circle"></i> Anular</button>{% endif %}
         <a class="btn btn-outline-secondary ms-auto" href="{{ url_for('oc_req_lista') }}"><i class="bi bi-arrow-left"></i> Requerimientos</a>
@@ -58,7 +59,7 @@
             <div class="it">
                 <div class="d-flex flex-wrap gap-2 align-items-center"><span class="ds">{{ i.item }}. {{ i.descripcion }}</span> <span class="tag-sku">{{ i.codigo }}</span>
                     <span class="ms-auto fw-bold">{{ i.cantidad|cant }} {{ i.um }}</span></div>
-                <div class="small text-muted">{{ [i.familia, i.calidad]|select|join(' · ') }}{% if i.stock_al_pedir is not none %} · stock al pedir: {{ i.stock_al_pedir }}{% endif %}{% if i.nota %} · {{ i.nota }}{% endif %}</div>
+                <div class="small text-muted">{{ [i.familia, i.calidad]|select|join(' · ') }}{% if i.stock_al_pedir is not none %} · stock al pedir (las dos empresas): {{ i.stock_al_pedir }}{% endif %}{% if i.nota %} · {{ i.nota }}{% endif %}</div>
                 <div class="d-flex flex-wrap gap-1 mt-1">{{ rq.ordenes_de(s, p.ver_oc) }}
                     {% if s.activos and (s.ordenado - i.cantidad)|abs > 0.0001 %}<span class="small text-muted">· en orden: {{ s.ordenado|cant }} (se pidió {{ i.cantidad|cant }})</span>{% endif %}</div>
                 {% if r.estado == 'PENDIENTE' %}{{ rq.avance(s) }}{% endif %}

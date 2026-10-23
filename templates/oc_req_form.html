@@ -40,13 +40,6 @@
     <div class="col-12 col-lg-5">
         <div class="rq-card">
             <div class="rq-t"><i class="bi bi-person-raised-hand"></i> ¿Quién lo pide y para qué?</div>
-            <div class="lbl req">Inventario al que le faltan</div>
-            <div class="seg mb-2">
-                {% for k, e in empresas_oc.items() if e.habilitada %}
-                <input type="radio" name="empresa" id="emp_{{ k }}" value="{{ k }}" {{ 'checked' if (pv.empresa or 'ANCLAJES') == k }} onchange="cambioEmpresa()">
-                <label for="emp_{{ k }}" style="--c: {{ e.color }};"><img src="{{ url_for('static', filename='img/' ~ e.logo) }}" alt="" width="54" height="20" style="object-fit: contain;"><b>{{ e.corto }}</b></label>
-                {% endfor %}
-            </div>
             <div class="row g-2">
                 <div class="col-12 col-sm-7"><div class="lbl req">¿Quién lo pide?</div>
                     {% set sel_sol = pv.solicitante if pv.solicitante is defined and pv.solicitante else yo_valor %}
@@ -113,7 +106,8 @@
     <div class="col-12 col-lg-7">
         <div class="rq-card">
             <div class="rq-t"><i class="bi bi-boxes"></i> Productos que faltan</div>
-            <div class="ayuda mb-2"><i class="bi bi-info-circle"></i> Solo productos del inventario <b id="empTxt"></b>: escribe el código o la descripción y elígelo de la lista.
+            <div class="ayuda mb-2"><i class="bi bi-info-circle"></i> Solo productos que ya existen en el inventario: escribe el código o la descripción, o usa <b>Familia / Calidad</b>, y elígelo de la lista.
+                Para qué empresa se compra (Anclajes o Import Bolts) lo decide Logística al armar la orden.
                 Si un producto no existe, pide al encargado que lo cree en el Maestro.</div>
             <div id="items"></div>
             <button type="button" class="btn btn-outline-primary w-100" onclick="agregarItem()"><i class="bi bi-plus-circle"></i> Agregar producto</button>
@@ -147,7 +141,7 @@
 
 <!-- Buscador con Familia y Calidad (como en las órdenes de compra y los inventarios) -->
 <div class="modal fade" id="modalProd" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg"><div class="modal-content border-0 shadow">
-    <div class="modal-header py-2 text-white" style="background: var(--theme-primary, #0F172A);"><h6 class="modal-title fw-bold"><i class="bi bi-funnel"></i> Buscar en el inventario <span id="mp_emp"></span></h6>
+    <div class="modal-header py-2 text-white" style="background: var(--theme-primary, #0F172A);"><h6 class="modal-title fw-bold"><i class="bi bi-funnel"></i> Buscar en el inventario</h6>
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
     <div class="modal-body">
         <div class="row g-2 mb-2">
@@ -171,7 +165,11 @@ const EMPRESAS = {{ empresas_oc|tojson }};
 const porId = id => document.getElementById(id);
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function nf(n) { return Number(n || 0).toLocaleString('es-PE', { maximumFractionDigits: 3 }); }
-function empresa() { const r = document.querySelector('#formReq input[name=empresa]:checked'); return r ? r.value : 'ANCLAJES'; }
+function empresa() { return 'ANCLAJES'; }      // solo para la búsqueda: muestra los productos de los dos inventarios
+function stockTxt(p) {
+    const a = p.stock_ANCLAJES, b = p.stock_IMPORTBOLTS;
+    return ` · stock Anclajes <span class="stk">${a == null ? '—' : nf(a)}</span> · Import Bolts <span class="stk">${b == null ? '—' : nf(b)}</span>`;
+}
 function pintarMotivo() {
     const r = document.querySelector('#formReq input[name=motivo]:checked');
     porId('boxCliente').style.display = r && r.dataset.cliente === '1' ? 'block' : 'none';
@@ -184,9 +182,8 @@ function fichaProd(fila, p) {
     const box = fila.querySelector('.i-prod'), busca = fila.querySelector('.i-busca');
     if (p) {
         busca.value = p.descripcion; busca.readOnly = true;
-        const stk = p[`stock_${empresa()}`];
         box.innerHTML = `<div class="prod ok"><i class="bi bi-link-45deg"></i> <b>${esc(p.sku)}</b>${p.familia ? ' · ' + esc(p.familia) : ''}${p.calidad ? ' · ' + esc(p.calidad) : ''}` +
-            (stk != null ? ` · stock actual <span class="stk">${nf(stk)}</span>` : '') + ` <button type="button" class="btn btn-link btn-sm p-0 ms-1 cambiar">cambiar</button></div>`;
+            stockTxt(p) + ` <button type="button" class="btn btn-link btn-sm p-0 ms-1 cambiar">cambiar</button></div>`;
         box.querySelector('.cambiar').onclick = () => { fichaProd(fila, null); busca.value = ''; busca.focus(); };
     } else {
         busca.readOnly = false;
@@ -210,11 +207,10 @@ function agregarItem(d) {
         t = setTimeout(() => fetch(urlProd(q)).then(r => r.json()).then(res => {
             if (document.activeElement !== busca) return;
             const lista = (res.results || []).slice(0, 15);
-            sug.innerHTML = lista.length ? '' : `<div class="list-group-item small text-danger">No está en el inventario ${esc(EMPRESAS[empresa()].corto)}. Pide al encargado que lo cree en el Maestro.</div>`;
+            sug.innerHTML = lista.length ? '' : '<div class="list-group-item small text-danger">No está en el inventario. Pide al encargado que lo cree en el Maestro.</div>';
             lista.forEach(p => {
                 const b = document.createElement('button'); b.type = 'button'; b.className = 'list-group-item list-group-item-action py-1 px-2 small';
-                const stk = p[`stock_${empresa()}`];
-                b.innerHTML = `<b>${esc(p.sku)}</b> — ${esc(p.descripcion)}<div class="text-muted">${esc([p.familia, p.calidad].filter(Boolean).join(' · '))}${stk != null ? ' · stock ' + nf(stk) : ''}</div>`;
+                b.innerHTML = `<b>${esc(p.sku)}</b> — ${esc(p.descripcion)}<div class="text-muted">${esc([p.familia, p.calidad].filter(Boolean).join(' · '))}${stockTxt(p)}</div>`;
                 b.onmousedown = e => e.preventDefault();
                 b.onclick = () => { sug.style.display = 'none'; elegir(fila, p); };
                 sug.appendChild(b);
@@ -228,14 +224,9 @@ function agregarItem(d) {
     numerar();
     return fila;
 }
-function urlProd(q) { return `{{ url_for('oc_api_productos') }}?q=${encodeURIComponent(q)}&empresa=${empresa()}&solo_empresa=1&destino=GENERAL&por_pagina=30`; }
+function urlProd(q) { return `{{ url_for('oc_api_productos') }}?q=${encodeURIComponent(q)}&empresa=${empresa()}&destino=GENERAL&por_pagina=30`; }
 function buscarCodigo(fila, cod) {
     fetch(urlProd(cod)).then(r => r.json()).then(res => { const p = (res.results || []).find(x => (x.sku || '').toUpperCase() === cod.toUpperCase()); fichaProd(fila, p || null); });
-}
-function cambioEmpresa() {
-    porId('empTxt').textContent = EMPRESAS[empresa()].corto;
-    // los productos elegidos eran de otro inventario: se revisan otra vez
-    document.querySelectorAll('#items .rq-item').forEach(f => { const c = f.querySelector('.i-cod').value; if (c) buscarCodigo(f, c); });
 }
 function pintarDocs() {
     const archivos = [...porId('inDocs').files, ...porId('inFoto').files];
@@ -267,15 +258,15 @@ function buscarModal(pagina) {
     clearTimeout(tMp); paginaMp = typeof pagina === 'number' ? pagina : 1;
     tMp = setTimeout(() => {
         const fam = porId('mp_familia').value, cal = porId('mp_calidad').value, q = porId('mp_q').value.trim();
-        fetch(`{{ url_for('oc_api_productos') }}?q=${encodeURIComponent(q)}&familia=${encodeURIComponent(fam)}&calidad=${encodeURIComponent(cal)}&empresa=${empresa()}&solo_empresa=1&destino=GENERAL&pagina=${paginaMp}`)
+        fetch(`{{ url_for('oc_api_productos') }}?q=${encodeURIComponent(q)}&familia=${encodeURIComponent(fam)}&calidad=${encodeURIComponent(cal)}&empresa=${empresa()}&destino=GENERAL&pagina=${paginaMp}`)
             .then(r => r.json()).then(d => {
                 llenarSelect(porId('mp_familia'), d.familias || [], fam, 'Todas las familias');
                 llenarSelect(porId('mp_calidad'), d.calidades || [], cal, 'Todas las calidades');
                 porId('mp_total').innerHTML = (q || fam || cal) ? `<b>${d.total}</b> producto(s)` : 'Elige una familia, una calidad o escribe para buscar.';
                 const cont = porId('mp_res'); cont.innerHTML = paginador(d);
                 (d.results || []).forEach(p => {
-                    const div = document.createElement('div'); div.className = 'res-prod'; const stk = p[`stock_${empresa()}`];
-                    div.innerHTML = `<span class="sku">${esc(p.sku)}</span> — ${esc(p.descripcion)}<div class="text-muted small">${esc([p.familia, p.calidad, p.estado].filter(Boolean).join(' · '))}${stk != null ? ' · stock <b>' + nf(stk) + '</b>' : ''}</div>`;
+                    const div = document.createElement('div'); div.className = 'res-prod';
+                    div.innerHTML = `<span class="sku">${esc(p.sku)}</span> — ${esc(p.descripcion)}<div class="text-muted small">${esc([p.familia, p.calidad, p.estado].filter(Boolean).join(' · '))}${stockTxt(p)}</div>`;
                     div.onclick = () => { elegir(filaBuscando, p); bootstrap.Modal.getOrCreateInstance(porId('modalProd')).hide(); };
                     cont.appendChild(div);
                 });
@@ -286,7 +277,6 @@ function buscarModal(pagina) {
 }
 function abrirBuscador(fila) {
     filaBuscando = fila;
-    porId('mp_emp').textContent = EMPRESAS[empresa()].corto;
     porId('mp_q').value = '';
     bootstrap.Modal.getOrCreateInstance(porId('modalProd')).show();
     buscarModal();
@@ -330,7 +320,7 @@ porId('formReq').addEventListener('submit', function (e) {
     if (err.length) { e.preventDefault(); Swal.fire({ icon: 'warning', title: 'Falta información', html: [...new Set(err)].map(esc).join('<br>') }); return; }
     porId('btnEnviar').disabled = true;
 });
-pintarMotivo(); cambioEmpresa(); pintarArea();
+pintarMotivo(); pintarArea();
 if (PREVIOS.length) PREVIOS.forEach(agregarItem); else agregarItem();
 </script>
 {% endblock %}

@@ -508,7 +508,13 @@ function pintarEntrega() {
 function reqEnForm() { return new Set([...document.querySelectorAll('#items .i-req')].map(i => i.value).filter(Boolean)); }
 function pintarReqs() {
     const panel = porId('reqPanel'); if (!panel) return;
-    const lista = REQS.filter(r => r.empresa === empresa());
+    const lista = REQS.filter(r => r.empresa === empresa() || r.empresa === 'AMBAS');
+    // productos jalados de un requerimiento: van al inventario de la empresa que compra
+    document.querySelectorAll('#items .item').forEach(f => {
+        if (f.querySelector('.i-req').value && f._prod && f._prod.origen !== empresa() && tipo() === 'OC') {
+            f._prod.origen = empresa(); f.querySelector('.i-origen').value = empresa(); pintarFicha(f);
+        }
+    });
     const ver = tipo() === 'OC' && destino() !== 'INSUMOS' && lista.length > 0;
     panel.style.display = ver ? '' : 'none';
     if (!ver) return;
@@ -532,7 +538,7 @@ function jalarReq(r, i) {
     // si la única fila está vacía, se usa esa
     const filas = [...document.querySelectorAll('#items .item')];
     if (filas.length === 1 && !filas[0].querySelector('.i-desc').value.trim() && !filas[0].querySelector('.i-cant').value) filas[0].remove();
-    agregarItem({ descripcion: i.descripcion, cantidad: i.cantidad, um: UMS.includes(i.um) ? i.um : '', origen: r.empresa, codigo: i.codigo, familia: i.familia,
+    agregarItem({ descripcion: i.descripcion, cantidad: i.cantidad, um: UMS.includes(i.um) ? i.um : '', origen: empresa(), codigo: i.codigo, familia: i.familia,
                   calidad: i.calidad, req_item: i.id, req_txt: `${r.codigo} · ${r.solicitante}` });
     // ¿quién lo pide y para qué? se llena con los datos del requerimiento si está vacío
     const sol = porId('solicitante');
@@ -986,6 +992,7 @@ if (ITEMS_PREVIOS.length) ITEMS_PREVIOS.forEach(it => agregarItem(it)); else agr
 if (REQ_INICIAL) {
     const r = REQS.find(x => x.id === REQ_INICIAL);
     if (r) { const e = porId('emp_' + r.empresa); if (e && !e.disabled) { e.checked = true; pintarDestino(); pintarNumero(); } r.items.forEach(i => jalarReq(r, i)); }
+    if (r && r.empresa === 'AMBAS') Swal.fire({ icon: 'info', title: 'Elige la empresa que compra', text: 'Los productos del requerimiento ya están en la orden. Revisa si es Anclajes o Import Bolts antes de guardar.', timer: 3500, showConfirmButton: false });
 }
 pintarReqs();
 if (porId('oc_proveedor_id').value) cargarProveedor(porId('oc_proveedor_id').value);

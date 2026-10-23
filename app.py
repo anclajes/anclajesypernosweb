@@ -17251,7 +17251,7 @@ def insumos_vaciar():
 #         -> RECIBIDA (Logística registra la llegada + guía/factura) -> CONFORME (check verde: estado,
 #            cantidad y documentos OK) -> queda en "Conformes / en almacén".
 #         Se puede ANULAR (con motivo) mientras el material no haya llegado. La numeración es correlativa
-#         por tipo (OC N° 000001, OS N° 000001) y un número anulado no se reutiliza.
+#         por tipo (OC N° 2026-00001, OS N° 2026-00001) y un número anulado no se reutiliza.
 # Precios: se ingresan SIN IGV; el sistema calcula IGV 18% y el total.
 # Las tablas se crean solas al arrancar (no hace falta ninguna ruta /fix_).
 # =====================================================================================
@@ -17582,13 +17582,11 @@ def _oc_evento(orden, accion, detalle=''):
 
 
 def _oc_numero_txt(orden, numero=None, empresa=None, fecha=None):
-    """Anclajes: 000123. Import Bolts (su formato): 2026-00248 (año de la orden)."""
+    """Mismo formato en las dos empresas (OC y OS): año de la orden - correlativo de 5 dígitos, ej. 2026-00248.
+    Cada empresa y cada tipo llevan su propio correlativo."""
     numero = orden.numero if orden is not None else numero
-    empresa = (orden.empresa if orden is not None else empresa) or 'ANCLAJES'
-    if empresa == 'IMPORTBOLTS':
-        anio = (orden.fecha if orden is not None and orden.fecha else (fecha or hora_peru().date())).year
-        return f"{anio}-{int(numero or 0):05d}"
-    return f"{int(numero or 0):06d}"
+    anio = (orden.fecha if orden is not None and orden.fecha else (fecha or hora_peru().date())).year
+    return f"{anio}-{int(numero or 0):05d}"
 
 
 def _oc_codigo(orden):
@@ -18113,7 +18111,7 @@ def _leer_orden_form(f, orden=None):
             if ri:
                 otro = next((oi for oi in OrdenCompraItem.query.filter(OrdenCompraItem.req_item_id == ri.id).all()
                              if oi.orden and oi.orden.estado not in ('ANULADA', 'RECHAZADA') and (not orden or oi.orden_id != orden.id)), None)
-            if not ri or ri.requerimiento.estado != 'PENDIENTE' or (ri.requerimiento.empresa or 'ANCLAJES') != empresa \
+            if not ri or ri.requerimiento.estado != 'PENDIENTE' or (ri.requerimiento.empresa or 'ANCLAJES') not in (empresa, REQ_EMPRESA_LIBRE) \
                     or (ri.codigo or '').upper() != (codigo or '').upper() or tipo != 'OC':
                 errores.append(f'Ítem {n}: ya no corresponde al requerimiento (cambió el producto, la empresa o el requerimiento se cerró). Quítalo y vuelve a jalarlo.')
                 continue
@@ -18326,7 +18324,7 @@ def oc_lista():
         if hasta and o.fecha > hasta:
             continue
         if buscar:
-            texto = (f"{o.tipo} {o.numero:06d} {o.razon_social} {o.ruc or ''} {o.cotizacion or ''} {o.numero_factura or ''} {o.numero_guia or ''} "
+            texto = (f"{o.tipo} {_oc_numero_txt(o)} {o.numero:06d} {o.razon_social} {o.ruc or ''} {o.cotizacion or ''} {o.numero_factura or ''} {o.numero_guia or ''} "
                      f"{_oc_solicitante_txt(o)} {o.cliente_razon or ''} {o.cliente_ruc or ''} {' '.join(i.descripcion for i in o.items)}").upper()
             if not all(t in texto for t in buscar.upper().split()):
                 continue
@@ -20086,6 +20084,7 @@ def oc_config_datos():
 
 # ---------------------------- REQUERIMIENTOS DE COMPRA (Almacén pide -> Logística arma la OC) ----------------------------
 MAX_DOCS_REQ = 3
+REQ_EMPRESA_LIBRE = 'AMBAS'      # requerimiento sin empresa: Logística decide para cuál compra al armar la OC
 PRIORIDADES_REQ = {'NORMAL': 'Normal', 'URGENTE': 'Urgente'}
 # Avance de cada producto pedido (se calcula con las órdenes enlazadas; no se guarda)
 PASOS_REQ = [('PENDIENTE', 'Esperando OC', 'bi-hourglass-split', '#b45309'),
@@ -20154,7 +20153,7 @@ def _req_pendientes_de_oc(empresa=None):
     """Requerimientos con productos que todavía no están en una orden activa (lo que Logística tiene por atender)."""
     q = RequerimientoCompra.query.filter(RequerimientoCompra.estado == 'PENDIENTE')
     if empresa:
-        q = q.filter(RequerimientoCompra.empresa == empresa)
+        q = q.filter(RequerimientoCompra.empresa.in_([empresa, REQ_EMPRESA_LIBRE]))
     salida = []
     for r in q.order_by(RequerimientoCompra.id).all():
         seg = _req_seguimiento(r.items)
@@ -20255,15 +20254,12 @@ def _contexto_form_req(previo=None, errores=None):
 @_ruta_oc('req_crear')
 def oc_req_nuevo():
     if request.method == 'GET':
-        return render_template('oc_req_form.html', **_contexto_form_req({'empresa': request.args.get('empresa') or 'ANCLAJES', 'prioridad': 'NORMAL'}))
+        return render_template('oc_req_form.html', **_contexto_form_req({'prioridad': 'NORMAL'}))
     request.max_content_length = LIMITE_PETICION_MOVIMIENTO
     f = request.form
     errores, d = [], {}
-    empresa = (f.get('empresa') or '').upper()
-    if empresa not in EMPRESAS_OC or not EMPRESAS_OC[empresa]['habilitada']:
-        errores.append('Elige para qué inventario son los productos (Anclajes o Import Bolts).')
-        empresa = 'ANCLAJES'
-    d['empresa'] = empresa
+    # El requerimiento es solo "qué productos faltan": para qué empresa se compra lo decide Logística al armar la OC
+    d['empresa'] = REQ_EMPRESA_LIBRE
     d['solicitante_user_id'], d['solicitante_nombre'] = None, None
     sol = (f.get('solicitante') or '').strip()
     if sol.startswith('u:') and sol[2:].isdigit():
@@ -20298,8 +20294,7 @@ def oc_req_nuevo():
     elif d['necesita_para'] and d['necesita_para'] < hora_peru().date():
         errores.append('La fecha "para cuándo" no puede ser pasada.')
     d['nota'] = ' '.join((f.get('nota') or '').split())[:500] or None
-    # productos (solo del inventario de la empresa)
-    Modelo = ProductImportBolts if empresa == 'IMPORTBOLTS' else Product
+    # productos: los que existen en los inventarios (Anclajes o Import Bolts; el maestro los reparte a los dos)
     ums = {v.valor for v in _oc_catalogo('OC_UM')}
     items, vistos = [], set()
     filas = list(zip(f.getlist('codigo[]'), f.getlist('cantidad[]'), f.getlist('um[]') + [''] * 99, f.getlist('nota_item[]') + [''] * 99))
@@ -20307,12 +20302,11 @@ def oc_req_nuevo():
         cod = (cod or '').strip().upper()
         if not cod and not (cant or '').strip():
             continue
-        q = Modelo.query.filter(func.upper(Modelo.sku) == cod) if cod else None
-        if q is not None and Modelo is Product:
-            q = q.filter(Product.es_shadow_importbolts.isnot(True))
-        prod = q.first() if q is not None else None
+        prod_a = Product.query.filter(func.upper(Product.sku) == cod, Product.es_shadow_importbolts.isnot(True)).first() if cod else None
+        prod_b = ProductImportBolts.query.filter(func.upper(ProductImportBolts.sku) == cod).first() if cod else None
+        prod = prod_a or prod_b
         if not prod:
-            errores.append(f'Producto {n}: elígelo de la lista del inventario {EMPRESAS_OC[empresa]["corto"]}.')
+            errores.append(f'Producto {n}: elígelo de la lista del inventario.')
             continue
         if cod in vistos:
             errores.append(f'Producto {n} ({cod}): está repetido; súmalo en una sola línea.')
@@ -20327,7 +20321,7 @@ def oc_req_nuevo():
         vistos.add(cod)
         items.append({'codigo': prod.sku, 'descripcion': (prod.nombre or '')[:400], 'familia': prod.categoria or None, 'calidad': prod.calidad or None,
                       'um': um, 'cantidad': round(cantidad, 4), 'nota': ' '.join((nota or '').split())[:200] or None,
-                      'stock_al_pedir': int(prod.stock_actual or 0)})
+                      'stock_al_pedir': int((prod_a.stock_actual or 0) if prod_a else 0) + int((prod_b.stock_actual or 0) if prod_b else 0)})
     if not items:
         errores.append('Agrega al menos un producto.')
     if len(items) > 60:
@@ -20368,9 +20362,9 @@ def oc_req_nuevo():
             claves.append(clave)
             db.session.add(RequerimientoDocumento(req_id=r.id, s3_key=clave, nombre_original=secure_filename(a.filename)[:200] or f'documento.{ext}',
                                                   content_type=mime, tamano_bytes=tamano, subido_por=session.get('nombre', ''), fecha=hora_peru()))
-        _req_evento(r, 'CREADO', f"{len(items)} producto(s) para {EMPRESAS_OC[empresa]['corto']}"
+        _req_evento(r, 'CREADO', f"{len(items)} producto(s)"
                                  + (f" · {len(validos)} archivo(s)" if validos else '') + (' · URGENTE' if d['prioridad'] == 'URGENTE' else ''))
-        registrar_log(f"Pidió a Logística {_req_codigo(r)}: {len(items)} producto(s) para {EMPRESAS_OC[empresa]['corto']}", 'bi-clipboard-plus', 'text-primary')
+        registrar_log(f"Pidió a Logística {_req_codigo(r)}: {len(items)} producto(s)", 'bi-clipboard-plus', 'text-primary')
         db.session.commit()
     except Exception as e:
         db.session.rollback()
@@ -20558,7 +20552,7 @@ def oc_vaciar():
         return redirect(destino)
     _borrar_de_s3(claves)
     flash(f"✅ Órdenes vaciadas: {n} orden(es) y {len(claves)} archivo(s) borrados. La numeración vuelve a empezar"
-          + (' en 000001' if f.get('catalogos') == '1' else ' (desde el número inicial configurado de cada empresa, si hay uno)')
+          + (' desde el N° 00001' if f.get('catalogos') == '1' else ' (desde el número inicial configurado de cada empresa, si hay uno)')
           + (f"; además: {', '.join(extra)}" if extra else '') + '.')
     return redirect(destino)
 

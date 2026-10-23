@@ -28,12 +28,8 @@
 
 <div class="d-flex flex-wrap gap-2 align-items-center mb-2 vistas">
     {% for k, t in [('abiertos', 'Abiertos'), ('mios', 'Pedidos por mí'), ('completados', 'Completados'), ('cerrados', 'Rechazados / anulados'), ('todos', 'Todos')] %}
-    <a href="{{ url_for('oc_req_lista', vista=k, empresa=emp_sel) }}" class="{{ 'on' if vista == k }}">{{ t }} <span class="opacity-75">{{ cuenta[k] }}</span></a>
+    <a href="{{ url_for('oc_req_lista', vista=k) }}" class="{{ 'on' if vista == k }}">{{ t }} <span class="opacity-75">{{ cuenta[k] }}</span></a>
     {% endfor %}
-    <select class="form-select form-select-sm ms-auto" style="max-width: 170px;" onchange="location.href='{{ url_for('oc_req_lista', vista=vista) }}&empresa=' + this.value">
-        <option value="TODAS">Las dos empresas</option>
-        {% for e, info in empresas_oc.items() %}<option value="{{ e }}" {{ 'selected' if emp_sel == e }}>{{ info.corto }}</option>{% endfor %}
-    </select>
 </div>
 
 <div class="kpis-rq mb-2" title="{{ 'Solo los pedidos por ti' if vista == 'mios' else 'Todos los requerimientos' }}">
@@ -52,11 +48,12 @@
 </details>
 
 {% for r, sg, res in filas %}
-<div class="req-card shadow-sm" style="border-left: 4px solid {{ empresas_oc[r.empresa].color }};">
+{% set emp_r = empresas_oc.get(r.empresa) %}
+<div class="req-card shadow-sm" style="border-left: 4px solid {{ emp_r.color if emp_r else '#7c3aed' }};">
     <div class="cab">
         <div class="d-flex flex-wrap gap-2 align-items-center">
             <a class="cod" href="{{ url_for('oc_req_detalle', req_id=r.id) }}">{{ req_codigo(r) }}</a>
-            <span class="small fw-bold" style="color: {{ empresas_oc[r.empresa].color }};">Inventario {{ empresas_oc[r.empresa].corto }}</span>
+            {% if emp_r %}<span class="small fw-bold" style="color: {{ emp_r.color }};">Inventario {{ emp_r.corto }}</span>{% endif %}
             {% if r.prioridad == 'URGENTE' %}<span class="rq-urg">URGENTE</span>{% endif %}
             <span class="rq-estado ms-auto" style="color: {{ res.color }};"><i class="bi {{ res.icono }}"></i> {{ res.txt }}</span>
         </div>
