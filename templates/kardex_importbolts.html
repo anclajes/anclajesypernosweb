@@ -346,6 +346,16 @@
                             <span class="kx-etapa kx-etapa-{{ (m.etapa_proceso or '')|lower }}">{{ etapas_proceso.get(m.etapa_proceso, '') }}</span>
                         </div>
                         {% endif %}
+                        {% set ocm = (oc_por_mov or {}).get(m.id) %}
+                        {% if ocm %}
+                        <div class="mt-1 kx-docs">
+                            {% if puede_ver_docs and session.get('role') in ['admin', 'logistica', 'administracion', 'almacen'] %}
+                            <a href="{{ url_for('oc_pdf', orden_id=ocm.orden.id) }}" target="_blank" class="kx-oc" title="Ingreso registrado desde esta orden: ver su PDF"><i class="bi bi-cart-check-fill"></i> {{ ocm.codigo }}</a>
+                            {% for d in ocm.docs %}<span class="kx-doc"><a href="{{ url_for('oc_documento_ver', doc_id=d.id) }}" target="_blank" title="{{ d.nombre_original }}"><i class="bi bi-paperclip kx-doc-ico"></i> {{ {'GUIA': 'Guía', 'FACTURA': 'Factura', 'CERTIFICADO': 'Certificado', 'COTIZACION': 'Cotización', 'PAGO': 'Pago'}.get(d.tipo, 'Otro') }}</a>
+                                <a href="{{ url_for('oc_documento_ver', doc_id=d.id, download=1) }}" title="Descargar"><i class="bi bi-download"></i></a></span>{% endfor %}
+                            {% else %}<span class="kx-oc"><i class="bi bi-cart-check-fill"></i> {{ ocm.codigo }}</span>{% endif %}
+                        </div>
+                        {% endif %}
                         {% if m.observacion %}<div class="kx-obs"><i class="bi bi-chat-left-text"></i> {{ m.observacion }}</div>{% endif %}
                         {% set docs_m = docs_por_mov.get(m.id, []) %}
                         {% if (docs_m and puede_ver_docs) or puede_adjuntar %}

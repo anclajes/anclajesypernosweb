@@ -47,6 +47,11 @@
     .ficha { font-size: .72rem; border-radius: 8px; padding: 5px 8px; margin-top: 4px; }
     .ficha.vinc { background: #f0fdf4; border: 1px solid #bbf7d0; color: #14532d; }
     .ficha.nuevo { background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412; }
+    .ficha.falta { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+    .ayuda-inv { font-size: .72rem; background: #eff6ff; border: 1px solid #bfdbfe; color: #1e3a8a; border-radius: 10px; padding: 7px 10px; }
+    .i-desc[readonly] { background: #f0fdf4; cursor: default; }
+    .reedit { background: #fff7ed; border: 2px solid #fdba74; border-radius: 14px; padding: 12px 14px; margin-bottom: 14px; }
+    .reedit .tit { font-weight: 800; color: #9a3412; }
     .ficha .x { border: 0; background: none; color: #94a3b8; padding: 0 3px; }
     .est { display: inline-block; font-weight: 800; border-radius: 6px; padding: 0 6px; background: #fef3c7; color: #92400e; }
     .stk { display: inline-block; font-weight: 800; border-radius: 6px; padding: 0 6px; background: #fff; border: 1px solid #e2e8f0; color: #0f172a; }
@@ -66,6 +71,7 @@
     .motivos label small { font-size: .64rem; }
     .cliente-box { border: 1.5px dashed #7dd3fc; background: #f0f9ff; border-radius: 10px; padding: 8px 10px; }
     .aviso-cert { background: #fffbeb; border: 1px solid #fde68a; color: #78350f; border-radius: 8px; padding: 6px 10px; font-size: .74rem; margin-top: 8px; }
+    .ayuda-ins { font-size: .72rem; background: #fffbeb; border: 1px solid #fde68a; color: #78350f; border-radius: 10px; padding: 7px 10px; }
     .detr-box { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 10px; padding: 7px 10px; }
     .peso-linea { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: .72rem; color: #475569; background: #f8fafc; border-radius: 8px; padding: 4px 8px; }
     .peso-linea select { width: auto; flex: 0 0 auto; }
@@ -79,6 +85,17 @@
 
 <form method="POST" action="{{ url_for('oc_guardar') }}" id="formOC" novalidate>
 <input type="hidden" name="id" value="{{ orden.id if orden else '' }}">
+{% set reaprob = orden and orden.estado == 'APROBADA' %}
+{% if reaprob %}
+<div class="reedit">
+    <div class="tit"><i class="bi bi-exclamation-diamond-fill"></i> Estás editando una orden YA APROBADA · quedará como Rev. {{ (orden.revision or 0) + 1 }}</div>
+    <div class="small mb-2">Al guardar, la orden <b>vuelve a Gerencia</b> ("Por aprobar") y el PDF pierde la firma hasta que la aprueben otra vez.
+        Se puede editar mientras <b>no llegue el material</b>, <b>no tenga factura subida</b> y <b>no esté pagada</b>. Mantiene su número {{ oc_codigo(orden) }}.</div>
+    <label class="small fw-bold">Motivo de la edición * <span class="fw-normal text-muted">(lo verá el Gerente al re-aprobar)</span></label>
+    <textarea name="motivo_edicion" id="motivo_edicion" class="form-control" rows="2" maxlength="300" required minlength="10"
+              placeholder="Ej: el proveedor cambió el precio de los pernos 1/2 (nueva cotización C-152); se agregan 20 arandelas">{{ pv.motivo_edicion or '' }}</textarea>
+</div>
+{% endif %}
 <input type="hidden" name="duplicada_de" value="{{ pv.duplicada_de or '' }}">
 <input type="hidden" name="accion" id="accion" value="guardar">
 <div class="row g-3">
@@ -293,9 +310,18 @@
     <div class="col-12 col-xl-7">
         <!-- ÍTEMS -->
         <div class="card border-0 shadow-sm mb-3"><div class="card-body">
-            <div class="card-t"><i class="bi bi-list-ol"></i> Productos / servicios <span class="ms-auto fw-normal text-muted" style="text-transform:none; letter-spacing:0; font-size:.72rem;">Precios <b>SIN IGV</b></span></div>
-            <div class="form-text mb-2" style="font-size:.72rem;"><i class="bi bi-funnel-fill text-primary"></i> Pulsa <b>Inventario</b> para buscar con <b>Familia y Calidad</b> (como en los inventarios) o escribe en la descripción.
-                Si no lo tenemos, escríbelo: quedará como <b class="text-warning">NUEVO</b> para que Almacén lo cree al ingresarlo.</div>
+            <div class="card-t"><i class="bi bi-list-ol"></i> Productos / servicios
+                {% if puede_insumos %}<button type="button" class="btn btn-sm btn-outline-success py-0 ms-2" id="btnNuevoInsumo" style="display:none; text-transform:none; letter-spacing:0;" onclick="crearInsumo(null)"><i class="bi bi-plus-lg"></i> Nuevo insumo (maestro)</button>{% endif %}
+                <span class="ms-auto fw-normal text-muted" style="text-transform:none; letter-spacing:0; font-size:.72rem;">Precios <b>SIN IGV</b></span></div>
+            <div class="ayuda-inv mb-2" id="ayudaInv"><i class="bi bi-funnel-fill"></i> <span id="ayudaInvTxt"></span>
+                <div class="mt-1" id="ayudaInvPedir"><b>¿No encuentras el producto?</b> No se puede escribir a mano: pide al <b>encargado del inventario</b> que lo cree en el
+                    <b>Maestro de Productos</b> indicándole <b>descripción, familia y calidad</b>.
+                    <button type="button" class="btn btn-sm btn-outline-primary py-0 ms-1" onclick="pedirProducto(null)"><i class="bi bi-chat-dots"></i> Armar el pedido</button>
+                    {% if session.get('role') == 'admin' %}<a href="{{ url_for('admin_maestro_nuevo') }}" target="_blank" class="btn btn-sm btn-link py-0">Crear en el Maestro</a>{% endif %}</div></div>
+            <div class="ayuda-ins mb-2" id="ayudaIns" style="display:none;"><i class="bi bi-lightbulb-fill"></i> <b>Compra para Insumos internos:</b> pulsa <b>Insumos</b> en cada ítem para buscar por <b>categoría</b> o descripción.
+                <b>Si no lo encuentras, primero créalo</b> con <b>"Nuevo insumo (maestro)"</b> (te muestra los parecidos que ya existen para no duplicarlo) y luego elígelo. Así, al llegar, el ingreso a Insumos queda enlazado solo.
+                <div class="mt-1">¿Falta una categoría? Agrégala en <a href="{{ url_for('insumos_config') }}" target="_blank">Insumos → Configuración</a> · Ver el <a href="{{ url_for('insumos_maestro') }}" target="_blank">Maestro de insumos</a>.
+                    <b>No se puede escribir un insumo a mano:</b> elígelo de la lista o créalo en el maestro.</div></div>
             <div id="items"></div>
             <button type="button" class="btn btn-outline-primary w-100" onclick="agregarItem()"><i class="bi bi-plus-circle"></i> Agregar ítem</button>
         </div></div>
@@ -315,8 +341,13 @@
             <div class="lbl">Observaciones (opcional)</div>
             <textarea name="observaciones" class="form-control mb-3" rows="2" maxlength="500" placeholder="Salen en el PDF debajo de los ítems">{{ pv.observaciones or '' }}</textarea>
             <div class="d-flex flex-column flex-sm-row gap-2">
+                {% if reaprob %}
+                <a href="{{ url_for('oc_detalle', orden_id=orden.id) }}" class="btn btn-outline-secondary btn-lg fw-bold">Cancelar</a>
+                <button type="submit" class="btn btn-warning btn-lg flex-fill fw-bold" data-accion="enviar"><i class="bi bi-send-exclamation"></i> Guardar cambios y re-enviar a Gerencia</button>
+                {% else %}
                 <button type="submit" class="btn btn-outline-primary btn-lg flex-fill fw-bold" data-accion="guardar"><i class="bi bi-save"></i> Guardar borrador</button>
                 <button type="submit" class="btn btn-success btn-lg flex-fill fw-bold" data-accion="enviar"><i class="bi bi-send-check"></i> Guardar y enviar a Gerencia</button>
+                {% endif %}
             </div>
             <div class="form-text mt-2">Mientras no la apruebe Gerencia, el PDF dice <b>"PENDIENTE DE APROBACIÓN"</b>. Al aprobarla lleva la <b>firma y sello</b>.</div>
         </div></div>
@@ -335,7 +366,7 @@
                 <select name="servicio[]" class="form-select form-select-sm i-serv"></select></div>
             <div class="col-12 position-relative"><label>Descripción *</label>
                 <div class="input-group input-group-sm">
-                    <input type="text" name="descripcion[]" class="form-control text-uppercase i-desc" maxlength="400" autocomplete="off" placeholder="Escribe o busca en el inventario...">
+                    <input type="text" name="descripcion[]" class="form-control text-uppercase i-desc" maxlength="400" autocomplete="off" placeholder="Busca por código o descripción...">
                     <button type="button" class="btn btn-outline-primary i-buscar" title="Buscar con Familia y Calidad"><i class="bi bi-funnel"></i> Inventario</button>
                 </div>
                 <div class="list-group position-absolute w-100 shadow sug prod-sug" style="left:0;"></div>
@@ -366,12 +397,13 @@
         <div id="mp_res"></div>
     </div>
     <div class="modal-footer p-2 justify-content-between">
-        <span class="small text-muted">¿No está? Ciérralo y escribe la descripción: quedará como <b>NUEVO</b>.</span>
+        <span class="small text-muted" id="mp_pie">¿No está? Pide al encargado que lo cree en el Maestro <button type="button" class="btn btn-link btn-sm p-0 align-baseline" onclick="pedirProducto(filaBuscando)">(armar el pedido)</button>.</span>
         <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cerrar</button>
     </div>
 </div></div></div>
 
 {% include '_oc_cuentas.html' %}
+{% if puede_insumos %}{% include '_insumo_modal.html' %}{% endif %}
 
 <script>
 const UMS = {{ ums|tojson }};
@@ -384,12 +416,31 @@ const LUGAR = {{ cfgs|dictsort|map('last')|map(attribute='lugar_entrega')|list|t
 const EMP_ORDEN = {{ cfgs|dictsort|map('first')|list|tojson }};
 const SERVICIOS = {{ servicios|tojson }};
 const ES_ADMIN = {{ 'true' if session.get('role') == 'admin' else 'false' }};
+const PUEDE_INSUMOS = {{ 'true' if puede_insumos else 'false' }};
+const ES_EDICION = {{ 'true' if orden else 'false' }};
+const ES_REAPROBACION = {{ 'true' if reaprob else 'false' }};
+window.INSUMO_ELEGIBLE = true;
+let filaInsumo = null;
+function crearInsumo(fila) {
+    filaInsumo = fila;
+    const desc = fila ? fila.querySelector('.i-desc').value.trim() : '';
+    abrirInsumo({ descripcion: desc });
+}
+function enlazarInsumo(n) {
+    // el insumo creado (o elegido de los parecidos) queda en la fila desde la que se abrió; si no, en la primera fila sin enlazar o en una nueva
+    let fila = filaInsumo || [...document.querySelectorAll('#items .item')].find(f => !f.querySelector('.i-codigo').value && !f.querySelector('.i-desc').value.trim());
+    filaInsumo = null;
+    if (!fila) fila = agregarItem();
+    elegirProducto(fila, { sku: n.codigo, descripcion: n.descripcion, familia: n.categoria || '', calidad: '', um: n.unidad || '', insumo_id: n.id, origen: 'INSUMO' });
+}
+document.addEventListener('insumoGuardado', e => { enlazarInsumo(e.detail); Swal.fire({ icon: 'success', title: 'Insumo creado', text: `${e.detail.codigo} — ${e.detail.descripcion}`, timer: 1500, showConfirmButton: false }); });
+document.addEventListener('insumoElegido', e => enlazarInsumo(e.detail));
 const porId = id => document.getElementById(id);
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function fmt(n) { return Number(n || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 function fmtCant(n) { return Number(n || 0).toLocaleString('es-PE', { maximumFractionDigits: 3 }); }
 function r2(n) { return Math.round((n + Number.EPSILON) * 100) / 100; }
-function valorRadio(n) { const r = document.querySelector(`input[name=${n}]:checked`); return r ? r.value : ''; }
+function valorRadio(n) { const r = document.querySelector(`#formOC input[name=${n}]:checked`); return r ? r.value : ''; }   // solo el formulario de la orden (el modal de cuentas tiene otro 'tipo')
 function moneda() { return MONEDAS[valorRadio('moneda') || 'PEN'].simbolo; }
 function destino() { return valorRadio('destino'); }
 function empresa() { return valorRadio('empresa') || 'ANCLAJES'; }
@@ -433,6 +484,26 @@ function pintarEntrega() {
     porId('boxFecha').style.display = et === 'FECHA' ? 'block' : 'none';
 }
 
+// Pedido al encargado para crear un producto que no existe (texto listo para copiar y mandar por WhatsApp o correo)
+function pedirProducto(fila) {
+    const d = fila ? fila.querySelector('.i-desc').value.trim() : '';
+    Swal.fire({ title: 'Pedir que creen el producto', confirmButtonText: '<i class="bi bi-clipboard"></i> Copiar pedido', showCancelButton: true, cancelButtonText: 'Cerrar',
+        html: `<div class="text-start small">Llena lo que sepas; se copia un mensaje para el encargado del inventario.</div>
+               <input id="pp_desc" class="swal2-input text-uppercase" placeholder="Descripción *" value="${esc(d)}">
+               <input id="pp_fam" class="swal2-input text-uppercase" placeholder="Familia (ej. PERNOS)">
+               <input id="pp_cal" class="swal2-input text-uppercase" placeholder="Calidad (ej. GRADO 5)">`,
+        preConfirm: () => {
+            const v = k => document.getElementById(k).value.trim().toUpperCase();
+            if (v('pp_desc').length < 3) { Swal.showValidationMessage('Escribe la descripción'); return false; }
+            return `Hola, para una orden de compra (${corto()}) necesito que se cree en el Maestro de Productos:\n• Descripción: ${v('pp_desc')}\n• Familia: ${v('pp_fam') || '-'}\n• Calidad: ${v('pp_cal') || '-'}\nGracias.`;
+        } }).then(r => {
+            if (!r.isConfirmed) return;
+            (navigator.clipboard ? navigator.clipboard.writeText(r.value) : Promise.reject()).then(
+                () => Swal.fire({ icon: 'success', title: 'Copiado', text: 'Pégalo en WhatsApp o en un correo al encargado.', timer: 1800, showConfirmButton: false }),
+                () => Swal.fire({ title: 'Copia este mensaje', html: `<textarea class="form-control" rows="6">${esc(r.value)}</textarea>` }));
+        });
+}
+
 // ================= ÍTEMS =================
 function numerar() { document.querySelectorAll('#items .item').forEach((f, i) => f.querySelector('.n').textContent = 'ÍTEM ' + (i + 1)); }
 function fmtKg(n) { return Number(n || 0).toLocaleString('es-PE', { maximumFractionDigits: 4 }); }
@@ -474,24 +545,41 @@ function pintarFicha(fila) {
     const desc = fila.querySelector('.i-desc').value.trim();
     if (p) {
         const enEmpresa = p.origen === 'INSUMO' || p.origen === empresa();
-        box.innerHTML = `<div class="ficha ${enEmpresa || destino() !== 'GENERAL' ? 'vinc' : 'nuevo'}"><i class="bi bi-link-45deg"></i> <b>${esc(p.sku)}</b>` +
+        const malo = tipo() === 'OC' && ((destino() === 'GENERAL' && !enEmpresa) || (destino() === 'INSUMOS' && p.origen !== 'INSUMO'));
+        box.innerHTML = `<div class="ficha ${malo ? 'falta' : (enEmpresa || destino() !== 'GENERAL' ? 'vinc' : 'nuevo')}"><i class="bi bi-link-45deg"></i> <b>${esc(p.sku)}</b>` +
             (p.familia ? ` · ${esc(p.familia)}` : '') + (p.calidad ? ` · ${esc(p.calidad)}` : '') + (p.estado ? ` · <span class="est">${esc(p.estado)}</span>` : '') + textoStock(p) +
             ` <button type="button" class="x" title="Quitar vínculo"><i class="bi bi-x-circle"></i></button>` +
-            (!enEmpresa && destino() === 'GENERAL' && tipo() === 'OC' ? `<div><b>NUEVO en ${esc(corto())}:</b> existe solo en ${p.origen === 'IMPORTBOLTS' ? 'Import Bolts' : 'otro inventario'}; Almacén deberá crearlo.</div>` : '') +
+            (malo ? `<div><b>No sirve para esta orden:</b> ${destino() === 'INSUMOS' ? 'es un producto del inventario, no un insumo' : 'no está en el inventario ' + esc(corto())}. Quítalo (x) y elige otro.</div>` : '') +
             (p.ultimo ? `<div class="text-muted">Último precio: <b>${esc(p.ultimo.moneda)} ${fmt(p.ultimo.precio)}</b> / ${esc(p.ultimo.um)} · ${esc(p.ultimo.orden)} · ${esc(p.ultimo.proveedor)}</div>` : '') + '</div>';
         box.querySelector('.x').onclick = () => vincular(fila, null);
         const inv = fila.querySelector('.i-pinv');
         inv.innerHTML = p.peso ? `Inventario: ${fmtKg(p.peso)} kg/u <button type="button" class="usar">usar</button>` : '';
         if (p.peso) inv.querySelector('.usar').onclick = () => { fila.querySelector('.i-pmodo').value = 'U'; fila.querySelector('.i-pval').value = p.peso; recalcular(); };
-    } else if (desc && tipo() === 'OC' && destino() === 'GENERAL') {
-        box.innerHTML = `<div class="ficha nuevo"><i class="bi bi-stars"></i> <b>PRODUCTO NUEVO</b>: no está en el inventario ${esc(corto())}. Almacén lo creará al ingresarlo.</div>`;
+    } else if (desc && fila._legado && tipo() === 'OC') {
+        box.innerHTML = `<div class="ficha nuevo"><i class="bi bi-clock-history"></i> Ítem antiguo escrito a mano: se respeta, pero si lo cambias tendrás que elegirlo de la lista.</div>`;
+    } else if (desc && tipo() === 'OC' && destino() !== 'INSUMOS') {
+        box.innerHTML = `<div class="ficha falta"><i class="bi bi-x-octagon-fill"></i> <b>No elegido.</b> Elige el producto de la lista (escribe para buscar o pulsa <b>Inventario</b>). No se puede escribir un producto que no esté en el inventario ${esc(corto())}.` +
+            ` <button type="button" class="btn btn-sm btn-outline-danger py-0 ms-1 pedir"><i class="bi bi-chat-dots"></i> No existe: pedir que lo creen</button></div>`;
+        box.querySelector('.pedir').onclick = () => pedirProducto(fila);
     } else if (desc && destino() === 'INSUMOS') {
-        box.innerHTML = `<div class="ficha nuevo"><i class="bi bi-info-circle"></i> No está vinculado al maestro de insumos: se elegirá al ingresarlo.</div>`;
+        box.innerHTML = `<div class="ficha falta sin-insumo"><i class="bi bi-x-octagon-fill"></i> <b>No elegido del maestro de insumos.</b> Búscalo con <b>Insumos</b> o créalo ahora.` +
+            (PUEDE_INSUMOS ? ` <button type="button" class="btn btn-sm btn-outline-success py-0 ms-1 crear-ins"><i class="bi bi-plus-lg"></i> Crear en el maestro</button>` : '') + `</div>`;
+        const b = box.querySelector('.crear-ins'); if (b) b.onclick = () => crearInsumo(fila);
     } else box.innerHTML = '';
+    fila.querySelector('.i-desc').readOnly = !!(p && tipo() === 'OC');
     if (!p) fila.querySelector('.i-pinv').innerHTML = '';
 }
 function pintarFichas() {
     document.querySelectorAll('#items .item').forEach(pintarFicha);
+    const ins = destino() === 'INSUMOS' && tipo() === 'OC';
+    porId('ayudaInv').style.display = ins ? 'none' : '';
+    const compra = tipo() === 'OC';
+    porId('ayudaInvTxt').innerHTML = compra ? `<b>Solo productos del inventario ${esc(corto())}:</b> escribe el código o la descripción y elige de la lista, o pulsa <b>Inventario</b> para buscar con <b>Familia y Calidad</b>.`
+        : 'Servicio: describe el trabajo. Si es sobre un producto del inventario, puedes elegirlo con <b>Inventario</b>.';
+    porId('ayudaInvPedir').style.display = compra ? '' : 'none';
+    porId('ayudaIns').style.display = ins ? 'block' : 'none';
+    if (porId('btnNuevoInsumo')) porId('btnNuevoInsumo').style.display = ins ? '' : 'none';
+    document.querySelectorAll('#items .i-buscar').forEach(b => b.innerHTML = ins ? '<i class="bi bi-tools"></i> Insumos' : '<i class="bi bi-funnel"></i> Inventario');
     porId('avisoCert').style.display = tipo() === 'OC' && destino() === 'GENERAL' ? 'block' : 'none';
 }
 function vincular(fila, p) {
@@ -519,7 +607,7 @@ function tarjetaProducto(p) {
         (p.ultimo ? `<div class="mt">Últ. precio ${esc(p.ultimo.moneda)} ${fmt(p.ultimo.precio)} / ${esc(p.ultimo.um)} (${esc(p.ultimo.orden)})</div>` : '');
 }
 function urlProductos(q, familia, calidad) {
-    return `{{ url_for('oc_api_productos') }}?q=${encodeURIComponent(q || '')}&familia=${encodeURIComponent(familia || '')}&calidad=${encodeURIComponent(calidad || '')}&destino=${destino()}&empresa=${empresa()}`;
+    return `{{ url_for('oc_api_productos') }}?q=${encodeURIComponent(q || '')}&familia=${encodeURIComponent(familia || '')}&calidad=${encodeURIComponent(calidad || '')}&destino=${destino()}&empresa=${empresa()}&solo_empresa=${tipo() === 'OC' ? 1 : 0}`;
 }
 function agregarItem(datos) {
     datos = datos || {};
@@ -535,8 +623,10 @@ function agregarItem(datos) {
     fila.querySelector('.i-pmodo').value = datos.peso_modo === 'T' ? 'T' : 'U';
     fila.querySelector('.i-pval').value = datos.peso_valor || '';
     if (datos.codigo) vincular(fila, { origen: datos.origen, sku: datos.codigo, insumo_id: datos.insumo_id, familia: datos.familia, calidad: datos.calidad, estado: datos.estado });
+    else if (ES_EDICION && datos.descripcion) fila._legado = datos.descripcion;
     let t = null;
     desc.addEventListener('input', () => {
+        if (fila._legado && desc.value.trim().toUpperCase() !== fila._legado.toUpperCase()) fila._legado = null;
         if (fila._prod) vincular(fila, null);
         pintarFicha(fila);
         clearTimeout(t);
@@ -545,7 +635,8 @@ function agregarItem(datos) {
         t = setTimeout(() => fetch(urlProductos(q)).then(r => r.json()).then(d => {
             if (document.activeElement !== desc) return;
             const res = (d.results || []).slice(0, 12);
-            sug.innerHTML = res.length ? '' : '<div class="list-group-item small text-muted">No está en el inventario: quedará como producto NUEVO.</div>';
+            sug.innerHTML = res.length ? '' : (tipo() === 'OC' ? `<div class="list-group-item small text-danger">No está en ${destino() === 'INSUMOS' ? 'el maestro de insumos' : 'el inventario ' + esc(corto())}. ${destino() === 'INSUMOS' ? 'Créalo con "Nuevo insumo (maestro)".' : 'Pide al encargado que lo cree en el Maestro.'}</div>`
+                : '<div class="list-group-item small text-muted">No está en el inventario: se guarda como lo escribiste.</div>');
             res.forEach(p => {
                 const b = document.createElement('button'); b.type = 'button'; b.className = 'list-group-item list-group-item-action py-1 px-2 small';
                 b.innerHTML = tarjetaProducto(p); b.onmousedown = e => e.preventDefault(); b.onclick = () => elegirProducto(fila, p);
@@ -789,7 +880,7 @@ function archivarContacto(c) {
 }
 
 // ================= VALIDACIÓN Y ENVÍO =================
-let accionPulsada = 'guardar';
+let accionPulsada = ES_REAPROBACION ? 'enviar' : 'guardar';
 document.querySelectorAll('#formOC button[type=submit]').forEach(b => b.addEventListener('click', () => accionPulsada = b.dataset.accion));
 porId('formOC').addEventListener('submit', function (e) {
     if (porId('provManual').style.display === 'block') {
@@ -819,18 +910,20 @@ porId('formOC').addEventListener('submit', function (e) {
     const et = valorRadio('entrega_tipo');
     if (et === 'DIAS' && !(parseInt(porId('entrega_dias').value) >= 1)) err.push('Escribe en cuántos días se entrega.');
     if (et === 'FECHA' && !porId('fecha_entrega').value) err.push('Escribe la fecha de entrega.');
+    if (ES_REAPROBACION && porId('motivo_edicion').value.trim().length < 10) err.push('Escribe el MOTIVO DE LA EDICIÓN (mínimo 10 letras).');
     const filas = [...document.querySelectorAll('#items .item')].filter(f => f.querySelector('.i-desc').value.trim() || f.querySelector('.i-cant').value || f.querySelector('.i-pu').value);
     if (!filas.length) err.push('Agrega al menos un ítem.');
     filas.forEach((f, i) => {
         if (f.querySelector('.i-desc').value.trim().length < 2 || !(parseFloat(f.querySelector('.i-cant').value) > 0) || !f.querySelector('.i-um').value || f.querySelector('.i-pu').value === '')
             err.push(`Ítem ${i + 1}: completa descripción, cantidad, U.M. y precio.`);
         if (tipo() === 'OS' && !f.querySelector('.i-serv').value) err.push(`Ítem ${i + 1}: elige el tipo de servicio.`);
+        if (f.querySelector('.ficha.falta')) err.push(`Ítem ${i + 1}: elige ${destino() === 'INSUMOS' ? 'el insumo del maestro' : 'el producto del inventario ' + corto()} de la lista (no se puede escribir a mano).`);
     });
     if (err.length) { e.preventDefault(); Swal.fire({ icon: 'warning', title: 'Falta información', html: [...new Set(err)].map(esc).join('<br>') }); return; }
     if (accionPulsada === 'enviar' && !this.dataset.confirmado) {
         e.preventDefault();
-        const nuevos = filas.filter(f => f.querySelector('.ficha.nuevo')).length;
-        Swal.fire({ icon: 'question', title: '¿Enviar a Gerencia?', html: `Total: <b>${porId('tTot').textContent}</b>.` + (nuevos ? `<br>${nuevos} producto(s) NUEVO(S) para el inventario.` : '') + '<br>Ya no se podrá editar salvo que la retires.',
+        Swal.fire({ icon: 'question', title: '¿Enviar a Gerencia?', html: `Total: <b>${porId('tTot').textContent}</b>.` +
+                    (ES_REAPROBACION ? '<br>La orden vuelve a <b>Por aprobar</b> con tu motivo de edición.' : '<br>Ya no se podrá editar salvo que la retires.'),
                     showCancelButton: true, confirmButtonText: 'Sí, enviar', cancelButtonText: 'Revisar' })
             .then(r => { if (r.isConfirmed) { this.dataset.confirmado = '1'; porId('accion').value = 'enviar'; this.requestSubmit ? this.requestSubmit() : this.submit(); } });
         return;

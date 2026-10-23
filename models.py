@@ -181,6 +181,9 @@ class ProductMovement(db.Model):
     # --- Detalle del motivo (ej. CONSUMO INTERNO -> 'MEJORA DE INFRAESTRUCTURA') y explicación libre ---
     detalle_motivo = db.Column(db.String(100), nullable=True)
     observacion = db.Column(db.String(300), nullable=True)
+    # --- Ingreso hecho desde una Orden de Compra (Ingresos pendientes): enlace a la orden y su ítem (los documentos NO se copian) ---
+    orden_compra_id = db.Column(db.Integer, nullable=True, index=True)
+    orden_item_id = db.Column(db.Integer, nullable=True)
 
     proveedor = db.relationship('Proveedor')
     proceso_oc = db.relationship('ProcesoOC')
@@ -554,6 +557,9 @@ class ProductMovementImportBolts(db.Model):
     # --- Detalle del motivo (ej. CONSUMO INTERNO -> 'MEJORA DE INFRAESTRUCTURA') y explicación libre ---
     detalle_motivo = db.Column(db.String(100), nullable=True)
     observacion = db.Column(db.String(300), nullable=True)
+    # --- Ingreso hecho desde una Orden de Compra (Ingresos pendientes): enlace a la orden y su ítem (los documentos NO se copian) ---
+    orden_compra_id = db.Column(db.Integer, nullable=True, index=True)
+    orden_item_id = db.Column(db.Integer, nullable=True)
 
     proveedor = db.relationship('Proveedor')
     proceso_oc = db.relationship('ProcesoOC')
@@ -1345,6 +1351,9 @@ class OrdenCompra(db.Model):
     anulacion_categoria = db.Column(db.String(60))
     anulacion_opcion = db.Column(db.String(150))
     detraccion_pct = db.Column(db.Float)                    # % de detracción SUNAT (vacío = no aplica)
+    nota_seguimiento = db.Column(db.String(300))            # OS: nota de Almacén al marcar el seguimiento
+    revision = db.Column(db.Integer, default=0)            # cuántas veces se editó DESPUÉS de aprobada (Rev. 1, Rev. 2...)
+    motivo_edicion = db.Column(db.String(300))              # por qué se editó la orden ya aprobada (lo ve Gerencia al re-aprobar)
     # Recepción del material
     fecha_llegada = db.Column(db.DateTime, nullable=True)
     recibido_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
@@ -1423,6 +1432,8 @@ class OrdenCompraItem(db.Model):
     fecha_ingreso = db.Column(db.DateTime, nullable=True)
     sku_ingreso = db.Column(db.String(60))                     # SKU con el que se ingresó (obligatorio si era nuevo)
     nota_ingreso = db.Column(db.String(300))
+    kardex_mov_id = db.Column(db.Integer)                      # movimiento del Kardex creado desde Ingresos pendientes
+    cantidad_kardex = db.Column(db.Integer)                    # cantidad que entró al Kardex (puede diferir de la OC)
 
     ingresado_por = db.relationship('User', foreign_keys=[ingresado_por_id])
 

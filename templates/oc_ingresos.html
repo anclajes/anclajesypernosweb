@@ -35,7 +35,7 @@
     .it .desc { font-weight: 700; font-size: .88rem; overflow-wrap: anywhere; }
     .it .meta { font-size: .72rem; color: #64748b; margin-top: 3px; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
     .tag { display: inline-block; font-size: .64rem; font-weight: 800; border-radius: 5px; padding: 0 6px; }
-    .tag.nuevo { background: #ffedd5; color: #9a3412; } .tag.vinc { background: #dcfce7; color: #166534; } .tag.est { background: #fef3c7; color: #92400e; }
+    .tag.nuevo { background: #ffedd5; color: #9a3412; } .tag.serv { background: #ede9fe; color: #5b21b6; } .tag.vinc { background: #dcfce7; color: #166534; } .tag.est { background: #fef3c7; color: #92400e; }
     .tag.espera-i { background: #fef3c7; color: #92400e; } .tag.listo { background: #dcfce7; color: #166534; }
     .cant { font-size: 1.1rem; font-weight: 800; font-variant-numeric: tabular-nums; color: #0f172a; }
     .peso-l { font-size: .7rem; color: #475569; background: #f8fafc; border-radius: 7px; padding: 2px 7px; }
@@ -48,6 +48,19 @@
     .sku-sug { z-index: 1050; max-height: 240px; overflow-y: auto; display: none; left: 0; right: 0; }
     .oculto { display: none !important; }
     @media (max-width: 767.98px) { .it { grid-template-columns: 1fr; } }
+    .manual summary { cursor: pointer; font-size: .7rem; }
+    .kx-fijo { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 6px; margin-bottom: 10px; }
+    .kx-fijo > div { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 5px 9px; font-size: .78rem; overflow-wrap: anywhere; }
+    .kx-fijo small { display: block; font-size: .62rem; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: .03em; }
+    .kx-it { border: 1px solid #e2e8f0; border-radius: 12px; padding: 8px 10px; margin-bottom: 8px; background: #fff; }
+    .kx-it.off { opacity: .45; }
+    .kx-it .tit { font-weight: 700; font-size: .82rem; overflow-wrap: anywhere; }
+    .kx-it label { font-size: .64rem; font-weight: 800; color: #64748b; text-transform: uppercase; margin-bottom: 1px; }
+    .kx-it .dif { font-size: .7rem; color: #9a3412; }
+    .kx-prod { font-size: .74rem; background: #f0fdf4; border-radius: 8px; padding: 3px 8px; margin-top: 4px; }
+    .kx-prod.falta { background: #fff7ed; color: #9a3412; }
+    .kx-docs { display: flex; flex-wrap: wrap; gap: 4px; }
+    @media (max-width: 767.98px) { #modalKardex .modal-dialog { margin: .5rem; } }
 </style>
 
 <div class="d-flex flex-wrap gap-2 align-items-center mb-2 vistas">
@@ -70,14 +83,16 @@
     <summary><i class="bi bi-info-circle"></i> ¿Cómo funciona este apartado?</summary>
     <div class="pasos-ing">
         <div><b class="nro">1</b> Aquí aparece cada producto que <b>llegó con una OC</b> y que Logística revisó y dio <b>conforme</b> (buen estado, cantidad y documentos). Está <b>esperando ser ingresado</b>.</div>
-        <div><b class="nro">2</b> Ve al <b>inventario</b> y <b>súmale</b> la cantidad al producto (botón <i class="bi bi-search"></i> buscar). Si es <span class="tag nuevo">NUEVO</span>, primero <b>créalo</b> y luego súmalo.</div>
-        <div><b class="nro">3</b> Vuelve y pulsa <b>Marcar ingresado</b>: queda tu nombre, la fecha y la hora, y pasa a "Ya ingresados" con toda su historia.</div>
+        <div><b class="nro">2</b> Pulsa <b>Registrar ingreso en Kardex</b>: se abre el <b>Movimiento de Kardex</b> con todo lleno desde la orden (ingreso por <b>COMPRA</b>, cantidad, fecha de llegada, proveedor, precio, factura o guía). Solo revisas y confirmas. Si la orden trae varios ítems, usa <b>Ingresar todo</b>.</div>
+        <div><b class="nro">3</b> Se suma el stock, el movimiento queda en el Kardex <b>enlazado a la orden</b> (con su PDF y documentos) y el ítem pasa a "Ya ingresados" con tu nombre, fecha y hora.</div>
     </div>
     <div class="nota-cod"><b><i class="bi bi-upc-scan"></i> ¿Qué es el "Código en el inventario"?</b> Es el <b>SKU</b> con el que el producto quedó en el inventario. Sirve para <b>enlazar</b> la orden con el producto (trazabilidad).
         <ul class="mb-0 mt-1 ps-3">
             <li>Si el producto <b>ya existía</b>, el código ya viene puesto: no tienes que hacer nada.</li>
+            <li><b>Documentos:</b> no se vuelven a subir. El movimiento del Kardex queda <b>enlazado</b> a la orden: desde el Kardex abres el PDF de la orden, la guía, la factura y el certificado (es el mismo archivo, no una copia).</li>
+            <li>Las <b>Órdenes de Servicio</b> (OS, en morado) también aparecen aquí: no se ingresan producto por producto, solo se marca <b>"Seguimiento hecho · movimiento registrado"</b> cuando el material volvió del servicio.</li>
             <li>Cada orden se ingresa al inventario de <b>su empresa</b> (Anclajes o Import Bolts): fíjate en el color y el nombre arriba de cada orden.</li>
-            <li>Si es <b>NUEVO</b>, escribe (o busca) el código con el que lo <b>acabas de crear</b>. Si todavía no tiene código, puedes dejarlo vacío: <b>no impide marcarlo</b>.</li>
+            <li>Si es <b>NUEVO</b> (órdenes antiguas escritas a mano), en el Kardex te pide <b>elegir el producto</b> con el que lo creaste en el inventario.</li>
         </ul></div>
 </details>
 
@@ -97,8 +112,9 @@
         <div class="d-flex flex-wrap gap-2 align-items-center">
             {% if puede_ver_oc %}<a class="oc-num" href="{{ url_for('oc_detalle', orden_id=o.id) }}">{% else %}<span class="oc-num">{% endif %}<span class="oc-tipo {{ o.tipo }}">{{ o.tipo }}</span> N° {{ oc_numero_txt(o) }}{% if puede_ver_oc %}</a>{% else %}</span>{% endif %}
             <span class="prov">{{ o.razon_social }}</span>
-            <span class="oc-dest GENERAL" style="background: {{ empresas_oc[emp].color }}; color: #fff;">Inventario {{ empresas_oc[emp].corto }}</span>
-            {% if vista == 'pendientes' %}<span class="espera {{ 'larga' if espera >= 3 }} ms-auto"><i class="bi bi-hourglass-split"></i> {{ 'Conforme hoy' if espera == 0 else 'Esperando ingreso hace ' ~ espera ~ ' día' ~ ('s' if espera != 1 else '') }}</span>{% endif %}
+            {% if o.tipo == 'OS' %}<span class="oc-dest" style="background: #7c3aed; color: #fff;"><i class="bi bi-tools"></i> Servicio · {{ empresas_oc[emp].corto }}</span>
+            {% else %}<span class="oc-dest GENERAL" style="background: {{ empresas_oc[emp].color }}; color: #fff;">Inventario {{ empresas_oc[emp].corto }}</span>{% endif %}
+            {% if vista == 'pendientes' and not (o.tipo == 'OS' and o.fecha_kardex) %}<span class="espera {{ 'larga' if espera >= 3 }} ms-auto"><i class="bi bi-hourglass-split"></i> {{ 'Conforme hoy' if espera == 0 else ('Esperando seguimiento' if o.tipo == 'OS' else 'Esperando ingreso') ~ ' hace ' ~ espera ~ ' día' ~ ('s' if espera != 1 else '') }}</span>{% endif %}
         </div>
         {% if o.solicitante_nombre or o.motivo_compra %}
         <div class="sol-l"><i class="bi bi-person-raised-hand"></i> Solicitó <b>{{ oc_solicitante_txt(o) or '—' }}</b>{% if o.area_solicitante %} ({{ o.area_solicitante|title }}){% endif %}
@@ -107,12 +123,14 @@
         <div class="traza">
             <span class="t ok"><i class="bi bi-patch-check-fill"></i><span><b>Aprobada</b>{{ o.aprobado_por.nombre_completo if o.aprobado_por else '' }}{% if o.fecha_aprobacion %} · {{ o.fecha_aprobacion.strftime('%d/%m %H:%M') }}{% endif %}</span></span>
             <i class="bi bi-chevron-right flecha"></i>
-            <span class="t ok"><i class="bi bi-truck"></i><span><b>Llegó</b>{{ o.recibido_por.nombre_completo if o.recibido_por else '' }}{% if o.fecha_llegada %} · {{ o.fecha_llegada.strftime('%d/%m %H:%M') }}{% endif %}</span></span>
+            <span class="t ok"><i class="bi bi-truck"></i><span><b>{{ 'Entregado' if o.tipo == 'OS' else 'Llegó' }}</b>{{ o.recibido_por.nombre_completo if o.recibido_por else '' }}{% if o.fecha_llegada %} · {{ o.fecha_llegada.strftime('%d/%m %H:%M') }}{% endif %}</span></span>
             <i class="bi bi-chevron-right flecha"></i>
             <span class="t ok"><i class="bi bi-check-circle-fill"></i><span><b>Conforme</b>{{ o.conforme_por.nombre_completo if o.conforme_por else '' }}{% if o.fecha_conforme %} · {{ o.fecha_conforme.strftime('%d/%m %H:%M') }}{% endif %}</span></span>
             <i class="bi bi-chevron-right flecha"></i>
-            {% set ie = oc_ingreso_estado(o) %}
-            <span class="t {{ 'ok' if ie.completo else 'pend' }}"><i class="bi {{ 'bi-box-arrow-in-down' if ie.completo else 'bi-hourglass-split' }}"></i><span><b>Ingreso al inventario</b>{{ ie.hechos }} de {{ ie.total }} ítem(s)</span></span>
+            {% if o.tipo == 'OS' %}
+            <span class="t {{ 'ok' if o.fecha_kardex else 'pend' }}"><i class="bi {{ 'bi-clipboard-check' if o.fecha_kardex else 'bi-hourglass-split' }}"></i><span><b>Seguimiento</b>{{ (o.kardex_registrado_por.nombre_completo ~ ' · ' ~ o.fecha_kardex.strftime('%d/%m %H:%M')) if o.fecha_kardex and o.kardex_registrado_por else 'pendiente' }}</span></span>
+            {% else %}{% set ie = oc_ingreso_estado(o) %}
+            <span class="t {{ 'ok' if ie.completo else 'pend' }}"><i class="bi {{ 'bi-box-arrow-in-down' if ie.completo else 'bi-hourglass-split' }}"></i><span><b>Ingreso al inventario</b>{{ ie.hechos }} de {{ ie.total }} ítem(s)</span></span>{% endif %}
         </div>
         <div class="d-flex flex-wrap gap-1 mt-2">
             {% for d in ds if d.tipo in ['GUIA', 'FACTURA', 'CERTIFICADO'] %}
@@ -120,8 +138,39 @@
                 <i class="bi {{ {'GUIA': 'bi-truck', 'FACTURA': 'bi-receipt', 'CERTIFICADO': 'bi-award'}[d.tipo] }}"></i> {{ {'GUIA': 'Guía', 'FACTURA': 'Factura', 'CERTIFICADO': 'Certificado de calidad'}[d.tipo] }}
                 {{ {'GUIA': o.numero_guia, 'FACTURA': o.numero_factura}.get(d.tipo) or '' }}</a>
             {% else %}<span class="small text-muted">{% if o.numero_guia %}Guía <b>{{ o.numero_guia }}</b>{% endif %}{% if o.numero_factura %} · Factura <b>{{ o.numero_factura }}</b>{% endif %}</span>{% endfor %}
+            {% set dk = datos_kardex.get(o.id) %}
+            {% if dk and dk['items']|length > 1 %}<button type="button" class="btn btn-success btn-sm fw-bold ms-auto" onclick="abrirKardex({{ o.id }}, null)">
+                <i class="bi bi-box-arrow-in-down"></i> Ingresar todo al Kardex ({{ dk['items']|length }})</button>{% endif %}
         </div>
     </div>
+    {% if o.tipo == 'OS' %}
+    <div class="it" data-nuevo="0" data-buscar="{{ (items|map(attribute='descripcion')|join(' '))|upper }}">
+        <div>
+            {% for i in items %}
+            <div class="desc">{{ i.item }}. {% if i.tipo_servicio %}<span class="tag serv"><i class="bi bi-tools"></i> {{ i.tipo_servicio }}</span> {% endif %}{{ i.descripcion }}</div>
+            <div class="meta mb-1"><span><span class="cant">{{ i.cantidad|cant }}</span> {{ i.um }}</span>{% if i.codigo %}<span class="tag vinc">{{ i.codigo }}</span>{% endif %}
+                {% if i.familia or i.calidad %}<span>{{ [i.familia, i.calidad]|select|join(' · ') }}</span>{% endif %}</div>
+            {% endfor %}
+        </div>
+        {% if o.fecha_kardex %}
+        <div class="hecho">
+            <div><i class="bi bi-check-circle-fill text-success"></i> Servicio conforme {{ o.fecha_conforme.strftime('%d/%m/%Y %H:%M') if o.fecha_conforme else '' }} · {{ o.conforme_por.nombre_completo if o.conforme_por else '' }}</div>
+            <div><i class="bi bi-clipboard-check text-success"></i> <b>Seguimiento hecho {{ o.fecha_kardex.strftime('%d/%m/%Y %H:%M') }}</b> por <b>{{ o.kardex_registrado_por.nombre_completo if o.kardex_registrado_por else '' }}</b></div>
+            {% if o.nota_seguimiento %}<div class="text-muted">Nota: {{ o.nota_seguimiento }}</div>{% endif %}
+            {% if es_admin %}<form method="POST" action="{{ url_for('oc_os_seguimiento_deshacer', orden_id=o.id) }}" class="d-inline" onsubmit="return quitarMarca(this)">
+                <input type="hidden" name="motivo"><button class="btn btn-link btn-sm p-0 text-danger">Quitar marca</button></form>{% endif %}
+        </div>
+        {% else %}
+        <form method="POST" action="{{ url_for('oc_os_seguimiento', orden_id=o.id) }}" class="form-ing" onsubmit="return confirmarSeguimiento(this)">
+            <div class="ayuda mb-2"><i class="bi bi-tools"></i> <b>Orden de servicio</b> (corte, roscado, galvanizado...): confirma que el material <b>volvió del servicio</b>
+                y que registraste su <b>movimiento</b> si corresponde (Kardex, cambio de ubicación o de producto).</div>
+            <label>Nota <span class="text-lowercase fw-normal">(opcional)</span></label>
+            <input type="text" name="nota" class="form-control form-control-sm" maxlength="300" placeholder="Ej: volvieron 150 pernos cortados, mov. kardex 23/10">
+            <button class="btn btn-success btn-sm fw-bold w-100 mt-2"><i class="bi bi-clipboard-check"></i> Seguimiento hecho · movimiento registrado</button>
+        </form>
+        {% endif %}
+    </div>
+    {% else %}
     {% for i in items %}
     {% set cod = (i.sku_ingreso or i.codigo or '')|upper %}{% set emp = o.empresa or 'ANCLAJES' %}
     <div class="it" data-nuevo="{{ '1' if i.es_nuevo else '0' }}" data-buscar="{{ (i.descripcion ~ ' ' ~ (i.codigo or '') ~ ' ' ~ (i.sku_ingreso or ''))|upper }}">
@@ -149,13 +198,22 @@
             <div><i class="bi bi-check-circle-fill text-success"></i> Conforme {{ o.fecha_conforme.strftime('%d/%m/%Y %H:%M') if o.fecha_conforme else '' }} · {{ o.conforme_por.nombre_completo if o.conforme_por else '' }}</div>
             <div><i class="bi bi-box-arrow-in-down text-success"></i> <b>Ingresado {{ i.fecha_ingreso.strftime('%d/%m/%Y %H:%M') }}</b> por <b>{{ i.ingresado_por.nombre_completo if i.ingresado_por else '' }}</b></div>
             {% if o.fecha_conforme %}{% set h = ((i.fecha_ingreso - o.fecha_conforme).total_seconds() / 3600)|round(0, 'floor')|int %}<div class="text-muted">Esperó {{ (h // 24) ~ ' día(s)' if h >= 24 else h ~ ' hora(s)' }} desde la conformidad</div>{% endif %}
-            {% if i.sku_ingreso %}<div>Código en el inventario: <b>{{ i.sku_ingreso }}</b></div>{% endif %}
+            {% if i.kardex_mov_id %}<div><i class="bi bi-journal-check text-success"></i> Kardex: <b>+{{ i.cantidad_kardex }}</b> en <b>{{ i.sku_ingreso }}</b> · movimiento #{{ i.kardex_mov_id }}
+                <a href="{{ url_for('ver_kardex_importbolts' if emp == 'IMPORTBOLTS' else 'ver_kardex', busqueda=i.sku_ingreso) }}" target="_blank">ver en el Kardex</a></div>
+            {% elif i.sku_ingreso %}<div>Código en el inventario: <b>{{ i.sku_ingreso }}</b> <span class="text-muted">(marcado a mano)</span></div>{% endif %}
             {% if i.nota_ingreso %}<div class="text-muted">Nota: {{ i.nota_ingreso }}</div>{% endif %}
-            {% if es_admin %}<form method="POST" action="{{ url_for('oc_item_deshacer', item_id=i.id) }}" class="d-inline" onsubmit="return quitarMarca(this)">
+            {% if es_admin and not i.kardex_mov_id %}<form method="POST" action="{{ url_for('oc_item_deshacer', item_id=i.id) }}" class="d-inline" onsubmit="return quitarMarca(this)">
                 <input type="hidden" name="motivo"><button class="btn btn-link btn-sm p-0 text-danger">Quitar marca</button></form>{% endif %}
         </div>
         {% else %}
-        <form method="POST" action="{{ url_for('oc_item_ingresar', item_id=i.id) }}" class="form-ing" onsubmit="return confirmarIngreso(this, {{ 'true' if i.es_nuevo else 'false' }})">
+        <div class="form-ing">
+            {% set prod_k = (datos_kardex.get(o.id, {}).get('items') or [])|selectattr('id', 'equalto', i.id)|first %}
+            {% if prod_k and prod_k.sku %}<div class="ayuda mb-1"><i class="bi bi-link-45deg"></i> Entra a <b>{{ prod_k.sku }}</b> · stock {{ prod_k.stock }} → <b>{{ prod_k.stock + prod_k.cantidad_int }}</b></div>
+            {% else %}<div class="ayuda nuevo mb-1"><i class="bi bi-exclamation-triangle"></i> Sin producto enlazado: al registrar eliges con qué código del inventario entra.</div>{% endif %}
+            <button type="button" class="btn btn-success btn-sm fw-bold w-100" onclick="abrirKardex({{ o.id }}, {{ i.id }})"><i class="bi bi-box-arrow-in-down"></i> Registrar ingreso en Kardex</button>
+            <details class="mt-1 manual">
+                <summary class="small text-muted">¿Ya hiciste el movimiento a mano en el Kardex? Solo marcar</summary>
+                        <form method="POST" action="{{ url_for('oc_item_ingresar', item_id=i.id) }}" class="mt-1" onsubmit="return confirmarIngreso(this, {{ 'true' if i.es_nuevo else 'false' }})">
             <input type="hidden" name="volver" value="{{ url_for('oc_ingresos_pendientes') }}">
             <div class="position-relative">
                 <label>Código en el inventario <span class="text-lowercase fw-normal">(opcional)</span></label>
@@ -168,16 +226,55 @@
             </div>
             <label class="mt-2">Nota <span class="text-lowercase fw-normal">(opcional)</span></label>
             <input type="text" name="nota" class="form-control form-control-sm" maxlength="300" placeholder="Ej: ubicado en anaquel A-3, mov. kardex 21/10">
-            <button class="btn btn-success btn-sm fw-bold w-100 mt-2"><i class="bi bi-box-arrow-in-down"></i> Marcar ingresado</button>
+            <button class="btn btn-outline-secondary btn-sm w-100 mt-2"><i class="bi bi-check2"></i> Solo marcar como ingresado</button>
         </form>
+            </details>
+        </div>
         {% endif %}
     </div>
     {% endfor %}
+    {% endif %}
 </div>
 {% else %}
 <div class="text-center text-muted py-5 bg-white rounded-3 border"><i class="bi bi-inbox display-6 opacity-25"></i>
     <p class="mt-2 mb-0">{{ 'No hay material pendiente de ingresar.' if vista == 'pendientes' else 'Todavía no se marcó ningún ingreso.' }}</p></div>
 {% endfor %}
+
+<!-- Movimiento de Kardex precargado desde la orden -->
+<div class="modal fade" id="modalKardex" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg"><div class="modal-content border-0 shadow">
+    <form method="POST" id="formKardex" onsubmit="return enviarKardex(event)">
+        <div class="modal-header py-2 text-white" id="kxCab"><h6 class="modal-title fw-bold"><i class="bi bi-arrow-left-right"></i> Movimiento de Kardex · <span id="kxTitulo"></span></h6>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body">
+            <div class="kx-fijo">
+                <div><small>Tipo de movimiento</small><b class="text-success">➕ Ingreso</b></div>
+                <div><small>Motivo</small><b>COMPRA</b></div>
+                <div><small>Inventario</small><b id="kxEmp"></b></div>
+                <div><small>Proveedor</small><b id="kxProv"></b><span class="d-block text-muted small" id="kxRuc"></span></div>
+                <div><small>Referencia (factura o guía)</small><b id="kxRef"></b></div>
+            </div>
+            <div class="row g-2 mb-2">
+                <div class="col-6 col-md-4"><label class="small fw-bold"><i class="bi bi-calendar-event"></i> Fecha del movimiento</label>
+                    <input type="date" name="fecha_movimiento" id="kxFecha" class="form-control form-control-sm" max="{{ hoy_iso }}" required>
+                    <div class="form-text" style="font-size:.66rem;" id="kxFechaAyuda"></div></div>
+                <div class="col-6 col-md-4"><label class="small fw-bold">Presentación <span class="fw-normal text-muted">(opcional)</span></label>
+                    <select name="presentacion" id="kxPres" class="form-select form-select-sm"><option value="">—</option>
+                        {% for pr in presentaciones %}<option value="{{ pr }}">{{ pr }}</option>{% endfor %}</select></div>
+            </div>
+            <div class="small fw-bold mb-1">Ítems que entran <span class="fw-normal text-muted">(cantidad y precio vienen de la orden; precio <b>sin IGV</b>)</span></div>
+            <div id="kxItems"></div>
+            <label class="small fw-bold mt-1" id="kxObsLbl">Observación (opcional)</label>
+            <textarea name="observacion" id="kxObs" rows="2" maxlength="200" class="form-control form-control-sm" placeholder="Ej: llegó 1 caja menos, se repone la próxima semana"></textarea>
+            <div class="mt-2"><label class="small fw-bold mb-1"><i class="bi bi-paperclip"></i> Documentos enlazados</label>
+                <div class="kx-docs" id="kxDocs"></div>
+                <div class="form-text" style="font-size:.68rem;">No se vuelven a subir: el movimiento queda enlazado a la orden y desde el Kardex se abren estos mismos archivos.</div></div>
+        </div>
+        <div class="modal-footer p-2 bg-light">
+            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+            <button type="submit" class="btn btn-success btn-sm fw-bold flex-fill" id="kxBtn"><i class="bi bi-box-arrow-in-down"></i> Registrar ingreso en Kardex</button>
+        </div>
+    </form>
+</div></div></div>
 
 <script>
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
@@ -190,6 +287,13 @@ function confirmarIngreso(form, nuevo) {
         .then(r => { if (r.isConfirmed) { form.dataset.ok = '1'; form.submit(); } });
     return false;
 }
+function confirmarSeguimiento(form) {
+    if (form.dataset.ok) return true;
+    Swal.fire({ icon: 'question', title: '¿Seguimiento hecho?', html: 'Se marcará la orden de servicio como <b>seguida y con su movimiento registrado</b>, a tu nombre y con la fecha y hora de ahora.',
+                showCancelButton: true, confirmButtonText: 'Sí, listo', cancelButtonText: 'Todavía no' })
+        .then(r => { if (r.isConfirmed) { form.dataset.ok = '1'; form.submit(); } });
+    return false;
+}
 function quitarMarca(form) {
     if (form.dataset.ok) return true;
     Swal.fire({ title: 'Quitar la marca de ingresado', input: 'text', inputLabel: '¿Por qué? (queda en el historial)', showCancelButton: true,
@@ -197,8 +301,105 @@ function quitarMarca(form) {
         .then(r => { if (r.isConfirmed) { form.motivo.value = r.value; form.dataset.ok = '1'; form.submit(); } });
     return false;
 }
+
+// ================= MOVIMIENTO DE KARDEX PRECARGADO =================
+const DATOS_KARDEX = {{ datos_kardex|tojson }};
+const EMP_COLOR = {{ empresas_oc|dictsort|map('last')|map(attribute='color')|list|tojson }};
+const EMP_ORDEN = {{ empresas_oc|dictsort|map('first')|list|tojson }};
+function nf(n) { return Number(n || 0).toLocaleString('es-PE', { maximumFractionDigits: 4 }); }
+let kxActual = null;
+function filaKardex(d, it, unico) {
+    const div = document.createElement('div'); div.className = 'kx-it'; div.dataset.id = it.id;
+    const prod = it.sku ? `<div class="kx-prod"><i class="bi bi-link-45deg"></i> Entra a <b>${esc(it.sku)}</b> — ${esc(it.nombre)} · stock <b>${nf(it.stock)}</b> → <b class="kx-nuevo">${nf((it.stock || 0) + it.cantidad_int)}</b></div>`
+        : `<div class="kx-prod falta position-relative"><i class="bi bi-exclamation-triangle"></i> Este ítem no tiene producto enlazado: elige con qué código del inventario ${esc(d.empresa_txt)} entra.
+            <input type="text" name="sku_${it.id}" class="form-control form-control-sm text-uppercase mt-1 kx-sku" autocomplete="off" placeholder="Busca por código o descripción" data-empresa="${esc(d.empresa)}">
+            <div class="list-group position-absolute shadow sku-sug" style="top:100%;"></div>
+            <div class="mt-1">¿No existe? Pide al encargado del inventario que lo cree en el <b>Maestro</b> (descripción, familia y calidad).</div></div>`;
+    div.innerHTML = `<div class="d-flex gap-2 align-items-start">
+            ${unico ? '' : `<input type="checkbox" class="form-check-input mt-1 kx-chk" checked title="Incluir este ítem">`}
+            <input type="hidden" name="item_id" value="${it.id}" class="kx-id">
+            <div class="flex-fill"><div class="tit">${it.item}. ${esc(it.descripcion)}</div>
+                <div class="small text-muted">Según la orden: <b>${nf(it.cantidad)} ${esc(it.um)}</b> × ${esc(d.moneda)} ${nf(it.precio)}</div></div></div>
+        <div class="row g-2 mt-1">
+            <div class="col-6"><label>Cantidad que entra *</label><input type="number" name="cantidad_${it.id}" class="form-control form-control-sm kx-cant" min="1" step="1" value="${it.cantidad_int}" required inputmode="numeric"></div>
+            <div class="col-6"><label>Precio unit. (${esc(d.moneda)} sin IGV)</label><input type="number" name="precio_${it.id}" class="form-control form-control-sm" min="0" step="any" value="${it.precio}" inputmode="decimal"></div>
+        </div>
+        <div class="dif mt-1"></div>${prod}`;
+    const cant = div.querySelector('.kx-cant'), dif = div.querySelector('.dif');
+    const pintar = () => {
+        const v = parseInt(cant.value) || 0;
+        dif.innerHTML = !it.entera ? `<i class="bi bi-info-circle"></i> La orden tiene ${nf(it.cantidad)} ${esc(it.um)} (con decimales): el Kardex cuenta en unidades enteras. Revisa la cantidad.`
+            : (v && v !== it.cantidad_int ? `<i class="bi bi-exclamation-triangle"></i> Distinto a la orden (${nf(it.cantidad)}): explica por qué en la observación.` : '');
+        const n = div.querySelector('.kx-nuevo'); if (n) n.textContent = nf((it.stock || 0) + v);
+        pintarObs();
+    };
+    cant.addEventListener('input', pintar); pintar();
+    const chk = div.querySelector('.kx-chk');
+    if (chk) chk.addEventListener('change', () => {
+        div.classList.toggle('off', !chk.checked);
+        div.querySelectorAll('input:not(.kx-chk), select').forEach(i => i.disabled = !chk.checked);
+        pintarObs();
+    });
+    const sku = div.querySelector('.kx-sku');
+    if (sku) buscadorSku(sku);
+    return div;
+}
+function difiere() {
+    return [...document.querySelectorAll('#kxItems .kx-it')].some(f => {
+        const c = f.querySelector('.kx-cant'); if (c.disabled) return false;
+        const it = kxActual.items.find(x => String(x.id) === f.dataset.id);
+        return (parseInt(c.value) || 0) !== it.cantidad || !it.entera;
+    });
+}
+function pintarObs() {
+    if (!kxActual) return;
+    const req = difiere();
+    porId('kxObsLbl').innerHTML = req ? 'Observación <span class="text-danger">* (la cantidad es distinta a la orden)</span>' : 'Observación (opcional)';
+    porId('kxObs').required = req;
+}
+function porId(x) { return document.getElementById(x); }
+function abrirKardex(ordenId, itemId) {
+    const d = DATOS_KARDEX[ordenId]; if (!d) return;
+    kxActual = d;
+    const items = itemId ? d.items.filter(i => i.id === itemId) : d.items;
+    porId('formKardex').action = d.url;
+    porId('kxCab').style.background = EMP_COLOR[EMP_ORDEN.indexOf(d.empresa)] || '#0f172a';
+    porId('kxTitulo').textContent = `${d.codigo}` + (itemId ? ` · ítem ${items[0].item}` : ` · ${items.length} ítem(s)`);
+    porId('kxEmp').textContent = d.empresa_txt;
+    porId('kxProv').textContent = d.razon_social; porId('kxRuc').textContent = d.ruc ? 'RUC ' + d.ruc : '';
+    porId('kxRef').textContent = d.referencia;
+    porId('kxFecha').value = d.fecha;
+    porId('kxFechaAyuda').textContent = `Día en que se marcó la llegada (${d.fecha_txt}). Cámbiala si entró otro día.`;
+    porId('kxObs').value = ''; porId('kxPres').value = '';
+    const cont = porId('kxItems'); cont.innerHTML = '';
+    items.forEach(it => cont.appendChild(filaKardex(d, it, items.length === 1)));
+    porId('kxDocs').innerHTML = `<a class="doc-b" href="${d.pdf}" target="_blank"><i class="bi bi-file-earmark-pdf"></i> ${esc(d.codigo)} (PDF)</a>` +
+        (d.docs || []).map(x => `<a class="doc-b" href="${x.url}" target="_blank" title="${esc(x.nombre)}"><i class="bi bi-paperclip"></i> ${esc(x.tipo)}</a>`).join('');
+    porId('kxBtn').disabled = false;
+    pintarObs();
+    bootstrap.Modal.getOrCreateInstance(porId('modalKardex')).show();
+}
+function enviarKardex(ev) {
+    ev.preventDefault();
+    const form = porId('formKardex');
+    const filas = [...document.querySelectorAll('#kxItems .kx-it')].filter(f => !f.classList.contains('off'));
+    if (!filas.length) { Swal.fire('Elige al menos un ítem', '', 'warning'); return false; }
+    const sinProd = filas.filter(f => { const s = f.querySelector('.kx-sku'); return s && !s.value.trim(); });
+    if (sinProd.length) { Swal.fire('Falta el producto', 'Elige con qué código del inventario entra cada ítem sin producto enlazado.', 'warning'); return false; }
+    if (porId('kxObs').required && porId('kxObs').value.trim().length < 5) { Swal.fire('Falta la observación', 'La cantidad es distinta a la de la orden: explica por qué.', 'warning'); return false; }
+    const resumen = filas.map(f => {
+        const it = kxActual.items.find(x => String(x.id) === f.dataset.id);
+        const sku = it.sku || f.querySelector('.kx-sku').value.trim().toUpperCase();
+        return `<li><b>+${esc(f.querySelector('.kx-cant').value)}</b> en <b>${esc(sku)}</b></li>`;
+    }).join('');
+    Swal.fire({ icon: 'question', title: '¿Registrar el ingreso?', html: `Se sumará al stock de <b>${esc(kxActual.empresa_txt)}</b> con fecha <b>${esc(porId('kxFecha').value.split('-').reverse().join('/'))}</b>:<ul class="text-start small mt-2">${resumen}</ul>`,
+                showCancelButton: true, confirmButtonText: 'Sí, registrar', cancelButtonText: 'Revisar' })
+        .then(r => { if (r.isConfirmed) { porId('kxBtn').disabled = true; form.submit(); } });
+    return false;
+}
+porId('modalKardex').addEventListener('hidden.bs.modal', () => { porId('kxItems').innerHTML = ''; kxActual = null; });
 // buscador de código (para productos nuevos ya creados en el inventario)
-document.querySelectorAll('.sku-in').forEach(inp => {
+function buscadorSku(inp) {
     const sug = inp.parentElement.querySelector('.sku-sug'); let t = null;
     inp.addEventListener('input', () => {
         clearTimeout(t); const q = inp.value.trim();
@@ -212,7 +413,8 @@ document.querySelectorAll('.sku-in').forEach(inp => {
         }), 250);
     });
     inp.addEventListener('blur', () => setTimeout(() => sug.style.display = 'none', 150));
-});
+}
+document.querySelectorAll('.sku-in').forEach(buscadorSku);
 // filtros en la página
 function filtrar() {
     const q = (document.getElementById('filtroIng')?.value || '').trim().toUpperCase().split(/\s+/).filter(Boolean);

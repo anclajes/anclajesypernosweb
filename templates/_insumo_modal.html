@@ -1,6 +1,17 @@
-{# Modal Crear / Editar insumo del maestro. Espera: categorias, unidades. Dispara el evento 'insumoGuardado' (detail = insumo). #}
+{# Modal Crear / Editar insumo del maestro. Espera: categorias, unidades.
+   Dispara 'insumoGuardado' (detail = insumo nuevo/editado) o 'insumoElegido' (detail = insumo que YA existía y se eligió de los parecidos).
+   Para mostrar el botón "Usar este" en los parecidos, la página define window.INSUMO_ELEGIBLE = true. #}
+<style>
+    .ins-sim { border: 1px solid #e2e8f0; border-radius: 10px; background: #f8fafc; padding: 6px 8px; margin-top: 8px; display: none; }
+    .ins-sim .tit { font-size: .7rem; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: .03em; }
+    .ins-sim .fila { display: flex; gap: 8px; align-items: center; font-size: .78rem; padding: 4px 0; border-top: 1px dashed #e2e8f0; }
+    .ins-sim .fila:first-of-type { border-top: 0; }
+    .ins-sim .cod { font-weight: 800; color: #0B3D91; white-space: nowrap; }
+    .ins-sim .ds { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+    .ins-sim .igual { font-size: .62rem; font-weight: 800; background: #fee2e2; color: #991b1b; border-radius: 6px; padding: 0 5px; }
+</style>
 <div class="modal fade" id="modalInsumo" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
         <form class="modal-content border-0 shadow" id="formInsumo" onsubmit="return guardarInsumo(event)">
             <div class="modal-header text-white py-2" style="background: var(--theme-primary, #0F172A);">
                 <h6 class="modal-title fw-bold" id="tituloInsumo">Nuevo insumo</h6>
@@ -8,10 +19,8 @@
             </div>
             <div class="modal-body">
                 <input type="hidden" name="id" id="ins_id">
-                <div class="mb-2"><label class="small fw-bold">Código interno <span class="text-muted fw-normal">(vacío = automático)</span></label>
-                    <input name="codigo" id="ins_codigo" class="form-control text-uppercase" maxlength="50" placeholder="Ej: EPP-GUANTE-01"></div>
                 <div class="mb-2"><label class="small fw-bold">Descripción *</label>
-                    <input name="descripcion" id="ins_desc" class="form-control text-uppercase" maxlength="300" required placeholder="Ej: GUANTES DE NITRILO TALLA L"></div>
+                    <input name="descripcion" id="ins_desc" class="form-control text-uppercase" maxlength="300" required placeholder="Ej: GUANTES DE NITRILO TALLA L" autocomplete="off"></div>
                 <div class="row g-2">
                     <div class="col-7"><label class="small fw-bold">Categoría</label>
                         <select name="categoria" id="ins_cat" class="form-select"><option value="">— Sin categoría —</option>
@@ -20,36 +29,69 @@
                         <select name="unidad" id="ins_uni" class="form-select" required><option value="">—</option>
                             {% for u in unidades %}<option value="{{ u.valor }}">{{ u.valor }}</option>{% endfor %}</select></div>
                 </div>
-                <div class="form-text">Las categorías y unidades se administran en Insumos → Configuración.</div>
+                <div class="ins-sim" id="insSim"><div class="tit"><i class="bi bi-search"></i> Ya existen estos parecidos — revisa que no sea el mismo</div><div id="insSimLista"></div></div>
+                <div class="mt-2"><label class="small fw-bold">Código interno <span class="text-muted fw-normal">(opcional: vacío = automático, ej. INS-00025)</span></label>
+                    <input name="codigo" id="ins_codigo" class="form-control text-uppercase" maxlength="50" placeholder="Ej: EPP-GUANTE-01"></div>
+                <div class="form-text">¿Falta la categoría o la unidad? Agrégala en <a href="{{ url_for('insumos_config') }}" target="_blank">Insumos → Configuración</a> y vuelve a abrir esta ventana.
+                    No se puede crear dos insumos con la misma descripción.</div>
             </div>
             <div class="modal-footer p-2"><button type="submit" class="btn btn-primary w-100 fw-bold" id="btnGuardarInsumo">Guardar</button></div>
         </form>
     </div>
 </div>
 <script>
-function abrirInsumo(datos) {
-    const d = datos || {};
-    document.getElementById('tituloInsumo').textContent = d.id ? 'Editar insumo' : 'Nuevo insumo';
-    document.getElementById('ins_id').value = d.id || '';
-    document.getElementById('ins_codigo').value = d.codigo || '';
-    document.getElementById('ins_desc').value = d.descripcion || '';
-    document.getElementById('ins_cat').value = d.categoria || '';
-    document.getElementById('ins_uni').value = d.unidad || '';
-    new bootstrap.Modal(document.getElementById('modalInsumo')).show();
-}
-function guardarInsumo(ev) {
-    ev.preventDefault();
-    const btn = document.getElementById('btnGuardarInsumo');
-    btn.disabled = true;
-    fetch('/insumos/maestro/guardar', { method: 'POST', body: new FormData(document.getElementById('formInsumo')) })
-        .then(r => r.json())
-        .then(d => {
-            btn.disabled = false;
-            if (d.status !== 'success') return Swal.fire('No se pudo guardar', d.msg, 'warning');
-            const m = bootstrap.Modal.getInstance(document.getElementById('modalInsumo')); if (m) m.hide();
-            document.dispatchEvent(new CustomEvent('insumoGuardado', { detail: d.insumo }));
-        })
-        .catch(() => { btn.disabled = false; Swal.fire('Error', 'No se pudo comunicar con el servidor.', 'error'); });
-    return false;
-}
+(() => {
+    const e = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const id = x => document.getElementById(x);
+    let t = null;
+    function similares() {
+        clearTimeout(t);
+        t = setTimeout(() => {
+            const q = id('ins_desc').value.trim(), cat = id('ins_cat').value;
+            if (q.length < 3 && !cat) { id('insSim').style.display = 'none'; return; }
+            fetch(`/insumos/api/similares?q=${encodeURIComponent(q)}&categoria=${encodeURIComponent(cat)}&excluir=${id('ins_id').value || 0}`)
+                .then(r => r.json()).then(d => {
+                    const lista = d.similares || [];
+                    id('insSim').style.display = lista.length ? 'block' : 'none';
+                    id('insSimLista').innerHTML = lista.map((s, n) => `<div class="fila"><span class="cod">${e(s.codigo)}</span><span class="ds">${e(s.descripcion)}` +
+                        `${s.categoria ? ' <span class="text-muted">· ' + e(s.categoria) + '</span>' : ''}${s.igual ? ' <span class="igual">IGUAL</span>' : ''}${s.activo ? '' : ' <span class="text-muted">(inactivo)</span>'}</span>` +
+                        (window.INSUMO_ELEGIBLE && !id('ins_id').value && s.activo ? `<button type="button" class="btn btn-sm btn-outline-success py-0" data-n="${n}">Usar este</button>` : '') + `</div>`).join('');
+                    id('insSimLista').querySelectorAll('[data-n]').forEach(b => b.onclick = () => {
+                        const s = lista[b.dataset.n];
+                        const m = bootstrap.Modal.getInstance(id('modalInsumo')); if (m) m.hide();
+                        document.dispatchEvent(new CustomEvent('insumoElegido', { detail: s }));
+                    });
+                }).catch(() => {});
+        }, 250);
+    }
+    id('ins_desc').addEventListener('input', similares);
+    id('ins_cat').addEventListener('change', similares);
+    window.abrirInsumo = function (datos) {
+        const d = datos || {};
+        id('tituloInsumo').textContent = d.id ? 'Editar insumo' : 'Nuevo insumo';
+        id('ins_id').value = d.id || '';
+        id('ins_codigo').value = d.codigo || '';
+        id('ins_desc').value = d.descripcion || '';
+        id('ins_cat').value = d.categoria || '';
+        id('ins_uni').value = d.unidad || '';
+        id('insSim').style.display = 'none';
+        (bootstrap.Modal.getOrCreateInstance ? bootstrap.Modal.getOrCreateInstance(id('modalInsumo')) : new bootstrap.Modal(id('modalInsumo'))).show();
+        if (d.descripcion) similares();
+    };
+    window.guardarInsumo = function (ev) {
+        ev.preventDefault();
+        const btn = id('btnGuardarInsumo');
+        btn.disabled = true;
+        fetch('/insumos/maestro/guardar', { method: 'POST', body: new FormData(id('formInsumo')) })
+            .then(r => r.json())
+            .then(d => {
+                btn.disabled = false;
+                if (d.status !== 'success') { if (d.existe) similares(); return Swal.fire('No se pudo guardar', d.msg, 'warning'); }
+                const m = bootstrap.Modal.getInstance(id('modalInsumo')); if (m) m.hide();
+                document.dispatchEvent(new CustomEvent('insumoGuardado', { detail: d.insumo }));
+            })
+            .catch(() => { btn.disabled = false; Swal.fire('Error', 'No se pudo comunicar con el servidor.', 'error'); });
+        return false;
+    };
+})();
 </script>

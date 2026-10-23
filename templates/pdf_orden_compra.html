@@ -64,7 +64,7 @@
             <table>
                 <tr><td class="caja-ruc">RUC: {{ cfg.ruc or '-' }}</td></tr>
                 <tr><td class="caja-tipo">{{ tipos[o.tipo]|upper }}</td></tr>
-                <tr><td class="caja-num">N° {{ oc_numero_txt(o) }}</td></tr>
+                <tr><td class="caja-num">N° {{ oc_numero_txt(o) }}{% if o.revision %} · Rev. {{ o.revision }}{% endif %}</td></tr>
             </table>
         </td>
     </tr>

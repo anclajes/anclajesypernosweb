@@ -25,6 +25,7 @@
     .sello.no { background: #fef2f2; border: 1.5px solid #fca5a5; color: #7f1d1d; }
     .sello.pend { background: #fffbeb; border: 1.5px dashed #fbbf24; color: #78350f; }
     .sello.anul { background: #f1f5f9; border: 1.5px solid #94a3b8; color: #1e293b; }
+    .sello.reaprob { background: #fff7ed; border: 2px solid #fb923c; color: #7c2d12; align-items: flex-start; }
     .sello i { font-size: 1.6rem; }
     .panel { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 14px 16px; margin-bottom: 14px; }
     .panel-t { font-size: .7rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #64748b; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
@@ -52,7 +53,7 @@
     .linea:last-child::before { display: none; }
     .linea .pt { position: absolute; left: 0; top: 3px; width: 14px; height: 14px; border-radius: 50%; background: #cbd5e1; border: 3px solid #fff; box-shadow: 0 0 0 1px #cbd5e1; }
     .linea .pt.APROBADA, .linea .pt.CONFORME, .linea .pt.KARDEX, .linea .pt.INGRESO_ITEM, .linea .pt.PAGO { background: #16a34a; } .linea .pt.RECHAZADA, .linea .pt.ANULADA { background: #dc2626; }
-    .linea .pt.ENVIADA { background: #f59e0b; } .linea .pt.LLEGADA { background: #0891b2; } .linea .pt.CREADA { background: #0B3D91; } .linea .pt.OBSERVACION { background: #7c3aed; }
+    .linea .pt.ENVIADA { background: #f59e0b; } .linea .pt.LLEGADA { background: #0891b2; } .linea .pt.CREADA { background: #0B3D91; } .linea .pt.OBSERVACION { background: #7c3aed; } .linea .pt.EDITADA_APROBADA { background: #ea580c; }
     .linea .t { font-size: .8rem; font-weight: 700; } .linea .s { font-size: .74rem; color: #64748b; }
     .acciones .btn { font-weight: 700; }
     .check-conf { border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 8px 10px; margin-bottom: 6px; }
@@ -158,8 +159,10 @@
             <div class="small">Debía llegar el {{ oc_fecha_esperada(orden).strftime('%d/%m/%Y') }} y aún no se registra la llegada. Llama al proveedor y deja una observación.</div></div></div>
     {% endif %}
     {% if orden.estado in ['APROBADA', 'RECIBIDA', 'CONFORME'] %}
-        <div class="sello ok"><i class="bi bi-patch-check-fill"></i><div><b>APROBADA por {{ orden.aprobado_por.nombre_completo if orden.aprobado_por else 'Gerencia' }}</b>
-            <div class="small">el {{ orden.fecha_aprobacion.strftime('%d/%m/%Y a las %H:%M') }} · el PDF lleva la firma y sello de Gerencia</div></div></div>
+        <div class="sello ok"><i class="bi bi-patch-check-fill"></i><div><b>{{ 'RE-APROBADA (Rev. ' ~ orden.revision ~ ')' if orden.revision else 'APROBADA' }} por {{ orden.aprobado_por.nombre_completo if orden.aprobado_por else 'Gerencia' }}</b>
+            <div class="small">{% if orden.fecha_aprobacion %}el {{ orden.fecha_aprobacion.strftime('%d/%m/%Y a las %H:%M') }} · {% endif %}el PDF lleva la firma y sello de Gerencia</div>
+            {% if orden.revision and orden.motivo_edicion %}<div class="small">Última edición: {{ orden.motivo_edicion }}</div>{% endif %}
+            {% if p.reeditar_bloqueo %}<div class="small text-muted"><i class="bi bi-lock"></i> Ya no se puede editar: {{ p.reeditar_bloqueo }}.</div>{% endif %}</div></div>
     {% elif orden.estado == 'RECHAZADA' %}
         <div class="sello no"><i class="bi bi-x-octagon-fill"></i><div><b>RECHAZADA por {{ orden.rechazado_por.nombre_completo if orden.rechazado_por else 'Gerencia' }}</b> · {{ orden.fecha_rechazo.strftime('%d/%m/%Y %H:%M') }}
             <div class="small">Motivo: {{ oc_rechazo_txt(orden) }}</div></div></div>
@@ -167,7 +170,14 @@
         <div class="sello anul"><i class="bi bi-slash-circle"></i><div><b>ANULADA por {{ orden.anulado_por.nombre_completo if orden.anulado_por else '-' }}</b> · {{ orden.fecha_anulacion.strftime('%d/%m/%Y %H:%M') }}
             <div class="small">Motivo: {{ oc_anulacion_txt(orden) }}</div></div></div>
     {% elif orden.estado == 'ENVIADA' %}
-        <div class="sello pend"><i class="bi bi-hourglass-split"></i><div><b>Esperando aprobación de Gerencia</b>
+        {% if orden.revision %}{% set ev_ed = eventos|selectattr('accion', 'equalto', 'EDITADA_APROBADA')|first %}
+        <div class="sello reaprob mb-2"><i class="bi bi-arrow-repeat"></i><div><b>RE-APROBACIÓN · Rev. {{ orden.revision }}</b> — esta orden ya estaba aprobada y se editó
+            <div class="small mt-1"><b>Motivo de la edición:</b> {{ orden.motivo_edicion or '—' }}</div>
+            {% if ev_ed %}<div class="small">Editó <b>{{ ev_ed.usuario.nombre_completo if ev_ed.usuario else '-' }}</b> el {{ ev_ed.fecha.strftime('%d/%m/%Y %H:%M') }}
+                {% set cmb = (ev_ed.detalle or '').split(' · Cambios: ') %}{% if cmb|length > 1 %}<div class="mt-1"><b>Cambios:</b> {{ cmb[1] }}</div>{% endif %}</div>{% endif %}
+        </div></div>
+        {% endif %}
+        <div class="sello pend"><i class="bi bi-hourglass-split"></i><div><b>Esperando {{ 're-' if orden.revision }}aprobación de Gerencia</b>
             <div class="small">Enviada por {{ orden.enviado_por.nombre_completo if orden.enviado_por else '-' }} el {{ orden.fecha_envio.strftime('%d/%m/%Y %H:%M') }}. El PDF dice "PENDIENTE DE APROBACIÓN".</div></div></div>
     {% else %}
         <div class="sello pend"><i class="bi bi-pencil-square"></i><div><b>Borrador: aún no enviada a Gerencia</b>
@@ -179,13 +189,14 @@
         <a class="btn btn-outline-danger" href="{{ url_for('oc_pdf', orden_id=orden.id, ver=1) }}" target="_blank"><i class="bi bi-file-earmark-pdf"></i> Ver PDF</a>
         <a class="btn btn-outline-secondary" href="{{ url_for('oc_pdf', orden_id=orden.id) }}"><i class="bi bi-download"></i> Descargar</a>
         {% if p.editar %}<a class="btn btn-outline-primary" href="{{ url_for('oc_editar', orden_id=orden.id) }}"><i class="bi bi-pencil"></i> Editar</a>{% endif %}
+        {% if p.reeditar %}<a class="btn btn-outline-warning" href="{{ url_for('oc_editar', orden_id=orden.id) }}" title="Vuelve a Gerencia para re-aprobación, con motivo obligatorio"><i class="bi bi-pencil-square"></i> Editar (re-aprobación)</a>{% endif %}
         {% if p.enviar %}<form method="POST" action="{{ url_for('oc_enviar', orden_id=orden.id) }}" onsubmit="return confirmar(this, '¿Enviar a Gerencia para aprobación?')"><button class="btn btn-success"><i class="bi bi-send-check"></i> Enviar a Gerencia</button></form>{% endif %}
         {% if p.aprobar %}<form method="POST" action="{{ url_for('oc_aprobar', orden_id=orden.id) }}" onsubmit="return confirmar(this, '¿Aprobar {{ oc_codigo(orden) }} por {{ mon.simbolo }} {{ '{:,.2f}'.format(orden.total) }}? El PDF llevará tu firma y sello.')"><button class="btn btn-success"><i class="bi bi-patch-check-fill"></i> Aprobar</button></form>{% endif %}
         {% if p.rechazar %}<button class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#mRechazar"><i class="bi bi-x-octagon"></i> Rechazar</button>{% endif %}
         {% if p.llegada %}<button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#mLlegada"><i class="bi bi-truck"></i> {{ 'Registrar entrega del servicio' if orden.tipo == 'OS' else 'Registrar llegada' }}</button>{% endif %}
         {% if p.conforme %}<button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#mConforme"><i class="bi bi-check-circle-fill"></i> Dar conformidad</button>{% endif %}
         {% if p.insumos %}<a class="btn btn-warning" href="{{ url_for('insumos_ingreso_nuevo', oc=orden.id, empresa=orden.empresa or 'ANCLAJES') }}"><i class="bi bi-box-arrow-in-down"></i> Ingresar a Insumos</a>{% endif %}
-        {% if p.ingresar %}<a class="btn btn-warning" href="{{ url_for('oc_ingresos_pendientes') }}#oc{{ orden.id }}"><i class="bi bi-box-arrow-in-down"></i> Ingreso al inventario (Almacén)</a>{% endif %}
+        {% if p.ingresar %}<a class="btn btn-warning" href="{{ url_for('oc_ingresos_pendientes') }}#oc{{ orden.id }}"><i class="bi {{ 'bi-clipboard-check' if orden.tipo == 'OS' else 'bi-box-arrow-in-down' }}"></i> {{ 'Seguimiento (Almacén)' if orden.tipo == 'OS' else 'Ingreso al inventario (Almacén)' }}</a>{% endif %}
         {% if p.pagar %}<button class="btn btn-outline-success" data-bs-toggle="modal" data-bs-target="#mPagar"><i class="bi bi-cash-coin"></i> Marcar pagada</button>{% endif %}
         {% if docs|selectattr('tipo', 'equalto', 'FACTURA')|list %}<a class="btn btn-outline-primary" href="{{ url_for('oc_comparar', orden_id=orden.id) }}"><i class="bi bi-layout-split"></i> Factura vs OC</a>{% endif %}
         {% if p.observar %}<button class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#mObs"><i class="bi bi-chat-left-text"></i> Observación</button>{% endif %}
@@ -300,7 +311,9 @@
                 {% if orden.destino == 'INSUMOS' %}
                     {% if ingreso %}<span class="aprob si"><i class="bi bi-check2"></i> Ingresado en Insumos</span> <a href="{{ url_for('insumos_ingreso_detalle', ingreso_id=ingreso.id) }}">ver ingreso #{{ ingreso.id }}</a>
                     {% else %}<span class="aprob pend"><i class="bi bi-hourglass"></i> Pendiente de ingresar en Insumos internos</span>{% endif %}
-                {% elif orden.tipo == 'OS' %}<span class="aprob si"><i class="bi bi-check2"></i> Servicio conforme</span>
+                {% elif orden.tipo == 'OS' %}{% if orden.fecha_kardex %}<span class="aprob si"><i class="bi bi-clipboard-check"></i> Seguimiento hecho</span>
+                    <span class="text-muted">· {{ orden.kardex_registrado_por.nombre_completo if orden.kardex_registrado_por else '' }}, {{ orden.fecha_kardex.strftime('%d/%m/%Y %H:%M') }}{% if orden.nota_seguimiento %} · {{ orden.nota_seguimiento }}{% endif %}</span>
+                    {% else %}<span class="aprob pend"><i class="bi bi-hourglass"></i> Servicio conforme · Almacén debe marcar el seguimiento en "Ingresos pendientes"</span>{% endif %}
                 {% else %}{% set ie = oc_ingreso_estado(orden) %}
                     {% if ie.completo %}<span class="aprob si"><i class="bi bi-check2-all"></i> Todo ingresado al inventario {{ (orden.empresa or 'ANCLAJES')|title }}</span>
                         <span class="text-muted">· último: {{ ie.ultimo.ingresado_por.nombre_completo if ie.ultimo.ingresado_por else '' }}, {{ ie.ultimo.fecha_ingreso.strftime('%d/%m/%Y %H:%M') }}</span>
@@ -422,7 +435,8 @@
                                    'RECHAZADA': 'RECHAZADA', 'ANULADA': 'ANULADA', 'LLEGADA': 'Llegó el material', 'CONFORME': 'Conformidad (check verde)',
                                    'OBSERVACION': 'Observación', 'DOCUMENTO': 'Documento adjuntado', 'DOC_BORRADO': 'Documento borrado',
                                    'KARDEX': 'Todo ingresado al inventario', 'INGRESO_ITEM': 'Ítem ingresado al inventario', 'INGRESO_DESHECHO': 'Se quitó una marca de ingreso',
-                                   'INSUMOS': 'Insumos internos', 'PAGO': 'Marcada como PAGADA', 'PAGO_DESHECHO': 'Se quitó la marca de pagada'}.get(ev.accion, ev.accion) }}</div>
+                                   'INSUMOS': 'Insumos internos', 'PAGO': 'Marcada como PAGADA', 'PAGO_DESHECHO': 'Se quitó la marca de pagada', 'SEGUIMIENTO': 'Seguimiento de la OS (Almacén)',
+                                   'EDITADA_APROBADA': 'EDITADA DESPUÉS DE APROBADA (vuelve a Gerencia)'}.get(ev.accion, ev.accion) }}</div>
                 <div class="s">{{ ev.fecha.strftime('%d/%m/%Y %H:%M') }} · <b>{{ ev.usuario.nombre_completo if ev.usuario else 'Sistema' }}</b></div>
                 {% if ev.detalle %}<div class="s">{{ ev.detalle }}</div>{% endif %}
             </div>

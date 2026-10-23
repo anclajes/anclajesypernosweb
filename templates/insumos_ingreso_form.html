@@ -244,10 +244,22 @@ function agregarFila(insumoId) {
 function cambioEmpresa() {
     document.querySelectorAll('#filas .fila-item').forEach(f => { const s = f.querySelector('.sel-insumo'); opcionesInsumos(s); if (window.jQuery) jQuery(s).trigger('change.select2'); pintarInfo(f); });
 }
+window.INSUMO_ELEGIBLE = true;
+let filaParaInsumo = null;
+document.addEventListener('insumoElegido', e => {
+    const n = e.detail;
+    const fila = filaParaInsumo || [...document.querySelectorAll('#filas .fila-item')].find(f => !f.querySelector('.sel-insumo').value);
+    filaParaInsumo = null;
+    if (!fila) { agregarFila(n.id); return; }
+    fila.querySelector('.sel-cat').value = '';
+    opcionesInsumos(fila.querySelector('.sel-insumo'));
+    const s = fila.querySelector('.sel-insumo'); s.value = n.id; if (window.jQuery) jQuery(s).trigger('change'); pintarInfo(fila);
+});
 document.addEventListener('insumoGuardado', e => {
     const n = e.detail;
     Object.keys(INSUMOS).forEach(k => INSUMOS[k].push({ ...n }));
-    let vacia = [...document.querySelectorAll('#filas .fila-item')].find(f => !f.querySelector('.sel-insumo').value);
+    let vacia = filaParaInsumo || [...document.querySelectorAll('#filas .fila-item')].find(f => !f.querySelector('.sel-insumo').value);
+    filaParaInsumo = null;
     if (vacia) vacia.querySelector('.sel-cat').value = '';
     document.querySelectorAll('#filas .sel-cat').forEach(s => opcionesCategorias(s));
     document.querySelectorAll('#filas .sel-insumo').forEach(s => opcionesInsumos(s));
@@ -376,6 +388,12 @@ if (PREFILL) {
         d.textContent = `De la orden: ${it.descripcion} (${it.cantidad} ${it.um}) · P.U. orden ${it.simbolo} ${Number(it.precio_oc).toFixed(2)} sin IGV` +
             (it.precio_unitario !== '' ? ` → S/ ${Number(it.precio_unitario).toFixed(2)} con IGV` : ' → escribe el precio en soles con IGV') + (it.insumo_id ? '' : ' — elige el insumo');
         d.style.display = 'block';
+        if (!it.insumo_id) {
+            const b = document.createElement('button'); b.type = 'button'; b.className = 'btn btn-sm btn-outline-success py-0 ms-1';
+            b.innerHTML = '<i class="bi bi-plus-lg"></i> Crear este insumo';
+            b.onclick = () => { filaParaInsumo = fila; abrirInsumo({ descripcion: it.descripcion }); };
+            d.appendChild(b);
+        }
         if (window.jQuery && it.insumo_id) jQuery(fila.querySelector('.sel-insumo')).trigger('change');
         fila.querySelector('.c-cant').value = it.cantidad;
         if (it.precio_unitario !== '') { fila.querySelector('.c-pu').value = it.precio_unitario; fila.dataset.ultimo = 'unit'; fila.querySelector('.c-pu').dispatchEvent(new Event('input')); }

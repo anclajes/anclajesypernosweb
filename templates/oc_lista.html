@@ -141,7 +141,7 @@
     {% endfor %}
 </div>
 
-{% macro estado_badge(o) %}{% set e = estados[o.estado] %}<span class="oc-estado" style="color: {{ e.color }}; background: {{ e.fondo }};"><i class="bi {{ e.icono }}"></i> {{ e.txt }}</span>{% endmacro %}
+{% macro estado_badge(o) %}{% set e = estados[o.estado] %}<span class="oc-estado" style="color: {{ e.color }}; background: {{ e.fondo }};"><i class="bi {{ e.icono }}"></i> {{ e.txt }}</span>{% if o.revision %} <span class="oc-estado" style="color:#9a3412; background:#ffedd5;" title="{{ 'Editada después de aprobada: ' ~ (o.motivo_edicion or '') }}"><i class="bi bi-arrow-repeat"></i> {{ 'Re-aprobación' if o.estado == 'ENVIADA' else 'Rev. ' ~ o.revision }}</span>{% endif %}{% endmacro %}
 {% macro seguimiento(o) %}
     {% if o.estado in ['APROBADA', 'RECIBIDA'] and o.aprobado_por %}<div class="sub mt-1"><i class="bi bi-patch-check-fill text-success"></i> Aprobó {{ o.aprobado_por.nombre_completo }}</div>
     {% elif o.estado == 'RECHAZADA' %}<div class="sub mt-1 text-danger clamp2" title="{{ oc_rechazo_txt(o) }}">{{ oc_rechazo_txt(o) }}</div>
@@ -192,7 +192,8 @@
         <div class="sub">{{ (o.conforme_por.nombre_completo if o.conforme_por else '')|truncate(18, True, '…') }}</div></div>
 {% endmacro %}
 {% macro destino_final(o) %}
-    {% if o.tipo == 'OS' %}<span class="aprob si"><i class="bi bi-tools"></i> Servicio conforme</span>
+    {% if o.tipo == 'OS' %}{% if o.fecha_kardex %}<span class="aprob si"><i class="bi bi-clipboard-check"></i> Seguimiento hecho</span><div class="sub">{{ o.kardex_registrado_por.nombre_completo if o.kardex_registrado_por else '' }} · {{ o.fecha_kardex.strftime('%d/%m %H:%M') }}</div>
+        {% else %}<span class="aprob pend"><i class="bi bi-tools"></i> Falta seguimiento</span><div class="sub">Almacén lo marca</div>{% endif %}
     {% elif o.destino == 'INSUMOS' %}{% if o.insumo_ingreso_id %}<span class="aprob si"><i class="bi bi-check2"></i> En Insumos</span><div class="sub">ingreso #{{ o.insumo_ingreso_id }}</div>
         {% else %}<span class="aprob pend"><i class="bi bi-hourglass"></i> Falta ingresar a Insumos</span>{% endif %}
     {% else %}{% set ie = oc_ingreso_estado(o) %}
