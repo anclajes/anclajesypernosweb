@@ -94,6 +94,9 @@
     .sol-chip.mot { background: #ede9fe; color: #5b21b6; } .sol-chip.cli { background: #e0f2fe; color: #075985; }
     .sello.atraso { background: #fef2f2; border: 1.5px solid #fca5a5; color: #7f1d1d; }
     .sello.parcial { background: #eff6ff; border: 1.5px solid #93c5fd; color: #1e3a8a; }
+    .parcial-items { display: flex; flex-wrap: wrap; gap: 4px 6px; margin: 4px 0; }
+    .parcial-items span { font-size: .76rem; background: #fff; border: 1px solid #bfdbfe; border-radius: 7px; padding: 1px 8px; }
+    .parcial-items span.ok { border-color: #86efac; color: #166534; }
     .entrega-box { border: 1px solid #e2e8f0; border-left: 4px solid #16a34a; border-radius: 10px; padding: 8px 10px; margin-bottom: 8px; background: #fff; }
     .entrega-box.pend { border-left-color: #f59e0b; background: #fffdf5; }
     .ent-it { display: inline-block; background: #f1f5f9; border-radius: 6px; padding: 1px 7px; margin: 2px 4px 0 0; font-size: .72rem; }
@@ -171,7 +174,9 @@
             <div class="small">Debía llegar el {{ oc_fecha_esperada(orden).strftime('%d/%m/%Y') }} y aún no se registra la llegada. Llama al proveedor y deja una observación.</div></div></div>
     {% endif %}
     {% if rec.parcial and orden.estado in ['APROBADA', 'RECIBIDA'] %}
-        <div class="sello parcial mb-2"><i class="bi bi-boxes"></i><div><b>ENTREGA PARCIAL · llegó {{ rec.llego|cant }} de {{ rec.pedido|cant }}</b> · faltan <b>{{ rec.pendiente|cant }}</b> por llegar
+        <div class="sello parcial mb-2"><i class="bi bi-boxes"></i><div><b>ENTREGA PARCIAL</b> · {{ rec.n_completos }} de {{ rec.n_items }} producto(s) completos
+            <div class="parcial-items">{% for d in rec.detalle %}
+                <span class="{{ 'ok' if d.pendiente <= 0 else '' }}"><b>{{ d.item.codigo or d.item.descripcion[:30] }}</b>: llegó {{ d.llego|cant }} de {{ d.pedido|cant }} {{ d.item.um }}{% if d.pendiente > 0 %} · <b>faltan {{ d.pendiente|cant }}</b>{% else %} <i class="bi bi-check-lg"></i>{% endif %}</span>{% endfor %}</div>
             <div class="small">{{ rec.entregas|length }} entrega(s) registradas. Lo que ya llegó y tiene conformidad pasa a Almacén sin esperar el resto.
                 Cuando llegue lo que falta, pulsa <b>Registrar otra entrega</b>; si ya no llegará, usa <b>No llegará el resto</b>.</div></div></div>
     {% endif %}
@@ -301,6 +306,7 @@
                 {% for i in orden.items %}
                     <tr><td class="ps-3 text-muted">{{ i.item }}</td>
                         <td>{{ i.descripcion }}
+                            {% if i.detalle or i.piezas %}<div class="small text-muted fst-italic">{{ i.detalle or '' }}{% if i.detalle and i.piezas %} · {% endif %}{% if i.piezas %}{{ i.piezas|cant }} pieza(s){% endif %}</div>{% endif %}
                             <div style="font-size:.7rem;">{% if i.tipo_servicio %}<span class="tag" style="background:#ede9fe; color:#5b21b6;"><i class="bi bi-tools"></i> {{ i.tipo_servicio }}</span>{% endif %}{% if i.codigo %}<span class="tag vinc">{{ i.codigo }}</span>{% endif %}
                                 {% if i.estado_producto %}<span class="tag estado">{{ i.estado_producto }}</span>{% endif %}
                                 {% if i.es_nuevo %}<span class="tag nuevo">NUEVO en {{ (orden.empresa or 'ANCLAJES')|title }}</span>{% endif %}
@@ -346,7 +352,7 @@
         {% set por_item = {} %}{% for i in orden.items %}{% set _ = por_item.update({i.id: i}) %}{% endfor %}
         <div class="panel">
             <div class="panel-t"><i class="bi bi-box-seam"></i> {{ 'Entrega del servicio' if orden.tipo == 'OS' else 'Entregas del material' }}
-                {% if rec.entregas|length > 1 or rec.parcial %}<span class="ms-auto small fw-normal text-muted" style="text-transform:none; letter-spacing:0;">llegó {{ rec.llego|cant }} de {{ rec.pedido|cant }}</span>{% endif %}</div>
+                {% if rec.entregas|length > 1 or rec.parcial %}<span class="ms-auto small fw-normal text-muted" style="text-transform:none; letter-spacing:0;">{{ rec.n_completos }} de {{ rec.n_items }} producto(s) completos</span>{% endif %}</div>
             {% if orden.numero_factura %}<div class="small mb-2">Factura de la orden: <b>{{ orden.numero_factura }}</b> <span class="text-muted">(una sola para todas las entregas)</span></div>{% endif %}
             {% for e in rec.entregas %}
             {% set guias_e = docs|selectattr('tipo', 'equalto', 'GUIA')|selectattr('entrega_id', 'equalto', e.id)|list

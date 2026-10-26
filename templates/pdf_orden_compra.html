@@ -100,7 +100,7 @@
     {% for i in filas %}
     <tr>
         {% if i %}
-        <td class="it">{{ i.item }}</td><td class="itb">{{ i.descripcion }}</td><td class="itb c">{{ '{:,.0f}'.format(i.cantidad) if i.cantidad == i.cantidad|round else i.cantidad|cant }}</td>
+        <td class="it">{{ i.item }}</td><td class="itb">{{ i.descripcion }}{% if i.detalle or i.piezas %}<br><span class="chico">{{ i.detalle or '' }}{% if i.detalle and i.piezas %} · {% endif %}{% if i.piezas %}{{ i.piezas|cant }} PIEZA(S){% endif %}</span>{% endif %}</td><td class="itb c">{{ '{:,.0f}'.format(i.cantidad) if i.cantidad == i.cantidad|round else i.cantidad|cant }}</td>
         <td class="it c">{{ ('{:,.2f}'.format(i.kgs_mpcs) if i.kgs_mpcs is not none else '-') }}</td>
         <td class="it c">{{ ('{:,.2f}'.format(i.peso_total) if i.peso_total else '-') }}</td>
         <td class="itb r">{{ ('{:,.2f}'.format(i.precio_mil) if (i.precio_mil * 100)|round == i.precio_mil * 100 else '{:,.4f}'.format(i.precio_mil)) if i.precio_mil is not none else '-' }}</td>
@@ -144,7 +144,7 @@
     {% for i in filas %}
     <tr>
         {% if i %}
-        <td class="it">{{ i.item }}</td><td class="itb">{% if i.tipo_servicio %}[{{ i.tipo_servicio }}] {% endif %}{{ i.descripcion }}</td><td class="itb c">{{ i.cantidad|cant }}</td><td class="itb c">{{ i.um }}</td>
+        <td class="it">{{ i.item }}</td><td class="itb">{% if i.tipo_servicio %}[{{ i.tipo_servicio }}] {% endif %}{{ i.descripcion }}{% if i.detalle or i.piezas %}<br><span class="chico">{{ i.detalle or '' }}{% if i.detalle and i.piezas %} · {% endif %}{% if i.piezas %}{{ i.piezas|cant }} PIEZA(S){% endif %}</span>{% endif %}</td><td class="itb c">{{ i.cantidad|cant }}</td><td class="itb c">{{ i.um }}</td>
         <td class="itb r">{{ '{:,.2f}'.format(i.precio_unitario) if (i.precio_unitario * 100)|round == i.precio_unitario * 100 else '{:,.4f}'.format(i.precio_unitario) }}</td>
         <td class="it r">{{ mon.simbolo }} {{ '{:,.2f}'.format(i.total) }}</td>
         {% else %}

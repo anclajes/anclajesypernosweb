@@ -3,81 +3,152 @@
 {% block subtitle %}Kardex valorizado {{ empresas[empresa].corto }}{% endblock %}
 {% block content %}
 {% include '_insumos_nav.html' %}
-<form method="GET" class="row g-2 align-items-end mb-3">
-    <div class="col-6 col-md-2"><label class="small fw-bold text-muted">Empresa</label>
-        <select name="empresa" class="form-select" onchange="this.form.submit()">
-            {% for k, e in empresas.items() %}<option value="{{ k }}" {{ 'selected' if k == empresa }}>{{ e.corto }}</option>{% endfor %}</select></div>
-    <div class="col-6 col-md-3"><label class="small fw-bold text-muted">Categoría</label>
-        <select name="categoria" class="form-select filtro-cat" data-placeholder="Todas las categorías">
-            <option value=""></option>
-            {% for c in categorias_filtro %}<option value="{{ c }}" {{ 'selected' if c == categoria }}>{{ c }}</option>{% endfor %}
-        </select></div>
-    <div class="col-12 col-md-4"><label class="small fw-bold text-muted">Insumo</label>
-        <select name="insumo_id" class="form-select filtro-s2-k" data-placeholder="Todos los insumos" onchange="this.form.submit()">
-            <option value=""></option>
-            {% for i in insumos %}<option value="{{ i.id }}" {{ 'selected' if insumo and i.id == insumo.id }}>{{ i.codigo }} — {{ i.descripcion }}</option>{% endfor %}
-        </select></div>
-    <div class="col-6 col-md-3"><label class="small fw-bold text-muted">Movimiento</label>
-        <select name="concepto" class="form-select" onchange="this.form.submit()">
-            {% for v, t in [('', 'Todos'), ('COMPRA', 'Compras'), ('CONSUMO', 'Consumos'), ('ANULACION', 'Anulaciones'), ('AJUSTE_COSTO', 'Ajustes de costo'), ('IMPORTACION', 'Carga desde Excel')] %}
-            <option value="{{ v }}" {{ 'selected' if v == concepto }}>{{ t }}</option>{% endfor %}</select></div>
-    <div class="col-6 col-md-2"><label class="small fw-bold text-muted">Desde</label><input type="date" name="desde" class="form-control" value="{{ desde.isoformat() if desde else '' }}"></div>
-    <div class="col-6 col-md-2"><label class="small fw-bold text-muted">Hasta</label><input type="date" name="hasta" class="form-control" value="{{ hasta.isoformat() if hasta else '' }}"></div>
-    <div class="col-12 col-md-2"><button class="btn btn-primary w-100"><i class="bi bi-funnel"></i> Filtrar</button></div>
-</form>
-{% if insumo %}
-<div class="row g-2 mb-3">
-    <div class="col-12 col-md-6"><div class="card border-0 shadow-sm h-100"><div class="card-body py-2">
-        <div class="ins-dato">{{ insumo.codigo }}</div><div class="fw-bold">{{ insumo.descripcion }}</div><div class="text-muted small">{{ insumo.categoria or '' }} · {{ insumo.unidad }}</div></div></div></div>
-    <div class="col-4 col-md-2"><div class="card border-0 shadow-sm h-100"><div class="card-body py-2">
-        <div class="ins-dato">Stock</div><div class="ins-kpi">{{ stock.stock_actual|cant if stock else '0' }}</div></div></div></div>
-    <div class="col-4 col-md-2"><div class="card border-0 shadow-sm h-100"><div class="card-body py-2">
-        <div class="ins-dato">Costo prom.</div><div class="ins-kpi">{{ (stock.costo_promedio if stock else 0)|soles }}</div>
-        {% if puede_ajustar %}<button type="button" class="btn btn-link btn-sm p-0" onclick="ajustarCosto({{ insumo.id }}, '{{ empresa }}', {{ (insumo.codigo ~ ' · ' ~ insumo.descripcion)|tojson|forceescape }}, {{ (stock.costo_promedio if stock else 0)|tojson }}, {{ (stock.stock_actual if stock else 0)|tojson }})"><i class="bi bi-pencil"></i> Editar</button>{% endif %}</div></div></div>
-    <div class="col-4 col-md-2"><div class="card border-0 shadow-sm h-100"><div class="card-body py-2">
-        <div class="ins-dato">Valor</div><div class="ins-kpi">{{ ((stock.stock_actual or 0) * (stock.costo_promedio or 0) if stock else 0)|soles }}</div></div></div></div>
+{# Mismo formato que el Kardex de los inventarios de Anclajes / Import Bolts, más la valorización (costo promedio) #}
+<style>
+    .kardex-filtros-card { border-radius: 14px; }
+    .kardex-filtros-card .form-label { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: #6c757d; margin-bottom: 4px; }
+    .kardex-filtros-card .form-select, .kardex-filtros-card .form-control { font-size: .85rem; }
+    .kardex-filtros-grupo { background: #f8f9fa; border-radius: 10px; padding: 10px 12px; height: 100%; }
+    .kardex-tabla th { white-space: nowrap; vertical-align: middle; font-size: .78rem; }
+    .kardex-tabla td { padding-top: .45rem; padding-bottom: .45rem; }
+    .kardex-tabla .kx-producto { min-width: 200px; max-width: 280px; line-height: 1.25; }
+    .kardex-tabla .kx-familia { font-size: .68rem; color: #64748b; text-transform: uppercase; margin-top: 2px; }
+    .kardex-tabla .kx-cant { font-size: 1.05rem; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.1; }
+    .kardex-tabla .kx-saldo { display: inline-block; min-width: 3.2rem; padding: 3px 8px; border-radius: 6px; background: #f1f5f9;
+                              border: 1px solid #e2e8f0; font-weight: 800; font-size: .95rem; font-variant-numeric: tabular-nums; color: #0f172a; }
+    .kardex-tabla .kx-motivo { min-width: 220px; max-width: 360px; white-space: normal; word-break: break-word; font-size: .8rem; line-height: 1.3; }
+    .kardex-tabla .kx-proveedor { min-width: 150px; max-width: 220px; font-size: .75rem; line-height: 1.25; }
+    .kardex-tabla .kx-obs { font-size: .72rem; color: #475569; margin-top: 2px; font-style: italic; }
+    .kardex-tabla .kx-con { font-size: .6rem; font-weight: 800; letter-spacing: .02em; }
+    .kardex-tabla .num { font-variant-numeric: tabular-nums; }
+    .kx-ficha { border-radius: 14px; }
+    .kx-ficha .k { font-size: .68rem; font-weight: 700; text-transform: uppercase; color: #6c757d; }
+    .kx-ficha .v { font-size: 1.15rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+</style>
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <h4 class="mb-0">📊 Kardex de Insumos {{ empresas[empresa].corto }} <span class="fs-6 text-muted fw-normal">(valorizado a costo promedio)</span></h4>
+    <div class="d-flex flex-wrap gap-2">
+        <span class="badge bg-success-subtle text-success border border-success d-flex align-items-center"><i class="bi bi-arrow-up-circle me-1"></i> Entradas</span>
+        <span class="badge bg-danger-subtle text-danger border border-danger d-flex align-items-center"><i class="bi bi-arrow-down-circle me-1"></i> Salidas</span>
+        <a href="{{ url_for('insumos_inventario', empresa=empresa) }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Volver</a>
+        {% for k, e in empresas.items() if k != empresa %}
+        <a href="{{ url_for('insumos_kardex', empresa=k) }}" class="btn btn-outline-success btn-sm"><i class="bi bi-arrow-left-right"></i> Ver Kardex {{ e.corto }}</a>{% endfor %}
+    </div>
 </div>
-{% endif %}
-<div class="d-flex flex-wrap gap-3 small mb-2">
-    <span>{{ movs|length }} movimiento(s){% if movs|length == 500 %} (los 500 más recientes){% endif %}</span>
-    <span class="text-success">Entradas: <b>{{ tot_entradas|soles }}</b></span>
-    <span class="text-danger">Salidas: <b>{{ tot_salidas|soles }}</b></span>
-</div>
-<div class="card border-0 shadow-sm"><div class="card-body p-0 table-responsive">
-    <table class="table table-hover align-middle mb-0 small">
-        <thead class="table-dark text-nowrap"><tr>
-            <th class="ps-3">Fecha</th>{% if not insumo %}<th>Insumo</th>{% endif %}<th>Concepto / referencia</th>
-            <th class="text-center">Entrada</th><th class="text-center">Salida</th><th class="text-end">Costo unit.</th><th class="text-end">Costo total</th>
-            <th class="text-center">Saldo</th><th class="text-end">Costo prom.</th><th class="text-end pe-3">Valor saldo</th></tr></thead>
-        <tbody>
-        {% for m in movs %}
-            <tr>
-                <td class="ps-3 text-nowrap">{{ m.fecha.strftime('%d/%m/%Y') }}<div class="text-muted" style="font-size:.7rem;">{{ m.usuario.username if m.usuario else '' }}</div></td>
-                {% if not insumo %}<td><a href="{{ url_for('insumos_kardex', empresa=empresa, insumo_id=m.insumo_id) }}" class="fw-bold">{{ m.insumo.codigo }}</a><div class="text-muted" style="font-size:.72rem;">{{ m.insumo.descripcion }}</div></td>{% endif %}
-                <td><span class="badge {{ 'bg-success' if m.concepto == 'COMPRA' else 'bg-danger' if m.concepto == 'CONSUMO' else 'bg-warning text-dark' if m.concepto == 'AJUSTE_COSTO' else 'bg-secondary' }}">{{ 'AJUSTE DE COSTO' if m.concepto == 'AJUSTE_COSTO' else ('CARGA EXCEL' if m.concepto == 'IMPORTACION' else m.concepto) }}</span>
-                    {% if m.ingreso_id %}<a href="{{ url_for('insumos_ingreso_detalle', ingreso_id=m.ingreso_id) }}">{{ m.referencia }}</a>
-                    {% elif m.salida_id %}<a href="{{ url_for('insumos_salida_detalle', salida_id=m.salida_id) }}">{{ m.referencia }}</a>{% else %}{{ m.referencia }}{% endif %}
-                    {% if m.observacion %}<div class="text-muted fst-italic" style="font-size:.72rem;">{% if m.concepto == 'AJUSTE_COSTO' %}<i class="bi bi-shield-check"></i> Motivo: {% endif %}{{ m.observacion }}</div>{% endif %}
-                    {% if m.concepto == 'AJUSTE_COSTO' %}<div class="text-muted" style="font-size:.7rem;">Por {{ m.usuario.nombre_completo if m.usuario else '?' }} el {{ m.fecha_registro.strftime('%d/%m/%Y %H:%M') if m.fecha_registro else '' }}</div>{% endif %}</td>
-                <td class="text-center text-success fw-bold">{{ m.cantidad|cant if m.tipo == 'ENTRADA' else '' }}</td>
-                <td class="text-center text-danger fw-bold">{{ m.cantidad|cant if m.tipo == 'SALIDA' else '' }}</td>
-                {% if m.concepto == 'AJUSTE_COSTO' %}
-                <td class="text-end text-nowrap" title="Costo anterior"><s class="text-muted">{{ m.costo_unitario|soles }}</s></td>
-                <td class="text-end text-nowrap {{ 'text-success' if (m.costo_total or 0) >= 0 else 'text-danger' }}" title="Cambio en el valor del stock">{{ '+' if (m.costo_total or 0) >= 0 }}{{ m.costo_total|soles }}</td>
-                {% else %}
-                <td class="text-end">{{ m.costo_unitario|soles }}</td>
-                <td class="text-end">{{ m.costo_total|soles }}</td>
-                {% endif %}
-                <td class="text-center fw-bold">{{ m.stock_despues|cant }}</td>
-                <td class="text-end">{{ m.costo_prom_despues|soles }}</td>
-                <td class="text-end pe-3">{{ ((m.stock_despues or 0) * (m.costo_prom_despues or 0))|soles }}</td>
-            </tr>
-        {% else %}
-            <tr><td colspan="10" class="text-center text-muted py-5">Sin movimientos.</td></tr>
-        {% endfor %}
-        </tbody>
-    </table>
+
+<div class="card shadow-sm border-0 kardex-filtros-card mb-3"><div class="card-body">
+    <form method="GET" class="row g-3">
+        <input type="hidden" name="empresa" value="{{ empresa }}">
+        <div class="col-12 col-md-6 col-lg-3"><div class="kardex-filtros-grupo">
+            <label class="form-label"><i class="bi bi-tags"></i> Categoría</label>
+            <select name="categoria" class="form-select form-select-sm filtro-cat" data-placeholder="Todas las categorías">
+                <option value=""></option>
+                {% for c in categorias_filtro %}<option value="{{ c }}" {{ 'selected' if c == categoria }}>{{ c }}</option>{% endfor %}
+            </select></div></div>
+        <div class="col-12 col-md-6 col-lg-3"><div class="kardex-filtros-grupo">
+            <label class="form-label"><i class="bi bi-box2"></i> Insumo</label>
+            <select name="insumo_id" class="form-select form-select-sm filtro-s2-k" data-placeholder="Todos los insumos" onchange="this.form.submit()">
+                <option value=""></option>
+                {% for i in insumos %}<option value="{{ i.id }}" {{ 'selected' if insumo and i.id == insumo.id }}>{{ i.codigo }} — {{ i.descripcion }}</option>{% endfor %}
+            </select></div></div>
+        <div class="col-12 col-md-6 col-lg-2"><div class="kardex-filtros-grupo">
+            <label class="form-label"><i class="bi bi-arrow-left-right"></i> Movimiento</label>
+            <select name="concepto" class="form-select form-select-sm" onchange="this.form.submit()">
+                {% for v, t in [('', 'Todos'), ('COMPRA', 'Compras'), ('CONSUMO', 'Consumos'), ('ANULACION', 'Anulaciones'), ('AJUSTE_COSTO', 'Ajustes de costo'), ('IMPORTACION', 'Carga desde Excel')] %}
+                <option value="{{ v }}" {{ 'selected' if v == concepto }}>{{ t }}</option>{% endfor %}</select></div></div>
+        <div class="col-12 col-md-6 col-lg-2"><div class="kardex-filtros-grupo">
+            <label class="form-label"><i class="bi bi-calendar-range"></i> Fechas</label>
+            <input type="date" name="desde" class="form-control form-control-sm mb-1" value="{{ desde.isoformat() if desde else '' }}" title="Desde">
+            <input type="date" name="hasta" class="form-control form-control-sm" value="{{ hasta.isoformat() if hasta else '' }}" title="Hasta"></div></div>
+        <div class="col-12 col-lg-2 d-flex align-items-end gap-2">
+            <button class="btn btn-primary btn-sm w-100"><i class="bi bi-funnel"></i> Filtrar</button>
+            <a href="{{ url_for('insumos_kardex', empresa=empresa) }}" class="btn btn-outline-secondary btn-sm" title="Limpiar filtros"><i class="bi bi-x-lg"></i></a>
+        </div>
+    </form>
 </div></div>
+
+{% if insumo %}
+<div class="card shadow-sm border-0 kx-ficha mb-3"><div class="card-body py-2 d-flex flex-wrap gap-4 align-items-center">
+    <div class="me-auto"><div class="k">{{ insumo.codigo }}</div><div class="fw-bold">{{ insumo.descripcion }}</div><div class="text-muted small">{{ insumo.categoria or '' }} · {{ insumo.unidad }}</div></div>
+    <div><div class="k">Stock</div><div class="v">{{ stock.stock_actual|cant if stock else '0' }}</div></div>
+    <div><div class="k">Costo prom.</div><div class="v">{{ (stock.costo_promedio if stock else 0)|soles }}</div>
+        {% if puede_ajustar %}<button type="button" class="btn btn-link btn-sm p-0" onclick="ajustarCosto({{ insumo.id }}, '{{ empresa }}', {{ (insumo.codigo ~ ' · ' ~ insumo.descripcion)|tojson|forceescape }}, {{ (stock.costo_promedio if stock else 0)|tojson }}, {{ (stock.stock_actual if stock else 0)|tojson }})"><i class="bi bi-pencil"></i> Editar</button>{% endif %}</div>
+    <div><div class="k">Valor</div><div class="v">{{ ((stock.stock_actual or 0) * (stock.costo_promedio or 0) if stock else 0)|soles }}</div></div>
+</div></div>
+{% endif %}
+
+<div class="d-flex flex-wrap gap-2 mb-2">
+    <span class="badge rounded-pill text-bg-dark px-3 py-2"><i class="bi bi-calculator"></i> {{ movs|length }} movimiento(s){% if movs|length == 500 %} (los 500 más recientes){% endif %}</span>
+    <span class="badge rounded-pill bg-success-subtle text-success border border-success px-3 py-2">Entradas: {{ tot_entradas|soles }}</span>
+    <span class="badge rounded-pill bg-danger-subtle text-danger border border-danger px-3 py-2">Salidas: {{ tot_salidas|soles }}</span>
+</div>
+
+<div class="card shadow-sm border-0">
+    <div class="card-body p-0 table-responsive" style="min-height: 300px;">
+        <table class="table table-hover mb-0 align-middle small kardex-tabla">
+            <thead class="table-dark text-nowrap sticky-top">
+                <tr>
+                    <th class="ps-3">Fecha</th>
+                    <th>Insumo</th>
+                    <th class="text-center">Cant.</th>
+                    <th class="text-center">Saldo</th>
+                    <th>Concepto / Referencia</th>
+                    <th>Proveedor / Área</th>
+                    <th class="text-end">Costo unit.<br><span class="fw-normal opacity-75">Total</span></th>
+                    <th class="text-end">Costo prom.<br><span class="fw-normal opacity-75">Valor del saldo</span></th>
+                    <th class="pe-3">Usuario</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for m in movs %}
+                {% set ent = m.tipo == 'ENTRADA' %}{% set sal = m.tipo == 'SALIDA' %}{% set ing = ingresos.get(m.ingreso_id) %}
+                <tr>
+                    <td class="ps-3 text-nowrap"><div class="fw-semibold text-dark">{{ m.fecha.strftime('%d/%m/%y') }}</div><div class="text-muted">{{ m.fecha.strftime('%H:%M') }}</div></td>
+                    <td class="kx-producto">
+                        <a href="{{ url_for('insumos_kardex', empresa=empresa, insumo_id=m.insumo_id) }}" class="d-block text-dark fw-bold text-decoration-none">{{ m.insumo.codigo }}</a>
+                        <span class="text-secondary">{{ m.insumo.descripcion }}</span>
+                        <div class="kx-familia">{{ m.insumo.categoria or '' }}{% if m.insumo.unidad %} · {{ m.insumo.unidad }}{% endif %}</div>
+                    </td>
+                    <td class="text-center text-nowrap">
+                        {% if ent or sal %}
+                        <div class="kx-cant {{ 'text-success' if ent else 'text-danger' }}">{{ '+' if ent else '-' }}{{ m.cantidad|cant }}</div>
+                        <span class="badge {{ 'bg-success-subtle text-success border border-success' if ent else 'bg-danger-subtle text-danger border border-danger' }}" style="font-size:.6rem;">{{ m.tipo }}</span>
+                        {% else %}<span class="badge bg-warning-subtle text-warning-emphasis border border-warning" style="font-size:.6rem;">AJUSTE</span>{% endif %}
+                    </td>
+                    <td class="text-center text-nowrap"><span class="kx-saldo">{{ m.stock_despues|cant }}</span></td>
+                    <td class="kx-motivo">
+                        <span class="badge kx-con {{ 'bg-success' if m.concepto == 'COMPRA' else 'bg-danger' if m.concepto == 'CONSUMO' else 'bg-warning text-dark' if m.concepto == 'AJUSTE_COSTO' else 'bg-info text-dark' if m.concepto == 'IMPORTACION' else 'bg-secondary' }}">{{ {'AJUSTE_COSTO': 'AJUSTE DE COSTO', 'IMPORTACION': 'CARGA EXCEL'}.get(m.concepto, m.concepto) }}</span>
+                        {% if m.ingreso_id %}<a href="{{ url_for('insumos_ingreso_detalle', ingreso_id=m.ingreso_id) }}" class="fw-bold text-dark">/ {{ m.referencia }}</a>
+                        {% elif m.salida_id %}<a href="{{ url_for('insumos_salida_detalle', salida_id=m.salida_id) }}" class="fw-bold text-dark">/ {{ m.referencia }}</a>
+                        {% elif m.referencia %}<span class="fw-bold text-dark">/ {{ m.referencia }}</span>{% endif %}
+                        {% if m.observacion %}<div class="kx-obs"><i class="bi bi-chat-left-text"></i> {% if m.concepto == 'AJUSTE_COSTO' %}Motivo: {% endif %}{{ m.observacion }}</div>{% endif %}
+                    </td>
+                    <td class="kx-proveedor">
+                        {% if ing and ing.razon_social %}<span class="fw-semibold">{{ ing.razon_social }}</span><div class="text-muted">{{ ing.ruc or 'S/N' }}{% if ing.numero_factura %} · {{ ing.numero_factura }}{% endif %}</div>
+                        {% elif m.area %}<span class="fw-semibold"><i class="bi bi-diagram-3"></i> {{ m.area.nombre }}</span>
+                        {% else %}<span class="text-muted">-</span>{% endif %}
+                    </td>
+                    <td class="text-end text-nowrap num">
+                        {% if m.concepto == 'AJUSTE_COSTO' %}
+                        <div title="Costo anterior"><s class="text-muted">{{ m.costo_unitario|soles }}</s></div>
+                        <div class="{{ 'text-success' if (m.costo_total or 0) >= 0 else 'text-danger' }}" style="font-size:.72rem;" title="Cambio en el valor del stock">{{ '+' if (m.costo_total or 0) >= 0 }}{{ m.costo_total|soles }}</div>
+                        {% else %}
+                        <div>{{ m.costo_unitario|soles }}</div><div class="text-muted" style="font-size:.72rem;">{{ m.costo_total|soles }}</div>
+                        {% endif %}
+                    </td>
+                    <td class="text-end text-nowrap num"><div class="fw-semibold">{{ m.costo_prom_despues|soles }}</div>
+                        <div class="text-muted" style="font-size:.72rem;">{{ ((m.stock_despues or 0) * (m.costo_prom_despues or 0))|soles }}</div></td>
+                    <td class="pe-3 text-nowrap text-muted"><i class="bi bi-person-fill"></i> {{ m.usuario.username if m.usuario else '' }}
+                        {% if m.concepto == 'AJUSTE_COSTO' and m.fecha_registro %}<div style="font-size:.68rem;">{{ m.fecha_registro.strftime('%d/%m/%Y %H:%M') }}</div>{% endif %}</td>
+                </tr>
+            {% else %}
+                <tr><td colspan="9" class="text-center py-5 text-muted"><i class="bi bi-search display-4 opacity-25"></i><p class="mt-2">No se encontraron movimientos con estos filtros.</p></td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
 {% include '_insumos_costo.html' %}
 <script>
 document.addEventListener('DOMContentLoaded', () => {

@@ -17039,7 +17039,7 @@ def insumos_kardex():
         insumo_id = None
     q = InsumoMovimiento.query.filter(InsumoMovimiento.empresa == empresa)
     concepto = request.args.get('concepto', '')
-    if concepto in ('COMPRA', 'CONSUMO', 'ANULACION', 'AJUSTE_COSTO'):
+    if concepto in ('COMPRA', 'CONSUMO', 'ANULACION', 'AJUSTE_COSTO', 'IMPORTACION'):
         q = q.filter(InsumoMovimiento.concepto == concepto)
     else:
         concepto = ''
@@ -17056,7 +17056,9 @@ def insumos_kardex():
     salidas = sum(m.costo_total or 0 for m in movs if m.tipo == 'SALIDA')
     insumo = Insumo.query.get(insumo_id) if insumo_id else None
     stock = _stock_de(insumo_id, empresa, crear=False) if insumo_id else None
-    return render_template('insumos_kardex.html', empresa=empresa, empresas=EMPRESAS_INSUMOS, movs=movs, insumo=insumo, stock=stock,
+    ids_ing = {m.ingreso_id for m in movs if m.ingreso_id}
+    ingresos = {i.id: i for i in InsumoIngreso.query.filter(InsumoIngreso.id.in_(list(ids_ing) or [0])).all()}
+    return render_template('insumos_kardex.html', ingresos=ingresos, empresa=empresa, empresas=EMPRESAS_INSUMOS, movs=movs, insumo=insumo, stock=stock,
                            insumos=lista, desde=desde, hasta=hasta, categoria=categoria, categorias_filtro=_categorias_insumos(),
                            puede_ajustar=session.get('role') == 'admin', concepto=concepto,
                            tot_entradas=entradas, tot_salidas=salidas, seccion='kardex')
@@ -17767,7 +17769,9 @@ def _asegurar_oc():
                                                       ('tipo_servicio', 'VARCHAR(80)'), ('kardex_mov_id', 'INTEGER'), ('cantidad_kardex', 'INTEGER'),
                                                       ('req_item_id', 'INTEGER')])
     _agregar_columnas_si_faltan('orden_compra_documento', [('entrega_id', 'INTEGER')])
-    _agregar_columnas_si_faltan('orden_compra_item', [('cantidad_cancelada', 'FLOAT DEFAULT 0'), ('kgs_mpcs', 'FLOAT'), ('precio_mil', 'FLOAT')])
+    _agregar_columnas_si_faltan('oc_proveedor', [('es_extranjero', 'BOOLEAN DEFAULT FALSE'), ('pais', 'VARCHAR(60)')])
+    _agregar_columnas_si_faltan('orden_compra_item', [('cantidad_cancelada', 'FLOAT DEFAULT 0'), ('kgs_mpcs', 'FLOAT'), ('precio_mil', 'FLOAT'),
+                                                      ('detalle', 'VARCHAR(500)'), ('piezas', 'FLOAT')])
     _agregar_columnas_si_faltan('orden_compra', [('es_importacion', 'BOOLEAN DEFAULT FALSE'), ('condiciones_comerciales', 'TEXT'),
                                                  ('pagos_importacion', 'TEXT'), ('saldo_cerrado_motivo', 'VARCHAR(300)')])
     _agregar_columnas_si_faltan('requerimiento_item', [('descartado', 'BOOLEAN DEFAULT FALSE'), ('descartado_por_id', 'INTEGER'),
@@ -18444,6 +18448,8 @@ def _leer_orden_form(f, orden=None):
     servicios = f.getlist('servicio[]') + [''] * n_filas
     req_items = f.getlist('req_item[]') + [''] * n_filas
     kgs_l = f.getlist('kgs_mpcs[]') + [''] * n_filas
+    detalle_l = f.getlist('detalle[]') + [''] * n_filas
+    piezas_l = f.getlist('piezas[]') + [''] * n_filas
     pmil_l = f.getlist('precio_mil[]') + [''] * n_filas
     servicios_ok = {(v.valor or '').upper() for v in _oc_catalogo('OC_SERVICIO', incluir_inactivos=True)}
     servicios_ok |= {(i.tipo_servicio or '').upper() for i in orden.items} if orden else set()
@@ -18515,6 +18521,13 @@ def _leer_orden_form(f, orden=None):
         if peso:
             peso_modo = 'T' if p_modo == 'T' else 'U'
             peso_u, peso_t = (round(peso / cantidad, 4), round(peso, 3)) if peso_modo == 'T' else (round(peso, 4), round(peso * cantidad, 3))
+        if (um or '').upper() == 'KG':      # se compra (o se cobra el servicio) por kilo: el peso ES la cantidad
+            peso_modo, peso_u, peso_t = 'U', 1.0, round(cantidad, 3)
+        detalle_it = ' '.join((detalle_l[n - 1] or '').split())[:500] or None
+        piezas_it = _num(piezas_l[n - 1]) if tipo == 'OS' and (piezas_l[n - 1] or '').strip() else None
+        if piezas_it is not None and not 0 < piezas_it <= 100_000_000:
+            errores.append(f'Ítem {n}: la cantidad de piezas no es válida.')
+            continue
         if es_imp:      # importación: el peso sale de los KGS por millar (1000 piezas)
             peso_modo, peso_u, peso_t = ('U', round(kgs_mpcs / 1000, 6), round(cantidad * kgs_mpcs / 1000, 3)) if kgs_mpcs else (None, None, None)
         # Producto que vino de un requerimiento de Almacén: se valida que siga libre y que sea el mismo producto
@@ -18540,6 +18553,7 @@ def _leer_orden_form(f, orden=None):
         items.append({'descripcion': desc, 'cantidad': round(cantidad, 4), 'um': um, 'precio_unitario': round(precio, 6 if es_imp else 4), 'req_item_id': req_item_id,
                       'total': round(cantidad * precio_mil / 1000 if es_imp else cantidad * precio, 2), 'origen': origen, 'codigo': codigo, 'insumo_id': ins_id,
                       'kgs_mpcs': round(kgs_mpcs, 4) if kgs_mpcs is not None else None, 'precio_mil': round(precio_mil, 4) if es_imp else None,
+                      'detalle': detalle_it, 'piezas': piezas_it,
                       'familia': _limpio(familia, 200) or None, 'calidad': _limpio(calidad, 200) or None,
                       'estado_producto': (_limpio(estado_p, 100) or None) if codigo else None, 'es_nuevo': es_nuevo,
                       'peso_modo': peso_modo, 'peso_unitario': peso_u, 'peso_total': peso_t, 'tipo_servicio': servicio or None})
@@ -18577,7 +18591,7 @@ def _guardar_proveedor_oc(d):
     ahora = hora_peru()
     if not p:
         p = OCProveedor(ruc=d['ruc'], razon_social=d['razon_social'], direccion=d['direccion'] or None,
-                        creado_por=session.get('nombre', ''), fecha_creacion=ahora)
+                        es_extranjero=bool(d.get('es_importacion')), creado_por=session.get('nombre', ''), fecha_creacion=ahora)
         db.session.add(p)
     elif not p.sunat_fecha:          # datos escritos a mano: se pueden corregir desde la orden
         p.razon_social = d['razon_social']
@@ -18890,7 +18904,7 @@ def _oc_excel_lista(ordenes, pagos, atrasos, emp_sel):
                       o.moneda, o.subtotal or 0, o.igv or 0, o.total or 0, o.condicion_pago or '',
                       'Pagada' if pg['pagada'] else ('—' if not pg['habilitado'] else 'Pendiente'), o.fecha_pago, pg.get('vence'),
                       esp, atrasos.get(o.id) or None, o.fecha_llegada, len(rec['entregas']),
-                      rec['llego'], rec['pedido'], o.fecha_conforme,
+                      (f"{rec['n_completos']} de {rec['n_items']} productos completos" if rec['entregas'] else ''), _oc_faltan_txt(o, rec), o.fecha_conforme,
                       ('Completo' if ie['completo'] else f"{ie['hechos']} de {ie['total']}") if ie else ('Sí' if o.insumo_ingreso_id else ''),
                       o.numero_factura or '', guias, o.aprobado_por.nombre_completo if o.aprobado_por else '', o.fecha_aprobacion,
                       o.creado_por.nombre_completo if o.creado_por else '', ', '.join(reqs), len(docs.get(o.id, []))])
@@ -18904,9 +18918,9 @@ def _oc_excel_lista(ordenes, pagos, atrasos, emp_sel):
     f_d, f_dt, f_m, f_n = 'dd/mm/yyyy', 'dd/mm/yyyy hh:mm', '#,##0.00', '#,##0.####'
     _xlsx_hoja(wb, 'Órdenes', ['Empresa', 'Tipo', 'N°', 'Fecha', 'Estado', 'Importación', 'Proveedor', 'RUC / Tax ID', 'Solicitó', 'Área', 'Motivo', 'Cliente',
                                'Destino', 'Moneda', 'Subtotal', 'IGV', 'Total', 'Condición de pago', 'Pago', 'Fecha de pago', 'Vence', 'Debía llegar',
-                               'Atraso (días)', '1.ª llegada', 'Entregas', 'Llegó (cant.)', 'Pedido (cant.)', 'Conforme', 'Ingreso al inventario',
+                               'Atraso (días)', '1.ª llegada', 'Entregas', 'Llegada', 'Falta llegar (por producto)', 'Conforme', 'Ingreso al inventario',
                                'Factura', 'Guía(s)', 'Aprobó', 'Fecha aprobación', 'Creó', 'Requerimientos', 'Documentos'],
-               filas, formatos={3: f_d, 14: f_m, 15: f_m, 16: f_m, 19: f_d, 20: f_d, 21: f_d, 23: f_dt, 25: f_n, 26: f_n, 27: f_dt, 32: f_dt},
+               filas, formatos={3: f_d, 14: f_m, 15: f_m, 16: f_m, 19: f_d, 20: f_d, 21: f_d, 23: f_dt, 27: f_dt, 32: f_dt},
                primera=True, nota=f"Órdenes de compra y servicio · {'Las dos empresas' if emp_sel == 'TODAS' else EMPRESAS_OC[emp_sel]['nombre']} · "
                                   f"exportado el {hora_peru().strftime('%d/%m/%Y %H:%M')} por {session.get('nombre', '')} · {len(filas)} orden(es)")
     _xlsx_hoja(wb, 'Ítems', ['Empresa', 'Orden', 'Fecha', 'Estado', 'Proveedor', 'Ítem', 'Código', 'Descripción', 'Familia', 'Calidad', 'Cantidad', 'U.M.',
@@ -19045,6 +19059,88 @@ def oc_reportes():
                            empresas_oc=EMPRESAS_OC, seccion='reportes', hoy=hoy)
 
 
+def _oc_precios(emp_sel='TODAS', q='', desde=None, hasta=None, tipo='OC'):
+    """Precios por producto y proveedor sacados de las órdenes APROBADAS: el mejor precio de cada proveedor (sin y con IGV),
+    cuándo y en qué orden, el último precio y cuántas veces se compró. Se compara solo dentro de la misma moneda y U.M."""
+    ordenes = [o for o in OrdenCompra.query.filter(OrdenCompra.estado.in_(['APROBADA', 'RECIBIDA', 'CONFORME'])).all()
+               if (emp_sel == 'TODAS' or (o.empresa or 'ANCLAJES') == emp_sel) and (not tipo or o.tipo == tipo)
+               and o.fecha and (not desde or o.fecha >= desde) and (not hasta or o.fecha <= hasta)]
+    terminos = [t for t in _txt_sin_tildes(q or '').upper().split() if t]
+    productos = {}
+    for o in ordenes:
+        for i in o.items:
+            if not i.precio_unitario:
+                continue
+            texto = _txt_sin_tildes(f"{i.codigo or ''} {i.descripcion} {i.familia or ''} {i.calidad or ''} {o.razon_social}").upper()
+            if terminos and not all(t in texto for t in terminos):
+                continue
+            clave = (i.codigo or i.descripcion or '').upper()
+            pr = productos.setdefault(clave, {'clave': clave, 'codigo': i.codigo or '', 'descripcion': i.descripcion, 'familia': i.familia or '',
+                                              'calidad': i.calidad or '', 'segmentos': {}, 'n': 0})
+            pr['n'] += 1
+            seg = pr['segmentos'].setdefault((o.moneda, (i.um or '').upper()), {})
+            compra = {'precio': i.precio_unitario, 'con_igv': round(i.precio_unitario * (1 + (0 if o.es_importacion else IGV_OC)), 4),
+                      'fecha': o.fecha, 'orden': o, 'cantidad': i.cantidad or 0, 'importacion': bool(o.es_importacion)}
+            pv = seg.setdefault(o.razon_social, {'proveedor': o.razon_social, 'ruc': o.ruc or '', 'compras': []})
+            pv['compras'].append(compra)
+    lista = []
+    for pr in productos.values():
+        segmentos = []
+        for (moneda, um), provs in pr['segmentos'].items():
+            filas = []
+            for pv in provs.values():
+                cs = pv['compras']
+                mejor = min(cs, key=lambda c: (c['precio'], -(c['fecha'].toordinal())))
+                ultimo = max(cs, key=lambda c: (c['fecha'], c['orden'].id))
+                filas.append({**pv, 'mejor': mejor, 'ultimo': ultimo, 'veces': len(cs), 'cantidad': round(sum(c['cantidad'] for c in cs), 4)})
+            filas.sort(key=lambda f: (f['mejor']['precio'], f['proveedor']))
+            base = filas[0]['mejor']['precio'] if filas else 0
+            for f in filas:
+                f['dif_pct'] = round(100 * (f['mejor']['precio'] - base) / base, 1) if base else 0
+            segmentos.append({'moneda': moneda, 'simbolo': MONEDAS_OC.get(moneda, {}).get('simbolo', moneda), 'um': um, 'filas': filas})
+        segmentos.sort(key=lambda sg: (sg['moneda'] != 'PEN', sg['um']))
+        pr['segmentos'] = segmentos
+        pr['n_prov'] = len({f['proveedor'] for sg in segmentos for f in sg['filas']})
+        lista.append(pr)
+    lista.sort(key=lambda p: _clave_alfabetica(p['descripcion'] or ''))
+    return lista
+
+
+@app.route('/ordenes/precios')
+@_ruta_oc()
+def oc_precios():
+    """Pestaña "Precios": por producto, qué proveedor vendió más barato, cuándo y en qué orden (sin IGV y con IGV)."""
+    emp_sel = (request.args.get('empresa') or session.get('oc_empresa') or 'TODAS').upper()
+    emp_sel = emp_sel if emp_sel in EMPRESAS_OC or emp_sel == 'TODAS' else 'TODAS'
+    q = ' '.join((request.args.get('q') or '').split())[:80]
+    desde, hasta = _fecha_param('desde', None), _fecha_param('hasta', None)
+    tipo = request.args.get('tipo', 'OC')
+    tipo = tipo if tipo in TIPOS_OC or tipo == '' else 'OC'
+    lista = _oc_precios(emp_sel, q, desde, hasta, tipo)
+    if request.args.get('exportar') == 'excel':
+        from openpyxl import Workbook
+        wb = Workbook()
+        filas = []
+        for p in lista:
+            for sg in p['segmentos']:
+                for n, f in enumerate(sg['filas'], start=1):
+                    m, u = f['mejor'], f['ultimo']
+                    filas.append([p['codigo'], p['descripcion'], p['familia'], p['calidad'], sg['um'], sg['moneda'], n, f['proveedor'], f['ruc'],
+                                  m['precio'], m['con_igv'], 'Importación (sin IGV)' if m['importacion'] else '', m['fecha'], _oc_codigo(m['orden']),
+                                  u['precio'], u['fecha'], _oc_codigo(u['orden']), f['veces'], f['cantidad'], f['dif_pct']])
+        _xlsx_hoja(wb, 'Precios por proveedor', ['Código', 'Producto', 'Familia', 'Calidad', 'U.M.', 'Moneda', 'Puesto', 'Proveedor', 'RUC / Tax ID',
+                                                 'Mejor precio sin IGV', 'Mejor precio con IGV', 'Nota', 'Fecha del mejor precio', 'Orden del mejor precio',
+                                                 'Último precio sin IGV', 'Fecha del último', 'Orden del último', 'Veces comprado', 'Cantidad comprada',
+                                                 '% más caro que el mejor'],
+                   filas, formatos={9: '#,##0.00##', 10: '#,##0.00##', 12: 'dd/mm/yyyy', 14: '#,##0.00##', 15: 'dd/mm/yyyy', 18: '#,##0.##'}, primera=True,
+                   nota=f"Precios de órdenes aprobadas · {'Las dos empresas' if emp_sel == 'TODAS' else EMPRESAS_OC[emp_sel]['nombre']} · puesto 1 = mejor precio")
+        return _xlsx_respuesta(wb, f"precios_proveedores_{hora_peru().strftime('%Y%m%d')}.xlsx")
+    total = len(lista)
+    return render_template('oc_precios.html', lista=lista[:150], total=total, emp_sel=emp_sel, q=q, desde=desde, hasta=hasta, tipo=tipo,
+                           tipos=TIPOS_OC, empresas_oc=EMPRESAS_OC, igv=IGV_OC, seccion='precios',
+                           puede_ver_oc=session.get('role') in ROLES_OC_VEN)
+
+
 def _oc_excel_reporte(rep, emp_sel, desde, hasta, tipo):
     from openpyxl import Workbook
     wb = Workbook()
@@ -19131,7 +19227,8 @@ def _orden_a_previo(o, items=None):
                    'calidad': i.calidad or '', 'estado': i.estado_producto or '', 'peso_modo': i.peso_modo or 'U',
                    'peso_valor': (i.peso_total if i.peso_modo == 'T' else i.peso_unitario) or '', 'servicio': i.tipo_servicio or '',
                    'req_item': getattr(i, 'req_item_id', None) or '', 'req_txt': _req_txt_item(i),
-                   'kgs_mpcs': i.kgs_mpcs if i.kgs_mpcs is not None else '', 'precio_mil': i.precio_mil if i.precio_mil is not None else ''}
+                   'kgs_mpcs': i.kgs_mpcs if i.kgs_mpcs is not None else '', 'precio_mil': i.precio_mil if i.precio_mil is not None else '',
+                   'detalle': i.detalle or '', 'piezas': i.piezas if i.piezas is not None else ''}
                   for i in (items or o.items)]
     return d
 
@@ -19195,14 +19292,15 @@ def oc_guardar():
         previo = {k: (v.isoformat() if hasattr(v, 'isoformat') else v) for k, v in datos.items()}
         previo.update(items=[{'descripcion': ' '.join((d or '').split()).upper(), 'cantidad': c, 'um': u, 'precio_unitario': pu, 'origen': o_,
                               'codigo': cod, 'insumo_id': ii, 'familia': fa, 'calidad': ca, 'estado': es, 'peso_modo': pm, 'peso_valor': pval, 'servicio': sv,
-                              'req_item': rq, 'req_txt': rt, 'kgs_mpcs': kg, 'precio_mil': pmil}
-                             for d, c, u, pu, o_, cod, ii, fa, ca, es, pm, pval, sv, rq, rt, kg, pmil in zip(
+                              'req_item': rq, 'req_txt': rt, 'kgs_mpcs': kg, 'precio_mil': pmil, 'detalle': dt, 'piezas': pz}
+                             for d, c, u, pu, o_, cod, ii, fa, ca, es, pm, pval, sv, rq, rt, kg, pmil, dt, pz in zip(
                                  f.getlist('descripcion[]'), f.getlist('cantidad[]'), f.getlist('um[]'), f.getlist('precio_unitario[]'),
                                  f.getlist('origen[]'), f.getlist('codigo[]'), f.getlist('insumo_id[]'), f.getlist('familia[]') + [''] * 99,
                                  f.getlist('calidad[]') + [''] * 99, f.getlist('estado_producto[]') + [''] * 99,
                                  f.getlist('peso_modo[]') + [''] * 99, f.getlist('peso_valor[]') + [''] * 99, f.getlist('servicio[]') + [''] * 99,
                                  f.getlist('req_item[]') + [''] * 99, f.getlist('req_txt[]') + [''] * 99,
-                                 f.getlist('kgs_mpcs[]') + [''] * 99, f.getlist('precio_mil[]') + [''] * 99) if (d or c or pu)],
+                                 f.getlist('kgs_mpcs[]') + [''] * 99, f.getlist('precio_mil[]') + [''] * 99,
+                                 f.getlist('detalle[]') + [''] * 99, f.getlist('piezas[]') + [''] * 99) if (d or c or pu)],
                       duplicada_de=f.get('duplicada_de'), entrega_dias=f.get('entrega_dias'), fecha_entrega=f.get('fecha_entrega'),
                       solicitante=f.get('solicitante', ''), cliente_ruc=f.get('cliente_ruc', ''), cliente_razon=f.get('cliente_razon', ''),
                       motivo_edicion=motivo_edicion)
@@ -19473,12 +19571,30 @@ def _oc_recepcion(orden):
         items[it.id] = {**{k: round(v, 4) for k, v in d.items()}, 'pedido': it.cantidad, 'cancelado': cancelado,
                         'pendiente': max(round((it.cantidad or 0) - d['llego'] - cancelado, 4), 0)}
     pendiente = round(sum(x['pendiente'] for x in items.values()), 4)
+    # avance POR PRODUCTO (no se suman productos distintos): [{item, llego, pedido, pendiente, cancelado}]
+    detalle = [{'item': it, **items[it.id]} for it in orden.items]
     return {'entregas': entregas, 'items': items, 'pendiente': pendiente, 'parcial': bool(entregas) and pendiente > 0,
+            'detalle': detalle, 'n_items': len(detalle), 'n_completos': sum(1 for d in detalle if d['pendiente'] <= 0 and d['llego'] > 0),
+            'n_faltan': sum(1 for d in detalle if d['pendiente'] > 0),
             'sin_conformar': [e for e in entregas if not e.fecha_conforme],
             'pedido': round(sum(x['pedido'] or 0 for x in items.values()), 4), 'llego': round(sum(x['llego'] for x in items.values()), 4)}
 
 
 app.add_template_global(_oc_recepcion, 'oc_recepcion')
+
+
+def _oc_faltan_txt(orden, rec=None):
+    """'PER-001: faltan 50 UN · PLA-300: faltan 20 PZA' (cada producto con su propia unidad; nunca se suman productos distintos)."""
+    rec = rec or _oc_recepcion(orden)
+    partes = []
+    for d in rec['detalle']:
+        if d['pendiente'] > 0:
+            it = d['item']
+            partes.append(f"{it.codigo or it.descripcion[:30]}: faltan {_cant_txt(d['pendiente'])} {it.um or ''}".strip())
+    return ' · '.join(partes)
+
+
+app.add_template_global(_oc_faltan_txt, 'oc_faltan_txt')
 
 
 def _oc_etapa_por_entregas(orden, rec=None):
@@ -19596,7 +19712,7 @@ def oc_llegada(orden_id):
         detalle_items = ', '.join(f"{(por_item[i].codigo or por_item[i].descripcion[:25])} {_cant_txt(q)}" for i, q in cantidades.items())
         _oc_evento(orden, 'LLEGADA', f"Entrega {numero} ({'PARCIAL' if falta > 0 else 'completa'}) el {llegada.strftime('%d/%m/%Y %H:%M')}"
                                     + (f" · Guía {guia}" if guia else '') + f" · {detalle_items}"
-                                    + (f" · faltan {_cant_txt(falta)}" if falta > 0 else '')
+                                    + (f" · {_oc_faltan_txt(orden)}" if falta > 0 else '')
                                     + (f" · {n} documento(s)" if n else '') + (f" · {e.nota}" if e.nota else ''))
         _req_notificar_orden(orden, 'OC_LLEGO', f"{_oc_codigo(orden)}: llegó la entrega {numero}" + (' (parcial)' if falta > 0 else ''))
         registrar_log(f"Registró la entrega {numero} {'parcial ' if falta > 0 else ''}de la {_oc_codigo(orden)}", 'bi-truck', 'text-info')
@@ -19608,7 +19724,7 @@ def oc_llegada(orden_id):
         app.logger.exception("No se pudo registrar la llegada de la orden")
         flash(f'⛔ No se pudo registrar la llegada (no se guardó nada): {ex}')
         return redirect(destino)
-    flash(f'✅ Entrega {numero} registrada' + (f' (PARCIAL: faltan {_cant_txt(falta)} por llegar)' if falta > 0 else ' (completa)')
+    flash(f'✅ Entrega {numero} registrada' + (f' (PARCIAL — {_oc_faltan_txt(orden)})' if falta > 0 else ' (completa)')
           + '. Revisa el material y da la CONFORMIDAD de esta entrega.')
     return redirect(destino)
 
@@ -19678,7 +19794,7 @@ def oc_conforme(orden_id):
         orden.nota_conforme = e.nota_conforme or orden.nota_conforme
     _oc_evento(orden, 'CONFORME', f"Entrega {e.numero} conforme: buen estado, cantidad y documentos OK"
                + (f" · {e.nota_conforme}" if e.nota_conforme else '')
-               + (' · ORDEN COMPLETA' if etapa == 'CONFORME' else (f" · faltan {_cant_txt(_oc_recepcion(orden)['pendiente'])} por llegar" if etapa == 'APROBADA' else '')))
+               + (' · ORDEN COMPLETA' if etapa == 'CONFORME' else (f" · por llegar: {_oc_faltan_txt(orden)}" if etapa == 'APROBADA' else '')))
     _req_notificar_orden(orden, 'OC_CONFORME', f"{_oc_codigo(orden)}: entrega {e.numero} conforme" + (' (orden completa)' if etapa == 'CONFORME' else ''))
     _oc_revisar_ingreso_completo(orden)
     registrar_log(f"Dio CONFORMIDAD a la entrega {e.numero} de la {_oc_codigo(orden)}", 'bi-check-circle-fill', 'text-success')
@@ -20148,7 +20264,7 @@ def oc_ingresos_pendientes():
             hecho = bool(o.fecha_kardex)
             n_hechos += hecho and (emp_sel in ('TODAS', emp))
             if (emp_sel in ('TODAS', emp)) and ((vista == 'pendientes' and not hecho) or (vista == 'hechos' and hecho)):
-                grupos.append({'o': o, 'items': items, 'bloques': [], 'fecha': (o.fecha_kardex if hecho else o.fecha_conforme) or o.fecha_llegada})
+                grupos.append({'o': o, 'items': items, 'bloques': [], 'fecha': (o.fecha_kardex if hecho else o.fecha_llegada) or o.fecha_conforme})
             continue
         bloques = []
         for e in _oc_entregas(o):
@@ -20163,11 +20279,14 @@ def oc_ingresos_pendientes():
             if lista:
                 bloques.append({'e': e, 'eis': lista})
         if bloques and emp_sel in ('TODAS', emp):
-            fecha = (min(b['e'].fecha_conforme for b in bloques) if vista == 'pendientes'
+            # pendientes: por FECHA DE LLEGADA de la entrega más antigua que espera (lo que llegó primero, se ingresa primero)
+            fecha = (min(b['e'].fecha or b['e'].fecha_conforme for b in bloques) if vista == 'pendientes'
                      else max(ei.fecha_ingreso for b in bloques for ei in b['eis']))
             grupos.append({'o': o, 'items': items, 'bloques': bloques, 'fecha': fecha})
-    # lo que más espera, primero (pendientes); lo último ingresado, primero (hechos)
-    grupos.sort(key=lambda g: g['fecha'] or datetime.min, reverse=(vista == 'hechos'))
+    # pendientes: lo que llegó primero va arriba (o al revés si se elige "más recientes"); hechos: lo último ingresado arriba
+    orden_lista = request.args.get('orden', 'antiguos' if vista == 'pendientes' else 'recientes')
+    orden_lista = orden_lista if orden_lista in ('antiguos', 'recientes') else 'antiguos'
+    grupos.sort(key=lambda g: (g['fecha'] or datetime.min, g['o'].id), reverse=(orden_lista == 'recientes'))
     if vista == 'hechos':
         grupos = grupos[:80]
     pend_emp['TODAS'] = sum(pend_emp.values())
@@ -20196,7 +20315,7 @@ def oc_ingresos_pendientes():
     return render_template('oc_ingresos.html', grupos=grupos, docs=docs, puede_ver_oc=session.get('role') in ROLES_OC_VEN, vista=vista, stock=stock,
                            datos_kardex=datos_kardex, presentaciones=presentaciones, hoy_iso=hora_peru().date().isoformat(),
                            peso_inv=peso_inv, n_pendientes=pend_emp[emp_sel], n_hechos=n_hechos, monedas=MONEDAS_OC, ahora=hora_peru(),
-                           emp_sel=emp_sel, pend_emp=pend_emp,
+                           emp_sel=emp_sel, pend_emp=pend_emp, orden_lista=orden_lista,
                            empresas_oc=EMPRESAS_OC, es_admin=session.get('role') == 'admin', seccion='ingresos')
 
 
@@ -20578,7 +20697,8 @@ def _proveedor_oc_json(p, con_contactos=True):
     d = {'id': p.id, 'ruc': p.ruc or '', 'razon_social': p.razon_social, 'direccion': p.direccion or '',
          'sunat_estado': p.sunat_estado or '', 'sunat_condicion': p.sunat_condicion or '',
          'sunat_fecha': p.sunat_fecha.strftime('%d/%m/%Y') if p.sunat_fecha else '',
-         'ultima': p.ultima_orden.strftime('%d/%m/%Y') if p.ultima_orden else ''}
+         'ultima': p.ultima_orden.strftime('%d/%m/%Y') if p.ultima_orden else '',
+         'extranjero': bool(p.es_extranjero), 'pais': p.pais or ''}
     if con_contactos:
         d['contactos'] = _contactos_de(p)
         d['cuentas'] = _cuentas_de(p.id)
@@ -20612,10 +20732,48 @@ def oc_api_proveedores():
     """SOLO la lista propia de proveedores de órdenes (no se mezcla con clientes ni con otros proveedores del sistema)."""
     q = ' '.join((request.args.get('q') or '').split()).upper()
     lista = OCProveedor.query.all()
+    # importación: solo proveedores del exterior; compra local: solo los peruanos (RUC / DNI)
+    ext = request.args.get('ext') == '1'
+    lista = [p for p in lista if bool(p.es_extranjero) == ext]
     if q:
-        lista = [p for p in lista if all(t in f"{p.ruc or ''} {p.razon_social}".upper() for t in q.split())]
+        lista = [p for p in lista if all(t in f"{p.ruc or ''} {p.razon_social} {p.pais or ''}".upper() for t in q.split())]
     lista.sort(key=lambda p: (p.ultima_orden or p.fecha_creacion or datetime.min), reverse=True)
     return {'status': 'success', 'proveedores': [_proveedor_oc_json(p, con_contactos=False) for p in lista[:25]]}
+
+
+@app.route('/ordenes/api/proveedor_ext', methods=['POST'])
+@_ruta_oc('editar', como_json=True)
+def oc_api_proveedor_ext():
+    """Registra (o corrige) un proveedor del EXTERIOR en la lista propia: Tax ID / N° de registro, razón social, país y dirección.
+    No pasa por SUNAT. Luego se le agregan contactos y cuentas (SWIFT) como a cualquier proveedor."""
+    f = request.form
+    tax = re.sub(r'[^0-9A-Za-z]', '', f.get('tax_id') or '').upper()[:20]
+    razon = ' '.join((f.get('razon_social') or '').split()).upper()[:200]
+    pais = ' '.join((f.get('pais') or '').split()).upper()[:60]
+    direccion = ' '.join((f.get('direccion') or '').split())[:250]
+    if len(tax) < 3:
+        return {'status': 'error', 'msg': 'Escribe el Tax ID / N° de registro del proveedor (mínimo 3 letras o números).'}
+    if len(razon) < 3:
+        return {'status': 'error', 'msg': 'Escribe la razón social del proveedor.'}
+    if not pais:
+        return {'status': 'error', 'msg': 'Escribe el país del proveedor.'}
+    p = next((x for x in OCProveedor.query.filter(OCProveedor.ruc == tax).all()), None)
+    ahora = hora_peru()
+    if p and not p.es_extranjero:
+        return {'status': 'error', 'msg': f'Ese número ya está registrado como proveedor peruano ({p.razon_social}).'}
+    if p:
+        p.razon_social, p.pais, p.direccion = razon, pais, direccion or p.direccion
+        p.actualizado_por, p.fecha_actualizacion = session.get('nombre', ''), ahora
+        msg = 'Proveedor del exterior actualizado.'
+    else:
+        p = OCProveedor(ruc=tax, razon_social=razon, direccion=direccion or None, pais=pais, es_extranjero=True,
+                        creado_por=session.get('nombre', ''), fecha_creacion=ahora)
+        db.session.add(p)
+        msg = 'Proveedor del exterior guardado en la lista.'
+    db.session.flush()
+    registrar_log(f"Guardó el proveedor del exterior {razon} ({pais}, Tax ID {tax})", 'bi-globe-americas', 'text-primary')
+    db.session.commit()
+    return {'status': 'success', 'msg': msg, 'proveedor': _proveedor_oc_json(p)}
 
 
 @app.route('/ordenes/api/proveedor/<int:prov_id>')

@@ -103,6 +103,9 @@
     <div class="input-group input-group-sm" style="max-width: 420px;"><span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
         <input type="search" id="filtroIng" class="form-control" placeholder="Filtrar por OC, proveedor, producto o código"></div>
     {% if vista == 'pendientes' %}<label class="small d-flex align-items-center gap-1"><input type="checkbox" class="form-check-input mt-0" id="soloNuevos"> Solo productos nuevos</label>{% endif %}
+    <div class="ms-auto small d-flex align-items-center gap-1"><span class="text-muted">Orden:</span>
+        <a class="btn btn-sm {{ 'btn-dark' if orden_lista == 'antiguos' else 'btn-outline-secondary' }} py-0" href="{{ url_for('oc_ingresos_pendientes', vista=vista, empresa=emp_sel, orden='antiguos') }}" title="Por fecha de llegada: lo que llegó primero, arriba">Llegó primero</a>
+        <a class="btn btn-sm {{ 'btn-dark' if orden_lista == 'recientes' else 'btn-outline-secondary' }} py-0" href="{{ url_for('oc_ingresos_pendientes', vista=vista, empresa=emp_sel, orden='recientes') }}">Más recientes</a></div>
 </div>
 {% endif %}
 
@@ -159,6 +162,7 @@
         <div>
             {% for i in items.values() %}
             <div class="desc">{{ i.item }}. {% if i.tipo_servicio %}<span class="tag serv"><i class="bi bi-tools"></i> {{ i.tipo_servicio }}</span> {% endif %}{{ i.descripcion }}</div>
+            {% if i.detalle or i.piezas %}<div class="meta fst-italic">{{ i.detalle or '' }}{% if i.detalle and i.piezas %} · {% endif %}{% if i.piezas %}{{ i.piezas|cant }} pieza(s){% endif %}</div>{% endif %}
             <div class="meta mb-1"><span><span class="cant">{{ i.cantidad|cant }}</span> {{ i.um }}</span>{% if i.codigo %}<span class="tag vinc">{{ i.codigo }}</span>{% endif %}
                 {% if i.familia or i.calidad %}<span>{{ [i.familia, i.calidad]|select|join(' · ') }}</span>{% endif %}</div>
             {% endfor %}
@@ -202,6 +206,7 @@
     <div class="it" data-nuevo="{{ '1' if i.es_nuevo else '0' }}" data-buscar="{{ (i.descripcion ~ ' ' ~ (i.codigo or '') ~ ' ' ~ (ei.sku_ingreso or '') ~ ' ' ~ (e.numero_guia or ''))|upper }}">
         <div>
             <div class="desc">{{ i.item }}. {{ i.descripcion }}</div>
+            {% if i.detalle or i.piezas %}<div class="meta fst-italic">{{ i.detalle or '' }}{% if i.detalle and i.piezas %} · {% endif %}{% if i.piezas %}{{ i.piezas|cant }} pieza(s){% endif %}</div>{% endif %}
             {% set rqi = req_de_item_oc(i) %}{% if rqi %}<div class="meta"><span class="tag" style="background:#ede9fe; color:#5b21b6;"><i class="bi bi-clipboard-check"></i> Pedido en {{ req_codigo(rqi) }} · {{ rqi.solicitante_nombre }}</span></div>{% endif %}
             <div class="meta">
                 {% if ei.fecha_ingreso %}<span class="tag listo"><i class="bi bi-check2-all"></i> Ingresado</span>{% else %}<span class="tag espera-i"><i class="bi bi-check-circle"></i> Conforme · esperando ingreso</span>{% endif %}

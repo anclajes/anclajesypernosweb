@@ -1260,6 +1260,8 @@ class OCProveedor(db.Model):
     actualizado_por = db.Column(db.String(100))
     fecha_actualizacion = db.Column(db.DateTime, nullable=True)
     ultima_orden = db.Column(db.DateTime, nullable=True)
+    es_extranjero = db.Column(db.Boolean, default=False)      # proveedor del exterior (importaciones): ruc = Tax ID
+    pais = db.Column(db.String(60))
 
 
 class OCContacto(db.Model):
@@ -1429,6 +1431,8 @@ class OrdenCompraItem(db.Model):
     # Peso (opcional): por unidad o total, como lo dé el proveedor. Se guardan los dos (el otro se calcula).
     tipo_servicio = db.Column(db.String(80))                   # solo en Órdenes de Servicio: CORTE, ROSCADO, GALVANIZADO...
     peso_modo = db.Column(db.String(1))                        # U = por unidad / T = total
+    detalle = db.Column(db.String(500))                         # descripción adicional del ítem (sale debajo del producto)
+    piezas = db.Column(db.Float)                                # OS: cantidad de piezas (solo informativo)
     peso_unitario = db.Column(db.Float)                        # kg por unidad
     peso_total = db.Column(db.Float)                           # kg del ítem
     # Ingreso al inventario (lo marca Almacén cuando hizo el movimiento en el Kardex)

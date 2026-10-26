@@ -45,8 +45,11 @@
     .form-contacto { border: 1.5px dashed #93c5fd; border-radius: 10px; padding: 10px; background: #f8fbff; }
     .item { border: 1px solid #e2e8f0; border-radius: 12px; padding: 10px; margin-bottom: 8px; background: #fff; position: relative; }
     .item .n { position: absolute; top: -9px; left: 10px; background: #0B3D91; color: #fff; border-radius: 10px; font-size: .68rem; font-weight: 800; padding: 0 8px; }
-    .item .quitar { position: absolute; top: 4px; right: 6px; border: 0; background: transparent; color: #94a3b8; font-size: 1.05rem; }
-    .item .quitar:hover { color: #dc2626; }
+    .item .quitar { position: absolute; top: -13px; right: 8px; z-index: 6; width: 28px; height: 28px; border-radius: 50%; border: 1px solid #e2e8f0;
+                    background: #fff; color: #94a3b8; font-size: 1.05rem; display: flex; align-items: center; justify-content: center; padding: 0; cursor: pointer; }
+    .item .quitar:hover { color: #dc2626; border-color: #fca5a5; background: #fef2f2; }
+    .item { margin-top: 14px; }
+    .item .i-detalle { font-size: .78rem; resize: vertical; }
     .item label { font-size: .66rem; font-weight: 800; color: #64748b; text-transform: uppercase; margin-bottom: 1px; }
     .item .tot { font-weight: 800; font-variant-numeric: tabular-nums; padding-top: 4px; }
     .ficha { font-size: .72rem; border-radius: 8px; padding: 5px 8px; margin-top: 4px; }
@@ -198,6 +201,13 @@
             <div class="aviso-cert" id="avisoCert" style="display:none;"><i class="bi bi-award-fill"></i> Compra para el <b>inventario</b>: al dar la conformidad será <b>obligatorio subir el CERTIFICADO DE CALIDAD</b> (pídeselo al proveedor).</div>
         </div></div>
 
+        <div id="boxImp" class="imp-box mb-3 shadow-sm">
+                <div class="form-check form-switch m-0">
+                    <input class="form-check-input" type="checkbox" role="switch" name="es_importacion" value="1" id="es_importacion" {{ 'checked' if pv.es_importacion }} onchange="pintarImportacion(true)">
+                    <label class="form-check-label fw-bold" for="es_importacion"><i class="bi bi-globe-americas"></i> Orden de IMPORTACIÓN (proveedor del exterior)</label>
+                </div>
+                <div class="small text-muted">En <b>dólares</b>, <b>sin IGV</b>, precio por cada <b>1000 piezas</b> (USD/1000 PCS) y peso por millar (KGS/MPCS). Mismo flujo: aprobación, llegada, conformidad e ingreso al inventario (entra la <b>CANTIDAD / PCS</b>).</div>
+            </div>
         <!-- PROVEEDOR -->
         <div class="card border-0 shadow-sm mb-3"><div class="card-body">
             <div class="card-t"><i class="bi bi-building"></i> Proveedor <span class="ms-auto fw-normal" style="text-transform:none; letter-spacing:0; font-size:.68rem;">Lista propia de órdenes</span></div>
@@ -211,11 +221,11 @@
                         <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
                         <input type="text" id="buscaProv" class="form-control" placeholder="RUC o nombre del proveedor" autocomplete="off" inputmode="search"
                                oninput="sugerirProv(this.value)" onfocus="sugerirProv(this.value)" onkeydown="if(event.key==='Enter'){event.preventDefault(); buscarSunat(false);}">
-                        <button type="button" class="btn btn-primary" onclick="buscarSunat(false)" title="Buscar el RUC en SUNAT"><i class="bi bi-cloud-download"></i> SUNAT</button>
+                        <button type="button" class="btn btn-primary" id="btnSunat" onclick="buscarSunat(false)" title="Buscar el RUC en SUNAT"><i class="bi bi-cloud-download"></i> SUNAT</button>
                     </div>
                     <div id="sugProv" class="list-group position-absolute w-100 shadow sug"></div>
                 </div>
-                <div class="form-text mb-2" style="font-size:.7rem;">Toca para ver los proveedores ya usados. Si es nuevo, escribe su RUC y pulsa <b>SUNAT</b>: se guarda en la lista.</div>
+                <div class="form-text mb-2" style="font-size:.7rem;" id="provAyuda">Toca para ver los proveedores ya usados. Si es nuevo, escribe su RUC y pulsa <b>SUNAT</b>: se guarda en la lista.</div>
             </div>
             <div id="provMsg" class="small mb-2"></div>
             <div class="prov-card mb-2" id="provCard">
@@ -233,7 +243,12 @@
                 <div class="row g-2">
                     <div class="col-5"><div class="lbl req" id="m_ruc_lbl">RUC</div><input type="text" id="m_ruc" class="form-control" maxlength="20"></div>
                     <div class="col-7"><div class="lbl req">Razón social</div><input type="text" id="m_razon" class="form-control" maxlength="200"></div>
-                    <div class="col-12"><div class="lbl">Dirección</div><input type="text" id="m_dir" class="form-control" maxlength="250"></div>
+                    <div class="col-12 col-sm-4 solo-imp" style="display:none;"><div class="lbl req">País</div><input type="text" id="m_pais" class="form-control text-uppercase" maxlength="60" placeholder="Ej: CHINA"></div>
+                    <div class="col-12" id="colMDir"><div class="lbl">Dirección</div><input type="text" id="m_dir" class="form-control" maxlength="250"></div>
+                    <div class="col-12 solo-imp" style="display:none;">
+                        <button type="button" class="btn btn-primary btn-sm fw-bold" onclick="guardarExt()"><i class="bi bi-save"></i> Guardar proveedor del exterior</button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="cambiarProv()">Cancelar</button>
+                        <div class="form-text">Queda en la lista de proveedores (sin SUNAT). Después le agregas contactos y cuentas bancarias (SWIFT).</div></div>
                 </div>
             </div>
             <button type="button" class="btn btn-link btn-sm px-0" onclick="aMano()" id="btnAMano"><i class="bi bi-pencil"></i> SUNAT no responde: escribir los datos a mano</button>
@@ -277,13 +292,6 @@
         <!-- CONDICIONES -->
         <div class="card border-0 shadow-sm mb-3"><div class="card-body">
             <div class="card-t"><i class="bi bi-sliders"></i> Condiciones</div>
-            <div id="boxImp" class="imp-box mb-3">
-                <div class="form-check form-switch m-0">
-                    <input class="form-check-input" type="checkbox" role="switch" name="es_importacion" value="1" id="es_importacion" {{ 'checked' if pv.es_importacion }} onchange="pintarImportacion(true)">
-                    <label class="form-check-label fw-bold" for="es_importacion"><i class="bi bi-globe-americas"></i> Orden de IMPORTACIÓN (proveedor del exterior)</label>
-                </div>
-                <div class="small text-muted">En <b>dólares</b>, <b>sin IGV</b>, precio por cada <b>1000 piezas</b> (USD/1000 PCS) y peso por millar (KGS/MPCS). Mismo flujo: aprobación, llegada, conformidad e ingreso al inventario (entra la <b>CANTIDAD / PCS</b>).</div>
-            </div>
             <div class="row g-2">
                 <div class="col-12 col-sm-6"><div class="lbl req">Moneda</div>
                     <div class="seg chico">
@@ -410,7 +418,11 @@
                     <button type="button" class="btn btn-outline-primary i-buscar" title="Buscar con Familia y Calidad"><i class="bi bi-funnel"></i> Inventario</button>
                 </div>
                 <div class="list-group position-absolute w-100 shadow sug prod-sug" style="left:0;"></div>
-                <div class="i-ficha"></div></div>
+                <div class="i-ficha"></div>
+                <textarea name="detalle[]" class="form-control form-control-sm i-detalle mt-1" rows="1" maxlength="500" placeholder="Detalle del ítem (opcional): medidas, acabado, norma, color... sale debajo del producto en la orden y el PDF"></textarea></div>
+            <div class="col-6 col-md-4 i-os-box" style="display:none;"><label>N° de piezas <span class="text-muted text-lowercase fw-normal">(opcional)</span></label>
+                <input type="number" name="piezas[]" min="0" step="any" class="form-control form-control-sm i-piezas" inputmode="decimal" placeholder="Ej: 150"></div>
+            <div class="col-6 col-md-8 i-os-box align-self-end" style="display:none; font-size:.7rem; color:#64748b;"><i class="bi bi-info-circle"></i> Solo informativo: si el servicio se cobra por <b>kilo</b>, escribe cuántas piezas van (sale en la OS y el PDF).</div>
             <div class="col-4 col-md-2"><label class="i-lbl-cant">Cantidad *</label><input type="number" name="cantidad[]" step="any" min="0" class="form-control form-control-sm i-cant" inputmode="decimal"></div>
             <div class="col-4 col-md-3"><label>U.M. *</label><select name="um[]" class="form-select form-select-sm i-um"></select></div>
             <div class="col-4 col-md-3 i-local"><label>P. Unit. *</label><input type="number" name="precio_unitario[]" step="any" min="0" class="form-control form-control-sm i-pu" inputmode="decimal"></div>
@@ -418,7 +430,7 @@
             <div class="col-12 col-md-4 text-end"><label>Total</label><div class="tot i-tot">0.00</div></div>
             <div class="col-6 col-md-3 i-imp" style="display:none;"><label>KGS / MPCS</label><input type="number" name="kgs_mpcs[]" step="any" min="0" class="form-control form-control-sm i-kgs" inputmode="decimal" placeholder="kg por millar"></div>
             <div class="col-6 col-md-4 i-imp align-self-end small" style="display:none;">Total KGS: <b class="i-tkg">0</b></div>
-            <div class="col-12 i-local"><div class="peso-linea"><i class="bi bi-speedometer2"></i> Peso <span class="text-muted">(opcional)</span>
+            <div class="col-12 i-peso-box"><div class="peso-linea"><i class="bi bi-speedometer2"></i> Peso <span class="text-muted">(opcional)</span>
                 <select name="peso_modo[]" class="form-select form-select-sm i-pmodo"><option value="U">kg por unidad</option><option value="T">kg total del ítem</option></select>
                 <input type="number" name="peso_valor[]" step="any" min="0" class="form-control form-control-sm i-pval" placeholder="kg" inputmode="decimal">
                 <span class="i-pcalc"></span><span class="i-pinv ms-auto"></span></div></div>
@@ -521,6 +533,7 @@ function pintarTipo() {
     porId('avisoOS').style.display = os ? 'block' : 'none';
     porId('lblDestino').textContent = os ? 'Este servicio es para' : 'Este material es para';
     document.querySelectorAll('#items .i-serv-box').forEach(b => b.style.display = os ? 'block' : 'none');
+    document.querySelectorAll('#items .i-os-box').forEach(b => b.style.display = os ? '' : 'none');
     pintarDestino();
     if (porId('pagosImp')) pintarImportacion(false);
 }
@@ -606,7 +619,7 @@ function recalcular() {
             const tk = cant * kg / 1000; f.querySelector('.i-tkg').textContent = fmtKg(tk); peso += tk; pcs += cant;
         } else {
             t = r2(cant * (parseFloat(f.querySelector('.i-pu').value) || 0));
-            peso += pesoFila(f);
+            peso += f.querySelector('.i-um').value === 'KG' ? cant : pesoFila(f);
         }
         f.querySelector('.i-tot').textContent = `${moneda()} ${fmt(t)}`; sub += t;
     });
@@ -653,8 +666,12 @@ function pintarImportacion(cambio) {
     document.querySelectorAll('#formOC input[name=moneda]').forEach(r => r.disabled = imp && r.value !== 'USD');
     document.querySelectorAll('#items .i-imp').forEach(x => x.style.display = imp ? '' : 'none');
     document.querySelectorAll('#items .i-local').forEach(x => x.style.display = imp ? 'none' : '');
+    document.querySelectorAll('#items .item').forEach(pintarPesoFila);
     document.querySelectorAll('#items .i-lbl-cant').forEach(x => x.textContent = imp ? 'Cantidad / PCS *' : 'Cantidad *');
     porId('m_ruc_lbl').textContent = imp ? 'Tax ID / N° de registro' : 'RUC';
+    // el proveedor elegido debe ser del tipo de la orden (peruano o del exterior)
+    if (cambio && provActual && !!provActual.extranjero !== imp) cambiarProv();
+    pintarProvModo();
     if (imp && cambio) {
         // sugerencias de Configuración, solo si está vacío
         const def = IMP_DEF[empresa()] || {};
@@ -664,6 +681,11 @@ function pintarImportacion(cambio) {
         document.querySelectorAll('#items .item').forEach(f => { const pu = f.querySelector('.i-pu').value, pm = f.querySelector('.i-pmil'); if (pu !== '' && pm.value === '') pm.value = r2(parseFloat(pu) * 1000); });
     }
     recalcular();
+}
+function pintarPesoFila(f) {
+    // por kilo (U.M. KG) el peso ya es la cantidad; en importación el peso sale de KGS/MPCS
+    const kg = f.querySelector('.i-um').value === 'KG';
+    f.querySelector('.i-peso-box').style.display = (esImp() || kg) ? 'none' : '';
 }
 function opcionesUM(sel, valor) {
     const lista = UMS.slice(); if (valor && !lista.includes(valor)) lista.push(valor);
@@ -735,7 +757,7 @@ function elegirProducto(fila, p) {
     fila.querySelector('.i-desc').value = (p.descripcion || '').toUpperCase();
     vincular(fila, p);
     const um = fila.querySelector('.i-um');
-    if (!um.value) { const u = (p.ultimo && p.ultimo.um) || (UMS.includes((p.um || '').toUpperCase()) ? p.um.toUpperCase() : ''); if (u) opcionesUM(um, u); }
+    if (!um.value) { const u = (p.ultimo && p.ultimo.um) || (UMS.includes((p.um || '').toUpperCase()) ? p.um.toUpperCase() : ''); if (u) opcionesUM(um, u); pintarPesoFila(fila); }
     fila.querySelector('.prod-sug').style.display = 'none';
     fila.querySelector('.i-cant').focus();
 }
@@ -759,10 +781,15 @@ function agregarItem(datos) {
     fila.querySelector('.i-pu').value = (datos.precio_unitario === 0 || datos.precio_unitario) ? datos.precio_unitario : '';
     fila.querySelector('.i-pmil').value = (datos.precio_mil === 0 || datos.precio_mil) ? datos.precio_mil : '';
     fila.querySelector('.i-kgs').value = (datos.kgs_mpcs === 0 || datos.kgs_mpcs) ? datos.kgs_mpcs : '';
+    fila.querySelector('.i-detalle').value = datos.detalle || '';
+    fila.querySelector('.i-piezas').value = (datos.piezas === 0 || datos.piezas) ? datos.piezas : '';
+    fila.querySelectorAll('.i-os-box').forEach(x => x.style.display = tipo() === 'OS' ? '' : 'none');
+    fila.querySelector('.i-um').addEventListener('change', () => { pintarPesoFila(fila); recalcular(); });
     const imp0 = esImp();
     fila.querySelectorAll('.i-imp').forEach(x => x.style.display = imp0 ? '' : 'none');
     fila.querySelectorAll('.i-local').forEach(x => x.style.display = imp0 ? 'none' : '');
     fila.querySelector('.i-lbl-cant').textContent = imp0 ? 'Cantidad / PCS *' : 'Cantidad *';
+    pintarPesoFila(fila);
     opcionesServicio(fila.querySelector('.i-serv'), datos.servicio || '');
     fila.querySelector('.i-serv-box').style.display = tipo() === 'OS' ? 'block' : 'none';
     fila.querySelector('.i-pmodo').value = datos.peso_modo === 'T' ? 'T' : 'U';
@@ -866,13 +893,14 @@ porId('mp_q').addEventListener('input', () => buscarModal());
 let tSug = null, provActual = null, contactos = [];
 function sugerirProv(t) {
     clearTimeout(tSug);
-    const cont = porId('sugProv');
-    tSug = setTimeout(() => fetch(`{{ url_for('oc_api_proveedores') }}?q=${encodeURIComponent(t.trim())}`).then(r => r.json()).then(d => {
+    const cont = porId('sugProv'), imp = esImp();
+    tSug = setTimeout(() => fetch(`{{ url_for('oc_api_proveedores') }}?q=${encodeURIComponent(t.trim())}&ext=${imp ? 1 : 0}`).then(r => r.json()).then(d => {
         const lista = d.proveedores || [];
-        cont.innerHTML = lista.length ? '' : `<div class="list-group-item small text-muted">${t.trim() ? 'No está en la lista. Si es un RUC, pulsa <b>SUNAT</b>.' : 'Todavía no hay proveedores: busca un RUC en SUNAT.'}</div>`;
+        cont.innerHTML = lista.length ? '' : `<div class="list-group-item small text-muted">${imp ? (t.trim() ? 'No está en la lista: pulsa <b>Registrar proveedor del exterior</b>.' : 'Todavía no hay proveedores del exterior: regístralo abajo.')
+            : (t.trim() ? 'No está en la lista. Si es un RUC, pulsa <b>SUNAT</b>.' : 'Todavía no hay proveedores: busca un RUC en SUNAT.')}</div>`;
         lista.forEach(p => {
             const b = document.createElement('button'); b.type = 'button'; b.className = 'list-group-item list-group-item-action py-1 px-2 small';
-            b.innerHTML = `<div><b>${esc(p.razon_social)}</b></div><div class="text-muted"><span class="ruc">${esc(p.ruc)}</span>${p.ultima ? ' · última orden ' + p.ultima : ''}</div>`;
+            b.innerHTML = `<div><b>${esc(p.razon_social)}</b></div><div class="text-muted">${p.extranjero ? 'Tax ID ' : ''}<span class="ruc">${esc(p.ruc)}</span>${p.pais ? ' · ' + esc(p.pais) : ''}${p.ultima ? ' · última orden ' + p.ultima : ''}</div>`;
             b.onclick = () => cargarProveedor(p.id);
             cont.appendChild(b);
         });
@@ -884,9 +912,10 @@ function cargarProveedor(id) { fetch(`{{ url_for('oc_api_proveedor', prov_id=0) 
 function mostrarProveedor(p, msg) {
     provActual = p;
     porId('oc_proveedor_id').value = p.id; porId('ruc').value = p.ruc; porId('razon_social').value = p.razon_social; porId('direccion').value = p.direccion || '';
-    porId('pc_nombre').textContent = p.razon_social; porId('pc_ruc').textContent = 'RUC ' + p.ruc; porId('pc_dir').textContent = p.direccion || '';
+    porId('pc_nombre').textContent = p.razon_social; porId('pc_ruc').textContent = (p.extranjero ? 'Tax ID ' : 'RUC ') + p.ruc; porId('pc_dir').textContent = p.direccion || '';
     const est = [p.sunat_estado, p.sunat_condicion].filter(Boolean);
-    porId('pc_sunat').innerHTML = est.length ? est.map(x => `<span class="chip ${/ACTIVO|HABIDO/.test(x) && !/NO /.test(x) ? 'ok' : 'mal'}">${esc(x)}</span>`).join(' ') + (p.sunat_fecha ? ` <span class="chip gris">SUNAT ${esc(p.sunat_fecha)}</span>` : '')
+    porId('btnActSunat').style.display = p.extranjero ? 'none' : '';
+    porId('pc_sunat').innerHTML = p.extranjero ? `<span class="chip gris"><i class="bi bi-globe-americas"></i> Proveedor del exterior${p.pais ? ' · ' + esc(p.pais) : ''}</span>` : est.length ? est.map(x => `<span class="chip ${/ACTIVO|HABIDO/.test(x) && !/NO /.test(x) ? 'ok' : 'mal'}">${esc(x)}</span>`).join(' ') + (p.sunat_fecha ? ` <span class="chip gris">SUNAT ${esc(p.sunat_fecha)}</span>` : '')
                                          : '<span class="chip gris">escrito a mano</span>';
     porId('provCard').style.display = 'block'; porId('provBuscar').style.display = 'none'; porId('provManual').style.display = 'none';
     porId('btnAMano').style.display = 'none'; porId('sugProv').style.display = 'none';
@@ -921,7 +950,7 @@ function aMano() {
     porId('oc_proveedor_id').value = ''; porId('contacto_id').value = '';
     porId('provBuscar').style.display = 'none'; porId('provCard').style.display = 'none'; porId('provManual').style.display = 'block'; porId('btnAMano').style.display = 'none';
     porId('boxCuentas').style.display = 'none';
-    porId('m_ruc').value = porId('buscaProv').value.replace(/\D/g, '');
+    porId('m_ruc').value = esImp() ? porId('buscaProv').value.toUpperCase().replace(/[^0-9A-Z]/g, '') : porId('buscaProv').value.replace(/\D/g, '');
     porId('provMsg').innerHTML = '<span class="text-muted">Escribe los datos tal como figuran en la cotización. Se guardará en la lista al guardar la orden.</span>';
     // sin proveedor guardado, el contacto se escribe aquí y se guarda junto con la orden
     porId('boxContactos').style.display = 'block'; porId('listaContactos').innerHTML = ''; porId('btnNuevoContacto').style.display = 'none';
@@ -929,6 +958,24 @@ function aMano() {
     porId('m_ruc').focus();
 }
 
+function guardarExt() {
+    post(`{{ url_for('oc_api_proveedor_ext') }}`, { tax_id: porId('m_ruc').value, razon_social: porId('m_razon').value, pais: porId('m_pais').value, direccion: porId('m_dir').value })
+        .then(d => {
+            if (d.status !== 'success') return Swal.fire('Falta información', d.msg, 'warning');
+            mostrarProveedor(d.proveedor, `<span class="text-success"><i class="bi bi-check-circle-fill"></i> ${esc(d.msg)}</span>`);
+        }).catch(() => Swal.fire('Error de conexión', '', 'error'));
+}
+function pintarProvModo() {
+    const imp = esImp();
+    porId('btnSunat').style.display = imp ? 'none' : '';
+    porId('buscaProv').placeholder = imp ? 'Nombre, país o Tax ID del proveedor del exterior' : 'RUC o nombre del proveedor';
+    porId('provAyuda').innerHTML = imp ? 'Toca para ver los proveedores del exterior ya usados. Si es nuevo, pulsa <b>Registrar proveedor del exterior</b>.'
+        : 'Toca para ver los proveedores ya usados. Si es nuevo, escribe su RUC y pulsa <b>SUNAT</b>: se guarda en la lista.';
+    porId('btnAMano').innerHTML = imp ? '<i class="bi bi-globe-americas"></i> Registrar proveedor del exterior' : '<i class="bi bi-pencil"></i> SUNAT no responde: escribir los datos a mano';
+    porId('btnAMano').className = imp ? 'btn btn-outline-primary btn-sm' : 'btn btn-link btn-sm px-0';
+    document.querySelectorAll('.solo-imp').forEach(x => x.style.display = imp ? '' : 'none');
+    porId('colMDir').className = imp ? 'col-12 col-sm-8' : 'col-12';
+}
 function pintarCuentasForm() {
     porId('boxCuentas').style.display = 'block';
     OCC.render(porId('listaCuentas'), (provActual && provActual.cuentas) || [], { vacio: 'Sin cuentas guardadas.' + ({{ 'true' if puede_cuentas else 'false' }} ? ' Agrégalas para tenerlas a la mano al pagar.' : '') });

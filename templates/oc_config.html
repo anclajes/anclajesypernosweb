@@ -131,12 +131,13 @@
         <div class="card border-0 shadow-sm mb-2"><div class="card-body py-2">
             <div class="d-flex flex-wrap gap-2 justify-content-between align-items-start">
                 <div style="min-width:0;"><b style="overflow-wrap:anywhere;">{{ p.razon_social }}</b>
-                    <div class="uso">RUC {{ p.ruc }}{% if p.direccion %} · {{ p.direccion }}{% endif %}{% if p.sunat_fecha %} · SUNAT {{ p.sunat_estado or '' }} {{ p.sunat_condicion or '' }} ({{ p.sunat_fecha.strftime('%d/%m/%Y') }}){% endif %}
+                    <div class="uso">{% if p.es_extranjero %}<i class="bi bi-globe-americas"></i> Del exterior · {{ p.pais or '' }} · Tax ID {{ p.ruc }}{% else %}RUC {{ p.ruc }}{% endif %}{% if p.direccion %} · {{ p.direccion }}{% endif %}{% if p.sunat_fecha %} · SUNAT {{ p.sunat_estado or '' }} {{ p.sunat_condicion or '' }} ({{ p.sunat_fecha.strftime('%d/%m/%Y') }}){% endif %}
                         · {{ ordenes_prov.get(p.id, 0) }} orden(es)</div></div>
                 <div class="acciones">
-                    {% if p.sunat_fecha %}<span class="badge text-bg-light border me-1" title="Datos oficiales de SUNAT"><i class="bi bi-patch-check-fill text-success"></i> SUNAT</span>{% else %}
+                    {% if p.es_extranjero %}<button class="btn btn-sm btn-outline-secondary" title="Corregir los datos del proveedor del exterior" onclick="editarProv({{ {'id': p.id, 'razon_social': p.razon_social, 'direccion': p.direccion or ''}|tojson|forceescape }})"><i class="bi bi-pencil"></i> Corregir</button>
+                    {% elif p.sunat_fecha %}<span class="badge text-bg-light border me-1" title="Datos oficiales de SUNAT"><i class="bi bi-patch-check-fill text-success"></i> SUNAT</span>{% else %}
                     <button class="btn btn-sm btn-outline-secondary" title="Se escribió a mano (SUNAT no respondió): corregir" onclick="editarProv({{ {'id': p.id, 'razon_social': p.razon_social, 'direccion': p.direccion or ''}|tojson|forceescape }})"><i class="bi bi-pencil"></i> Corregir</button>{% endif %}
-                    <button class="btn btn-sm btn-outline-primary" title="Volver a traer los datos de SUNAT" onclick="actualizarSunat({{ p.ruc|tojson|forceescape }})"><i class="bi bi-cloud-arrow-down"></i> Actualizar SUNAT</button>
+                    {% if not p.es_extranjero %}<button class="btn btn-sm btn-outline-primary" title="Volver a traer los datos de SUNAT" onclick="actualizarSunat({{ p.ruc|tojson|forceescape }})"><i class="bi bi-cloud-arrow-down"></i> Actualizar SUNAT</button>{% endif %}
                     {% if es_admin and not ordenes_prov.get(p.id) %}<button class="btn btn-sm btn-outline-danger" title="Borrar (no tiene órdenes)" onclick="borrar('proveedor', {{ p.id }}, {{ p.razon_social|tojson|forceescape }}, 'proveedores')"><i class="bi bi-trash"></i></button>{% endif %}</div>
             </div>
             <div class="d-flex justify-content-between align-items-center mt-2 mb-1">

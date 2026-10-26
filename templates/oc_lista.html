@@ -160,7 +160,7 @@
 {% macro entrega(o) %}
     {% set esp = oc_fecha_esperada(o) %}{% set at = atrasos[o.id] %}
     {% if o.fecha_llegada %}<div class="entrega"><i class="bi bi-box-seam"></i> Llegó {{ o.fecha_llegada.strftime('%d/%m/%Y') }}
-        {% if o.estado in ['APROBADA', 'RECIBIDA'] %}{% set rc = oc_recepcion(o) %}{% if rc.pendiente > 0 %}<div class="atrasada" title="Entrega parcial: falta que llegue el resto">Parcial · {{ rc.llego|cant }} de {{ rc.pedido|cant }}{% if at %} · {{ at }} d atraso{% endif %}</div>{% endif %}{% endif %}</div>
+        {% if o.estado in ['APROBADA', 'RECIBIDA'] %}{% set rc = oc_recepcion(o) %}{% if rc.pendiente > 0 %}<div class="atrasada" title="Entrega parcial — {{ oc_faltan_txt(o, rc) }}">Parcial · {{ rc.n_completos }} de {{ rc.n_items }} completos{% if at %} · {{ at }} d atraso{% endif %}</div>{% endif %}{% endif %}</div>
     {% elif o.estado in ['RECHAZADA', 'ANULADA'] %}<span class="sub">—</span>
     {% else %}<div class="entrega">{% if o.entrega_modo == 'RECOJO' %}<i class="bi bi-person-walking"></i> Recojo{% else %}<i class="bi bi-truck"></i> Llega{% endif %}
         <div class="{{ 'atrasada' if at }}">{{ esp.strftime('%d/%m/%Y') if esp else oc_entrega_txt(o) }}{% if at %} · {{ at }} d atraso{% endif %}</div></div>{% endif %}
