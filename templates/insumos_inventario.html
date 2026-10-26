@@ -21,6 +21,8 @@
         <img src="{{ url_for('static', filename='img/' ~ e.logo) }}" alt="{{ e.corto }}"> {{ e.corto }}
     </a>
     {% endfor %}
+    {% if puede_editar %}<a href="{{ url_for('insumos_importar', empresa=empresa) }}" class="ms-auto" style="--c:#15803d; border-color:#bbf7d0; color:#15803d;" title="Cargar insumos y stock desde un Excel a este inventario">
+        <i class="bi bi-file-earmark-excel fs-5"></i> Importar Excel</a>{% endif %}
 </div>
 
 <div class="row g-2 mb-3">

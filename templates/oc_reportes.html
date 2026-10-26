@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}Reportes de compras{% endblock %}
+{% block subtitle %}Gasto, atrasos de proveedores y tiempos de cada paso{% endblock %}
+{% block content %}
+{% include '_oc_nav.html' %}
+<style>
+    .rp-filtros { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 10px 12px; margin-bottom: 12px; }
+    .rp-filtros label { font-size: .68rem; font-weight: 800; color: #64748b; text-transform: uppercase; margin-bottom: 1px; }
+    .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-bottom: 12px; }
+    .kpis div { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 9px 12px; }
+    .kpis b { display: block; font-size: 1.25rem; color: #0f172a; font-variant-numeric: tabular-nums; line-height: 1.15; }
+    .kpis span { font-size: .72rem; color: #475569; font-weight: 600; }
+    .rp { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 12px 14px; margin-bottom: 14px; }
+    .rp h6 { font-weight: 800; font-size: .86rem; color: #0f172a; margin-bottom: 2px; }
+    .rp .ay { font-size: .72rem; color: #64748b; margin-bottom: 8px; }
+    .rp table { font-size: .78rem; margin-bottom: 0; }
+    .rp th { font-size: .66rem; text-transform: uppercase; color: #64748b; font-weight: 800; white-space: nowrap; }
+    .rp td { vertical-align: middle; }
+    .barra { position: relative; min-width: 120px; }
+    .barra .b { height: 8px; border-radius: 0 4px 4px 0; background: var(--c); min-width: 2px; }
+    .barra .v { font-variant-numeric: tabular-nums; font-weight: 700; font-size: .76rem; color: #0f172a; }
+    .pen { --c: #0B3D91; } .usd { --c: #0f766e; }
+    .nombre { max-width: 260px; overflow-wrap: anywhere; }
+    .mal { color: #b91c1c; font-weight: 700; }
+    .vacio { font-size: .78rem; color: #64748b; padding: 8px 0; }
+</style>
+
+<form method="GET" class="rp-filtros d-flex flex-wrap gap-2 align-items-end">
+    <div><label class="d-block">Empresa</label>
+        <select name="empresa" class="form-select form-select-sm">
+            <option value="TODAS" {{ 'selected' if emp_sel == 'TODAS' }}>Las dos</option>
+            {% for e, info in empresas_oc.items() %}<option value="{{ e }}" {{ 'selected' if emp_sel == e }}>{{ info.corto }}</option>{% endfor %}</select></div>
+    <div><label class="d-block">Desde</label><input type="date" name="desde" class="form-control form-control-sm" value="{{ desde.isoformat() }}"></div>
+    <div><label class="d-block">Hasta</label><input type="date" name="hasta" class="form-control form-control-sm" value="{{ hasta.isoformat() }}"></div>
+    <div><label class="d-block">Tipo</label>
+        <select name="tipo" class="form-select form-select-sm"><option value="">OC y OS</option>
+            {% for t, tn in tipos.items() %}<option value="{{ t }}" {{ 'selected' if tipo == t }}>{{ tn }}</option>{% endfor %}</select></div>
+    <button class="btn btn-sm btn-primary"><i class="bi bi-funnel"></i> Ver</button>
+    <a class="btn btn-sm btn-outline-success ms-auto" href="{{ url_for('oc_reportes', empresa=emp_sel, desde=desde.isoformat(), hasta=hasta.isoformat(), tipo=tipo, exportar='excel') }}">
+        <i class="bi bi-file-earmark-excel"></i> Descargar en Excel</a>
+</form>
+
+{% set T = rep.totales %}
+<div class="kpis">
+    <div><b>{{ T.n }}</b><span>Órdenes aprobadas en el periodo</span></div>
+    <div><b>S/ {{ '{:,.2f}'.format(T.PEN) }}</b><span>En soles ({{ T.n_pen }} órdenes)</span></div>
+    <div><b>US$ {{ '{:,.2f}'.format(T.USD) }}</b><span>En dólares ({{ T.n_usd }} órdenes{% if T.importacion %}, {{ T.importacion }} de importación{% endif %})</span></div>
+    {% set tl = rep.tiempos|selectattr('clave', 'equalto', 'aprobada_llegada')|first %}
+    <div><b>{{ tl.prom if tl.prom is not none else '—' }}{% if tl.prom is not none %} d{% endif %}</b><span>Promedio: aprobada → llega el material</span></div>
+</div>
+<div class="small text-muted mb-2"><i class="bi bi-info-circle"></i> Cuenta las órdenes <b>aprobadas</b> (aprobada, llegó o conforme) con fecha en el periodo. El total es lo que se paga al proveedor
+    (las compras locales incluyen IGV; las importaciones no). <b>Soles y dólares van por separado</b>: no se suman.</div>
+
+{% macro tabla_gasto(lista, cab, maximo=12) %}
+{% set mx_pen = (lista|map(attribute='PEN')|max) if lista else 0 %}{% set mx_usd = (lista|map(attribute='USD')|max) if lista else 0 %}
+{% if lista %}
+<div class="table-responsive"><table class="table table-sm">
+    <thead><tr><th>{{ cab }}</th><th>Soles (S/)</th><th>Dólares (US$)</th><th class="text-end">Órdenes</th></tr></thead>
+    <tbody>{% for r in lista[:maximo] %}
+    <tr><td class="nombre">{{ r.txt or r.clave }}</td>
+        <td class="barra pen" title="{{ r.txt or r.clave }}: S/ {{ '{:,.2f}'.format(r.PEN) }}">{% if r.PEN %}<div class="v">{{ '{:,.2f}'.format(r.PEN) }}</div><div class="b" style="width: {{ (100 * r.PEN / mx_pen)|round(1) if mx_pen else 0 }}%;"></div>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+        <td class="barra usd" title="{{ r.txt or r.clave }}: US$ {{ '{:,.2f}'.format(r.USD) }}">{% if r.USD %}<div class="v">{{ '{:,.2f}'.format(r.USD) }}</div><div class="b" style="width: {{ (100 * r.USD / mx_usd)|round(1) if mx_usd else 0 }}%;"></div>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+        <td class="text-end num">{{ r.n }}</td></tr>
+    {% endfor %}</tbody></table></div>
+{% if lista|length > maximo %}<div class="ay mt-1">Se muestran {{ maximo }} de {{ lista|length }}: el Excel trae todos.</div>{% endif %}
+{% else %}<div class="vacio">Sin datos en el periodo.</div>{% endif %}
+{% endmacro %}
+
+<div class="row g-3">
+    <div class="col-12 col-xl-6">
+        <div class="rp"><h6><i class="bi bi-calendar3"></i> Gasto por mes</h6><div class="ay">Por la fecha de la orden.</div>{{ tabla_gasto(rep.por_mes, 'Mes', 24) }}</div>
+        <div class="rp"><h6><i class="bi bi-building"></i> Gasto por proveedor</h6><div class="ay">Ordenado por monto.</div>{{ tabla_gasto(rep.por_prov, 'Proveedor') }}</div>
+        <div class="rp"><h6><i class="bi bi-person-badge"></i> Gasto por cliente</h6><div class="ay">Compras hechas para el pedido de un cliente.</div>{{ tabla_gasto(rep.por_cliente, 'Cliente') }}</div>
+    </div>
+    <div class="col-12 col-xl-6">
+        <div class="rp"><h6><i class="bi bi-diagram-3"></i> Gasto por área</h6><div class="ay">Área que solicitó la compra.</div>{{ tabla_gasto(rep.por_area, 'Área') }}</div>
+        <div class="rp"><h6><i class="bi bi-bullseye"></i> Gasto por motivo</h6><div class="ay">Para qué se compró.</div>{{ tabla_gasto(rep.por_motivo, 'Motivo') }}</div>
+        <div class="rp"><h6><i class="bi bi-person-raised-hand"></i> Gasto por solicitante</h6><div class="ay">Quién pidió la compra.</div>{{ tabla_gasto(rep.por_solic, 'Solicitó') }}</div>
+    </div>
+</div>
+
+<div class="rp">
+    <h6><i class="bi bi-alarm"></i> Proveedores que más se atrasan</h6>
+    <div class="ay">Solo órdenes con fecha de entrega (en días o fecha exacta). Se compara la fecha prometida con la <b>primera llegada</b>; las que aún no llegan y ya pasaron la fecha cuentan como atrasadas.</div>
+    {% if rep.atrasos %}
+    <div class="table-responsive"><table class="table table-sm">
+        <thead><tr><th>Proveedor</th><th class="text-end">Con fecha</th><th class="text-end">A tiempo</th><th class="text-end">Tarde</th><th class="text-end">Atrasadas sin llegar</th>
+            <th class="text-end">% con atraso</th><th class="text-end">Atraso prom.</th><th>Peor caso</th></tr></thead>
+        <tbody>{% for p in rep.atrasos[:20] %}
+        <tr><td class="nombre">{{ p.clave }}</td><td class="text-end num">{{ p.con_fecha }}</td><td class="text-end num">{{ p.a_tiempo }}</td>
+            <td class="text-end num {{ 'mal' if p.tarde }}">{{ p.tarde }}</td><td class="text-end num {{ 'mal' if p.pend_atrasadas }}">{{ p.pend_atrasadas }}</td>
+            <td class="text-end num {{ 'mal' if p.pct_tarde >= 50 }}">{{ p.pct_tarde }}%</td><td class="text-end num">{{ p.prom }} d</td>
+            <td class="small">{% if p.peor %}{{ p.peor[0] }} · <b>{{ p.peor[1] }} d</b>{% else %}—{% endif %}</td></tr>
+        {% endfor %}</tbody></table></div>
+    {% else %}<div class="vacio">No hay órdenes con fecha de entrega en el periodo.</div>{% endif %}
+</div>
+
+<div class="rp">
+    <h6><i class="bi bi-stopwatch"></i> ¿Cuánto demora cada paso?</h6>
+    <div class="ay">En días (con decimales: 0.5 = medio día). La <b>mediana</b> es el caso típico (no la mueven los casos extremos). Con entregas parciales, la conformidad y el ingreso se miden por cada entrega.</div>
+    {% set mx_t = rep.tiempos|map(attribute='prom')|select|max if rep.tiempos|map(attribute='prom')|select|list else 0 %}
+    <div class="table-responsive"><table class="table table-sm">
+        <thead><tr><th>Paso</th><th>Promedio</th><th class="text-end">Mediana</th><th class="text-end">Mín.</th><th class="text-end">Máx.</th><th class="text-end">Casos</th></tr></thead>
+        <tbody>{% for x in rep.tiempos %}
+        <tr><td><b>{{ x.txt }}</b><div class="text-muted" style="font-size:.7rem;">{{ x.ayuda }}</div></td>
+            <td class="barra pen" title="{{ x.txt }}: {{ x.prom }} días en promedio">{% if x.prom is not none %}<div class="v">{{ x.prom }} d</div><div class="b" style="width: {{ (100 * x.prom / mx_t)|round(1) if mx_t else 0 }}%;"></div>{% else %}<span class="text-muted">sin casos</span>{% endif %}</td>
+            <td class="text-end num">{{ x.mediana if x.mediana is not none else '—' }}</td><td class="text-end num">{{ x.min if x.min is not none else '—' }}</td>
+            <td class="text-end num">{{ x.max if x.max is not none else '—' }}</td><td class="text-end num">{{ x.n }}</td></tr>
+        {% endfor %}</tbody></table></div>
+</div>
+{% endblock %}

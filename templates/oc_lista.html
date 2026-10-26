@@ -92,6 +92,9 @@
         <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#masFiltros" aria-expanded="{{ 'true' if filtros_activos else 'false' }}">
             <i class="bi bi-funnel"></i> Filtros{% if filtros_activos %} <span class="badge bg-primary">{{ filtros_activos }}</span>{% endif %}</button>
         {% if filtros_activos or buscar %}<a class="btn btn-sm btn-link text-danger" href="{{ url_for('oc_lista', vista=vista) }}"><i class="bi bi-x-circle"></i> Limpiar</a>{% endif %}
+        {% set args_x = request.args.to_dict() %}{% set _ = args_x.update({'vista': vista, 'exportar': 'excel'}) %}
+        <a class="btn btn-sm btn-outline-success ms-auto" href="{{ url_for('oc_lista', **args_x) }}" title="Descarga a Excel lo que estás viendo (con los filtros aplicados), con una hoja de ítems"><i class="bi bi-file-earmark-excel"></i> Exportar a Excel</a>
+        <a class="btn btn-sm btn-outline-primary" href="{{ url_for('oc_reportes') }}"><i class="bi bi-bar-chart-line"></i> Reportes</a>
     </div>
     <div class="collapse {{ 'show' if filtros_activos }}" id="masFiltros">
         <div class="row g-2 mt-1">
@@ -149,14 +152,15 @@
     {% elif o.estado == 'CONFORME' %}
         {% if o.destino == 'INSUMOS' %}<div class="sub mt-1">{{ 'En Insumos ✓' if o.insumo_ingreso_id else 'Pendiente en Insumos' }}</div>
         {% else %}{% set ie = oc_ingreso_estado(o) %}
-            {% if ie.completo %}<div class="sub mt-1 text-success fw-bold"><i class="bi bi-check2-all"></i> Ingresado</div><div class="sub">{{ ie.ultimo.ingresado_por.nombre_completo if ie.ultimo.ingresado_por else '' }} · {{ ie.ultimo.fecha_ingreso.strftime('%d/%m %H:%M') }}</div>
+            {% if ie.completo %}<div class="sub mt-1 text-success fw-bold"><i class="bi bi-check2-all"></i> Ingresado</div>{% if ie.ultimo %}<div class="sub">{{ ie.ultimo.ingresado_por.nombre_completo if ie.ultimo.ingresado_por else '' }} · {{ ie.ultimo.fecha_ingreso.strftime('%d/%m %H:%M') }}</div>{% endif %}
             {% else %}<div class="sub mt-1 text-warning-emphasis fw-bold">Por ingresar {{ ie.hechos }}/{{ ie.total }}</div>{% endif %}
         {% endif %}
     {% endif %}
 {% endmacro %}
 {% macro entrega(o) %}
     {% set esp = oc_fecha_esperada(o) %}{% set at = atrasos[o.id] %}
-    {% if o.fecha_llegada %}<div class="entrega"><i class="bi bi-box-seam"></i> Llegó {{ o.fecha_llegada.strftime('%d/%m/%Y') }}</div>
+    {% if o.fecha_llegada %}<div class="entrega"><i class="bi bi-box-seam"></i> Llegó {{ o.fecha_llegada.strftime('%d/%m/%Y') }}
+        {% if o.estado in ['APROBADA', 'RECIBIDA'] %}{% set rc = oc_recepcion(o) %}{% if rc.pendiente > 0 %}<div class="atrasada" title="Entrega parcial: falta que llegue el resto">Parcial · {{ rc.llego|cant }} de {{ rc.pedido|cant }}{% if at %} · {{ at }} d atraso{% endif %}</div>{% endif %}{% endif %}</div>
     {% elif o.estado in ['RECHAZADA', 'ANULADA'] %}<span class="sub">—</span>
     {% else %}<div class="entrega">{% if o.entrega_modo == 'RECOJO' %}<i class="bi bi-person-walking"></i> Recojo{% else %}<i class="bi bi-truck"></i> Llega{% endif %}
         <div class="{{ 'atrasada' if at }}">{{ esp.strftime('%d/%m/%Y') if esp else oc_entrega_txt(o) }}{% if at %} · {{ at }} d atraso{% endif %}</div></div>{% endif %}
@@ -197,7 +201,7 @@
     {% elif o.destino == 'INSUMOS' %}{% if o.insumo_ingreso_id %}<span class="aprob si"><i class="bi bi-check2"></i> En Insumos</span><div class="sub">ingreso #{{ o.insumo_ingreso_id }}</div>
         {% else %}<span class="aprob pend"><i class="bi bi-hourglass"></i> Falta ingresar a Insumos</span>{% endif %}
     {% else %}{% set ie = oc_ingreso_estado(o) %}
-        {% if ie.completo %}<span class="aprob si"><i class="bi bi-check2-all"></i> En inventario</span><div class="sub">{{ ie.ultimo.ingresado_por.nombre_completo if ie.ultimo.ingresado_por else '' }} · {{ ie.ultimo.fecha_ingreso.strftime('%d/%m %H:%M') }}</div>
+        {% if ie.completo %}<span class="aprob si"><i class="bi bi-check2-all"></i> En inventario</span>{% if ie.ultimo %}<div class="sub">{{ ie.ultimo.ingresado_por.nombre_completo if ie.ultimo.ingresado_por else '' }} · {{ ie.ultimo.fecha_ingreso.strftime('%d/%m %H:%M') }}</div>{% endif %}
         {% else %}<span class="aprob pend"><i class="bi bi-hourglass"></i> Por ingresar {{ ie.hechos }}/{{ ie.total }}</span><div class="sub">Almacén lo suma al inventario</div>{% endif %}
     {% endif %}
 {% endmacro %}

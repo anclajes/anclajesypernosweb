@@ -87,6 +87,7 @@
                 </a>
                 <a href="{{ url_for('oc_req_lista', vista='mios') }}" class="nav-link {{ 'active' if request.endpoint in ['oc_req_lista', 'oc_req_detalle'] }}">
                     <i class="bi bi-list-check me-2"></i> <span>Mis requerimientos</span>
+                    {% if oc_req_novedades %}<span class="badge rounded-pill ms-1" style="background:#f59e0b;" title="Novedades">{{ oc_req_novedades }}</span>{% endif %}
                 </a>
             {% else %}
                 <!-- ================================== -->
@@ -143,6 +144,7 @@
                         <li>
                             <a href="{{ url_for('oc_req_lista') }}" class="nav-link py-2 ps-3 {{ 'active' if (request.endpoint or '').startswith('oc_req_') }}">
                                 <i class="bi bi-clipboard-plus fs-6 me-2"></i> <span>Requerimientos de compra</span>
+                                {% if oc_req_novedades %}<span class="badge rounded-pill ms-1" style="background:#f59e0b;" title="Novedades en tus requerimientos">{{ oc_req_novedades }}</span>{% endif %}
                             </a>
                         </li>
                         {% endif %}
@@ -204,7 +206,8 @@
                         <li><a href="{{ url_for('oc_nueva') }}" class="nav-link py-2 ps-3 {{ 'active' if request.endpoint in ['oc_nueva', 'oc_editar'] }}"><i class="bi bi-plus-circle fs-6 me-2"></i> <span>Nueva orden</span></a></li>
                         {% endif %}
                         <li><a href="{{ url_for('oc_req_lista') }}" class="nav-link py-2 ps-3 {{ 'active' if (request.endpoint or '').startswith('oc_req_') }}"><i class="bi bi-clipboard-plus fs-6 me-2"></i> <span>Requerimientos</span>
-                            {% if oc_req_pendientes %}<span class="badge rounded-pill ms-1" style="background:#7c3aed;">{{ oc_req_pendientes }}</span>{% endif %}</a></li>
+                            {% if oc_req_pendientes %}<span class="badge rounded-pill ms-1" style="background:#7c3aed;">{{ oc_req_pendientes }}</span>{% endif %}
+                            {% if oc_req_novedades %}<span class="badge rounded-pill ms-1" style="background:#f59e0b;" title="Novedades en tus requerimientos">{{ oc_req_novedades }}</span>{% endif %}</a></li>
                         <li><a href="{{ url_for('oc_lista', vista='aprobar') }}" class="nav-link py-2 ps-3 {{ 'active' if request.endpoint == 'oc_lista' and request.args.get('vista') == 'aprobar' }}"><i class="bi bi-hourglass-split fs-6 me-2"></i> <span>Por aprobar</span>
                             {% if oc_por_aprobar %}<span class="badge rounded-pill bg-warning text-dark ms-1">{{ oc_por_aprobar }}</span>{% endif %}</a></li>
                         <li><a href="{{ url_for('oc_lista', vista='por_pagar') }}" class="nav-link py-2 ps-3 {{ 'active' if request.endpoint == 'oc_lista' and request.args.get('vista') == 'por_pagar' }}"><i class="bi bi-cash-coin fs-6 me-2"></i> <span>Por pagar</span></a></li>

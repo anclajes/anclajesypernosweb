@@ -19,7 +19,7 @@
         </select></div>
     <div class="col-6 col-md-3"><label class="small fw-bold text-muted">Movimiento</label>
         <select name="concepto" class="form-select" onchange="this.form.submit()">
-            {% for v, t in [('', 'Todos'), ('COMPRA', 'Compras'), ('CONSUMO', 'Consumos'), ('ANULACION', 'Anulaciones'), ('AJUSTE_COSTO', 'Ajustes de costo')] %}
+            {% for v, t in [('', 'Todos'), ('COMPRA', 'Compras'), ('CONSUMO', 'Consumos'), ('ANULACION', 'Anulaciones'), ('AJUSTE_COSTO', 'Ajustes de costo'), ('IMPORTACION', 'Carga desde Excel')] %}
             <option value="{{ v }}" {{ 'selected' if v == concepto }}>{{ t }}</option>{% endfor %}</select></div>
     <div class="col-6 col-md-2"><label class="small fw-bold text-muted">Desde</label><input type="date" name="desde" class="form-control" value="{{ desde.isoformat() if desde else '' }}"></div>
     <div class="col-6 col-md-2"><label class="small fw-bold text-muted">Hasta</label><input type="date" name="hasta" class="form-control" value="{{ hasta.isoformat() if hasta else '' }}"></div>
@@ -54,7 +54,7 @@
             <tr>
                 <td class="ps-3 text-nowrap">{{ m.fecha.strftime('%d/%m/%Y') }}<div class="text-muted" style="font-size:.7rem;">{{ m.usuario.username if m.usuario else '' }}</div></td>
                 {% if not insumo %}<td><a href="{{ url_for('insumos_kardex', empresa=empresa, insumo_id=m.insumo_id) }}" class="fw-bold">{{ m.insumo.codigo }}</a><div class="text-muted" style="font-size:.72rem;">{{ m.insumo.descripcion }}</div></td>{% endif %}
-                <td><span class="badge {{ 'bg-success' if m.concepto == 'COMPRA' else 'bg-danger' if m.concepto == 'CONSUMO' else 'bg-warning text-dark' if m.concepto == 'AJUSTE_COSTO' else 'bg-secondary' }}">{{ 'AJUSTE DE COSTO' if m.concepto == 'AJUSTE_COSTO' else m.concepto }}</span>
+                <td><span class="badge {{ 'bg-success' if m.concepto == 'COMPRA' else 'bg-danger' if m.concepto == 'CONSUMO' else 'bg-warning text-dark' if m.concepto == 'AJUSTE_COSTO' else 'bg-secondary' }}">{{ 'AJUSTE DE COSTO' if m.concepto == 'AJUSTE_COSTO' else ('CARGA EXCEL' if m.concepto == 'IMPORTACION' else m.concepto) }}</span>
                     {% if m.ingreso_id %}<a href="{{ url_for('insumos_ingreso_detalle', ingreso_id=m.ingreso_id) }}">{{ m.referencia }}</a>
                     {% elif m.salida_id %}<a href="{{ url_for('insumos_salida_detalle', salida_id=m.salida_id) }}">{{ m.referencia }}</a>{% else %}{{ m.referencia }}{% endif %}
                     {% if m.observacion %}<div class="text-muted fst-italic" style="font-size:.72rem;">{% if m.concepto == 'AJUSTE_COSTO' %}<i class="bi bi-shield-check"></i> Motivo: {% endif %}{{ m.observacion }}</div>{% endif %}

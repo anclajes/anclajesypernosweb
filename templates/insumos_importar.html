@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}Importar insumos{% endblock %}
+{% block subtitle %}Desde Excel al inventario {{ empresas[empresa].corto }}{% endblock %}
+{% block content %}
+{% include '_insumos_nav.html' %}
+<style>
+    .emp-switch a { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 10px; border: 2px solid #e2e8f0;
+                    background: #fff; text-decoration: none; color: #334155; font-weight: 700; font-size: .85rem; }
+    .emp-switch a img { height: 28px; object-fit: contain; }
+    .emp-switch a.on { border-color: var(--c); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 18%, transparent); color: var(--c); }
+    .imp-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 14px 16px; margin-bottom: 14px; }
+    .cols { display: flex; flex-wrap: wrap; gap: 6px; }
+    .cols span { font-size: .74rem; font-weight: 700; border-radius: 7px; padding: 2px 9px; background: #e0f2fe; color: #075985; }
+    .cols span.opc { background: #f1f5f9; color: #475569; }
+    .res { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin-bottom: 10px; }
+    .res div { border: 1px solid #e2e8f0; border-radius: 10px; padding: 7px 10px; background: #fff; }
+    .res b { display: block; font-size: 1.2rem; }
+    .res span { font-size: .72rem; color: #475569; font-weight: 600; }
+    .tabla-imp { font-size: .76rem; }
+    .tabla-imp th { font-size: .66rem; text-transform: uppercase; color: #64748b; white-space: nowrap; }
+    .tabla-imp tr.err td { background: #fef2f2; }
+    .tabla-imp .ds { max-width: 300px; overflow-wrap: anywhere; font-weight: 600; }
+    .chip { font-size: .64rem; font-weight: 800; border-radius: 5px; padding: 0 6px; white-space: nowrap; }
+    .chip.nuevo { background: #dcfce7; color: #166534; } .chip.exis { background: #e0f2fe; color: #075985; }
+    .sube { color: #15803d; font-weight: 700; } .baja { color: #b91c1c; font-weight: 700; }
+</style>
+
+<div class="d-flex flex-wrap gap-2 mb-3 emp-switch">
+    {% for clave, e in empresas.items() %}
+    <a href="{{ url_for('insumos_importar', empresa=clave) }}" class="{{ 'on' if clave == empresa }}" style="--c: {{ e.color }};">
+        <img src="{{ url_for('static', filename='img/' ~ e.logo) }}" alt="{{ e.corto }}"> {{ e.corto }}</a>
+    {% endfor %}
+    <a href="{{ url_for('insumos_inventario', empresa=empresa) }}" class="ms-auto"><i class="bi bi-arrow-left"></i> Volver al inventario</a>
+</div>
+
+{% if not filas %}
+<div class="imp-card">
+    <h6 class="fw-bold mb-1"><i class="bi bi-file-earmark-excel text-success"></i> Importar insumos al inventario de <span style="color: {{ empresas[empresa].color }};">{{ empresas[empresa].corto }}</span></h6>
+    <p class="small text-muted mb-2">Sirve para la <b>carga inicial</b> o para un <b>conteo</b>: lo que no existe se crea en el maestro (que es uno solo para las dos empresas) y el
+        <b>stock de {{ empresas[empresa].corto }}</b> queda igual al del archivo. La diferencia se registra en el Kardex como <b>"Carga desde Excel"</b>, con tu nombre, fecha y hora.
+        Antes de guardar verás una <b>vista previa</b>.</p>
+    <div class="small fw-bold mb-1">Columnas (la primera fila del Excel):</div>
+    <div class="cols mb-2"><span>Código</span><span>Descripción</span><span>Categoría</span><span>Stock</span>
+        <span class="opc">Mínimo (opcional)</span><span class="opc">Costo prom. (opcional, S/ con IGV)</span><span class="opc">Unidad (opcional)</span></div>
+    <ul class="small text-muted mb-3 ps-3">
+        <li>Se busca cada insumo por <b>Código</b>; si no tiene, por la <b>Descripción</b> exacta. Si no existe, se crea (sin código se genera uno: INS-00025).</li>
+        <li><b>Stock</b>: el que debe quedar en {{ empresas[empresa].corto }} (no se suma: reemplaza). <b>Mínimo</b> y <b>Costo prom.</b> se actualizan solo si vienen escritos.</li>
+        <li>Las categorías y unidades nuevas se agregan a las listas.</li>
+    </ul>
+    <div class="d-flex flex-wrap gap-2 mb-3">
+        <a class="btn btn-sm btn-outline-success" href="{{ url_for('insumos_importar_plantilla', empresa=empresa) }}"><i class="bi bi-download"></i> Plantilla vacía (con ejemplo)</a>
+        <a class="btn btn-sm btn-outline-primary" href="{{ url_for('insumos_importar_plantilla', empresa=empresa, con_stock=1) }}"><i class="bi bi-download"></i> Plantilla con los insumos y stock actual de {{ empresas[empresa].corto }} (para un conteo)</a>
+    </div>
+    <form method="POST" enctype="multipart/form-data" class="d-flex flex-wrap gap-2 align-items-center">
+        <input type="hidden" name="empresa" value="{{ empresa }}"><input type="hidden" name="paso" value="previa">
+        <input type="file" name="archivo" accept=".xlsx,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" class="form-control" style="max-width: 420px;" required>
+        <button class="btn btn-success fw-bold"><i class="bi bi-eye"></i> Ver vista previa</button>
+    </form>
+</div>
+{% else %}
+<div class="imp-card">
+    <h6 class="fw-bold mb-1"><i class="bi bi-eye"></i> Vista previa · {{ nombre_archivo }} → inventario <span style="color: {{ empresas[empresa].color }};">{{ empresas[empresa].corto }}</span></h6>
+    <p class="small text-muted mb-2">Todavía <b>no se guardó nada</b>. Revisa y confirma abajo.</p>
+    <div class="res">
+        <div><b>{{ resumen.filas }}</b><span>Filas</span></div>
+        <div><b class="text-success">{{ resumen.nuevos }}</b><span>Insumos nuevos en el maestro</span></div>
+        <div><b>{{ resumen.cambian_stock }}</b><span>Cambian de stock ({{ resumen.sube }} suben · {{ resumen.baja }} bajan)</span></div>
+        <div><b class="{{ 'text-danger' if resumen.errores }}">{{ resumen.errores }}</b><span>Filas con error</span></div>
+    </div>
+    {% if resumen.errores %}<div class="alert alert-danger py-2 small"><i class="bi bi-x-octagon-fill"></i> Hay filas con error (en rojo): corrígelas en el Excel y vuelve a subirlo. No se importa nada mientras haya errores.</div>{% endif %}
+    <div class="table-responsive" style="max-height: 60vh;"><table class="table table-sm tabla-imp mb-0">
+        <thead class="sticky-top bg-white"><tr><th>Fila</th><th></th><th>Código</th><th>Descripción</th><th>Categoría</th><th class="text-end">Stock actual</th><th class="text-end">Stock nuevo</th>
+            <th class="text-end">Dif.</th><th class="text-end">Mínimo</th><th class="text-end">Costo prom.</th><th>Observaciones</th></tr></thead>
+        <tbody>{% for r in filas %}
+        <tr class="{{ 'err' if r.errores }}"><td class="text-muted">{{ r.fila }}</td>
+            <td>{% if r.nuevo %}<span class="chip nuevo">NUEVO</span>{% else %}<span class="chip exis">EXISTE</span>{% endif %}</td>
+            <td class="text-nowrap">{{ r.codigo_final }}</td><td class="ds">{{ r.descripcion_final }}</td><td>{{ r.categoria_final or '—' }}</td>
+            <td class="text-end num">{{ r.stock_antes|cant }}</td><td class="text-end num fw-bold">{{ r.stock|cant if r.stock is not none else '—' }}</td>
+            <td class="text-end num {{ 'sube' if r.dif > 0 else ('baja' if r.dif < 0 else '') }}">{% if r.dif %}{{ '+' if r.dif > 0 }}{{ r.dif|cant }}{% else %}—{% endif %}</td>
+            <td class="text-end num">{{ r.minimo|cant if r.minimo is not none else '—' }}</td>
+            <td class="text-end num">{{ ('S/ ' ~ '{:,.4f}'.format(r.costo).rstrip('0').rstrip('.')) if r.costo is not none else '—' }}</td>
+            <td>{% for e in r.errores %}<div class="text-danger fw-bold"><i class="bi bi-x-circle"></i> {{ e }}</div>{% endfor %}
+                {% for a in r.avisos %}<div class="text-muted"><i class="bi bi-info-circle"></i> {{ a }}</div>{% endfor %}</td></tr>
+        {% endfor %}</tbody></table></div>
+    <div class="d-flex flex-wrap gap-2 mt-3">
+        <a class="btn btn-outline-secondary" href="{{ url_for('insumos_importar', empresa=empresa) }}"><i class="bi bi-arrow-left"></i> Subir otro archivo</a>
+        {% if not resumen.errores %}
+        <form method="POST" class="ms-auto" onsubmit="return confirmarImport(this)">
+            <input type="hidden" name="empresa" value="{{ empresa }}"><input type="hidden" name="paso" value="confirmar">
+            <input type="hidden" name="nombre_archivo" value="{{ nombre_archivo }}"><input type="hidden" name="datos" value="{{ datos }}">
+            <button class="btn btn-success fw-bold"><i class="bi bi-check2-circle"></i> Confirmar e importar a {{ empresas[empresa].corto }}</button>
+        </form>{% endif %}
+    </div>
+</div>
+<script>
+function confirmarImport(form) {
+    if (form.dataset.ok) return true;
+    Swal.fire({ icon: 'question', title: '¿Importar a {{ empresas[empresa].corto }}?',
+                html: '{{ resumen.nuevos }} insumo(s) nuevo(s) y {{ resumen.cambian_stock }} cambio(s) de stock.<br><span class="small">Cada cambio queda en el Kardex como "Carga desde Excel" a tu nombre.</span>',
+                showCancelButton: true, confirmButtonText: 'Sí, importar', cancelButtonText: 'Revisar' })
+        .then(r => { if (r.isConfirmed) { form.dataset.ok = '1'; form.querySelector('button').disabled = true; form.submit(); } });
+    return false;
+}
+</script>
+{% endif %}
+{% endblock %}

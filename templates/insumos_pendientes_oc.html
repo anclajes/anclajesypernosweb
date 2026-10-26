@@ -56,7 +56,9 @@
             <span class="t"><b>Pago</b>{{ o.condicion_pago or '—' }} · {{ 'pagada' if o.estado_pago == 'PAGADO' else 'pendiente' }}</span>
         </div>
         <div class="d-flex flex-wrap gap-1 align-items-center mt-2">
-            {% for d in ds if d.tipo in ['GUIA', 'FACTURA', 'CERTIFICADO', 'OTRO'] %}
+            <a class="doc-b" href="{{ url_for('oc_pdf', orden_id=o.id, ver=1) }}" target="_blank" title="Ver la orden de compra"><i class="bi bi-file-earmark-pdf text-danger"></i> {{ oc_codigo(o) }} (PDF)</a>
+            <a class="doc-b" href="{{ url_for('oc_pdf', orden_id=o.id) }}" title="Descargar la orden de compra"><i class="bi bi-download"></i></a>
+            {% for d in ds if d.tipo in ['GUIA', 'FACTURA', 'CERTIFICADO', 'COTIZACION', 'OTRO'] %}
             <a class="doc-b" href="{{ url_for('oc_documento_ver', doc_id=d.id) }}" target="_blank"><i class="bi {{ 'bi-file-earmark-pdf text-danger' if d.content_type == 'application/pdf' else 'bi-image text-primary' }}"></i>
                 {{ tipos_doc.get(d.tipo, d.tipo) }}{% if d.tipo == 'GUIA' and o.numero_guia %} {{ o.numero_guia }}{% elif d.tipo == 'FACTURA' and o.numero_factura %} {{ o.numero_factura }}{% endif %}</a>
             {% endfor %}

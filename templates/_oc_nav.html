@@ -28,13 +28,17 @@
         {% if oc_por_aprobar %}<span class="cnt" style="background:#f59e0b;" title="Por aprobar">{{ oc_por_aprobar }}</span>{% endif %}
         {% if oc_alertas %}<span class="cnt" title="Atrasadas o pagos por vencer / vencidos">{{ oc_alertas }}</span>{% endif %}</a>
     {% endif %}
+    {% if session.get('role') in ['admin', 'logistica', 'administracion'] %}
+    <a href="{{ url_for('oc_reportes') }}" class="{{ 'activa' if seccion == 'reportes' }}"><i class="bi bi-bar-chart-line"></i> Reportes</a>
+    {% endif %}
     {% if session.get('role') in ['admin', 'logistica', 'almacen'] %}
     <a href="{{ url_for('oc_ingresos_pendientes') }}" class="{{ 'activa' if seccion == 'ingresos' }}"><i class="bi bi-box-arrow-in-down"></i> Ingresos pendientes
         {% if oc_por_ingresar %}<span class="cnt">{{ oc_por_ingresar }}</span>{% endif %}</a>
     {% endif %}
     {% if session.get('role') in ['admin', 'logistica', 'almacen', 'administracion', 'almacen_visor'] %}
     <a href="{{ url_for('oc_req_lista') }}" class="{{ 'activa' if seccion == 'req' }}"><i class="bi bi-clipboard-plus"></i> Requerimientos
-        {% if oc_req_pendientes %}<span class="cnt" style="background:#7c3aed;" title="Requerimientos de Almacén esperando OC">{{ oc_req_pendientes }}</span>{% endif %}</a>
+        {% if oc_req_pendientes %}<span class="cnt" style="background:#7c3aed;" title="Requerimientos de Almacén esperando OC">{{ oc_req_pendientes }}</span>{% endif %}
+        {% if oc_req_novedades %}<span class="cnt" style="background:#f59e0b;" title="Novedades en tus requerimientos"><i class="bi bi-bell-fill"></i> {{ oc_req_novedades }}</span>{% endif %}</a>
     {% if session.get('role') in ['admin', 'logistica', 'almacen', 'almacen_visor'] %}
     <a href="{{ url_for('oc_req_nuevo') }}" class="nueva {{ 'activa' if seccion == 'req_nuevo' }}" style="background:#f5f3ff; border-color:#ddd6fe; color:#6d28d9;"><i class="bi bi-clipboard-plus"></i> Nuevo requerimiento</a>
     {% endif %}

@@ -1352,6 +1352,10 @@ class OrdenCompra(db.Model):
     anulacion_opcion = db.Column(db.String(150))
     detraccion_pct = db.Column(db.Float)                    # % de detracción SUNAT (vacío = no aplica)
     nota_seguimiento = db.Column(db.String(300))            # OS: nota de Almacén al marcar el seguimiento
+    es_importacion = db.Column(db.Boolean, default=False)   # OC de importación: ítems por millar, sin IGV, pagos por porcentaje
+    condiciones_comerciales = db.Column(db.Text)            # importación: incoterm, embarque, etc.
+    pagos_importacion = db.Column(db.Text)                  # importación: JSON [{concepto, pct, detalle}]
+    saldo_cerrado_motivo = db.Column(db.String(300))        # "no llegará el resto": por qué se cerró el saldo
     revision = db.Column(db.Integer, default=0)            # cuántas veces se editó DESPUÉS de aprobada (Rev. 1, Rev. 2...)
     motivo_edicion = db.Column(db.String(300))              # por qué se editó la orden ya aprobada (lo ve Gerencia al re-aprobar)
     # Recepción del material
@@ -1433,8 +1437,50 @@ class OrdenCompraItem(db.Model):
     sku_ingreso = db.Column(db.String(60))                     # SKU con el que se ingresó (obligatorio si era nuevo)
     nota_ingreso = db.Column(db.String(300))
     req_item_id = db.Column(db.Integer, index=True)            # ítem del requerimiento de Almacén que atiende (si vino de uno)
+    cantidad_cancelada = db.Column(db.Float, default=0)        # saldo que ya no llegará (se cerró con motivo)
+    kgs_mpcs = db.Column(db.Float)                             # importación: kg por cada 1000 piezas
+    precio_mil = db.Column(db.Float)                           # importación: precio por cada 1000 piezas
     kardex_mov_id = db.Column(db.Integer)                      # movimiento del Kardex creado desde Ingresos pendientes
     cantidad_kardex = db.Column(db.Integer)                    # cantidad que entró al Kardex (puede diferir de la OC)
+
+    ingresado_por = db.relationship('User', foreign_keys=[ingresado_por_id])
+
+
+class OrdenCompraEntrega(db.Model):
+    """Una llegada del material (puede haber varias: entregas parciales). Cada una con su fecha, su guía y su conformidad.
+    Lo que se aprueba en cada conformidad pasa a "Ingresos pendientes" con la fecha y la guía de esa entrega."""
+    __tablename__ = 'orden_compra_entrega'
+    id = db.Column(db.Integer, primary_key=True)
+    orden_id = db.Column(db.Integer, db.ForeignKey('orden_compra.id'), nullable=False, index=True)
+    numero = db.Column(db.Integer, nullable=False)                 # 1, 2, 3... dentro de la orden
+    fecha = db.Column(db.DateTime, nullable=False)                 # cuándo llegó
+    parcial = db.Column(db.Boolean, default=False)                 # quedó saldo por llegar después de esta entrega
+    numero_guia = db.Column(db.String(60))
+    nota = db.Column(db.String(500))
+    recibido_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    fecha_registro = db.Column(db.DateTime, default=hora_peru)
+    conforme_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    fecha_conforme = db.Column(db.DateTime, nullable=True)
+    nota_conforme = db.Column(db.String(500))
+
+    items = db.relationship('OrdenCompraEntregaItem', backref='entrega', cascade='all, delete-orphan', order_by='OrdenCompraEntregaItem.id')
+    recibido_por = db.relationship('User', foreign_keys=[recibido_por_id])
+    conforme_por = db.relationship('User', foreign_keys=[conforme_por_id])
+
+
+class OrdenCompraEntregaItem(db.Model):
+    """Cuánto llegó de un ítem en una entrega, y su ingreso al inventario (Kardex)."""
+    __tablename__ = 'orden_compra_entrega_item'
+    id = db.Column(db.Integer, primary_key=True)
+    entrega_id = db.Column(db.Integer, db.ForeignKey('orden_compra_entrega.id'), nullable=False, index=True)
+    item_id = db.Column(db.Integer, nullable=False, index=True)   # OrdenCompraItem (sin FK: al re-editar la orden se vuelve a enlazar)
+    cantidad = db.Column(db.Float, nullable=False)
+    ingresado_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    fecha_ingreso = db.Column(db.DateTime, nullable=True)
+    sku_ingreso = db.Column(db.String(60))
+    nota_ingreso = db.Column(db.String(300))
+    kardex_mov_id = db.Column(db.Integer)
+    cantidad_kardex = db.Column(db.Integer)
 
     ingresado_por = db.relationship('User', foreign_keys=[ingresado_por_id])
 
@@ -1458,6 +1504,7 @@ class OrdenCompraDocumento(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     orden_id = db.Column(db.Integer, db.ForeignKey('orden_compra.id'), nullable=False, index=True)
     tipo = db.Column(db.String(15), nullable=False)           # GUIA / FACTURA / COTIZACION / OTRO
+    entrega_id = db.Column(db.Integer, nullable=True, index=True)   # la guía es de UNA entrega (llegadas parciales)
     s3_key = db.Column(db.String(300), nullable=False)
     nombre_original = db.Column(db.String(200))
     content_type = db.Column(db.String(50))
@@ -1546,6 +1593,15 @@ class RequerimientoItem(db.Model):
     cantidad = db.Column(db.Float, nullable=False)
     nota = db.Column(db.String(200))
     stock_al_pedir = db.Column(db.Integer)                     # stock que había cuando se pidió
+    # Logística puede DESCARTAR un producto (no se comprará) con motivo; el requerimiento se cierra cuando todo está comprado o descartado
+    descartado = db.Column(db.Boolean, default=False)
+    descartado_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    fecha_descarte = db.Column(db.DateTime)
+    descarte_categoria = db.Column(db.String(60))
+    descarte_opcion = db.Column(db.String(150))
+    descarte_motivo = db.Column(db.String(300))
+
+    descartado_por = db.relationship('User', foreign_keys=[descartado_por_id])
 
 
 class RequerimientoDocumento(db.Model):
@@ -1559,6 +1615,16 @@ class RequerimientoDocumento(db.Model):
     tamano_bytes = db.Column(db.Integer)
     subido_por = db.Column(db.String(100))
     fecha = db.Column(db.DateTime, default=hora_peru)
+
+
+class RequerimientoVisto(db.Model):
+    """Hasta cuándo vio cada usuario un requerimiento (para avisarle de las novedades)."""
+    __tablename__ = 'requerimiento_visto'
+    id = db.Column(db.Integer, primary_key=True)
+    req_id = db.Column(db.Integer, db.ForeignKey('requerimiento_compra.id'), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    fecha = db.Column(db.DateTime, default=hora_peru)
+    __table_args__ = (db.UniqueConstraint('req_id', 'user_id', name='uq_requerimiento_visto'),)
 
 
 class RequerimientoEvento(db.Model):

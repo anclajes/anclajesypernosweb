@@ -63,7 +63,7 @@
         <td style="width: 30%; vertical-align: middle;">
             <table>
                 <tr><td class="caja-ruc">RUC: {{ cfg.ruc or '-' }}</td></tr>
-                <tr><td class="caja-tipo">{{ tipos[o.tipo]|upper }}</td></tr>
+                <tr><td class="caja-tipo">{{ tipos[o.tipo]|upper }}{% if o.es_importacion %}<br><span style="font-size: 8pt;">IMPORTACIÓN</span>{% endif %}</td></tr>
                 <tr><td class="caja-num">N° {{ oc_numero_txt(o) }}{% if o.revision %} · Rev. {{ o.revision }}{% endif %}</td></tr>
             </table>
         </td>
@@ -82,7 +82,7 @@
 <table>
     <tr><td class="k" style="width: 13%;">FECHA</td><td class="dp" style="width: 2%;">:</td><td class="v" style="width: 47%;">{{ o.fecha.strftime('%d/%m/%Y') }}</td>
         <td class="k" style="width: 11%;">CONTACTO:</td><td class="v" style="width: 27%;">{{ o.contacto }}</td></tr>
-    <tr><td class="k">RUC</td><td class="dp">:</td><td class="v">{{ o.ruc }}</td><td class="k">TELEFONO:</td><td class="v">{{ o.telefono }}</td></tr>
+    <tr><td class="k">{{ 'TAX ID' if o.es_importacion else 'RUC' }}</td><td class="dp">:</td><td class="v">{{ o.ruc }}</td><td class="k">TELEFONO:</td><td class="v">{{ o.telefono }}</td></tr>
     <tr><td class="k">RAZON SOCIAL</td><td class="dp">:</td><td class="v"><b>{{ o.razon_social }}</b></td><td class="k">COTIZACION:</td><td class="v">{{ o.cotizacion or '' }}&nbsp;</td></tr>
     <tr><td class="k">DIRECCION</td><td class="dp">:</td><td class="v">{{ o.direccion or '-' }}</td><td class="k">{{ 'CORREO:' if o.email else '&nbsp;'|safe }}</td><td class="v">{{ o.email or '' }}&nbsp;</td></tr>
 </table>
@@ -91,6 +91,52 @@
 <table style="margin-top: 4px;"><tr><td class="v">Estimados señores:<br>Por medio de la presente nos es grato solicitarle lo siguiente:</td></tr></table>
 
 <!-- ÍTEMS -->
+{% if o.es_importacion %}
+{% set tot_pcs = o.items|sum(attribute='cantidad') %}{% set tot_kg = o.items|map(attribute='peso_total')|select|sum %}
+<table style="margin-top: 5px;">
+    <tr><th class="cab" style="width: 5%; text-align: left;">ITEM</th><th class="cab" style="width: 35%; text-align: left;">DESCRIPCIÓN</th>
+        <th class="cab c" style="width: 11%;">CANTIDAD/ PCS</th><th class="cab c" style="width: 10%;">KGS/ MPCS</th><th class="cab c" style="width: 11%;">TOTAL KGS</th>
+        <th class="cab r" style="width: 14%;">USD/ 1000PCS</th><th class="cab r" style="width: 14%;">TOTAL USD</th></tr>
+    {% for i in filas %}
+    <tr>
+        {% if i %}
+        <td class="it">{{ i.item }}</td><td class="itb">{{ i.descripcion }}</td><td class="itb c">{{ '{:,.0f}'.format(i.cantidad) if i.cantidad == i.cantidad|round else i.cantidad|cant }}</td>
+        <td class="it c">{{ ('{:,.2f}'.format(i.kgs_mpcs) if i.kgs_mpcs is not none else '-') }}</td>
+        <td class="it c">{{ ('{:,.2f}'.format(i.peso_total) if i.peso_total else '-') }}</td>
+        <td class="itb r">{{ ('{:,.2f}'.format(i.precio_mil) if (i.precio_mil * 100)|round == i.precio_mil * 100 else '{:,.4f}'.format(i.precio_mil)) if i.precio_mil is not none else '-' }}</td>
+        <td class="it r">$ {{ '{:,.2f}'.format(i.total) }}</td>
+        {% else %}
+        <td class="it">&nbsp;</td><td class="it">&nbsp;</td><td class="it">&nbsp;</td><td class="it">&nbsp;</td><td class="it">&nbsp;</td><td class="it">&nbsp;</td><td class="it">&nbsp;</td>
+        {% endif %}
+    </tr>
+    {% endfor %}
+    <tr><td class="tk" style="border-top: 1px solid #111;">&nbsp;</td><td class="tk r" style="border-top: 1px solid #111;">TOTALES</td>
+        <td class="itb c" style="border-top: 1px solid #111;">{{ '{:,.0f}'.format(tot_pcs) if tot_pcs == tot_pcs|round else tot_pcs|cant }}</td>
+        <td class="it" style="border-top: 1px solid #111;">&nbsp;</td>
+        <td class="itb c" style="border-top: 1px solid #111;">{{ '{:,.2f}'.format(tot_kg) if tot_kg else '-' }}</td>
+        <td class="neto-k" style="text-align: right;">TOTAL NETO</td><td class="neto-v">$ {{ '{:,.2f}'.format(o.total or 0) }}</td></tr>
+</table>
+<table style="margin-top: 4px;">
+    <tr><td class="letras" style="width: 70%;">{{ letras }}{% if o.observaciones %}<br><span class="b" style="font-style: normal;">OBSERVACIONES:</span> <span style="font-style: normal;">{{ o.observaciones }}</span>{% endif %}</td>
+        <td class="tk r" style="width: 30%;">PRECIOS NO INCLUYEN IGV</td></tr>
+</table>
+<table style="margin-top: 4px;"><tr><td class="linea">&nbsp;</td></tr></table>
+
+<!-- CONDICIONES (importación) -->
+<table>
+    <tr><td style="width: 58%;" class="terminos"><span class="titulo">CONDICIONES COMERCIALES:</span><br>
+            {% for linea in (o.condiciones_comerciales or '').split('\n') if linea.strip() %}- {{ linea }}<br>{% else %}-<br>{% endfor %}</td>
+        <td style="width: 2%;">&nbsp;</td>
+        <td style="width: 40%;" class="terminos"><span class="titulo">CONDICIONES DE PAGO:</span><br>
+            {% for p in oc_pagos_imp(o) %}<b>{{ p.txt }}</b><br>{% else %}{{ o.condicion_pago }}<br>{% endfor %}</td></tr>
+</table>
+<table style="margin-top: 3px;">
+    <tr><td class="k" style="width: 19%;">MONEDA</td><td class="dp" style="width: 2%;">:</td><td class="v b" style="width: 79%;">{{ mon.nombre|upper }} (USD)</td></tr>
+    <tr><td class="k-res">FECHA DE ENTREGA</td><td class="dp">:</td><td class="v"><span style="background-color: {{ tema.res }};">&nbsp;{{ oc_entrega_txt(o) }}&nbsp;</span></td></tr>
+    <tr><td class="k">LUGAR DE ENTREGA</td><td class="dp">:</td><td class="v">{{ o.lugar_recojo if o.entrega_modo == 'RECOJO' else cfg.lugar_entrega }}</td></tr>
+</table>
+<table style="margin-top: 3px;"><tr><td class="linea">&nbsp;</td></tr></table>
+{% else %}
 <table style="margin-top: 5px;">
     <tr><th class="cab" style="width: 7%; text-align: left;">ITEM</th><th class="cab" style="width: 51%; text-align: left;">DESCRIPCIÓN</th>
         <th class="cab c" style="width: 10%;">CANTIDAD</th><th class="cab c" style="width: 8%;">U.M.</th>
@@ -157,6 +203,8 @@
         </td>
     </tr>
 </table>
+
+{% endif %}
 
 <!-- FIRMAS -->
 <table style="margin-top: 8px;">

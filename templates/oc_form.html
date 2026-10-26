@@ -24,6 +24,11 @@
     .sug { z-index: 1060; max-height: 340px; overflow-y: auto; display: none; border-radius: 10px; }
     .sug button { text-align: left; }
     .ruc { font-variant-numeric: tabular-nums; font-weight: 700; color: #0B3D91; }
+    .imp-box { background: #f0f9ff; border: 1.5px solid #bae6fd; border-radius: 12px; padding: 8px 12px; }
+    body.modo-imp .imp-box { background: #e0f2fe; border-color: #0284c7; }
+    .pago-l { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; flex-wrap: wrap; }
+    .pago-l .p-txt { flex: 1 1 220px; }
+    .pago-l .p-monto { font-size: .74rem; font-weight: 700; color: #075985; white-space: nowrap; }
     .prov-card { border: 1.5px solid #bbf7d0; background: #f0fdf4; border-radius: 12px; padding: 10px 12px; display: none; }
     .prov-card .nom { font-weight: 800; color: #14532d; line-height: 1.2; overflow-wrap: anywhere; }
     .chip { display: inline-flex; align-items: center; gap: 4px; font-size: .68rem; font-weight: 700; border-radius: 20px; padding: 1px 8px; }
@@ -226,7 +231,7 @@
             </div>
             <div id="provManual" style="display:none;" class="mb-2">
                 <div class="row g-2">
-                    <div class="col-5"><div class="lbl req">RUC</div><input type="text" id="m_ruc" class="form-control" maxlength="11" inputmode="numeric"></div>
+                    <div class="col-5"><div class="lbl req" id="m_ruc_lbl">RUC</div><input type="text" id="m_ruc" class="form-control" maxlength="20"></div>
                     <div class="col-7"><div class="lbl req">Razón social</div><input type="text" id="m_razon" class="form-control" maxlength="200"></div>
                     <div class="col-12"><div class="lbl">Dirección</div><input type="text" id="m_dir" class="form-control" maxlength="250"></div>
                 </div>
@@ -272,6 +277,13 @@
         <!-- CONDICIONES -->
         <div class="card border-0 shadow-sm mb-3"><div class="card-body">
             <div class="card-t"><i class="bi bi-sliders"></i> Condiciones</div>
+            <div id="boxImp" class="imp-box mb-3">
+                <div class="form-check form-switch m-0">
+                    <input class="form-check-input" type="checkbox" role="switch" name="es_importacion" value="1" id="es_importacion" {{ 'checked' if pv.es_importacion }} onchange="pintarImportacion(true)">
+                    <label class="form-check-label fw-bold" for="es_importacion"><i class="bi bi-globe-americas"></i> Orden de IMPORTACIÓN (proveedor del exterior)</label>
+                </div>
+                <div class="small text-muted">En <b>dólares</b>, <b>sin IGV</b>, precio por cada <b>1000 piezas</b> (USD/1000 PCS) y peso por millar (KGS/MPCS). Mismo flujo: aprobación, llegada, conformidad e ingreso al inventario (entra la <b>CANTIDAD / PCS</b>).</div>
+            </div>
             <div class="row g-2">
                 <div class="col-12 col-sm-6"><div class="lbl req">Moneda</div>
                     <div class="seg chico">
@@ -280,13 +292,22 @@
                         <label for="mon_{{ k }}" style="--c:#15803d; justify-content:center; white-space:nowrap;"><span><b>{{ m.simbolo }}</b> <small class="d-inline">{{ m.nombre }}</small></span></label>
                         {% endfor %}
                     </div></div>
-                <div class="col-12 col-sm-6"><div class="lbl req">Condición de pago</div>
-                    <select name="condicion_pago" id="condicion_pago" class="form-select" required><option value="">— Elige —</option>
+                <div class="col-12 col-sm-6" id="colCondPago"><div class="lbl req">Condición de pago</div>
+                    <select name="condicion_pago" id="condicion_pago" class="form-select"><option value="">— Elige —</option>
                         {% for c in condiciones %}<option value="{{ c }}" {{ 'selected' if c == pv.condicion_pago }}>{{ c }}</option>{% endfor %}
                         {% if pv.condicion_pago and pv.condicion_pago not in condiciones %}<option value="{{ pv.condicion_pago }}" selected>{{ pv.condicion_pago }}</option>{% endif %}
                     </select></div>
             </div>
-            <div class="detr-box mt-3">
+            <div id="boxImpCond" style="display:none;">
+                <div class="lbl req mt-3">Condiciones de pago</div>
+                <div id="pagosImp"></div>
+                <button type="button" class="btn btn-sm btn-outline-primary" onclick="agregarPago()"><i class="bi bi-plus-lg"></i> Agregar línea</button>
+                <div class="form-text">Con <b>%</b> se calcula el monto sobre el total: "Depósito del 15.0% $13,934.28". Sin % queda como texto (ej. "El saldo debe pagarse en 60 días una vez recibido el B/L").</div>
+                <div class="lbl mt-3">Condiciones comerciales</div>
+                <textarea name="condiciones_comerciales" id="condiciones_comerciales" class="form-control" rows="4" maxlength="2000" placeholder="Incoterm, puerto, documentos del embarque...">{{ pv.condiciones_comerciales or '' }}</textarea>
+                <div class="form-text">Salen en el PDF. Los textos sugeridos se cambian en Órdenes → Configuración → Datos del PDF.</div>
+            </div>
+            <div class="detr-box mt-3" id="boxDetrWrap">
                 <div class="form-check form-switch m-0">
                     <input class="form-check-input" type="checkbox" role="switch" name="aplica_detraccion" value="1" id="aplica_detraccion"
                            {{ 'checked' if pv.get('detraccion_pct') }} data-definido="{{ '1' if 'detraccion_pct' in pv else '' }}" onchange="this.dataset.tocado = '1'; pintarDetraccion()">
@@ -345,8 +366,9 @@
 
         <div class="totales mb-3">
             <div class="fila small"><span>Subtotal</span><span id="tSub">0.00</span></div>
-            <div class="fila small"><span>IGV ({{ (igv * 100)|int }}%)</span><span id="tIgv">0.00</span></div>
-            <div class="fila mt-1 align-items-baseline"><span>TOTAL</span><span class="grande" id="tTot">0.00</span></div>
+            <div class="fila small" id="tIgvFila"><span id="tIgvLbl">IGV ({{ (igv * 100)|int }}%)</span><span id="tIgv">0.00</span></div>
+            <div class="fila small" id="tImpFila" style="display:none;"><span>Total PCS · Total KGS</span><span id="tImp"></span></div>
+            <div class="fila mt-1 align-items-baseline"><span id="tTotLbl">TOTAL</span><span class="grande" id="tTot">0.00</span></div>
             <div id="tDetr" style="display:none;">
                 <div class="fila small mt-1" style="color:#fca5a5;"><span>Detracción (<span id="tDetrPct"></span>%)</span><span id="tDetrMonto"></span></div>
                 <div class="fila small"><span>Neto a pagar al proveedor</span><span id="tNeto"></span></div>
@@ -389,11 +411,14 @@
                 </div>
                 <div class="list-group position-absolute w-100 shadow sug prod-sug" style="left:0;"></div>
                 <div class="i-ficha"></div></div>
-            <div class="col-4 col-md-2"><label>Cantidad *</label><input type="number" name="cantidad[]" step="any" min="0" class="form-control form-control-sm i-cant" inputmode="decimal"></div>
+            <div class="col-4 col-md-2"><label class="i-lbl-cant">Cantidad *</label><input type="number" name="cantidad[]" step="any" min="0" class="form-control form-control-sm i-cant" inputmode="decimal"></div>
             <div class="col-4 col-md-3"><label>U.M. *</label><select name="um[]" class="form-select form-select-sm i-um"></select></div>
-            <div class="col-4 col-md-3"><label>P. Unit. *</label><input type="number" name="precio_unitario[]" step="any" min="0" class="form-control form-control-sm i-pu" inputmode="decimal"></div>
+            <div class="col-4 col-md-3 i-local"><label>P. Unit. *</label><input type="number" name="precio_unitario[]" step="any" min="0" class="form-control form-control-sm i-pu" inputmode="decimal"></div>
+            <div class="col-4 col-md-3 i-imp" style="display:none;"><label>USD / 1000 PCS *</label><input type="number" name="precio_mil[]" step="any" min="0" class="form-control form-control-sm i-pmil" inputmode="decimal"></div>
             <div class="col-12 col-md-4 text-end"><label>Total</label><div class="tot i-tot">0.00</div></div>
-            <div class="col-12"><div class="peso-linea"><i class="bi bi-speedometer2"></i> Peso <span class="text-muted">(opcional)</span>
+            <div class="col-6 col-md-3 i-imp" style="display:none;"><label>KGS / MPCS</label><input type="number" name="kgs_mpcs[]" step="any" min="0" class="form-control form-control-sm i-kgs" inputmode="decimal" placeholder="kg por millar"></div>
+            <div class="col-6 col-md-4 i-imp align-self-end small" style="display:none;">Total KGS: <b class="i-tkg">0</b></div>
+            <div class="col-12 i-local"><div class="peso-linea"><i class="bi bi-speedometer2"></i> Peso <span class="text-muted">(opcional)</span>
                 <select name="peso_modo[]" class="form-select form-select-sm i-pmodo"><option value="U">kg por unidad</option><option value="T">kg total del ítem</option></select>
                 <input type="number" name="peso_valor[]" step="any" min="0" class="form-control form-control-sm i-pval" placeholder="kg" inputmode="decimal">
                 <span class="i-pcalc"></span><span class="i-pinv ms-auto"></span></div></div>
@@ -438,6 +463,9 @@ const PUEDE_INSUMOS = {{ 'true' if puede_insumos else 'false' }};
 const ES_EDICION = {{ 'true' if orden else 'false' }};
 const ES_REAPROBACION = {{ 'true' if reaprob else 'false' }};
 const REQS = {{ reqs_pendientes|tojson }};
+const PAGOS_PREVIOS = {{ pagos_imp|tojson }};
+const IMP_DEF = {{ imp_defaults|tojson }};
+function esImp() { const c = porId('es_importacion'); return !!(c && c.checked && tipo() === 'OC'); }
 const REQ_INICIAL = {{ req_inicial|tojson if req_inicial else 'null' }};
 window.INSUMO_ELEGIBLE = true;
 let filaInsumo = null;
@@ -494,6 +522,7 @@ function pintarTipo() {
     porId('lblDestino').textContent = os ? 'Este servicio es para' : 'Este material es para';
     document.querySelectorAll('#items .i-serv-box').forEach(b => b.style.display = os ? 'block' : 'none');
     pintarDestino();
+    if (porId('pagosImp')) pintarImportacion(false);
 }
 function pintarEntrega() {
     const recojo = porId('em_RECOJO').checked;
@@ -565,18 +594,76 @@ function pesoFila(f) {
     calc.innerHTML = cant ? `= <b>${fmtKg(v * cant)}</b> kg en total` : ''; return v * cant;
 }
 function recalcular() {
-    let sub = 0, peso = 0;
+    let sub = 0, peso = 0, pcs = 0;
+    const imp = esImp();
     document.querySelectorAll('#items .item').forEach(f => {
-        const t = r2((parseFloat(f.querySelector('.i-cant').value) || 0) * (parseFloat(f.querySelector('.i-pu').value) || 0));
+        const cant = parseFloat(f.querySelector('.i-cant').value) || 0;
+        let t;
+        if (imp) {
+            const pm = f.querySelector('.i-pmil').value, kg = parseFloat(f.querySelector('.i-kgs').value) || 0;
+            f.querySelector('.i-pu').value = pm === '' ? '' : (parseFloat(pm) || 0) / 1000;
+            t = r2(cant * (parseFloat(pm) || 0) / 1000);
+            const tk = cant * kg / 1000; f.querySelector('.i-tkg').textContent = fmtKg(tk); peso += tk; pcs += cant;
+        } else {
+            t = r2(cant * (parseFloat(f.querySelector('.i-pu').value) || 0));
+            peso += pesoFila(f);
+        }
         f.querySelector('.i-tot').textContent = `${moneda()} ${fmt(t)}`; sub += t;
-        peso += pesoFila(f);
     });
-    sub = r2(sub); const igv = r2(sub * IGV);
+    sub = r2(sub); const igv = imp ? 0 : r2(sub * IGV);
+    porId('tIgvFila').style.display = imp ? 'none' : 'flex';
+    porId('tTotLbl').textContent = imp ? 'TOTAL NETO (sin IGV)' : 'TOTAL';
+    porId('tImpFila').style.display = imp ? 'flex' : 'none';
+    if (imp) porId('tImp').textContent = `${fmtCant(pcs)} PCS · ${fmtKg(peso)} kg`;
+    pintarMontosPago(sub);
     porId('tSub').textContent = `${moneda()} ${fmt(sub)}`; porId('tIgv').textContent = `${moneda()} ${fmt(igv)}`; porId('tTot').textContent = `${moneda()} ${fmt(sub + igv)}`;
     const conDetr = porId('aplica_detraccion').checked, pct = parseFloat(porId('detraccion_pct').value) || 0;
     porId('tDetr').style.display = conDetr && pct ? 'block' : 'none';
     if (conDetr && pct) { const m = r2((sub + igv) * pct / 100); porId('tDetrPct').textContent = pct; porId('tDetrMonto').textContent = `- ${moneda()} ${fmt(m)}`; porId('tNeto').textContent = `${moneda()} ${fmt(r2(sub + igv - m))}`; }
-    porId('tPesoFila').style.display = peso ? 'flex' : 'none'; porId('tPeso').textContent = fmtKg(peso) + ' kg';
+    porId('tPesoFila').style.display = peso && !imp ? 'flex' : 'none'; porId('tPeso').textContent = fmtKg(peso) + ' kg';
+}
+// ================= IMPORTACIÓN =================
+function agregarPago(d) {
+    d = d || {};
+    const div = document.createElement('div'); div.className = 'pago-l';
+    div.innerHTML = `<input name="pago_texto[]" class="form-control form-control-sm p-txt" maxlength="200" placeholder="Ej: Depósito / El saldo debe pagarse en 60 días...">
+        <div class="input-group input-group-sm" style="width: 105px; flex: none;"><input name="pago_pct[]" type="number" step="0.01" min="0" max="100" class="form-control p-pct" placeholder="%"><span class="input-group-text">%</span></div>
+        <span class="p-monto"></span><button type="button" class="btn btn-sm btn-link text-danger p-0" title="Quitar"><i class="bi bi-x-circle"></i></button>`;
+    div.querySelector('.p-txt').value = d.texto || ''; div.querySelector('.p-pct').value = d.pct || '';
+    div.querySelector('.p-pct').addEventListener('input', recalcular);
+    div.querySelector('button').onclick = () => { div.remove(); recalcular(); };
+    porId('pagosImp').appendChild(div);
+    recalcular();
+}
+function pintarMontosPago(total) {
+    document.querySelectorAll('#pagosImp .pago-l').forEach(l => {
+        const pct = parseFloat(l.querySelector('.p-pct').value) || 0;
+        l.querySelector('.p-monto').textContent = pct ? `${pct.toFixed(1)}% = $${fmt(r2(total * pct / 100))}` : '';
+    });
+}
+function pintarImportacion(cambio) {
+    const box = porId('boxImp'); if (!box) return;
+    box.style.display = tipo() === 'OC' ? '' : 'none';
+    const imp = esImp();
+    document.body.classList.toggle('modo-imp', imp);
+    porId('boxImpCond').style.display = imp ? 'block' : 'none';
+    porId('colCondPago').style.display = imp ? 'none' : '';
+    porId('boxDetrWrap').style.display = imp ? 'none' : '';
+    if (imp) { porId('aplica_detraccion').checked = false; const usd = porId('mon_USD'); if (usd) usd.checked = true; }
+    document.querySelectorAll('#formOC input[name=moneda]').forEach(r => r.disabled = imp && r.value !== 'USD');
+    document.querySelectorAll('#items .i-imp').forEach(x => x.style.display = imp ? '' : 'none');
+    document.querySelectorAll('#items .i-local').forEach(x => x.style.display = imp ? 'none' : '');
+    document.querySelectorAll('#items .i-lbl-cant').forEach(x => x.textContent = imp ? 'Cantidad / PCS *' : 'Cantidad *');
+    porId('m_ruc_lbl').textContent = imp ? 'Tax ID / N° de registro' : 'RUC';
+    if (imp && cambio) {
+        // sugerencias de Configuración, solo si está vacío
+        const def = IMP_DEF[empresa()] || {};
+        if (!porId('pagosImp').children.length) ((def.pagos || []).length ? def.pagos : [{}]).forEach(agregarPago);
+        if (!porId('condiciones_comerciales').value.trim()) porId('condiciones_comerciales').value = def.condiciones || '';
+        // el precio unitario que ya estaba escrito pasa a USD por 1000 piezas
+        document.querySelectorAll('#items .item').forEach(f => { const pu = f.querySelector('.i-pu').value, pm = f.querySelector('.i-pmil'); if (pu !== '' && pm.value === '') pm.value = r2(parseFloat(pu) * 1000); });
+    }
+    recalcular();
 }
 function opcionesUM(sel, valor) {
     const lista = UMS.slice(); if (valor && !lista.includes(valor)) lista.push(valor);
@@ -670,6 +757,12 @@ function agregarItem(datos) {
     desc.value = datos.descripcion || '';
     fila.querySelector('.i-cant').value = datos.cantidad || '';
     fila.querySelector('.i-pu').value = (datos.precio_unitario === 0 || datos.precio_unitario) ? datos.precio_unitario : '';
+    fila.querySelector('.i-pmil').value = (datos.precio_mil === 0 || datos.precio_mil) ? datos.precio_mil : '';
+    fila.querySelector('.i-kgs').value = (datos.kgs_mpcs === 0 || datos.kgs_mpcs) ? datos.kgs_mpcs : '';
+    const imp0 = esImp();
+    fila.querySelectorAll('.i-imp').forEach(x => x.style.display = imp0 ? '' : 'none');
+    fila.querySelectorAll('.i-local').forEach(x => x.style.display = imp0 ? 'none' : '');
+    fila.querySelector('.i-lbl-cant').textContent = imp0 ? 'Cantidad / PCS *' : 'Cantidad *';
     opcionesServicio(fila.querySelector('.i-serv'), datos.servicio || '');
     fila.querySelector('.i-serv-box').style.display = tipo() === 'OS' ? 'block' : 'none';
     fila.querySelector('.i-pmodo').value = datos.peso_modo === 'T' ? 'T' : 'U';
@@ -700,7 +793,7 @@ function agregarItem(datos) {
     });
     desc.addEventListener('blur', () => setTimeout(() => sug.style.display = 'none', 150));
     fila.querySelector('.i-buscar').addEventListener('click', () => abrirBuscador(fila));
-    fila.querySelectorAll('.i-cant, .i-pu, .i-pval').forEach(i => i.addEventListener('input', recalcular));
+    fila.querySelectorAll('.i-cant, .i-pu, .i-pval, .i-pmil, .i-kgs').forEach(i => i.addEventListener('input', recalcular));
     fila.querySelector('.i-pmodo').addEventListener('change', recalcular);
     fila.querySelector('.quitar').addEventListener('click', () => {
         if (document.querySelectorAll('#items .item').length === 1) { fila.querySelectorAll('input').forEach(i => i.value = ''); vincular(fila, null); recalcular(); return; }
@@ -937,7 +1030,8 @@ let accionPulsada = ES_REAPROBACION ? 'enviar' : 'guardar';
 document.querySelectorAll('#formOC button[type=submit]').forEach(b => b.addEventListener('click', () => accionPulsada = b.dataset.accion));
 porId('formOC').addEventListener('submit', function (e) {
     if (porId('provManual').style.display === 'block') {
-        porId('ruc').value = porId('m_ruc').value.replace(/\D/g, ''); porId('razon_social').value = porId('m_razon').value.trim(); porId('direccion').value = porId('m_dir').value.trim();
+        porId('ruc').value = esImp() ? porId('m_ruc').value.toUpperCase().replace(/[^0-9A-Z]/g, '') : porId('m_ruc').value.replace(/\D/g, '');
+        porId('razon_social').value = porId('m_razon').value.trim(); porId('direccion').value = porId('m_dir').value.trim();
     }
     // contacto escrito sin guardar en la lista: va con la orden y se guarda solo
     if (!porId('contacto_id').value && porId('formContacto').style.display === 'block' && porId('fc_nombre').value.trim()) {
@@ -952,22 +1046,24 @@ porId('formOC').addEventListener('submit', function (e) {
         const cr = porId('cliente_ruc').value.replace(/\D/g, '');
         if ((cr.length !== 11 && cr.length !== 8) || porId('cliente_razon').value.trim().length < 3) err.push('Indica el RUC y la razón social del CLIENTE.');
     }
-    const ruc = porId('ruc').value.replace(/\D/g, '');
+    const ruc = esImp() ? porId('ruc').value.trim() : porId('ruc').value.replace(/\D/g, '');
     if (!destino()) err.push('Elige si el material es para el inventario o para Insumos.');
-    if (ruc.length !== 11 && ruc.length !== 8) err.push('Elige o busca el proveedor (RUC de 11 dígitos).');
+    if (esImp() ? ruc.length < 3 : (ruc.length !== 11 && ruc.length !== 8)) err.push(esImp() ? 'Elige el proveedor del exterior o escribe sus datos (Tax ID).' : 'Elige o busca el proveedor (RUC de 11 dígitos).');
     if (porId('razon_social').value.trim().length < 3) err.push('Falta la razón social del proveedor.');
     if (porId('contacto').value.trim().length < 3) err.push('Elige o escribe el CONTACTO.');
     if (porId('telefono').value.replace(/\D/g, '').length < 6) err.push('Falta el TELÉFONO del contacto.');
-    if (!porId('condicion_pago').value) err.push('Elige la condición de pago.');
+    if (!esImp() && !porId('condicion_pago').value) err.push('Elige la condición de pago.');
+    if (esImp() && ![...document.querySelectorAll('#pagosImp .p-txt')].some(i => i.value.trim())) err.push('Escribe las condiciones de pago de la importación.');
+    if (esImp() && [...document.querySelectorAll('#pagosImp .p-pct')].reduce((a, i) => a + (parseFloat(i.value) || 0), 0) > 100.0001) err.push('Los porcentajes de pago suman más de 100%.');
     if (porId('em_RECOJO').checked && porId('lugar_recojo').value.trim().length < 5) err.push('Escribe dónde se recoge el material.');
     const et = valorRadio('entrega_tipo');
     if (et === 'DIAS' && !(parseInt(porId('entrega_dias').value) >= 1)) err.push('Escribe en cuántos días se entrega.');
     if (et === 'FECHA' && !porId('fecha_entrega').value) err.push('Escribe la fecha de entrega.');
     if (ES_REAPROBACION && porId('motivo_edicion').value.trim().length < 10) err.push('Escribe el MOTIVO DE LA EDICIÓN (mínimo 10 letras).');
-    const filas = [...document.querySelectorAll('#items .item')].filter(f => f.querySelector('.i-desc').value.trim() || f.querySelector('.i-cant').value || f.querySelector('.i-pu').value);
+    const filas = [...document.querySelectorAll('#items .item')].filter(f => f.querySelector('.i-desc').value.trim() || f.querySelector('.i-cant').value || f.querySelector('.i-pu').value || f.querySelector('.i-pmil').value);
     if (!filas.length) err.push('Agrega al menos un ítem.');
     filas.forEach((f, i) => {
-        if (f.querySelector('.i-desc').value.trim().length < 2 || !(parseFloat(f.querySelector('.i-cant').value) > 0) || !f.querySelector('.i-um').value || f.querySelector('.i-pu').value === '')
+        if (f.querySelector('.i-desc').value.trim().length < 2 || !(parseFloat(f.querySelector('.i-cant').value) > 0) || !f.querySelector('.i-um').value || (esImp() ? f.querySelector('.i-pmil').value === '' : f.querySelector('.i-pu').value === ''))
             err.push(`Ítem ${i + 1}: completa descripción, cantidad, U.M. y precio.`);
         if (tipo() === 'OS' && !f.querySelector('.i-serv').value) err.push(`Ítem ${i + 1}: elige el tipo de servicio.`);
         if (f.querySelector('.ficha.falta')) err.push(`Ítem ${i + 1}: elige ${destino() === 'INSUMOS' ? 'el insumo del maestro' : 'el producto del inventario ' + corto()} de la lista (no se puede escribir a mano).`);
@@ -989,6 +1085,9 @@ porId('formOC').addEventListener('submit', function (e) {
 pintarNumero(); pintarEntrega(); pintarMotivo(); pintarTipo();
 if (porId('solicitante').value && !porId('area_solicitante').value) pintarArea();
 if (ITEMS_PREVIOS.length) ITEMS_PREVIOS.forEach(it => agregarItem(it)); else agregarItem();
+PAGOS_PREVIOS.forEach(agregarPago);
+if (esImp() && !PAGOS_PREVIOS.length) agregarPago();
+pintarImportacion(false);
 if (REQ_INICIAL) {
     const r = REQS.find(x => x.id === REQ_INICIAL);
     if (r) { const e = porId('emp_' + r.empresa); if (e && !e.disabled) { e.checked = true; pintarDestino(); pintarNumero(); } r.items.forEach(i => jalarReq(r, i)); }

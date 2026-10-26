@@ -16,6 +16,12 @@
     .linea { border-left: 2px solid #e2e8f0; padding: 0 0 10px 12px; position: relative; font-size: .78rem; }
     .linea::before { content: ''; position: absolute; left: -6px; top: 3px; width: 10px; height: 10px; border-radius: 50%; background: #0B3D91; }
     .linea .s { color: #64748b; font-size: .72rem; }
+    .linea.nuevo::before { background: #f59e0b; box-shadow: 0 0 0 3px #fde68a; }
+    .nuevo-b { font-size: .6rem; font-weight: 800; background: #f59e0b; color: #fff; border-radius: 5px; padding: 0 5px; margin-left: 4px; }
+    .it.desc { background: #f8fafc; border-style: dashed; }
+    .it.desc .ds { text-decoration: line-through; color: #64748b; }
+    .desc-b { font-size: .7rem; font-weight: 800; background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; border-radius: 6px; padding: 1px 7px; }
+    .rec-b { font-size: .7rem; font-weight: 700; background: #eff6ff; color: #1e3a8a; border-radius: 6px; padding: 1px 7px; }
 </style>
 
 {% set emp_r = empresas_oc.get(r.empresa) %}
@@ -33,7 +39,7 @@
             <div class="dato"><i class="bi bi-bullseye"></i> Motivo: <b>{{ (r.motivo or '—')|capitalize }}</b></div>
         </div>
         <div class="col-12 col-md-6">
-            {% if r.cliente_razon %}<div class="dato"><i class="bi bi-person-badge"></i> Cliente: <b>{{ r.cliente_razon }}</b> · {{ r.cliente_ruc }}</div>{% endif %}
+            {% if r.cliente_razon %}<div class="dato"><i class="bi bi-person-badge"></i> Cliente: <b>{{ r.cliente_razon }}</b>{% if r.cliente_ruc %} · {{ r.cliente_ruc }}{% endif %}</div>{% endif %}
             {% if r.oc_cliente %}<div class="dato"><i class="bi bi-receipt"></i> OC del cliente: <b>{{ r.oc_cliente }}</b></div>{% endif %}
             {% if r.necesita_para %}<div class="dato"><i class="bi bi-calendar-event"></i> Para el: <b class="{{ 'text-danger' if r.necesita_para <= hoy and res.paso < 6 }}">{{ r.necesita_para.strftime('%d/%m/%Y') }}</b></div>{% endif %}
         </div>
@@ -45,7 +51,8 @@
         <a class="doc-b" href="{{ url_for('oc_req_documento', doc_id=d.id) }}" target="_blank"><i class="bi {{ 'bi-file-earmark-pdf' if d.content_type == 'application/pdf' else 'bi-image' }}"></i> {{ d.nombre_original }}</a>{% endfor %}</div>{% endif %}
     <div class="d-flex flex-wrap gap-2 mt-2">
         {% if p.armar %}<a class="btn btn-success fw-bold" href="{{ url_for('oc_nueva', tipo='OC', empresa=r.empresa, req=r.id) if emp_r else url_for('oc_nueva', tipo='OC', req=r.id) }}"><i class="bi bi-cart-plus"></i> Armar OC con estos productos</a>{% endif %}
-        {% if p.rechazar %}<button class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#mRechazar"><i class="bi bi-x-octagon"></i> Rechazar</button>{% endif %}
+        {% if p.editar %}<a class="btn btn-outline-primary" href="{{ url_for('oc_req_editar', req_id=r.id) }}"><i class="bi bi-pencil"></i> Editar</a>{% endif %}
+        {% if p.rechazar %}<button class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#mRechazar"><i class="bi bi-x-octagon"></i> Rechazar todo</button>{% endif %}
         {% if p.anular %}<button class="btn btn-outline-dark" data-bs-toggle="modal" data-bs-target="#mAnular"><i class="bi bi-slash-circle"></i> Anular</button>{% endif %}
         <a class="btn btn-outline-secondary ms-auto" href="{{ url_for('oc_req_lista') }}"><i class="bi bi-arrow-left"></i> Requerimientos</a>
     </div>
@@ -56,15 +63,25 @@
         <div class="panel">
             <div class="panel-t"><i class="bi bi-boxes"></i> Productos y avance</div>
             {% for i in r.items %}{% set s = seg[i.id] %}
-            <div class="it">
+            <div class="it {{ 'desc' if s.descartado }}" id="ri{{ i.id }}">
                 <div class="d-flex flex-wrap gap-2 align-items-center"><span class="ds">{{ i.item }}. {{ i.descripcion }}</span> <span class="tag-sku">{{ i.codigo }}</span>
+                    {% if s.descartado %}<span class="desc-b"><i class="bi bi-x-circle"></i> No se comprará</span>{% endif %}
                     <span class="ms-auto fw-bold">{{ i.cantidad|cant }} {{ i.um }}</span></div>
                 <div class="small text-muted">{{ [i.familia, i.calidad]|select|join(' · ') }}{% if i.stock_al_pedir is not none %} · stock al pedir (las dos empresas): {{ i.stock_al_pedir }}{% endif %}{% if i.nota %} · {{ i.nota }}{% endif %}</div>
-                <div class="d-flex flex-wrap gap-1 mt-1">{{ rq.ordenes_de(s, p.ver_oc) }}
-                    {% if s.activos and (s.ordenado - i.cantidad)|abs > 0.0001 %}<span class="small text-muted">· en orden: {{ s.ordenado|cant }} (se pidió {{ i.cantidad|cant }})</span>{% endif %}</div>
+                {% if s.descartado %}
+                <div class="small mt-1"><b>Descartado</b> por {{ i.descartado_por.nombre_completo if i.descartado_por else '-' }}{% if i.fecha_descarte %} el {{ i.fecha_descarte.strftime('%d/%m/%Y %H:%M') }}{% endif %}:
+                    {{ req_motivo_txt(i.descarte_categoria, i.descarte_opcion, i.descarte_motivo) }}
+                    {% if p.descartar %}<form method="POST" action="{{ url_for('oc_req_reactivar', item_id=i.id) }}" class="d-inline"><button class="btn btn-link btn-sm p-0 ms-1">Volver a pedirlo</button></form>{% endif %}</div>
+                {% else %}
+                <div class="d-flex flex-wrap gap-1 mt-1 align-items-center">{{ rq.ordenes_de(s, p.ver_oc) }}
+                    {% if s.activos and (s.ordenado - i.cantidad)|abs > 0.0001 %}<span class="small text-muted">· en orden: {{ s.ordenado|cant }} (se pidió {{ i.cantidad|cant }})</span>{% endif %}
+                    {% if s.recibido and s.recibido < s.ordenado - 0.0001 %}<span class="rec-b"><i class="bi bi-boxes"></i> Llegó {{ s.recibido|cant }} de {{ s.ordenado|cant }} (parcial)</span>{% endif %}
+                    {% if p.descartar and not s.activos %}<button type="button" class="btn btn-sm btn-outline-secondary py-0 ms-auto" onclick="descartar({{ i.id }}, {{ (i.codigo ~ ' · ' ~ i.descripcion)|tojson|forceescape }})"><i class="bi bi-x-circle"></i> No se comprará</button>{% endif %}</div>
                 {% if r.estado == 'PENDIENTE' %}{{ rq.avance(s) }}{% endif %}
+                {% endif %}
             </div>
             {% endfor %}
+            {% if res.descartados %}<div class="small text-muted"><i class="bi bi-info-circle"></i> Los productos descartados no cuentan: el requerimiento se cierra cuando todo lo demás quedó ingresado.</div>{% endif %}
         </div>
     </div>
     <div class="col-12 col-lg-4">
@@ -83,7 +100,7 @@
         <div class="panel">
             <div class="panel-t"><i class="bi bi-clock-history"></i> Historial</div>
             {% for ev in eventos %}
-            <div class="linea"><b>{{ {'CREADO': 'Requerimiento enviado', 'EN_OC': 'Puesto en una orden', 'QUITADO_OC': 'Quitado de una orden', 'RECHAZADO': 'Rechazado', 'ANULADO': 'Anulado'}.get(ev.accion, ev.accion) }}</b>
+            <div class="linea {{ 'nuevo' if ev.id in nuevos_ids }}"><b>{{ acciones_req.get(ev.accion, ev.accion) }}</b>{% if ev.id in nuevos_ids %}<span class="nuevo-b">NUEVO</span>{% endif %}
                 <div class="s">{{ ev.fecha.strftime('%d/%m/%Y %H:%M') }} · {{ ev.usuario.nombre_completo if ev.usuario else 'Sistema' }}</div>
                 {% if ev.detalle %}<div>{{ ev.detalle }}</div>{% endif %}</div>
             {% endfor %}
@@ -106,7 +123,29 @@
     <div class="modal-footer p-2"><button class="btn fw-bold w-100 text-white" style="background: {{ color }};">Confirmar</button></div>
 </form></div></div>
 {% endfor %}
+{% if p.descartar %}
+<div class="modal fade" id="mDescartar" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><form method="POST" id="formDescartar" class="modal-content border-0 shadow">
+    <div class="modal-header py-2 text-white" style="background: #475569;"><h6 class="modal-title fw-bold"><i class="bi bi-x-circle"></i> Este producto no se comprará</h6><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+        <div class="fw-bold small mb-2" id="descProd"></div>
+        <div class="small text-muted mb-2">Queda marcado como <b>descartado</b> con el motivo (lo ve quien lo pidió). Los demás productos siguen su curso; el requerimiento se cierra cuando todo lo demás se compra e ingresa. Se puede volver a pedir.</div>
+        <label class="small fw-bold">¿Por qué no se comprará? *</label>
+        <select name="motivo_id" class="form-select mb-2" required><option value="">— Elige el motivo —</option>
+            {% for cat, lista in motivos_desc.items() %}<optgroup label="{{ cat }}">{% for m in lista %}<option value="{{ m.id }}">{{ m.motivo }}</option>{% endfor %}</optgroup>{% endfor %}</select>
+        <label class="small fw-bold">Descripción <span class="fw-normal text-muted">(opcional)</span></label>
+        <textarea name="motivo" class="form-control" rows="2" maxlength="300" placeholder="Ej: se ofreció el M16 en vez del M14 y el cliente aceptó"></textarea>
+        <div class="form-text">Las opciones se configuran en <a href="{{ url_for('oc_config', tab='motivos') }}" target="_blank">Órdenes → Configuración → Motivos</a> ("Descartar producto").</div>
+    </div>
+    <div class="modal-footer p-2"><button class="btn fw-bold w-100 text-white" style="background: #475569;">Descartar producto</button></div>
+</form></div></div>
+{% endif %}
 <script>
-document.querySelectorAll('#mRechazar, #mAnular').forEach(m => m.addEventListener('hidden.bs.modal', () => m.querySelector('form').reset()));
+document.querySelectorAll('#mRechazar, #mAnular, #mDescartar').forEach(m => m.addEventListener('hidden.bs.modal', () => m.querySelector('form').reset()));
+function descartar(id, txt) {
+    const f = document.getElementById('formDescartar');
+    f.action = '{{ url_for('oc_req_descartar', item_id=0) }}'.replace('/0/', '/' + id + '/');
+    document.getElementById('descProd').textContent = txt;
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('mDescartar')).show();
+}
 </script>
 {% endblock %}

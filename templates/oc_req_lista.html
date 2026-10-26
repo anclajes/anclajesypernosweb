@@ -24,14 +24,32 @@
     @media (max-width: 575.98px) { .kpis-rq { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
     .como { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 10px 14px; margin-bottom: 12px; font-size: .78rem; }
     .como summary { font-weight: 800; color: #0B3D91; cursor: pointer; font-size: .84rem; }
+    .novedades { background: #fffbeb; border: 1.5px solid #fcd34d; border-radius: 12px; padding: 10px 14px; margin-bottom: 12px; }
+    .novedades .t { font-weight: 800; color: #92400e; font-size: .84rem; }
+    .novedades a.nv { display: flex; gap: 8px; align-items: baseline; font-size: .76rem; color: #334155; text-decoration: none; padding: 3px 0; border-bottom: 1px dashed #fde68a; }
+    .novedades a.nv:last-child { border-bottom: 0; }
+    .novedades a.nv:hover b { text-decoration: underline; }
+    .nov-chip { font-size: .62rem; font-weight: 800; background: #f59e0b; color: #fff; border-radius: 6px; padding: 1px 6px; }
+    .desc-b { font-size: .66rem; font-weight: 800; background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; border-radius: 6px; padding: 0 6px; }
 </style>
 
 <div class="d-flex flex-wrap gap-2 align-items-center mb-2 vistas">
-    {% for k, t in [('abiertos', 'Abiertos'), ('mios', 'Pedidos por mí'), ('completados', 'Completados'), ('cerrados', 'Rechazados / anulados'), ('todos', 'Todos')] %}
+    {% for k, t in [('abiertos', 'Abiertos'), ('mios', 'Pedidos por mí'), ('completados', 'Completados'), ('cerrados', 'Rechazados / anulados / descartados'), ('todos', 'Todos')] %}
     <a href="{{ url_for('oc_req_lista', vista=k) }}" class="{{ 'on' if vista == k }}">{{ t }} <span class="opacity-75">{{ cuenta[k] }}</span></a>
     {% endfor %}
 </div>
 
+{% if novedades %}
+<div class="novedades">
+    <div class="t"><i class="bi bi-bell-fill"></i> Novedades en tus requerimientos <span class="fw-normal text-muted small">(desde la última vez que los abriste)</span></div>
+    {% for rn, ev in novedades %}
+    <a class="nv" href="{{ url_for('oc_req_detalle', req_id=rn.id) }}"><b class="text-nowrap">{{ req_codigo(rn) }}</b>
+        <span><b>{{ acciones_req.get(ev.accion, ev.accion) }}</b>{% if ev.detalle %} · {{ ev.detalle|truncate(110, True, '…') }}{% endif %}</span>
+        <span class="ms-auto text-muted text-nowrap">{{ ev.fecha.strftime('%d/%m %H:%M') }}</span></a>
+    {% endfor %}
+    <div class="small text-muted mt-1">Al abrir el requerimiento, sus novedades se marcan como vistas.</div>
+</div>
+{% endif %}
 <div class="kpis-rq mb-2" title="{{ 'Solo los pedidos por ti' if vista == 'mios' else 'Todos los requerimientos' }}">
     <div style="--c:#b45309;"><b>{{ cuenta.esperando }}</b><span>Esperando OC</span></div>
     <div style="--c:#0B3D91;"><b>{{ cuenta.en_proceso }}</b><span>En proceso (con OC)</span></div>
@@ -55,6 +73,7 @@
             <a class="cod" href="{{ url_for('oc_req_detalle', req_id=r.id) }}">{{ req_codigo(r) }}</a>
             {% if emp_r %}<span class="small fw-bold" style="color: {{ emp_r.color }};">Inventario {{ emp_r.corto }}</span>{% endif %}
             {% if r.prioridad == 'URGENTE' %}<span class="rq-urg">URGENTE</span>{% endif %}
+            {% if r.id in con_novedad %}<span class="nov-chip"><i class="bi bi-bell-fill"></i> Novedad</span>{% endif %}
             <span class="rq-estado ms-auto" style="color: {{ res.color }};"><i class="bi {{ res.icono }}"></i> {{ res.txt }}</span>
         </div>
         <div class="meta"><i class="bi bi-person"></i> Lo pide <b>{{ r.solicitante_nombre }}</b>{% if r.area %} ({{ r.area|title }}){% endif %}{% if r.creado_por and r.creado_por.id != r.solicitante_user_id %} · registró {{ r.creado_por.nombre_completo or r.creado_por.username }}{% endif %} · {{ r.fecha_registro.strftime('%d/%m/%Y %H:%M') }}
@@ -65,10 +84,13 @@
     </div>
     {% for i in r.items %}{% set s = sg[i.id] %}
     <div class="it">
-        <div class="d-flex flex-wrap gap-2 align-items-center"><span class="ds">{{ i.descripcion }}</span> <span class="tag-sku">{{ i.codigo }}</span>
+        <div class="d-flex flex-wrap gap-2 align-items-center"><span class="ds" {% if s.descartado %}style="text-decoration: line-through; color: #64748b;"{% endif %}>{{ i.descripcion }}</span> <span class="tag-sku">{{ i.codigo }}</span>
+            {% if s.descartado %}<span class="desc-b" title="{{ req_motivo_txt(i.descarte_categoria, i.descarte_opcion, i.descarte_motivo) }}">No se comprará: {{ i.descarte_opcion or '' }}</span>{% endif %}
             <span class="ms-auto fw-bold">{{ i.cantidad|cant }} {{ i.um }}</span></div>
-        <div class="d-flex flex-wrap gap-1 mt-1">{{ rq.ordenes_de(s, puede_ver_oc) }}</div>
+        {% if not s.descartado %}
+        <div class="d-flex flex-wrap gap-1 mt-1">{{ rq.ordenes_de(s, puede_ver_oc) }}{% if s.recibido and s.recibido < s.ordenado - 0.0001 %}<span class="small" style="color:#1e3a8a;">· llegó {{ s.recibido|cant }} de {{ s.ordenado|cant }}</span>{% endif %}</div>
         {% if r.estado == 'PENDIENTE' %}{{ rq.avance(s) }}{% endif %}
+        {% endif %}
     </div>
     {% endfor %}
 </div>

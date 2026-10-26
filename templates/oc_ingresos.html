@@ -60,6 +60,8 @@
     .kx-prod { font-size: .74rem; background: #f0fdf4; border-radius: 8px; padding: 3px 8px; margin-top: 4px; }
     .kx-prod.falta { background: #fff7ed; color: #9a3412; }
     .kx-docs { display: flex; flex-wrap: wrap; gap: 4px; }
+    .entrega-cab { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; padding: 7px 14px; background: #f1f5f9; border-bottom: 1px solid #e2e8f0; font-size: .74rem; color: #334155; }
+    .entrega-cab .ent-n { font-weight: 800; color: #0f172a; font-size: .8rem; }
     @media (max-width: 767.98px) { #modalKardex .modal-dialog { margin: .5rem; } }
 </style>
 
@@ -82,8 +84,8 @@
 <details class="como" {{ 'open' if vista == 'pendientes' and n_pendientes }}>
     <summary><i class="bi bi-info-circle"></i> ¿Cómo funciona este apartado?</summary>
     <div class="pasos-ing">
-        <div><b class="nro">1</b> Aquí aparece cada producto que <b>llegó con una OC</b> y que Logística revisó y dio <b>conforme</b> (buen estado, cantidad y documentos). Está <b>esperando ser ingresado</b>.</div>
-        <div><b class="nro">2</b> Pulsa <b>Registrar ingreso en Kardex</b>: se abre el <b>Movimiento de Kardex</b> con todo lleno desde la orden (ingreso por <b>COMPRA</b>, cantidad, fecha de llegada, proveedor, precio, factura o guía). Solo revisas y confirmas. Si la orden trae varios ítems, usa <b>Ingresar todo</b>.</div>
+        <div><b class="nro">1</b> Aquí aparece cada <b>entrega</b> que llegó con una OC y que Logística revisó y dio <b>conforme</b>. Si el proveedor entrega <b>por partes</b>, cada parte llega aquí por separado, con <b>su fecha y su guía</b>, en el orden en que llegó: no hay que esperar a que llegue todo.</div>
+        <div><b class="nro">2</b> Pulsa <b>Registrar ingreso en Kardex</b>: se abre el <b>Movimiento de Kardex</b> con todo lleno desde la orden (ingreso por <b>COMPRA</b>, cantidad, fecha de llegada, proveedor, precio, factura o guía). Solo revisas y confirmas. Si la entrega trae varios ítems, usa <b>Ingresar entrega al Kardex</b>. La factura <b>no</b> hace falta para ingresar.</div>
         <div><b class="nro">3</b> Se suma el stock, el movimiento queda en el Kardex <b>enlazado a la orden</b> (con su PDF y documentos) y el ítem pasa a "Ya ingresados" con tu nombre, fecha y hora.</div>
     </div>
     <div class="nota-cod"><b><i class="bi bi-upc-scan"></i> ¿Qué es el "Código en el inventario"?</b> Es el <b>SKU</b> con el que el producto quedó en el inventario. Sirve para <b>enlazar</b> la orden con el producto (trazabilidad).
@@ -104,17 +106,20 @@
 </div>
 {% endif %}
 
-{% for o, items in grupos %}
-{% set espera = ((ahora - o.fecha_conforme).days) if o.fecha_conforme else 0 %}
+{% for g in grupos %}
+{% set o = g.o %}{% set items = g['items'] %}
 {% set ds = docs.get(o.id, []) %}{% set emp = o.empresa or 'ANCLAJES' %}
-<div style="border-top: 4px solid {{ empresas_oc[emp].color }};" class="oc-card shadow-sm" id="oc{{ o.id }}" data-buscar="{{ (o.tipo ~ ' ' ~ oc_numero_txt(o) ~ ' ' ~ o.razon_social ~ ' ' ~ (items|map(attribute='descripcion')|join(' ')) ~ ' ' ~ (items|map(attribute='codigo')|select|join(' ')))|upper }}">
+{% set guias = ds|selectattr('tipo', 'equalto', 'GUIA')|list %}
+<div style="border-top: 4px solid {{ empresas_oc[emp].color }};" class="oc-card shadow-sm" id="oc{{ o.id }}" data-buscar="{{ (o.tipo ~ ' ' ~ oc_numero_txt(o) ~ ' ' ~ o.razon_social ~ ' ' ~ (items.values()|map(attribute='descripcion')|join(' ')) ~ ' ' ~ (items.values()|map(attribute='codigo')|select|join(' ')))|upper }}">
     <div class="cab">
         <div class="d-flex flex-wrap gap-2 align-items-center">
             {% if puede_ver_oc %}<a class="oc-num" href="{{ url_for('oc_detalle', orden_id=o.id) }}">{% else %}<span class="oc-num">{% endif %}<span class="oc-tipo {{ o.tipo }}">{{ o.tipo }}</span> N° {{ oc_numero_txt(o) }}{% if puede_ver_oc %}</a>{% else %}</span>{% endif %}
             <span class="prov">{{ o.razon_social }}</span>
             {% if o.tipo == 'OS' %}<span class="oc-dest" style="background: #7c3aed; color: #fff;"><i class="bi bi-tools"></i> Servicio · {{ empresas_oc[emp].corto }}</span>
             {% else %}<span class="oc-dest GENERAL" style="background: {{ empresas_oc[emp].color }}; color: #fff;">Inventario {{ empresas_oc[emp].corto }}</span>{% endif %}
-            {% if vista == 'pendientes' and not (o.tipo == 'OS' and o.fecha_kardex) %}<span class="espera {{ 'larga' if espera >= 3 }} ms-auto"><i class="bi bi-hourglass-split"></i> {{ 'Conforme hoy' if espera == 0 else ('Esperando seguimiento' if o.tipo == 'OS' else 'Esperando ingreso') ~ ' hace ' ~ espera ~ ' día' ~ ('s' if espera != 1 else '') }}</span>{% endif %}
+            {% if o.es_importacion %}<span class="tag" style="background:#e0f2fe; color:#075985;"><i class="bi bi-globe-americas"></i> Importación</span>{% endif %}
+            {% if o.tipo == 'OS' and vista == 'pendientes' and not o.fecha_kardex %}{% set espera = ((ahora - o.fecha_conforme).days) if o.fecha_conforme else 0 %}
+            <span class="espera {{ 'larga' if espera >= 3 }} ms-auto"><i class="bi bi-hourglass-split"></i> {{ 'Conforme hoy' if espera == 0 else 'Esperando seguimiento hace ' ~ espera ~ ' día' ~ ('s' if espera != 1 else '') }}</span>{% endif %}
         </div>
         {% if o.solicitante_nombre or o.motivo_compra %}
         <div class="sol-l"><i class="bi bi-person-raised-hand"></i> Solicitó <b>{{ oc_solicitante_txt(o) or '—' }}</b>{% if o.area_solicitante %} ({{ o.area_solicitante|title }}){% endif %}
@@ -123,30 +128,36 @@
         <div class="traza">
             <span class="t ok"><i class="bi bi-patch-check-fill"></i><span><b>Aprobada</b>{{ o.aprobado_por.nombre_completo if o.aprobado_por else '' }}{% if o.fecha_aprobacion %} · {{ o.fecha_aprobacion.strftime('%d/%m %H:%M') }}{% endif %}</span></span>
             <i class="bi bi-chevron-right flecha"></i>
-            <span class="t ok"><i class="bi bi-truck"></i><span><b>{{ 'Entregado' if o.tipo == 'OS' else 'Llegó' }}</b>{{ o.recibido_por.nombre_completo if o.recibido_por else '' }}{% if o.fecha_llegada %} · {{ o.fecha_llegada.strftime('%d/%m %H:%M') }}{% endif %}</span></span>
+            {% if o.tipo == 'OS' %}
+            <span class="t ok"><i class="bi bi-truck"></i><span><b>Entregado</b>{{ o.recibido_por.nombre_completo if o.recibido_por else '' }}{% if o.fecha_llegada %} · {{ o.fecha_llegada.strftime('%d/%m %H:%M') }}{% endif %}</span></span>
             <i class="bi bi-chevron-right flecha"></i>
             <span class="t ok"><i class="bi bi-check-circle-fill"></i><span><b>Conforme</b>{{ o.conforme_por.nombre_completo if o.conforme_por else '' }}{% if o.fecha_conforme %} · {{ o.fecha_conforme.strftime('%d/%m %H:%M') }}{% endif %}</span></span>
             <i class="bi bi-chevron-right flecha"></i>
-            {% if o.tipo == 'OS' %}
             <span class="t {{ 'ok' if o.fecha_kardex else 'pend' }}"><i class="bi {{ 'bi-clipboard-check' if o.fecha_kardex else 'bi-hourglass-split' }}"></i><span><b>Seguimiento</b>{{ (o.kardex_registrado_por.nombre_completo ~ ' · ' ~ o.fecha_kardex.strftime('%d/%m %H:%M')) if o.fecha_kardex and o.kardex_registrado_por else 'pendiente' }}</span></span>
-            {% else %}{% set ie = oc_ingreso_estado(o) %}
-            <span class="t {{ 'ok' if ie.completo else 'pend' }}"><i class="bi {{ 'bi-box-arrow-in-down' if ie.completo else 'bi-hourglass-split' }}"></i><span><b>Ingreso al inventario</b>{{ ie.hechos }} de {{ ie.total }} ítem(s)</span></span>{% endif %}
+            {% else %}{% set rc = oc_recepcion(o) %}{% set ie = oc_ingreso_estado(o) %}
+            <span class="t {{ 'pend' if rc.pendiente > 0 else 'ok' }}"><i class="bi bi-truck"></i><span><b>Llegada{{ ' parcial' if rc.pendiente > 0 }}</b>{{ rc.entregas|length }} entrega(s){% if o.fecha_llegada %} · 1.ª {{ o.fecha_llegada.strftime('%d/%m') }}{% endif %}</span></span>
+            <i class="bi bi-chevron-right flecha"></i>
+            <span class="t {{ 'pend' if rc.sin_conformar else 'ok' }}"><i class="bi bi-check-circle-fill"></i><span><b>Conformidad</b>por entrega{% if rc.sin_conformar %} · {{ rc.sin_conformar|length }} sin revisar{% endif %}</span></span>
+            <i class="bi bi-chevron-right flecha"></i>
+            <span class="t {{ 'ok' if ie.completo else 'pend' }}"><i class="bi {{ 'bi-box-arrow-in-down' if ie.completo else 'bi-hourglass-split' }}"></i><span><b>Ingreso al inventario</b>{{ ie.hechos }} de {{ ie.total }} ítem(s) completos</span></span>
+            {% endif %}
         </div>
         <div class="d-flex flex-wrap gap-1 mt-2">
-            {% for d in ds if d.tipo in ['GUIA', 'FACTURA', 'CERTIFICADO'] %}
+            <a class="doc-b" href="{{ url_for('oc_pdf', orden_id=o.id, ver=1) }}" target="_blank" title="Ver la orden de compra (PDF)"><i class="bi bi-file-earmark-pdf text-danger"></i> {{ o.tipo }} {{ oc_numero_txt(o) }} (PDF)</a>
+            <a class="doc-b" href="{{ url_for('oc_pdf', orden_id=o.id) }}" title="Descargar la orden"><i class="bi bi-download"></i></a>
+            {% for d in ds if d.tipo in ['FACTURA', 'CERTIFICADO', 'COTIZACION'] %}
             <a class="doc-b" href="{{ url_for('oc_documento_ver', doc_id=d.id) }}" target="_blank">
-                <i class="bi {{ {'GUIA': 'bi-truck', 'FACTURA': 'bi-receipt', 'CERTIFICADO': 'bi-award'}[d.tipo] }}"></i> {{ {'GUIA': 'Guía', 'FACTURA': 'Factura', 'CERTIFICADO': 'Certificado de calidad'}[d.tipo] }}
-                {{ {'GUIA': o.numero_guia, 'FACTURA': o.numero_factura}.get(d.tipo) or '' }}</a>
-            {% else %}<span class="small text-muted">{% if o.numero_guia %}Guía <b>{{ o.numero_guia }}</b>{% endif %}{% if o.numero_factura %} · Factura <b>{{ o.numero_factura }}</b>{% endif %}</span>{% endfor %}
-            {% set dk = datos_kardex.get(o.id) %}
-            {% if dk and dk['items']|length > 1 %}<button type="button" class="btn btn-success btn-sm fw-bold ms-auto" onclick="abrirKardex({{ o.id }}, null)">
-                <i class="bi bi-box-arrow-in-down"></i> Ingresar todo al Kardex ({{ dk['items']|length }})</button>{% endif %}
+                <i class="bi {{ {'FACTURA': 'bi-receipt', 'CERTIFICADO': 'bi-award', 'COTIZACION': 'bi-file-text'}[d.tipo] }}"></i> {{ {'FACTURA': 'Factura', 'CERTIFICADO': 'Certificado de calidad', 'COTIZACION': 'Cotización'}[d.tipo] }}
+                {{ o.numero_factura if d.tipo == 'FACTURA' and o.numero_factura else '' }}</a>
+            {% endfor %}
+            {% if o.tipo == 'OS' %}{% for d in guias %}<a class="doc-b" href="{{ url_for('oc_documento_ver', doc_id=d.id) }}" target="_blank"><i class="bi bi-truck"></i> Guía {{ o.numero_guia or '' }}</a>{% endfor %}{% endif %}
+            {% if o.tipo == 'OC' and not o.numero_factura and not (ds|selectattr('tipo', 'equalto', 'FACTURA')|list) %}<span class="small text-muted align-self-center">· la factura aún no se sube (no hace falta para ingresar)</span>{% endif %}
         </div>
     </div>
     {% if o.tipo == 'OS' %}
-    <div class="it" data-nuevo="0" data-buscar="{{ (items|map(attribute='descripcion')|join(' '))|upper }}">
+    <div class="it" data-nuevo="0" data-buscar="{{ (items.values()|map(attribute='descripcion')|join(' '))|upper }}">
         <div>
-            {% for i in items %}
+            {% for i in items.values() %}
             <div class="desc">{{ i.item }}. {% if i.tipo_servicio %}<span class="tag serv"><i class="bi bi-tools"></i> {{ i.tipo_servicio }}</span> {% endif %}{{ i.descripcion }}</div>
             <div class="meta mb-1"><span><span class="cant">{{ i.cantidad|cant }}</span> {{ i.um }}</span>{% if i.codigo %}<span class="tag vinc">{{ i.codigo }}</span>{% endif %}
                 {% if i.familia or i.calidad %}<span>{{ [i.familia, i.calidad]|select|join(' · ') }}</span>{% endif %}</div>
@@ -171,68 +182,83 @@
         {% endif %}
     </div>
     {% else %}
-    {% for i in items %}
-    {% set cod = (i.sku_ingreso or i.codigo or '')|upper %}{% set emp = o.empresa or 'ANCLAJES' %}
-    <div class="it" data-nuevo="{{ '1' if i.es_nuevo else '0' }}" data-buscar="{{ (i.descripcion ~ ' ' ~ (i.codigo or '') ~ ' ' ~ (i.sku_ingreso or ''))|upper }}">
+    {% for b in g.bloques %}{% set e = b.e %}
+    {% set espera = ((ahora - e.fecha_conforme).days) if e.fecha_conforme else 0 %}
+    {% set dk = datos_kardex.get(e.id) %}
+    {% set guias_e = guias|selectattr('entrega_id', 'equalto', e.id)|list or (guias|selectattr('entrega_id', 'none')|list if e.numero == 1 else []) %}
+    <div class="entrega-cab">
+        <span class="ent-n"><i class="bi bi-box-seam"></i> Entrega {{ e.numero }}</span>
+        <span class="tag {{ 'est' if e.parcial else 'vinc' }}">{{ 'PARCIAL' if e.parcial else 'COMPLETA' }}</span>
+        <span>Llegó <b>{{ e.fecha.strftime('%d/%m/%Y %H:%M') if e.fecha else '—' }}</b>{% if e.recibido_por %} · {{ e.recibido_por.nombre_completo }}{% endif %}</span>
+        {% for d in guias_e %}<a class="doc-b" href="{{ url_for('oc_documento_ver', doc_id=d.id) }}" target="_blank"><i class="bi bi-truck"></i> Guía {{ e.numero_guia or '' }}</a>
+        {% else %}{% if e.numero_guia %}<span>Guía <b>{{ e.numero_guia }}</b></span>{% endif %}{% endfor %}
+        <span class="text-success"><i class="bi bi-check-circle-fill"></i> Conforme {{ e.fecha_conforme.strftime('%d/%m %H:%M') }}{% if e.conforme_por %} · {{ e.conforme_por.nombre_completo }}{% endif %}</span>
+        {% if vista == 'pendientes' %}<span class="espera {{ 'larga' if espera >= 3 }}"><i class="bi bi-hourglass-split"></i> {{ 'Conforme hoy' if espera == 0 else 'Esperando ingreso hace ' ~ espera ~ ' día' ~ ('s' if espera != 1 else '') }}</span>{% endif %}
+        {% if dk and dk['items']|length > 1 %}<button type="button" class="btn btn-success btn-sm fw-bold ms-auto" onclick="abrirKardex({{ e.id }}, null)">
+            <i class="bi bi-box-arrow-in-down"></i> Ingresar entrega {{ e.numero }} al Kardex ({{ dk['items']|length }})</button>{% endif %}
+    </div>
+    {% for ei in b.eis %}{% set i = items[ei.item_id] %}
+    {% set cod = (ei.sku_ingreso or i.sku_ingreso or i.codigo or '')|upper %}
+    <div class="it" data-nuevo="{{ '1' if i.es_nuevo else '0' }}" data-buscar="{{ (i.descripcion ~ ' ' ~ (i.codigo or '') ~ ' ' ~ (ei.sku_ingreso or '') ~ ' ' ~ (e.numero_guia or ''))|upper }}">
         <div>
             <div class="desc">{{ i.item }}. {{ i.descripcion }}</div>
             {% set rqi = req_de_item_oc(i) %}{% if rqi %}<div class="meta"><span class="tag" style="background:#ede9fe; color:#5b21b6;"><i class="bi bi-clipboard-check"></i> Pedido en {{ req_codigo(rqi) }} · {{ rqi.solicitante_nombre }}</span></div>{% endif %}
             <div class="meta">
-                {% if i.fecha_ingreso %}<span class="tag listo"><i class="bi bi-check2-all"></i> Ingresado</span>{% else %}<span class="tag espera-i"><i class="bi bi-check-circle"></i> Conforme · esperando ingreso</span>{% endif %}
-                <span><span class="cant">{{ i.cantidad|cant }}</span> {{ i.um }}</span>
-                {% if i.es_nuevo and i.fecha_ingreso %}<span class="tag vinc">Producto nuevo (creado)</span>
+                {% if ei.fecha_ingreso %}<span class="tag listo"><i class="bi bi-check2-all"></i> Ingresado</span>{% else %}<span class="tag espera-i"><i class="bi bi-check-circle"></i> Conforme · esperando ingreso</span>{% endif %}
+                <span><span class="cant">{{ ei.cantidad|cant }}</span> {{ i.um }}{% if (ei.cantidad or 0) != (i.cantidad or 0) %} <span class="text-muted">de {{ i.cantidad|cant }} pedidos</span>{% endif %}</span>
+                {% if i.es_nuevo and ei.fecha_ingreso %}<span class="tag vinc">Producto nuevo (creado)</span>
                 {% elif i.es_nuevo %}<span class="tag nuevo">NUEVO: crearlo en el inventario</span>
                 {% elif i.codigo %}<span class="tag vinc">{{ i.codigo }}</span> <span>stock actual <b>{{ stock.get((emp, i.codigo|upper), '—') }}</b></span>
                     <a href="{{ url_for('inventario_importbolts' if emp == 'IMPORTBOLTS' else 'inventario', busqueda=i.codigo) }}" target="_blank" title="Buscar en el inventario"><i class="bi bi-search"></i> buscar</a>{% endif %}
                 {% if i.estado_producto %}<span class="tag est">{{ i.estado_producto }}</span>{% endif %}
                 {% if i.familia or i.calidad %}<span>{{ [i.familia, i.calidad]|select|join(' · ') }}</span>{% endif %}
             </div>
-            {% if i.peso_total %}
+            {% if i.peso_unitario %}
             {% set pinv = peso_inv.get((emp, cod), 0) %}
-            <div class="meta"><span class="peso-l"><i class="bi bi-speedometer2"></i> Peso según OC: <b>{{ '{:,.4f}'.format(i.peso_unitario).rstrip('0').rstrip('.') }} kg/u</b> · {{ '{:,.3f}'.format(i.peso_total).rstrip('0').rstrip('.') }} kg en total</span>
+            <div class="meta"><span class="peso-l"><i class="bi bi-speedometer2"></i> Peso según OC: <b>{{ '{:,.4f}'.format(i.peso_unitario).rstrip('0').rstrip('.') }} kg/u</b> · {{ '{:,.3f}'.format(i.peso_unitario * (ei.cantidad or 0)).rstrip('0').rstrip('.') }} kg en esta entrega</span>
                 {% if cod and pinv %}<span class="peso-l {{ 'dif' if (pinv - i.peso_unitario)|abs > 0.0005 }}">En el inventario: {{ '{:,.4f}'.format(pinv).rstrip('0').rstrip('.') }} kg/u{% if (pinv - i.peso_unitario)|abs > 0.0005 %} (distinto){% endif %}</span>
                 {% elif cod %}<span class="peso-l dif">El inventario no tiene peso: puedes cargarlo</span>{% endif %}</div>
             {% endif %}
         </div>
-        {% if i.fecha_ingreso %}
+        {% if ei.fecha_ingreso %}
         <div class="hecho">
-            <div><i class="bi bi-check-circle-fill text-success"></i> Conforme {{ o.fecha_conforme.strftime('%d/%m/%Y %H:%M') if o.fecha_conforme else '' }} · {{ o.conforme_por.nombre_completo if o.conforme_por else '' }}</div>
-            <div><i class="bi bi-box-arrow-in-down text-success"></i> <b>Ingresado {{ i.fecha_ingreso.strftime('%d/%m/%Y %H:%M') }}</b> por <b>{{ i.ingresado_por.nombre_completo if i.ingresado_por else '' }}</b></div>
-            {% if o.fecha_conforme %}{% set h = ((i.fecha_ingreso - o.fecha_conforme).total_seconds() / 3600)|round(0, 'floor')|int %}<div class="text-muted">Esperó {{ (h // 24) ~ ' día(s)' if h >= 24 else h ~ ' hora(s)' }} desde la conformidad</div>{% endif %}
-            {% if i.kardex_mov_id %}<div><i class="bi bi-journal-check text-success"></i> Kardex: <b>+{{ i.cantidad_kardex }}</b> en <b>{{ i.sku_ingreso }}</b> · movimiento #{{ i.kardex_mov_id }}
-                <a href="{{ url_for('ver_kardex_importbolts' if emp == 'IMPORTBOLTS' else 'ver_kardex', busqueda=i.sku_ingreso) }}" target="_blank">ver en el Kardex</a></div>
-            {% elif i.sku_ingreso %}<div>Código en el inventario: <b>{{ i.sku_ingreso }}</b> <span class="text-muted">(marcado a mano)</span></div>{% endif %}
-            {% if i.nota_ingreso %}<div class="text-muted">Nota: {{ i.nota_ingreso }}</div>{% endif %}
-            {% if es_admin and not i.kardex_mov_id %}<form method="POST" action="{{ url_for('oc_item_deshacer', item_id=i.id) }}" class="d-inline" onsubmit="return quitarMarca(this)">
+            <div><i class="bi bi-check-circle-fill text-success"></i> Entrega {{ e.numero }} conforme {{ e.fecha_conforme.strftime('%d/%m/%Y %H:%M') if e.fecha_conforme else '' }}</div>
+            <div><i class="bi bi-box-arrow-in-down text-success"></i> <b>Ingresado {{ ei.fecha_ingreso.strftime('%d/%m/%Y %H:%M') }}</b> por <b>{{ ei.ingresado_por.nombre_completo if ei.ingresado_por else '' }}</b></div>
+            {% if e.fecha_conforme %}{% set h = ((ei.fecha_ingreso - e.fecha_conforme).total_seconds() / 3600)|round(0, 'floor')|int %}<div class="text-muted">Esperó {{ (h // 24) ~ ' día(s)' if h >= 24 else h ~ ' hora(s)' }} desde la conformidad</div>{% endif %}
+            {% if ei.kardex_mov_id %}<div><i class="bi bi-journal-check text-success"></i> Kardex: <b>+{{ ei.cantidad_kardex }}</b> en <b>{{ ei.sku_ingreso }}</b> · movimiento #{{ ei.kardex_mov_id }}
+                <a href="{{ url_for('ver_kardex_importbolts' if emp == 'IMPORTBOLTS' else 'ver_kardex', busqueda=ei.sku_ingreso) }}" target="_blank">ver en el Kardex</a></div>
+            {% elif ei.sku_ingreso %}<div>Código en el inventario: <b>{{ ei.sku_ingreso }}</b> <span class="text-muted">(marcado a mano)</span></div>{% endif %}
+            {% if ei.nota_ingreso %}<div class="text-muted">Nota: {{ ei.nota_ingreso }}</div>{% endif %}
+            {% if es_admin and not ei.kardex_mov_id %}<form method="POST" action="{{ url_for('oc_item_deshacer', ei_id=ei.id) }}" class="d-inline" onsubmit="return quitarMarca(this)">
                 <input type="hidden" name="motivo"><button class="btn btn-link btn-sm p-0 text-danger">Quitar marca</button></form>{% endif %}
         </div>
         {% else %}
         <div class="form-ing">
-            {% set prod_k = (datos_kardex.get(o.id, {}).get('items') or [])|selectattr('id', 'equalto', i.id)|first %}
+            {% set prod_k = ((dk or {}).get('items') or [])|selectattr('id', 'equalto', ei.id)|first %}
             {% if prod_k and prod_k.sku %}<div class="ayuda mb-1"><i class="bi bi-link-45deg"></i> Entra a <b>{{ prod_k.sku }}</b> · stock {{ prod_k.stock }} → <b>{{ prod_k.stock + prod_k.cantidad_int }}</b></div>
             {% else %}<div class="ayuda nuevo mb-1"><i class="bi bi-exclamation-triangle"></i> Sin producto enlazado: al registrar eliges con qué código del inventario entra.</div>{% endif %}
-            <button type="button" class="btn btn-success btn-sm fw-bold w-100" onclick="abrirKardex({{ o.id }}, {{ i.id }})"><i class="bi bi-box-arrow-in-down"></i> Registrar ingreso en Kardex</button>
+            <button type="button" class="btn btn-success btn-sm fw-bold w-100" onclick="abrirKardex({{ e.id }}, {{ ei.id }})"><i class="bi bi-box-arrow-in-down"></i> Registrar ingreso en Kardex</button>
             <details class="mt-1 manual">
                 <summary class="small text-muted">¿Ya hiciste el movimiento a mano en el Kardex? Solo marcar</summary>
-                        <form method="POST" action="{{ url_for('oc_item_ingresar', item_id=i.id) }}" class="mt-1" onsubmit="return confirmarIngreso(this, {{ 'true' if i.es_nuevo else 'false' }})">
-            <input type="hidden" name="volver" value="{{ url_for('oc_ingresos_pendientes') }}">
-            <div class="position-relative">
-                <label>Código en el inventario <span class="text-lowercase fw-normal">(opcional)</span></label>
-                <input type="text" name="sku" class="form-control form-control-sm text-uppercase sku-in" data-empresa="{{ emp }}" autocomplete="off" value="{{ '' if i.es_nuevo else (i.codigo or '') }}"
-                       placeholder="{{ 'Código con el que lo creaste' if i.es_nuevo else 'SKU' }}">
-                <div class="list-group position-absolute shadow sku-sug" style="top: 100%;"></div>
-                {% if i.es_nuevo %}<div class="ayuda nuevo"><i class="bi bi-stars"></i> Producto NUEVO: créalo en el inventario y escribe aquí su código (búscalo). Si aún no tiene, déjalo vacío.</div>
-                {% elif i.codigo %}<div class="ayuda"><i class="bi bi-link-45deg"></i> Ya existe en el inventario con este código. No tienes que cambiarlo.</div>
-                {% else %}<div class="ayuda">No vino con código: si lo ubicaste en el inventario, escríbelo.</div>{% endif %}
-            </div>
-            <label class="mt-2">Nota <span class="text-lowercase fw-normal">(opcional)</span></label>
-            <input type="text" name="nota" class="form-control form-control-sm" maxlength="300" placeholder="Ej: ubicado en anaquel A-3, mov. kardex 21/10">
-            <button class="btn btn-outline-secondary btn-sm w-100 mt-2"><i class="bi bi-check2"></i> Solo marcar como ingresado</button>
-        </form>
+                <form method="POST" action="{{ url_for('oc_item_ingresar', ei_id=ei.id) }}" class="mt-1" onsubmit="return confirmarIngreso(this, {{ 'true' if i.es_nuevo else 'false' }})">
+                    <div class="position-relative">
+                        <label>Código en el inventario <span class="text-lowercase fw-normal">(opcional)</span></label>
+                        <input type="text" name="sku" class="form-control form-control-sm text-uppercase sku-in" data-empresa="{{ emp }}" autocomplete="off" value="{{ '' if i.es_nuevo else (i.codigo or '') }}"
+                               placeholder="{{ 'Código con el que lo creaste' if i.es_nuevo else 'SKU' }}">
+                        <div class="list-group position-absolute shadow sku-sug" style="top: 100%;"></div>
+                        {% if i.es_nuevo %}<div class="ayuda nuevo"><i class="bi bi-stars"></i> Producto NUEVO: créalo en el inventario y escribe aquí su código (búscalo). Si aún no tiene, déjalo vacío.</div>
+                        {% elif i.codigo %}<div class="ayuda"><i class="bi bi-link-45deg"></i> Ya existe en el inventario con este código. No tienes que cambiarlo.</div>
+                        {% else %}<div class="ayuda">No vino con código: si lo ubicaste en el inventario, escríbelo.</div>{% endif %}
+                    </div>
+                    <label class="mt-2">Nota <span class="text-lowercase fw-normal">(opcional)</span></label>
+                    <input type="text" name="nota" class="form-control form-control-sm" maxlength="300" placeholder="Ej: ubicado en anaquel A-3, mov. kardex 21/10">
+                    <button class="btn btn-outline-secondary btn-sm w-100 mt-2"><i class="bi bi-check2"></i> Solo marcar como ingresado</button>
+                </form>
             </details>
         </div>
         {% endif %}
     </div>
+    {% endfor %}
     {% endfor %}
     {% endif %}
 </div>
@@ -252,7 +278,7 @@
                 <div><small>Motivo</small><b>COMPRA</b></div>
                 <div><small>Inventario</small><b id="kxEmp"></b></div>
                 <div><small>Proveedor</small><b id="kxProv"></b><span class="d-block text-muted small" id="kxRuc"></span></div>
-                <div><small>Referencia (factura o guía)</small><b id="kxRef"></b></div>
+                <div><small>Referencia (guía de la entrega o factura)</small><b id="kxRef"></b></div>
             </div>
             <div class="row g-2 mb-2">
                 <div class="col-6 col-md-4"><label class="small fw-bold"><i class="bi bi-calendar-event"></i> Fecha del movimiento</label>
@@ -262,7 +288,7 @@
                     <select name="presentacion" id="kxPres" class="form-select form-select-sm"><option value="">—</option>
                         {% for pr in presentaciones %}<option value="{{ pr }}">{{ pr }}</option>{% endfor %}</select></div>
             </div>
-            <div class="small fw-bold mb-1">Ítems que entran <span class="fw-normal text-muted">(cantidad y precio vienen de la orden; precio <b>sin IGV</b>)</span></div>
+            <div class="small fw-bold mb-1">Ítems que entran <span class="fw-normal text-muted">(cantidad = lo que llegó en esta entrega; precio de la orden <b>sin IGV</b>)</span></div>
             <div id="kxItems"></div>
             <label class="small fw-bold mt-1" id="kxObsLbl">Observación (opcional)</label>
             <textarea name="observacion" id="kxObs" rows="2" maxlength="200" class="form-control form-control-sm" placeholder="Ej: llegó 1 caja menos, se repone la próxima semana"></textarea>
@@ -320,7 +346,7 @@ function filaKardex(d, it, unico) {
             ${unico ? '' : `<input type="checkbox" class="form-check-input mt-1 kx-chk" checked title="Incluir este ítem">`}
             <input type="hidden" name="item_id" value="${it.id}" class="kx-id">
             <div class="flex-fill"><div class="tit">${it.item}. ${esc(it.descripcion)}</div>
-                <div class="small text-muted">Según la orden: <b>${nf(it.cantidad)} ${esc(it.um)}</b> × ${esc(d.moneda)} ${nf(it.precio)}</div></div></div>
+                <div class="small text-muted">Llegó en esta entrega: <b>${nf(it.cantidad)} ${esc(it.um)}</b> × ${esc(d.moneda)} ${nf(it.precio)}</div></div></div>
         <div class="row g-2 mt-1">
             <div class="col-6"><label>Cantidad que entra *</label><input type="number" name="cantidad_${it.id}" class="form-control form-control-sm kx-cant" min="1" step="1" value="${it.cantidad_int}" required inputmode="numeric"></div>
             <div class="col-6"><label>Precio unit. (${esc(d.moneda)} sin IGV)</label><input type="number" name="precio_${it.id}" class="form-control form-control-sm" min="0" step="any" value="${it.precio}" inputmode="decimal"></div>
@@ -330,7 +356,7 @@ function filaKardex(d, it, unico) {
     const pintar = () => {
         const v = parseInt(cant.value) || 0;
         dif.innerHTML = !it.entera ? `<i class="bi bi-info-circle"></i> La orden tiene ${nf(it.cantidad)} ${esc(it.um)} (con decimales): el Kardex cuenta en unidades enteras. Revisa la cantidad.`
-            : (v && v !== it.cantidad_int ? `<i class="bi bi-exclamation-triangle"></i> Distinto a la orden (${nf(it.cantidad)}): explica por qué en la observación.` : '');
+            : (v && v !== it.cantidad_int ? `<i class="bi bi-exclamation-triangle"></i> Distinto a lo que llegó (${nf(it.cantidad)}): explica por qué en la observación.` : '');
         const n = div.querySelector('.kx-nuevo'); if (n) n.textContent = nf((it.stock || 0) + v);
         pintarObs();
     };
@@ -359,18 +385,18 @@ function pintarObs() {
     porId('kxObs').required = req;
 }
 function porId(x) { return document.getElementById(x); }
-function abrirKardex(ordenId, itemId) {
-    const d = DATOS_KARDEX[ordenId]; if (!d) return;
+function abrirKardex(entregaId, itemId) {
+    const d = DATOS_KARDEX[entregaId]; if (!d) return;
     kxActual = d;
     const items = itemId ? d.items.filter(i => i.id === itemId) : d.items;
     porId('formKardex').action = d.url;
     porId('kxCab').style.background = EMP_COLOR[EMP_ORDEN.indexOf(d.empresa)] || '#0f172a';
-    porId('kxTitulo').textContent = `${d.codigo}` + (itemId ? ` · ítem ${items[0].item}` : ` · ${items.length} ítem(s)`);
+    porId('kxTitulo').textContent = `${d.codigo} · entrega ${d.entrega}${d.parcial ? ' (parcial)' : ''}` + (itemId ? ` · ítem ${items[0].item}` : ` · ${items.length} ítem(s)`);
     porId('kxEmp').textContent = d.empresa_txt;
     porId('kxProv').textContent = d.razon_social; porId('kxRuc').textContent = d.ruc ? 'RUC ' + d.ruc : '';
     porId('kxRef').textContent = d.referencia;
     porId('kxFecha').value = d.fecha;
-    porId('kxFechaAyuda').textContent = `Día en que se marcó la llegada (${d.fecha_txt}). Cámbiala si entró otro día.`;
+    porId('kxFechaAyuda').textContent = `Día en que llegó esta entrega (${d.fecha_txt}${d.guia ? ', guía ' + d.guia : ''}). Cámbiala si entró otro día.`;
     porId('kxObs').value = ''; porId('kxPres').value = '';
     const cont = porId('kxItems'); cont.innerHTML = '';
     items.forEach(it => cont.appendChild(filaKardex(d, it, items.length === 1)));

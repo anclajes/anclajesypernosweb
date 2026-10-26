@@ -27,7 +27,7 @@
     <li class="nav-item"><button class="nav-link {{ 'active' if tab == t }}" data-bs-toggle="tab" data-bs-target="#c-{{ t }}">{{ nombre }}</button></li>
     {% endfor %}
     <li class="nav-item"><button class="nav-link {{ 'active' if tab == 'motivos_compra' }}" data-bs-toggle="tab" data-bs-target="#c-mcompra"><i class="bi bi-bullseye"></i> Motivos de compra</button></li>
-    <li class="nav-item"><button class="nav-link {{ 'active' if tab == 'motivos' }}" data-bs-toggle="tab" data-bs-target="#c-motivos"><i class="bi bi-x-octagon"></i> Motivos de rechazo y anulación</button></li>
+    <li class="nav-item"><button class="nav-link {{ 'active' if tab == 'motivos' }}" data-bs-toggle="tab" data-bs-target="#c-motivos"><i class="bi bi-x-octagon"></i> Motivos (rechazo, anulación, descarte)</button></li>
     <li class="nav-item"><button class="nav-link {{ 'active' if tab == 'proveedores' }}" data-bs-toggle="tab" data-bs-target="#c-prov"><i class="bi bi-building"></i> Proveedores, contactos y cuentas</button></li>
     <li class="nav-item"><button class="nav-link {{ 'active' if tab == 'datos' }}" data-bs-toggle="tab" data-bs-target="#c-datos"><i class="bi bi-file-earmark-pdf"></i> Datos del PDF y numeración</button></li>
     {% if es_admin %}<li class="nav-item"><button class="nav-link peligro {{ 'active' if tab == 'vaciar' }}" data-bs-toggle="tab" data-bs-target="#c-vaciar"><i class="bi bi-trash3"></i> Vaciar datos del módulo</button></li>{% endif %}
@@ -89,15 +89,16 @@
     <div class="tab-pane fade {{ 'show active' if tab == 'motivos' }}" id="c-motivos">
         <div class="row g-3">
         {% for uso, uso_txt in usos_motivo.items() %}
-        <div class="col-12 col-xl-6"><div class="card border-0 shadow-sm h-100" style="border-top: 4px solid {{ '#b91c1c' if uso == 'RECHAZO' else '#334155' }} !important;"><div class="card-body">
-            <h6 class="fw-bold mb-1"><i class="bi {{ 'bi-x-octagon' if uso == 'RECHAZO' else 'bi-slash-circle' }}"></i> Motivos de {{ 'rechazo' if uso == 'RECHAZO' else 'anulación' }}</h6>
-            <p class="small text-muted mb-2">{% if uso == 'RECHAZO' %}Los elige <b>Gerencia</b> al rechazar una orden.{% else %}Se eligen al <b>anular</b> una orden (antes de que llegue el material o se haga el servicio).{% endif %}
-                Cada motivo puede ser para <b>OC</b>, <b>OS</b>, <b>ambas</b> o para los <b>Requerimientos</b> de Almacén{% if uso == 'RECHAZO' %} (los elige Logística al rechazar uno){% else %} (los elige quien lo pidió al anularlo){% endif %}. Además se escribe una descripción.</p>
+        <div class="col-12 col-xl-6"><div class="card border-0 shadow-sm h-100" style="border-top: 4px solid {{ {'RECHAZO': '#b91c1c', 'DESCARTE': '#475569'}.get(uso, '#334155') }} !important;"><div class="card-body">
+            <h6 class="fw-bold mb-1"><i class="bi {{ {'RECHAZO': 'bi-x-octagon', 'DESCARTE': 'bi-x-circle'}.get(uso, 'bi-slash-circle') }}"></i> {{ {'RECHAZO': 'Motivos de rechazo', 'ANULACION': 'Motivos de anulación', 'DESCARTE': 'Motivos para descartar un producto (requerimientos)'}.get(uso, uso) }}</h6>
+            {% if uso == 'DESCARTE' %}<p class="small text-muted mb-2">Los elige <b>Logística</b> cuando un producto de un requerimiento <b>no se comprará</b> (no hay proveedor, precio, ya hay stock...). El producto queda marcado como descartado con el motivo y lo ve quien lo pidió; el resto del requerimiento sigue.</p>
+            {% else %}<p class="small text-muted mb-2">{% if uso == 'RECHAZO' %}Los elige <b>Gerencia</b> al rechazar una orden.{% else %}Se eligen al <b>anular</b> una orden (antes de que llegue el material o se haga el servicio).{% endif %}
+                Cada motivo puede ser para <b>OC</b>, <b>OS</b>, <b>ambas</b> o para los <b>Requerimientos</b> de Almacén{% if uso == 'RECHAZO' %} (los elige Logística al rechazar uno){% else %} (los elige quien lo pidió al anularlo){% endif %}. Además se escribe una descripción.</p>{% endif %}
             <div class="row g-2 mb-3 align-items-end">
                 <div class="col-6 col-sm-3"><label class="small fw-bold">Categoría</label>
                     <input id="m_cat_{{ uso }}" class="form-control form-control-sm text-uppercase" list="cats_{{ uso }}" placeholder="Ej: PRECIO"><datalist id="cats_{{ uso }}">{% for c in motivos[uso] %}<option value="{{ c }}">{% endfor %}</datalist></div>
                 <div class="col-6 col-sm-3"><label class="small fw-bold">Para</label>
-                    <select id="m_apl_{{ uso }}" class="form-select form-select-sm">{% for k, t in aplica_motivo.items() %}<option value="{{ k }}">{{ t }}</option>{% endfor %}</select></div>
+                    <select id="m_apl_{{ uso }}" class="form-select form-select-sm">{% for k, t in aplica_motivo.items() if uso != 'DESCARTE' or k == 'RQ' %}<option value="{{ k }}">{{ t }}</option>{% endfor %}</select></div>
                 <div class="col-12 col-sm-6"><label class="small fw-bold">Motivo</label>
                     <div class="input-group input-group-sm"><input id="m_mot_{{ uso }}" class="form-control" placeholder="{{ 'Ej: Precio elevado' if uso == 'RECHAZO' else 'Ej: El proveedor no tiene stock' }}">
                     <button class="btn btn-primary" onclick="post('motivo', {uso: '{{ uso }}', categoria: document.getElementById('m_cat_{{ uso }}').value, aplica: document.getElementById('m_apl_{{ uso }}').value, motivo: document.getElementById('m_mot_{{ uso }}').value}, 'motivos')"><i class="bi bi-plus-lg"></i></button></div></div>
@@ -179,9 +180,10 @@
                     En los términos, encierra entre <code>**</code> lo que quieres <span class="resaltado">resaltar</span>. Firma de aprobación: <code>static/img/{{ info.firma }}</code>.</p>
                 <div class="row g-2">
                 {% for k, etq in etiquetas.items() %}
-                    <div class="{{ 'col-12' if k in ['terminos', 'horario', 'lugar_entrega', 'direccion', 'razon_social'] else 'col-12 col-md-4' }}">
+                    <div class="{{ 'col-12' if k in ['terminos', 'horario', 'lugar_entrega', 'direccion', 'razon_social', 'imp_condiciones', 'imp_pagos'] else 'col-12 col-md-4' }}">
+                        {% if k == 'imp_condiciones' %}<div class="border-top pt-2 mt-1 small fw-bold text-info-emphasis"><i class="bi bi-globe-americas"></i> Órdenes de IMPORTACIÓN (proveedor del exterior): textos que se proponen al marcar "Importación"; en cada orden se pueden cambiar.</div>{% endif %}
                         <label class="small fw-bold">{{ etq }}</label>
-                        {% if k in ['terminos', 'horario'] %}
+                        {% if k in ['terminos', 'horario', 'imp_condiciones', 'imp_pagos'] %}
                         <textarea name="{{ k }}" class="form-control" rows="{{ 6 if k == 'terminos' else 3 }}" {{ 'readonly' if not es_admin }} {% if k == 'terminos' %}oninput="previa(this)"{% endif %}>{{ cfg[k] }}</textarea>
                         {% else %}<input name="{{ k }}" class="form-control" value="{{ cfg[k] }}" {{ 'readonly' if not es_admin }}>{% endif %}
                         {% if k == 'terminos' %}<div class="small fw-bold mt-2 text-muted">Vista previa</div><div class="preview-terminos">{{ cfg.terminos|resaltado }}</div>{% endif %}

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
-{% block title %}Requerimiento de compra{% endblock %}
-{% block subtitle %}Pedir a Logística los productos que faltan{% endblock %}
+{% block title %}{{ 'Editar ' ~ req_codigo(req) if req else 'Requerimiento de compra' }}{% endblock %}
+{% block subtitle %}{{ 'Corregir antes de que Logística arme la OC' if req else 'Pedir a Logística los productos que faltan' }}{% endblock %}
 {% block content %}
 {% include '_oc_nav.html' %}
 {% set pv = previo %}
@@ -35,7 +35,10 @@
 {% if errores %}<div class="alert alert-danger py-2"><b><i class="bi bi-exclamation-triangle-fill"></i> No se envió. Revisa:</b>
     <ul class="mb-0 small">{% for e in errores %}<li>{{ e }}</li>{% endfor %}</ul></div>{% endif %}
 
-<form method="POST" action="{{ url_for('oc_req_nuevo') }}" enctype="multipart/form-data" id="formReq" novalidate>
+{% if req %}<div class="alert alert-primary py-2 small d-flex flex-wrap gap-2 align-items-center"><i class="bi bi-pencil-square"></i>
+    <span>Editando <b>{{ req_codigo(req) }}</b>. Se puede cambiar mientras Logística no haya armado una orden con él. Los cambios quedan en el historial.</span>
+    <a class="ms-auto" href="{{ url_for('oc_req_detalle', req_id=req.id) }}">Cancelar</a></div>{% endif %}
+<form method="POST" action="{{ url_for('oc_req_editar', req_id=req.id) if req else url_for('oc_req_nuevo') }}" enctype="multipart/form-data" id="formReq" novalidate>
 <div class="row g-3">
     <div class="col-12 col-lg-5">
         <div class="rq-card">
@@ -98,7 +101,10 @@
                     <label class="btn btn-outline-success btn-sm mb-0"><i class="bi bi-camera"></i> Tomar foto
                         <input type="file" name="foto" id="inFoto" accept="image/*" capture="environment" class="d-none" onchange="pintarDocs()"></label>
                 </div>
-                <div id="docsSel" class="mt-1 small text-muted">Ningún archivo. PDF o foto (JPG, PNG), máx. 5 MB cada uno.</div>
+                {% if docs_req %}<div class="mt-2 small fw-bold">Ya adjuntos <span class="fw-normal text-muted">(marca los que quieres quitar)</span></div>
+                {% for d in docs_req %}<label class="doc-sel"><input type="checkbox" name="quitar_doc" value="{{ d.id }}" class="form-check-input mt-0 quitar-doc" onchange="pintarDocs()">
+                    <a href="{{ url_for('oc_req_documento', doc_id=d.id) }}" target="_blank"><i class="bi {{ 'bi-file-earmark-pdf' if d.content_type == 'application/pdf' else 'bi-image' }}"></i> {{ d.nombre_original }}</a> <span class="text-danger small">quitar</span></label>{% endfor %}{% endif %}
+                <div id="docsSel" class="mt-1 small text-muted">{{ 'Sin archivos nuevos.' if docs_req else 'Ningún archivo.' }} PDF o foto (JPG, PNG), máx. 5 MB cada uno.</div>
             </div>
         </div>
     </div>
@@ -112,7 +118,7 @@
             <div id="items"></div>
             <button type="button" class="btn btn-outline-primary w-100" onclick="agregarItem()"><i class="bi bi-plus-circle"></i> Agregar producto</button>
         </div>
-        <button type="submit" class="btn btn-success btn-lg w-100 fw-bold" id="btnEnviar"><i class="bi bi-send-check"></i> Enviar requerimiento a Logística</button>
+        <button type="submit" class="btn btn-success btn-lg w-100 fw-bold" id="btnEnviar"><i class="bi {{ 'bi-check2-circle' if req else 'bi-send-check' }}"></i> {{ 'Guardar cambios' if req else 'Enviar requerimiento a Logística' }}</button>
         <div class="form-text mt-1">Logística lo ve en su bandeja y arma la orden de compra. Tú ves el avance: OC creada, aprobada, llegada y conformidad.</div>
     </div>
 </div>
@@ -316,7 +322,8 @@ porId('formReq').addEventListener('submit', function (e) {
         if (!f.querySelector('.i-cod').value || !f._p) err.push(`Producto ${i + 1}: elígelo de la lista del inventario.`);
         if (!(parseFloat(f.querySelector('.i-cant').value) > 0) || !f.querySelector('.i-um').value) err.push(`Producto ${i + 1}: escribe la cantidad y la U.M.`);
     });
-    if (porId('inDocs').files.length + porId('inFoto').files.length > {{ max_docs }}) err.push('Máximo {{ max_docs }} archivos.');
+    const yaDocs = {{ docs_req|length }} - document.querySelectorAll('.quitar-doc:checked').length;
+    if (porId('inDocs').files.length + porId('inFoto').files.length + yaDocs > {{ max_docs }}) err.push('Máximo {{ max_docs }} archivos en total (quita alguno de los ya adjuntos).');
     if (err.length) { e.preventDefault(); Swal.fire({ icon: 'warning', title: 'Falta información', html: [...new Set(err)].map(esc).join('<br>') }); return; }
     porId('btnEnviar').disabled = true;
 });
