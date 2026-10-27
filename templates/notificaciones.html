@@ -120,18 +120,34 @@
         }
     }
     pintar();
+    const esc = t => String(t == null ? '' : t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     window.probarPush = function (espera) {
         const res = document.getElementById('resPush'), fd = new FormData();
         fd.append('espera', espera);
         res.textContent = 'Enviando…';
         const enviar = () => fetch({{ url_for('push_prueba')|tojson }}, { method: 'POST', body: fd, credentials: 'same-origin', headers: { 'Accept': 'application/json' } }).then(r => r.json());
         const listo = window.notifActivarPush ? window.notifActivarPush(true) : Promise.resolve(false);
-        listo.then(enviar).then(d => {
-            if (d.status !== 'ok') { res.innerHTML = '<span class="text-danger">' + (d.msg || 'No se pudo enviar') + '</span>'; return; }
+        let motivo = '';
+        listo.then(ok => { if (!ok && window.notifMotivoPush) motivo = window.notifMotivoPush(); return enviar(); }).then(d => {
+            if (d.status !== 'ok') {
+                res.innerHTML = '<span class="text-danger">' + esc(d.msg || 'No se pudo enviar') + '</span>'
+                    + (motivo ? '<div class="mt-1 p-2 rounded" style="background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;"><b>Por qué:</b> ' + esc(motivo) + '</div>' : '');
+                return;
+            }
             res.innerHTML = espera ? `<span class="text-success fw-bold">Listo: cierra esta pestaña (o todas las del sistema). En ${espera} segundos te llega el aviso de Windows.</span>`
                                    : `<span class="text-success">Enviado a ${d.enviados} de ${d.navegadores} navegador(es).</span>`;
         }).catch(() => { res.innerHTML = '<span class="text-danger">No se pudo enviar.</span>'; });
     };
+    // al abrir: si esta computadora no quedó registrada, se explica por qué
+    setTimeout(() => {
+        if (!window.notifActivarPush || !document.getElementById('resPush') || !('Notification' in window) || Notification.permission !== 'granted') return;
+        window.notifActivarPush(true).then(ok => {
+            const res = document.getElementById('resPush');
+            if (ok) { if (document.getElementById('sinNav')) location.reload(); return; }
+            const m = window.notifMotivoPush ? window.notifMotivoPush() : '';
+            if (m) res.innerHTML = '<div class="p-2 rounded" style="background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;"><b>Esta computadora no quedó registrada:</b> ' + esc(m) + '</div>';
+        });
+    }, 1800);
     window.quitarNav = function (id) {
         const fd = new FormData(); fd.append('id', id);
         fetch({{ url_for('push_quitar')|tojson }}, { method: 'POST', body: fd, credentials: 'same-origin', headers: { 'Accept': 'application/json' } })

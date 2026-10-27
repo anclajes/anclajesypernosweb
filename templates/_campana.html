@@ -157,8 +157,26 @@
             return a.length === b.length && a.every((x, i) => x === b[i]);
         } catch (e) { return true; }
     }
+    // por qué no se pudo activar (se muestra en "Configurar avisos")
+    let pushError = '';
+    function motivoPush(e) {
+        const brave = !!navigator.brave, msg = String((e && (e.message || e.name)) || e || '');
+        if (!window.isSecureContext) return 'La página no está en una dirección segura (https). Abre el sistema con su dirección https.';
+        if (!('serviceWorker' in navigator) || !('PushManager' in window)) return 'Este navegador no permite avisos con la página cerrada. Usa Chrome o Edge.';
+        if (!PUSH_CLAVE) return 'El servidor todavía no tiene listas sus claves de avisos. Recarga la página.';
+        if (permisoWin() !== 'granted') return 'Falta dar permiso de notificaciones a esta página (botón "Activar avisos de Windows").';
+        if (brave) return 'BRAVE: este navegador trae apagado el servicio de avisos. Escribe brave://settings/privacy en la barra de direcciones, activa '
+            + '"Usar los servicios de Google para mensajería push" (Use Google services for push messaging), cierra Brave por completo y vuelve a abrirlo.'
+            + (msg ? ' (detalle: ' + msg + ')' : '');
+        return 'El navegador no pudo registrarse para recibir avisos' + (msg ? ' (detalle: ' + msg + ')' : '') + '. Prueba en Chrome o Edge.';
+    }
+    window.notifMotivoPush = () => pushError;
     async function activarPush(forzar) {
-        if (!pushPosible() || permisoWin() !== 'granted' || (datos && !datos.cfg.windows)) return false;
+        pushError = '';
+        if (!pushPosible() || permisoWin() !== 'granted' || (datos && !datos.cfg.windows)) {
+            pushError = (datos && !datos.cfg.windows) ? 'Tienes apagado el "Aviso de Windows" en tu configuración (márcalo y guarda).' : motivoPush('');
+            return false;
+        }
         try {
             const reg = await navigator.serviceWorker.register(URL_SW, { scope: '/' });
             await navigator.serviceWorker.ready;
@@ -172,7 +190,7 @@
                 guardar(K_PUSH, marca);
             }
             return true;
-        } catch (e) { return false; }
+        } catch (e) { pushError = motivoPush(e); return false; }
     }
     async function quitarPush() {
         try {
