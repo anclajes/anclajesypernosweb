@@ -1567,6 +1567,7 @@ class RequerimientoCompra(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     numero = db.Column(db.Integer, nullable=False, unique=True)
     empresa = db.Column(db.String(15), nullable=False, default='ANCLAJES')     # inventario al que hacen falta
+    destino = db.Column(db.String(10), default='GENERAL')      # GENERAL (productos del inventario) / INSUMOS (insumos internos)
     estado = db.Column(db.String(12), nullable=False, default='PENDIENTE', index=True)   # PENDIENTE / RECHAZADO / ANULADO (el resto se calcula)
     prioridad = db.Column(db.String(10), default='NORMAL')                      # NORMAL / URGENTE
     fecha_registro = db.Column(db.DateTime, default=hora_peru)
@@ -1603,7 +1604,8 @@ class RequerimientoItem(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     req_id = db.Column(db.Integer, db.ForeignKey('requerimiento_compra.id'), nullable=False, index=True)
     item = db.Column(db.Integer, nullable=False)
-    codigo = db.Column(db.String(60), nullable=False)          # SKU del inventario de la empresa
+    codigo = db.Column(db.String(60), nullable=False)          # SKU del inventario de la empresa (o código del insumo)
+    insumo_id = db.Column(db.Integer, nullable=True)            # si el requerimiento es de INSUMOS internos: el insumo del maestro
     descripcion = db.Column(db.String(400), nullable=False)
     familia = db.Column(db.String(200))
     calidad = db.Column(db.String(200))

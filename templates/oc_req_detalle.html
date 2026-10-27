@@ -29,6 +29,7 @@
     <div class="d-flex flex-wrap gap-2 align-items-center">
         <span class="fs-4 fw-bold">{{ req_codigo(r) }}</span>
         {% if emp_r %}<span class="small fw-bold" style="color: {{ emp_r.color }};">Inventario {{ emp_r.corto }}</span>{% endif %}
+        {% if r.destino == 'INSUMOS' %}<span class="rq-ins"><i class="bi bi-tools"></i> Insumos internos</span>{% endif %}
         {% if r.prioridad == 'URGENTE' %}<span class="rq-urg">URGENTE</span>{% endif %}
         <span class="rq-estado ms-auto" style="color: {{ res.color }};"><i class="bi {{ res.icono }}"></i> {{ res.txt }}</span>
     </div>
@@ -50,7 +51,7 @@
     {% if docs %}<div class="mt-2">{% for d in docs %}
         <a class="doc-b" href="{{ url_for('oc_req_documento', doc_id=d.id) }}" target="_blank"><i class="bi {{ 'bi-file-earmark-pdf' if d.content_type == 'application/pdf' else 'bi-image' }}"></i> {{ d.nombre_original }}</a>{% endfor %}</div>{% endif %}
     <div class="d-flex flex-wrap gap-2 mt-2">
-        {% if p.armar %}<a class="btn btn-success fw-bold" href="{{ url_for('oc_nueva', tipo='OC', empresa=r.empresa, req=r.id) if emp_r else url_for('oc_nueva', tipo='OC', req=r.id) }}"><i class="bi bi-cart-plus"></i> Armar OC con estos productos</a>{% endif %}
+        {% if p.armar %}<a class="btn btn-success fw-bold" href="{{ url_for('oc_nueva', tipo='OC', empresa=r.empresa, req=r.id) if emp_r else url_for('oc_nueva', tipo='OC', req=r.id) }}"><i class="bi bi-cart-plus"></i> Armar OC con estos {{ 'insumos' if r.destino == 'INSUMOS' else 'productos' }}</a>{% endif %}
         {% if p.editar %}<a class="btn btn-outline-primary" href="{{ url_for('oc_req_editar', req_id=r.id) }}"><i class="bi bi-pencil"></i> Editar</a>{% endif %}
         {% if p.rechazar %}<button class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#mRechazar"><i class="bi bi-x-octagon"></i> Rechazar todo</button>{% endif %}
         {% if p.anular %}<button class="btn btn-outline-dark" data-bs-toggle="modal" data-bs-target="#mAnular"><i class="bi bi-slash-circle"></i> Anular</button>{% endif %}
@@ -61,7 +62,7 @@
 <div class="row g-3">
     <div class="col-12 col-lg-8">
         <div class="panel">
-            <div class="panel-t"><i class="bi bi-boxes"></i> Productos y avance</div>
+            <div class="panel-t"><i class="bi {{ 'bi-tools' if r.destino == 'INSUMOS' else 'bi-boxes' }}"></i> {{ 'Insumos internos' if r.destino == 'INSUMOS' else 'Productos' }} y avance</div>
             {% for i in r.items %}{% set s = seg[i.id] %}
             <div class="it {{ 'desc' if s.descartado }}" id="ri{{ i.id }}">
                 <div class="d-flex flex-wrap gap-2 align-items-center"><span class="ds">{{ i.item }}. {{ i.descripcion }}</span> <span class="tag-sku">{{ i.codigo }}</span>

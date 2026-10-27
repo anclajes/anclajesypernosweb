@@ -374,7 +374,8 @@
             {% if session.get('role') in ['admin', 'logistica'] %}
             <details class="req-panel" id="reqPanel" style="display:none;" open>
                 <summary><i class="bi bi-clipboard-plus"></i> Requerimientos de Almacén <span id="reqCnt"></span></summary>
-                <div class="small text-muted mt-1">Productos que pidieron y aún no están en una orden. Agrégalos a esta OC (si son de este proveedor); lo demás puede ir en otra orden.</div>
+                <div class="small text-muted mt-1" id="reqAyuda">Productos que pidieron y aún no están en una orden. Agrégalos a esta OC (si son de este proveedor); lo demás puede ir en otra orden.</div>
+                <div id="reqOtros" class="small mt-1" style="display:none;"></div>
                 <div id="reqLista"></div>
             </details>
             {% endif %}
@@ -560,18 +561,29 @@ function pintarEntrega() {
 function reqEnForm() { return new Set([...document.querySelectorAll('#items .i-req')].map(i => i.value).filter(Boolean)); }
 function pintarReqs() {
     const panel = porId('reqPanel'); if (!panel) return;
-    const lista = REQS.filter(r => r.empresa === empresa() || r.empresa === 'AMBAS');
+    const deEmp = REQS.filter(r => r.empresa === empresa() || r.empresa === 'AMBAS');
+    // cada requerimiento es del Inventario General o de Insumos internos: se muestran los del destino de esta orden
+    const lista = deEmp.filter(r => (r.destino || 'GENERAL') === destino());
+    const otros = deEmp.filter(r => (r.destino || 'GENERAL') !== destino());
     // productos jalados de un requerimiento: van al inventario de la empresa que compra
     document.querySelectorAll('#items .item').forEach(f => {
-        if (f.querySelector('.i-req').value && f._prod && f._prod.origen !== empresa() && tipo() === 'OC') {
+        if (f.querySelector('.i-req').value && f._prod && f._prod.origen !== 'INSUMO' && f._prod.origen !== empresa() && tipo() === 'OC') {
             f._prod.origen = empresa(); f.querySelector('.i-origen').value = empresa(); pintarFicha(f);
         }
     });
-    const ver = tipo() === 'OC' && destino() !== 'INSUMOS' && lista.length > 0;
+    const ver = tipo() === 'OC' && (lista.length > 0 || otros.length > 0);
     panel.style.display = ver ? '' : 'none';
     if (!ver) return;
+    const ins = destino() === 'INSUMOS';
+    porId('reqAyuda').textContent = ins ? 'Insumos internos que pidieron y aún no están en una orden. Agrégalos a esta OC (si son de este proveedor); lo demás puede ir en otra orden.'
+        : 'Productos que pidieron y aún no están en una orden. Agrégalos a esta OC (si son de este proveedor); lo demás puede ir en otra orden.';
+    porId('reqAyuda').style.display = lista.length ? '' : 'none';
+    const oEl = porId('reqOtros');
+    oEl.style.display = otros.length ? '' : 'none';
+    oEl.innerHTML = otros.length ? `<i class="bi bi-info-circle"></i> Hay <b>${otros.length}</b> requerimiento(s) de <b>${ins ? 'Inventario General' : 'Insumos internos'}</b> (${otros.map(r => esc(r.codigo)).join(', ')}): ` +
+        `para jalarlos, elige arriba el destino <b>"${ins ? 'Inventario' : 'Insumos internos'}"</b> (van en otra orden).` : '';
     const usados = reqEnForm();
-    porId('reqCnt').textContent = `(${lista.length})`;
+    porId('reqCnt').textContent = `(${lista.length}${otros.length ? ' + ' + otros.length + (ins ? ' de inventario' : ' de insumos') : ''})`;
     porId('reqLista').innerHTML = lista.map(r => {
         const libres = r.items.filter(i => !usados.has(String(i.id)));
         return `<div class="req-b"><div class="cab"><a class="cod" href="${r.url}" target="_blank">${esc(r.codigo)}</a>${r.prioridad === 'URGENTE' ? '<span class="urg">URGENTE</span>' : ''}
@@ -590,8 +602,9 @@ function jalarReq(r, i) {
     // si la única fila está vacía, se usa esa
     const filas = [...document.querySelectorAll('#items .item')];
     if (filas.length === 1 && !filas[0].querySelector('.i-desc').value.trim() && !filas[0].querySelector('.i-cant').value) filas[0].remove();
-    agregarItem({ descripcion: i.descripcion, cantidad: i.cantidad, um: UMS.includes(i.um) ? i.um : '', origen: empresa(), codigo: i.codigo, familia: i.familia,
-                  calidad: i.calidad, req_item: i.id, req_txt: `${r.codigo} · ${r.solicitante}` });
+    const esIns = (r.destino || 'GENERAL') === 'INSUMOS';
+    agregarItem({ descripcion: i.descripcion, cantidad: i.cantidad, um: UMS.includes(i.um) ? i.um : '', origen: esIns ? 'INSUMO' : empresa(), codigo: i.codigo,
+                  insumo_id: esIns ? i.insumo_id : '', familia: i.familia, calidad: i.calidad, req_item: i.id, req_txt: `${r.codigo} · ${r.solicitante}` });
     // ¿quién lo pide y para qué? se llena con los datos del requerimiento si está vacío
     const sol = porId('solicitante');
     if (!sol.value && r.sol_valor && [...sol.options].some(o => o.value === r.sol_valor)) { sol.value = r.sol_valor; pintarArea(); }
@@ -849,6 +862,7 @@ function agregarItem(datos) {
     });
     desc.addEventListener('blur', () => setTimeout(() => sug.style.display = 'none', 150));
     fila.querySelector('.i-buscar').addEventListener('click', () => abrirBuscador(fila));
+    if (destino() === 'INSUMOS' && tipo() === 'OC') fila.querySelector('.i-buscar').innerHTML = '<i class="bi bi-tools"></i> Insumos';
     fila.querySelectorAll('.i-cant, .i-pu, .i-pval, .i-pmil, .i-kgs').forEach(i => i.addEventListener('input', recalcular));
     fila.querySelector('.i-pmodo').addEventListener('change', recalcular);
     fila.querySelector('.quitar').addEventListener('click', () => {
@@ -1167,7 +1181,11 @@ if (esImp() && !PAGOS_PREVIOS.length) agregarPago();
 pintarImportacion(false);
 if (REQ_INICIAL) {
     const r = REQS.find(x => x.id === REQ_INICIAL);
-    if (r) { const e = porId('emp_' + r.empresa); if (e && !e.disabled) { e.checked = true; pintarDestino(); pintarNumero(); } r.items.forEach(i => jalarReq(r, i)); }
+    if (r) {
+        const e = porId('emp_' + r.empresa); if (e && !e.disabled) { e.checked = true; pintarDestino(); pintarNumero(); }
+        const dst = porId('dest_' + (r.destino || 'GENERAL')); if (dst && !dst.checked) { dst.checked = true; pintarFichas(); }
+        r.items.forEach(i => jalarReq(r, i));
+    }
     if (r && r.empresa === 'AMBAS') Swal.fire({ icon: 'info', title: 'Elige la empresa que compra', text: 'Los productos del requerimiento ya están en la orden. Revisa si es Anclajes o Import Bolts antes de guardar.', timer: 3500, showConfirmButton: false });
 }
 pintarReqs();

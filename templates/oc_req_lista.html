@@ -72,6 +72,7 @@
         <div class="d-flex flex-wrap gap-2 align-items-center">
             <a class="cod" href="{{ url_for('oc_req_detalle', req_id=r.id) }}">{{ req_codigo(r) }}</a>
             {% if emp_r %}<span class="small fw-bold" style="color: {{ emp_r.color }};">Inventario {{ emp_r.corto }}</span>{% endif %}
+            {% if r.destino == 'INSUMOS' %}<span class="rq-ins"><i class="bi bi-tools"></i> Insumos internos</span>{% endif %}
             {% if r.prioridad == 'URGENTE' %}<span class="rq-urg">URGENTE</span>{% endif %}
             {% if r.id in con_novedad %}<span class="nov-chip"><i class="bi bi-bell-fill"></i> Novedad</span>{% endif %}
             <span class="rq-estado ms-auto" style="color: {{ res.color }};"><i class="bi {{ res.icono }}"></i> {{ res.txt }}</span>

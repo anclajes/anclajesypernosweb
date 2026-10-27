@@ -10741,7 +10741,7 @@ def inventario_general():
             resultados.append({
                 'id': p.id, 'sku': p.sku, 'nombre': p.nombre, 'categoria': p.categoria, 'calidad': p.calidad,
                 'ubicacion': p.ubicacion, 'stock': p.stock_actual, 'stock_min': p.stock_minimo, 'estado': p.estado,
-                'peso_kg': p.peso_kg or 0, 'origen': 'ANCLAJES', 'activo': p.activo,
+                'peso_kg': p.peso_kg or 0, 'origen': 'ANCLAJES', 'activo': p.activo, 'precio_unidad': p.precio_unidad or 0,
                 'ultimo_ajuste_fecha': p.ultimo_ajuste_auditoria_fecha,
                 'ultimo_ajuste_por': p.ultimo_ajuste_auditoria_por,
                 'ultimo_ajuste_conteo_por': p.ultimo_ajuste_auditoria_conteo_por,
@@ -10766,7 +10766,7 @@ def inventario_general():
             resultados.append({
                 'id': p.id, 'sku': p.sku, 'nombre': p.nombre, 'categoria': p.categoria, 'calidad': p.calidad,
                 'ubicacion': p.ubicacion, 'stock': p.stock_actual, 'stock_min': p.stock_minimo, 'estado': p.estado,
-                'peso_kg': p.peso_kg or 0, 'origen': 'IMPORTBOLTS', 'activo': p.activo,
+                'peso_kg': p.peso_kg or 0, 'origen': 'IMPORTBOLTS', 'activo': p.activo, 'precio_unidad': p.precio_unidad or 0,
                 'ultimo_ajuste_fecha': p.ultimo_ajuste_auditoria_fecha,
                 'ultimo_ajuste_por': p.ultimo_ajuste_auditoria_por,
                 'ultimo_ajuste_conteo_por': p.ultimo_ajuste_auditoria_conteo_por,
@@ -10828,7 +10828,7 @@ def inventario_general():
     # origen y esa familia no existe ahí), no lo borramos — el usuario puede estar escribiendo
     # texto libre a propósito — solo evitamos que rompa la página.
 
-    return render_template('inventario_general.html',
+    return render_template('inventario_general.html', ver_precio_usd=session.get('role') in ('vendedor', 'administracion', 'admin'),
                            productos=pagina_actual,
                            busqueda=busqueda,
                            origen_filtro=origen_filtro,
@@ -16643,6 +16643,7 @@ def insumos_ingreso_guardar():
             orden_oc.insumo_ingreso_id = ing.id
             ing.observacion = (f"{_oc_codigo(orden_oc)}" + (f" · {ing.observacion}" if ing.observacion else ''))[:300]
             _oc_evento(orden_oc, 'INSUMOS', f"Ingresado en Insumos internos (ingreso #{ing.id}, {EMPRESAS_INSUMOS[empresa]['corto']})")
+            _req_notificar_orden(orden_oc, 'OC_INGRESADO', f"{_oc_codigo(orden_oc)}: ingresado en Insumos internos {EMPRESAS_INSUMOS[empresa]['corto']} (ingreso #{ing.id})")
         registrar_log(f"Ingreso de insumos {EMPRESAS_INSUMOS[empresa]['corto']} #{ing.id} ({ref}, {len(items)} ítem(s), {simbolo} {ing.total:,.2f})",
                       'bi-box-arrow-in-down', 'text-success')
         db.session.commit()
@@ -17915,6 +17916,8 @@ def _asegurar_oc():
     _agregar_columnas_si_faltan('requerimiento_compra', [('solicitante_user_id', 'INTEGER'), ('rechazo_categoria', 'VARCHAR(60)'),
                                                          ('rechazo_opcion', 'VARCHAR(150)'), ('motivo_anulacion', 'VARCHAR(300)'),
                                                          ('anulacion_categoria', 'VARCHAR(60)'), ('anulacion_opcion', 'VARCHAR(150)')])
+    _agregar_columnas_si_faltan('requerimiento_compra', [('destino', "VARCHAR(10) DEFAULT 'GENERAL'")])
+    _agregar_columnas_si_faltan('requerimiento_item', [('insumo_id', 'INTEGER')])
     if not SystemConfig.query.get('oc_numeracion_empresa'):
         # Numeración propia por empresa: la restricción única pasa de (tipo, número) a (empresa, tipo, número)
         try:
@@ -18684,6 +18687,12 @@ def _leer_orden_form(f, orden=None):
             if not ri or ri.requerimiento.estado != 'PENDIENTE' or (ri.requerimiento.empresa or 'ANCLAJES') not in (empresa, REQ_EMPRESA_LIBRE) \
                     or (ri.codigo or '').upper() != (codigo or '').upper() or tipo != 'OC':
                 errores.append(f'Ítem {n}: ya no corresponde al requerimiento (cambió el producto, la empresa o el requerimiento se cerró). Quítalo y vuelve a jalarlo.')
+                continue
+            req_dest = ri.requerimiento.destino or 'GENERAL'
+            if req_dest != datos.get('destino') or (req_dest == 'INSUMOS' and ri.insumo_id and ri.insumo_id != ins_id):
+                errores.append(f'Ítem {n}: el {_req_codigo(ri.requerimiento)} es de '
+                               + ('INSUMOS INTERNOS: la orden debe tener destino "Insumos internos".' if req_dest == 'INSUMOS'
+                                  else 'productos del INVENTARIO GENERAL: la orden debe tener destino "Inventario General".'))
                 continue
             if otro:
                 errores.append(f'Ítem {n}: ese producto del {_req_codigo(ri.requerimiento)} ya está en la {_oc_codigo(otro.orden)}.')
@@ -21054,11 +21063,16 @@ def oc_api_productos():
     es_insumos = request.args.get('destino') == 'INSUMOS'
     if es_insumos:
         # Todos los insumos del maestro (también los que no tienen stock: se compra justamente para reponer)
-        stocks = {st.insumo_id: st for st in InsumoStock.query.filter_by(empresa=empresa).all()}
+        stocks, stocks_emp = {}, {}
+        for st in InsumoStock.query.all():
+            stocks_emp.setdefault(st.insumo_id, {})[st.empresa] = st.stock_actual or 0
+            if st.empresa == empresa:
+                stocks[st.insumo_id] = st
         base = [{'sku': i.codigo, 'descripcion': i.descripcion, 'familia': i.categoria or '', 'calidad': '', 'um': i.unidad or '',
                  'insumo_id': i.id, 'origen': 'INSUMO', 'stock_insumo': (stocks[i.id].stock_actual or 0) if i.id in stocks else 0,
                  'costo_insumo': (stocks[i.id].costo_promedio or 0) if i.id in stocks else 0,
-                 'minimo_insumo': (stocks[i.id].stock_minimo or 0) if i.id in stocks else 0}
+                 'minimo_insumo': (stocks[i.id].stock_minimo or 0) if i.id in stocks else 0,
+                 'stocks_ins': {e: stocks_emp.get(i.id, {}).get(e, 0) for e in EMPRESAS_INSUMOS}}
                 for i in Insumo.query.all() if i.activo is not False]
     else:
         base = _catalogo_productos_oc(empresa)
@@ -21386,7 +21400,8 @@ def _req_seguimiento(items):
         lista = sorted(por.get(i.id, []), key=lambda x: x.orden_id)
         activos = [oi for oi in lista if oi.orden and oi.orden.estado not in ('ANULADA', 'RECHAZADA')]
         caidos = [oi for oi in lista if oi.orden and oi.orden.estado in ('ANULADA', 'RECHAZADA')]
-        pasos = [6 if (oi.orden.estado == 'CONFORME' and oi.fecha_ingreso) else _PASO_DE_ESTADO_OC.get(oi.orden.estado, 1) for oi in activos]
+        pasos = [6 if (oi.orden.estado == 'CONFORME' and (oi.fecha_ingreso or (oi.orden.destino == 'INSUMOS' and oi.orden.insumo_ingreso_id)))
+                 else _PASO_DE_ESTADO_OC.get(oi.orden.estado, 1) for oi in activos]
         recibido = 0.0
         for oi in activos:
             if oi.orden.fecha_llegada:
@@ -21496,7 +21511,7 @@ def _req_json_para_oc(empresa):
     """Requerimientos pendientes para el panel de la Nueva orden (Logística jala los productos)."""
     datos = []
     for r, libres, seg in _req_pendientes_de_oc(empresa):
-        datos.append({'id': r.id, 'codigo': _req_codigo(r), 'empresa': r.empresa, 'solicitante': r.solicitante_nombre or '',
+        datos.append({'id': r.id, 'codigo': _req_codigo(r), 'empresa': r.empresa, 'destino': r.destino or 'GENERAL', 'solicitante': r.solicitante_nombre or '',
                       'sol_valor': f'u:{r.solicitante_user_id}' if r.solicitante_user_id else (f'n:{r.solicitante_nombre}' if r.solicitante_nombre else ''),
                       'registro': (r.creado_por.nombre_completo or r.creado_por.username) if r.creado_por else '', 'area': r.area or '', 'motivo': r.motivo or '', 'cliente_ruc': r.cliente_ruc or '',
                       'cliente_razon': r.cliente_razon or '', 'oc_cliente': r.oc_cliente or '', 'prioridad': r.prioridad or 'NORMAL',
@@ -21505,7 +21520,7 @@ def _req_json_para_oc(empresa):
                       'url': url_for('oc_req_detalle', req_id=r.id),
                       'docs': [{'nombre': d.nombre_original or 'documento', 'url': url_for('oc_req_documento', doc_id=d.id)}
                                for d in RequerimientoDocumento.query.filter_by(req_id=r.id).order_by(RequerimientoDocumento.id).all()],
-                      'items': [{'id': i.id, 'codigo': i.codigo, 'descripcion': i.descripcion, 'familia': i.familia or '', 'calidad': i.calidad or '',
+                      'items': [{'id': i.id, 'codigo': i.codigo, 'insumo_id': i.insumo_id or '', 'descripcion': i.descripcion, 'familia': i.familia or '', 'calidad': i.calidad or '',
                                  'um': i.um or '', 'cantidad': i.cantidad, 'nota': i.nota or '',
                                  'caida': ', '.join(_oc_codigo(oi.orden) + ' ' + oi.orden.estado.lower() for oi in seg[i.id]['caidos'])}
                                 for i in libres]})
@@ -21594,6 +21609,7 @@ def _req_a_previo(r):
     return {'solicitante': f'u:{r.solicitante_user_id}' if r.solicitante_user_id else f'n:{r.solicitante_nombre or ""}', 'area': r.area,
             'motivo': r.motivo, 'cliente_ruc': r.cliente_ruc, 'cliente_razon': r.cliente_razon, 'oc_cliente': r.oc_cliente,
             'prioridad': r.prioridad, 'necesita_para': r.necesita_para.isoformat() if r.necesita_para else '', 'nota': r.nota,
+            'destino': r.destino or 'GENERAL',
             'items': [{'codigo': i.codigo, 'cantidad': i.cantidad, 'um': i.um, 'nota': i.nota or ''} for i in r.items if not i.descartado]}
 
 
@@ -21651,7 +21667,10 @@ def _req_guardar(r_edit):
     elif d['necesita_para'] and d['necesita_para'] < hora_peru().date():
         errores.append('La fecha "para cuándo" no puede ser pasada.')
     d['nota'] = ' '.join((f.get('nota') or '').split())[:500] or None
-    # productos: los que existen en los inventarios (Anclajes o Import Bolts; el maestro los reparte a los dos)
+    # De qué inventario: productos del Inventario General (para vender) o Insumos internos (uso de la empresa)
+    d['destino'] = 'INSUMOS' if (f.get('destino') or '').upper() == 'INSUMOS' else 'GENERAL'
+    es_ins = d['destino'] == 'INSUMOS'
+    # productos: los que existen en los inventarios (Anclajes o Import Bolts; el maestro los reparte a los dos) o en el maestro de insumos
     ums = {v.valor for v in _oc_catalogo('OC_UM')}
     items, vistos = [], set()
     filas = list(zip(f.getlist('codigo[]'), f.getlist('cantidad[]'), f.getlist('um[]') + [''] * 99, f.getlist('nota_item[]') + [''] * 99))
@@ -21659,12 +21678,19 @@ def _req_guardar(r_edit):
         cod = (cod or '').strip().upper()
         if not cod and not (cant or '').strip():
             continue
-        prod_a = Product.query.filter(func.upper(Product.sku) == cod, Product.es_shadow_importbolts.isnot(True)).first() if cod else None
-        prod_b = ProductImportBolts.query.filter(func.upper(ProductImportBolts.sku) == cod).first() if cod else None
+        prod_a = prod_b = ins = None
+        if es_ins:
+            ins = Insumo.query.filter(func.upper(Insumo.codigo) == cod).first() if cod else None
+            if not ins or ins.activo is False:
+                errores.append(f'Insumo {n}: elígelo de la lista de Insumos internos.')
+                continue
+        else:
+            prod_a = Product.query.filter(func.upper(Product.sku) == cod, Product.es_shadow_importbolts.isnot(True)).first() if cod else None
+            prod_b = ProductImportBolts.query.filter(func.upper(ProductImportBolts.sku) == cod).first() if cod else None
+            if not (prod_a or prod_b):
+                errores.append(f'Producto {n}: elígelo de la lista del inventario.')
+                continue
         prod = prod_a or prod_b
-        if not prod:
-            errores.append(f'Producto {n}: elígelo de la lista del inventario.')
-            continue
         if cod in vistos:
             errores.append(f'Producto {n} ({cod}): está repetido; súmalo en una sola línea.')
             continue
@@ -21676,11 +21702,17 @@ def _req_guardar(r_edit):
             errores.append(f'Producto {n} ({cod}): elige la unidad de medida.')
             continue
         vistos.add(cod)
-        items.append({'codigo': prod.sku, 'descripcion': (prod.nombre or '')[:400], 'familia': prod.categoria or None, 'calidad': prod.calidad or None,
-                      'um': um, 'cantidad': round(cantidad, 4), 'nota': ' '.join((nota or '').split())[:200] or None,
+        nota_it = ' '.join((nota or '').split())[:200] or None
+        if es_ins:
+            stock_ins = sum((st.stock_actual or 0) for st in InsumoStock.query.filter_by(insumo_id=ins.id).all())
+            items.append({'codigo': ins.codigo, 'insumo_id': ins.id, 'descripcion': (ins.descripcion or '')[:400], 'familia': ins.categoria or None,
+                          'calidad': None, 'um': um, 'cantidad': round(cantidad, 4), 'nota': nota_it, 'stock_al_pedir': int(stock_ins)})
+            continue
+        items.append({'codigo': prod.sku, 'insumo_id': None, 'descripcion': (prod.nombre or '')[:400], 'familia': prod.categoria or None, 'calidad': prod.calidad or None,
+                      'um': um, 'cantidad': round(cantidad, 4), 'nota': nota_it,
                       'stock_al_pedir': int((prod_a.stock_actual or 0) if prod_a else 0) + int((prod_b.stock_actual or 0) if prod_b else 0)})
     if not items:
-        errores.append('Agrega al menos un producto.')
+        errores.append('Agrega al menos un insumo.' if es_ins else 'Agrega al menos un producto.')
     if len(items) > 60:
         errores.append('Máximo 60 productos por requerimiento.')
     archivos = [a for a in request.files.getlist('docs') + request.files.getlist('foto') if a and a.filename]
@@ -21717,7 +21749,7 @@ def _req_guardar(r_edit):
         for n, it in enumerate(items, start=1):
             db.session.add(RequerimientoItem(req_id=r.id, item=n, **it))
         _req_subir_docs(r, validos, claves)
-        _req_evento(r, 'CREADO', f"{len(items)} producto(s)"
+        _req_evento(r, 'CREADO', f"{len(items)} {'insumo(s) interno(s)' if es_ins else 'producto(s)'}"
                                  + (f" · {len(validos)} archivo(s)" if validos else '') + (' · URGENTE' if d['prioridad'] == 'URGENTE' else ''))
         registrar_log(f"Pidió a Logística {_req_codigo(r)}: {len(items)} producto(s)", 'bi-clipboard-plus', 'text-primary')
         db.session.commit()
@@ -21737,6 +21769,9 @@ def _req_guardar_edicion(r, d, items, validos, quitar_docs):
     claves, borrar = [], []
     try:
         cambios = []
+        if (r.destino or 'GENERAL') != d['destino']:
+            cambios.append('Ahora es de ' + ('Insumos internos' if d['destino'] == 'INSUMOS' else 'Inventario General'))
+            r.destino = d['destino']
         for campo, etq in (('solicitante_nombre', 'Lo pide'), ('area', 'Área'), ('motivo', 'Motivo'), ('cliente_razon', 'Cliente'),
                            ('oc_cliente', 'OC cliente'), ('prioridad', 'Prioridad'), ('necesita_para', 'Para cuándo'), ('nota', 'Nota')):
             if (getattr(r, campo) or None) != (d.get(campo) or None):

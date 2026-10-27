@@ -258,6 +258,7 @@
                     <th>Ubicación</th>
                     <th class="text-center" title="Peso nominal por unidad, en kilogramos">Peso Nom. (kg)</th>
                     <th class="text-center">Stock</th>
+                    {% if ver_precio_usd %}<th class="text-end" title="Precio unitario de referencia en dólares (solo consulta)">P. Unit (US$)</th>{% endif %}
                     <th class="text-center">Fotos</th>
                 </tr>
             </thead>
@@ -301,6 +302,7 @@
                         <span class="stock-num {{ 'bajo' if p.stock <= p.stock_min else '' }}"
                               title="{{ 'Stock bajo' if p.stock <= p.stock_min else 'Stock OK' }} (mínimo {{ p.stock_min }})">{{ "{:,}".format(p.stock or 0) }}</span>
                     </td>
+                    {% if ver_precio_usd %}<td class="text-end text-nowrap fw-semibold">{% if p.precio_unidad and p.precio_unidad > 0 %}$ {{ "%.2f"|format(p.precio_unidad) }}{% else %}<span class="text-muted">-</span>{% endif %}</td>{% endif %}
                     <td class="text-center">
                         <button class="btn btn-sm btn-outline-info py-0" title="Ver Fotos"
                                 onclick="abrirGaleria({{ p.id }}, '{{ p.sku }}', '{{ p.origen }}')">
@@ -309,7 +311,7 @@
                     </td>
                 </tr>
                 {% else %}
-                <tr><td colspan="9" class="text-center py-5 text-muted">No se encontraron productos.</td></tr>
+                <tr><td colspan="{{ 10 if ver_precio_usd else 9 }}" class="text-center py-5 text-muted">No se encontraron productos.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
