@@ -2,6 +2,7 @@
 {% block title %}Insumos internos{% endblock %}
 {% block subtitle %}Ingreso #{{ ing.id }}{% endblock %}
 {% block content %}
+{% macro m(v) %}{{ ('US$ ' ~ '{:,.2f}'.format(v or 0)) if ing.moneda == 'USD' else v|soles }}{% endmacro %}
 {% include '_insumos_nav.html' %}
 {% set emp = empresas[ing.empresa] %}
 <div class="card border-0 shadow-sm mb-3" style="border-left: 6px solid {{ emp.color }} !important;"><div class="card-body d-flex flex-wrap justify-content-between gap-3 align-items-center">
@@ -55,12 +56,12 @@
                 <tbody>
                 {% for d in ing.detalles %}
                 <tr><td class="ps-3 fw-bold">{{ d.insumo.codigo }}</td><td>{{ d.insumo.descripcion }}</td><td class="text-muted">{{ d.codigo_proveedor or '-' }}</td>
-                    <td class="text-center">{{ d.cantidad|cant }} {{ d.insumo.unidad }}</td><td class="text-end">{{ d.precio_unitario|soles }}</td>
-                    <td class="text-end fw-semibold">{{ d.precio_total|soles }}</td>
-                    <td class="text-end pe-3 text-nowrap"><span class="text-muted">{{ d.costo_prom_antes|soles }}</span> → <b>{{ d.costo_prom_despues|soles }}</b></td></tr>
+                    <td class="text-center">{{ d.cantidad|cant }} {{ d.insumo.unidad }}</td><td class="text-end">{{ m(d.precio_unitario) }}</td>
+                    <td class="text-end fw-semibold">{{ m(d.precio_total) }}</td>
+                    <td class="text-end pe-3 text-nowrap"><span class="text-muted">{{ m(d.costo_prom_antes) }}</span> → <b>{{ m(d.costo_prom_despues) }}</b></td></tr>
                 {% endfor %}
                 </tbody>
-                <tfoot><tr><td colspan="5" class="text-end fw-bold">Total con IGV</td><td class="text-end fw-bold fs-6">{{ ing.total|soles }}</td><td></td></tr></tfoot>
+                <tfoot><tr><td colspan="5" class="text-end fw-bold">Total{{ ' (en dólares, sin convertir)' if ing.moneda == 'USD' else ' con IGV' }}</td><td class="text-end fw-bold fs-6">{{ m(ing.total) }}</td><td></td></tr></tfoot>
             </table>
         </div></div>
     </div>

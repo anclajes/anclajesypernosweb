@@ -29,12 +29,12 @@
     <div class="col-6 col-md-3"><div class="card border-0 shadow-sm h-100"><div class="card-body py-2">
         <div class="ins-dato">Insumos con stock</div><div class="ins-kpi">{{ kpi['items'] }}</div></div></div></div>
     <div class="col-6 col-md-3"><div class="card border-0 shadow-sm h-100"><div class="card-body py-2">
-        <div class="ins-dato">Valor del inventario</div><div class="ins-kpi">{{ kpi.valor|soles }}</div><div class="text-muted small">a costo promedio</div></div></div></div>
+        <div class="ins-dato">Valor del inventario</div><div class="ins-kpi">{{ kpi.valor|soles }}</div>{% if kpi.valor_usd %}<div class="ins-kpi" style="color:#0f766e;">US$ {{ '{:,.2f}'.format(kpi.valor_usd) }}</div>{% endif %}<div class="text-muted small">a costo promedio</div></div></div></div>
     <div class="col-6 col-md-3"><div class="card border-0 shadow-sm h-100"><div class="card-body py-2">
         <div class="ins-dato">Bajo stock mínimo</div><div class="ins-kpi {{ 'text-danger' if kpi.bajo }}">{{ kpi.bajo }}</div>
         {% if kpi.bajo %}<a class="small" href="{{ url_for('insumos_inventario', empresa=empresa, bajo=1) }}">Ver cuáles</a>{% endif %}</div></div></div>
     <div class="col-6 col-md-3"><div class="card border-0 shadow-sm h-100"><div class="card-body py-2">
-        <div class="ins-dato">Consumido este mes</div><div class="ins-kpi">{{ kpi.gasto_mes|soles }}</div>
+        <div class="ins-dato">Consumido este mes</div><div class="ins-kpi">{{ kpi.gasto_mes|soles }}</div>{% if kpi.gasto_mes_usd %}<div class="ins-kpi" style="color:#0f766e;">US$ {{ '{:,.2f}'.format(kpi.gasto_mes_usd) }}</div>{% endif %}
         <a class="small" href="{{ url_for('insumos_gasto', empresa=empresa) }}">Ver por área</a></div></div></div>
 </div>
 
@@ -90,10 +90,14 @@
                     <td><span class="badge bg-light text-dark border">{{ f.i.categoria or '-' }}</span></td>
                     <td class="text-center text-nowrap"><span class="stock-chip num {{ 'bajo' if f.bajo }} {{ 'cero' if not f.stock }}">{{ f.stock|cant }}</span> <span class="text-muted">{{ f.i.unidad }}</span></td>
                     <td class="text-center num">{{ f.minimo|cant if f.minimo else '-' }}</td>
-                    <td class="text-end num text-nowrap">{{ f.costo|soles if f.costo else '-' }}
-                        {% if puede_ajustar %}<button type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline" title="Editar costo promedio (queda en auditoría)"
-                            onclick="ajustarCosto({{ f.i.id }}, '{{ empresa }}', {{ (f.i.codigo ~ ' · ' ~ f.i.descripcion)|tojson|forceescape }}, {{ f.costo|tojson }}, {{ f.stock|tojson }})"><i class="bi bi-pencil-square"></i></button>{% endif %}</td>
-                    <td class="text-end num fw-semibold">{{ f.valor|soles if f.valor else '-' }}</td>
+                    <td class="text-end num text-nowrap">
+                        {% if f.stock_pen > 0 or not f.stock_usd %}<div>{{ f.costo|soles if f.costo else '-' }}{% if f.stock_usd %} <span class="text-muted" style="font-size:.7rem;">({{ f.stock_pen|cant }} und)</span>{% endif %}
+                        {% if puede_ajustar %}<button type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline" title="Editar costo promedio en soles (queda en auditoría)"
+                            onclick="ajustarCosto({{ f.i.id }}, '{{ empresa }}', {{ (f.i.codigo ~ ' · ' ~ f.i.descripcion)|tojson|forceescape }}, {{ f.costo|tojson }}, {{ f.stock_pen|tojson }}, 'PEN')"><i class="bi bi-pencil-square"></i></button>{% endif %}</div>{% endif %}
+                        {% if f.stock_usd %}<div style="color:#0f766e;" title="Lo comprado en dólares (se lleva aparte, sin convertir)">US$ {{ '{:,.2f}'.format(f.costo_usd) }} <span class="text-muted" style="font-size:.7rem;">({{ f.stock_usd|cant }} und)</span>
+                        {% if puede_ajustar %}<button type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline" title="Editar costo promedio en dólares"
+                            onclick="ajustarCosto({{ f.i.id }}, '{{ empresa }}', {{ (f.i.codigo ~ ' · ' ~ f.i.descripcion)|tojson|forceescape }}, {{ f.costo_usd|tojson }}, {{ f.stock_usd|tojson }}, 'USD')"><i class="bi bi-pencil-square"></i></button>{% endif %}</div>{% endif %}</td>
+                    <td class="text-end num fw-semibold text-nowrap">{% if f.valor or f.valor_usd %}{% if f.valor or not f.valor_usd %}<div>{{ f.valor|soles }}</div>{% endif %}{% if f.valor_usd %}<div style="color:#0f766e;">US$ {{ '{:,.2f}'.format(f.valor_usd) }}</div>{% endif %}{% else %}-{% endif %}</td>
                     <td class="text-muted">{{ f.s.almacen if f.s and f.s.almacen else '-' }}</td>
                     <td class="pe-3 text-end text-nowrap">
                         <a class="btn btn-sm btn-outline-secondary py-0" title="Kardex" href="{{ url_for('insumos_kardex', empresa=empresa, insumo_id=f.i.id) }}"><i class="bi bi-clock-history"></i></a>

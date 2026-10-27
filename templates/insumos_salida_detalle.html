@@ -54,10 +54,12 @@
                 {% for d in sal.detalles %}
                     <tr><td class="ps-3 fw-bold">{{ d.insumo.codigo }}</td><td>{{ d.insumo.descripcion }}</td>
                         <td class="text-center">{{ d.cantidad_solicitada|cant }} {{ d.unidad }}</td><td class="text-center fw-bold">{{ d.cantidad_despachada|cant }} {{ d.unidad }}</td>
-                        <td class="text-muted">{{ d.ubicacion or '-' }}</td><td class="text-end">{{ d.costo_unitario|soles }}</td><td class="text-end pe-3 fw-semibold">{{ d.costo_total|soles }}</td></tr>
+                        <td class="text-muted">{{ d.ubicacion or '-' }}</td><td class="text-end text-nowrap">{% if (d.cantidad_despachada or 0) - (d.cantidad_usd or 0) > 0.000001 %}<div>{{ d.costo_unitario|soles }}{% if d.cantidad_usd %} <span class="text-muted small">× {{ ((d.cantidad_despachada or 0) - d.cantidad_usd)|cant }}</span>{% endif %}</div>{% endif %}
+                            {% if d.cantidad_usd %}<div style="color:#0f766e;">US$ {{ '{:,.2f}'.format(d.costo_unitario_usd or 0) }} <span class="text-muted small">× {{ d.cantidad_usd|cant }}</span></div>{% endif %}</td>
+                        <td class="text-end pe-3 fw-semibold text-nowrap">{{ montos_txt(d.costo_total, d.costo_total_usd) }}</td></tr>
                 {% endfor %}
                 </tbody>
-                <tfoot><tr><td colspan="6" class="text-end fw-bold">Costo total cargado a {{ sal.area.nombre if sal.area else 'el área' }}</td><td class="text-end pe-3 fw-bold fs-6">{{ sal.total_costo|soles }}</td></tr></tfoot>
+                <tfoot><tr><td colspan="6" class="text-end fw-bold">Costo total cargado a {{ sal.area.nombre if sal.area else 'el área' }}</td><td class="text-end pe-3 fw-bold fs-6">{{ montos_txt(sal.total_costo, sal.total_costo_usd) }}</td></tr></tfoot>
             </table>
         </div></div>
 

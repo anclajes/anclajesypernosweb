@@ -15638,6 +15638,23 @@ FORMATO_SALIDA_DEF = {'codigo': 'LAL-FO-0001', 'version': '01'}
 _insumos_ok = False
 
 
+def _agregar_columnas_si_faltan(tabla, columnas):
+    """ALTER TABLE ... ADD COLUMN para las columnas nuevas que todavía no existen (sin rutas /fix_)."""
+    from sqlalchemy import inspect as sa_inspect
+    existentes = {c['name'] for c in sa_inspect(db.engine).get_columns(tabla)}
+    faltan = [(n, t) for n, t in columnas if n not in existentes]
+    if not faltan:
+        return
+    es_pg = db.engine.dialect.name == 'postgresql'
+    with db.engine.begin() as conn:
+        if es_pg:
+            conn.execute(text("SET LOCAL lock_timeout = '5s'"))
+        for nombre, tipo in faltan:
+            if not es_pg:
+                tipo = tipo.replace('DEFAULT FALSE', 'DEFAULT 0').replace('TIMESTAMP', 'DATETIME')
+            conn.execute(text(f'ALTER TABLE {tabla} ADD COLUMN {"IF NOT EXISTS " if es_pg else ""}{nombre} {tipo}'))
+
+
 def _sembrar_catalogos_insumos():
     """Pone los valores iniciales en los catálogos del módulo que estén vacíos."""
     for tipo, valores in _INSUMOS_INICIALES.items():
@@ -15654,6 +15671,13 @@ def _asegurar_insumos():
     for modelo in (InsumoArea, InsumoTrabajador, Insumo, InsumoStock, InsumoProveedor, InsumoIngreso, InsumoIngresoDetalle,
                    InsumoSalida, InsumoSalidaDetalle, InsumoMovimiento, InsumoDocumento):
         modelo.__table__.create(bind=db.engine, checkfirst=True)
+    # compras en dólares: se llevan aparte, sin convertir (stock y costo en US$, gasto en US$)
+    _agregar_columnas_si_faltan('insumo_stock', [('stock_usd', 'FLOAT DEFAULT 0'), ('costo_usd', 'FLOAT DEFAULT 0'), ('bolsa_antigua', "VARCHAR(3) DEFAULT 'PEN'")])
+    _agregar_columnas_si_faltan('insumo_ingreso', [('moneda', "VARCHAR(3) DEFAULT 'PEN'")])
+    _agregar_columnas_si_faltan('insumo_movimiento', [('moneda', "VARCHAR(3) DEFAULT 'PEN'"), ('stock_moneda_despues', 'FLOAT')])
+    _agregar_columnas_si_faltan('insumo_salida', [('total_costo_usd', 'FLOAT DEFAULT 0')])
+    _agregar_columnas_si_faltan('insumo_salida_detalle', [('cantidad_usd', 'FLOAT DEFAULT 0'), ('costo_unitario_usd', 'FLOAT DEFAULT 0'),
+                                                          ('costo_total_usd', 'FLOAT DEFAULT 0')])
     from sqlalchemy import inspect as sa_inspect
     if 'insumo_proveedor_id' not in {c['name'] for c in sa_inspect(db.engine).get_columns('insumo_ingreso')}:
         es_pg = db.engine.dialect.name == 'postgresql'
@@ -15748,23 +15772,84 @@ def _stock_de(insumo_id, empresa, crear=True):
     return st
 
 
-def _entrada_a_stock(st, cantidad, precio_unitario):
-    """Suma al stock y recalcula el COSTO PROMEDIO PONDERADO. Devuelve (stock_antes, prom_antes)."""
-    antes, prom_antes = float(st.stock_actual or 0), float(st.costo_promedio or 0)
-    nuevo = antes + cantidad
-    if antes <= 0 or nuevo <= 0:
-        st.costo_promedio = round(precio_unitario, 6)
-    else:
-        st.costo_promedio = round((antes * prom_antes + cantidad * precio_unitario) / nuevo, 6)
-    st.stock_actual = round(nuevo, 6)
-    return antes, prom_antes
+MONEDAS_INSUMOS = {'PEN': 'S/', 'USD': 'US$'}
 
 
-def _salida_de_stock(st, cantidad):
-    """Resta del stock; la salida vale el costo promedio actual (el promedio no cambia). Devuelve (antes, costo_unit)."""
+def _montos_txt(pen, usd):
+    """'S/ 120.00' · 'US$ 35.00' · 'S/ 120.00 + US$ 35.00' (soles y dólares por separado; nunca se suman)."""
+    partes = []
+    if (pen or 0) or not (usd or 0):
+        partes.append(f"S/ {float(pen or 0):,.2f}")
+    if usd or 0:
+        partes.append(f"US$ {float(usd):,.2f}")
+    return ' + '.join(partes)
+
+
+app.add_template_global(_montos_txt, 'montos_txt')
+
+
+def _bolsa(st, moneda):
+    """(unidades, costo unitario) de lo comprado en esa moneda. Lo comprado en soles y en dólares se lleva por separado
+    (sin convertir): cada parte tiene su propio costo promedio."""
+    usd = float(st.stock_usd or 0) if st else 0.0
+    if moneda == 'USD':
+        return usd, float(st.costo_usd or 0) if st else 0.0
+    return (float(st.stock_actual or 0) - usd, float(st.costo_promedio or 0)) if st else (0.0, 0.0)
+
+
+def _otra_moneda(m):
+    return 'PEN' if m == 'USD' else 'USD'
+
+
+def _entrada_a_stock(st, cantidad, precio_unitario, moneda='PEN'):
+    """Suma al stock en la parte de SU moneda y recalcula el COSTO PROMEDIO PONDERADO de esa parte.
+    Devuelve (stock_antes total, costo prom. antes de esa moneda)."""
+    moneda = 'USD' if moneda == 'USD' else 'PEN'
     antes = float(st.stock_actual or 0)
+    q, prom = _bolsa(st, moneda)
+    otra_q, _ = _bolsa(st, _otra_moneda(moneda))
+    nuevo_q = q + cantidad
+    costo = precio_unitario if q <= 1e-9 or nuevo_q <= 0 else (q * prom + cantidad * precio_unitario) / nuevo_q
+    if q <= 1e-9:     # esta parte estaba vacía: si la otra tiene unidades, esas son las más antiguas (salen primero)
+        st.bolsa_antigua = _otra_moneda(moneda) if otra_q > 1e-9 else moneda
+    if moneda == 'USD':
+        st.stock_usd, st.costo_usd = round(nuevo_q, 6), round(costo, 6)
+    else:
+        st.costo_promedio = round(costo, 6)
+    st.stock_actual = round(antes + cantidad, 6)
+    return antes, prom
+
+
+def _salida_por_monedas(st, cantidad):
+    """Resta del stock: primero de las unidades MÁS ANTIGUAS (las compradas en soles o en dólares, según cuál entró antes).
+    Cada parte sale a su costo promedio y en su moneda. Devuelve (stock_antes, [(moneda, cantidad, costo_unitario)])."""
+    antes = float(st.stock_actual or 0)
+    primera = st.bolsa_antigua if st.bolsa_antigua in ('PEN', 'USD') else 'PEN'
+    partes, falta = [], cantidad
+    for m in (primera, _otra_moneda(primera)):
+        if falta <= 1e-9:
+            break
+        q, costo = _bolsa(st, m)
+        toma = min(max(q, 0), falta)
+        if toma > 1e-9:
+            partes.append((m, round(toma, 6), costo))
+            falta -= toma
+            if m == 'USD':
+                st.stock_usd = round(q - toma, 6)
+    if falta > 1e-9:          # no debería pasar (se valida el stock antes): sale de lo comprado en soles
+        partes.append(('PEN', round(falta, 6), float(st.costo_promedio or 0)))
     st.stock_actual = round(antes - cantidad, 6)
-    return antes, float(st.costo_promedio or 0)
+    if float(st.stock_usd or 0) <= 1e-9:
+        st.stock_usd, st.bolsa_antigua = 0.0, 'PEN'
+    elif _bolsa(st, 'PEN')[0] <= 1e-9:
+        st.bolsa_antigua = 'USD'
+    return antes, partes
+
+
+def _datos_mov_moneda(st, moneda):
+    """Campos del Kardex que dependen de la moneda: costo prom. y unidades que quedan de esa moneda."""
+    q, c = _bolsa(st, moneda)
+    return {'moneda': moneda, 'costo_prom_despues': c, 'stock_moneda_despues': round(q, 6)}
 
 
 def _subir_doc_insumo(carpeta, archivo, info, tipo, claves, ingreso_id=None, salida_id=None):
@@ -15802,7 +15887,9 @@ def _datos_formulario_insumos(empresa):
         lista.append({'id': i.id, 'codigo': i.codigo, 'descripcion': i.descripcion, 'unidad': i.unidad or '',
                       'categoria': i.categoria or '', 'stock': round(float(s.stock_actual or 0), 3) if s else 0,
                       'costo': round(float(s.costo_promedio or 0), 4) if s else 0, 'almacen': (s.almacen or '') if s else '',
-                      'minimo': round(float(s.stock_minimo or 0), 3) if s else 0})
+                      'minimo': round(float(s.stock_minimo or 0), 3) if s else 0,
+                      'stock_usd': round(float(s.stock_usd or 0), 3) if s else 0, 'costo_usd': round(float(s.costo_usd or 0), 4) if s else 0,
+                      'primero': (s.bolsa_antigua if s and s.bolsa_antigua in ('PEN', 'USD') else 'PEN')})
     return lista
 
 
@@ -15831,16 +15918,20 @@ def insumos_inventario():
         minimo = float(s.stock_minimo or 0) if s else 0
         if bajo and not (minimo > 0 and stock <= minimo):
             continue
-        filas.append({'i': i, 's': s, 'stock': stock, 'minimo': minimo, 'costo': float(s.costo_promedio or 0) if s else 0,
-                      'valor': stock * (float(s.costo_promedio or 0) if s else 0), 'bajo': minimo > 0 and stock <= minimo})
+        q_pen, c_pen = _bolsa(s, 'PEN') if s else (0.0, 0.0)
+        q_usd, c_usd = _bolsa(s, 'USD') if s else (0.0, 0.0)
+        filas.append({'i': i, 's': s, 'stock': stock, 'minimo': minimo, 'costo': c_pen, 'costo_usd': c_usd, 'stock_pen': q_pen, 'stock_usd': q_usd,
+                      'valor': q_pen * c_pen, 'valor_usd': q_usd * c_usd, 'bajo': minimo > 0 and stock <= minimo})
     ahora = hora_peru()
     inicio_mes = datetime(ahora.year, ahora.month, 1)
-    gasto_mes = sum(x.total_costo or 0 for x in InsumoSalida.query.filter(
-        InsumoSalida.empresa == empresa, InsumoSalida.estado == 'REGISTRADA', InsumoSalida.fecha >= inicio_mes).all())
-    todos = [{'stock': float(s.stock_actual or 0), 'min': float(s.stock_minimo or 0), 'valor': float(s.stock_actual or 0) * float(s.costo_promedio or 0)}
+    sal_mes = InsumoSalida.query.filter(InsumoSalida.empresa == empresa, InsumoSalida.estado == 'REGISTRADA', InsumoSalida.fecha >= inicio_mes).all()
+    gasto_mes = sum(x.total_costo or 0 for x in sal_mes)
+    gasto_mes_usd = sum(x.total_costo_usd or 0 for x in sal_mes)
+    todos = [{'stock': float(s.stock_actual or 0), 'min': float(s.stock_minimo or 0),
+              'valor': _bolsa(s, 'PEN')[0] * _bolsa(s, 'PEN')[1], 'valor_usd': _bolsa(s, 'USD')[0] * _bolsa(s, 'USD')[1]}
              for s in stocks.values()]
-    kpi = {'items': sum(1 for t in todos if t['stock'] > 0), 'valor': sum(t['valor'] for t in todos),
-           'bajo': sum(1 for t in todos if t['min'] > 0 and t['stock'] <= t['min']), 'gasto_mes': gasto_mes}
+    kpi = {'items': sum(1 for t in todos if t['stock'] > 0), 'valor': sum(t['valor'] for t in todos), 'valor_usd': sum(t['valor_usd'] for t in todos),
+           'bajo': sum(1 for t in todos if t['min'] > 0 and t['stock'] <= t['min']), 'gasto_mes': gasto_mes, 'gasto_mes_usd': gasto_mes_usd}
     return render_template('insumos_inventario.html', empresa=empresa, empresas=EMPRESAS_INSUMOS, filas=filas, kpi=kpi,
                            q=q, categoria=categoria, bajo=bajo, ver=ver, categorias=_categorias_insumos(),
                            almacenes=_catalogo_insumos('INSUMO_ALMACEN'), puede_editar=session.get('role') in ROLES_INSUMOS_EDITAN,
@@ -16062,28 +16153,29 @@ def insumos_importar():
             dif = round(r['stock'] - float(st.stock_actual or 0), 6)
             if dif > 1e-9:
                 costo = r['costo'] if r['costo'] is not None else float(st.costo_promedio or 0)
-                antes, _ = _entrada_a_stock(st, dif, costo)
+                antes, _ = _entrada_a_stock(st, dif, costo, 'PEN')
                 db.session.add(InsumoMovimiento(empresa=empresa, insumo_id=ins.id, fecha=ahora, tipo='ENTRADA', concepto='IMPORTACION', cantidad=dif,
                                                 costo_unitario=round(costo, 6), costo_total=round(dif * costo, 2), stock_antes=antes,
-                                                stock_despues=st.stock_actual, costo_prom_despues=st.costo_promedio, referencia=ref,
+                                                stock_despues=st.stock_actual, **_datos_mov_moneda(st, 'PEN'), referencia=ref,
                                                 observacion='Stock según el Excel (inventario inicial o conteo)', user_id=session.get('user_id'),
                                                 fecha_registro=ahora))
                 st.ultimo_ingreso = ahora
                 movs += 1
             elif dif < -1e-9:
-                antes, costo = _salida_de_stock(st, -dif)
-                db.session.add(InsumoMovimiento(empresa=empresa, insumo_id=ins.id, fecha=ahora, tipo='SALIDA', concepto='IMPORTACION', cantidad=-dif,
-                                                costo_unitario=round(costo, 6), costo_total=round(-dif * costo, 2), stock_antes=antes,
-                                                stock_despues=st.stock_actual, costo_prom_despues=st.costo_promedio, referencia=ref,
-                                                observacion='Stock según el Excel (conteo): había más en el sistema', user_id=session.get('user_id'),
-                                                fecha_registro=ahora))
+                antes, partes = _salida_por_monedas(st, -dif)
+                for mon, cant_p, costo in partes:
+                    db.session.add(InsumoMovimiento(empresa=empresa, insumo_id=ins.id, fecha=ahora, tipo='SALIDA', concepto='IMPORTACION', cantidad=cant_p,
+                                                    costo_unitario=round(costo, 6), costo_total=round(cant_p * costo, 2), stock_antes=antes,
+                                                    stock_despues=st.stock_actual, **_datos_mov_moneda(st, mon), referencia=ref,
+                                                    observacion='Stock según el Excel (conteo): había más en el sistema', user_id=session.get('user_id'),
+                                                    fecha_registro=ahora))
                 movs += 1
             if r['costo'] is not None and abs(round(r['costo'], 6) - round(float(st.costo_promedio or 0), 6)) > 1e-9:
-                antes_c, stock_c = float(st.costo_promedio or 0), float(st.stock_actual or 0)
+                antes_c, stock_c = float(st.costo_promedio or 0), _bolsa(st, 'PEN')[0]
                 st.costo_promedio = round(r['costo'], 6)
                 db.session.add(InsumoMovimiento(empresa=empresa, insumo_id=ins.id, fecha=ahora, tipo='AJUSTE', concepto='AJUSTE_COSTO', cantidad=0,
                                                 costo_unitario=antes_c, costo_total=round(stock_c * (r['costo'] - antes_c), 2), stock_antes=stock_c,
-                                                stock_despues=stock_c, costo_prom_despues=st.costo_promedio,
+                                                stock_despues=stock_c, **_datos_mov_moneda(st, 'PEN'),
                                                 referencia=f'Costo promedio S/ {antes_c:,.4f} → S/ {r["costo"]:,.4f}'[:120],
                                                 observacion=f'{ref} (costo prom. del archivo)'[:255], user_id=session.get('user_id'), fecha_registro=ahora))
         registrar_log(f"Importó {len(res)} insumo(s) desde Excel al inventario {EMPRESAS_INSUMOS[empresa]['corto']}: {creados} nuevo(s), "
@@ -16376,13 +16468,14 @@ def _prefill_ingreso_desde_oc(o):
     items = [{'insumo_id': it.insumo_id or '', 'descripcion': it.descripcion, 'um': it.um,
               'cantidad': rec['items'][it.id]['llego'] if rec and rec['entregas'] else it.cantidad,
               'precio_oc': it.precio_unitario, 'simbolo': MONEDAS_OC[o.moneda]['simbolo'],
-              'precio_unitario': (it.precio_con_igv if it.precio_con_igv else round(it.precio_unitario * (1 + IGV_OC), 4)) if o.moneda == 'PEN' and not o.es_importacion else ''}
+              # en la moneda de la orden (soles o dólares, sin convertir); con IGV, salvo importación
+              'precio_unitario': it.precio_unitario if o.es_importacion else (it.precio_con_igv if it.precio_con_igv else round(it.precio_unitario * (1 + IGV_OC), 4))}
              for it in o.items if not (rec and rec['entregas'] and rec['items'][it.id]['llego'] <= 0)]
     docs = [{'id': d.id, 'tipo': d.tipo, 'nombre': d.nombre_original, 'url': url_for('oc_documento_ver', doc_id=d.id),
              'tipo_txt': TIPOS_DOC_OC.get(d.tipo, d.tipo), 'numero': {'GUIA': o.numero_guia, 'FACTURA': o.numero_factura}.get(d.tipo) or ''}
             for d in OrdenCompraDocumento.query.filter_by(orden_id=o.id).all() if d.tipo in ('GUIA', 'FACTURA', 'CERTIFICADO', 'OTRO')]
     return {'oc_id': o.id, 'codigo': _oc_codigo(o), 'fecha': (o.fecha_llegada or o.fecha_conforme or hora_peru()).date().isoformat(),
-            'numero_factura': o.numero_factura or '', 'moneda': o.moneda, 'proveedor': prov, 'items': items, 'docs': docs,
+            'numero_factura': o.numero_factura or '', 'moneda': o.moneda, 'importacion': bool(o.es_importacion), 'proveedor': prov, 'items': items, 'docs': docs,
             'empresa': o.empresa or 'ANCLAJES', 'numero_guia': o.numero_guia or '', 'pdf': url_for('oc_pdf', orden_id=o.id, ver=1)}
 
 
@@ -16457,6 +16550,10 @@ def insumos_ingreso_guardar():
         flash(f'⛔ La factura {numero_factura} de {datos_prov["razon_social"]} ya está registrada en el ingreso #{repetido.id} '
               f'({repetido.fecha.strftime("%d/%m/%Y")}). Si era otra compra, revisa el número.')
         return redirect(volver)
+    moneda = 'USD' if (f.get('moneda') or '').upper() == 'USD' else 'PEN'
+    if orden_oc:      # desde una OC: la moneda es la de la orden (no se convierte)
+        moneda = 'USD' if orden_oc.moneda == 'USD' else 'PEN'
+    simbolo = MONEDAS_INSUMOS[moneda]
     items, errores = [], []
     ids = f.getlist('insumo_id[]')
     for n, (iid, cod_prov, cant, pu, pt, smin) in enumerate(zip(ids, f.getlist('codigo_proveedor[]'), f.getlist('cantidad[]'),
@@ -16500,7 +16597,7 @@ def insumos_ingreso_guardar():
     try:
         prov_ins = _guardar_proveedor_insumo(datos_prov, fecha)
         ing = InsumoIngreso(
-            empresa=empresa, fecha=fecha, proveedor_id=datos_prov['proveedor_id'], insumo_proveedor_id=prov_ins.id,
+            empresa=empresa, fecha=fecha, moneda=moneda, proveedor_id=datos_prov['proveedor_id'], insumo_proveedor_id=prov_ins.id,
             ruc=datos_prov['ruc'] or None, razon_social=datos_prov['razon_social'], direccion=datos_prov['direccion'] or None,
             numero_factura=numero_factura,
             contacto_nombre=datos_prov['contacto_nombre'] or None, contacto_telefono=datos_prov['contacto_telefono'] or None,
@@ -16512,7 +16609,7 @@ def insumos_ingreso_guardar():
         ref = f"Factura {ing.numero_factura}"
         for it in items:
             st = _stock_de(it['ins'].id, empresa)
-            antes, prom_antes = _entrada_a_stock(st, it['cantidad'], it['unit'])
+            antes, prom_antes = _entrada_a_stock(st, it['cantidad'], it['unit'], moneda)
             if ing.almacen:
                 st.almacen = ing.almacen
             if it['minimo'] is not None and it['minimo'] >= 0:
@@ -16521,11 +16618,11 @@ def insumos_ingreso_guardar():
             db.session.add(InsumoIngresoDetalle(
                 ingreso_id=ing.id, insumo_id=it['ins'].id, codigo_proveedor=it['cod_prov'] or None, cantidad=it['cantidad'],
                 precio_unitario=it['unit'], precio_total=it['total'], stock_antes=antes, stock_despues=st.stock_actual,
-                costo_prom_antes=prom_antes, costo_prom_despues=st.costo_promedio))
+                costo_prom_antes=prom_antes, costo_prom_despues=_bolsa(st, moneda)[1]))
             db.session.add(InsumoMovimiento(
                 empresa=empresa, insumo_id=it['ins'].id, fecha=fecha, tipo='ENTRADA', concepto='COMPRA', cantidad=it['cantidad'],
                 costo_unitario=it['unit'], costo_total=it['total'], stock_antes=antes, stock_despues=st.stock_actual,
-                costo_prom_despues=st.costo_promedio, referencia=ref[:120], ingreso_id=ing.id, user_id=session.get('user_id'),
+                **_datos_mov_moneda(st, moneda), referencia=ref[:120], ingreso_id=ing.id, user_id=session.get('user_id'),
                 fecha_registro=ahora))
         for tipo, a, info in archivos:
             _subir_doc_insumo(f"{empresa.lower()}/ingresos/{ing.id}", a, info, tipo, claves, ingreso_id=ing.id)
@@ -16546,7 +16643,7 @@ def insumos_ingreso_guardar():
             orden_oc.insumo_ingreso_id = ing.id
             ing.observacion = (f"{_oc_codigo(orden_oc)}" + (f" · {ing.observacion}" if ing.observacion else ''))[:300]
             _oc_evento(orden_oc, 'INSUMOS', f"Ingresado en Insumos internos (ingreso #{ing.id}, {EMPRESAS_INSUMOS[empresa]['corto']})")
-        registrar_log(f"Ingreso de insumos {EMPRESAS_INSUMOS[empresa]['corto']} #{ing.id} ({ref}, {len(items)} ítem(s), S/ {ing.total:,.2f})",
+        registrar_log(f"Ingreso de insumos {EMPRESAS_INSUMOS[empresa]['corto']} #{ing.id} ({ref}, {len(items)} ítem(s), {simbolo} {ing.total:,.2f})",
                       'bi-box-arrow-in-down', 'text-success')
         db.session.commit()
     except Exception as e:
@@ -16555,7 +16652,8 @@ def insumos_ingreso_guardar():
         app.logger.exception("No se pudo guardar el ingreso de insumos")
         flash(f'⛔ No se pudo guardar el ingreso (no se registró nada): {e}')
         return redirect(volver)
-    flash(f'✅ Ingreso registrado: {len(items)} insumo(s) por S/ {ing.total:,.2f}.')
+    flash(f'✅ Ingreso registrado: {len(items)} insumo(s) por {simbolo} {ing.total:,.2f}'
+          + (' (en dólares: se lleva aparte, sin convertir a soles).' if moneda == 'USD' else '.'))
     return redirect(url_for('insumos_ingreso_detalle', ingreso_id=ing.id))
 
 
@@ -16628,24 +16726,35 @@ def insumos_ingreso_anular(ingreso_id):
         flash('⛔ Escribe el motivo de la anulación.')
         return redirect(destino)
     ahora = hora_peru()
+    mon = ing.moneda if ing.moneda in ('PEN', 'USD') else 'PEN'
     for d in ing.detalles:
         st = _stock_de(d.insumo_id, ing.empresa, crear=False)
-        if not st or float(st.stock_actual or 0) + 1e-9 < d.cantidad:
+        q = _bolsa(st, mon)[0] if st else 0
+        if not st or q + 1e-9 < d.cantidad:
             flash(f'⛔ No se puede anular: de {d.insumo.codigo} ya salió parte de lo ingresado '
-                  f'(stock {_cant_txt(st.stock_actual if st else 0)}, ingreso {_cant_txt(d.cantidad)}).')
+                  f'(quedan {_cant_txt(q)} comprados en {"dólares" if mon == "USD" else "soles"}, ingreso {_cant_txt(d.cantidad)}).')
             return redirect(destino)
     for d in ing.detalles:
         st = _stock_de(d.insumo_id, ing.empresa, crear=False)
-        antes, prom = float(st.stock_actual or 0), float(st.costo_promedio or 0)
+        antes = float(st.stock_actual or 0)
+        q, prom = _bolsa(st, mon)
+        nuevo_q = round(q - d.cantidad, 6)
+        recalculado = (q * prom - d.cantidad * d.precio_unitario) / nuevo_q if nuevo_q > 0 else prom
+        recalculado = round(recalculado, 6) if recalculado > 0 else prom
+        if mon == 'USD':
+            st.stock_usd, st.costo_usd = nuevo_q, recalculado
+        else:
+            st.costo_promedio = recalculado
         nuevo = round(antes - d.cantidad, 6)
-        if nuevo > 0:
-            recalculado = (antes * prom - d.cantidad * d.precio_unitario) / nuevo
-            st.costo_promedio = round(recalculado, 6) if recalculado > 0 else prom
         st.stock_actual = nuevo
+        if float(st.stock_usd or 0) <= 1e-9:
+            st.stock_usd, st.bolsa_antigua = 0.0, 'PEN'
+        elif _bolsa(st, 'PEN')[0] <= 1e-9:
+            st.bolsa_antigua = 'USD'
         db.session.add(InsumoMovimiento(
             empresa=ing.empresa, insumo_id=d.insumo_id, fecha=ahora, tipo='SALIDA', concepto='ANULACION', cantidad=d.cantidad,
             costo_unitario=d.precio_unitario, costo_total=d.precio_total, stock_antes=antes, stock_despues=nuevo,
-            costo_prom_despues=st.costo_promedio, referencia=f'Anulación ingreso #{ing.id}', ingreso_id=ing.id,
+            **_datos_mov_moneda(st, mon), referencia=f'Anulación ingreso #{ing.id}', ingreso_id=ing.id,
             observacion=motivo, user_id=session.get('user_id'), fecha_registro=ahora))
     ing.estado, ing.anulado_por, ing.fecha_anulacion, ing.motivo_anulacion = 'ANULADO', session.get('nombre', ''), ahora, motivo
     try:
@@ -16769,29 +16878,38 @@ def insumos_salida_guardar():
                 estado='REGISTRADA', user_id=session.get('user_id'), fecha_registro=ahora)
             db.session.add(sal)
             db.session.flush()
-            total = 0
+            total, total_usd = 0, 0
             for it in items:
                 st = _stock_de(it['ins'].id, empresa, crear=False)
-                antes, costo = _salida_de_stock(st, it['cd'])
+                antes, partes = _salida_por_monedas(st, it['cd'])
                 st.ultima_salida = fecha
-                costo_total = round(costo * it['cd'], 2)
-                total += costo_total
+                # lo comprado en soles sale a su costo en S/; lo comprado en dólares, a su costo en US$ (no se convierte)
+                pen = [(c, u) for m_, c, u in partes if m_ == 'PEN']
+                usd = [(c, u) for m_, c, u in partes if m_ == 'USD']
+                c_pen, c_usd = sum(c for c, _ in pen), sum(c for c, _ in usd)
+                t_pen = round(sum(c * u for c, u in pen), 2)
+                t_usd = round(sum(c * u for c, u in usd), 2)
+                total += t_pen
+                total_usd += t_usd
                 db.session.add(InsumoSalidaDetalle(
                     salida_id=sal.id, insumo_id=it['ins'].id, cantidad_solicitada=it['cs'], cantidad_despachada=it['cd'],
-                    unidad=it['ins'].unidad, ubicacion=st.almacen, costo_unitario=costo, costo_total=costo_total,
+                    unidad=it['ins'].unidad, ubicacion=st.almacen, costo_unitario=pen[0][1] if pen else 0, costo_total=t_pen,
+                    cantidad_usd=round(c_usd, 6), costo_unitario_usd=usd[0][1] if usd else 0, costo_total_usd=t_usd,
                     stock_antes=antes, stock_despues=st.stock_actual))
-                db.session.add(InsumoMovimiento(
-                    empresa=empresa, insumo_id=it['ins'].id, fecha=fecha, tipo='SALIDA', concepto='CONSUMO', cantidad=it['cd'],
-                    costo_unitario=costo, costo_total=costo_total, stock_antes=antes, stock_despues=st.stock_actual,
-                    costo_prom_despues=st.costo_promedio, referencia=f'Consumo N° {sal.numero:06d} · {area.nombre}'[:120],
-                    salida_id=sal.id, area_id=area.id, user_id=session.get('user_id'), fecha_registro=ahora))
+                for m_, c, u in partes:
+                    db.session.add(InsumoMovimiento(
+                        empresa=empresa, insumo_id=it['ins'].id, fecha=fecha, tipo='SALIDA', concepto='CONSUMO', cantidad=c,
+                        costo_unitario=u, costo_total=round(c * u, 2), stock_antes=antes, stock_despues=st.stock_actual,
+                        **_datos_mov_moneda(st, m_), referencia=f'Consumo N° {sal.numero:06d} · {area.nombre}'[:120],
+                        salida_id=sal.id, area_id=area.id, user_id=session.get('user_id'), fecha_registro=ahora))
             sal.total_costo = round(total, 2)
+            sal.total_costo_usd = round(total_usd, 2)
             firma = f.get('firma_png') or ''
             if firma:
                 sal.firma_s3_key = _guardar_firma_png(firma, sal, claves)
                 sal.firma_fecha, sal.firma_por = ahora, (recibido or solicitado).nombre
             registrar_log(f"Salida de insumos {EMPRESAS_INSUMOS[empresa]['corto']} N° {sal.numero:06d} para {area.nombre} "
-                          f"(S/ {sal.total_costo:,.2f})", 'bi-box-arrow-up', 'text-danger')
+                          f"({_montos_txt(sal.total_costo, sal.total_costo_usd)})", 'bi-box-arrow-up', 'text-danger')
             db.session.commit()
             break
         except IntegrityError:
@@ -16806,7 +16924,7 @@ def insumos_salida_guardar():
             app.logger.exception("No se pudo guardar la salida de insumos")
             flash(f'⛔ No se pudo guardar la salida (no se registró nada): {e}')
             return redirect(volver)
-    flash(f'✅ Salida N° {sal.numero:06d} registrada (S/ {sal.total_costo:,.2f} para {area.nombre}).')
+    flash(f'✅ Salida N° {sal.numero:06d} registrada ({_montos_txt(sal.total_costo, sal.total_costo_usd)} para {area.nombre}).')
     return redirect(url_for('insumos_salida_detalle', salida_id=sal.id))
 
 
@@ -16831,13 +16949,16 @@ def insumos_salidas():
     if trabajador_id:
         salidas = [s for s in salidas if trabajador_id in (s.solicitado_por_id, s.recibido_por_id, s.a_cuenta_de_id)]
     categoria = request.args.get('categoria', '')
-    total_categoria = None
+    total_categoria = total_categoria_usd = None
     if categoria:
         salidas = [s for s in salidas if any((d.insumo.categoria or '') == categoria for d in s.detalles)]
         total_categoria = sum(d.costo_total or 0 for s in salidas if s.estado == 'REGISTRADA'
                               for d in s.detalles if (d.insumo.categoria or '') == categoria)
+        total_categoria_usd = sum(d.costo_total_usd or 0 for s in salidas if s.estado == 'REGISTRADA'
+                                  for d in s.detalles if (d.insumo.categoria or '') == categoria)
     total = sum(s.total_costo or 0 for s in salidas if s.estado == 'REGISTRADA')
-    return render_template('insumos_salidas.html', salidas=salidas, total=total, empresa=empresa, empresas=EMPRESAS_INSUMOS,
+    total_usd = sum(s.total_costo_usd or 0 for s in salidas if s.estado == 'REGISTRADA')
+    return render_template('insumos_salidas.html', salidas=salidas, total=total, total_usd=total_usd, total_categoria_usd=total_categoria_usd, empresa=empresa, empresas=EMPRESAS_INSUMOS,
                            areas=InsumoArea.query.order_by(InsumoArea.nombre).all(), area_id=area_id,
                            trabajadores=InsumoTrabajador.query.order_by(InsumoTrabajador.nombre).all(), trabajador_id=trabajador_id,
                            desde=desde, hasta=hasta, categoria=categoria, total_categoria=total_categoria,
@@ -16943,13 +17064,18 @@ def insumos_salida_anular(salida_id):
     ahora = hora_peru()
     for d in sal.detalles:
         st = _stock_de(d.insumo_id, sal.empresa)
-        antes, _ = _entrada_a_stock(st, d.cantidad_despachada, d.costo_unitario or 0)
-        db.session.add(InsumoMovimiento(
-            empresa=sal.empresa, insumo_id=d.insumo_id, fecha=ahora, tipo='ENTRADA', concepto='ANULACION',
-            cantidad=d.cantidad_despachada, costo_unitario=d.costo_unitario, costo_total=d.costo_total, stock_antes=antes,
-            stock_despues=st.stock_actual, costo_prom_despues=st.costo_promedio,
-            referencia=f'Anulación consumo N° {sal.numero:06d}', salida_id=sal.id, area_id=sal.area_id, observacion=motivo,
-            user_id=session.get('user_id'), fecha_registro=ahora))
+        c_usd = float(d.cantidad_usd or 0)
+        for mon, cant, unit, tot in (('PEN', round((d.cantidad_despachada or 0) - c_usd, 6), d.costo_unitario or 0, d.costo_total),
+                                     ('USD', c_usd, d.costo_unitario_usd or 0, d.costo_total_usd)):
+            if cant <= 1e-9:
+                continue
+            antes, _ = _entrada_a_stock(st, cant, unit, mon)
+            db.session.add(InsumoMovimiento(
+                empresa=sal.empresa, insumo_id=d.insumo_id, fecha=ahora, tipo='ENTRADA', concepto='ANULACION',
+                cantidad=cant, costo_unitario=unit, costo_total=tot, stock_antes=antes,
+                stock_despues=st.stock_actual, **_datos_mov_moneda(st, mon),
+                referencia=f'Anulación consumo N° {sal.numero:06d}', salida_id=sal.id, area_id=sal.area_id, observacion=motivo,
+                user_id=session.get('user_id'), fecha_registro=ahora))
     sal.estado, sal.anulado_por, sal.fecha_anulacion, sal.motivo_anulacion = 'ANULADA', session.get('nombre', ''), ahora, motivo
     registrar_log(f"Anuló la salida de insumos N° {sal.numero:06d}: {motivo}", 'bi-x-octagon', 'text-danger')
     db.session.commit()
@@ -17052,8 +17178,10 @@ def insumos_kardex():
     if hasta:
         q = q.filter(InsumoMovimiento.fecha < datetime.combine(hasta, datetime.min.time()) + timedelta(days=1))
     movs = q.order_by(InsumoMovimiento.fecha.desc(), InsumoMovimiento.id.desc()).limit(500).all()
-    entradas = sum(m.costo_total or 0 for m in movs if m.tipo == 'ENTRADA')
-    salidas = sum(m.costo_total or 0 for m in movs if m.tipo == 'SALIDA')
+    entradas = sum(m.costo_total or 0 for m in movs if m.tipo == 'ENTRADA' and (m.moneda or 'PEN') != 'USD')
+    salidas = sum(m.costo_total or 0 for m in movs if m.tipo == 'SALIDA' and (m.moneda or 'PEN') != 'USD')
+    entradas_usd = sum(m.costo_total or 0 for m in movs if m.tipo == 'ENTRADA' and m.moneda == 'USD')
+    salidas_usd = sum(m.costo_total or 0 for m in movs if m.tipo == 'SALIDA' and m.moneda == 'USD')
     insumo = Insumo.query.get(insumo_id) if insumo_id else None
     stock = _stock_de(insumo_id, empresa, crear=False) if insumo_id else None
     ids_ing = {m.ingreso_id for m in movs if m.ingreso_id}
@@ -17061,7 +17189,7 @@ def insumos_kardex():
     return render_template('insumos_kardex.html', ingresos=ingresos, empresa=empresa, empresas=EMPRESAS_INSUMOS, movs=movs, insumo=insumo, stock=stock,
                            insumos=lista, desde=desde, hasta=hasta, categoria=categoria, categorias_filtro=_categorias_insumos(),
                            puede_ajustar=session.get('role') == 'admin', concepto=concepto,
-                           tot_entradas=entradas, tot_salidas=salidas, seccion='kardex')
+                           tot_entradas=entradas, tot_salidas=salidas, tot_entradas_usd=entradas_usd, tot_salidas_usd=salidas_usd, seccion='kardex')
 
 
 # ---------------------------- GASTO POR ÁREA ----------------------------
@@ -17092,44 +17220,58 @@ def insumos_gasto():
             q = q.filter(InsumoSalida.empresa == empresa)
         res = []
         for s in q.all():
+            # soles y dólares por separado (lo comprado en US$ se gasta en US$: no se convierte)
             monto = (s.total_costo or 0) if not categoria else sum(d.costo_total or 0 for d in s.detalles if en_cat(d))
+            monto_usd = (s.total_costo_usd or 0) if not categoria else sum(d.costo_total_usd or 0 for d in s.detalles if en_cat(d))
             if not categoria or any(en_cat(d) for d in s.detalles):
-                res.append((s, monto))
+                res.append((s, monto, monto_usd))
         return res
     salidas = salidas_entre(ini, fin)
-    total = sum(m for _, m in salidas)
+    total = sum(m for _, m, _u in salidas)
+    total_usd = sum(u for _, _m, u in salidas)
     areas, personas, insumos, cats = {}, {}, {}, {}
-    for s, monto in salidas:
-        a = areas.setdefault(s.area_id, {'id': s.area_id, 'nombre': s.area.nombre if s.area else 'Sin área', 'total': 0, 'salidas': 0,
-                                         'anclajes': 0, 'importbolts': 0})
+    for s, monto, monto_usd in salidas:
+        a = areas.setdefault(s.area_id, {'id': s.area_id, 'nombre': s.area.nombre if s.area else 'Sin área', 'total': 0, 'total_usd': 0, 'salidas': 0,
+                                         'anclajes': 0, 'importbolts': 0, 'anclajes_usd': 0, 'importbolts_usd': 0})
         a['total'] += monto
+        a['total_usd'] += monto_usd
         a['salidas'] += 1
         a['anclajes' if s.empresa == 'ANCLAJES' else 'importbolts'] += monto
+        a[('anclajes' if s.empresa == 'ANCLAJES' else 'importbolts') + '_usd'] += monto_usd
         quien = s.a_cuenta_de or s.solicitado_por
         if quien:
             p = personas.setdefault(quien.id, {'id': quien.id, 'nombre': quien.nombre, 'area': quien.area.nombre if quien.area else '',
-                                               'total': 0, 'salidas': 0})
+                                               'total': 0, 'total_usd': 0, 'salidas': 0})
             p['total'] += monto
+            p['total_usd'] += monto_usd
             p['salidas'] += 1
         for d in s.detalles:
             if not en_cat(d):
                 continue
             i = insumos.setdefault(d.insumo_id, {'codigo': d.insumo.codigo, 'descripcion': d.insumo.descripcion,
-                                                 'unidad': d.unidad or d.insumo.unidad, 'cantidad': 0, 'total': 0})
+                                                 'unidad': d.unidad or d.insumo.unidad, 'cantidad': 0, 'total': 0, 'total_usd': 0})
             i['cantidad'] += d.cantidad_despachada or 0
             i['total'] += d.costo_total or 0
-            c = cats.setdefault(d.insumo.categoria or 'Sin categoría', {'nombre': d.insumo.categoria or 'Sin categoría', 'total': 0, 'items': 0})
+            i['total_usd'] += d.costo_total_usd or 0
+            c = cats.setdefault(d.insumo.categoria or 'Sin categoría', {'nombre': d.insumo.categoria or 'Sin categoría', 'total': 0, 'total_usd': 0, 'items': 0})
             c['total'] += d.costo_total or 0
+            c['total_usd'] += d.costo_total_usd or 0
             c['items'] += 1
-    lista_areas = sorted(areas.values(), key=lambda a: -a['total'])
+    # % y barras por moneda (no se suman soles con dólares)
+    lista_areas = sorted(areas.values(), key=lambda a: (-a['total'], -a['total_usd']))
     maximo = max([a['total'] for a in lista_areas] + [0]) or 1
+    maximo_usd = max([a['total_usd'] for a in lista_areas] + [0]) or 1
     for a in lista_areas:
         a['pct'] = round(100 * a['total'] / total, 1) if total else 0
+        a['pct_usd'] = round(100 * a['total_usd'] / total_usd, 1) if total_usd else 0
         a['barra'] = round(100 * a['total'] / maximo)
-    lista_cats = sorted(cats.values(), key=lambda c: -c['total'])
+        a['barra_usd'] = round(100 * a['total_usd'] / maximo_usd)
+    lista_cats = sorted(cats.values(), key=lambda c: (-c['total'], -c['total_usd']))
     total_cats = sum(c['total'] for c in lista_cats) or 1
+    total_cats_usd = sum(c['total_usd'] for c in lista_cats) or 1
     for c in lista_cats:
         c['pct'] = round(100 * c['total'] / total_cats, 1)
+        c['pct_usd'] = round(100 * c['total_usd'] / total_cats_usd, 1)
     # Últimos 6 meses (hasta el mes de "hasta"), por área
     meses = []
     y, m = hasta.year, hasta.month
@@ -17138,17 +17280,21 @@ def insumos_gasto():
         y, m = (y, m - 1) if m > 1 else (y - 1, 12)
     ini6 = datetime(meses[0][0], meses[0][1], 1)
     fin6 = datetime(hasta.year + (hasta.month == 12), hasta.month % 12 + 1, 1)
-    matriz = {}
-    for s, monto in salidas_entre(ini6, fin6):
-        fila = matriz.setdefault(s.area.nombre if s.area else 'Sin área', {})
+    matriz, matriz_usd = {}, {}
+    for s, monto, monto_usd in salidas_entre(ini6, fin6):
+        nombre = s.area.nombre if s.area else 'Sin área'
         clave = (s.fecha.year, s.fecha.month)
+        fila = matriz.setdefault(nombre, {})
         fila[clave] = fila.get(clave, 0) + monto
-    mensual = sorted(({'area': k, 'meses': [v.get(mm, 0) for mm in meses], 'total': sum(v.values())} for k, v in matriz.items()),
-                     key=lambda r: -r['total'])
+        fu = matriz_usd.setdefault(nombre, {})
+        fu[clave] = fu.get(clave, 0) + monto_usd
+    mensual = sorted(({'area': k, 'meses': [v.get(mm, 0) for mm in meses], 'total': sum(v.values()),
+                       'meses_usd': [matriz_usd.get(k, {}).get(mm, 0) for mm in meses], 'total_usd': sum(matriz_usd.get(k, {}).values())}
+                      for k, v in matriz.items()), key=lambda r: (-r['total'], -r['total_usd']))
     max_celda = max([x for r in mensual for x in r['meses']] + [0]) or 1
-    return render_template('insumos_gasto.html', empresa=empresa, empresas=EMPRESAS_INSUMOS, desde=desde, hasta=hasta, total=total,
-                           n_salidas=len(salidas), areas=lista_areas, personas=sorted(personas.values(), key=lambda p: -p['total'])[:15],
-                           insumos=sorted(insumos.values(), key=lambda i: -i['total'])[:15], mensual=mensual, max_celda=max_celda,
+    return render_template('insumos_gasto.html', empresa=empresa, empresas=EMPRESAS_INSUMOS, desde=desde, hasta=hasta, total=total, total_usd=total_usd,
+                           n_salidas=len(salidas), areas=lista_areas, personas=sorted(personas.values(), key=lambda p: (-p['total'], -p['total_usd']))[:15],
+                           insumos=sorted(insumos.values(), key=lambda i: (-i['total'], -i['total_usd']))[:15], mensual=mensual, max_celda=max_celda,
                            categoria=categoria, categorias_filtro=_categorias_insumos(), por_categoria=lista_cats,
                            meses=[f"{MESES_CORTOS_INSUMOS[mm - 1]} {str(yy)[2:]}" for yy, mm in meses], seccion='gasto')
 
@@ -17414,25 +17560,30 @@ def insumos_ajustar_costo(insumo_id, empresa):
     ins = Insumo.query.get(insumo_id)
     if empresa not in EMPRESAS_INSUMOS or not ins:
         return {'status': 'error', 'msg': 'Datos inválidos'}
+    moneda = 'USD' if (request.form.get('moneda') or '').upper() == 'USD' else 'PEN'
+    sim = MONEDAS_INSUMOS[moneda]
     nuevo = _num(request.form.get('costo'))
     motivo = ' '.join((request.form.get('motivo') or '').split())[:255]
     if nuevo is None or nuevo < 0:
-        return {'status': 'error', 'msg': 'Escribe el nuevo costo promedio (S/ por unidad, con IGV).'}
+        return {'status': 'error', 'msg': f'Escribe el nuevo costo promedio ({sim} por unidad).'}
     if len(motivo) < 5:
         return {'status': 'error', 'msg': 'Escribe el motivo del ajuste (queda en la auditoría).'}
     st = _stock_de(ins.id, empresa)
-    antes = float(st.costo_promedio or 0)
+    stock, antes = _bolsa(st, moneda)
     if abs(round(nuevo, 6) - round(antes, 6)) < 1e-9:
         return {'status': 'error', 'msg': 'Es el mismo costo que ya tiene.'}
     ahora = hora_peru()
-    stock = float(st.stock_actual or 0)
-    st.costo_promedio = round(nuevo, 6)
+    if moneda == 'USD':
+        st.costo_usd = round(nuevo, 6)
+    else:
+        st.costo_promedio = round(nuevo, 6)
+    total = float(st.stock_actual or 0)
     db.session.add(InsumoMovimiento(
         empresa=empresa, insumo_id=ins.id, fecha=ahora, tipo='AJUSTE', concepto='AJUSTE_COSTO', cantidad=0,
-        costo_unitario=antes, costo_total=round(stock * (nuevo - antes), 2), stock_antes=stock, stock_despues=stock,
-        costo_prom_despues=st.costo_promedio, referencia=f'Costo promedio S/ {antes:,.4f} → S/ {nuevo:,.4f}'[:120],
+        costo_unitario=antes, costo_total=round(stock * (nuevo - antes), 2), stock_antes=total, stock_despues=total,
+        **_datos_mov_moneda(st, moneda), referencia=f'Costo promedio {sim} {antes:,.4f} → {sim} {nuevo:,.4f}'[:120],
         observacion=motivo, user_id=session.get('user_id'), fecha_registro=ahora))
-    registrar_log(f"Ajustó el costo promedio de {ins.codigo} en {EMPRESAS_INSUMOS[empresa]['corto']}: S/ {antes:,.4f} → S/ {nuevo:,.4f} ({motivo})",
+    registrar_log(f"Ajustó el costo promedio ({sim}) de {ins.codigo} en {EMPRESAS_INSUMOS[empresa]['corto']}: {sim} {antes:,.4f} → {sim} {nuevo:,.4f} ({motivo})",
                   'bi-currency-exchange', 'text-warning')
     db.session.commit()
     return {'status': 'success'}
@@ -17685,23 +17836,6 @@ USOS_MOTIVO_OC = {'RECHAZO': 'Rechazo (Gerencia)', 'ANULACION': 'Anulación', 'D
 APLICA_MOTIVO_OC = {'AMBAS': 'OC y OS', 'OC': 'Solo OC', 'OS': 'Solo OS', 'RQ': 'Requerimientos'}
 DETRACCION_DEF = 12.0       # % de detracción sugerido (se cambia en cada orden)
 _oc_ok = False
-
-
-def _agregar_columnas_si_faltan(tabla, columnas):
-    """ALTER TABLE ... ADD COLUMN para las columnas nuevas que todavía no existen (sin rutas /fix_)."""
-    from sqlalchemy import inspect as sa_inspect
-    existentes = {c['name'] for c in sa_inspect(db.engine).get_columns(tabla)}
-    faltan = [(n, t) for n, t in columnas if n not in existentes]
-    if not faltan:
-        return
-    es_pg = db.engine.dialect.name == 'postgresql'
-    with db.engine.begin() as conn:
-        if es_pg:
-            conn.execute(text("SET LOCAL lock_timeout = '5s'"))
-        for nombre, tipo in faltan:
-            if not es_pg:
-                tipo = tipo.replace('DEFAULT FALSE', 'DEFAULT 0').replace('TIMESTAMP', 'DATETIME')
-            conn.execute(text(f'ALTER TABLE {tabla} ADD COLUMN {"IF NOT EXISTS " if es_pg else ""}{nombre} {tipo}'))
 
 
 def _sembrar_catalogos_oc():

@@ -32,10 +32,10 @@
 <div class="alert d-flex gap-2 align-items-start py-2" style="background:#eff6ff; border:1px solid #bfdbfe;">
     <i class="bi bi-cart-check-fill fs-4 text-primary"></i>
     <div class="small"><b>Ingreso desde la {{ oc_prefill.codigo }}</b> (conforme · {{ empresas[oc_prefill.empresa].corto }}). Ya se llenaron el proveedor, la fecha de llegada, la factura, los documentos y los ítems.
-        Revisa los datos{% if oc_prefill.moneda == 'USD' %} y <b class="text-danger">escribe los precios en SOLES con IGV</b> (la orden está en dólares){% endif %}.
+        Revisa los datos{% if oc_prefill.moneda == 'USD' %}. La orden está en <b>dólares</b>: el ingreso queda en <b>US$</b>, sin convertir (se lleva aparte de lo comprado en soles){% endif %}.
         Si algún ítem no está en el maestro de insumos, créalo con <b>"Nuevo insumo"</b> y elígelo en su fila.
         <div class="mt-1"><i class="bi bi-info-circle-fill"></i> <b>¿Por qué cambia el precio?</b> La orden de compra va <b>sin IGV</b> (como la cotización). En Insumos se registra <b>con IGV</b>
-            porque en material de uso interno el IGV es parte del gasto: precio de la orden × 1.18. Así el costo promedio y el gasto por área son reales.</div></div>
+            porque en material de uso interno el IGV es parte del gasto: precio de la orden × 1.18 (en importaciones no hay IGV). Así el costo promedio y el gasto por área son reales.</div></div>
 </div>
 {% elif oc_pendientes %}
 <div class="alert py-2 small" style="background:#fffbeb; border:1px solid #fde68a;">
@@ -64,6 +64,14 @@
                 <div class="col-6"><label class="small fw-bold"># Factura *</label>
                     <input type="text" name="numero_factura" id="numero_factura" class="form-control text-uppercase" maxlength="50" placeholder="F001-12345" required>
                     <div class="form-text" style="font-size:.68rem;">O el N° de boleta / recibo si es sin RUC.</div></div>
+                <div class="col-12"><label class="small fw-bold d-block">Moneda de la factura *</label>
+                    <div class="btn-group w-100" role="group">
+                        <input type="radio" class="btn-check" name="moneda" id="mon_PEN" value="PEN" checked onchange="cambioMoneda()" {{ 'disabled' if oc_prefill and oc_prefill.moneda == 'USD' }}>
+                        <label class="btn btn-outline-primary btn-sm fw-bold" for="mon_PEN">S/ Soles</label>
+                        <input type="radio" class="btn-check" name="moneda" id="mon_USD" value="USD" onchange="cambioMoneda()" {{ 'disabled' if oc_prefill and oc_prefill.moneda != 'USD' }}>
+                        <label class="btn btn-outline-success btn-sm fw-bold" for="mon_USD">US$ Dólares</label>
+                    </div>
+                    <div class="form-text" style="font-size:.68rem;">Lo comprado en <b>dólares</b> se lleva aparte, <b>sin convertir</b>: su stock, su costo promedio y su gasto quedan en US$. Al sacar, sale primero lo que entró antes.</div></div>
                 <div class="col-12"><label class="small fw-bold">Almacén donde se guarda</label>
                     <select name="almacen" class="form-select"><option value="">— Sin especificar —</option>
                         {% for a in almacenes %}<option value="{{ a.valor }}">{{ a.valor }}</option>{% endfor %}</select>
@@ -139,7 +147,7 @@
             <div id="filas"></div>
             <button type="button" class="btn btn-outline-primary w-100 mb-3" onclick="agregarFila()"><i class="bi bi-plus-circle"></i> Agregar otro insumo</button>
             <div class="d-flex justify-content-between align-items-center border-top pt-2">
-                <span class="text-muted">Total del ingreso (con IGV)</span>
+                <span class="text-muted">Total del ingreso <span id="lblMonTotal">(con IGV)</span></span>
                 <span class="total-ingreso" id="totalIngreso">S/ 0.00</span>
             </div>
             <div class="form-text">El costo de cada insumo se calcula como <b>promedio ponderado</b> entre lo que ya había y esta compra.</div>
@@ -162,8 +170,8 @@
             <div class="col-12 info"></div>
             <div class="col-6 col-md-4"><label>Cód. proveedor</label><input name="codigo_proveedor[]" class="form-control form-control-sm" maxlength="60"></div>
             <div class="col-6 col-md-2"><label>Cantidad *</label><input name="cantidad[]" type="number" step="any" min="0" class="form-control form-control-sm c-cant"></div>
-            <div class="col-6 col-md-3"><label>Precio unit. c/IGV</label><input name="precio_unitario[]" type="number" step="any" min="0" class="form-control form-control-sm c-pu"></div>
-            <div class="col-6 col-md-3"><label>Precio total c/IGV</label><input name="precio_total[]" type="number" step="any" min="0" class="form-control form-control-sm c-pt"></div>
+            <div class="col-6 col-md-3"><label><span class="lbl-pu">Precio unit. c/IGV</span> <span class="sim-mon">S/</span></label><input name="precio_unitario[]" type="number" step="any" min="0" class="form-control form-control-sm c-pu"></div>
+            <div class="col-6 col-md-3"><label><span class="lbl-pt">Precio total c/IGV</span> <span class="sim-mon">S/</span></label><input name="precio_total[]" type="number" step="any" min="0" class="form-control form-control-sm c-pt"></div>
             <div class="col-6 col-md-4"><label>Stock mínimo</label><input name="stock_minimo[]" type="number" step="any" min="0" class="form-control form-control-sm c-min"></div>
         </div>
     </div>
@@ -196,7 +204,11 @@ function pintarInfo(fila) {
     const d = datoInsumo(fila.querySelector('.sel-insumo').value);
     const info = fila.querySelector('.info');
     if (!d) { info.innerHTML = ''; return; }
-    info.innerHTML = `<span class="badge bg-light text-dark border">${esc(d.unidad)}</span> Stock actual: <b>${fmt(d.stock, 0)}</b> · costo prom.: <b>S/ ${fmt(d.costo, 2)}</b>${d.categoria ? ' · ' + esc(d.categoria) : ''}`;
+    const usd = monedaIngreso() === 'USD';
+    info.innerHTML = `<span class="badge bg-light text-dark border">${esc(d.unidad)}</span> Stock actual: <b>${fmt(d.stock, 0)}</b>` +
+        (d.stock - (d.stock_usd || 0) > 0 || !d.stock_usd ? ` · costo prom. en soles: <b>S/ ${fmt(d.costo, 2)}</b>` : '') +
+        (d.stock_usd ? ` · <span style="color:#0f766e;">${fmt(d.stock_usd, 0)} comprados en dólares a <b>US$ ${fmt(d.costo_usd, 2)}</b></span>` : '') +
+        (d.categoria ? ' · ' + esc(d.categoria) : '');
     const min = fila.querySelector('.c-min');
     if (!min.dataset.tocado) min.value = d.minimo || '';
 }
@@ -209,7 +221,14 @@ function numerar() { document.querySelectorAll('#filas .fila-item').forEach((f, 
 function recalcular() {
     let total = 0;
     document.querySelectorAll('#filas .fila-item').forEach(f => total += parseFloat(f.querySelector('.c-pt').value) || 0);
-    document.getElementById('totalIngreso').textContent = 'S/ ' + fmt(total);
+    document.getElementById('totalIngreso').textContent = simboloIngreso() + ' ' + fmt(total);
+}
+function monedaIngreso() { const r = document.querySelector('#formIngreso input[name=moneda]:checked'); return r ? r.value : 'PEN'; }
+function simboloIngreso() { return monedaIngreso() === 'USD' ? 'US$' : 'S/'; }
+function cambioMoneda() {
+    document.querySelectorAll('.sim-mon').forEach(x => x.textContent = simboloIngreso());
+    document.querySelectorAll('#filas .fila-item').forEach(f => { if (f.querySelector('.sel-insumo').value) pintarInfo(f); });
+    recalcular();
 }
 function agregarFila(insumoId) {
     const fila = document.getElementById('tplFila').content.firstElementChild.cloneNode(true);
@@ -239,6 +258,7 @@ function agregarFila(insumoId) {
         fila.remove(); numerar(); recalcular();
     });
     numerar(); pintarInfo(fila);
+    fila.querySelectorAll('.sim-mon').forEach(x => x.textContent = simboloIngreso());
     return fila;
 }
 function cambioEmpresa() {
@@ -372,6 +392,7 @@ document.getElementById('formIngreso').addEventListener('submit', function (e) {
     const btn = document.getElementById('btnGuardar'); btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Guardando...';
 });
 if (PREFILL) {
+    if (PREFILL.moneda === 'USD') { porId('mon_USD').checked = true; }
     porId('fecha_ingreso').value = PREFILL.fecha;
     porId('numero_factura').value = PREFILL.numero_factura || '';
     const p = PREFILL.proveedor;
@@ -386,7 +407,7 @@ if (PREFILL) {
         const fila = agregarFila(it.insumo_id || null);
         const d = fila.querySelector('.oc-desc');
         d.textContent = `De la orden: ${it.descripcion} (${it.cantidad} ${it.um}) · P.U. orden ${it.simbolo} ${Number(it.precio_oc).toFixed(2)} sin IGV` +
-            (it.precio_unitario !== '' ? ` → S/ ${Number(it.precio_unitario).toFixed(2)} con IGV` : ' → escribe el precio en soles con IGV') + (it.insumo_id ? '' : ' — elige el insumo');
+            (it.precio_unitario !== '' ? ` → ${it.simbolo} ${Number(it.precio_unitario).toFixed(2)}${PREFILL.importacion ? ' (importación, sin IGV)' : ' con IGV'}` : '') + (it.insumo_id ? '' : ' — elige el insumo');
         d.style.display = 'block';
         if (!it.insumo_id) {
             const b = document.createElement('button'); b.type = 'button'; b.className = 'btn btn-sm btn-outline-success py-0 ms-1';

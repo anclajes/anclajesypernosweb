@@ -29,7 +29,7 @@
                 <td><b>{{ i.razon_social or '-' }}</b><div class="text-muted">{{ i.ruc or '' }}</div></td>
                 <td>{{ i.numero_factura or '-' }}</td>
                 <td class="text-center">{{ i.detalles|length }}</td>
-                <td class="text-end fw-semibold text-nowrap">{{ i.total|soles }}</td>
+                <td class="text-end fw-semibold text-nowrap">{{ ('US$ ' ~ '{:,.2f}'.format(i.total or 0)) if i.moneda == 'USD' else i.total|soles }}</td>
                 <td>{% for d in docs.get(i.id, []) %}<a href="{{ url_for('insumos_documento', doc_id=d.id) }}" target="_blank" class="badge text-bg-light border text-decoration-none me-1"><i class="bi {{ 'bi-receipt' if d.tipo == 'FACTURA' else 'bi-truck' if d.tipo == 'GUIA' else 'bi-paperclip' }}"></i> {{ d.tipo|title }}</a>{% else %}<span class="text-muted">—</span>{% endfor %}</td>
                 <td class="pe-3 text-end"><a href="{{ url_for('insumos_ingreso_detalle', ingreso_id=i.id) }}" class="btn btn-sm btn-outline-primary py-0"><i class="bi bi-eye"></i></a></td>
             </tr>

@@ -79,6 +79,6 @@
             {% if firma %}<img src="{{ firma.uri }}" width="{{ firma.ancho }}" height="{{ firma.alto }}"><br><span class="chico">Firmado en pantalla el {{ sal.firma_fecha.strftime('%d/%m/%Y %H:%M') if sal.firma_fecha else '' }}</span>{% else %}<br><br><br>{% endif %}</td>
     </tr>
 </table>
-<p class="chico" style="margin-top: 4px;">Costo de la salida (costo promedio con IGV): S/ {{ '{:,.2f}'.format(sal.total_costo or 0) }} · Registrado en el sistema el {{ sal.fecha_registro.strftime('%d/%m/%Y %H:%M') if sal.fecha_registro else '' }}</p>
+<p class="chico" style="margin-top: 4px;">Costo de la salida (costo promedio): {{ montos_txt(sal.total_costo, sal.total_costo_usd) }} · Registrado en el sistema el {{ sal.fecha_registro.strftime('%d/%m/%Y %H:%M') if sal.fecha_registro else '' }}</p>
 </body>
 </html>

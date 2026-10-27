@@ -1071,7 +1071,12 @@ class InsumoStock(db.Model):
     empresa = db.Column(db.String(15), nullable=False)        # ANCLAJES / IMPORTBOLTS
     stock_actual = db.Column(db.Float, default=0)
     stock_minimo = db.Column(db.Float, default=0)
-    costo_promedio = db.Column(db.Float, default=0)          # S/ por unidad, con IGV
+    costo_promedio = db.Column(db.Float, default=0)          # S/ por unidad, con IGV (de lo comprado en SOLES)
+    # Lo comprado en DÓLARES se lleva aparte (sin convertir): cuántas unidades del stock son "en dólares" y su costo en US$.
+    # stock_actual = unidades en soles + stock_usd
+    stock_usd = db.Column(db.Float, default=0)
+    costo_usd = db.Column(db.Float, default=0)               # US$ por unidad (con IGV si la factura lo lleva)
+    bolsa_antigua = db.Column(db.String(3), default='PEN')    # de qué moneda son las unidades más antiguas (salen primero)
     almacen = db.Column(db.String(100))                     # almacén / ubicación
     ultimo_ingreso = db.Column(db.DateTime, nullable=True)
     ultima_salida = db.Column(db.DateTime, nullable=True)
@@ -1107,6 +1112,7 @@ class InsumoIngreso(db.Model):
     ruc = db.Column(db.String(20))
     razon_social = db.Column(db.String(200))
     direccion = db.Column(db.String(250))
+    moneda = db.Column(db.String(3), default='PEN')                  # PEN / USD (precios del ingreso en esa moneda)
     numero_factura = db.Column(db.String(50))
     contacto_nombre = db.Column(db.String(120))
     contacto_telefono = db.Column(db.String(40))
@@ -1157,6 +1163,7 @@ class InsumoSalida(db.Model):
     motivo = db.Column(db.String(100))            # "Necesario para" (catálogo)
     motivo_detalle = db.Column(db.String(300))    # explicación libre
     total_costo = db.Column(db.Float, default=0)
+    total_costo_usd = db.Column(db.Float, default=0)   # gasto en dólares (lo que salió de compras en US$, sin convertir)
     estado = db.Column(db.String(10), default='REGISTRADA')        # REGISTRADA / ANULADA
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)   # grabado / entregado por
     fecha_registro = db.Column(db.DateTime, default=hora_peru)
@@ -1186,8 +1193,11 @@ class InsumoSalidaDetalle(db.Model):
     cantidad_despachada = db.Column(db.Float, nullable=False)
     unidad = db.Column(db.String(30))
     ubicacion = db.Column(db.String(100))
-    costo_unitario = db.Column(db.Float, default=0)   # costo promedio al momento de la salida
-    costo_total = db.Column(db.Float, default=0)
+    costo_unitario = db.Column(db.Float, default=0)   # costo promedio (S/) de la parte que salió de lo comprado en soles
+    costo_total = db.Column(db.Float, default=0)      # S/
+    cantidad_usd = db.Column(db.Float, default=0)     # de lo despachado, cuánto salió de lo comprado en dólares
+    costo_unitario_usd = db.Column(db.Float, default=0)
+    costo_total_usd = db.Column(db.Float, default=0)  # US$
     stock_antes = db.Column(db.Float)
     stock_despues = db.Column(db.Float)
 
@@ -1209,6 +1219,8 @@ class InsumoMovimiento(db.Model):
     stock_antes = db.Column(db.Float)
     stock_despues = db.Column(db.Float)
     costo_prom_despues = db.Column(db.Float)
+    moneda = db.Column(db.String(3), default='PEN')         # moneda del costo de este movimiento (PEN / USD)
+    stock_moneda_despues = db.Column(db.Float)              # unidades que quedan compradas en ESA moneda (para el valor del saldo)
     referencia = db.Column(db.String(120))                 # "Factura F001-123" / "Consumo N° 000015"
     ingreso_id = db.Column(db.Integer, db.ForeignKey('insumo_ingreso.id'), nullable=True)
     salida_id = db.Column(db.Integer, db.ForeignKey('insumo_salida.id'), nullable=True)

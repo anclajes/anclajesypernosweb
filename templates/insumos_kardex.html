@@ -3,6 +3,7 @@
 {% block subtitle %}Kardex valorizado {{ empresas[empresa].corto }}{% endblock %}
 {% block content %}
 {% include '_insumos_nav.html' %}
+{% macro dinero(v, mon) %}{{ ('US$ ' ~ '{:,.2f}'.format(v or 0)) if mon == 'USD' else (v|soles) }}{% endmacro %}
 {# Mismo formato que el Kardex de los inventarios de Anclajes / Import Bolts, más la valorización (costo promedio) #}
 <style>
     .kardex-filtros-card { border-radius: 14px; }
@@ -72,16 +73,20 @@
 <div class="card shadow-sm border-0 kx-ficha mb-3"><div class="card-body py-2 d-flex flex-wrap gap-4 align-items-center">
     <div class="me-auto"><div class="k">{{ insumo.codigo }}</div><div class="fw-bold">{{ insumo.descripcion }}</div><div class="text-muted small">{{ insumo.categoria or '' }} · {{ insumo.unidad }}</div></div>
     <div><div class="k">Stock</div><div class="v">{{ stock.stock_actual|cant if stock else '0' }}</div></div>
-    <div><div class="k">Costo prom.</div><div class="v">{{ (stock.costo_promedio if stock else 0)|soles }}</div>
-        {% if puede_ajustar %}<button type="button" class="btn btn-link btn-sm p-0" onclick="ajustarCosto({{ insumo.id }}, '{{ empresa }}', {{ (insumo.codigo ~ ' · ' ~ insumo.descripcion)|tojson|forceescape }}, {{ (stock.costo_promedio if stock else 0)|tojson }}, {{ (stock.stock_actual if stock else 0)|tojson }})"><i class="bi bi-pencil"></i> Editar</button>{% endif %}</div>
-    <div><div class="k">Valor</div><div class="v">{{ ((stock.stock_actual or 0) * (stock.costo_promedio or 0) if stock else 0)|soles }}</div></div>
+    {% set q_usd = (stock.stock_usd or 0) if stock else 0 %}{% set q_pen = ((stock.stock_actual or 0) - q_usd) if stock else 0 %}
+    <div><div class="k">Costo prom. S/{% if q_usd %} ({{ q_pen|cant }} und){% endif %}</div><div class="v">{{ (stock.costo_promedio if stock else 0)|soles }}</div>
+        {% if puede_ajustar %}<button type="button" class="btn btn-link btn-sm p-0" onclick="ajustarCosto({{ insumo.id }}, '{{ empresa }}', {{ (insumo.codigo ~ ' · ' ~ insumo.descripcion)|tojson|forceescape }}, {{ (stock.costo_promedio if stock else 0)|tojson }}, {{ q_pen|tojson }}, 'PEN')"><i class="bi bi-pencil"></i> Editar</button>{% endif %}</div>
+    {% if q_usd %}<div><div class="k">Costo prom. US$ ({{ q_usd|cant }} und)</div><div class="v" style="color:#0f766e;">US$ {{ '{:,.2f}'.format(stock.costo_usd or 0) }}</div>
+        {% if puede_ajustar %}<button type="button" class="btn btn-link btn-sm p-0" onclick="ajustarCosto({{ insumo.id }}, '{{ empresa }}', {{ (insumo.codigo ~ ' · ' ~ insumo.descripcion)|tojson|forceescape }}, {{ (stock.costo_usd or 0)|tojson }}, {{ q_usd|tojson }}, 'USD')"><i class="bi bi-pencil"></i> Editar</button>{% endif %}</div>{% endif %}
+    <div><div class="k">Valor</div><div class="v">{{ montos_txt(q_pen * ((stock.costo_promedio or 0) if stock else 0), q_usd * ((stock.costo_usd or 0) if stock else 0)) }}</div></div>
 </div></div>
 {% endif %}
 
 <div class="d-flex flex-wrap gap-2 mb-2">
     <span class="badge rounded-pill text-bg-dark px-3 py-2"><i class="bi bi-calculator"></i> {{ movs|length }} movimiento(s){% if movs|length == 500 %} (los 500 más recientes){% endif %}</span>
-    <span class="badge rounded-pill bg-success-subtle text-success border border-success px-3 py-2">Entradas: {{ tot_entradas|soles }}</span>
-    <span class="badge rounded-pill bg-danger-subtle text-danger border border-danger px-3 py-2">Salidas: {{ tot_salidas|soles }}</span>
+    <span class="badge rounded-pill bg-success-subtle text-success border border-success px-3 py-2">Entradas: {{ montos_txt(tot_entradas, tot_entradas_usd) }}</span>
+    <span class="badge rounded-pill bg-danger-subtle text-danger border border-danger px-3 py-2">Salidas: {{ montos_txt(tot_salidas, tot_salidas_usd) }}</span>
+    <span class="small text-muted align-self-center">Soles y dólares por separado (lo comprado en US$ no se convierte).</span>
 </div>
 
 <div class="card shadow-sm border-0">
@@ -102,7 +107,7 @@
             </thead>
             <tbody>
             {% for m in movs %}
-                {% set ent = m.tipo == 'ENTRADA' %}{% set sal = m.tipo == 'SALIDA' %}{% set ing = ingresos.get(m.ingreso_id) %}
+                {% set ent = m.tipo == 'ENTRADA' %}{% set sal = m.tipo == 'SALIDA' %}{% set ing = ingresos.get(m.ingreso_id) %}{% set mon = m.moneda or 'PEN' %}
                 <tr>
                     <td class="ps-3 text-nowrap"><div class="fw-semibold text-dark">{{ m.fecha.strftime('%d/%m/%y') }}</div><div class="text-muted">{{ m.fecha.strftime('%H:%M') }}</div></td>
                     <td class="kx-producto">
@@ -122,6 +127,7 @@
                         {% if m.ingreso_id %}<a href="{{ url_for('insumos_ingreso_detalle', ingreso_id=m.ingreso_id) }}" class="fw-bold text-dark">/ {{ m.referencia }}</a>
                         {% elif m.salida_id %}<a href="{{ url_for('insumos_salida_detalle', salida_id=m.salida_id) }}" class="fw-bold text-dark">/ {{ m.referencia }}</a>
                         {% elif m.referencia %}<span class="fw-bold text-dark">/ {{ m.referencia }}</span>{% endif %}
+                        {% if mon == 'USD' %}<span class="badge" style="background:#ccfbf1; color:#0f766e; font-size:.6rem;">EN DÓLARES</span>{% endif %}
                         {% if m.observacion %}<div class="kx-obs"><i class="bi bi-chat-left-text"></i> {% if m.concepto == 'AJUSTE_COSTO' %}Motivo: {% endif %}{{ m.observacion }}</div>{% endif %}
                     </td>
                     <td class="kx-proveedor">
@@ -131,14 +137,15 @@
                     </td>
                     <td class="text-end text-nowrap num">
                         {% if m.concepto == 'AJUSTE_COSTO' %}
-                        <div title="Costo anterior"><s class="text-muted">{{ m.costo_unitario|soles }}</s></div>
-                        <div class="{{ 'text-success' if (m.costo_total or 0) >= 0 else 'text-danger' }}" style="font-size:.72rem;" title="Cambio en el valor del stock">{{ '+' if (m.costo_total or 0) >= 0 }}{{ m.costo_total|soles }}</div>
+                        <div title="Costo anterior"><s class="text-muted">{{ dinero(m.costo_unitario, mon) }}</s></div>
+                        <div class="{{ 'text-success' if (m.costo_total or 0) >= 0 else 'text-danger' }}" style="font-size:.72rem;" title="Cambio en el valor del stock">{{ '+' if (m.costo_total or 0) >= 0 }}{{ dinero(m.costo_total, mon) }}</div>
                         {% else %}
-                        <div>{{ m.costo_unitario|soles }}</div><div class="text-muted" style="font-size:.72rem;">{{ m.costo_total|soles }}</div>
+                        <div>{{ dinero(m.costo_unitario, mon) }}</div><div class="text-muted" style="font-size:.72rem;">{{ dinero(m.costo_total, mon) }}</div>
                         {% endif %}
                     </td>
-                    <td class="text-end text-nowrap num"><div class="fw-semibold">{{ m.costo_prom_despues|soles }}</div>
-                        <div class="text-muted" style="font-size:.72rem;">{{ ((m.stock_despues or 0) * (m.costo_prom_despues or 0))|soles }}</div></td>
+                    {% set q_mon = m.stock_moneda_despues if m.stock_moneda_despues is not none else m.stock_despues %}
+                    <td class="text-end text-nowrap num {{ 'text-teal' if mon == 'USD' }}"><div class="fw-semibold" {% if mon == 'USD' %}style="color:#0f766e;"{% endif %}>{{ dinero(m.costo_prom_despues, mon) }}</div>
+                        <div class="text-muted" style="font-size:.72rem;" title="{{ 'Valor de lo comprado en dólares que queda' if mon == 'USD' else 'Valor de lo comprado en soles que queda' }}">{{ dinero((q_mon or 0) * (m.costo_prom_despues or 0), mon) }}{% if m.stock_moneda_despues is not none and (m.stock_moneda_despues or 0) != (m.stock_despues or 0) %} · {{ q_mon|cant }} und{% endif %}</div></td>
                     <td class="pe-3 text-nowrap text-muted"><i class="bi bi-person-fill"></i> {{ m.usuario.username if m.usuario else '' }}
                         {% if m.concepto == 'AJUSTE_COSTO' and m.fecha_registro %}<div style="font-size:.68rem;">{{ m.fecha_registro.strftime('%d/%m/%Y %H:%M') }}</div>{% endif %}</td>
                 </tr>

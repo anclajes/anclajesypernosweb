@@ -35,7 +35,7 @@
 
 <div class="nota-igv"><i class="bi bi-info-circle-fill"></i> Aquí están las compras con <b>Orden de Compra para Insumos internos</b> que ya <b>llegaron y tienen conformidad</b>, esperando registrarse en el inventario de insumos de
     <b>{{ empresas[empresa].corto }}</b>. Pulsa <b>Registrar ingreso</b>: el formulario se llena solo con el proveedor, la factura, los ítems, los precios y los documentos de la orden.
-    <br><b>Precios:</b> la orden se emite <b>sin IGV</b> (como la cotización); en Insumos se registran <b>con IGV</b>, porque en material de uso interno el IGV es parte del gasto. Por eso el precio unitario cambia (×1.18).</div>
+    <br><b>Precios:</b> la orden se emite <b>sin IGV</b> (como la cotización); en Insumos se registran <b>con IGV</b>, porque en material de uso interno el IGV es parte del gasto. Por eso el precio unitario cambia (×1.18). Las órdenes en <b>dólares</b> se registran en <b>US$</b>, sin convertir (se llevan aparte de lo comprado en soles).</div>
 
 {% for o in ordenes %}
 {% set mon = monedas[o.moneda] %}
@@ -76,8 +76,9 @@
                     {% if not ins %}<div class="small text-warning-emphasis"><i class="bi bi-exclamation-circle"></i> No está vinculado al maestro: se elige (o se crea) al registrar.</div>{% endif %}</td>
                 <td class="text-end num">{{ i.cantidad|cant }}</td><td>{{ i.um }}</td>
                 <td class="text-end num">{{ mon.simbolo }} {{ '{:,.2f}'.format(i.precio_unitario) }}</td>
-                <td class="text-end num">{% if o.moneda == 'PEN' %}S/ {{ '{:,.2f}'.format(i.precio_unitario * (1 + igv)) }}{% else %}<span class="text-muted small">en soles al registrar</span>{% endif %}</td>
-                <td class="text-end num fw-semibold">{% if o.moneda == 'PEN' %}S/ {{ '{:,.2f}'.format(i.total * (1 + igv)) }}{% else %}—{% endif %}</td>
+                {% set f_igv = 1 if o.es_importacion else (1 + igv) %}{% set sim = 'US$' if o.moneda == 'USD' else 'S/' %}
+                <td class="text-end num">{{ sim }} {{ '{:,.2f}'.format(i.precio_con_igv if i.precio_con_igv else i.precio_unitario * f_igv) }}</td>
+                <td class="text-end num fw-semibold">{{ sim }} {{ '{:,.2f}'.format(i.total * f_igv) }}</td>
                 <td class="text-end num pe-3">{{ (st.stock_actual if st else 0)|cant }}</td></tr>
             {% endfor %}
             </tbody>

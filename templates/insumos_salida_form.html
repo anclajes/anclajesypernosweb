@@ -136,6 +136,16 @@ function opcionesInsumos(sel) {
         `<option value="${i.id}" ${i.stock > 0 ? '' : 'disabled'}>${esc(i.codigo)} — ${esc(i.descripcion)} (stock ${fmtCant(i.stock)} ${esc(i.unidad)})</option>`).join('');
     sel.value = val;
 }
+// Lo comprado en soles y en dólares se lleva aparte: sale primero lo que entró antes, cada parte a su costo y en su moneda
+function costoSalida(d, cant) {
+    const usd = Math.min(d.stock_usd || 0, d.stock), pen = Math.max(d.stock - usd, 0);
+    const orden = d.primero === 'USD' ? [['USD', usd, d.costo_usd || 0], ['PEN', pen, d.costo]] : [['PEN', pen, d.costo], ['USD', usd, d.costo_usd || 0]];
+    let falta = cant; const r = { PEN: 0, USD: 0 };
+    orden.forEach(([m, q, c]) => { const t = Math.min(q, falta); if (t > 0) { r[m] += t * c; falta -= t; } });
+    if (falta > 0) r.PEN += falta * d.costo;
+    return r;
+}
+function montos(r) { const p = []; if (r.PEN || !r.USD) p.push('S/ ' + fmt(r.PEN)); if (r.USD) p.push('US$ ' + fmt(r.USD)); return p.join(' + '); }
 function pintarFila(fila) {
     const d = datoInsumo(fila.querySelector('.sel-insumo').value);
     const info = fila.querySelector('.info');
@@ -143,17 +153,19 @@ function pintarFila(fila) {
     fila.classList.toggle('sin-stock', !!d && desp > d.stock);
     if (!d) { info.innerHTML = ''; recalcular(); return; }
     info.innerHTML = `<span class="badge bg-light text-dark border">${esc(d.unidad)}</span> Stock: <b>${fmtCant(d.stock)}</b>` +
-        `${d.almacen ? ' · ' + esc(d.almacen) : ''} · costo prom.: S/ ${fmt(d.costo)}` +
-        (desp ? ` · <b>S/ ${fmt(desp * d.costo)}</b>` : '') + (desp > d.stock ? ' <span class="text-danger fw-bold">· no alcanza el stock</span>' : '');
+        `${d.almacen ? ' · ' + esc(d.almacen) : ''}` +
+        (d.stock - (d.stock_usd || 0) > 0 || !d.stock_usd ? ` · costo prom.: S/ ${fmt(d.costo)}` : '') +
+        (d.stock_usd ? ` · <span style="color:#0f766e;">${fmtCant(d.stock_usd)} comprados en dólares a US$ ${fmt(d.costo_usd)}</span>` : '') +
+        (desp ? ` · <b>${montos(costoSalida(d, Math.min(desp, d.stock)))}</b>` : '') + (desp > d.stock ? ' <span class="text-danger fw-bold">· no alcanza el stock</span>' : '');
     recalcular();
 }
 function recalcular() {
-    let total = 0;
+    const total = { PEN: 0, USD: 0 };
     document.querySelectorAll('#filas .fila-item').forEach(f => {
         const d = datoInsumo(f.querySelector('.sel-insumo').value);
-        if (d) total += (parseFloat(f.querySelector('.c-desp').value) || 0) * d.costo;
+        if (d) { const r = costoSalida(d, Math.min(parseFloat(f.querySelector('.c-desp').value) || 0, d.stock)); total.PEN += r.PEN; total.USD += r.USD; }
     });
-    document.getElementById('totalSalida').textContent = 'S/ ' + fmt(total);
+    document.getElementById('totalSalida').textContent = montos(total);
 }
 function numerar() { document.querySelectorAll('#filas .fila-item').forEach((f, i) => f.querySelector('.n').textContent = i + 1); }
 function agregarFila() {

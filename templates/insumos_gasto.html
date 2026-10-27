@@ -25,13 +25,14 @@
 
 <div class="row g-2 mb-3">
     <div class="col-6 col-md-4"><div class="card border-0 shadow-sm h-100"><div class="card-body py-2">
-        <div class="ins-dato">Gasto del período</div><div class="ins-kpi">{{ total|soles }}</div>
+        <div class="ins-dato">Gasto del período</div><div class="ins-kpi">{{ total|soles }}</div>{% if total_usd %}<div class="ins-kpi" style="color:#0f766e;">US$ {{ '{:,.2f}'.format(total_usd) }}</div>{% endif %}
         <div class="text-muted small">{{ desde.strftime('%d/%m/%Y') }} al {{ hasta.strftime('%d/%m/%Y') }}</div></div></div></div>
     <div class="col-6 col-md-4"><div class="card border-0 shadow-sm h-100"><div class="card-body py-2">
         <div class="ins-dato">Salidas</div><div class="ins-kpi">{{ n_salidas }}</div><div class="text-muted small">sin contar anuladas</div></div></div></div>
     <div class="col-12 col-md-4"><div class="card border-0 shadow-sm h-100"><div class="card-body py-2 small text-muted">
         <i class="bi bi-info-circle-fill text-primary"></i> Cada salida se valoriza al <b>costo promedio</b> del insumo en ese momento
-        (precio con IGV de las facturas, promediado con lo que ya había). Por eso, aunque la factura sea por 100 unidades, cada área carga solo lo que sacó.</div></div></div>
+        (precio con IGV de las facturas, promediado con lo que ya había). Por eso, aunque la factura sea por 100 unidades, cada área carga solo lo que sacó.
+        <div class="mt-1"><i class="bi bi-currency-dollar text-success"></i> Lo comprado en <b>dólares</b> se gasta en dólares: <b>soles y dólares van por separado</b> (no se convierten ni se suman).</div></div></div></div>
 </div>
 
 <div class="row g-3 mb-3">
@@ -44,13 +45,13 @@
                         {% if empresa == 'AMBAS' %}<th class="text-end">Anclajes</th><th class="text-end pe-3">Import Bolts</th>{% endif %}</tr></thead>
                     <tbody>
                     {% for a in areas %}
-                        <tr title="{{ a.nombre }}: {{ a.total|soles }} ({{ a.pct }}%)">
+                        <tr title="{{ a.nombre }}: {{ montos_txt(a.total, a.total_usd) }}">
                             <td class="ps-3 fw-semibold"><a href="{{ url_for('insumos_salidas', area_id=a.id, desde=desde.isoformat(), hasta=hasta.isoformat(), empresa=empresa if empresa != 'AMBAS' else 'TODAS') }}">{{ a.nombre }}</a></td>
-                            <td><div class="barra-area" style="width: {{ a.barra }}%;"></div></td>
-                            <td class="text-end fw-bold text-nowrap">{{ a.total|soles }}</td>
-                            <td class="text-end">{{ a.pct }}%</td>
+                            <td>{% if a.total %}<div class="barra-area" style="width: {{ a.barra }}%;"></div>{% endif %}{% if a.total_usd %}<div class="barra-area mt-1" style="width: {{ a.barra_usd }}%; background:#0f766e;"></div>{% endif %}</td>
+                            <td class="text-end fw-bold text-nowrap">{% if a.total or not a.total_usd %}<div>{{ a.total|soles }}</div>{% endif %}{% if a.total_usd %}<div style="color:#0f766e;">US$ {{ '{:,.2f}'.format(a.total_usd) }}</div>{% endif %}</td>
+                            <td class="text-end">{% if a.total or not a.total_usd %}<div>{{ a.pct }}%</div>{% endif %}{% if a.total_usd %}<div style="color:#0f766e;">{{ a.pct_usd }}%</div>{% endif %}</td>
                             <td class="text-center">{{ a.salidas }}</td>
-                            {% if empresa == 'AMBAS' %}<td class="text-end text-nowrap">{{ a.anclajes|soles }}</td><td class="text-end pe-3 text-nowrap">{{ a.importbolts|soles }}</td>{% endif %}
+                            {% if empresa == 'AMBAS' %}<td class="text-end text-nowrap">{{ montos_txt(a.anclajes, a.anclajes_usd) }}</td><td class="text-end pe-3 text-nowrap">{{ montos_txt(a.importbolts, a.importbolts_usd) }}</td>{% endif %}
                         </tr>
                     {% else %}
                         <tr><td colspan="7" class="text-center text-muted py-4">Sin salidas en este período.</td></tr>
@@ -69,7 +70,7 @@
                     {% for p in personas %}
                         <tr><td class="ps-3"><a href="{{ url_for('insumos_salidas', trabajador_id=p.id, desde=desde.isoformat(), hasta=hasta.isoformat()) }}" class="fw-semibold">{{ p.nombre }}</a>
                             <div class="text-muted" style="font-size:.72rem;">{{ p.area }}</div></td>
-                            <td class="text-center">{{ p.salidas }} sal.</td><td class="text-end pe-3 fw-bold text-nowrap">{{ p.total|soles }}</td></tr>
+                            <td class="text-center">{{ p.salidas }} sal.</td><td class="text-end pe-3 fw-bold text-nowrap">{{ montos_txt(p.total, p.total_usd) }}</td></tr>
                     {% else %}<tr><td class="text-center text-muted py-4">—</td></tr>{% endfor %}
                     </tbody>
                 </table>
@@ -86,8 +87,8 @@
             <tbody>
             {% for r in mensual %}
                 <tr><td class="ps-3 fw-semibold">{{ r.area }}</td>
-                    {% for v in r.meses %}<td class="mes-celda" style="background: rgba(42,120,214,{{ (0.06 + 0.5 * v / max_celda)|round(2) if v else 0 }});">{{ v|soles if v else '—' }}</td>{% endfor %}
-                    <td class="mes-celda pe-3 fw-bold">{{ r.total|soles }}</td></tr>
+                    {% for v in r.meses %}{% set vu = r.meses_usd[loop.index0] %}<td class="mes-celda" style="background: rgba(42,120,214,{{ (0.06 + 0.5 * v / max_celda)|round(2) if v else 0 }});">{% if v or vu %}{{ montos_txt(v, vu) }}{% else %}—{% endif %}</td>{% endfor %}
+                    <td class="mes-celda pe-3 fw-bold">{{ montos_txt(r.total, r.total_usd) }}</td></tr>
             {% else %}
                 <tr><td colspan="8" class="text-center text-muted py-4">Sin salidas en los últimos 6 meses.</td></tr>
             {% endfor %}
@@ -104,7 +105,7 @@
             {% for c in por_categoria %}
                 <tr><td class="ps-3 fw-semibold"><a href="{{ url_for('insumos_gasto', empresa=empresa, desde=desde.isoformat(), hasta=hasta.isoformat(), categoria=c.nombre if c.nombre != 'Sin categoría' else '') }}">{{ c.nombre }}</a></td>
                     <td style="width:40%;"><div class="barra-area" style="width: {{ c.pct }}%; background: #16a34a;"></div></td>
-                    <td class="text-end">{{ c.pct }}%</td><td class="text-end pe-3 fw-bold text-nowrap">{{ c.total|soles }}</td></tr>
+                    <td class="text-end">{{ c.pct }}%{% if c.total_usd %}<div style="color:#0f766e;">{{ c.pct_usd }}% US$</div>{% endif %}</td><td class="text-end pe-3 fw-bold text-nowrap">{{ montos_txt(c.total, c.total_usd) }}</td></tr>
             {% else %}<tr><td class="text-center text-muted py-4">—</td></tr>{% endfor %}
             </tbody>
         </table>
@@ -118,7 +119,7 @@
             <thead class="table-light"><tr><th class="ps-3">Código</th><th>Descripción</th><th class="text-center">Cantidad</th><th class="text-end pe-3">Gasto</th></tr></thead>
             <tbody>
             {% for i in insumos %}
-                <tr><td class="ps-3 fw-bold">{{ i.codigo }}</td><td>{{ i.descripcion }}</td><td class="text-center">{{ i.cantidad|cant }} {{ i.unidad }}</td><td class="text-end pe-3 fw-bold">{{ i.total|soles }}</td></tr>
+                <tr><td class="ps-3 fw-bold">{{ i.codigo }}</td><td>{{ i.descripcion }}</td><td class="text-center">{{ i.cantidad|cant }} {{ i.unidad }}</td><td class="text-end pe-3 fw-bold">{{ montos_txt(i.total, i.total_usd) }}</td></tr>
             {% else %}<tr><td colspan="4" class="text-center text-muted py-4">—</td></tr>{% endfor %}
             </tbody>
         </table>
