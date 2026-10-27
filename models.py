@@ -1655,6 +1655,20 @@ class Notificacion(db.Model):
     fecha_leida = db.Column(db.DateTime)
 
 
+class PushSuscripcion(db.Model):
+    """Navegador (computadora) donde el usuario activó los avisos de Windows: el servidor le manda el aviso aunque la página esté cerrada."""
+    __tablename__ = 'push_suscripcion'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    endpoint = db.Column(db.String(800), nullable=False, unique=True)
+    p256dh = db.Column(db.String(200), nullable=False)
+    auth = db.Column(db.String(100), nullable=False)
+    navegador = db.Column(db.String(120))
+    fecha = db.Column(db.DateTime, default=hora_peru)
+    ultimo_envio = db.Column(db.DateTime)
+    fallos = db.Column(db.Integer, default=0)
+
+
 class NotificacionConfig(db.Model):
     """Cómo quiere cada usuario sus avisos (qué tipos, sonido, ventana emergente, aviso de Windows, cada cuánto recordar)."""
     __tablename__ = 'notificacion_config'

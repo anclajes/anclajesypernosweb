@@ -16,6 +16,8 @@
     .nf-h.nueva .tt { font-weight: 800; }
     .nf-h .x { font-size: .72rem; color: #64748b; overflow-wrap: anywhere; }
     .estado-win { font-size: .78rem; border-radius: 10px; padding: 7px 10px; }
+    .nf-cerrada { border: 1px dashed #93c5fd; border-radius: 10px; padding: 8px 10px; background: #f8fbff; }
+    .nav-push { display: flex; gap: 6px; align-items: center; font-size: .78rem; padding: 3px 0; border-bottom: 1px solid #eef2f7; flex-wrap: wrap; }
 </style>
 
 <div class="row g-3">
@@ -43,8 +45,33 @@
                 <div class="col-12"><button type="button" class="btn btn-sm btn-outline-primary" onclick="notifProbarSonido(document.getElementById('sonidoTipo').value, +document.getElementById('volumen').value)"><i class="bi bi-play-fill"></i> Probar sonido</button></div>
             </div>
             <label class="nf-op" style="--c:#2563eb;"><input type="checkbox" class="form-check-input" name="windows" value="1" {{ 'checked' if cfg.windows }}>
-                <span class="ic"><i class="bi bi-windows"></i></span><span><b>Aviso de Windows</b><small>Sale en la esquina de la pantalla aunque estés en Excel u otro programa, mientras el sistema esté abierto en alguna pestaña del navegador (aunque esté minimizado).</small></span></label>
+                <span class="ic"><i class="bi bi-windows"></i></span><span><b>Aviso de Windows</b><small>Sale en la esquina de la pantalla aunque estés en Excel u otro programa, y también con la página del sistema cerrada (ver abajo).</small></span></label>
             <div id="estadoWin" class="estado-win mb-2"></div>
+            <div class="nf-cerrada mb-2">
+                <div class="small fw-bold"><i class="bi bi-door-closed"></i> Con la página cerrada</div>
+                {% if not push_disponible %}
+                <div class="small text-danger">El servidor no tiene la librería de cifrado para estos avisos (revisa requirements.txt: cryptography).</div>
+                {% else %}
+                <div class="small text-muted mb-1">El aviso llega aunque cierres todas las pestañas del sistema, mientras el navegador esté funcionando
+                    (también en segundo plano). Computadoras con el aviso activado para ti:</div>
+                {% for nv in navegadores %}
+                <div class="nav-push" id="nav{{ nv.id }}"><i class="bi bi-laptop"></i> <b>{{ nv.navegador or 'Navegador' }}</b>
+                    <span class="text-muted">desde {{ nv.fecha.strftime('%d/%m/%Y') if nv.fecha }}{% if nv.ultimo_envio %} · último aviso {{ hace(nv.ultimo_envio, ahora) }}{% endif %}{% if nv.fallos %} · <span class="text-danger">{{ nv.fallos }} fallo(s)</span>{% endif %}</span>
+                    <button type="button" class="btn btn-link btn-sm text-danger p-0 ms-auto" onclick="quitarNav({{ nv.id }})">Quitar</button></div>
+                {% else %}
+                <div class="small text-muted fst-italic mb-1" id="sinNav">Ninguna todavía: se agrega sola al activar el aviso de Windows en esa computadora.</div>
+                {% endfor %}
+                <div class="d-flex flex-wrap gap-2 mt-2">
+                    <button type="button" class="btn btn-sm btn-outline-primary" onclick="probarPush(15)"><i class="bi bi-send"></i> Probar con la página cerrada (llega en 15 s)</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="probarPush(0)">Probar ahora</button>
+                </div>
+                <div class="small mt-1" id="resPush"></div>
+                <details class="small mt-2"><summary>Para que llegue también con el navegador cerrado</summary>
+                    <div class="text-muted mt-1"><b>Chrome:</b> Configuración → Sistema → activar <i>"Seguir ejecutando aplicaciones en segundo plano al cerrar Google Chrome"</i>.<br>
+                        <b>Edge:</b> Configuración → Sistema y rendimiento → activar <i>"Continuar ejecutando extensiones y aplicaciones en segundo plano cuando Microsoft Edge esté cerrado"</i>.<br>
+                        Si la computadora está apagada, el aviso llega al prenderla (si no pasó más de un día).</div></details>
+                {% endif %}
+            </div>
 
             <div class="nf-t mt-3"><i class="bi bi-alarm"></i> Recordatorio de lo pendiente</div>
             <select name="recordar_min" class="form-select">
@@ -86,10 +113,30 @@
             box.innerHTML = '<i class="bi bi-slash-circle"></i> Bloqueado en este navegador: haz clic en el candado de la barra de direcciones → Notificaciones → Permitir, y recarga la página.';
         } else { box.className = 'estado-win mb-2'; box.style.cssText = 'background:#eff6ff;border:1px solid #bfdbfe;color:#1e3a8a;';
             box.innerHTML = 'Falta dar permiso en este navegador (una sola vez por computadora). <button type="button" class="btn btn-sm btn-primary py-0 ms-1" id="activarWin">Activar avisos de Windows</button>';
-            document.getElementById('activarWin').onclick = () => Notification.requestPermission().then(pintar);
+            document.getElementById('activarWin').onclick = () => Notification.requestPermission().then(p => {
+                pintar();
+                if (p === 'granted' && window.notifActivarPush) window.notifActivarPush(true).then(ok => { if (ok) setTimeout(() => location.reload(), 600); });
+            });
         }
     }
     pintar();
+    window.probarPush = function (espera) {
+        const res = document.getElementById('resPush'), fd = new FormData();
+        fd.append('espera', espera);
+        res.textContent = 'Enviando…';
+        const enviar = () => fetch({{ url_for('push_prueba')|tojson }}, { method: 'POST', body: fd, credentials: 'same-origin', headers: { 'Accept': 'application/json' } }).then(r => r.json());
+        const listo = window.notifActivarPush ? window.notifActivarPush(true) : Promise.resolve(false);
+        listo.then(enviar).then(d => {
+            if (d.status !== 'ok') { res.innerHTML = '<span class="text-danger">' + (d.msg || 'No se pudo enviar') + '</span>'; return; }
+            res.innerHTML = espera ? `<span class="text-success fw-bold">Listo: cierra esta pestaña (o todas las del sistema). En ${espera} segundos te llega el aviso de Windows.</span>`
+                                   : `<span class="text-success">Enviado a ${d.enviados} de ${d.navegadores} navegador(es).</span>`;
+        }).catch(() => { res.innerHTML = '<span class="text-danger">No se pudo enviar.</span>'; });
+    };
+    window.quitarNav = function (id) {
+        const fd = new FormData(); fd.append('id', id);
+        fetch({{ url_for('push_quitar')|tojson }}, { method: 'POST', body: fd, credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+            .then(() => { const e = document.getElementById('nav' + id); if (e) e.remove(); });
+    };
 })();
 </script>
 {% endblock %}

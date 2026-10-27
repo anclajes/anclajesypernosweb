@@ -134,9 +134,61 @@
         if (!('Notification' in window)) { alert('Este navegador no tiene avisos de Windows. Usa Chrome o Edge.'); return; }
         Notification.requestPermission().then(p => {
             pintarPanel();
-            if (p === 'granted') avisoWindows('Avisos activados', 'Así te llegarán las órdenes por aprobar y las novedades del sistema.', 'erp-prueba', null, false);
+            if (p === 'granted') {
+                avisoWindows('Avisos activados', 'Así te llegarán las órdenes por aprobar y las novedades del sistema.', 'erp-prueba', null, false);
+                activarPush(true);
+            }
         });
     };
+
+    // ---------- avisos con la página CERRADA (Web Push: los manda el servidor al navegador) ----------
+    const PUSH_CLAVE = {{ (push_clave or '')|tojson }}, URL_SW = {{ url_for('push_sw')|tojson }};
+    const URL_SUB = {{ url_for('push_suscribir')|tojson }}, URL_QUITAR = {{ url_for('push_quitar')|tojson }};
+    const K_PUSH = 'erp_push_' + UID;
+    let pushRevisado = false;
+    function pushPosible() { return !!(PUSH_CLAVE && 'serviceWorker' in navigator && 'PushManager' in window && window.isSecureContext); }
+    function clave8(b64) {
+        const s = atob((b64 + '='.repeat((4 - b64.length % 4) % 4)).replace(/-/g, '+').replace(/_/g, '/'));
+        return Uint8Array.from(s, c => c.charCodeAt(0));
+    }
+    function mismaClave(sub, clave) {
+        try {
+            const a = new Uint8Array(sub.options.applicationServerKey || []), b = clave8(clave);
+            return a.length === b.length && a.every((x, i) => x === b[i]);
+        } catch (e) { return true; }
+    }
+    async function activarPush(forzar) {
+        if (!pushPosible() || permisoWin() !== 'granted' || (datos && !datos.cfg.windows)) return false;
+        try {
+            const reg = await navigator.serviceWorker.register(URL_SW, { scope: '/' });
+            await navigator.serviceWorker.ready;
+            let sub = await reg.pushManager.getSubscription();
+            if (sub && !mismaClave(sub, PUSH_CLAVE)) { await sub.unsubscribe(); sub = null; }     // cambió la clave del servidor
+            if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: clave8(PUSH_CLAVE) });
+            const j = sub.toJSON(), marca = j.endpoint + '|' + UID + '|' + new Date().toISOString().slice(0, 10);
+            if (forzar || leer(K_PUSH) !== marca) {
+                const r = await fetch(URL_SUB, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify(j) });
+                if (!r.ok) throw new Error('suscripcion');
+                guardar(K_PUSH, marca);
+            }
+            return true;
+        } catch (e) { return false; }
+    }
+    async function quitarPush() {
+        try {
+            const reg = 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration('/') : null;
+            const sub = reg ? await reg.pushManager.getSubscription() : null;
+            if (sub) {
+                await fetch(URL_QUITAR, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify({ endpoint: sub.endpoint }) });
+                await sub.unsubscribe();
+            }
+        } catch (e) {}
+        try { localStorage.removeItem(K_PUSH); } catch (e) {}
+    }
+    // con push activo, el aviso de Windows de lo NUEVO lo pone el servidor (así no sale dos veces)
+    function pushActivo() { return !!leer(K_PUSH) && permisoWin() === 'granted'; }
+    window.notifActivarPush = activarPush;
+    window.notifQuitarPush = quitarPush;
 
     // ---------- título de la pestaña que parpadea si está en otra pestaña ----------
     function parpadear(txt) {
@@ -217,7 +269,7 @@
         const acc = (n.aprobar ? `<button type="button" class="btn btn-warning btn-sm" data-revisar="${String(n.resumen).match(/(\d+)$/)[1]}"><i class="bi bi-patch-check"></i> Revisar y aprobar</button>` : '')
             + `<a class="btn btn-outline-secondary btn-sm" href="${esc(n.ir)}">${esOC ? 'Abrir orden' : 'Ver'}</a>`;
         toast('nt' + n.id, n.color, n.icono, cab, `<div class="tt">${esc(n.titulo)}</div><div class="tx">${esc(n.texto)}</div>`, acc);
-        avisoWindows(n.titulo, n.texto, 'erp-' + n.id, () => { if (n.aprobar) abrirAprobar(String(n.resumen).match(/(\d+)$/)[1]); else location.href = n.ir; }, esOC);
+        if (!pushActivo()) avisoWindows(n.titulo, n.texto, 'erp-' + n.id, () => { if (n.aprobar) abrirAprobar(String(n.resumen).match(/(\d+)$/)[1]); else location.href = n.ir; }, esOC);
     }
     function recordar() {
         const pa = datos.por_aprobar, nl = datos.novedades.filter(n => !n.leida);
@@ -294,6 +346,7 @@
             .then(d => {
                 if (!d || d.status !== 'ok' || !d.activo) return;
                 datos = d; cada = (d.consulta_seg || 30) * 1000;
+                if (!pushRevisado) { pushRevisado = true; if (d.cfg.windows) activarPush(false); else if (leer(K_PUSH)) quitarPush(); }
                 pintarBoton();
                 if (panel.classList.contains('abierto')) pintarPanel();
                 const ultAhora = leer(K_ULT);
@@ -301,7 +354,7 @@
                 else if (d.nuevas.length && Number(ultAhora) < d.ultimo_id) {
                     guardar(K_ULT, d.ultimo_id);
                     if (d.cfg.popup) d.nuevas.slice(-3).forEach(avisarNueva);
-                    else d.nuevas.slice(-3).forEach(n => avisoWindows(n.titulo, n.texto, 'erp-' + n.id, () => location.href = n.ir, n.tipo === 'OC_POR_APROBAR'));
+                    else if (!pushActivo()) d.nuevas.slice(-3).forEach(n => avisoWindows(n.titulo, n.texto, 'erp-' + n.id, () => location.href = n.ir, n.tipo === 'OC_POR_APROBAR'));
                     if (d.cfg.sonido) sonar(d.cfg.sonido_tipo, d.cfg.volumen);
                     btn.classList.remove('sacude'); void btn.offsetWidth; btn.classList.add('sacude');
                     parpadear(`🔔 (${d.total}) ${d.nuevas[d.nuevas.length - 1].titulo}`);
