@@ -69,6 +69,13 @@
                 <details class="small mt-2"><summary>Para que llegue también con el navegador cerrado</summary>
                     <div class="text-muted mt-1"><b>Chrome:</b> Configuración → Sistema → activar <i>"Seguir ejecutando aplicaciones en segundo plano al cerrar Google Chrome"</i>.<br>
                         <b>Edge:</b> Configuración → Sistema y rendimiento → activar <i>"Continuar ejecutando extensiones y aplicaciones en segundo plano cuando Microsoft Edge esté cerrado"</i>.<br>
+                        <b>Brave:</b> escribe <code>brave://settings/system</code> y activa <i>"Continue running background apps when Brave is closed"</i>.<br>
+                        Así, al cerrar con la X el navegador sigue funcionando escondido (ícono junto al reloj de Windows) y los avisos llegan.
+                        Si lo cierras desde ese ícono con "Salir", o reinicias la PC y no abres el navegador, el aviso llega recién cuando lo vuelvas a abrir.<br>
+                        <b>Para que arranque solo al prender la PC (sin abrir ventana):</b> tecla Windows + R → escribe <code>shell:startup</code> → Enter;
+                        en esa carpeta: clic derecho → Nuevo → Acceso directo → pega la ruta del navegador seguida de <code>--no-startup-window</code>, por ejemplo<br>
+                        <code>"C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe" --no-startup-window</code><br>
+                        <code>"C:\Program Files\Google\Chrome\Application\chrome.exe" --no-startup-window</code><br>
                         Si la computadora está apagada, el aviso llega al prenderla (si no pasó más de un día).</div></details>
                 {% endif %}
             </div>
