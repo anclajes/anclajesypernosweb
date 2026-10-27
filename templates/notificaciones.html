@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Avisos{% endblock %}
+{% block subtitle %}Qué te avisa la campana y cómo (ventana, sonido, Windows){% endblock %}
+{% block content %}
+<style>
+    .nf-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 14px 16px; margin-bottom: 14px; }
+    .nf-t { font-size: .74rem; font-weight: 800; color: #475569; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 10px; display: flex; gap: 6px; align-items: center; }
+    .nf-op { display: flex; gap: 10px; align-items: flex-start; border: 1px solid #e2e8f0; border-radius: 10px; padding: 8px 10px; margin-bottom: 6px; cursor: pointer; }
+    .nf-op:hover { background: #f8fafc; }
+    .nf-op .ic { width: 30px; height: 30px; border-radius: 50%; flex: 0 0 30px; display: flex; align-items: center; justify-content: center; color: #fff; background: var(--c); }
+    .nf-op b { font-size: .84rem; } .nf-op small { display: block; color: #64748b; font-size: .72rem; }
+    .nf-op input { margin-top: 6px; }
+    .nf-h { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid #f1f5f9; text-decoration: none; color: #334155; }
+    .nf-h .ic { width: 28px; height: 28px; border-radius: 50%; flex: 0 0 28px; display: flex; align-items: center; justify-content: center; color: #fff; background: var(--c); font-size: .8rem; }
+    .nf-h .tt { font-size: .82rem; font-weight: 600; color: #0f172a; }
+    .nf-h.nueva .tt { font-weight: 800; }
+    .nf-h .x { font-size: .72rem; color: #64748b; overflow-wrap: anywhere; }
+    .estado-win { font-size: .78rem; border-radius: 10px; padding: 7px 10px; }
+</style>
+
+<div class="row g-3">
+    <div class="col-12 col-lg-6">
+        <form method="POST" class="nf-card" id="formNotif">
+            <div class="nf-t"><i class="bi bi-sliders"></i> ¿De qué quieres que te avise?</div>
+            {% for k, on in cfg.tipos.items() %}{% set t = tipos[k] %}
+            <label class="nf-op" style="--c: {{ t.color }};">
+                <input type="checkbox" class="form-check-input" name="tipo_{{ k }}" value="1" {{ 'checked' if on }}>
+                <span class="ic"><i class="bi {{ t.icono }}"></i></span>
+                <span><b>{{ t.txt }}</b><small>{{ t.ayuda }}</small></span>
+            </label>
+            {% endfor %}
+
+            <div class="nf-t mt-3"><i class="bi bi-megaphone"></i> ¿Cómo?</div>
+            <label class="nf-op" style="--c:#d97706;"><input type="checkbox" class="form-check-input" name="popup" value="1" {{ 'checked' if cfg.popup }}>
+                <span class="ic"><i class="bi bi-window-stack"></i></span><span><b>Ventana emergente en el sistema</b><small>Abajo a la derecha, en cualquier página (también en el inventario). Se queda hasta que la cierras.</small></span></label>
+            <label class="nf-op" style="--c:#0891b2;"><input type="checkbox" class="form-check-input" name="sonido" value="1" {{ 'checked' if cfg.sonido }}>
+                <span class="ic"><i class="bi bi-volume-up-fill"></i></span><span><b>Sonido</b><small>Suena cuando llega algo nuevo y en cada recordatorio.</small></span></label>
+            <div class="row g-2 mb-2 ps-1">
+                <div class="col-7"><label class="small fw-bold">Tipo de sonido</label>
+                    <select name="sonido_tipo" id="sonidoTipo" class="form-select form-select-sm">{% for k, t in sonidos.items() %}<option value="{{ k }}" {{ 'selected' if cfg.sonido_tipo == k }}>{{ t }}</option>{% endfor %}</select></div>
+                <div class="col-5"><label class="small fw-bold">Volumen <span id="volTxt">{{ cfg.volumen }}</span>%</label>
+                    <input type="range" name="volumen" id="volumen" min="10" max="100" step="10" value="{{ cfg.volumen }}" class="form-range" oninput="document.getElementById('volTxt').textContent = this.value"></div>
+                <div class="col-12"><button type="button" class="btn btn-sm btn-outline-primary" onclick="notifProbarSonido(document.getElementById('sonidoTipo').value, +document.getElementById('volumen').value)"><i class="bi bi-play-fill"></i> Probar sonido</button></div>
+            </div>
+            <label class="nf-op" style="--c:#2563eb;"><input type="checkbox" class="form-check-input" name="windows" value="1" {{ 'checked' if cfg.windows }}>
+                <span class="ic"><i class="bi bi-windows"></i></span><span><b>Aviso de Windows</b><small>Sale en la esquina de la pantalla aunque estés en Excel u otro programa, mientras el sistema esté abierto en alguna pestaña del navegador (aunque esté minimizado).</small></span></label>
+            <div id="estadoWin" class="estado-win mb-2"></div>
+
+            <div class="nf-t mt-3"><i class="bi bi-alarm"></i> Recordatorio de lo pendiente</div>
+            <select name="recordar_min" class="form-select">
+                {% for m, t in recordar %}<option value="{{ m }}" {{ 'selected' if cfg.recordar_min == m }}>{{ t }}{{ ' (recomendado)' if m == 30 }}</option>{% endfor %}
+            </select>
+            <div class="form-text">Mientras haya órdenes por aprobar o avisos sin leer, vuelve a salir la ventana con el resumen (y al entrar al sistema).
+                En la ventana puedes pulsar "Recordarme más tarde".</div>
+            <button class="btn btn-success fw-bold w-100 mt-3"><i class="bi bi-check2-circle"></i> Guardar</button>
+        </form>
+    </div>
+    <div class="col-12 col-lg-6">
+        <div class="nf-card">
+            <div class="nf-t"><i class="bi bi-clock-history"></i> Últimos avisos
+                <form method="POST" action="{{ url_for('notif_leer') }}" class="ms-auto" onsubmit="event.preventDefault(); fetch(this.action, {method: 'POST', body: new FormData(this)}).then(() => location.reload());">
+                    <button class="btn btn-link btn-sm p-0">Marcar todo como leído</button></form></div>
+            {% for n in historial %}{% set t = tipos.get(n.tipo, {}) %}
+            <a class="nf-h {{ '' if n.leida else 'nueva' }}" href="{{ url_for('notif_ir', notif_id=n.id) }}" style="--c: {{ t.color or '#0B3D91' }};">
+                <span class="ic"><i class="bi {{ t.icono or 'bi-bell' }}"></i></span>
+                <span class="flex-grow-1"><span class="tt d-block">{{ n.titulo }}</span><span class="x d-block">{{ n.texto }}</span>
+                    <span class="x">{{ n.fecha.strftime('%d/%m/%Y %H:%M') if n.fecha }} · {{ hace(n.fecha, ahora) }}{{ ' · resuelto' if n.leida and n.tipo == 'OC_POR_APROBAR' }}</span></span>
+                {% if not n.leida %}<span class="badge text-bg-primary align-self-start">Nuevo</span>{% endif %}
+            </a>
+            {% else %}
+            <div class="text-center text-muted py-4 small"><i class="bi bi-bell-slash fs-3 d-block"></i>Todavía no tienes avisos.</div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+<script>
+(function () {
+    const box = document.getElementById('estadoWin');
+    function pintar() {
+        if (!('Notification' in window)) { box.className = 'estado-win mb-2 bg-light'; box.innerHTML = 'Este navegador no tiene avisos de Windows. Usa Chrome o Edge.'; return; }
+        const p = Notification.permission;
+        if (p === 'granted') { box.className = 'estado-win mb-2'; box.style.cssText = 'background:#f0fdf4;border:1px solid #bbf7d0;color:#14532d;';
+            box.innerHTML = '<i class="bi bi-check-circle-fill"></i> Activado en este navegador. <button type="button" class="btn btn-link btn-sm p-0 ms-1" id="probarWin">Enviar uno de prueba</button>';
+            document.getElementById('probarWin').onclick = () => { try { new Notification('Prueba de aviso', { body: 'Así te llegarán las órdenes por aprobar.', tag: 'erp-prueba' }); } catch (e) {} };
+        } else if (p === 'denied') { box.className = 'estado-win mb-2'; box.style.cssText = 'background:#fef2f2;border:1px solid #fecaca;color:#991b1b;';
+            box.innerHTML = '<i class="bi bi-slash-circle"></i> Bloqueado en este navegador: haz clic en el candado de la barra de direcciones → Notificaciones → Permitir, y recarga la página.';
+        } else { box.className = 'estado-win mb-2'; box.style.cssText = 'background:#eff6ff;border:1px solid #bfdbfe;color:#1e3a8a;';
+            box.innerHTML = 'Falta dar permiso en este navegador (una sola vez por computadora). <button type="button" class="btn btn-sm btn-primary py-0 ms-1" id="activarWin">Activar avisos de Windows</button>';
+            document.getElementById('activarWin').onclick = () => Notification.requestPermission().then(pintar);
+        }
+    }
+    pintar();
+})();
+</script>
+{% endblock %}

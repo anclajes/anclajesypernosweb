@@ -1637,6 +1637,33 @@ class RequerimientoDocumento(db.Model):
     fecha = db.Column(db.DateTime, default=hora_peru)
 
 
+class Notificacion(db.Model):
+    """Aviso para un usuario (campana del sistema): OC/OS por aprobar, aprobada, rechazada, requerimiento nuevo...
+    Se marca como leída al abrirla o al pulsar "Marcar todo como leído"."""
+    __tablename__ = 'notificacion'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    tipo = db.Column(db.String(20), nullable=False)          # OC_POR_APROBAR / OC_APROBADA / OC_RECHAZADA / REQ_NUEVO
+    titulo = db.Column(db.String(150), nullable=False)
+    texto = db.Column(db.String(300))
+    url = db.Column(db.String(300))
+    orden_id = db.Column(db.Integer, nullable=True, index=True)
+    req_id = db.Column(db.Integer, nullable=True)
+    empresa = db.Column(db.String(15))
+    fecha = db.Column(db.DateTime, default=hora_peru)
+    leida = db.Column(db.Boolean, default=False, index=True)
+    fecha_leida = db.Column(db.DateTime)
+
+
+class NotificacionConfig(db.Model):
+    """Cómo quiere cada usuario sus avisos (qué tipos, sonido, ventana emergente, aviso de Windows, cada cuánto recordar)."""
+    __tablename__ = 'notificacion_config'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, unique=True)
+    datos = db.Column(db.Text)                                 # JSON
+    fecha = db.Column(db.DateTime, default=hora_peru)
+
+
 class RequerimientoVisto(db.Model):
     """Hasta cuándo vio cada usuario un requerimiento (para avisarle de las novedades)."""
     __tablename__ = 'requerimiento_visto'

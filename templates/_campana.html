@@ -1,0 +1,329 @@
+{# Campana de avisos: OC/OS por aprobar (Gerencia), aprobadas / rechazadas y requerimientos nuevos (Logística).
+   Consulta cada 30 s; cuando llega algo nuevo: ventana emergente, sonido y aviso de Windows (si el usuario lo activó). #}
+<style>
+    .campana-box { position: relative; }
+    .campana-btn.hay { color: #b45309 !important; border-color: #f59e0b !important; background: #fffbeb !important; }
+    .campana-btn.hay .bi-bell-fill { animation: campanaLate 2.4s ease-in-out infinite; display: inline-block; transform-origin: 50% 0; }
+    .campana-btn.sacude .bi-bell-fill { animation: campanaSacude .9s ease-in-out 3; }
+    .campana-cnt { position: absolute; top: -8px; right: -9px; min-width: 21px; height: 21px; padding: 0 6px; border-radius: 11px; background: #dc2626; color: #fff;
+                   font-size: .72rem; font-weight: 800; line-height: 21px; text-align: center; box-shadow: 0 0 0 2px #fff; animation: campanaPulso 1.6s ease-out infinite; }
+    @keyframes campanaPulso { 0% { box-shadow: 0 0 0 2px #fff, 0 0 0 2px rgba(220,38,38,.55); } 70% { box-shadow: 0 0 0 2px #fff, 0 0 0 11px rgba(220,38,38,0); } 100% { box-shadow: 0 0 0 2px #fff, 0 0 0 2px rgba(220,38,38,0); } }
+    @keyframes campanaLate { 0%, 86%, 100% { transform: rotate(0); } 89% { transform: rotate(14deg); } 93% { transform: rotate(-12deg); } 97% { transform: rotate(6deg); } }
+    @keyframes campanaSacude { 0%, 100% { transform: rotate(0); } 20% { transform: rotate(22deg); } 40% { transform: rotate(-20deg); } 60% { transform: rotate(12deg); } 80% { transform: rotate(-8deg); } }
+    @media (prefers-reduced-motion: reduce) { .campana-btn .bi-bell-fill, .campana-cnt { animation: none !important; } }
+
+    .campana-panel { display: none; position: absolute; right: 0; top: calc(100% + 8px); width: 400px; max-width: calc(100vw - 24px); max-height: min(78vh, 640px);
+                     overflow-y: auto; background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; box-shadow: 0 18px 48px rgba(15,23,42,.22); z-index: 1085; text-align: left; }
+    .campana-panel.abierto { display: block; }
+    @media (max-width: 576px) { .campana-panel { position: fixed; left: 12px; right: 12px; top: 64px; width: auto; max-width: none; } }
+    .cp-cab { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid #e2e8f0; position: sticky; top: 0; background: #fff; z-index: 1; }
+    .cp-cab b { font-size: .95rem; color: #0f172a; }
+    .cp-cab a, .cp-cab button { font-size: .74rem; font-weight: 700; }
+    .cp-sec { font-size: .66rem; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: #92400e; background: #fffbeb; padding: 6px 14px; border-bottom: 1px solid #fde68a; }
+    .cp-sec.nov { color: #475569; background: #f8fafc; border-color: #e2e8f0; }
+    .cp-oc { padding: 9px 14px 10px; border-bottom: 1px solid #f1f5f9; border-left: 4px solid var(--c, #0B3D91); }
+    .cp-oc .l1 { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+    .cp-oc .cod { font-weight: 800; color: #0f172a; font-size: .86rem; }
+    .cp-oc .emp { font-size: .62rem; font-weight: 800; border-radius: 5px; padding: 0 6px; color: #fff; background: var(--c, #0B3D91); }
+    .cp-oc .hace { margin-left: auto; font-size: .7rem; color: #64748b; white-space: nowrap; }
+    .cp-oc .hace.mal { color: #dc2626; font-weight: 800; }
+    .cp-oc .prov { font-size: .8rem; color: #334155; overflow-wrap: anywhere; }
+    .cp-oc .monto { font-weight: 800; font-size: .95rem; color: #0f172a; font-variant-numeric: tabular-nums; }
+    .cp-oc .sub { font-size: .7rem; color: #64748b; }
+    .cp-oc .btn { font-size: .74rem; font-weight: 700; padding: 2px 10px; }
+    .cp-nov { display: flex; gap: 10px; padding: 9px 14px; border-bottom: 1px solid #f1f5f9; text-decoration: none; color: #334155; }
+    .cp-nov:hover { background: #f8fafc; }
+    .cp-nov .ic { width: 30px; height: 30px; border-radius: 50%; flex: 0 0 30px; display: flex; align-items: center; justify-content: center; color: #fff; background: var(--c); font-size: .85rem; }
+    .cp-nov .t { font-size: .8rem; font-weight: 600; color: #0f172a; }
+    .cp-nov.nueva .t { font-weight: 800; }
+    .cp-nov.nueva { background: #f0f9ff; }
+    .cp-nov .x { font-size: .72rem; color: #64748b; overflow-wrap: anywhere; }
+    .cp-nov .punto { width: 8px; height: 8px; border-radius: 50%; background: #2563eb; flex: 0 0 8px; margin-top: 6px; }
+    .cp-vacio { text-align: center; color: #64748b; font-size: .8rem; padding: 22px 14px; }
+    .cp-win { margin: 8px 12px; font-size: .74rem; background: #eff6ff; border: 1px solid #bfdbfe; color: #1e3a8a; border-radius: 10px; padding: 7px 10px; }
+    .cp-pie { display: flex; justify-content: space-between; gap: 8px; padding: 8px 14px; font-size: .76rem; font-weight: 700; position: sticky; bottom: 0; background: #fff; border-top: 1px solid #e2e8f0; }
+
+    /* Ventanas emergentes (abajo a la derecha): se quedan hasta que se cierran */
+    .notif-toasts { position: fixed; right: 18px; bottom: 18px; z-index: 1090; display: flex; flex-direction: column; gap: 10px; width: 380px; max-width: calc(100vw - 24px); }
+    @media (max-width: 576px) { .notif-toasts { right: 12px; left: 12px; bottom: 12px; width: auto; } }
+    .nt { background: #fff; border-radius: 14px; box-shadow: 0 16px 44px rgba(15,23,42,.28); overflow: hidden; border: 2px solid var(--c, #d97706); animation: ntEntra .35s cubic-bezier(.2,.9,.3,1.3); }
+    @keyframes ntEntra { from { transform: translateY(24px) scale(.96); opacity: 0; } to { transform: none; opacity: 1; } }
+    .nt .cab { display: flex; align-items: center; gap: 8px; padding: 8px 12px; color: #fff; background: var(--c, #d97706); font-weight: 800; font-size: .8rem; }
+    .nt .cab .bi-bell-fill { animation: campanaSacude .9s ease-in-out 3; display: inline-block; transform-origin: 50% 0; }
+    .nt .cab button { margin-left: auto; border: 0; background: rgba(255,255,255,.2); color: #fff; width: 26px; height: 26px; border-radius: 50%; line-height: 1; }
+    .nt .cue { padding: 10px 12px; }
+    .nt .tt { font-weight: 800; color: #0f172a; font-size: .9rem; }
+    .nt .tx { font-size: .8rem; color: #334155; overflow-wrap: anywhere; }
+    .nt .lst { margin: 6px 0 0; padding: 0; list-style: none; font-size: .78rem; }
+    .nt .lst li { display: flex; gap: 6px; padding: 3px 0; border-top: 1px dashed #e2e8f0; align-items: baseline; }
+    .nt .lst li b { white-space: nowrap; }
+    .nt .lst li .m { margin-left: auto; font-weight: 800; white-space: nowrap; }
+    .nt .acc { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+    .nt .acc .btn { font-size: .78rem; font-weight: 700; }
+
+    /* Aprobación rápida */
+    .na-fondo { position: fixed; inset: 0; background: rgba(15,23,42,.55); z-index: 1095; display: none; align-items: flex-start; justify-content: center; padding: 4vh 12px; overflow-y: auto; }
+    .na-fondo.abierto { display: flex; }
+    .na-caja { background: #fff; border-radius: 16px; width: 760px; max-width: 100%; box-shadow: 0 24px 60px rgba(0,0,0,.35); overflow: hidden; }
+    .na-cab { padding: 12px 16px; color: #fff; background: var(--c, #0B3D91); display: flex; gap: 10px; align-items: center; }
+    .na-cab h5 { margin: 0; font-weight: 800; font-size: 1.05rem; color: #fff !important; }
+    .na-cab button { margin-left: auto; border: 0; background: rgba(255,255,255,.18); color: #fff; width: 32px; height: 32px; border-radius: 50%; }
+    .na-cue { padding: 14px 16px; }
+    .na-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 6px 14px; font-size: .8rem; margin-bottom: 10px; }
+    .na-grid span { display: block; font-size: .64rem; font-weight: 800; color: #64748b; text-transform: uppercase; }
+    .na-tabla { width: 100%; font-size: .78rem; border-collapse: collapse; }
+    .na-tabla th { font-size: .64rem; text-transform: uppercase; color: #64748b; font-weight: 800; border-bottom: 2px solid #e2e8f0; padding: 4px 6px; text-align: left; }
+    .na-tabla td { border-bottom: 1px solid #f1f5f9; padding: 5px 6px; vertical-align: top; }
+    .na-tabla .n { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .na-tot { display: flex; justify-content: flex-end; gap: 16px; font-size: .82rem; margin-top: 8px; flex-wrap: wrap; }
+    .na-tot b { font-size: 1.15rem; color: #0f172a; }
+    .na-aviso { font-size: .76rem; border-radius: 10px; padding: 7px 10px; margin-bottom: 10px; }
+    .na-pie { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 12px 16px; border-top: 1px solid #e2e8f0; background: #f8fafc; }
+</style>
+
+<div class="notif-toasts" id="notifToasts" aria-live="polite"></div>
+<div class="na-fondo" id="notifAprobar"><div class="na-caja" id="notifAprobarCaja"></div></div>
+
+<script>
+(function () {
+    const UID = {{ session.get('user_id')|tojson }};
+    const API = {{ url_for('notif_api')|tojson }}, URL_LEER = {{ url_for('notif_leer')|tojson }}, URL_PAG = {{ url_for('notif_pagina')|tojson }};
+    const LOGO = {{ url_for('static', filename='img/logo.png')|tojson }};
+    const K_ULT = 'erp_notif_ult_' + UID, K_REC = 'erp_notif_rec_' + UID;
+    const btn = document.getElementById('campanaBtn'), cnt = document.getElementById('campanaCnt'), panel = document.getElementById('campanaPanel');
+    const toasts = document.getElementById('notifToasts');
+    let datos = null, detenido = false, titulo0 = document.title, parpadeo = null;
+    const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const leer = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+    const guardar = (k, v) => { try { localStorage.setItem(k, String(v)); } catch (e) {} };
+
+    // ---------- sonido (sin archivos: se genera en el navegador) ----------
+    let ctx = null;
+    function audio() {
+        if (!ctx) { const A = window.AudioContext || window.webkitAudioContext; if (!A) return null; try { ctx = new A(); } catch (e) { return null; } }
+        if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+        return ctx;
+    }
+    // el navegador solo deja sonar después de un clic o tecla en la página: se "despierta" el audio con el primero
+    ['pointerdown', 'keydown', 'touchstart'].forEach(ev => window.addEventListener(ev, () => audio(), { once: true, passive: true, capture: true }));
+    function tono(c, f, ini, dur, vol, forma) {
+        const o = c.createOscillator(), g = c.createGain(), t = c.currentTime + ini;
+        o.type = forma || 'sine'; o.frequency.setValueAtTime(f, t);
+        g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+        o.connect(g); g.connect(c.destination); o.start(t); o.stop(t + dur + 0.05);
+    }
+    function sonar(tipo, volumen) {
+        const c = audio(); if (!c) return;
+        const v = Math.max(0.02, Math.min(1, (volumen || 80) / 100)) * 0.5;
+        if (tipo === 'alerta') { [0, 0.22, 0.44].forEach(i => tono(c, 988, i, 0.18, v, 'triangle')); tono(c, 1319, 0.7, 0.45, v, 'triangle'); }
+        else if (tipo === 'suave') tono(c, 784, 0, 0.7, v * 0.8);
+        else { tono(c, 1046, 0, 0.6, v); tono(c, 784, 0.32, 1.0, v); }
+    }
+    window.notifProbarSonido = (tipo, vol) => sonar(tipo, vol);
+
+    // ---------- aviso de Windows ----------
+    function permisoWin() { return ('Notification' in window) ? Notification.permission : 'no'; }
+    function avisoWindows(t, cuerpo, tag, alClic, insistente) {
+        if (!datos || !datos.cfg.windows || permisoWin() !== 'granted') return;
+        try {
+            const n = new Notification(t, { body: cuerpo, tag: tag, icon: LOGO, requireInteraction: !!insistente });
+            n.onclick = () => { window.focus(); n.close(); if (alClic) alClic(); };
+        } catch (e) {}
+    }
+    window.notifActivarWindows = function () {
+        if (!('Notification' in window)) { alert('Este navegador no tiene avisos de Windows. Usa Chrome o Edge.'); return; }
+        Notification.requestPermission().then(p => {
+            pintarPanel();
+            if (p === 'granted') avisoWindows('Avisos activados', 'Así te llegarán las órdenes por aprobar y las novedades del sistema.', 'erp-prueba', null, false);
+        });
+    };
+
+    // ---------- título de la pestaña que parpadea si está en otra pestaña ----------
+    function parpadear(txt) {
+        if (document.visibilityState === 'visible' || parpadeo) return;
+        let on = false;
+        parpadeo = setInterval(() => { on = !on; document.title = on ? txt : titulo0; }, 1300);
+    }
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && parpadeo) { clearInterval(parpadeo); parpadeo = null; document.title = titulo0; }
+    });
+
+    // ---------- campana ----------
+    function pintarBoton() {
+        const total = datos ? datos.total : 0;
+        cnt.style.display = total ? '' : 'none';
+        cnt.textContent = total > 99 ? '99+' : total;
+        btn.classList.toggle('hay', !!(datos && datos.por_aprobar.length));
+        btn.title = total ? `${total} aviso(s) pendiente(s)` : 'Avisos';
+    }
+    function tarjetaOC(o) {
+        return `<div class="cp-oc" style="--c:${esc(o.color)};">
+            <div class="l1"><span class="cod">${esc(o.codigo)}</span><span class="emp">${esc(o.empresa_txt)}</span>${o.revision ? `<span class="sub">Rev. ${o.revision}</span>` : ''}
+                <span class="hace ${o.atrasada ? 'mal' : ''}">${o.atrasada ? '<i class="bi bi-exclamation-triangle-fill"></i> ' : ''}${esc(o.hace)}</span></div>
+            <div class="prov">${esc(o.proveedor)}</div>
+            <div class="d-flex align-items-center gap-2 mt-1"><span class="monto">${esc(o.monto)}</span>
+                <span class="sub">${o.n_items} ítem(s)${o.solicitante ? ' · pide ' + esc(o.solicitante) : ''}${o.motivo ? ' · ' + esc(o.motivo) : ''}</span></div>
+            <div class="d-flex gap-2 mt-2">${o.aprobar ? `<button type="button" class="btn btn-warning" data-revisar="${o.id}"><i class="bi bi-patch-check"></i> Revisar y aprobar</button>` : ''}
+                <a class="btn btn-outline-secondary" href="${esc(o.url)}">Abrir orden</a></div></div>`;
+    }
+    function pintarPanel() {
+        if (!datos) { panel.innerHTML = '<div class="cp-vacio">Cargando…</div>'; return; }
+        const pa = datos.por_aprobar, nv = datos.novedades;
+        let h = `<div class="cp-cab"><i class="bi bi-bell-fill text-warning"></i><b>Avisos</b>
+            ${datos.no_leidas ? '<button type="button" class="btn btn-link p-0 ms-auto" id="cpLeer">Marcar leídos</button>' : '<span class="ms-auto"></span>'}
+            <a href="${URL_PAG}" title="Configurar avisos"><i class="bi bi-gear"></i> Configurar</a></div>`;
+        const pw = permisoWin();
+        if (datos.cfg.windows && pw === 'default') h += `<div class="cp-win"><i class="bi bi-windows"></i> Activa los <b>avisos de Windows</b> para enterarte aunque estés en otro programa.
+            <button type="button" class="btn btn-sm btn-primary py-0 ms-1" onclick="notifActivarWindows()">Activar</button></div>`;
+        else if (datos.cfg.windows && pw === 'denied') h += `<div class="cp-win" style="background:#fef2f2;border-color:#fecaca;color:#991b1b;"><i class="bi bi-slash-circle"></i> Los avisos de Windows están <b>bloqueados</b> en este navegador:
+            haz clic en el candado de la barra de direcciones → Notificaciones → Permitir.</div>`;
+        if (pa.length) h += `<div class="cp-sec"><i class="bi bi-hourglass-split"></i> Por aprobar (${pa.length})</div>` + pa.map(tarjetaOC).join('');
+        if (nv.length) h += `<div class="cp-sec nov">Novedades${datos.no_leidas ? ` (${datos.no_leidas} sin leer)` : ''}</div>` + nv.map(n =>
+            `<a class="cp-nov ${n.leida ? '' : 'nueva'}" href="${esc(n.ir)}" style="--c:${esc(n.color)};"><span class="ic"><i class="bi ${esc(n.icono)}"></i></span>
+                <span class="flex-grow-1"><span class="t d-block">${esc(n.titulo)}</span><span class="x d-block">${esc(n.texto)}</span><span class="x">${esc(n.hace)}</span></span>
+                ${n.leida ? '' : '<span class="punto"></span>'}</a>`).join('');
+        if (!pa.length && !nv.length) h += '<div class="cp-vacio"><i class="bi bi-check2-circle fs-3 d-block text-success"></i>Todo al día: no hay avisos.</div>';
+        h += `<div class="cp-pie"><a href="${URL_PAG}">Ver todos los avisos</a><span class="text-muted fw-normal">Se actualiza solo</span></div>`;
+        panel.innerHTML = h;
+        panel.querySelectorAll('[data-revisar]').forEach(b => b.onclick = () => abrirAprobar(b.dataset.revisar));
+        const l = document.getElementById('cpLeer');
+        if (l) l.onclick = () => { const fd = new FormData(); fetch(URL_LEER, { method: 'POST', body: fd, credentials: 'same-origin' }).then(() => consultar()); };
+    }
+    btn.addEventListener('click', e => {
+        e.stopPropagation();
+        const abrir = !panel.classList.contains('abierto');
+        panel.classList.toggle('abierto', abrir); btn.setAttribute('aria-expanded', abrir);
+        if (abrir) { pintarPanel(); consultar(); }
+    });
+    document.addEventListener('click', e => { if (!e.target.closest('#campanaBox')) { panel.classList.remove('abierto'); btn.setAttribute('aria-expanded', 'false'); } });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') { panel.classList.remove('abierto'); cerrarAprobar(); } });
+
+    // ---------- ventanas emergentes ----------
+    function toast(id, color, icono, cab, cuerpo, acciones, alCerrar) {
+        const viejo = id && document.getElementById(id); if (viejo) viejo.remove();
+        const d = document.createElement('div'); d.className = 'nt'; if (id) d.id = id; d.style.setProperty('--c', color);
+        d.innerHTML = `<div class="cab"><i class="bi ${icono}"></i><span>${cab}</span><button type="button" title="Cerrar" aria-label="Cerrar"><i class="bi bi-x-lg"></i></button></div>
+            <div class="cue">${cuerpo}<div class="acc">${acciones}</div></div>`;
+        d.querySelector('.cab button').onclick = () => { d.remove(); if (alCerrar) alCerrar(); };
+        toasts.prepend(d);
+        while (toasts.children.length > 3) toasts.lastElementChild.remove();
+        d.querySelectorAll('[data-revisar]').forEach(b => b.onclick = () => { abrirAprobar(b.dataset.revisar); d.remove(); });
+        d.querySelectorAll('[data-luego]').forEach(b => b.onclick = () => { guardar(K_REC, Date.now()); d.remove(); });
+        return d;
+    }
+    function avisarNueva(n) {
+        const esOC = n.tipo === 'OC_POR_APROBAR';
+        const cab = esOC ? '<i class="bi bi-bell-fill"></i> NUEVA ORDEN POR APROBAR' : '<i class="bi bi-bell-fill"></i> NUEVO AVISO';
+        const acc = (n.aprobar ? `<button type="button" class="btn btn-warning btn-sm" data-revisar="${String(n.resumen).match(/(\d+)$/)[1]}"><i class="bi bi-patch-check"></i> Revisar y aprobar</button>` : '')
+            + `<a class="btn btn-outline-secondary btn-sm" href="${esc(n.ir)}">${esOC ? 'Abrir orden' : 'Ver'}</a>`;
+        toast('nt' + n.id, n.color, n.icono, cab, `<div class="tt">${esc(n.titulo)}</div><div class="tx">${esc(n.texto)}</div>`, acc);
+        avisoWindows(n.titulo, n.texto, 'erp-' + n.id, () => { if (n.aprobar) abrirAprobar(String(n.resumen).match(/(\d+)$/)[1]); else location.href = n.ir; }, esOC);
+    }
+    function recordar() {
+        const pa = datos.por_aprobar, nl = datos.novedades.filter(n => !n.leida);
+        if (!pa.length && !nl.length) return false;
+        let cuerpo = '', acc = '';
+        if (pa.length) {
+            cuerpo += `<div class="tt">Tienes ${pa.length} orden(es) esperando tu aprobación</div><ul class="lst">` +
+                pa.slice(0, 4).map(o => `<li><b>${esc(o.codigo)}</b><span class="text-truncate">${esc(o.empresa_txt)} · ${esc(o.proveedor)}</span><span class="m">${esc(o.monto)}</span></li>`).join('') +
+                (pa.length > 4 ? `<li class="text-muted">y ${pa.length - 4} más…</li>` : '') + '</ul>';
+            const vieja = pa.filter(o => o.atrasada).length;
+            if (vieja) cuerpo += `<div class="tx text-danger fw-bold mt-1"><i class="bi bi-exclamation-triangle-fill"></i> ${vieja} lleva(n) más de un día esperando.</div>`;
+            acc += pa[0].aprobar ? `<button type="button" class="btn btn-warning btn-sm" data-revisar="${pa[0].id}"><i class="bi bi-patch-check"></i> Revisar ${pa.length > 1 ? 'la primera' : 'y aprobar'}</button>` : '';
+            acc += `<button type="button" class="btn btn-outline-primary btn-sm" onclick="document.getElementById('campanaBtn').click(); this.closest('.nt').remove();">Ver todas</button>`;
+        }
+        if (nl.length) cuerpo += `<div class="tx ${pa.length ? 'mt-2' : 'tt'}">${nl.length} aviso(s) sin leer: ${esc(nl[0].titulo)}${nl.length > 1 ? '…' : ''}</div>`;
+        if (!pa.length) acc += `<button type="button" class="btn btn-outline-primary btn-sm" onclick="document.getElementById('campanaBtn').click(); this.closest('.nt').remove();">Ver avisos</button>`;
+        acc += '<button type="button" class="btn btn-link btn-sm text-muted" data-luego="1">Recordarme más tarde</button>';
+        toast('ntRecordar', pa.length ? '#d97706' : '#0B3D91', 'bi-bell-fill', 'PENDIENTES POR REVISAR', cuerpo, acc, () => guardar(K_REC, Date.now()));
+        avisoWindows(pa.length ? `${pa.length} orden(es) por aprobar` : `${nl.length} aviso(s) sin leer`,
+                     pa.length ? pa.slice(0, 3).map(o => `${o.codigo} · ${o.empresa_txt} · ${o.monto}`).join('\n') : nl[0].titulo, 'erp-recordatorio',
+                     () => { if (pa.length && pa[0].aprobar) abrirAprobar(pa[0].id); else btn.click(); }, false);
+        return true;
+    }
+
+    // ---------- aprobación rápida ----------
+    const fondo = document.getElementById('notifAprobar'), caja = document.getElementById('notifAprobarCaja');
+    function cerrarAprobar() { fondo.classList.remove('abierto'); }
+    fondo.addEventListener('click', e => { if (e.target === fondo) cerrarAprobar(); });
+    function abrirAprobar(id) {
+        panel.classList.remove('abierto');
+        caja.innerHTML = '<div class="na-cue text-center text-muted py-5"><div class="spinner-border spinner-border-sm"></div> Cargando la orden…</div>';
+        fondo.classList.add('abierto');
+        fetch({{ url_for('notif_orden', orden_id=0)|tojson }}.replace(/0$/, id), { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+            .then(r => r.json()).then(o => {
+                if (!o.codigo) throw new Error();
+                caja.style.setProperty('--c', o.color);
+                const dato = (t, v) => v ? `<div><span>${t}</span>${esc(v)}</div>` : '';
+                caja.innerHTML = `<div class="na-cab"><div><div class="small opacity-75">${esc(o.tipo_txt)} · ${esc(o.empresa_txt)}</div><h5>${esc(o.codigo)}</h5></div>
+                    <button type="button" title="Cerrar" id="naCerrar"><i class="bi bi-x-lg"></i></button></div>
+                    <div class="na-cue">
+                    ${!o.pendiente ? `<div class="na-aviso" style="background:#f1f5f9;">Esta orden ya no está por aprobar: está <b>${esc(o.estado_txt)}</b>.</div>` : ''}
+                    ${o.revision ? `<div class="na-aviso" style="background:#fffbeb;border:1px solid #fde68a;"><b>Re-aprobación (Rev. ${o.revision}):</b> ${esc(o.motivo_edicion)}</div>` : ''}
+                    <div class="na-grid">${dato('Proveedor', o.proveedor + (o.ruc ? ' · ' + o.ruc : ''))}${dato('Contacto', o.contacto)}
+                        ${dato('Lo pide', o.solicitante + (o.area ? ' (' + o.area + ')' : ''))}${dato('Motivo', o.motivo + (o.motivo_detalle ? ' · ' + o.motivo_detalle : ''))}
+                        ${dato('Cliente', o.cliente)}${dato('Destino', o.destino)}${dato('Condición de pago', o.condicion)}${dato('Entrega', o.entrega)}
+                        ${dato('Cotización', o.cotizacion)}${dato('Enviada por', o.enviado)}</div>
+                    <div class="table-responsive"><table class="na-tabla"><thead><tr><th>#</th><th>Descripción</th><th class="n">Cant.</th><th class="n">P. Unit.</th><th class="n">Total</th></tr></thead><tbody>
+                    ${o.items.map((i, k) => `<tr><td>${k + 1}</td><td><b>${esc(i.descripcion)}</b>${i.codigo ? ' <span class="text-muted">' + esc(i.codigo) + '</span>' : ''}${i.detalle ? '<div class="text-muted small">' + esc(i.detalle) + '</div>' : ''}</td>
+                        <td class="n">${esc(i.cantidad)} ${esc(i.um)}</td><td class="n">${esc(i.pu)}</td><td class="n">${esc(i.total)}</td></tr>`).join('')}</tbody></table></div>
+                    <div class="na-tot">${o.sin_igv ? '<span>Importación (sin IGV)</span>' : `<span>Subtotal ${esc(o.subtotal)}</span><span>IGV ${esc(o.igv)}</span>`}<span>TOTAL <b>${esc(o.total)}</b></span></div>
+                    ${o.observaciones ? `<div class="small mt-2"><b>Observaciones:</b> ${esc(o.observaciones)}</div>` : ''}
+                    ${o.docs.length ? `<div class="small mt-2"><b>Documentos:</b> ${o.docs.map(d => `<a href="${esc(d.url)}" target="_blank" class="me-2"><i class="bi bi-paperclip"></i>${esc(d.nombre)}</a>`).join('')}</div>` : ''}
+                    </div>
+                    <form method="POST" action="${esc(o.aprobar_url)}" class="na-pie" id="naForm">
+                        ${o.puede_aprobar ? `<input type="text" name="comentario" maxlength="300" class="form-control form-control-sm" style="flex:1 1 220px;" placeholder="Comentario (opcional)">
+                        <button type="submit" class="btn btn-success fw-bold"><i class="bi bi-patch-check-fill"></i> Aprobar</button>` : ''}
+                        <a class="btn btn-outline-secondary" href="${esc(o.pdf)}" target="_blank"><i class="bi bi-file-earmark-pdf"></i> PDF</a>
+                        <a class="btn btn-outline-danger" href="${esc(o.url)}" title="Para rechazar u observar se abre la orden completa"><i class="bi bi-box-arrow-up-right"></i> Abrir orden (rechazar / observar)</a>
+                    </form>`;
+                document.getElementById('naCerrar').onclick = cerrarAprobar;
+                const f = document.getElementById('naForm');
+                f.addEventListener('submit', () => { const b = f.querySelector('button[type=submit]'); if (b) { b.disabled = true; b.innerHTML = 'Aprobando…'; } });
+            }).catch(() => { caja.innerHTML = '<div class="na-cue text-danger">No se pudo cargar la orden. Ábrela desde Órdenes de compra.</div>'; });
+    }
+    window.notifAbrirAprobar = abrirAprobar;
+
+    // ---------- consulta periódica ----------
+    let cada = 30000, timer = null;
+    function consultar() {
+        if (detenido) return;
+        const ult = leer(K_ULT);
+        fetch(API + (ult !== null ? '?desde=' + encodeURIComponent(ult) : ''), { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+            .then(r => { if (r.status === 401) { detenido = true; throw new Error('sesion'); } return r.json(); })
+            .then(d => {
+                if (!d || d.status !== 'ok' || !d.activo) return;
+                datos = d; cada = (d.consulta_seg || 30) * 1000;
+                pintarBoton();
+                if (panel.classList.contains('abierto')) pintarPanel();
+                const ultAhora = leer(K_ULT);
+                if (ultAhora === null) { guardar(K_ULT, d.ultimo_id); }        // primera vez en este navegador: no se repite lo viejo
+                else if (d.nuevas.length && Number(ultAhora) < d.ultimo_id) {
+                    guardar(K_ULT, d.ultimo_id);
+                    if (d.cfg.popup) d.nuevas.slice(-3).forEach(avisarNueva);
+                    else d.nuevas.slice(-3).forEach(n => avisoWindows(n.titulo, n.texto, 'erp-' + n.id, () => location.href = n.ir, n.tipo === 'OC_POR_APROBAR'));
+                    if (d.cfg.sonido) sonar(d.cfg.sonido_tipo, d.cfg.volumen);
+                    btn.classList.remove('sacude'); void btn.offsetWidth; btn.classList.add('sacude');
+                    parpadear(`🔔 (${d.total}) ${d.nuevas[d.nuevas.length - 1].titulo}`);
+                    guardar(K_REC, Date.now());
+                    return;
+                } else if (Number(ultAhora) < d.ultimo_id) guardar(K_ULT, d.ultimo_id);
+                // recordatorio de lo pendiente (también al entrar al sistema)
+                const rec = Number(leer(K_REC) || 0), min = d.cfg.recordar_min;
+                if (min > 0 && d.total > 0 && Date.now() - rec >= min * 60000 && !document.getElementById('ntRecordar')) {
+                    if (d.cfg.popup || d.cfg.windows) {
+                        guardar(K_REC, Date.now());
+                        if (d.cfg.popup) recordar(); else avisoWindows(`${d.total} aviso(s) pendiente(s)`, 'Abre la campana del sistema para revisarlos.', 'erp-recordatorio', () => btn.click(), false);
+                        if (d.cfg.sonido) sonar(d.cfg.sonido_tipo, d.cfg.volumen);
+                        parpadear(`🔔 (${d.total}) Pendientes por revisar`);
+                    }
+                }
+            })
+            .catch(() => {})
+            .finally(() => { clearTimeout(timer); if (!detenido) timer = setTimeout(consultar, cada); });
+    }
+    pintarBoton();
+    setTimeout(consultar, 1200);
+    window.notifConsultar = consultar;
+})();
+</script>

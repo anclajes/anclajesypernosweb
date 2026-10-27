@@ -431,6 +431,15 @@
             </div>
             
             <div class="d-flex gap-3">
+                {% if campana_activa %}
+                <div class="campana-box" id="campanaBox">
+                    <button type="button" class="btn btn-light border bg-white text-muted position-relative campana-btn" id="campanaBtn" title="Avisos" aria-haspopup="true" aria-expanded="false">
+                        <i class="bi bi-bell-fill"></i>
+                        <span class="campana-cnt" id="campanaCnt" style="display:none;">0</span>
+                    </button>
+                    <div class="campana-panel" id="campanaPanel" role="dialog" aria-label="Avisos"></div>
+                </div>
+                {% else %}
                 <div class="dropdown">
                     <a class="btn btn-light border bg-white text-muted position-relative" href="#" role="button" data-bs-toggle="dropdown">
                         <i class="bi bi-bell-fill"></i>
@@ -439,6 +448,7 @@
                         {% endif %}
                     </a>
                 </div>
+                {% endif %}
             </div>
         </header>
 
@@ -489,6 +499,7 @@
             }
         });
     </script>
+    {% if campana_activa %}{% include '_campana.html' %}{% endif %}
     {% if session.get('user_id') and vista_id %}
     <script>
     /* Tiempo en ESTA página del sistema: ACTIVO (pestaña visible y con mouse/teclado/toque en el último minuto)
