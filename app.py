@@ -16376,7 +16376,7 @@ def _prefill_ingreso_desde_oc(o):
     items = [{'insumo_id': it.insumo_id or '', 'descripcion': it.descripcion, 'um': it.um,
               'cantidad': rec['items'][it.id]['llego'] if rec and rec['entregas'] else it.cantidad,
               'precio_oc': it.precio_unitario, 'simbolo': MONEDAS_OC[o.moneda]['simbolo'],
-              'precio_unitario': round(it.precio_unitario * (1 + IGV_OC), 4) if o.moneda == 'PEN' and not o.es_importacion else ''}
+              'precio_unitario': (it.precio_con_igv if it.precio_con_igv else round(it.precio_unitario * (1 + IGV_OC), 4)) if o.moneda == 'PEN' and not o.es_importacion else ''}
              for it in o.items if not (rec and rec['entregas'] and rec['items'][it.id]['llego'] <= 0)]
     docs = [{'id': d.id, 'tipo': d.tipo, 'nombre': d.nombre_original, 'url': url_for('oc_documento_ver', doc_id=d.id),
              'tipo_txt': TIPOS_DOC_OC.get(d.tipo, d.tipo), 'numero': {'GUIA': o.numero_guia, 'FACTURA': o.numero_factura}.get(d.tipo) or ''}
@@ -17769,9 +17769,10 @@ def _asegurar_oc():
                                                       ('tipo_servicio', 'VARCHAR(80)'), ('kardex_mov_id', 'INTEGER'), ('cantidad_kardex', 'INTEGER'),
                                                       ('req_item_id', 'INTEGER')])
     _agregar_columnas_si_faltan('orden_compra_documento', [('entrega_id', 'INTEGER')])
+    _agregar_columnas_si_faltan('orden_compra', [('precios_con_igv', 'BOOLEAN DEFAULT FALSE')])
     _agregar_columnas_si_faltan('oc_proveedor', [('es_extranjero', 'BOOLEAN DEFAULT FALSE'), ('pais', 'VARCHAR(60)')])
     _agregar_columnas_si_faltan('orden_compra_item', [('cantidad_cancelada', 'FLOAT DEFAULT 0'), ('kgs_mpcs', 'FLOAT'), ('precio_mil', 'FLOAT'),
-                                                      ('detalle', 'VARCHAR(500)'), ('piezas', 'FLOAT')])
+                                                      ('detalle', 'VARCHAR(500)'), ('piezas', 'FLOAT'), ('precio_con_igv', 'FLOAT')])
     _agregar_columnas_si_faltan('orden_compra', [('es_importacion', 'BOOLEAN DEFAULT FALSE'), ('condiciones_comerciales', 'TEXT'),
                                                  ('pagos_importacion', 'TEXT'), ('saldo_cerrado_motivo', 'VARCHAR(300)')])
     _agregar_columnas_si_faltan('requerimiento_item', [('descartado', 'BOOLEAN DEFAULT FALSE'), ('descartado_por_id', 'INTEGER'),
@@ -18296,6 +18297,11 @@ def _leer_orden_form(f, orden=None):
     # Orden de IMPORTACIÓN: proveedor del exterior, en dólares, sin IGV, precio por cada 1000 piezas y pagos por porcentaje
     es_imp = tipo == 'OC' and f.get('es_importacion') == '1'
     datos['es_importacion'] = es_imp
+    # "Los precios incluyen IGV": se escribe el precio de la factura/cotización CON IGV y el sistema saca el valor sin IGV
+    # a partir del TOTAL (así cuadra al céntimo con la factura: 600.00 = 508.47 + 91.53)
+    con_igv = f.get('precios_con_igv') == '1' and not es_imp
+    datos['precios_con_igv'] = con_igv
+    totales_con_igv = []
     empresa = (orden.empresa if orden and orden.empresa else (f.get('empresa') or 'ANCLAJES')).upper()
     if empresa not in EMPRESAS_OC or not EMPRESAS_OC[empresa]['habilitada']:
         errores.append('Elige la empresa que emite la orden.')
@@ -18472,6 +18478,9 @@ def _leer_orden_form(f, orden=None):
                 errores.append(f'Ítem {n}: los KGS por millar no son válidos.')
                 continue
             precio = precio_mil / 1000
+        precio_con = None
+        if con_igv and precio is not None:
+            precio_con, precio = precio, precio / (1 + IGV_OC)
         if len(desc) < 2:
             errores.append(f'Ítem {n}: escribe la descripción.')
             continue
@@ -18550,8 +18559,12 @@ def _leer_orden_form(f, orden=None):
                 continue
             req_usados.add(ri.id)
             req_item_id = ri.id
-        items.append({'descripcion': desc, 'cantidad': round(cantidad, 4), 'um': um, 'precio_unitario': round(precio, 6 if es_imp else 4), 'req_item_id': req_item_id,
-                      'total': round(cantidad * precio_mil / 1000 if es_imp else cantidad * precio, 2), 'origen': origen, 'codigo': codigo, 'insumo_id': ins_id,
+        total_con = round(cantidad * precio_con, 2) if con_igv else None
+        if con_igv:
+            totales_con_igv.append(total_con)
+        items.append({'descripcion': desc, 'cantidad': round(cantidad, 4), 'um': um, 'precio_unitario': round(precio, 6 if (es_imp or con_igv) else 4), 'req_item_id': req_item_id,
+                      'precio_con_igv': round(precio_con, 4) if con_igv else None,
+                      'total': round(total_con / (1 + IGV_OC), 2) if con_igv else round(cantidad * precio_mil / 1000 if es_imp else cantidad * precio, 2), 'origen': origen, 'codigo': codigo, 'insumo_id': ins_id,
                       'kgs_mpcs': round(kgs_mpcs, 4) if kgs_mpcs is not None else None, 'precio_mil': round(precio_mil, 4) if es_imp else None,
                       'detalle': detalle_it, 'piezas': piezas_it,
                       'familia': _limpio(familia, 200) or None, 'calidad': _limpio(calidad, 200) or None,
@@ -18580,6 +18593,10 @@ def _leer_orden_form(f, orden=None):
     datos['subtotal'] = subtotal
     datos['igv'] = 0.0 if es_imp else round(subtotal * IGV_OC, 2)
     datos['total'] = round(subtotal + datos['igv'], 2)
+    if con_igv and items:
+        # se parte del total CON IGV (como la factura) y el IGV es la diferencia: no se pierde ni se gana un céntimo
+        datos['total'] = round(sum(totales_con_igv), 2)
+        datos['igv'] = round(datos['total'] - subtotal, 2)
     return datos, items, errores
 
 
@@ -18640,9 +18657,10 @@ def _aplicar_datos_orden(orden, datos, items, prov, contacto=None):
                   'condicion_pago', 'entrega_modo', 'lugar_recojo', 'entrega_tipo', 'entrega_dias', 'fecha_entrega', 'observaciones',
                   'subtotal', 'igv', 'total', 'solicitante_user_id', 'solicitante_nombre', 'area_solicitante', 'motivo_compra', 'motivo_detalle',
                   'cliente_ruc', 'cliente_razon', 'requiere_certificado', 'detraccion_pct',
-                  'es_importacion', 'condiciones_comerciales', 'pagos_importacion'):
+                  'es_importacion', 'condiciones_comerciales', 'pagos_importacion', 'precios_con_igv'):
         setattr(orden, campo, datos[campo] if datos[campo] != '' else None)
     orden.es_importacion = bool(datos.get('es_importacion'))
+    orden.precios_con_igv = bool(datos.get('precios_con_igv'))
     orden.razon_social = datos['razon_social']
     orden.contacto, orden.telefono = datos['contacto'], datos['telefono']
     orden.oc_proveedor_id = prov.id
@@ -19079,7 +19097,7 @@ def _oc_precios(emp_sel='TODAS', q='', desde=None, hasta=None, tipo='OC'):
                                               'calidad': i.calidad or '', 'segmentos': {}, 'n': 0})
             pr['n'] += 1
             seg = pr['segmentos'].setdefault((o.moneda, (i.um or '').upper()), {})
-            compra = {'precio': i.precio_unitario, 'con_igv': round(i.precio_unitario * (1 + (0 if o.es_importacion else IGV_OC)), 4),
+            compra = {'precio': i.precio_unitario, 'con_igv': i.precio_con_igv or round(i.precio_unitario * (1 + (0 if o.es_importacion else IGV_OC)), 4),
                       'fecha': o.fecha, 'orden': o, 'cantidad': i.cantidad or 0, 'importacion': bool(o.es_importacion)}
             pv = seg.setdefault(o.razon_social, {'proveedor': o.razon_social, 'ruc': o.ruc or '', 'compras': []})
             pv['compras'].append(compra)
@@ -19218,11 +19236,13 @@ def _orden_a_previo(o, items=None):
     d = {c: getattr(o, c) for c in ('tipo', 'empresa', 'destino', 'ruc', 'razon_social', 'direccion', 'contacto', 'telefono', 'email', 'cotizacion',
                                     'moneda', 'condicion_pago', 'entrega_modo', 'lugar_recojo', 'entrega_tipo', 'entrega_dias',
                                     'observaciones', 'oc_proveedor_id', 'contacto_id', 'area_solicitante', 'motivo_compra', 'motivo_detalle',
-                                    'cliente_ruc', 'cliente_razon', 'detraccion_pct', 'es_importacion', 'condiciones_comerciales', 'pagos_importacion')}
+                                    'cliente_ruc', 'cliente_razon', 'detraccion_pct', 'es_importacion', 'condiciones_comerciales', 'pagos_importacion',
+                                    'precios_con_igv')}
     d['solicitante'] = (f"u:{o.solicitante_user_id}" if o.solicitante_user_id else (f"n:{o.solicitante_nombre}" if o.solicitante_nombre else ''))
     d['fecha'] = o.fecha.isoformat() if o.fecha else ''
     d['fecha_entrega'] = o.fecha_entrega.isoformat() if o.fecha_entrega else ''
-    d['items'] = [{'descripcion': i.descripcion, 'cantidad': i.cantidad, 'um': i.um, 'precio_unitario': i.precio_unitario,
+    d['items'] = [{'descripcion': i.descripcion, 'cantidad': i.cantidad, 'um': i.um,
+                   'precio_unitario': i.precio_con_igv if o.precios_con_igv and i.precio_con_igv is not None else i.precio_unitario,
                    'origen': i.origen or '', 'codigo': i.codigo or '', 'insumo_id': i.insumo_id or '', 'familia': i.familia or '',
                    'calidad': i.calidad or '', 'estado': i.estado_producto or '', 'peso_modo': i.peso_modo or 'U',
                    'peso_valor': (i.peso_total if i.peso_modo == 'T' else i.peso_unitario) or '', 'servicio': i.tipo_servicio or '',

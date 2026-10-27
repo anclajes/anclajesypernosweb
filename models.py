@@ -1354,6 +1354,7 @@ class OrdenCompra(db.Model):
     anulacion_opcion = db.Column(db.String(150))
     detraccion_pct = db.Column(db.Float)                    # % de detracción SUNAT (vacío = no aplica)
     nota_seguimiento = db.Column(db.String(300))            # OS: nota de Almacén al marcar el seguimiento
+    precios_con_igv = db.Column(db.Boolean, default=False)   # los precios se escribieron con IGV (cuadra con la factura)
     es_importacion = db.Column(db.Boolean, default=False)   # OC de importación: ítems por millar, sin IGV, pagos por porcentaje
     condiciones_comerciales = db.Column(db.Text)            # importación: incoterm, embarque, etc.
     pagos_importacion = db.Column(db.Text)                  # importación: JSON [{concepto, pct, detalle}]
@@ -1433,6 +1434,7 @@ class OrdenCompraItem(db.Model):
     peso_modo = db.Column(db.String(1))                        # U = por unidad / T = total
     detalle = db.Column(db.String(500))                         # descripción adicional del ítem (sale debajo del producto)
     piezas = db.Column(db.Float)                                # OS: cantidad de piezas (solo informativo)
+    precio_con_igv = db.Column(db.Float)                        # precio escrito CON IGV (órdenes con "precios incluyen IGV")
     peso_unitario = db.Column(db.Float)                        # kg por unidad
     peso_total = db.Column(db.Float)                           # kg del ítem
     # Ingreso al inventario (lo marca Almacén cuando hizo el movimiento en el Kardex)

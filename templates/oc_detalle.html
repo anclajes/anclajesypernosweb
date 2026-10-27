@@ -344,6 +344,7 @@
                     <div class="d-flex justify-content-between"><span class="text-muted">IGV {{ (igv * 100)|int }}%</span><span class="num">{{ mon.simbolo }} {{ '{:,.2f}'.format(orden.igv or 0) }}</span></div>
                     {% endif %}
                     <div class="d-flex justify-content-between border-top mt-1 pt-1 fs-6 fw-bold"><span>{{ 'TOTAL NETO' if orden.es_importacion else 'TOTAL' }}</span><span class="num">{{ mon.simbolo }} {{ '{:,.2f}'.format(orden.total or 0) }}</span></div>
+                    {% if orden.precios_con_igv %}<div class="text-muted" style="font-size:.68rem;"><i class="bi bi-receipt"></i> Precios escritos con IGV: el total cuadra con la factura y el IGV es la diferencia.</div>{% endif %}
                 </div>
             </div>
         </div>
@@ -440,7 +441,8 @@
                     <div class="col-8"><label class="small">Total de la factura ({{ mon.simbolo }})</label><input type="number" step="0.01" min="0" name="monto_factura" class="form-control form-control-sm" value="{{ orden.monto_factura if orden.monto_factura is not none else '' }}"></div>
                     <div class="col-4 d-flex align-items-end"><button class="btn btn-sm btn-primary w-100">Guardar</button></div>
                     {% if orden.monto_factura is not none %}{% set dif = (orden.monto_factura - (orden.total or 0))|round(2) %}
-                    <div class="col-12"><span class="aprob {{ 'si' if dif == 0 else 'no' }}">{{ 'Coincide con la orden' if dif == 0 else ('Diferencia ' ~ mon.simbolo ~ ' ' ~ '{:,.2f}'.format(dif)) }}</span></div>{% endif %}
+                    <div class="col-12"><span class="aprob {{ 'si' if dif == 0 else 'no' }}">{{ 'Coincide con la orden' if dif == 0 else ('Diferencia ' ~ mon.simbolo ~ ' ' ~ '{:,.2f}'.format(dif)) }}</span>
+                        {% if dif != 0 and dif|abs <= 0.05 %}<div class="text-muted" style="font-size:.7rem;">Es un céntimo de <b>redondeo del IGV</b>: el proveedor calculó desde el precio con IGV. Edita la orden y marca "Los precios que escribo incluyen IGV" para que cuadre exacto.</div>{% endif %}</div>{% endif %}
                 </form>
             </details>
             {% endif %}

@@ -24,6 +24,8 @@
     .sug { z-index: 1060; max-height: 340px; overflow-y: auto; display: none; border-radius: 10px; }
     .sug button { text-align: left; }
     .ruc { font-variant-numeric: tabular-nums; font-weight: 700; color: #0B3D91; }
+    .igv-box { background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 10px; padding: 6px 10px; }
+    .igv-box.on { background: #fefce8; border: 1.5px solid #facc15; }
     .imp-box { background: #f0f9ff; border: 1.5px solid #bae6fd; border-radius: 12px; padding: 8px 12px; }
     body.modo-imp .imp-box { background: #e0f2fe; border-color: #0284c7; }
     .pago-l { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; flex-wrap: wrap; }
@@ -353,7 +355,15 @@
         <div class="card border-0 shadow-sm mb-3"><div class="card-body">
             <div class="card-t"><i class="bi bi-list-ol"></i> Productos / servicios
                 {% if puede_insumos %}<button type="button" class="btn btn-sm btn-outline-success py-0 ms-2" id="btnNuevoInsumo" style="display:none; text-transform:none; letter-spacing:0;" onclick="crearInsumo(null)"><i class="bi bi-plus-lg"></i> Nuevo insumo (maestro)</button>{% endif %}
-                <span class="ms-auto fw-normal text-muted" style="text-transform:none; letter-spacing:0; font-size:.72rem;">Precios <b>SIN IGV</b></span></div>
+                <span class="ms-auto fw-normal text-muted" style="text-transform:none; letter-spacing:0; font-size:.72rem;" id="lblPrecios">Precios <b>SIN IGV</b></span></div>
+            <div class="igv-box mb-2" id="boxConIgv">
+                <div class="form-check form-switch m-0">
+                    <input class="form-check-input" type="checkbox" role="switch" name="precios_con_igv" value="1" id="precios_con_igv" {{ 'checked' if pv.precios_con_igv }} onchange="pintarConIgv()">
+                    <label class="form-check-label small fw-bold" for="precios_con_igv">Los precios que escribo <u>incluyen IGV</u> (como en la factura o cotización)</label>
+                </div>
+                <div class="small text-muted" id="ayudaConIgv" style="font-size:.7rem;">Úsalo cuando el proveedor te da el precio final con IGV (ej. S/ 600.00): el total cuadra al céntimo con su factura
+                    (S/ 508.47 + IGV S/ 91.53 = S/ 600.00). Si escribes el precio sin IGV, el IGV se calcula sobre el subtotal y puede salir 1 céntimo distinto.</div>
+            </div>
             <div class="ayuda-inv mb-2" id="ayudaInv"><i class="bi bi-funnel-fill"></i> <span id="ayudaInvTxt"></span>
                 <div class="mt-1" id="ayudaInvPedir"><b>¿No encuentras el producto?</b> No se puede escribir a mano: pide al <b>encargado del inventario</b> que lo cree en el
                     <b>Maestro de Productos</b> indicándole <b>descripción, familia y calidad</b>.</div></div>
@@ -425,9 +435,9 @@
             <div class="col-6 col-md-8 i-os-box align-self-end" style="display:none; font-size:.7rem; color:#64748b;"><i class="bi bi-info-circle"></i> Solo informativo: si el servicio se cobra por <b>kilo</b>, escribe cuántas piezas van (sale en la OS y el PDF).</div>
             <div class="col-4 col-md-2"><label class="i-lbl-cant">Cantidad *</label><input type="number" name="cantidad[]" step="any" min="0" class="form-control form-control-sm i-cant" inputmode="decimal"></div>
             <div class="col-4 col-md-3"><label>U.M. *</label><select name="um[]" class="form-select form-select-sm i-um"></select></div>
-            <div class="col-4 col-md-3 i-local"><label>P. Unit. *</label><input type="number" name="precio_unitario[]" step="any" min="0" class="form-control form-control-sm i-pu" inputmode="decimal"></div>
+            <div class="col-4 col-md-3 i-local"><label class="i-lbl-pu">P. Unit. *</label><input type="number" name="precio_unitario[]" step="any" min="0" class="form-control form-control-sm i-pu" inputmode="decimal"></div>
             <div class="col-4 col-md-3 i-imp" style="display:none;"><label>USD / 1000 PCS *</label><input type="number" name="precio_mil[]" step="any" min="0" class="form-control form-control-sm i-pmil" inputmode="decimal"></div>
-            <div class="col-12 col-md-4 text-end"><label>Total</label><div class="tot i-tot">0.00</div></div>
+            <div class="col-12 col-md-4 text-end"><label class="i-lbl-tot">Total</label><div class="tot i-tot">0.00</div><div class="i-sin text-muted" style="font-size:.68rem;"></div></div>
             <div class="col-6 col-md-3 i-imp" style="display:none;"><label>KGS / MPCS</label><input type="number" name="kgs_mpcs[]" step="any" min="0" class="form-control form-control-sm i-kgs" inputmode="decimal" placeholder="kg por millar"></div>
             <div class="col-6 col-md-4 i-imp align-self-end small" style="display:none;">Total KGS: <b class="i-tkg">0</b></div>
             <div class="col-12 i-peso-box"><div class="peso-linea"><i class="bi bi-speedometer2"></i> Peso <span class="text-muted">(opcional)</span>
@@ -606,29 +616,46 @@ function pesoFila(f) {
     if (modo === 'T') { calc.innerHTML = cant ? `= <b>${fmtKg(v / cant)}</b> kg por unidad` : ''; return v; }
     calc.innerHTML = cant ? `= <b>${fmtKg(v * cant)}</b> kg en total` : ''; return v * cant;
 }
+function conIgv() { const c = porId('precios_con_igv'); return !!(c && c.checked && !esImp()); }
+function pintarConIgv() {
+    const on = conIgv();
+    porId('boxConIgv').style.display = esImp() ? 'none' : '';
+    porId('boxConIgv').classList.toggle('on', on);
+    porId('lblPrecios').innerHTML = esImp() ? 'Precios <b>SIN IGV</b> (importación)' : (on ? 'Precios <b>CON IGV</b>' : 'Precios <b>SIN IGV</b>');
+    document.querySelectorAll('#items .i-lbl-pu').forEach(x => x.textContent = on ? 'P. Unit. c/IGV *' : 'P. Unit. *');
+    document.querySelectorAll('#items .i-lbl-tot').forEach(x => x.textContent = on ? 'Total c/IGV' : 'Total');
+    recalcular();
+}
 function recalcular() {
-    let sub = 0, peso = 0, pcs = 0;
-    const imp = esImp();
+    let sub = 0, peso = 0, pcs = 0, totCon = 0;
+    const imp = esImp(), ci = conIgv();
     document.querySelectorAll('#items .item').forEach(f => {
         const cant = parseFloat(f.querySelector('.i-cant').value) || 0;
         let t;
         if (imp) {
             const pm = f.querySelector('.i-pmil').value, kg = parseFloat(f.querySelector('.i-kgs').value) || 0;
-            f.querySelector('.i-pu').value = pm === '' ? '' : (parseFloat(pm) || 0) / 1000;
+            if (pm !== '') f.querySelector('.i-pu').value = (parseFloat(pm) || 0) / 1000;
             t = r2(cant * (parseFloat(pm) || 0) / 1000);
             const tk = cant * kg / 1000; f.querySelector('.i-tkg').textContent = fmtKg(tk); peso += tk; pcs += cant;
         } else {
             t = r2(cant * (parseFloat(f.querySelector('.i-pu').value) || 0));
             peso += f.querySelector('.i-um').value === 'KG' ? cant : pesoFila(f);
         }
-        f.querySelector('.i-tot').textContent = `${moneda()} ${fmt(t)}`; sub += t;
+        const sinIgv = f.querySelector('.i-sin');
+        if (ci) {   // el total con IGV manda (como la factura); el valor sin IGV sale de dividir entre 1.18
+            totCon += t; const s_ = r2(t / (1 + IGV));
+            f.querySelector('.i-tot').textContent = `${moneda()} ${fmt(t)}`; sinIgv.textContent = `sin IGV ${moneda()} ${fmt(s_)}`; sub += s_;
+        } else {
+            f.querySelector('.i-tot').textContent = `${moneda()} ${fmt(t)}`; sinIgv.textContent = ''; sub += t;
+        }
     });
-    sub = r2(sub); const igv = imp ? 0 : r2(sub * IGV);
+    sub = r2(sub); const igv = imp ? 0 : (ci ? r2(r2(totCon) - sub) : r2(sub * IGV));
     porId('tIgvFila').style.display = imp ? 'none' : 'flex';
     porId('tTotLbl').textContent = imp ? 'TOTAL NETO (sin IGV)' : 'TOTAL';
     porId('tImpFila').style.display = imp ? 'flex' : 'none';
     if (imp) porId('tImp').textContent = `${fmtCant(pcs)} PCS · ${fmtKg(peso)} kg`;
     pintarMontosPago(sub);
+    porId('tIgvLbl').textContent = ci ? 'IGV ({{ (igv * 100)|int }}%) · diferencia con el total' : 'IGV ({{ (igv * 100)|int }}%)';
     porId('tSub').textContent = `${moneda()} ${fmt(sub)}`; porId('tIgv').textContent = `${moneda()} ${fmt(igv)}`; porId('tTot').textContent = `${moneda()} ${fmt(sub + igv)}`;
     const conDetr = porId('aplica_detraccion').checked, pct = parseFloat(porId('detraccion_pct').value) || 0;
     porId('tDetr').style.display = conDetr && pct ? 'block' : 'none';
@@ -673,14 +700,15 @@ function pintarImportacion(cambio) {
     if (cambio && provActual && !!provActual.extranjero !== imp) cambiarProv();
     pintarProvModo();
     if (imp && cambio) {
+        // el precio unitario que ya estaba escrito pasa a USD por 1000 piezas
+        document.querySelectorAll('#items .item').forEach(f => { const pu = f.querySelector('.i-pu').value, pm = f.querySelector('.i-pmil'); if (pu !== '' && pm.value === '') pm.value = r2(parseFloat(pu) * 1000); });
         // sugerencias de Configuración, solo si está vacío
         const def = IMP_DEF[empresa()] || {};
         if (!porId('pagosImp').children.length) ((def.pagos || []).length ? def.pagos : [{}]).forEach(agregarPago);
         if (!porId('condiciones_comerciales').value.trim()) porId('condiciones_comerciales').value = def.condiciones || '';
-        // el precio unitario que ya estaba escrito pasa a USD por 1000 piezas
-        document.querySelectorAll('#items .item').forEach(f => { const pu = f.querySelector('.i-pu').value, pm = f.querySelector('.i-pmil'); if (pu !== '' && pm.value === '') pm.value = r2(parseFloat(pu) * 1000); });
     }
-    recalcular();
+    if (cambio && !imp) { const pen = porId('mon_PEN'); if (pen) pen.checked = true; }
+    if (porId('boxConIgv')) pintarConIgv(); else recalcular();
 }
 function pintarPesoFila(f) {
     // por kilo (U.M. KG) el peso ya es la cantidad; en importación el peso sale de KGS/MPCS
@@ -790,6 +818,7 @@ function agregarItem(datos) {
     fila.querySelectorAll('.i-local').forEach(x => x.style.display = imp0 ? 'none' : '');
     fila.querySelector('.i-lbl-cant').textContent = imp0 ? 'Cantidad / PCS *' : 'Cantidad *';
     pintarPesoFila(fila);
+    if (conIgv()) { fila.querySelector('.i-lbl-pu').textContent = 'P. Unit. c/IGV *'; fila.querySelector('.i-lbl-tot').textContent = 'Total c/IGV'; }
     opcionesServicio(fila.querySelector('.i-serv'), datos.servicio || '');
     fila.querySelector('.i-serv-box').style.display = tipo() === 'OS' ? 'block' : 'none';
     fila.querySelector('.i-pmodo').value = datos.peso_modo === 'T' ? 'T' : 'U';
@@ -1133,6 +1162,7 @@ pintarNumero(); pintarEntrega(); pintarMotivo(); pintarTipo();
 if (porId('solicitante').value && !porId('area_solicitante').value) pintarArea();
 if (ITEMS_PREVIOS.length) ITEMS_PREVIOS.forEach(it => agregarItem(it)); else agregarItem();
 PAGOS_PREVIOS.forEach(agregarPago);
+pintarConIgv();
 if (esImp() && !PAGOS_PREVIOS.length) agregarPago();
 pintarImportacion(false);
 if (REQ_INICIAL) {
