@@ -85,6 +85,7 @@
     .totales .grande { font-size: 1.45rem; font-weight: 800; }
     .entrega-fija { background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 6px 10px; font-size: .78rem; }
     .num-prev { font-weight: 800; color: #0B3D91; font-variant-numeric: tabular-nums; }
+    .aviso-emp { font-size: .74rem; background: #ecfeff; border: 1px solid #a5f3fc; color: #155e75; border-radius: 10px; padding: 6px 10px; }
     #modalProd .select2-container { width: 100% !important; }
     .pag-mp { display: flex; flex-wrap: wrap; gap: 6px; justify-content: space-between; align-items: center; margin: 6px 0; }
     .motivos label { flex: 1 1 calc(50% - 8px); min-width: 130px; }
@@ -172,13 +173,16 @@
                 <span class="ms-auto text-muted fw-normal" style="text-transform:none; letter-spacing:0;">
                     {% if orden %}<span class="num-prev">{{ oc_codigo(orden) }}</span>{% else %}<span class="num-prev" id="numPrev"></span> <span style="font-size:.68rem;">(se confirma al guardar)</span>{% endif %}</span></div>
             <div class="lbl">Empresa que compra</div>
+            {% set fija_emp = orden and bloqueo_empresa %}
             <div class="seg chico mb-2">
                 {% for k, e in empresas_oc.items() %}
-                <input type="radio" name="empresa" id="emp_{{ k }}" value="{{ k }}" {{ 'checked' if (pv.empresa or 'ANCLAJES') == k }} {{ 'disabled' if not e.habilitada or orden }} onchange="pintarDestino(); pintarNumero()">
+                <input type="radio" name="empresa" id="emp_{{ k }}" value="{{ k }}" {{ 'checked' if (pv.empresa or 'ANCLAJES') == k }} {{ 'disabled' if not e.habilitada or fija_emp }} onchange="pintarDestino(); pintarNumero(); cambioEmpresa()">
                 <label for="emp_{{ k }}" style="--c: {{ e.color }};"><img src="{{ url_for('static', filename='img/' ~ e.logo) }}" alt="" width="58" height="22" style="object-fit: contain;"><span><b>{{ e.corto }}</b>{% if not e.habilitada %}<small>Próximamente</small>{% endif %}</span></label>
                 {% endfor %}
             </div>
-            {% if orden %}<input type="hidden" name="empresa" value="{{ orden.empresa or 'ANCLAJES' }}">{% endif %}
+            {% if fija_emp %}<input type="hidden" name="empresa" value="{{ orden.empresa or 'ANCLAJES' }}">
+            <div class="form-text mt-0 mb-2" style="font-size:.68rem;"><i class="bi bi-lock"></i> La empresa ya no se puede cambiar: {{ bloqueo_empresa }}.</div>
+            {% elif orden %}<div id="avisoEmpresa" class="aviso-emp mb-2" style="display:none;"></div>{% endif %}
             {% if not orden %}
             <div class="seg chico mb-2">
                 {% for k, t in tipos.items() %}
@@ -484,6 +488,8 @@ const SERVICIOS = {{ servicios|tojson }};
 const ES_ADMIN = {{ 'true' if session.get('role') == 'admin' else 'false' }};
 const PUEDE_INSUMOS = {{ 'true' if puede_insumos else 'false' }};
 const ES_EDICION = {{ 'true' if orden else 'false' }};
+const EMPRESA_ORIGINAL = {{ ((orden.empresa or 'ANCLAJES') if orden else '')|tojson }};
+const CODIGO_ORIGINAL = {{ (oc_codigo(orden) if orden else '')|tojson }};
 const ES_REAPROBACION = {{ 'true' if reaprob else 'false' }};
 const REQS = {{ reqs_pendientes|tojson }};
 const PAGOS_PREVIOS = {{ pagos_imp|tojson }};
@@ -519,6 +525,28 @@ function tipo() { return valorRadio('tipo') || '{{ orden.tipo if orden else 'OC'
 function corto() { return EMPRESAS[empresa()].corto; }
 function post(url, datos) { const fd = new FormData(); Object.entries(datos).forEach(([k, v]) => fd.append(k, v == null ? '' : v)); return fetch(url, { method: 'POST', body: fd }).then(r => r.json()); }
 function pintarNumero() { const t = tipo(); if (porId('numPrev')) porId('numPrev').textContent = `${t} N° ${SIGUIENTE[empresa() + '|' + t]}`; }
+// ---- cambio de empresa (al editar): toma el número siguiente de la otra empresa y se re-enlazan los productos ----
+function cambioEmpresa() {
+    const av = porId('avisoEmpresa');
+    if (av) {
+        const cambia = ES_EDICION && empresa() !== EMPRESA_ORIGINAL;
+        av.style.display = cambia ? '' : 'none';
+        if (cambia) av.innerHTML = `<i class="bi bi-arrow-left-right"></i> Al guardar, la orden pasa a <b>${esc(corto())}</b> con el número <b>${esc(tipo())} N° ${esc(SIGUIENTE[empresa() + '|' + tipo()] || '')}</b>.
+            El número actual (${esc(CODIGO_ORIGINAL)}) queda sin uso y el cambio queda en el historial. Los productos se buscan en el inventario de ${esc(corto())}.`;
+    }
+    revincularEmpresa();
+}
+function revincularEmpresa() {
+    if (tipo() !== 'OC' || destino() !== 'GENERAL') return;
+    document.querySelectorAll('#items .item').forEach(f => {
+        const p = f._prod;
+        if (!p || !p.sku || (p.origen !== 'ANCLAJES' && p.origen !== 'IMPORTBOLTS') || p.origen === empresa()) return;
+        fetch(urlProductos(p.sku)).then(r => r.json()).then(d => {
+            const q = (d.results || []).find(x => (x.sku || '').toUpperCase() === p.sku.toUpperCase() && x.origen === empresa());
+            if (q && f._prod === p) vincular(f, Object.assign({}, q, { familia: q.familia || p.familia, calidad: q.calidad || p.calidad }));
+        }).catch(() => {});
+    });
+}
 function pintarDestino() {
     porId('destInvTxt').textContent = (tipo() === 'OS' ? 'Servicio para ' : 'Inventario ') + corto();
     porId('lugarEmp').textContent = LUGAR[EMP_ORDEN.indexOf(empresa())] || '';
@@ -1189,6 +1217,7 @@ if (REQ_INICIAL) {
     if (r && r.empresa === 'AMBAS') Swal.fire({ icon: 'info', title: 'Elige la empresa que compra', text: 'Los productos del requerimiento ya están en la orden. Revisa si es Anclajes o Import Bolts antes de guardar.', timer: 3500, showConfirmButton: false });
 }
 pintarReqs();
+if (ES_EDICION) cambioEmpresa();
 if (porId('oc_proveedor_id').value) cargarProveedor(porId('oc_proveedor_id').value);
 else if (porId('ruc').value && porId('razon_social').value) {
     aMano(); porId('m_ruc').value = porId('ruc').value; porId('m_razon').value = porId('razon_social').value; porId('m_dir').value = porId('direccion').value;

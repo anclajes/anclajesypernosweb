@@ -11552,76 +11552,7 @@ def listar_proveedores_guardados():
         'last_updated': p.last_updated.strftime('%d/%m/%Y %H:%M') if p.last_updated else ''
     } for p in proveedores]}
 
-# --- REPORTE PROVEEDORES ---
-
-@app.route('/reporte_precios_proveedores')
-def reporte_precios_proveedores():
-    if session.get('role') not in ['admin', 'administracion', 'almacen', 'logistica']:
-        return "Acceso denegado", 403
-
-    origen = request.args.get('origen', 'ANCLAJES')
-    busqueda = request.args.get('busqueda', '').strip()
-
-    ModeloMov = ProductMovementImportBolts if origen == 'IMPORTBOLTS' else ProductMovement
-    ModeloProd = ProductImportBolts if origen == 'IMPORTBOLTS' else Product
-
-    # Todos los ingresos con precio y proveedor registrado
-    query = db.session.query(
-        ModeloMov.product_id, ModeloProd.sku, ModeloProd.nombre,
-        ModeloMov.ruc_proveedor, ModeloMov.razon_social_proveedor,
-        ModeloMov.precio_unitario, ModeloMov.fecha, ModeloMov.tipo_proveedor
-    ).join(ModeloProd, ModeloProd.id == ModeloMov.product_id).filter(
-        ModeloMov.tipo == 'ENTRADA',
-        ModeloMov.precio_unitario.isnot(None),
-        ModeloMov.precio_unitario > 0,
-        ModeloMov.ruc_proveedor.isnot(None)
-    )
-
-    if busqueda:
-        query = query.filter(or_(
-            ModeloProd.nombre.ilike(f"%{busqueda}%"),
-            ModeloProd.sku.ilike(f"%{busqueda}%")
-        ))
-
-    filas = query.order_by(ModeloProd.nombre, ModeloMov.precio_unitario.asc()).all()
-
-    # Agrupar por producto -> lista de (proveedor, precio, fecha), marcando el mejor precio
-    productos_map = {}
-    for f in filas:
-        key = f.product_id
-        if key not in productos_map:
-            productos_map[key] = {
-                'sku': f.sku, 'nombre': f.nombre, 'compras': []
-            }
-        productos_map[key]['compras'].append({
-            'ruc': f.ruc_proveedor,
-            'razon_social': f.razon_social_proveedor,
-            'precio': f.precio_unitario,
-            'fecha': f.fecha.strftime('%d/%m/%Y'),
-            'tipo_proveedor': f.tipo_proveedor
-        })
-
-    resultado = []
-    for pid, info in productos_map.items():
-        compras_ordenadas = sorted(info['compras'], key=lambda x: x['precio'])
-        mejor = compras_ordenadas[0]
-        peor = compras_ordenadas[-1]
-        ahorro_pct = round(((peor['precio'] - mejor['precio']) / peor['precio']) * 100, 1) if peor['precio'] > 0 else 0
-
-        resultado.append({
-            'sku': info['sku'], 'nombre': info['nombre'],
-            'compras': compras_ordenadas,
-            'mejor_proveedor': mejor,
-            'peor_proveedor': peor,
-            'ahorro_potencial_pct': ahorro_pct,
-            'cantidad_proveedores': len(set(c['ruc'] for c in info['compras']))
-        })
-
-    # Los que tienen más de 1 proveedor distinto (donde SÍ vale la pena comparar) primero
-    resultado.sort(key=lambda x: (-x['cantidad_proveedores'], -x['ahorro_potencial_pct']))
-
-    return render_template('reporte_precios_proveedores.html',
-                           resultado=resultado, origen=origen, busqueda=busqueda)
+# --- REPORTE PROVEEDORES: ahora es "Mejores precios" (modulos/compras/mejores_precios.py) ---
 
 @app.route('/api/verificar_nombre_existe', methods=['POST'])
 def verificar_nombre_existe():
@@ -15621,6 +15552,7 @@ MODULOS_EN_ARCHIVOS = [
     'modulos/insumos/gasto_config.py',
     'modulos/compras/base.py',
     'modulos/compras/ordenes.py',
+    'modulos/compras/mejores_precios.py',
     'modulos/compras/entregas.py',
     'modulos/compras/pdf_proveedores_config.py',
     'modulos/compras/requerimientos.py',

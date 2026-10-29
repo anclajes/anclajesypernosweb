@@ -24,8 +24,10 @@ modulos/
                          cuentas, motivos, requerimientos, OCConfig
     base.py              roles (ROLES_OC_*), empresas, catálogos, tablas, permisos (_ruta_oc), numeración,
                          _leer_orden_form (validación e IGV), recepción (_oc_recepcion) y pagos
-    ordenes.py           lista, Excel y reportes, precios por proveedor, crear/editar, detalle y flujo
-                         (enviar, aprobar, rechazar, anular, observación)
+    ordenes.py           lista (con aprobación rápida), Excel y reportes, crear/editar (incluye cambiar de empresa),
+                         detalle y flujo (enviar, aprobar, rechazar, anular, observación)
+    mejores_precios.py   MEJORES PRECIOS (/ordenes/precios, también el menú "Mejores Precios"): por producto, por proveedor,
+                         detalle, gráficos, ahorro potencial y Excel con gráficos (productos, insumos y servicios)
     entregas.py          llegadas totales/parciales, conformidad, pago y factura, cuentas bancarias,
                          cliente, ingresos pendientes al inventario e ingreso al Kardex
     pdf_proveedores_config.py   PDF de la orden, proveedores y contactos, buscador de productos, configuración
@@ -75,6 +77,7 @@ Próximos candidatos para separar (cuando se trabajen): inventario Anclajes/Impo
 
 admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectura del Inventario General), vendedor, chofer.
 - Compras: ven `ROLES_OC_VEN` (admin, logistica, administracion); editan admin y logistica; aprueba solo admin.
+- Mejores precios: solo `ROLES_OC_VEN` (admin, logistica, administracion).
 - Requerimientos: los crean admin, logistica, almacen y almacen_visor; los atienden admin y logistica.
 - Insumos: editan admin, almacen y logistica.
 

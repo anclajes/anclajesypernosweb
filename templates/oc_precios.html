@@ -1,79 +1,296 @@
 {% extends "base.html" %}
-{% block title %}Precios por proveedor{% endblock %}
-{% block subtitle %}Quién te vendió más barato cada producto (de las órdenes aprobadas){% endblock %}
+{% block title %}Mejores precios{% endblock %}
+{% block subtitle %}A qué precio y a quién compramos: productos, insumos y servicios (órdenes aprobadas){% endblock %}
 {% block content %}
 {% include '_oc_nav.html' %}
+{% macro px(v) %}{% if v is none %}—{% elif (v * 100)|round(6) == ((v * 100)|round(0)) %}{{ '{:,.2f}'.format(v) }}{% else %}{{ '{:,.4f}'.format(v).rstrip('0') }}{% endif %}{% endmacro %}
+{% macro dinero(v) %}{{ '{:,.2f}'.format(v or 0) }}{% endmacro %}
+{% set base_args = {'periodo': f.periodo, 'desde': f.desde.isoformat() if f.desde and f.periodo == 'rango' else '', 'hasta': f.hasta.isoformat() if f.hasta else '',
+                    'empresa': f.empresa, 'tipo': f.tipo, 'clase': f.clase, 'moneda': f.moneda, 'prov': f.prov, 'q': f.q} %}
 <style>
-    .pr-filtros { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 10px 12px; margin-bottom: 12px; }
-    .pr-filtros label { font-size: .68rem; font-weight: 800; color: #64748b; text-transform: uppercase; margin-bottom: 1px; }
-    .pr-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; margin-bottom: 12px; overflow: hidden; }
-    .pr-card .cab { padding: 9px 14px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
-    .pr-card .cod { font-size: .7rem; font-weight: 800; background: #dcfce7; color: #166534; border-radius: 5px; padding: 0 7px; }
-    .pr-card .ds { font-weight: 800; font-size: .9rem; color: #0f172a; overflow-wrap: anywhere; }
-    .pr-card .fam { font-size: .7rem; color: #64748b; text-transform: uppercase; }
-    .seg-t { font-size: .68rem; font-weight: 800; color: #475569; text-transform: uppercase; padding: 6px 14px 0; }
-    .tabla-pr { font-size: .78rem; margin-bottom: 0; }
-    .tabla-pr th { font-size: .64rem; text-transform: uppercase; color: #64748b; white-space: nowrap; font-weight: 800; }
-    .tabla-pr td { vertical-align: middle; }
-    .tabla-pr tr.mejor td { background: #f0fdf4; }
-    .puesto { display: inline-flex; width: 22px; height: 22px; border-radius: 50%; align-items: center; justify-content: center; font-size: .7rem; font-weight: 800; background: #e2e8f0; color: #334155; }
-    tr.mejor .puesto { background: #16a34a; color: #fff; }
-    .precio { font-weight: 800; font-variant-numeric: tabular-nums; }
-    .sub { font-size: .7rem; color: #64748b; }
-    .mas { font-size: .7rem; font-weight: 700; color: #b45309; }
-    .oc-l { font-size: .7rem; font-weight: 700; text-decoration: none; }
+    .mp-filtros { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 10px 12px; margin-bottom: 12px; }
+    .mp-filtros label { font-size: .66rem; font-weight: 800; color: #64748b; text-transform: uppercase; margin-bottom: 1px; display: block; }
+    .chips-per { display: flex; flex-wrap: wrap; gap: 4px; }
+    .chips-per a { font-size: .74rem; font-weight: 700; border: 1px solid #e2e8f0; border-radius: 20px; padding: 3px 10px; text-decoration: none; color: #475569; background: #f8fafc; }
+    .chips-per a.on { background: #0B3D91; border-color: #0B3D91; color: #fff; }
+    .mp-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+    .mp-tabs a { display: inline-flex; gap: 6px; align-items: center; font-size: .84rem; font-weight: 700; padding: 7px 14px; border-radius: 10px; text-decoration: none;
+                 color: #334155; background: #fff; border: 1px solid #e2e8f0; }
+    .mp-tabs a.on { background: #0f172a; color: #fff; border-color: #0f172a; }
+    .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); gap: 10px; margin-bottom: 14px; }
+    .kpi { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 10px 12px; border-left: 4px solid var(--c, #0B3D91); }
+    .kpi .v { font-size: 1.25rem; font-weight: 800; color: #0f172a; font-variant-numeric: tabular-nums; line-height: 1.15; }
+    .kpi .t { font-size: .72rem; color: #475569; font-weight: 600; }
+    .kpi .s { font-size: .68rem; color: #64748b; }
+    .card-g { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 12px 14px; height: 100%; }
+    .card-g h6 { font-weight: 800; font-size: .86rem; color: #0f172a; margin-bottom: 2px; }
+    .card-g .ay { font-size: .7rem; color: #64748b; margin-bottom: 8px; }
+    .graf { position: relative; height: 260px; }
+    .graf.alto { height: 320px; }
+    .vacio { font-size: .8rem; color: #64748b; padding: 30px 0; text-align: center; }
+    .tabla-mp { font-size: .78rem; margin-bottom: 0; }
+    .tabla-mp th { font-size: .62rem; text-transform: uppercase; color: #64748b; font-weight: 800; white-space: nowrap; background: #f8fafc; }
+    .tabla-mp td { vertical-align: top; }
+    .tabla-mp .n { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .cod { font-size: .66rem; font-weight: 800; background: #e0f2fe; color: #075985; border-radius: 5px; padding: 0 6px; white-space: nowrap; }
+    .clase { font-size: .6rem; font-weight: 800; border-radius: 5px; padding: 0 6px; color: #fff; white-space: nowrap; }
+    .ds { font-weight: 700; color: #0f172a; overflow-wrap: anywhere; }
+    .sub { font-size: .68rem; color: #64748b; }
+    .p-mejor { font-weight: 800; color: #15803d; font-size: .9rem; }
+    .p-ult { font-weight: 700; color: #0f172a; }
+    .var { font-size: .66rem; font-weight: 800; border-radius: 5px; padding: 0 5px; white-space: nowrap; }
+    .var.up { background: #fee2e2; color: #b91c1c; } .var.ok { background: #dcfce7; color: #166534; }
+    .ahorro { font-weight: 800; color: #b45309; }
+    .barrita { height: 6px; background: #fde68a; border-radius: 3px; margin-top: 3px; }
+    .barrita > div { height: 6px; background: #f59e0b; border-radius: 3px; }
+    tr.det td { background: #f8fafc; }
+    .rank { width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: .68rem; font-weight: 800; background: #e2e8f0; }
+    .rank.uno { background: #16a34a; color: #fff; }
+    .oc-l { font-size: .68rem; font-weight: 700; text-decoration: none; }
+    .pag { display: flex; gap: 6px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin: 10px 0; font-size: .78rem; }
+    .ayuda-mp { font-size: .74rem; background: #eff6ff; border: 1px solid #bfdbfe; color: #1e3a8a; border-radius: 10px; padding: 7px 10px; margin-bottom: 12px; }
+    @media (max-width: 768px) { .graf { height: 220px; } }
 </style>
 
-<form method="GET" class="pr-filtros d-flex flex-wrap gap-2 align-items-end">
-    <div class="flex-grow-1" style="min-width: 220px;"><label class="d-block">Producto, código, familia o proveedor</label>
-        <input type="search" name="q" value="{{ q }}" class="form-control form-control-sm" placeholder="Ej: perno 1/2 grado 5"></div>
-    <div><label class="d-block">Empresa</label>
-        <select name="empresa" class="form-select form-select-sm">
-            <option value="TODAS" {{ 'selected' if emp_sel == 'TODAS' }}>Las dos</option>
-            {% for e, info in empresas_oc.items() %}<option value="{{ e }}" {{ 'selected' if emp_sel == e }}>{{ info.corto }}</option>{% endfor %}</select></div>
-    <div><label class="d-block">Tipo</label>
-        <select name="tipo" class="form-select form-select-sm">
-            {% for t, tn in tipos.items() %}<option value="{{ t }}" {{ 'selected' if tipo == t }}>{{ tn }}</option>{% endfor %}
-            <option value="" {{ 'selected' if tipo == '' }}>OC y OS</option></select></div>
-    <div><label class="d-block">Desde</label><input type="date" name="desde" class="form-control form-control-sm" value="{{ desde.isoformat() if desde else '' }}"></div>
-    <div><label class="d-block">Hasta</label><input type="date" name="hasta" class="form-control form-control-sm" value="{{ hasta.isoformat() if hasta else '' }}"></div>
-    <button class="btn btn-sm btn-primary"><i class="bi bi-search"></i> Buscar</button>
-    <a class="btn btn-sm btn-outline-success" href="{{ url_for('oc_precios', q=q, empresa=emp_sel, tipo=tipo, desde=desde.isoformat() if desde else '', hasta=hasta.isoformat() if hasta else '', exportar='excel') }}">
-        <i class="bi bi-file-earmark-excel"></i> Excel</a>
-</form>
-<div class="small text-muted mb-2"><i class="bi bi-info-circle"></i> Sale de las órdenes <b>aprobadas</b>. Para cada producto, los proveedores van del <b>más barato</b> al más caro
-    (comparando solo la misma moneda y la misma U.M.). <b>Con IGV</b> = precio × {{ '%g' % (1 + igv) }}; las importaciones no llevan IGV.
-    {% if total > lista|length %}Se muestran {{ lista|length }} de {{ total }} productos: busca uno o descarga el Excel.{% else %}{{ total }} producto(s).{% endif %}</div>
-
-{% for p in lista %}
-<div class="pr-card">
-    <div class="cab">
-        {% if p.codigo %}<span class="cod">{{ p.codigo }}</span>{% endif %}
-        <span class="ds">{{ p.descripcion }}</span>
-        {% if p.familia or p.calidad %}<span class="fam">{{ [p.familia, p.calidad]|select|join(' · ') }}</span>{% endif %}
-        <span class="ms-auto small text-muted">{{ p.n_prov }} proveedor(es) · comprado {{ p.n }} vez(ces)</span>
+<form method="GET" class="mp-filtros" id="formMP">
+    <input type="hidden" name="vista" value="{{ vista }}"><input type="hidden" name="orden" value="{{ orden }}">
+    <div class="row g-2 align-items-end">
+        <div class="col-12 col-xl-5"><label>Periodo (fecha de la orden)</label>
+            <div class="chips-per">
+                {% for k, t in [('3m', '3 meses'), ('6m', '6 meses'), ('12m', '12 meses'), ('24m', '2 años'), ('todo', 'Todo')] %}
+                <a href="{{ url_for('oc_precios', **dict(base_args, periodo=k, desde='', hasta='', vista=vista, orden=orden)) }}" class="{{ 'on' if f.periodo == k }}">{{ t }}</a>
+                {% endfor %}
+                <span class="d-inline-flex gap-1 align-items-center ms-1"><input type="date" name="desde" value="{{ f.desde.isoformat() if f.desde and f.periodo == 'rango' else '' }}" class="form-control form-control-sm" style="width:140px;" title="Desde">
+                    <input type="date" name="hasta" value="{{ f.hasta.isoformat() if f.hasta else '' }}" class="form-control form-control-sm" style="width:140px;" title="Hasta"></span>
+            </div>
+            <input type="hidden" name="periodo" value="{{ f.periodo if f.periodo != 'rango' else '' }}"></div>
+        <div class="col-6 col-md-3 col-xl-2"><label>Empresa</label>
+            <select name="empresa" class="form-select form-select-sm auto"><option value="TODAS">Las dos</option>
+                {% for e, info in empresas_oc.items() %}<option value="{{ e }}" {{ 'selected' if f.empresa == e }}>{{ info.corto }}</option>{% endfor %}</select></div>
+        <div class="col-6 col-md-3 col-xl-2"><label>OC / OS</label>
+            <select name="tipo" class="form-select form-select-sm auto"><option value="">OC y OS</option>
+                {% for t, tn in tipos.items() %}<option value="{{ t }}" {{ 'selected' if f.tipo == t }}>{{ t }}</option>{% endfor %}</select></div>
+        <div class="col-6 col-md-3 col-xl-3"><label>Qué se compró</label>
+            <select name="clase" class="form-select form-select-sm auto"><option value="">Todo</option>
+                {% for k, c in clases.items() %}<option value="{{ k }}" {{ 'selected' if f.clase == k }}>{{ c.txt }}</option>{% endfor %}</select></div>
+        <div class="col-6 col-md-3 col-xl-2"><label>Moneda</label>
+            <select name="moneda" class="form-select form-select-sm auto"><option value="">Soles y dólares</option>
+                {% for k, m in monedas.items() %}<option value="{{ k }}" {{ 'selected' if f.moneda == k }}>{{ m.nombre }}</option>{% endfor %}</select></div>
+        <div class="col-12 col-md-5 col-xl-3"><label>Proveedor</label>
+            <select name="prov" class="form-select form-select-sm auto"><option value="">Todos los proveedores</option>
+                {% for pk, nombre in opciones_prov %}<option value="{{ pk }}" {{ 'selected' if f.prov == pk }}>{{ nombre }}</option>{% endfor %}</select></div>
+        <div class="col-12 col-md-7 col-xl-4"><label>Producto, código, familia o proveedor</label>
+            <input type="search" name="q" value="{{ f.q }}" class="form-control form-control-sm" placeholder="Ej: perno 1/2 grado 5 · guantes · galvanizado"></div>
+        <div class="col-12 col-xl-3 d-flex gap-2">
+            <button class="btn btn-sm btn-primary flex-fill"><i class="bi bi-search"></i> Buscar</button>
+            <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('oc_precios', vista=vista) }}" title="Quitar filtros"><i class="bi bi-x-lg"></i> Limpiar</a>
+            <a class="btn btn-sm btn-success flex-fill" href="{{ url_for('oc_precios', **dict(base_args, orden=orden, exportar='excel')) }}"><i class="bi bi-file-earmark-excel"></i> Excel</a>
+        </div>
     </div>
-    {% for sg in p.segmentos %}
-    {% if p.segmentos|length > 1 %}<div class="seg-t">{{ sg.moneda }} · por {{ sg.um or 'unidad' }}</div>{% endif %}
-    <div class="table-responsive"><table class="table table-sm tabla-pr">
-        <thead><tr><th class="ps-3">#</th><th>Proveedor</th><th class="text-end">Mejor precio<br>sin IGV</th><th class="text-end">Con IGV</th><th>Cuándo / orden</th>
-            <th class="text-end">Último precio</th><th class="text-end">Compras</th><th class="text-end pe-3">Vs. el mejor</th></tr></thead>
-        <tbody>{% for f in sg.filas %}{% set m = f.mejor %}{% set u = f.ultimo %}
-        <tr class="{{ 'mejor' if loop.first }}">
-            <td class="ps-3"><span class="puesto">{{ loop.index }}</span></td>
-            <td><b>{{ f.proveedor }}</b><div class="sub">{{ f.ruc }}</div></td>
-            <td class="text-end precio">{{ sg.simbolo }} {{ '{:,.4f}'.format(m.precio).rstrip('0').rstrip('.') if (m.precio * 100)|round != m.precio * 100 else '{:,.2f}'.format(m.precio) }}
-                <div class="sub">por {{ sg.um or 'unidad' }}</div></td>
-            <td class="text-end">{% if m.importacion %}<span class="sub">importación<br>sin IGV</span>{% else %}{{ sg.simbolo }} {{ '{:,.2f}'.format(m.con_igv) }}{% endif %}</td>
-            <td class="text-nowrap">{{ m.fecha.strftime('%d/%m/%Y') }}<div>{% if puede_ver_oc %}<a class="oc-l" href="{{ url_for('oc_detalle', orden_id=m.orden.id) }}">{{ oc_codigo(m.orden) }}</a>{% else %}<span class="oc-l">{{ oc_codigo(m.orden) }}</span>{% endif %}</div></td>
-            <td class="text-end text-nowrap">{% if u.orden.id != m.orden.id %}{{ sg.simbolo }} {{ '{:,.2f}'.format(u.precio) }}<div class="sub">{{ u.fecha.strftime('%d/%m/%Y') }}</div>{% else %}<span class="sub">el mismo</span>{% endif %}</td>
-            <td class="text-end">{{ f.veces }}<div class="sub">{{ f.cantidad|cant }} {{ sg.um }}</div></td>
-            <td class="text-end pe-3">{% if loop.first %}<span class="badge text-bg-success">Mejor precio</span>{% else %}<span class="mas">+{{ f.dif_pct }}%</span>{% endif %}</td>
-        </tr>{% endfor %}</tbody></table></div>
+</form>
+
+<div class="mp-tabs">
+    {% for k, (t, ic) in vistas.items() %}
+    <a href="{{ url_for('oc_precios', **dict(base_args, vista=k, orden=orden)) }}" class="{{ 'on' if vista == k }}"><i class="bi {{ ic }}"></i> {{ t }}</a>
     {% endfor %}
 </div>
-{% else %}
+
+{% set k = res.k %}
+<div class="kpis">
+    <div class="kpi" style="--c:#0B3D91;"><div class="v">S/ {{ dinero(k.PEN) }}</div><div class="t">Comprado en soles</div><div class="s">sin IGV · {{ k.ordenes }} orden(es)</div></div>
+    <div class="kpi" style="--c:#0f766e;"><div class="v">US$ {{ dinero(k.USD) }}</div><div class="t">Comprado en dólares</div><div class="s">sin IGV · no se convierte a soles</div></div>
+    <div class="kpi" style="--c:#f59e0b;"><div class="v">S/ {{ dinero(k.ahorro_PEN) }}</div><div class="t">Ahorro potencial</div>
+        <div class="s">{% if k.ahorro_USD %}+ US$ {{ dinero(k.ahorro_USD) }} · {% endif %}si todo se compraba al mejor precio</div></div>
+    <div class="kpi" style="--c:#7c3aed;"><div class="v">{{ k.productos }}</div><div class="t">Productos / insumos / servicios</div><div class="s">{{ k.multi }} con 2+ proveedores ({{ k.pct_multi }}%)</div></div>
+    <div class="kpi" style="--c:#475569;"><div class="v">{{ k.proveedores }}</div><div class="t">Proveedores</div><div class="s">{{ k['items'] }} ítem(s) comprados</div></div>
+    <div class="kpi" style="--c:#dc2626;"><div class="v">{{ k.subieron }}</div><div class="t">Último precio mayor al mejor</div><div class="s">revisar al volver a comprar</div></div>
+</div>
+
+{% if not k['items'] %}
 <div class="text-center text-muted py-5 bg-white rounded-3 border"><i class="bi bi-tags display-6 opacity-25"></i>
-    <p class="mt-2 mb-0">{{ 'No hay compras que coincidan con la búsqueda.' if q else 'Todavía no hay órdenes aprobadas con precios.' }}</p></div>
-{% endfor %}
+    <p class="mt-2 mb-0">No hay compras aprobadas con estos filtros. Prueba con otro periodo ("Todo") o quita filtros.</p></div>
+{% elif vista == 'resumen' %}
+<div class="ayuda-mp"><i class="bi bi-info-circle"></i> Se usan los ítems de las órdenes <b>aprobadas</b> (aprobada, llegó o conforme). Los precios van <b>sin IGV</b> y solo se comparan
+    dentro de la <b>misma moneda y U.M.</b> <b>Ahorro potencial</b> = lo que se habría ahorrado comprando cada vez al mejor precio del periodo.</div>
+<div class="row g-3 mb-3">
+    <div class="col-12 col-xl-8"><div class="card-g"><h6><i class="bi bi-calendar3"></i> Compras por mes</h6><div class="ay">Monto sin IGV por mes de la orden. Soles (barras) y dólares (línea) en ejes separados.</div>
+        <div class="graf alto"><canvas id="gMes"></canvas></div></div></div>
+    <div class="col-12 col-md-6 col-xl-4"><div class="card-g"><h6><i class="bi bi-credit-card"></i> Condición de pago</h6><div class="ay">N° de órdenes por condición (contado, crédito, importación...).</div>
+        <div class="graf"><canvas id="gCond"></canvas></div></div></div>
+    <div class="col-12 col-md-6 col-xl-6"><div class="card-g"><h6><i class="bi bi-building"></i> Top 10 proveedores</h6>
+        <div class="ay">Por monto comprado (sin IGV). {% if res.top_usd and res.top_pen %}<a href="#" id="verUsd">Ver en dólares</a>{% endif %}</div>
+        <div class="graf alto"><canvas id="gProv"></canvas></div></div></div>
+    <div class="col-12 col-md-6 col-xl-3"><div class="card-g"><h6><i class="bi bi-buildings"></i> Por empresa</h6><div class="ay">Monto sin IGV ({{ 'soles' if k.PEN else 'dólares' }}).</div>
+        <div class="graf"><canvas id="gEmp"></canvas></div></div></div>
+    <div class="col-12 col-md-6 col-xl-3"><div class="card-g"><h6><i class="bi bi-diagram-3"></i> Qué se compró</h6><div class="ay">Inventario General, Insumos internos o Servicios.</div>
+        <div class="graf"><canvas id="gClase"></canvas></div></div></div>
+</div>
+<div class="row g-3">
+    <div class="col-12 col-xl-6"><div class="card-g"><h6><i class="bi bi-piggy-bank"></i> Dónde está el mayor ahorro potencial</h6>
+        <div class="ay">Productos en los que se pagó más que el mejor precio conseguido. Al volver a comprarlos, pide precio a quien vendió más barato.</div>
+        {% set mx = (res.top_ahorro|map(attribute='ahorro')|max) if res.top_ahorro else 0 %}
+        {% if res.top_ahorro %}<div class="table-responsive"><table class="table table-sm tabla-mp"><thead><tr><th>Producto</th><th>Mejor precio / proveedor</th><th class="n">Ahorro potencial</th></tr></thead><tbody>
+        {% for p in res.top_ahorro %}<tr><td><span class="ds">{{ p.descripcion }}</span>{% if p.codigo %} <span class="cod">{{ p.codigo }}</span>{% endif %}<div class="sub">{{ p.n }} compra(s) · {{ p.n_prov }} proveedor(es) · por {{ p.um or 'unidad' }}</div></td>
+            <td><span class="p-mejor">{{ p.simbolo }} {{ px(p.mejor.precio) }}</span><div class="sub">{{ p.mejor.proveedor }}</div></td>
+            <td class="n"><span class="ahorro">{{ p.simbolo }} {{ dinero(p.ahorro) }}</span><div class="barrita"><div style="width: {{ (100 * p.ahorro / mx)|round(1) if mx else 0 }}%;"></div></div></td></tr>{% endfor %}
+        </tbody></table></div>{% else %}<div class="vacio">Sin ahorro potencial: cada producto se compró siempre al mismo precio (o a un solo proveedor).</div>{% endif %}
+    </div></div>
+    <div class="col-12 col-xl-6"><div class="card-g"><h6><i class="bi bi-graph-up-arrow"></i> Precios que subieron</h6>
+        <div class="ay">El último precio pagado es mayor que el mejor precio del periodo.</div>
+        {% if res.subidas %}<div class="table-responsive"><table class="table table-sm tabla-mp"><thead><tr><th>Producto</th><th class="n">Mejor</th><th class="n">Último</th><th class="n">Diferencia</th></tr></thead><tbody>
+        {% for p in res.subidas %}<tr><td><span class="ds">{{ p.descripcion }}</span><div class="sub">último: {{ p.ultimo.proveedor }} · {{ p.ultimo.fecha.strftime('%d/%m/%Y') }}</div></td>
+            <td class="n"><span class="p-mejor">{{ p.simbolo }} {{ px(p.mejor.precio) }}</span><div class="sub">{{ p.mejor.fecha.strftime('%d/%m/%Y') }}</div></td>
+            <td class="n p-ult">{{ p.simbolo }} {{ px(p.ultimo.precio) }}</td><td class="n"><span class="var up">+{{ p.variacion }}%</span></td></tr>{% endfor %}
+        </tbody></table></div>{% else %}<div class="vacio">Ningún producto subió de precio en el periodo.</div>{% endif %}
+    </div></div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+(function () {
+    if (!window.Chart) return;
+    const R = {{ {'mes': res.por_mes, 'cond': res.condiciones, 'emp': res.empresas, 'clase': res.clases,
+                 'pen': res.top_pen|map(attribute='proveedor')|list, 'pen_v': res.top_pen|map(attribute='PEN')|list,
+                 'usd': res.top_usd|map(attribute='proveedor')|list, 'usd_v': res.top_usd|map(attribute='USD')|list, 'hay_pen': k.PEN > 0}|tojson }};
+    const fmt = v => Number(v || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const corta = t => t.length > 28 ? t.slice(0, 27) + '…' : t;
+    const PAL = ['#0B3D91', '#f59e0b', '#16a34a', '#7c3aed', '#dc2626', '#0891b2', '#64748b', '#db2777', '#65a30d', '#ea580c'];
+    Chart.defaults.font.family = 'Inter, system-ui, sans-serif'; Chart.defaults.font.size = 11;
+    new Chart(document.getElementById('gMes'), { data: { labels: R.mes.map(x => x.txt), datasets: [
+        { type: 'bar', label: 'Soles (S/)', data: R.mes.map(x => x.PEN), backgroundColor: '#0B3D91', borderRadius: 4, yAxisID: 'y' },
+        { type: 'line', label: 'Dólares (US$)', data: R.mes.map(x => x.USD), borderColor: '#0f766e', backgroundColor: '#0f766e', tension: .3, yAxisID: 'y2', pointRadius: 3 }] },
+        options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+            plugins: { tooltip: { callbacks: { label: c => `${c.dataset.label}: ${fmt(c.raw)}` } } },
+            scales: { y: { beginAtZero: true, title: { display: true, text: 'S/' } }, y2: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'US$' } } } } });
+    new Chart(document.getElementById('gCond'), { type: 'doughnut', data: { labels: R.cond.map(x => x.clave), datasets: [{ data: R.cond.map(x => x.n), backgroundColor: PAL }] },
+        options: { maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 10 } },
+            tooltip: { callbacks: { label: c => { const x = R.cond[c.dataIndex]; return `${x.clave}: ${x.n} orden(es)` + (x.PEN ? ` · S/ ${fmt(x.PEN)}` : '') + (x.USD ? ` · US$ ${fmt(x.USD)}` : ''); } } } } } });
+    const gp = new Chart(document.getElementById('gProv'), { type: 'bar', data: { labels: (R.hay_pen ? R.pen : R.usd).map(corta),
+        datasets: [{ label: R.hay_pen ? 'S/' : 'US$', data: R.hay_pen ? R.pen_v : R.usd_v, backgroundColor: R.hay_pen ? '#0B3D91' : '#0f766e', borderRadius: 4 }] },
+        options: { indexAxis: 'y', maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.dataset.label} ${fmt(c.raw)}` } } },
+            scales: { x: { beginAtZero: true } } } });
+    const bu = document.getElementById('verUsd');
+    if (bu) bu.onclick = e => { e.preventDefault(); const usd = bu.dataset.m !== 'usd'; bu.dataset.m = usd ? 'usd' : 'pen'; bu.textContent = usd ? 'Ver en soles' : 'Ver en dólares';
+        gp.data.labels = (usd ? R.usd : R.pen).map(corta); gp.data.datasets[0].data = usd ? R.usd_v : R.pen_v; gp.data.datasets[0].label = usd ? 'US$' : 'S/';
+        gp.data.datasets[0].backgroundColor = usd ? '#0f766e' : '#0B3D91'; gp.update(); };
+    const campo = R.hay_pen ? 'PEN' : 'USD';
+    new Chart(document.getElementById('gEmp'), { type: 'doughnut', data: { labels: R.emp.map(x => x.txt), datasets: [{ data: R.emp.map(x => x[campo]), backgroundColor: R.emp.map(x => x.color === '#024aa8' ? '#5fb236' : x.color) }] },
+        options: { maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 10 } }, tooltip: { callbacks: { label: c => `${c.label}: ${R.hay_pen ? 'S/' : 'US$'} ${fmt(c.raw)}` } } } } });
+    new Chart(document.getElementById('gClase'), { type: 'doughnut', data: { labels: R.clase.map(x => x.txt), datasets: [{ data: R.clase.map(x => x[campo]), backgroundColor: R.clase.map(x => x.color) }] },
+        options: { maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 10 } }, tooltip: { callbacks: { label: c => `${c.label}: ${R.hay_pen ? 'S/' : 'US$'} ${fmt(c.raw)}` } } } } });
+})();
+</script>
+
+{% elif vista == 'productos' %}
+<div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+    <span class="small text-muted"><b>{{ total_lista }}</b> producto(s) / servicio(s) · un renglón por producto, moneda y U.M.</span>
+    <form method="GET" class="ms-auto d-flex gap-1 align-items-center">{% for a, v in base_args.items() %}<input type="hidden" name="{{ a }}" value="{{ v }}">{% endfor %}
+        <input type="hidden" name="vista" value="productos"><label class="small text-muted mb-0">Ordenar:</label>
+        <select name="orden" class="form-select form-select-sm auto" style="width:auto;">{% for o, t in ordenes_productos.items() %}<option value="{{ o }}" {{ 'selected' if orden == o }}>{{ t }}</option>{% endfor %}</select></form>
+</div>
+<div class="bg-white border rounded-3 table-responsive"><table class="table table-sm tabla-mp align-middle">
+    <thead><tr><th class="ps-2">Producto / servicio</th><th>U.M.</th><th>Mejor precio</th><th>Último precio</th><th class="n">Promedio / máx.</th>
+        <th class="n">Compras</th><th class="n">Monto</th><th class="n">Ahorro potencial</th><th></th></tr></thead>
+    <tbody>{% for p in lista %}{% set cl = clases[p.clase] %}
+    <tr><td class="ps-2"><span class="clase" style="background: {{ cl.color }};">{{ cl.corto }}{% if p.servicio %} · {{ p.servicio }}{% endif %}</span>
+            {% if p.codigo %}<span class="cod">{{ p.codigo }}</span>{% endif %}<div class="ds">{{ p.descripcion }}</div>
+            {% if p.familia or p.calidad %}<div class="sub">{{ [p.familia, p.calidad]|select|join(' · ') }}</div>{% endif %}</td>
+        <td class="text-nowrap">{{ p.um or '—' }}<div class="sub">{{ p.moneda }}</div></td>
+        <td><span class="p-mejor">{{ p.simbolo }} {{ px(p.mejor.precio) }}</span>{% if not p.mejor.importacion %}<span class="sub"> · c/IGV {{ px(p.mejor.con_igv) }}</span>{% else %}<span class="sub"> · importación</span>{% endif %}
+            <div class="sub"><b>{{ p.mejor.proveedor }}</b></div>
+            <div class="sub">{{ p.mejor.fecha.strftime('%d/%m/%Y') }} · {% if puede_ver_oc %}<a class="oc-l" href="{{ url_for('oc_detalle', orden_id=p.mejor.orden.id) }}">{{ oc_codigo(p.mejor.orden) }}</a>{% else %}{{ oc_codigo(p.mejor.orden) }}{% endif %}</div></td>
+        <td>{% if p.ultimo.orden.id == p.mejor.orden.id and p.ultimo.item.id == p.mejor.item.id %}<span class="var ok">es el mejor</span>
+            {% else %}<span class="p-ult">{{ p.simbolo }} {{ px(p.ultimo.precio) }}</span> {% if p.variacion > 0 %}<span class="var up">+{{ p.variacion }}%</span>{% else %}<span class="var ok">= mejor</span>{% endif %}
+            <div class="sub">{{ p.ultimo.proveedor }}</div><div class="sub">{{ p.ultimo.fecha.strftime('%d/%m/%Y') }}</div>{% endif %}</td>
+        <td class="n">{{ p.simbolo }} {{ px(p.promedio|round(4)) }}<div class="sub">máx. {{ px(p.maximo) }}</div></td>
+        <td class="n">{{ p.n }}<div class="sub">{{ p.n_prov }} proveedor(es)</div><div class="sub">{{ '{:,.2f}'.format(p.cantidad).rstrip('0').rstrip('.') }} {{ p.um }}</div></td>
+        <td class="n">{{ p.simbolo }} {{ dinero(p.monto) }}</td>
+        <td class="n">{% if p.ahorro %}<span class="ahorro">{{ p.simbolo }} {{ dinero(p.ahorro) }}</span>{% else %}<span class="sub">—</span>{% endif %}</td>
+        <td class="text-end pe-2"><button type="button" class="btn btn-sm btn-outline-primary py-0 text-nowrap" data-det="{{ loop.index }}"><i class="bi bi-chevron-down"></i> Proveedores</button></td></tr>
+    <tr class="det" id="det{{ loop.index }}" style="display:none;"><td colspan="9" class="p-2">
+        <div class="row g-2">
+            <div class="col-12 col-lg-7"><div class="sub fw-bold mb-1">Ranking de proveedores (sin IGV, del más barato al más caro)</div>
+                <table class="table table-sm tabla-mp bg-white border"><thead><tr><th>#</th><th>Proveedor</th><th class="n">Mejor</th><th class="n">Último</th><th class="n">Promedio</th><th class="n">Veces</th><th class="n">Vs. el mejor</th></tr></thead><tbody>
+                {% for r in p.ranking %}<tr><td><span class="rank {{ 'uno' if loop.first }}">{{ loop.index }}</span></td><td><b>{{ r.proveedor }}</b><div class="sub">{{ r.ruc }}</div></td>
+                    <td class="n">{{ p.simbolo }} {{ px(r.mejor.precio) }}<div class="sub">{{ r.mejor.fecha.strftime('%d/%m/%Y') }}</div></td>
+                    <td class="n">{{ p.simbolo }} {{ px(r.ultimo.precio) }}<div class="sub">{{ r.ultimo.fecha.strftime('%d/%m/%Y') }}</div></td>
+                    <td class="n">{{ px(r.promedio|round(4)) }}</td><td class="n">{{ r.veces }}</td>
+                    <td class="n">{% if loop.first %}<span class="var ok">Mejor precio</span>{% else %}<span class="var up">+{{ r.dif_pct }}%</span>{% endif %}</td></tr>{% endfor %}
+                </tbody></table></div>
+            <div class="col-12 col-lg-5"><div class="sub fw-bold mb-1">Historial de precios ({{ p.simbolo }} por {{ p.um or 'unidad' }})</div>
+                <div style="position:relative; height:200px;" class="bg-white border rounded-2 p-1"><canvas data-hist='{{ p.historial|tojson }}' data-sim="{{ p.simbolo }}"></canvas></div></div>
+        </div></td></tr>
+    {% endfor %}</tbody></table></div>
+
+{% elif vista == 'proveedores' %}
+<div class="small text-muted mb-2"><b>{{ total_lista }}</b> proveedor(es). <b>% mejor precio</b>: de los productos que también se compraron a otros proveedores, en cuántos este fue el más barato.
+    <b>Pagado de más</b>: lo que se pagó por encima del mejor precio del periodo.</div>
+<div class="bg-white border rounded-3 table-responsive"><table class="table table-sm tabla-mp align-middle">
+    <thead><tr><th class="ps-2">Proveedor</th><th class="n">Órdenes</th><th class="n">Productos</th><th class="n">Comprado</th><th class="n">% mejor precio</th>
+        <th class="n">Pagado de más</th><th>Condición de pago</th><th>Última compra</th><th></th></tr></thead>
+    <tbody>{% for p in lista %}
+    <tr><td class="ps-2"><b class="ds">{{ p.proveedor }}</b>{% if p.importacion %} <span class="clase" style="background:#0f766e;">EXTERIOR</span>{% endif %}<div class="sub">{{ p.ruc }} · {{ p.empresas_txt }} · {{ p.clases_txt }}</div></td>
+        <td class="n">{{ p.n_ordenes }}</td><td class="n">{{ p.n_productos }}<div class="sub">{{ p['items'] }} ítem(s)</div></td>
+        <td class="n">{% if p.PEN %}S/ {{ dinero(p.PEN) }}{% endif %}{% if p.USD %}<div>US$ {{ dinero(p.USD) }}</div>{% endif %}</td>
+        <td class="n">{% if p.pct_mejor is not none %}<b class="{{ 'text-success' if p.pct_mejor >= 50 else 'text-danger' }}">{{ p.pct_mejor|int }}%</b><div class="sub">{{ p.n_mejor }} de {{ p.n_comparables }}</div>{% else %}<span class="sub">sin comparar</span>{% endif %}</td>
+        <td class="n">{% if p.sobre_PEN %}<span class="ahorro">S/ {{ dinero(p.sobre_PEN) }}</span>{% endif %}{% if p.sobre_USD %}<div class="ahorro">US$ {{ dinero(p.sobre_USD) }}</div>{% endif %}{% if not p.sobre_PEN and not p.sobre_USD %}<span class="sub">—</span>{% endif %}</td>
+        <td><span class="small">{{ p.condicion }}</span>{% if ',' in p.condiciones_txt %}<div class="sub" title="{{ p.condiciones_txt }}">{{ p.condiciones_txt|truncate(40) }}</div>{% endif %}</td>
+        <td class="text-nowrap">{{ p.ultima.strftime('%d/%m/%Y') if p.ultima }}</td>
+        <td class="text-end pe-2 text-nowrap"><button type="button" class="btn btn-sm btn-outline-primary py-0" data-det="{{ loop.index }}"><i class="bi bi-chevron-down"></i> Productos</button>
+            <a class="btn btn-sm btn-outline-secondary py-0" href="{{ url_for('oc_precios', **dict(base_args, prov=p.prov_clave, vista='productos')) }}" title="Ver solo este proveedor"><i class="bi bi-funnel"></i></a></td></tr>
+    <tr class="det" id="det{{ loop.index }}" style="display:none;"><td colspan="9" class="p-2">
+        <table class="table table-sm tabla-mp bg-white border mb-0"><thead><tr><th>Producto / servicio</th><th>U.M.</th><th class="n">Su mejor precio</th><th class="n">Su último</th><th class="n">Mejor de todos</th><th class="n">Veces</th><th class="n">Vs. el mejor</th></tr></thead><tbody>
+        {% for d in p.detalle %}<tr><td>{% if d.codigo %}<span class="cod">{{ d.codigo }}</span> {% endif %}{{ d.descripcion }}</td><td>{{ d.um }} <span class="sub">{{ d.moneda }}</span></td>
+            <td class="n">{{ d.simbolo }} {{ px(d.mejor_suyo) }}</td><td class="n">{{ d.simbolo }} {{ px(d.ultimo_suyo) }}</td><td class="n">{{ d.simbolo }} {{ px(d.mejor_global) }}</td><td class="n">{{ d.veces }}</td>
+            <td class="n">{% if d.dif_pct > 0 %}<span class="var up">+{{ d.dif_pct }}%</span>{% else %}<span class="var ok">Mejor precio</span>{% endif %}</td></tr>{% endfor %}
+        </tbody></table></td></tr>
+    {% endfor %}</tbody></table></div>
+
+{% elif vista == 'detalle' %}
+<div class="small text-muted mb-2"><b>{{ total_lista }}</b> compra(s), de la más reciente a la más antigua. El Excel trae todas.</div>
+<div class="bg-white border rounded-3 table-responsive"><table class="table table-sm tabla-mp align-middle">
+    <thead><tr><th class="ps-2">Fecha</th><th>Orden</th><th>Proveedor</th><th>Producto / servicio</th><th class="n">Cantidad</th><th class="n">P. unit. sin IGV</th>
+        <th class="n">Total sin IGV</th><th class="n">Vs. el mejor</th><th>Pago</th></tr></thead>
+    <tbody>{% for c in lista %}{% set sim = monedas[c.moneda].simbolo %}
+    <tr><td class="ps-2 text-nowrap">{{ c.fecha.strftime('%d/%m/%Y') }}</td>
+        <td class="text-nowrap">{% if puede_ver_oc %}<a class="oc-l" href="{{ url_for('oc_detalle', orden_id=c.orden.id) }}">{{ oc_codigo(c.orden) }}</a>{% else %}{{ oc_codigo(c.orden) }}{% endif %}
+            <div class="sub">{{ empresas_oc[c.empresa].corto }} · {{ clases[c.clase].corto }}</div></td>
+        <td>{{ c.proveedor }}<div class="sub">{{ c.ruc }}</div></td>
+        <td>{% if c.codigo %}<span class="cod">{{ c.codigo }}</span> {% endif %}{{ c.descripcion }}</td>
+        <td class="n">{{ '{:,.2f}'.format(c.cantidad).rstrip('0').rstrip('.') }} {{ c.um }}</td>
+        <td class="n">{{ sim }} {{ px(c.precio) }}</td><td class="n">{{ sim }} {{ dinero(c.total) }}</td>
+        <td class="n">{% if c.dif_pct > 0 %}<span class="var up">+{{ c.dif_pct }}%</span>{% else %}<span class="var ok">mejor</span>{% endif %}</td>
+        <td class="small">{{ c.condicion }}<div class="sub">{{ 'Pagada' if c.pagada else 'Pendiente' }}</div></td></tr>
+    {% endfor %}</tbody></table></div>
+{% endif %}
+
+{% if vista in ['productos', 'proveedores', 'detalle'] and paginas > 1 %}
+<div class="pag"><span>Página {{ pagina }} de {{ paginas }}</span>
+    <div class="btn-group btn-group-sm">
+        <a class="btn btn-outline-primary {{ 'disabled' if pagina <= 1 }}" href="{{ url_for('oc_precios', **dict(base_args, vista=vista, orden=orden, pagina=pagina - 1)) }}">‹ Anterior</a>
+        <a class="btn btn-outline-primary {{ 'disabled' if pagina >= paginas }}" href="{{ url_for('oc_precios', **dict(base_args, vista=vista, orden=orden, pagina=pagina + 1)) }}">Siguiente ›</a>
+    </div></div>
+{% endif %}
+
+<script>
+document.querySelectorAll('.auto').forEach(el => el.addEventListener('change', () => el.form.submit()));
+document.querySelectorAll('[data-det]').forEach(b => b.addEventListener('click', () => {
+    const fila = document.getElementById('det' + b.dataset.det), abrir = fila.style.display === 'none';
+    fila.style.display = abrir ? '' : 'none';
+    b.querySelector('i').className = abrir ? 'bi bi-chevron-up' : 'bi bi-chevron-down';
+    const cv = fila.querySelector('canvas[data-hist]');
+    if (abrir && cv && !cv._hecho && window.Chart) {
+        cv._hecho = true;
+        const h = JSON.parse(cv.dataset.hist), provs = [...new Set(h.map(x => x.prov))];
+        const PAL = ['#16a34a', '#0B3D91', '#f59e0b', '#7c3aed', '#dc2626', '#0891b2', '#64748b'];
+        new Chart(cv, { type: 'line', data: { datasets: provs.map((pv, i) => ({ label: pv.length > 24 ? pv.slice(0, 23) + '…' : pv,
+            data: h.filter(x => x.prov === pv).map(x => ({ x: x.f, y: x.p, oc: x.oc })), borderColor: PAL[i % PAL.length], backgroundColor: PAL[i % PAL.length],
+            showLine: true, tension: 0, pointRadius: 4 })) },
+            options: { maintainAspectRatio: false, parsing: false, scales: { x: { type: 'category', labels: [...new Set(h.map(x => x.f))].sort(),
+                ticks: { callback: function (v) { const t = this.getLabelForValue(v); return t.slice(8, 10) + '/' + t.slice(5, 7) + '/' + t.slice(2, 4); } } },
+                y: { beginAtZero: false } },
+                plugins: { legend: { labels: { boxWidth: 10 } }, tooltip: { callbacks: { label: c => `${c.dataset.label}: ${cv.dataset.sim} ${c.raw.y} (${c.raw.oc})` } } } } });
+    }
+}));
+</script>
+{% if vista == 'productos' %}<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>{% endif %}
 {% endblock %}

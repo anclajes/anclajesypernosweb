@@ -342,9 +342,11 @@
                     ${o.docs.length ? `<div class="small mt-2"><b>Documentos:</b> ${o.docs.map(d => `<a href="${esc(d.url)}" target="_blank" class="me-2"><i class="bi bi-paperclip"></i>${esc(d.nombre)}</a>`).join('')}</div>` : ''}
                     </div>
                     <form method="POST" action="${esc(o.aprobar_url)}" class="na-pie" id="naForm">
+                        ${o.puede_aprobar && /^\/ordenes\/?(\?|$)/.test(location.pathname + location.search) ? `<input type="hidden" name="volver" value="${esc(location.pathname + location.search)}">` : ''}
                         ${o.puede_aprobar ? `<input type="text" name="comentario" maxlength="300" class="form-control form-control-sm" style="flex:1 1 220px;" placeholder="Comentario (opcional)">
                         <button type="submit" class="btn btn-success fw-bold"><i class="bi bi-patch-check-fill"></i> Aprobar</button>` : ''}
-                        <a class="btn btn-outline-secondary" href="${esc(o.pdf)}" target="_blank"><i class="bi bi-file-earmark-pdf"></i> PDF</a>
+                        <a class="btn btn-outline-secondary" href="${esc(o.pdf_ver)}" target="_blank" title="Ver el PDF en otra pestaña"><i class="bi bi-file-earmark-pdf"></i> Ver PDF</a>
+                        <a class="btn btn-outline-secondary" href="${esc(o.pdf)}" title="Descargar el PDF"><i class="bi bi-download"></i> Descargar</a>
                         <a class="btn btn-outline-danger" href="${esc(o.url)}" title="Para rechazar u observar se abre la orden completa"><i class="bi bi-box-arrow-up-right"></i> Abrir orden (rechazar / observar)</a>
                     </form>`;
                 document.getElementById('naCerrar').onclick = cerrarAprobar;

@@ -53,7 +53,7 @@
     .linea:last-child::before { display: none; }
     .linea .pt { position: absolute; left: 0; top: 3px; width: 14px; height: 14px; border-radius: 50%; background: #cbd5e1; border: 3px solid #fff; box-shadow: 0 0 0 1px #cbd5e1; }
     .linea .pt.APROBADA, .linea .pt.CONFORME, .linea .pt.KARDEX, .linea .pt.INGRESO_ITEM, .linea .pt.PAGO { background: #16a34a; } .linea .pt.RECHAZADA, .linea .pt.ANULADA { background: #dc2626; }
-    .linea .pt.ENVIADA { background: #f59e0b; } .linea .pt.LLEGADA { background: #0891b2; } .linea .pt.CREADA { background: #0B3D91; } .linea .pt.OBSERVACION { background: #7c3aed; } .linea .pt.EDITADA_APROBADA { background: #ea580c; }
+    .linea .pt.ENVIADA { background: #f59e0b; } .linea .pt.LLEGADA { background: #0891b2; } .linea .pt.CREADA { background: #0B3D91; } .linea .pt.OBSERVACION { background: #7c3aed; } .linea .pt.EDITADA_APROBADA { background: #ea580c; } .linea .pt.EMPRESA { background: #0891b2; }
     .linea .t { font-size: .8rem; font-weight: 700; } .linea .s { font-size: .74rem; color: #64748b; }
     .acciones .btn { font-weight: 700; }
     .check-conf { border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 8px 10px; margin-bottom: 6px; }
@@ -511,6 +511,7 @@
                                    'KARDEX': 'Todo ingresado al inventario', 'INGRESO_ITEM': 'Ítem ingresado al inventario', 'INGRESO_DESHECHO': 'Se quitó una marca de ingreso',
                                    'INSUMOS': 'Insumos internos', 'PAGO': 'Marcada como PAGADA', 'PAGO_DESHECHO': 'Se quitó la marca de pagada', 'SEGUIMIENTO': 'Seguimiento de la OS (Almacén)',
                                    'EDITADA_APROBADA': 'EDITADA DESPUÉS DE APROBADA (vuelve a Gerencia)',
+                                   'EMPRESA': 'Cambio de empresa',
                                    'SALDO_CERRADO': 'No llegará el resto (saldo cerrado)'}.get(ev.accion, ev.accion) }}</div>
                 <div class="s">{{ ev.fecha.strftime('%d/%m/%Y %H:%M') }} · <b>{{ ev.usuario.nombre_completo if ev.usuario else 'Sistema' }}</b></div>
                 {% if ev.detalle %}<div class="s">{{ ev.detalle }}</div>{% endif %}

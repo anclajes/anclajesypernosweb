@@ -251,7 +251,7 @@ def notif_orden(orden_id):
             'subtotal': f"{s} {(o.subtotal or 0):,.2f}", 'igv': f"{s} {(o.igv or 0):,.2f}", 'total': f"{s} {(o.total or 0):,.2f}",
             'sin_igv': bool(o.es_importacion),
             'docs': [{'nombre': d.nombre_original or d.tipo, 'tipo': d.tipo, 'url': url_for('oc_documento_ver', doc_id=d.id)} for d in docs],
-            'url': url_for('oc_detalle', orden_id=o.id), 'pdf': url_for('oc_pdf', orden_id=o.id),
+            'url': url_for('oc_detalle', orden_id=o.id), 'pdf': url_for('oc_pdf', orden_id=o.id), 'pdf_ver': url_for('oc_pdf', orden_id=o.id, ver=1),
             'aprobar_url': url_for('oc_aprobar', orden_id=o.id), 'puede_aprobar': session.get('role') in ROLES_OC_APRUEBAN and o.estado == 'ENVIADA'}
 
 

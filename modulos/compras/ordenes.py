@@ -110,7 +110,7 @@ def oc_lista():
                            desde=desde, hasta=hasta, buscar=buscar, hoy=hoy, pagos=pagos, atrasos=atrasos, kpi=kpi, resumen=resumen,
                            total_filtrado=total_filtrado, proveedores=proveedores, solicitantes=solicitantes, motivos=motivos,
                            filtros_activos=filtros_activos, estados=ESTADOS_OC, tipos=TIPOS_OC, destinos=DESTINOS_OC, monedas=MONEDAS_OC,
-                           puede_editar=rol in ROLES_OC_EDITAN, seccion='lista', emp_sel=emp_sel, conteo_emp=conteo_emp, empresas_oc=EMPRESAS_OC)
+                           puede_editar=rol in ROLES_OC_EDITAN, aprueba=rol in ROLES_OC_APRUEBAN, seccion='lista', emp_sel=emp_sel, conteo_emp=conteo_emp, empresas_oc=EMPRESAS_OC)
 
 
 # ---------------------------- EXCEL Y REPORTES ----------------------------
@@ -336,88 +336,6 @@ def oc_reportes():
                            empresas_oc=EMPRESAS_OC, seccion='reportes', hoy=hoy)
 
 
-def _oc_precios(emp_sel='TODAS', q='', desde=None, hasta=None, tipo='OC'):
-    """Precios por producto y proveedor sacados de las órdenes APROBADAS: el mejor precio de cada proveedor (sin y con IGV),
-    cuándo y en qué orden, el último precio y cuántas veces se compró. Se compara solo dentro de la misma moneda y U.M."""
-    ordenes = [o for o in OrdenCompra.query.filter(OrdenCompra.estado.in_(['APROBADA', 'RECIBIDA', 'CONFORME'])).all()
-               if (emp_sel == 'TODAS' or (o.empresa or 'ANCLAJES') == emp_sel) and (not tipo or o.tipo == tipo)
-               and o.fecha and (not desde or o.fecha >= desde) and (not hasta or o.fecha <= hasta)]
-    terminos = [t for t in _txt_sin_tildes(q or '').upper().split() if t]
-    productos = {}
-    for o in ordenes:
-        for i in o.items:
-            if not i.precio_unitario:
-                continue
-            texto = _txt_sin_tildes(f"{i.codigo or ''} {i.descripcion} {i.familia or ''} {i.calidad or ''} {o.razon_social}").upper()
-            if terminos and not all(t in texto for t in terminos):
-                continue
-            clave = (i.codigo or i.descripcion or '').upper()
-            pr = productos.setdefault(clave, {'clave': clave, 'codigo': i.codigo or '', 'descripcion': i.descripcion, 'familia': i.familia or '',
-                                              'calidad': i.calidad or '', 'segmentos': {}, 'n': 0})
-            pr['n'] += 1
-            seg = pr['segmentos'].setdefault((o.moneda, (i.um or '').upper()), {})
-            compra = {'precio': i.precio_unitario, 'con_igv': i.precio_con_igv or round(i.precio_unitario * (1 + (0 if o.es_importacion else IGV_OC)), 4),
-                      'fecha': o.fecha, 'orden': o, 'cantidad': i.cantidad or 0, 'importacion': bool(o.es_importacion)}
-            pv = seg.setdefault(o.razon_social, {'proveedor': o.razon_social, 'ruc': o.ruc or '', 'compras': []})
-            pv['compras'].append(compra)
-    lista = []
-    for pr in productos.values():
-        segmentos = []
-        for (moneda, um), provs in pr['segmentos'].items():
-            filas = []
-            for pv in provs.values():
-                cs = pv['compras']
-                mejor = min(cs, key=lambda c: (c['precio'], -(c['fecha'].toordinal())))
-                ultimo = max(cs, key=lambda c: (c['fecha'], c['orden'].id))
-                filas.append({**pv, 'mejor': mejor, 'ultimo': ultimo, 'veces': len(cs), 'cantidad': round(sum(c['cantidad'] for c in cs), 4)})
-            filas.sort(key=lambda f: (f['mejor']['precio'], f['proveedor']))
-            base = filas[0]['mejor']['precio'] if filas else 0
-            for f in filas:
-                f['dif_pct'] = round(100 * (f['mejor']['precio'] - base) / base, 1) if base else 0
-            segmentos.append({'moneda': moneda, 'simbolo': MONEDAS_OC.get(moneda, {}).get('simbolo', moneda), 'um': um, 'filas': filas})
-        segmentos.sort(key=lambda sg: (sg['moneda'] != 'PEN', sg['um']))
-        pr['segmentos'] = segmentos
-        pr['n_prov'] = len({f['proveedor'] for sg in segmentos for f in sg['filas']})
-        lista.append(pr)
-    lista.sort(key=lambda p: _clave_alfabetica(p['descripcion'] or ''))
-    return lista
-
-
-@app.route('/ordenes/precios')
-@_ruta_oc()
-def oc_precios():
-    """Pestaña "Precios": por producto, qué proveedor vendió más barato, cuándo y en qué orden (sin IGV y con IGV)."""
-    emp_sel = (request.args.get('empresa') or session.get('oc_empresa') or 'TODAS').upper()
-    emp_sel = emp_sel if emp_sel in EMPRESAS_OC or emp_sel == 'TODAS' else 'TODAS'
-    q = ' '.join((request.args.get('q') or '').split())[:80]
-    desde, hasta = _fecha_param('desde', None), _fecha_param('hasta', None)
-    tipo = request.args.get('tipo', 'OC')
-    tipo = tipo if tipo in TIPOS_OC or tipo == '' else 'OC'
-    lista = _oc_precios(emp_sel, q, desde, hasta, tipo)
-    if request.args.get('exportar') == 'excel':
-        from openpyxl import Workbook
-        wb = Workbook()
-        filas = []
-        for p in lista:
-            for sg in p['segmentos']:
-                for n, f in enumerate(sg['filas'], start=1):
-                    m, u = f['mejor'], f['ultimo']
-                    filas.append([p['codigo'], p['descripcion'], p['familia'], p['calidad'], sg['um'], sg['moneda'], n, f['proveedor'], f['ruc'],
-                                  m['precio'], m['con_igv'], 'Importación (sin IGV)' if m['importacion'] else '', m['fecha'], _oc_codigo(m['orden']),
-                                  u['precio'], u['fecha'], _oc_codigo(u['orden']), f['veces'], f['cantidad'], f['dif_pct']])
-        _xlsx_hoja(wb, 'Precios por proveedor', ['Código', 'Producto', 'Familia', 'Calidad', 'U.M.', 'Moneda', 'Puesto', 'Proveedor', 'RUC / Tax ID',
-                                                 'Mejor precio sin IGV', 'Mejor precio con IGV', 'Nota', 'Fecha del mejor precio', 'Orden del mejor precio',
-                                                 'Último precio sin IGV', 'Fecha del último', 'Orden del último', 'Veces comprado', 'Cantidad comprada',
-                                                 '% más caro que el mejor'],
-                   filas, formatos={9: '#,##0.00##', 10: '#,##0.00##', 12: 'dd/mm/yyyy', 14: '#,##0.00##', 15: 'dd/mm/yyyy', 18: '#,##0.##'}, primera=True,
-                   nota=f"Precios de órdenes aprobadas · {'Las dos empresas' if emp_sel == 'TODAS' else EMPRESAS_OC[emp_sel]['nombre']} · puesto 1 = mejor precio")
-        return _xlsx_respuesta(wb, f"precios_proveedores_{hora_peru().strftime('%Y%m%d')}.xlsx")
-    total = len(lista)
-    return render_template('oc_precios.html', lista=lista[:150], total=total, emp_sel=emp_sel, q=q, desde=desde, hasta=hasta, tipo=tipo,
-                           tipos=TIPOS_OC, empresas_oc=EMPRESAS_OC, igv=IGV_OC, seccion='precios',
-                           puede_ver_oc=session.get('role') in ROLES_OC_VEN)
-
-
 def _oc_excel_reporte(rep, emp_sel, desde, hasta, tipo):
     from openpyxl import Workbook
     wb = Workbook()
@@ -467,7 +385,7 @@ def _solicitantes_oc(orden=None):
 def _contexto_form_oc(orden=None, datos_previos=None):
     motivos = [m for m in OCMotivoCompra.query.all() if m.activo or (orden and (m.nombre or '').upper() == (orden.motivo_compra or '').upper())]
     motivos.sort(key=lambda m: m.id)
-    return dict(orden=orden, previo=datos_previos, tipos=TIPOS_OC, destinos=DESTINOS_OC, monedas=MONEDAS_OC, empresas_oc=EMPRESAS_OC,
+    return dict(orden=orden, previo=datos_previos, bloqueo_empresa=_oc_bloqueo_cambio_empresa(orden) if orden else None, tipos=TIPOS_OC, destinos=DESTINOS_OC, monedas=MONEDAS_OC, empresas_oc=EMPRESAS_OC,
                 ums=[v.valor for v in _oc_catalogo('OC_UM')], condiciones=[v.valor for v in _oc_catalogo('OC_CONDICION_PAGO')],
                 cfg=_oc_cfg(orden.empresa if orden else 'ANCLAJES'), igv=IGV_OC, hoy=hora_peru().date(), seccion='nueva',
                 cfgs={e: _oc_cfg(e) for e in EMPRESAS_OC}, detraccion_def=DETRACCION_DEF,
@@ -597,7 +515,16 @@ def oc_guardar():
                                                         'solicitante_nombre', 'motivo_compra', 'fecha_entrega', 'entrega_dias', 'lugar_recojo')}
                 items_antes = [(i.descripcion, i.cantidad, i.um, i.precio_unitario) for i in orden.items]
                 aprobada_antes = (orden.aprobado_por.nombre_completo if orden.aprobado_por else 'Gerencia', orden.fecha_aprobacion)
+                # cambio de empresa: toma el número siguiente de la otra empresa (antes de cambiarla, para no contarse a sí misma)
+                cambio_emp = None
+                if (orden.empresa or 'ANCLAJES') != datos['empresa']:
+                    cambio_emp = (EMPRESAS_OC[orden.empresa or 'ANCLAJES']['corto'], _oc_codigo(orden),
+                                  _siguiente_numero_oc(orden.tipo, datos['empresa']))
                 _aplicar_datos_orden(orden, datos, items, prov, contacto)
+                if cambio_emp:
+                    orden.numero = cambio_emp[2]
+                    _oc_evento(orden, 'EMPRESA', f"Empresa cambiada: {cambio_emp[0]} → {EMPRESAS_OC[orden.empresa]['corto']} · antes {cambio_emp[1]}, "
+                                                 f"ahora {_oc_codigo(orden)} (el número anterior queda sin uso)")
                 orden.editado_por_id, orden.fecha_edicion = session.get('user_id'), ahora
                 cambios = '; '.join(x for x in (_resumen_cambios_orden(antes, orden), _resumen_cambios_items(items_antes, items)) if x)
                 if reaprobacion:
@@ -726,6 +653,9 @@ def oc_aprobar(orden_id):
                   'bi-patch-check-fill', 'text-success')
     db.session.commit()
     flash(f'✅ {_oc_codigo(orden)} APROBADA. El PDF ya lleva la firma y sello de Gerencia.')
+    volver = (request.form.get('volver') or '').strip()
+    if volver.startswith('/') and not volver.startswith('//') and '\\' not in volver:     # aprobada desde la lista: vuelve a la lista
+        return redirect(volver)
     return redirect(url_for('oc_detalle', orden_id=orden.id))
 
 

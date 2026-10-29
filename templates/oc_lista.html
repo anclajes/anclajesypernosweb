@@ -35,6 +35,11 @@
     .prov-cel b, .clamp2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; line-height: 1.2; }
     .prov-cel b { font-size: .8rem; }
     .sub { font-size: .68rem; color: #64748b; line-height: 1.2; }
+    .sub .hora { color: #475569; font-weight: 600; }
+    .hora-ap { color: #166534; font-weight: 600; }
+    .btn-aprobar-rapido { box-shadow: 0 0 0 0 rgba(245,158,11,.6); animation: pulsoAprobar 2s infinite; }
+    @keyframes pulsoAprobar { 0% { box-shadow: 0 0 0 0 rgba(245,158,11,.55); } 70% { box-shadow: 0 0 0 8px rgba(245,158,11,0); } 100% { box-shadow: 0 0 0 0 rgba(245,158,11,0); } }
+    @media (prefers-reduced-motion: reduce) { .btn-aprobar-rapido { animation: none; } }
     .sol { max-width: 170px; font-size: .74rem; line-height: 1.2; }
     .mot { display: inline-block; font-size: .64rem; font-weight: 800; border-radius: 5px; padding: 0 6px; background: #ede9fe; color: #5b21b6; margin-top: 2px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .pago { display: inline-flex; align-items: center; gap: 4px; font-size: .68rem; font-weight: 800; border-radius: 7px; padding: 2px 7px; white-space: nowrap; border: 1px solid; }
@@ -128,7 +133,8 @@
 </form>
 
 {% if vista == 'aprobar' and session.get('role') == 'admin' and ordenes %}
-<div class="alert py-2 small" style="background:#fffbeb; border:1px solid #fde68a;"><i class="bi bi-pen text-warning"></i> Revisa cada orden y apruébala (el PDF llevará tu <b>firma y sello</b>) o recházala con el motivo.</div>
+<div class="alert py-2 small" style="background:#fffbeb; border:1px solid #fde68a;"><i class="bi bi-pen text-warning"></i> Pulsa <b>Aprobar</b> para ver el resumen (proveedor, ítems, precios, total, PDF) y aprobarla ahí mismo (el PDF llevará tu <b>firma y sello</b>).
+    Para rechazar u observar, abre la orden con <b>Ver</b>.</div>
 {% elif vista == 'atrasadas' and ordenes %}
 <div class="alert alert-danger py-2 small"><i class="bi bi-alarm-fill"></i> Órdenes <b>aprobadas</b> cuya fecha de entrega ya pasó y el material todavía no llega. Llama al proveedor y deja una observación en la orden.</div>
 {% elif vista == 'por_pagar' %}
@@ -147,6 +153,8 @@
 {% macro estado_badge(o) %}{% set e = estados[o.estado] %}<span class="oc-estado" style="color: {{ e.color }}; background: {{ e.fondo }};"><i class="bi {{ e.icono }}"></i> {{ e.txt }}</span>{% if o.revision %} <span class="oc-estado" style="color:#9a3412; background:#ffedd5;" title="{{ 'Editada después de aprobada: ' ~ (o.motivo_edicion or '') }}"><i class="bi bi-arrow-repeat"></i> {{ 'Re-aprobación' if o.estado == 'ENVIADA' else 'Rev. ' ~ o.revision }}</span>{% endif %}{% endmacro %}
 {% macro seguimiento(o) %}
     {% if o.estado in ['APROBADA', 'RECIBIDA'] and o.aprobado_por %}<div class="sub mt-1"><i class="bi bi-patch-check-fill text-success"></i> Aprobó {{ o.aprobado_por.nombre_completo }}</div>
+        {% if o.fecha_aprobacion %}<div class="sub hora-ap" title="Fecha y hora de la aprobación"><i class="bi bi-clock"></i> {{ o.fecha_aprobacion.strftime('%d/%m/%Y %H:%M') }}</div>{% endif %}
+    {% elif o.estado == 'ENVIADA' and o.fecha_envio %}<div class="sub mt-1" title="Enviada a Gerencia"><i class="bi bi-send"></i> Enviada {{ o.fecha_envio.strftime('%d/%m %H:%M') }}</div>
     {% elif o.estado == 'RECHAZADA' %}<div class="sub mt-1 text-danger clamp2" title="{{ oc_rechazo_txt(o) }}">{{ oc_rechazo_txt(o) }}</div>
     {% elif o.estado == 'ANULADA' %}<div class="sub mt-1 clamp2" title="{{ oc_anulacion_txt(o) }}">{{ oc_anulacion_txt(o) }}</div>
     {% elif o.estado == 'CONFORME' %}
@@ -218,7 +226,7 @@
                 <tr>
                     <td class="ps-3 text-nowrap">{% if emp_sel == 'TODAS' %}<span class="emp-chip" style="background: {{ empresas_oc[o.empresa or 'ANCLAJES'].color }};">{{ empresas_oc[o.empresa or 'ANCLAJES'].corto|upper }}</span><br>{% endif %}
                         <span class="oc-tipo {{ o.tipo }}">{{ o.tipo }}</span> <a class="oc-num" href="{{ url_for('oc_detalle', orden_id=o.id) }}">{{ oc_numero_txt(o) }}</a>
-                        <div class="sub">{{ o.fecha.strftime('%d/%m/%Y') }}</div>
+                        <div class="sub">{{ o.fecha.strftime('%d/%m/%Y') }}{% if o.fecha_registro %} <span class="hora" title="Registrada el {{ o.fecha_registro.strftime('%d/%m/%Y %H:%M') }}">· {{ o.fecha_registro.strftime('%H:%M') }}</span>{% endif %}</div>
                         <span class="oc-dest {{ o.destino }}" style="font-size:.6rem;">{{ oc_destino_txt(o)|replace('Inventario', 'Inv.') }}</span></td>
                     <td><div class="prov-cel" title="{{ o.razon_social }}"><b>{{ o.razon_social }}</b>
                         <div class="sub">{{ o.ruc }} · {{ o.items|length }} ítem(s){% if o.cotizacion %} · Cot. {{ o.cotizacion }}{% endif %}</div></div></td>
@@ -232,6 +240,7 @@
                     <td>{{ pago_chip(o) }}</td>
                     <td class="text-nowrap">{{ docs_mini(o) }}</td>
                     <td class="pe-3 text-end text-nowrap">
+                        {% if aprueba and o.estado == 'ENVIADA' %}<div class="mb-1"><button type="button" class="btn btn-sm btn-warning py-0 fw-bold btn-aprobar-rapido w-100" onclick="notifAbrirAprobar({{ o.id }})" title="Ver el resumen y aprobar"><i class="bi bi-patch-check"></i> Aprobar</button></div>{% endif %}
                         <a class="btn btn-sm btn-outline-primary py-0" href="{{ url_for('oc_detalle', orden_id=o.id) }}"><i class="bi bi-eye"></i> Ver</a>
                         <a class="btn btn-sm btn-outline-danger py-0" href="{{ url_for('oc_pdf', orden_id=o.id, ver=1) }}" target="_blank" title="PDF"><i class="bi bi-file-earmark-pdf"></i></a>
                     </td>
@@ -252,7 +261,7 @@
     <div class="card-oc" style="--c: {{ '#dc2626' if atrasos[o.id] or pagos[o.id].nivel == 'vencida' else estados[o.estado].color }};">
         <div class="fila">
             <div>{% if emp_sel == 'TODAS' %}<span class="emp-chip" style="background: {{ empresas_oc[o.empresa or 'ANCLAJES'].color }};">{{ empresas_oc[o.empresa or 'ANCLAJES'].corto|upper }}</span> {% endif %}<span class="oc-tipo {{ o.tipo }}">{{ o.tipo }}</span> <a class="oc-num" href="{{ url_for('oc_detalle', orden_id=o.id) }}">N° {{ oc_numero_txt(o) }}</a>
-                <span class="text-muted small">· {{ o.fecha.strftime('%d/%m/%Y') }}</span></div>
+                <span class="text-muted small">· {{ o.fecha.strftime('%d/%m/%Y') }}{% if o.fecha_registro %} {{ o.fecha_registro.strftime('%H:%M') }}{% endif %}</span></div>
             <div class="num fw-bold text-nowrap">{{ monedas[o.moneda].simbolo }} {{ '{:,.2f}'.format(o.total or 0) }}</div>
         </div>
         <div class="prov mt-1" title="{{ o.razon_social }}">{{ o.razon_social }}</div>
@@ -261,7 +270,9 @@
         <div class="mt-1">{% if vista == 'conformes' %}{{ recepcion(o) }}{% else %}{{ entrega(o) }}{% endif %}</div>
         <div class="d-flex flex-wrap gap-2 align-items-start mt-2"><div>{% if vista == 'conformes' %}{{ destino_final(o) }}{% else %}{{ estado_badge(o) }}{% endif %}</div><div>{{ pago_chip(o) }}</div></div>
         <div class="d-flex flex-wrap gap-1 align-items-center mt-1">{{ docs_mini(o) }}</div>
+        {% if o.estado in ['APROBADA', 'RECIBIDA'] and o.aprobado_por %}<div class="sub mt-1"><i class="bi bi-patch-check-fill text-success"></i> Aprobó {{ o.aprobado_por.nombre_completo }}{% if o.fecha_aprobacion %} · {{ o.fecha_aprobacion.strftime('%d/%m/%Y %H:%M') }}{% endif %}</div>{% endif %}
         <div class="d-flex gap-2 mt-2">
+            {% if aprueba and o.estado == 'ENVIADA' %}<button type="button" class="btn btn-sm btn-warning flex-fill fw-bold" onclick="notifAbrirAprobar({{ o.id }})"><i class="bi bi-patch-check"></i> Aprobar</button>{% endif %}
             <a class="btn btn-sm btn-outline-primary flex-fill" href="{{ url_for('oc_detalle', orden_id=o.id) }}"><i class="bi bi-eye"></i> Ver</a>
             <a class="btn btn-sm btn-outline-danger flex-fill" href="{{ url_for('oc_pdf', orden_id=o.id, ver=1) }}" target="_blank"><i class="bi bi-file-earmark-pdf"></i> PDF</a>
         </div>

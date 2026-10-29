@@ -269,8 +269,8 @@
                 </a>
                 {% endif %}
 
-                {% if session.get('role') in ['admin', 'almacen', 'logistica', 'administracion'] %}
-                <a href="{{ url_for('reporte_precios_proveedores') }}" class="nav-link {{ 'active' if request.endpoint == 'reporte_precios_proveedores' }}">
+                {% if session.get('role') in ['admin', 'logistica', 'administracion'] %}
+                <a href="{{ url_for('oc_precios') }}" class="nav-link {{ 'active' if request.endpoint == 'oc_precios' }}">
                     <i class="bi bi-graph-up-arrow me-2"></i> <span>Mejores Precios</span>
                 </a>
                 {% endif %}

@@ -724,6 +724,19 @@ def _oc_bloqueo_reedicion(orden):
     return None
 
 
+def _oc_bloqueo_cambio_empresa(orden):
+    """¿Se puede pasar la orden a la otra empresa (Anclajes <-> Import Bolts) al editarla? Solo antes de que haya llegado
+    material (la guía y la factura ya salen a nombre de una empresa), de pagarla o de ingresar algo. None = sí se puede."""
+    if orden.estado not in ('BORRADOR',) + ESTADOS_REEDITABLES_OC:
+        return 'solo al editar una orden en borrador o ya aprobada'
+    bloqueo = _oc_bloqueo_reedicion(orden) if orden.estado != 'BORRADOR' else None
+    if bloqueo:
+        return bloqueo
+    if orden.fecha_llegada or _oc_entregas(orden):
+        return 'ya llegó material (la guía y la factura son de esa empresa): anúlala y crea otra'
+    return None
+
+
 def _oc_permisos(orden):
     """Qué puede hacer el usuario actual con esta orden (para mostrar solo los botones que corresponden)."""
     rol = session.get('role')
@@ -785,6 +798,14 @@ def _leer_orden_form(f, orden=None):
     datos['precios_con_igv'] = con_igv
     totales_con_igv = []
     empresa = (orden.empresa if orden and orden.empresa else (f.get('empresa') or 'ANCLAJES')).upper()
+    pedida = (f.get('empresa') or '').upper()
+    if orden and pedida and pedida != empresa:
+        # al editar se puede pasar la orden a la otra empresa (toma el número siguiente de esa empresa al guardar)
+        bloqueo = _oc_bloqueo_cambio_empresa(orden)
+        if bloqueo:
+            errores.append(f'No se puede cambiar la empresa: {bloqueo}.')
+        else:
+            empresa = pedida
     if empresa not in EMPRESAS_OC or not EMPRESAS_OC[empresa]['habilitada']:
         errores.append('Elige la empresa que emite la orden.')
     datos['empresa'] = empresa
@@ -987,13 +1008,18 @@ def _leer_orden_form(f, orden=None):
             origen, codigo = None, None
         # Compras: SOLO productos que ya existen (inventario de la empresa o maestro de insumos). Nada escrito a mano,
         # para que al llegar el ingreso quede enlazado. Se respetan los ítems antiguos que ya estaban así en la orden.
+        if tipo == 'OC' and datos.get('destino') == 'GENERAL' and codigo and origen in ('ANCLAJES', 'IMPORTBOLTS') and origen != empresa:
+            # se cambió de empresa: si el mismo código existe en el inventario de la otra, el producto se enlaza ahí
+            ModeloOtra = ProductImportBolts if empresa == 'IMPORTBOLTS' else Product
+            if ModeloOtra.query.filter(func.upper(ModeloOtra.sku) == codigo.upper()).first():
+                origen = empresa
         if tipo == 'OC':
             legado = bool(orden) and any((x.descripcion or '').upper() == desc and (x.codigo or '') == (codigo or '') for x in orden.items)
             if datos.get('destino') == 'INSUMOS':
                 if not ins_id and not legado:
                     errores.append(f'Ítem {n}: elige el insumo del maestro (botón Insumos). Si no existe, créalo con "Nuevo insumo (maestro)".')
                     continue
-            elif datos.get('destino') == 'GENERAL' and not legado:
+            elif datos.get('destino') == 'GENERAL' and not (legado and (orden.empresa or 'ANCLAJES') == empresa):   # si cambió de empresa se revisa todo
                 ModeloInv = ProductImportBolts if empresa == 'IMPORTBOLTS' else Product
                 existe = bool(codigo) and origen == empresa and ModeloInv.query.filter(func.upper(ModeloInv.sku) == codigo.upper()).first()
                 if not existe:
