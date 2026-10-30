@@ -57,6 +57,7 @@
             {# Filtros que llegan desde los Dashboards (no tienen campo visible): se conservan al re-filtrar #}
             {% if request.args.get('motivo') %}<input type="hidden" name="motivo" value="{{ request.args.get('motivo') }}">{% endif %}
             {% if request.args.get('motivo_cat') %}<input type="hidden" name="motivo_cat" value="{{ request.args.get('motivo_cat') }}">{% endif %}
+            {% for _k in ['oc_cliente', 'os'] %}{% if request.args.get(_k) %}<input type="hidden" name="{{ _k }}" value="{{ request.args.get(_k) }}">{% endif %}{% endfor %}
             {% if request.args.get('desde') %}<input type="hidden" name="desde" value="{{ request.args.get('desde') }}">{% endif %}
 
             <!-- BÚSQUEDA LIBRE -->
@@ -198,6 +199,14 @@
                             Solo registrados manualmente <i class="bi bi-info-circle text-muted"></i>
                         </label>
                     </div>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" role="switch" id="soloVentaSrv"
+                               name="venta_srv" value="1" {% if request.args.get('venta_srv') == '1' %}checked{% endif %}
+                               onchange="document.getElementById('formFiltroKardex').submit()">
+                        <label class="form-check-label small" for="soloVentaSrv" title="Salidas a maestranza / transformación que salieron como venta">
+                            Solo ventas tras servicio <i class="bi bi-info-circle text-muted"></i>
+                        </label>
+                    </div>
                 </div>
             </div>
 
@@ -228,6 +237,9 @@
     <a href="javascript:history.back()" class="btn btn-sm btn-outline-primary"><i class="bi bi-arrow-left"></i> Volver al dashboard</a>
 </div>
 {% endif %}
+{% import '_kardex_venta.html' as kv with context %}
+{{ kv.estilos() }}
+{{ kv.banner(vs_filtro) }}
 {% if proceso_filtro %}
 <div class="alert d-flex justify-content-between align-items-center flex-wrap gap-2 py-2 mb-2 shadow-sm" style="background:#eef2ff; border:1px solid #c7d2fe;">
     <div class="small">
@@ -336,7 +348,8 @@
                     </td>
 
                     <td class="kx-motivo">
-                        {{ m.motivo }}{% if m.detalle_motivo %} · <span class="fw-semibold">{{ m.detalle_motivo }}</span>{% endif %}
+                        {% if m.venta_servicio %}{{ kv.motivo(m, os_por_mov, puede_editar_venta) }}{% else %}
+                        {{ m.motivo }}{% if m.detalle_motivo %} · <span class="fw-semibold">{{ m.detalle_motivo }}</span>{% endif %}{% endif %}
                         {% if m.referencia %}<span class="fw-bold text-dark">/ {{ m.referencia }}</span>{% endif %}
                         {% if m.proceso_oc %}
                         <div class="mt-1">
@@ -384,6 +397,7 @@
 
                     <td class="kx-proveedor">
                         {% if m.razon_social_proveedor %}
+                            {% if m.venta_servicio %}<div class="text-muted" style="font-size:.64rem; font-weight:700;">TALLER (SERVICIO)</div>{% endif %}
                             <span class="fw-semibold">{{ m.razon_social_proveedor }}</span>
                             <div class="text-muted">{{ m.ruc_proveedor or 'S/N' }}{% if m.tipo_proveedor == 'INTERNACIONAL' %} <span class="badge bg-info">INT'L</span>{% endif %}</div>
                         {% else %}<span class="text-muted">-</span>{% endif %}
@@ -421,7 +435,7 @@
         <nav aria-label="Navegación">
             <ul class="pagination justify-content-center mb-0 pagination-sm">
                 <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
-                    <a class="page-link" href="{{ url_for('ver_kardex', page=pagination.prev_num, busqueda=request.args.get('busqueda',''), categoria=cat_filtro, calidad=calidad_filtro, proveedor=request.args.get('proveedor','todos'), tipo=request.args.get('tipo',''), fecha_inicio=request.args.get('fecha_inicio',''), fecha_fin=request.args.get('fecha_fin',''), ocultar_iniciales=request.args.get('ocultar_iniciales',''), solo_interempresa=request.args.get('solo_interempresa',''), motivo=request.args.get('motivo',''), motivo_id=request.args.get('motivo_id',''), manual=request.args.get('manual',''), motivo_cat=request.args.get('motivo_cat',''), desde=request.args.get('desde',''), oc=request.args.get('oc','')) }}">Anterior</a>
+                    <a class="page-link" href="{{ url_for('ver_kardex', page=pagination.prev_num, busqueda=request.args.get('busqueda',''), categoria=cat_filtro, calidad=calidad_filtro, proveedor=request.args.get('proveedor','todos'), tipo=request.args.get('tipo',''), fecha_inicio=request.args.get('fecha_inicio',''), fecha_fin=request.args.get('fecha_fin',''), ocultar_iniciales=request.args.get('ocultar_iniciales',''), solo_interempresa=request.args.get('solo_interempresa',''), motivo=request.args.get('motivo',''), motivo_id=request.args.get('motivo_id',''), manual=request.args.get('manual',''), motivo_cat=request.args.get('motivo_cat',''), desde=request.args.get('desde',''), oc=request.args.get('oc',''), oc_cliente=request.args.get('oc_cliente',''), os=request.args.get('os',''), venta_srv=request.args.get('venta_srv','')) }}">Anterior</a>
                 </li>
                 <li class="page-item disabled">
                     <span class="page-link text-muted">
@@ -430,13 +444,14 @@
                     </span>
                 </li>
                 <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
-                    <a class="page-link" href="{{ url_for('ver_kardex', page=pagination.next_num, busqueda=request.args.get('busqueda',''), categoria=cat_filtro, calidad=calidad_filtro, proveedor=request.args.get('proveedor','todos'), tipo=request.args.get('tipo',''), fecha_inicio=request.args.get('fecha_inicio',''), fecha_fin=request.args.get('fecha_fin',''), ocultar_iniciales=request.args.get('ocultar_iniciales',''), solo_interempresa=request.args.get('solo_interempresa',''), motivo=request.args.get('motivo',''), motivo_id=request.args.get('motivo_id',''), manual=request.args.get('manual',''), motivo_cat=request.args.get('motivo_cat',''), desde=request.args.get('desde',''), oc=request.args.get('oc','')) }}">Siguiente</a>
+                    <a class="page-link" href="{{ url_for('ver_kardex', page=pagination.next_num, busqueda=request.args.get('busqueda',''), categoria=cat_filtro, calidad=calidad_filtro, proveedor=request.args.get('proveedor','todos'), tipo=request.args.get('tipo',''), fecha_inicio=request.args.get('fecha_inicio',''), fecha_fin=request.args.get('fecha_fin',''), ocultar_iniciales=request.args.get('ocultar_iniciales',''), solo_interempresa=request.args.get('solo_interempresa',''), motivo=request.args.get('motivo',''), motivo_id=request.args.get('motivo_id',''), manual=request.args.get('manual',''), motivo_cat=request.args.get('motivo_cat',''), desde=request.args.get('desde',''), oc=request.args.get('oc',''), oc_cliente=request.args.get('oc_cliente',''), os=request.args.get('os',''), venta_srv=request.args.get('venta_srv','')) }}">Siguiente</a>
                 </li>
             </ul>
         </nav>
     </div>
 
 </div>
+{% if puede_editar_venta %}{{ kv.modal(origen_kardex) }}{% endif %}
 {% if puede_adjuntar %}
 <!-- Adjuntar un documento a un movimiento ya registrado (ej. la guía llegó después) -->
 <div class="modal fade" id="modalAdjuntarDoc" tabindex="-1">

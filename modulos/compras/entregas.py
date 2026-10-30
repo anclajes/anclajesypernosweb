@@ -194,8 +194,9 @@ def oc_llegada(orden_id):
 @app.route('/ordenes/<int:orden_id>/conforme', methods=['POST'])
 @_ruta_oc('editar')
 def oc_conforme(orden_id):
-    """Conformidad de UNA entrega: buen estado, cantidad y documentos (su guía o la factura; certificado en compras para
-    el inventario). Lo conforme pasa a Ingresos pendientes. La orden queda CONFORME cuando ya llegó todo (o se cerró el saldo)."""
+    """Conformidad de UNA entrega: buen estado, cantidad y documentos (su guía o la factura). El certificado de calidad es
+    opcional: en importaciones queda como pendiente, sin frenar nada. Lo conforme pasa a Ingresos pendientes.
+    La orden queda CONFORME cuando ya llegó todo (o se cerró el saldo)."""
     orden, no = _accion_oc(orden_id, 'conforme')
     if no:
         return no
@@ -231,8 +232,7 @@ def oc_conforme(orden_id):
         falta = []
         if not guia_ok and not any(d.tipo == 'FACTURA' for d in docs):
             falta.append(f'la GUÍA de la entrega {e.numero} o la FACTURA')
-        if orden.requiere_certificado and not any(d.tipo == 'CERTIFICADO' for d in docs):
-            falta.append('el CERTIFICADO DE CALIDAD (obligatorio en compras para el inventario)')
+        falta_cert = orden.requiere_certificado and not any(d.tipo == 'CERTIFICADO' for d in docs)
         if falta:
             db.session.rollback()
             _borrar_de_s3(claves)
@@ -262,6 +262,9 @@ def oc_conforme(orden_id):
     registrar_log(f"Dio CONFORMIDAD a la entrega {e.numero} de la {_oc_codigo(orden)}", 'bi-check-circle-fill', 'text-success')
     db.session.commit()
     _borrar_de_s3(viejas)
+    if falta_cert:
+        flash('⚠️ Falta subir el CERTIFICADO DE CALIDAD de esta importación. No frena nada: súbelo apenas llegue '
+              '(queda en la lista "Certificados por subir").', 'warning')
     if etapa == 'CONFORME':
         sig = ('Ahora regístralo en Insumos internos (aparece como pendiente).' if orden.destino == 'INSUMOS'
                else 'Servicio terminado: queda pendiente solo el pago.' if orden.tipo == 'OS'
@@ -329,6 +332,8 @@ def oc_documento(orden_id):
     orden, no = _accion_oc(orden_id, 'documentos')
     if no:
         return no
+    # Desde la lista "Certificados por subir" se vuelve a la lista (no al detalle de la orden)
+    destino = url_for('oc_certificados') if request.form.get('volver') == 'certificados' else url_for('oc_detalle', orden_id=orden.id)
     tipo = (request.form.get('tipo') or 'OTRO').upper()
     tipo = tipo if tipo in TIPOS_DOC_OC else 'OTRO'
     claves, viejas = [], []
@@ -339,17 +344,18 @@ def oc_documento(orden_id):
             db.session.rollback()
             _borrar_de_s3(claves)
             flash('⛔ ' + (' '.join(errores) or 'Elige un archivo.'))
-            return redirect(url_for('oc_detalle', orden_id=orden.id))
+            return redirect(destino)
         if not viejas:
             _oc_evento(orden, 'DOCUMENTO', f"Adjuntó {n} archivo(s): {TIPOS_DOC_OC[tipo]}")
         db.session.commit()
         _borrar_de_s3(viejas)
-        flash('✅ Documento reemplazado.' if viejas else '✅ Documento adjuntado.')
+        flash(('✅ Documento reemplazado.' if viejas else '✅ Documento adjuntado.')
+              + (f' {_oc_codigo(orden)}: certificado de calidad al día.' if tipo == 'CERTIFICADO' else ''))
     except Exception as e:
         db.session.rollback()
         _borrar_de_s3(claves)
         flash(f'⛔ No se pudo subir el documento: {e}')
-    return redirect(url_for('oc_detalle', orden_id=orden.id))
+    return redirect(destino)
 
 
 @app.route('/ordenes/<int:orden_id>/numeros', methods=['POST'])

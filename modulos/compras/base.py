@@ -278,6 +278,17 @@ def _asegurar_oc():
         except Exception as e:
             db.session.rollback()
             print(f"Aviso: no se pudo cambiar la numeración por empresa de órdenes: {e}")
+    if not SystemConfig.query.get('oc_cert_importacion_v1'):
+        # El certificado deja de ser obligatorio: solo las importaciones lo esperan (como aviso, sin frenar el flujo)
+        try:
+            with db.engine.begin() as conn:
+                conn.execute(text("UPDATE orden_compra SET requiere_certificado = "
+                                  "CASE WHEN tipo = 'OC' AND es_importacion = TRUE THEN TRUE ELSE FALSE END"))
+            db.session.add(SystemConfig(key='oc_cert_importacion_v1', value='1', updated_by='Sistema'))
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            print(f"Aviso: no se pudo actualizar el certificado pendiente de las órdenes: {e}")
     if not SystemConfig.query.get('oc_motivos_sembrado'):
         try:
             if not OCMotivoRechazo.query.first():
@@ -956,8 +967,9 @@ def _leer_orden_form(f, orden=None):
         if len(cruc) not in (8, 11) or len(crazon) < 3:
             errores.append(f'Es "{motivo.title()}": escribe el RUC (o DNI) y la razón social del CLIENTE.')
         datos['cliente_ruc'], datos['cliente_razon'] = cruc[:20] or None, crazon or None
-    # Compras para el inventario: el certificado de calidad es obligatorio al dar la conformidad
-    datos['requiere_certificado'] = tipo == 'OC' and destino == 'GENERAL'
+    # Certificado de calidad: siempre OPCIONAL (no frena la conformidad ni el ingreso). En importaciones queda marcado como
+    # "pendiente" hasta que se suba (aviso en la orden y lista "Certificados por subir").
+    datos['requiere_certificado'] = es_imp
     # Detracción SUNAT (sugerida en servicios: 12%; se puede cambiar o quitar)
     datos['detraccion_pct'] = None
     if f.get('aplica_detraccion') == '1' and not es_imp:

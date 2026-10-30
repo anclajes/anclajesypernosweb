@@ -6846,10 +6846,13 @@ def admin_maestro_eliminar(sku):
     prod_anclajes = Product.query.filter_by(sku=sku).first()
     prod_importbolts = ProductImportBolts.query.filter_by(sku=sku).first()
 
-    bloqueos = []
+    # El "Saldo Inicial" (carga de datos al importar/crear el producto) NO cuenta como uso real: si es el único
+    # movimiento (sin documentos ni proceso por OC), se borra junto con el producto.
+    bloqueos, iniciales = [], []
     if prod_anclajes:
-        n = ProductMovement.query.filter_by(product_id=prod_anclajes.id).count()
-        if n: bloqueos.append(f'{n} movimiento(s) de Kardex en Anclajes')
+        ini, n = _movimientos_que_bloquean_borrado('ANCLAJES', prod_anclajes.id)
+        iniciales += ini
+        if n: bloqueos.append(f'{n} movimiento(s) de Kardex en Anclajes (aparte del Saldo Inicial)')
         n = OrderDetail.query.filter_by(product_id=prod_anclajes.id).count()
         if n: bloqueos.append(f'{n} línea(s) de cotización/pedido en Anclajes')
         n = OrderKitComponent.query.filter_by(product_id=prod_anclajes.id).count()
@@ -6857,8 +6860,9 @@ def admin_maestro_eliminar(sku):
         n = RegistroAuditoria.query.filter_by(product_id=prod_anclajes.id).count()
         if n: bloqueos.append(f'{n} conteo(s) de auditoría en Anclajes')
     if prod_importbolts:
-        n = ProductMovementImportBolts.query.filter_by(product_id=prod_importbolts.id).count()
-        if n: bloqueos.append(f'{n} movimiento(s) de Kardex en ImportBolts')
+        ini, n = _movimientos_que_bloquean_borrado('IMPORTBOLTS', prod_importbolts.id)
+        iniciales += ini
+        if n: bloqueos.append(f'{n} movimiento(s) de Kardex en ImportBolts (aparte del Saldo Inicial)')
         n = OrderDetail.query.filter_by(product_id_importbolts=prod_importbolts.id).count()
         if n: bloqueos.append(f'{n} línea(s) de cotización/pedido en ImportBolts')
         n = IntercompanyTransfer.query.filter_by(product_importbolts_id=prod_importbolts.id).count()
@@ -6893,6 +6897,12 @@ def admin_maestro_eliminar(sku):
 
         familia_log, calidad_log = maestro.familia, maestro.calidad
         detalle_eliminado = _recortar_para_log(f"{maestro.nombre} | Peso: {maestro.peso_nominal_kg or 0} kg")
+        stock_borrado = sum(int(p.stock_actual or 0) for p in (prod_anclajes, prod_importbolts) if p)
+
+        # Su único rastro era el Saldo Inicial: se borra con el producto (el log de abajo deja constancia)
+        for mov in iniciales:
+            db.session.delete(mov)
+        db.session.flush()
 
         if prod_anclajes:
             db.session.delete(prod_anclajes)
@@ -6904,16 +6914,36 @@ def admin_maestro_eliminar(sku):
             fecha=hora_actual, usuario=usuario_actual, lote_id=f"ELIM-{hora_actual.strftime('%Y%m%d%H%M%S')}",
             sku=sku, inventario='MAESTRO+AMBOS', campo='eliminacion',
             valor_anterior=detalle_eliminado,
-            valor_nuevo='Eliminado del Maestro y de ambos inventarios', familia=familia_log, calidad=calidad_log,
+            valor_nuevo=_recortar_para_log('Eliminado del Maestro y de ambos inventarios'
+                                           + (f' (con su Saldo Inicial, stock {stock_borrado})' if iniciales else '')),
+            familia=familia_log, calidad=calidad_log,
         ))
 
-        registrar_log(f"Eliminó el producto {sku} del Maestro (sin movimientos ni ventas) y de ambos inventarios",
+        registrar_log(f"Eliminó el producto {sku} del Maestro (sin movimientos reales ni ventas) y de ambos inventarios"
+                      + (f" · se borró su Saldo Inicial (stock {stock_borrado})" if iniciales else ''),
                       "bi-trash-fill", "text-danger")
         db.session.commit()
-        return {'status': 'success', 'msg': f'Producto "{sku}" eliminado del Maestro y de ambos inventarios.'}
+        return {'status': 'success', 'msg': f'Producto "{sku}" eliminado del Maestro y de ambos inventarios'
+                                           + (f' (junto con su Saldo Inicial: stock {stock_borrado}).' if iniciales else '.')}
     except Exception as e:
         db.session.rollback()
         return {'status': 'error', 'msg': f'Error al eliminar: {str(e)}'}, 500
+
+
+def _es_saldo_inicial(mov):
+    return (mov.motivo or '').strip().upper().startswith('SALDO INICIAL')
+
+
+def _movimientos_que_bloquean_borrado(origen, product_id):
+    """([movimientos 'Saldo Inicial' que se pueden borrar], n° de movimientos que SÍ bloquean el borrado).
+    Un Saldo Inicial bloquea si tiene documentos adjuntos, proceso por OC o vino de una orden de compra."""
+    Modelo = ProductMovementImportBolts if origen == 'IMPORTBOLTS' else ProductMovement
+    col_doc = MovimientoDocumento.movimiento_ib_id if origen == 'IMPORTBOLTS' else MovimientoDocumento.movimiento_id
+    movs = Modelo.query.filter_by(product_id=product_id).all()
+    con_docs = {r[0] for r in db.session.query(col_doc).filter(col_doc.in_([m.id for m in movs])).all()} if movs else set()
+    iniciales = [m for m in movs if _es_saldo_inicial(m) and m.id not in con_docs
+                 and not m.proceso_oc_id and not getattr(m, 'orden_compra_id', None)]
+    return iniciales, len(movs) - len(iniciales)
 
 
 def _recortar_para_log(texto, largo=97):
@@ -7438,7 +7468,9 @@ MOTIVO_CONSUMO_INTERNO = 'CONSUMO INTERNO'
 OPCIONES_CONSUMO_INTERNO_INICIALES = ['MEJORA DE INFRAESTRUCTURA', 'MANTENIMIENTO / MEJORA DE MÁQUINAS', 'OTRO']
 _COLUMNAS_MOV_NUEVAS = [('proceso_oc_id', 'INTEGER'), ('etapa_proceso', 'VARCHAR(20)'),
                         ('detalle_motivo', 'VARCHAR(100)'), ('observacion', 'VARCHAR(300)'),
-                        ('orden_compra_id', 'INTEGER'), ('orden_item_id', 'INTEGER')]
+                        ('orden_compra_id', 'INTEGER'), ('orden_item_id', 'INTEGER'),
+                        ('venta_servicio', 'BOOLEAN'), ('cliente_ruc', 'VARCHAR(20)'), ('cliente_razon', 'VARCHAR(200)'),
+                        ('oc_cliente', 'VARCHAR(50)'), ('orden_servicio_id', 'INTEGER')]
 _kardex_extras_ok = False
 
 
@@ -7519,8 +7551,10 @@ def _asegurar_kardex_extras():
             for nombre, tipo in faltan:
                 ref = ' REFERENCES proceso_oc(id)' if (nombre == 'proceso_oc_id' and es_pg) else ''
                 conn.execute(text(f'ALTER TABLE {tabla} ADD COLUMN {"IF NOT EXISTS " if es_pg else ""}{nombre} {tipo}{ref}'))
-            if es_pg and any(c[0] == 'proceso_oc_id' for c in faltan):
-                conn.execute(text(f'CREATE INDEX IF NOT EXISTS ix_{tabla}_proceso_oc_id ON {tabla} (proceso_oc_id)'))
+            if es_pg:
+                for col in ('proceso_oc_id', 'oc_cliente', 'orden_servicio_id'):
+                    if any(c[0] == col for c in faltan):
+                        conn.execute(text(f'CREATE INDEX IF NOT EXISTS ix_{tabla}_{col} ON {tabla} ({col})'))
     MovimientoDocumento.__table__.create(bind=db.engine, checkfirst=True)
     # Motivos: qué etapa del proceso por OC marcan (configurable en Catálogos -> Motivos)
     etapa_nueva = 'etapa_oc' not in {c['name'] for c in insp.get_columns('motivo_movimiento')}
@@ -7719,7 +7753,7 @@ def _preparar_extras_movimiento(origen, tipo_kardex, motivo_nombre, prod_id, can
     """Valida TODO lo nuevo del movimiento ANTES de tocar el stock: proceso por OC, consumo interno,
     observación y documentos. Devuelve (extras, None) o (None, mensaje_de_error)."""
     f = request.form
-    extras = {'proceso': None, 'nueva_oc': None, 'etapa': None, 'detalle_motivo': None,
+    extras = {'proceso': None, 'nueva_oc': None, 'etapa': None, 'detalle_motivo': None, 'venta_servicio': None,
               'observacion': ' '.join((f.get('observacion') or '').split())[:300] or None, 'archivos': []}
 
     # --- CONSUMO INTERNO ---
@@ -7736,6 +7770,14 @@ def _preparar_extras_movimiento(origen, tipo_kardex, motivo_nombre, prod_id, can
     sel = (f.get('proceso_oc_id') or '').strip()
     if etapa_motivo == 'AUTO':
         etapa_motivo = _etapa_oc_por_nombre(motivo_nombre, tipo_kardex)
+    # --- SALIDA A SERVICIO QUE SALE COMO VENTA (modulos/kardex/venta_servicio.py): el material no vuelve,
+    #     así que NO se abre proceso por OC; se pide el cliente (y opcionalmente su OC y la Orden de Servicio) ---
+    venta_srv, error_vs = _vs_preparar(f, tipo_kardex, etapa_motivo)
+    if error_vs:
+        return None, error_vs
+    if venta_srv:
+        extras['venta_servicio'] = venta_srv
+        sel, etapa_motivo = '', None
     inicio = tipo_kardex == 'SALIDA' and etapa_motivo == 'INICIO'
     reingreso_obligatorio = tipo_kardex == 'ENTRADA' and etapa_motivo == 'REINGRESO'
     if sel == '__nueva__':
@@ -7815,6 +7857,8 @@ def _aplicar_extras_movimiento(origen, mov, extras, claves):
             mov.referencia = extras['proceso'].numero_oc[:50]
     mov.detalle_motivo = extras['detalle_motivo']
     mov.observacion = extras['observacion']
+    if extras.get('venta_servicio'):
+        _vs_aplicar(mov, extras['venta_servicio'])
     for tipo_doc, archivo, info in extras['archivos']:
         _subir_documento_kardex(origen, mov, tipo_doc, archivo, info, claves)
 
@@ -7849,6 +7893,8 @@ def _guardar_movimiento_con_extras(origen, kardex, extras):
         app.logger.exception("No se pudo guardar el movimiento con sus documentos")
         return False, f'⛔ No se pudo guardar el movimiento (no se registró nada): {e}'
     partes = []
+    if extras.get('venta_servicio'):
+        partes.append(_vs_resumen(kardex))
     if extras['archivos']:
         partes.append(f"{len(extras['archivos'])} documento(s) adjunto(s)")
     if extras['proceso']:
@@ -8216,7 +8262,10 @@ def ver_kardex():
                 ProductMovement.ruc_proveedor.ilike(f"%{busqueda}%"),
                 ProductMovement.razon_social_proveedor.ilike(f"%{busqueda}%"),
                 ProductMovement.detalle_motivo.ilike(f"%{busqueda}%"),
-                ProductMovement.observacion.ilike(f"%{busqueda}%")
+                ProductMovement.observacion.ilike(f"%{busqueda}%"),
+                ProductMovement.oc_cliente.ilike(f"%{busqueda}%"),
+                ProductMovement.cliente_razon.ilike(f"%{busqueda}%"),
+                ProductMovement.cliente_ruc.ilike(f"%{busqueda}%")
             )
         )
 
@@ -8267,7 +8316,8 @@ def ver_kardex():
     #    los Dashboards, que buscan cualquier motivo que contenga la palabra, ej. "venta")
     motivo_filtro = request.args.get('motivo', '').strip()
     if motivo_filtro:
-        query = query.filter(ProductMovement.motivo.ilike(f"%{motivo_filtro}%"))
+        # (las salidas a servicio marcadas como venta cuentan como "venta")
+        query = query.filter(_vs_cond_motivo(ProductMovement.motivo.ilike(f"%{motivo_filtro}%"), ProductMovement, motivo_filtro))
 
     # 9b. Filtro por Motivo exacto del catálogo (selector Tipo -> Motivo de la UI).
     #     Coincidencia exacta por motivo_id: no se mezcla con otros motivos que
@@ -8292,10 +8342,12 @@ def ver_kardex():
     motivo_cat_filtro = request.args.get('motivo_cat', '').strip()
     if motivo_cat_filtro:
         query = query.join(MotivoMovimiento, ProductMovement.motivo_id == MotivoMovimiento.id) \
-                     .filter(MotivoMovimiento.nombre.ilike(f"%{motivo_cat_filtro}%"))
+                     .filter(_vs_cond_motivo(MotivoMovimiento.nombre.ilike(f"%{motivo_cat_filtro}%"), ProductMovement, motivo_cat_filtro))
 
     # 12. Proceso por N° de OC: todo su flujo (salida a proceso, reingreso y salida final)
     query, proceso_filtro = _filtro_kardex_por_oc(query, ProductMovement)
+    # 13. Ventas tras servicio: por N° de OC del cliente, por Orden de Servicio o solo esas ventas
+    query, vs_filtro = _vs_filtro_kardex(query, ProductMovement)
 
     # Totales de TODO el filtro (no solo de la página): movimientos, unidades y toneladas
     # (cantidad x peso nominal, igual que los dashboards) para poder cuadrar contra el KPI.
@@ -8351,6 +8403,8 @@ def ver_kardex():
                            origen_kardex='ANCLAJES',
                            docs_por_mov=docs_por_mov,
                            oc_por_mov=_oc_por_movimientos(movimientos),
+                           os_por_mov=_vs_os_por_movimientos(movimientos), vs_filtro=vs_filtro,
+                           puede_editar_venta=session.get('role') in ROLES_VENTA_SERVICIO,
                            procesos_oc_lista=procesos_oc_lista,
                            proceso_filtro=proceso_filtro,
                            etapas_proceso=ETAPAS_PROCESO,
@@ -10263,7 +10317,10 @@ def ver_kardex_importbolts():
                 ProductMovementImportBolts.ruc_proveedor.ilike(f"%{busqueda}%"),
                 ProductMovementImportBolts.razon_social_proveedor.ilike(f"%{busqueda}%"),
                 ProductMovementImportBolts.detalle_motivo.ilike(f"%{busqueda}%"),
-                ProductMovementImportBolts.observacion.ilike(f"%{busqueda}%")
+                ProductMovementImportBolts.observacion.ilike(f"%{busqueda}%"),
+                ProductMovementImportBolts.oc_cliente.ilike(f"%{busqueda}%"),
+                ProductMovementImportBolts.cliente_razon.ilike(f"%{busqueda}%"),
+                ProductMovementImportBolts.cliente_ruc.ilike(f"%{busqueda}%")
             )
         )
 
@@ -10307,7 +10364,8 @@ def ver_kardex_importbolts():
     # los Dashboards, que buscan cualquier motivo que contenga la palabra, ej. "venta")
     motivo_filtro = request.args.get('motivo', '').strip()
     if motivo_filtro:
-        query = query.filter(ProductMovementImportBolts.motivo.ilike(f"%{motivo_filtro}%"))
+        # (las salidas a servicio marcadas como venta cuentan como "venta")
+        query = query.filter(_vs_cond_motivo(ProductMovementImportBolts.motivo.ilike(f"%{motivo_filtro}%"), ProductMovementImportBolts, motivo_filtro))
 
     # Filtro por Motivo exacto del catálogo (selector Tipo -> Motivo de la UI).
     # Coincidencia exacta por motivo_id: no se mezcla con otros motivos que
@@ -10332,10 +10390,12 @@ def ver_kardex_importbolts():
     motivo_cat_filtro = request.args.get('motivo_cat', '').strip()
     if motivo_cat_filtro:
         query = query.join(MotivoMovimiento, ProductMovementImportBolts.motivo_id == MotivoMovimiento.id) \
-                     .filter(MotivoMovimiento.nombre.ilike(f"%{motivo_cat_filtro}%"))
+                     .filter(_vs_cond_motivo(MotivoMovimiento.nombre.ilike(f"%{motivo_cat_filtro}%"), ProductMovementImportBolts, motivo_cat_filtro))
 
     # 12. Proceso por N° de OC: todo su flujo (salida a proceso, reingreso y salida final)
     query, proceso_filtro = _filtro_kardex_por_oc(query, ProductMovementImportBolts)
+    # 13. Ventas tras servicio: por N° de OC del cliente, por Orden de Servicio o solo esas ventas
+    query, vs_filtro = _vs_filtro_kardex(query, ProductMovementImportBolts)
 
     # Totales de TODO el filtro (no solo de la página): movimientos, unidades y toneladas
     # (cantidad x peso nominal, igual que los dashboards) para poder cuadrar contra el KPI.
@@ -10390,6 +10450,8 @@ def ver_kardex_importbolts():
                            origen_kardex='IMPORTBOLTS',
                            docs_por_mov=docs_por_mov,
                            oc_por_mov=_oc_por_movimientos(movimientos),
+                           os_por_mov=_vs_os_por_movimientos(movimientos), vs_filtro=vs_filtro,
+                           puede_editar_venta=session.get('role') in ROLES_VENTA_SERVICIO,
                            procesos_oc_lista=procesos_oc_lista,
                            proceso_filtro=proceso_filtro,
                            etapas_proceso=ETAPAS_PROCESO,
@@ -14712,13 +14774,15 @@ def _modelo_movimiento_ton(empresa):
 
 def _query_salidas_venta_ton(empresa, f_ini=None, f_fin=None):
     """Movimientos SALIDA registrados manualmente desde el inventario, con motivo
-    de catálogo que contiene 'venta' (ej. Venta, Ventas, Venta Directa...)."""
+    de catálogo que contiene 'venta' (ej. Venta, Ventas, Venta Directa...), más las salidas a
+    servicio (maestranza / transformación) marcadas "sale como venta"."""
     MovModel, ProductModel, join_cond = _modelo_movimiento_ton(empresa)
     q = db.session.query(
         MovModel.cantidad.label('cantidad'),
         (MovModel.cantidad * ProductModel.peso_kg).label('peso_total'),
         MovModel.fecha.label('fecha'),
-        MovModel.razon_social_proveedor.label('destino'),
+        # en la venta tras un servicio (maestranza/transformación) el destino es el cliente, no el taller
+        func.coalesce(MovModel.cliente_razon, MovModel.razon_social_proveedor).label('destino'),
         ProductModel.id.label('producto_id'),
         ProductModel.nombre.label('producto_nombre'),
         ProductModel.sku.label('producto_sku'),
@@ -14729,7 +14793,7 @@ def _query_salidas_venta_ton(empresa, f_ini=None, f_fin=None):
      .filter(
         MovModel.tipo == 'SALIDA',
         MovModel.motivo_id.isnot(None),
-        MotivoMovimiento.nombre.ilike('%venta%')
+        or_(MotivoMovimiento.nombre.ilike('%venta%'), MovModel.venta_servicio.is_(True))
      )
     if f_ini is not None and f_fin is not None:
         q = q.filter(MovModel.fecha.between(f_ini, f_fin))
@@ -15555,9 +15619,11 @@ MODULOS_EN_ARCHIVOS = [
     'modulos/compras/mejores_precios.py',
     'modulos/compras/en_camino.py',
     'modulos/compras/entregas.py',
+    'modulos/compras/certificados.py',
     'modulos/compras/pdf_proveedores_config.py',
     'modulos/compras/requerimientos.py',
     'modulos/compras/vaciar_menu.py',
+    'modulos/kardex/venta_servicio.py',
     'modulos/avisos/notificaciones.py',
     'modulos/avisos/push.py',
 ]

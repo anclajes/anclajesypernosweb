@@ -31,6 +31,8 @@
     {% if session.get('role') in ['admin', 'logistica', 'administracion'] %}
     <a href="{{ url_for('oc_reportes') }}" class="{{ 'activa' if seccion == 'reportes' }}"><i class="bi bi-bar-chart-line"></i> Reportes</a>
     <a href="{{ url_for('oc_precios') }}" class="{{ 'activa' if seccion == 'precios' }}"><i class="bi bi-tags"></i> Mejores precios</a>
+    <a href="{{ url_for('oc_certificados') }}" class="{{ 'activa' if seccion == 'certificados' }}" title="Importaciones a las que les falta subir el certificado de calidad"><i class="bi bi-award"></i> Certificados por subir
+        {% if oc_cert_pend %}<span class="cnt" style="background:#ea580c;">{{ oc_cert_pend }}</span>{% endif %}</a>
     {% endif %}
     {% if session.get('role') in ['admin', 'logistica', 'almacen'] %}
     <a href="{{ url_for('oc_ingresos_pendientes') }}" class="{{ 'activa' if seccion == 'ingresos' }}"><i class="bi bi-box-arrow-in-down"></i> Ingresos pendientes

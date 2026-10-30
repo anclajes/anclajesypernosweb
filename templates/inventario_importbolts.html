@@ -931,6 +931,8 @@
                         <div class="form-text small" style="font-size:.68rem;">Las opciones se administran en Catálogos → Consumo Interno.</div>
                     </div>
 
+                    {% include '_mov_venta_servicio.html' %}
+
                     <!-- PROCESO POR N° DE OC (maestranza / transformación -> reingreso -> salida final) -->
                     <div class="mb-3 d-none kx-proceso-box" id="bloqueProcesoOC">
                         <label class="small fw-bold mb-1" style="color: var(--theme-primary);">
@@ -2329,6 +2331,7 @@ function liberarEnvioMovimiento() {
 }
 
 function reiniciarExtrasMovimiento() {
+    vsReiniciar();
     document.getElementById('bloqueConsumoInterno').classList.add('d-none');
     document.getElementById('bloqueProcesoOC').classList.add('d-none');
     document.getElementById('bloqueNuevaOC').classList.add('d-none');
@@ -2346,7 +2349,7 @@ function reiniciarExtrasMovimiento() {
 function marcarDocsSugeridos(tipo, nombreMotivo) {
     const n = txtSinTildes(nombreMotivo);
     let sug = [];
-    if (modoProcesoOC === 'INICIO') sug = ['NOTA_SALIDA'];
+    if (modoProcesoOC === 'INICIO') sug = vsActivo() ? ['NOTA_SALIDA', 'GUIA'] : ['NOTA_SALIDA'];
     else if (modoProcesoOC === 'REINGRESO' && ocRequerida) sug = ['ORDEN_COMPRA'];
     else if (tipo === 'salida' && n.includes('VENTA')) sug = ['ORDEN_COMPRA', 'GUIA'];
     else if (tipo === 'ingreso' && n.includes('COMPRA')) sug = ['GUIA'];
@@ -2392,12 +2395,14 @@ function actualizarBloquesMotivo(tipo, nombreMotivo, etapaOC) {
 
     // PROCESO POR OC
     // Lo decide la marca "Proceso OC" del motivo en Catálogos (① Inicia una OC / ② Reingreso a una OC)
+    // Salida a maestranza / transformación: si "Sale como VENTA" está marcado, no se abre proceso por OC
+    vsMostrar(!!nombreMotivo && tipo === 'salida' && etapaOC === 'INICIO');
     if (!nombreMotivo) { modoProcesoOC = 'NINGUNO'; ocRequerida = false; }
-    else if (tipo === 'salida' && etapaOC === 'INICIO') { modoProcesoOC = 'INICIO'; ocRequerida = true; }
+    else if (tipo === 'salida' && etapaOC === 'INICIO') { modoProcesoOC = 'INICIO'; ocRequerida = !vsActivo(); }
     else if (tipo === 'ingreso') { modoProcesoOC = 'REINGRESO'; ocRequerida = etapaOC === 'REINGRESO'; }
     else { modoProcesoOC = 'FINAL'; ocRequerida = false; }
     const labelProv = document.getElementById('label_proveedor_seccion');
-    if (modoProcesoOC === 'INICIO') labelProv.innerText = 'Destino: taller o maestranza que recibe el material';
+    if (modoProcesoOC === 'INICIO') labelProv.innerText = vsActivo() ? 'Servicio: taller o maestranza que hace el trabajo' : 'Destino: taller o maestranza que recibe el material';
     else if (ocRequerida) labelProv.innerText = 'Proveedor: taller o maestranza que devuelve el producto';
     else labelProv.innerText = (tipo === 'ingreso') ? 'Proveedor' : 'Destino / Cliente';
     marcarDocsSugeridos(tipo, nombreMotivo);
@@ -2419,7 +2424,7 @@ function cargarProcesosAbiertos() {
     document.getElementById('bloqueNuevaOC').classList.add('d-none');
     document.getElementById('proceso_oc_info').innerHTML = '';
     document.getElementById('docs_oc_existentes').innerHTML = '';
-    if (modoProcesoOC === 'NINGUNO') { bloque.classList.add('d-none'); sel.innerHTML = ''; return; }
+    if (modoProcesoOC === 'NINGUNO' || (modoProcesoOC === 'INICIO' && vsActivo())) { bloque.classList.add('d-none'); sel.innerHTML = ''; return; }
     const prodId = document.getElementById('stock_id').value;
     fetch(`/api/procesos_oc/abiertos?origen=${ORIGEN_MOVIMIENTO}&prod_id=${encodeURIComponent(prodId)}`)
         .then(r => r.json())
@@ -2631,6 +2636,9 @@ document.getElementById('formAjusteStock').addEventListener('submit', function(e
         e.preventDefault(); liberarEnvioMovimiento();
         return Swal.fire('Falta el N° de OC', 'Escribe el número de la nueva OC.', 'warning');
     }
+
+    // Sale como venta (salida a maestranza / transformación): falta el cliente
+    if (!vsValidar()) { e.preventDefault(); liberarEnvioMovimiento(); return; }
 
     // Consumo interno
     const nombreMot = document.getElementById('stock_motivo_texto').value;

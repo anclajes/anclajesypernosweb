@@ -184,6 +184,12 @@ class ProductMovement(db.Model):
     # --- Ingreso hecho desde una Orden de Compra (Ingresos pendientes): enlace a la orden y su ítem (los documentos NO se copian) ---
     orden_compra_id = db.Column(db.Integer, nullable=True, index=True)
     orden_item_id = db.Column(db.Integer, nullable=True)
+    # --- Salida a un servicio (maestranza / transformación) que sale como VENTA: el material ya no vuelve al inventario ---
+    venta_servicio = db.Column(db.Boolean, nullable=True)
+    cliente_ruc = db.Column(db.String(20), nullable=True)        # a quién se le vende
+    cliente_razon = db.Column(db.String(200), nullable=True)
+    oc_cliente = db.Column(db.String(50), nullable=True, index=True)   # N° de OC del cliente (opcional; se puede poner después)
+    orden_servicio_id = db.Column(db.Integer, nullable=True, index=True)   # Orden de Servicio (módulo Compras) del taller
 
     proveedor = db.relationship('Proveedor')
     proceso_oc = db.relationship('ProcesoOC')
@@ -560,6 +566,12 @@ class ProductMovementImportBolts(db.Model):
     # --- Ingreso hecho desde una Orden de Compra (Ingresos pendientes): enlace a la orden y su ítem (los documentos NO se copian) ---
     orden_compra_id = db.Column(db.Integer, nullable=True, index=True)
     orden_item_id = db.Column(db.Integer, nullable=True)
+    # --- Salida a un servicio (maestranza / transformación) que sale como VENTA: el material ya no vuelve al inventario ---
+    venta_servicio = db.Column(db.Boolean, nullable=True)
+    cliente_ruc = db.Column(db.String(20), nullable=True)        # a quién se le vende
+    cliente_razon = db.Column(db.String(200), nullable=True)
+    oc_cliente = db.Column(db.String(50), nullable=True, index=True)   # N° de OC del cliente (opcional; se puede poner después)
+    orden_servicio_id = db.Column(db.Integer, nullable=True, index=True)   # Orden de Servicio (módulo Compras) del taller
 
     proveedor = db.relationship('Proveedor')
     proceso_oc = db.relationship('ProcesoOC')

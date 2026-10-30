@@ -91,6 +91,10 @@
     .motivos label { flex: 1 1 calc(50% - 8px); min-width: 130px; }
     .motivos label small { font-size: .64rem; }
     .cliente-box { border: 1.5px dashed #7dd3fc; background: #f0f9ff; border-radius: 10px; padding: 8px 10px; }
+    .kx-os-form { background: #fff; border: 1.5px solid #ddd6fe; border-radius: 12px; padding: 10px 14px; }
+    .kx-os-form summary { font-weight: 800; font-size: .86rem; color: #6d28d9; cursor: pointer; }
+    .kx-os-form .kxi { display: flex; gap: 8px; align-items: flex-start; border: 1px solid #e2e8f0; border-radius: 9px; padding: 6px 9px; margin-bottom: 4px; font-size: .78rem; cursor: pointer; }
+    .kx-os-form .kxi.mismo { border-color: #86efac; background: #f0fdf4; }
     .aviso-cert { background: #fffbeb; border: 1px solid #fde68a; color: #78350f; border-radius: 8px; padding: 6px 10px; font-size: .74rem; margin-top: 8px; }
     .ayuda-ins { font-size: .72rem; background: #fffbeb; border: 1px solid #fde68a; color: #78350f; border-radius: 10px; padding: 7px 10px; }
     .detr-box { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 10px; padding: 7px 10px; }
@@ -204,7 +208,7 @@
             </div>
             <div class="aviso-cert" id="avisoOS" style="display:none; background:#f5f3ff; border-color:#ddd6fe; color:#4c1d95;"><i class="bi bi-tools"></i> <b>Orden de Servicio</b>: corte, roscado, galvanizado...
                 En cada ítem elige el <b>tipo de servicio</b>. No va a Insumos ni pasa por "Ingresos pendientes": al terminar se da la conformidad y queda el pago.</div>
-            <div class="aviso-cert" id="avisoCert" style="display:none;"><i class="bi bi-award-fill"></i> Compra para el <b>inventario</b>: al dar la conformidad será <b>obligatorio subir el CERTIFICADO DE CALIDAD</b> (pídeselo al proveedor).</div>
+            <div class="aviso-cert" id="avisoCert" style="display:none;"><i class="bi bi-award-fill"></i> <b>Importación</b>: pídele al proveedor el <b>CERTIFICADO DE CALIDAD</b>. No frena la llegada ni el ingreso al inventario, pero quedará como <b>pendiente</b> hasta que se suba.</div>
         </div></div>
 
         <div id="boxImp" class="imp-box mb-3 shadow-sm">
@@ -401,6 +405,16 @@
             <button type="button" class="btn btn-outline-primary w-100" onclick="agregarItem()"><i class="bi bi-plus-circle"></i> Agregar ítem</button>
         </div></div>
 
+        {% if session.get('role') in ['admin', 'logistica'] %}
+        <details class="kx-os-form mb-3" id="kxOsPanel" style="display:none;">
+            <summary><i class="bi bi-arrow-left-right"></i> Movimientos del Kardex ya registrados <span id="kxOsCnt"></span></summary>
+            <div class="small text-muted mt-1">Si el material <b>ya salió</b> del inventario a este taller como <b>venta tras servicio</b> (maestranza / transformación),
+                márcalo para vincularlo a esta orden de servicio. Las salidas del <b>mismo taller</b> van primero.</div>
+            <div id="kxOsVinc" class="small mt-2"></div>
+            <div id="kxOsLista" class="mt-2"></div>
+        </details>
+        {% endif %}
+
         <div class="totales mb-3">
             <div class="fila small"><span>Subtotal</span><span id="tSub">0.00</span></div>
             <div class="fila small" id="tIgvFila"><span id="tIgvLbl">IGV ({{ (igv * 100)|int }}%)</span><span id="tIgv">0.00</span></div>
@@ -590,6 +604,29 @@ function pintarTipo() {
     document.querySelectorAll('#items .i-os-box').forEach(b => b.style.display = os ? '' : 'none');
     pintarDestino();
     if (porId('pagosImp')) pintarImportacion(false);
+    cargarKardexOS();
+}
+// OS: salidas del Kardex (venta tras servicio) que ya se registraron y se pueden vincular a esta orden
+let kxOsCargado = '';
+function cargarKardexOS(forzar) {
+    const panel = porId('kxOsPanel'); if (!panel) return;
+    if (tipo() !== 'OS') { panel.style.display = 'none'; return; }
+    const ruc = (porId('ruc') || {}).value || '';
+    const marcados = new Set([...panel.querySelectorAll('input[name="kardex_mov[]"]:checked')].map(i => i.value));
+    if (!forzar && kxOsCargado === ruc) { panel.style.display = panel.dataset.hay ? '' : 'none'; return; }
+    kxOsCargado = ruc;
+    fetch(`{{ url_for('vs_api_candidatos') }}?orden={{ orden.id if orden else '' }}&ruc=${encodeURIComponent(ruc)}`).then(r => r.json()).then(d => {
+        const lista = d.movimientos || [], vinc = d.vinculados || [];
+        panel.dataset.hay = (lista.length || vinc.length) ? '1' : '';
+        panel.style.display = panel.dataset.hay ? '' : 'none';
+        porId('kxOsCnt').textContent = lista.length ? `(${lista.length} por vincular)` : '';
+        porId('kxOsVinc').innerHTML = vinc.length ? '<b><i class="bi bi-link-45deg"></i> Ya vinculados:</b> ' + vinc.map(v => `${esc(v.sku)} -${v.cantidad} (${esc(v.fecha)})`).join(' · ') : '';
+        porId('kxOsLista').innerHTML = lista.length ? lista.map(k => `<label class="kxi ${k.mismo_taller ? 'mismo' : ''}">
+            <input type="checkbox" class="form-check-input mt-1" name="kardex_mov[]" value="${esc(k.clave)}" ${marcados.has(k.clave) ? 'checked' : ''}>
+            <span><b>${esc(k.sku)}</b> · salió <b>${k.cantidad}</b> · ${esc(k.fecha)} <span class="text-muted">(${esc(k.origen_txt)})</span>${k.mismo_taller ? ' <span class="badge text-bg-success" style="font-size:.58rem;">MISMO TALLER</span>' : ''}
+                <div class="text-muted" style="font-size:.7rem;">Taller: ${esc(k.taller || '—')} · Cliente: ${esc(k.cliente)}${k.oc_cliente ? ' · OC ' + esc(k.oc_cliente) : ''}</div></span></label>`).join('')
+            : '<div class="small text-muted">No hay salidas por vincular.</div>';
+    }).catch(() => {});
 }
 function pintarEntrega() {
     const recojo = porId('em_RECOJO').checked;
@@ -753,6 +790,7 @@ function pintarImportacion(cambio) {
     box.style.display = tipo() === 'OC' ? '' : 'none';
     const imp = esImp();
     document.body.classList.toggle('modo-imp', imp);
+    if (porId('avisoCert')) porId('avisoCert').style.display = imp ? 'block' : 'none';
     porId('boxImpCond').style.display = imp ? 'block' : 'none';
     porId('colCondPago').style.display = imp ? 'none' : '';
     porId('boxDetrWrap').style.display = imp ? 'none' : '';
@@ -834,7 +872,7 @@ function pintarFichas() {
     porId('ayudaIns').style.display = ins ? 'block' : 'none';
     if (porId('btnNuevoInsumo')) porId('btnNuevoInsumo').style.display = ins ? '' : 'none';
     document.querySelectorAll('#items .i-buscar').forEach(b => b.innerHTML = ins ? '<i class="bi bi-tools"></i> Insumos' : '<i class="bi bi-funnel"></i> Inventario');
-    porId('avisoCert').style.display = tipo() === 'OC' && destino() === 'GENERAL' ? 'block' : 'none';
+    porId('avisoCert').style.display = tipo() === 'OC' && esImp() ? 'block' : 'none';
 }
 function vincular(fila, p) {
     fila._prod = p || null;
@@ -1009,6 +1047,7 @@ function cargarProveedor(id) { fetch(`{{ url_for('oc_api_proveedor', prov_id=0) 
 function mostrarProveedor(p, msg) {
     provActual = p;
     porId('oc_proveedor_id').value = p.id; porId('ruc').value = p.ruc; porId('razon_social').value = p.razon_social; porId('direccion').value = p.direccion || '';
+    if (typeof cargarKardexOS === 'function') setTimeout(() => cargarKardexOS(), 0);   // OS: salidas del mismo taller primero
     porId('pc_nombre').textContent = p.razon_social; porId('pc_ruc').textContent = (p.extranjero ? 'Tax ID ' : 'RUC ') + p.ruc; porId('pc_dir').textContent = p.direccion || '';
     const est = [p.sunat_estado, p.sunat_condicion].filter(Boolean);
     porId('btnActSunat').style.display = p.extranjero ? 'none' : '';

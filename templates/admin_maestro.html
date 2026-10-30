@@ -166,7 +166,7 @@
                                 <i class="bi bi-pencil"></i>
                             </button>
                             {% if session.get('role') == 'admin' %}
-                            <button class="btn btn-sm btn-outline-danger" title="Eliminar (solo si no tiene movimientos ni ventas en ningún inventario)"
+                            <button class="btn btn-sm btn-outline-danger" title="Eliminar (solo si no tiene movimientos —aparte del Saldo Inicial— ni ventas en ningún inventario)"
                                     onclick="eliminarProductoMaestro('{{ m.sku }}')">
                                 <i class="bi bi-trash"></i>
                             </button>
@@ -596,7 +596,9 @@ function eliminarProductoMaestro(sku) {
         html: 'Se borra del Maestro y de <b>ambos inventarios</b> (Anclajes e ImportBolts).<br>' +
               'Solo funciona si el código todavía no tiene movimientos de Kardex, ventas/cotizaciones, kits, ' +
               'traslados inter-empresa ni conteos de auditoría en ninguno de los dos inventarios — pensado para ' +
-              'corregir un error de digitación recién creado.<br><br><strong>Esta acción no se puede deshacer.</strong>',
+              'corregir un error de digitación o un código repetido.<br>' +
+              '<span class="text-muted small">El <b>Saldo Inicial</b> (carga del Excel) no cuenta: si es su único movimiento, se borra junto con el código.</span>' +
+              '<br><br><strong>Esta acción no se puede deshacer.</strong>',
         icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Sí, eliminar'
     }).then(result => {
         if (!result.isConfirmed) return;

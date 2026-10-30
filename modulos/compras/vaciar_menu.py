@@ -109,7 +109,8 @@ def _contador_ordenes():
                 'oc_por_ingresar': (len(_items_por_ingresar()) + len(_os_por_seguir())) if rol in ROLES_OC_INGRESAN else 0,
                 'oc_req_pendientes': len(_req_pendientes_de_oc()) if rol in ROLES_REQ_ATIENDEN else 0,
                 'oc_req_novedades': len(_req_novedades(session.get('user_id'), limite=0)) if rol in ROLES_REQ_CREAN else 0,
-                'oc_alertas': alertas}
+                'oc_alertas': alertas,
+                'oc_cert_pend': len(_certificados_pendientes()) if rol in ROLES_OC_VEN else 0}
     except Exception:
         db.session.rollback()
         return {}

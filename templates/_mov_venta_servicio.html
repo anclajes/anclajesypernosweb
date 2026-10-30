@@ -1,0 +1,175 @@
+{# Movimiento de Kardex (inventario Anclajes e Import Bolts): salida a MAESTRANZA / TRANSFORMACIÓN que sale como VENTA.
+   Aparece solo con un motivo de salida que "Inicia una OC" (Catálogos -> Motivos). Ver modulos/kardex/venta_servicio.py #}
+<style>
+    .vs-box { background: #f0fdf4; border: 1.5px solid #86efac; border-radius: 12px; padding: 10px 12px; }
+    .vs-box .form-check-label { color: #14532d; }
+    .vs-box.apagado { background: #f8fafc; border-color: #e2e8f0; }
+    .vs-box.apagado .form-check-label { color: #475569; }
+    .vs-chip { display: flex; align-items: center; gap: 8px; background: #fff; border: 1px solid #bbf7d0; border-radius: 9px; padding: 5px 9px; margin-top: 5px; font-size: .76rem; }
+    .vs-chip b { overflow-wrap: anywhere; }
+    .vs-chip .btn-link { margin-left: auto; color: #b91c1c; font-size: .9rem; }
+    .vs-sug { z-index: 1065; max-height: 220px; overflow-y: auto; }
+    .vs-sug .list-group-item { font-size: .76rem; }
+    .vs-sug .mismo { font-size: .6rem; font-weight: 800; background: #dcfce7; color: #166534; border-radius: 5px; padding: 0 5px; }
+</style>
+<div class="mb-3 d-none vs-box" id="bloqueVentaServicio">
+    <input type="hidden" name="venta_servicio" id="vs_flag" value="">
+    <div class="form-check form-switch m-0">
+        <input class="form-check-input" type="checkbox" role="switch" id="vs_check" checked onchange="vsCambio()">
+        <label class="form-check-label fw-bold small" for="vs_check"><i class="bi bi-cart-check-fill"></i> Sale como VENTA después del servicio</label>
+    </div>
+    <div class="form-text mt-1" id="vs_ayuda" style="font-size:.7rem;"></div>
+    <div id="vs_campos">
+        <label class="small fw-bold mt-2 mb-1"><i class="bi bi-person-badge"></i> Cliente al que se le vende *</label>
+        <div class="position-relative" id="vs_cliente_caja">
+            <div class="input-group input-group-sm">
+                <input type="text" id="vs_cliente_buscar" class="form-control" placeholder="RUC / DNI o nombre del cliente" autocomplete="off" oninput="vsSugerirClientes(this.value)">
+                <button type="button" class="btn btn-outline-primary" onclick="vsBuscarClienteSunat()" title="Buscar en la cartera o en SUNAT"><i class="bi bi-search"></i></button>
+            </div>
+            <div id="vs_cliente_sug" class="list-group position-absolute w-100 shadow-sm vs-sug" style="display:none;"></div>
+        </div>
+        <input type="hidden" name="cliente_ruc" id="vs_cliente_ruc"><input type="hidden" name="cliente_razon" id="vs_cliente_razon">
+        <div id="vs_cliente_elegido" class="vs-chip d-none"></div>
+        <div id="vs_cliente_msg" class="small mt-1"></div>
+
+        <label class="small fw-bold mt-2 mb-1"><i class="bi bi-receipt"></i> N° de OC del cliente <span class="text-muted fw-normal">(opcional)</span></label>
+        <input type="text" name="oc_cliente" id="vs_oc_cliente" maxlength="50" class="form-control form-control-sm text-uppercase" placeholder="Ej: OC-4512 (si llega después, se pone en el Kardex)">
+
+        <label class="small fw-bold mt-2 mb-1"><i class="bi bi-tools"></i> Orden de Servicio del taller <span class="text-muted fw-normal">(opcional)</span></label>
+        <div class="position-relative" id="vs_os_caja">
+            <input type="text" id="vs_os_buscar" class="form-control form-control-sm" placeholder="Busca si ya existe: número, taller o servicio" autocomplete="off"
+                   oninput="vsBuscarOS(this.value)" onfocus="vsBuscarOS(this.value)">
+            <div id="vs_os_sug" class="list-group position-absolute w-100 shadow-sm vs-sug" style="display:none;"></div>
+        </div>
+        <input type="hidden" name="orden_servicio_id" id="vs_os_id">
+        <div id="vs_os_elegida" class="vs-chip d-none"></div>
+        <div class="form-text" style="font-size:.68rem;">Si la OS aún no existe, después se vincula desde el Kardex o desde la misma orden de servicio.</div>
+    </div>
+</div>
+<script>
+// ---------- SALE COMO VENTA (salida a maestranza / transformación) ----------
+let vsTimer = null, vsOsTimer = null;
+function vsEsc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function vsVisible() { return !document.getElementById('bloqueVentaServicio').classList.contains('d-none'); }
+function vsActivo() { return vsVisible() && document.getElementById('vs_check').checked; }
+function vsPintar() {
+    const on = vsActivo();
+    document.getElementById('vs_flag').value = on ? '1' : '';
+    document.getElementById('vs_campos').style.display = on ? '' : 'none';
+    document.getElementById('bloqueVentaServicio').classList.toggle('apagado', !on);
+    document.getElementById('vs_ayuda').innerHTML = on
+        ? 'El material va al taller y de ahí al cliente: <b>no vuelve al inventario</b> (no se abre proceso por OC). En el Kardex sale como <b>VENTA</b>. Abajo, en <b>Proveedor</b>, va el <b>taller</b> que hace el servicio.'
+        : 'Desmarcado: el material <b>vuelve</b> al inventario después del servicio (proceso por OC: salida → reingreso → venta final).';
+}
+function vsMostrar(mostrar) {
+    document.getElementById('bloqueVentaServicio').classList.toggle('d-none', !mostrar);
+    vsPintar();
+}
+function vsCambio() {
+    vsPintar();
+    seleccionarMotivo();     // recalcula proceso por OC, etiqueta del proveedor y documentos sugeridos
+}
+function vsReiniciar() {
+    document.getElementById('vs_check').checked = true;
+    ['vs_cliente_buscar', 'vs_cliente_ruc', 'vs_cliente_razon', 'vs_oc_cliente', 'vs_os_buscar', 'vs_os_id'].forEach(i => document.getElementById(i).value = '');
+    ['vs_cliente_elegido', 'vs_os_elegida'].forEach(i => { const e = document.getElementById(i); e.classList.add('d-none'); e.innerHTML = ''; });
+    document.getElementById('vs_cliente_caja').style.display = '';
+    document.getElementById('vs_os_caja').style.display = '';
+    document.getElementById('vs_cliente_msg').innerHTML = '';
+    vsMostrar(false);
+}
+// --- Cliente (cartera de clientes, clientes usados en órdenes o SUNAT) ---
+function vsElegirCliente(ruc, razon) {
+    document.getElementById('vs_cliente_ruc').value = ruc;
+    document.getElementById('vs_cliente_razon').value = razon;
+    document.getElementById('vs_cliente_sug').style.display = 'none';
+    document.getElementById('vs_cliente_msg').innerHTML = '';
+    document.getElementById('vs_cliente_caja').style.display = 'none';
+    const chip = document.getElementById('vs_cliente_elegido');
+    chip.innerHTML = `<i class="bi bi-person-check-fill text-success"></i><span><b>${vsEsc(razon)}</b><br><span class="text-muted">${vsEsc(ruc)}</span></span>
+        <button type="button" class="btn btn-link p-0" title="Cambiar cliente" onclick="vsQuitarCliente()"><i class="bi bi-x-circle-fill"></i></button>`;
+    chip.classList.remove('d-none');
+}
+function vsQuitarCliente() {
+    document.getElementById('vs_cliente_ruc').value = '';
+    document.getElementById('vs_cliente_razon').value = '';
+    document.getElementById('vs_cliente_elegido').classList.add('d-none');
+    document.getElementById('vs_cliente_caja').style.display = '';
+    document.getElementById('vs_cliente_buscar').focus();
+}
+function vsPintarClientes(lista) {
+    const cont = document.getElementById('vs_cliente_sug');
+    if (!lista.length) { cont.style.display = 'none'; return; }
+    cont.innerHTML = lista.map((c, i) => `<button type="button" class="list-group-item list-group-item-action py-1 px-2" data-i="${i}">
+        <b>${vsEsc(c.ruc)}</b> — ${vsEsc(c.razon)} <span class="text-muted">· ${vsEsc(c.origen || '')}</span></button>`).join('');
+    cont.querySelectorAll('button').forEach(b => b.onclick = () => { const c = lista[+b.dataset.i]; vsElegirCliente(c.ruc, c.razon); });
+    cont.style.display = 'block';
+}
+function vsSugerirClientes(txt, sunat) {
+    clearTimeout(vsTimer);
+    const q = (txt || '').trim();
+    document.getElementById('vs_cliente_msg').innerHTML = '';
+    if (q.length < 2 && !sunat) { document.getElementById('vs_cliente_sug').style.display = 'none'; return; }
+    vsTimer = setTimeout(() => {
+        fetch(`/ordenes/api/cliente?q=${encodeURIComponent(q)}${sunat ? '&sunat=1' : ''}`).then(r => r.json()).then(d => {
+            if (d.status !== 'success') { document.getElementById('vs_cliente_msg').innerHTML = `<span class="text-danger">${vsEsc(d.msg || 'No se encontró')}</span>`; return; }
+            const lista = d.clientes || [];
+            if (sunat && lista.length === 1 && lista[0].ruc === q.replace(/\D/g, '')) return vsElegirCliente(lista[0].ruc, lista[0].razon);
+            if (sunat && !lista.length) document.getElementById('vs_cliente_msg').innerHTML = '<span class="text-danger">No se encontró ese RUC/DNI.</span>';
+            vsPintarClientes(lista);
+        }).catch(() => { document.getElementById('vs_cliente_msg').innerHTML = '<span class="text-danger">No se pudo buscar el cliente.</span>'; });
+    }, sunat ? 0 : 280);
+}
+function vsBuscarClienteSunat() {
+    const q = document.getElementById('vs_cliente_buscar').value.trim();
+    const num = q.replace(/\D/g, '');
+    if (num.length === 8 || num.length === 11) vsSugerirClientes(num, true);
+    else if (q.length >= 2) vsSugerirClientes(q);
+    else document.getElementById('vs_cliente_msg').innerHTML = '<span class="text-muted">Escribe el RUC (11), DNI (8) o el nombre del cliente.</span>';
+}
+// --- Orden de Servicio del taller ---
+function vsElegirOS(o) {
+    document.getElementById('vs_os_id').value = o.id;
+    document.getElementById('vs_os_sug').style.display = 'none';
+    document.getElementById('vs_os_caja').style.display = 'none';
+    const chip = document.getElementById('vs_os_elegida');
+    chip.innerHTML = `<i class="bi bi-tools" style="color:#7c3aed;"></i><span><b>${vsEsc(o.codigo)}</b> · ${vsEsc(o.proveedor)}<br><span class="text-muted">${vsEsc(o.estado)} · ${vsEsc(o.fecha)}${o.detalle ? ' · ' + vsEsc(o.detalle) : ''}</span></span>
+        <button type="button" class="btn btn-link p-0" title="Quitar" onclick="vsQuitarOS()"><i class="bi bi-x-circle-fill"></i></button>`;
+    chip.classList.remove('d-none');
+}
+function vsQuitarOS() {
+    document.getElementById('vs_os_id').value = '';
+    document.getElementById('vs_os_elegida').classList.add('d-none');
+    document.getElementById('vs_os_caja').style.display = '';
+}
+function vsBuscarOS(txt) {
+    clearTimeout(vsOsTimer);
+    vsOsTimer = setTimeout(() => {
+        const ruc = (document.getElementById('input_ruc_proveedor') || {}).value || '';
+        fetch(`/kardex/api/os_buscar?q=${encodeURIComponent((txt || '').trim())}&ruc=${encodeURIComponent(ruc)}`).then(r => r.json()).then(d => {
+            const cont = document.getElementById('vs_os_sug');
+            const lista = d.ordenes || [];
+            cont.innerHTML = lista.length ? lista.map((o, i) => `<button type="button" class="list-group-item list-group-item-action py-1 px-2" data-i="${i}">
+                <b>${vsEsc(o.codigo)}</b> ${o.mismo_taller ? '<span class="mismo">MISMO TALLER</span>' : ''} · ${vsEsc(o.proveedor)}
+                <div class="text-muted">${vsEsc(o.estado)} · ${vsEsc(o.fecha)}${o.cliente ? ' · cliente ' + vsEsc(o.cliente) : ''}${o.detalle ? ' · ' + vsEsc(o.detalle) : ''}</div></button>`).join('')
+                : '<div class="list-group-item text-muted">No hay órdenes de servicio con ese texto.</div>';
+            cont.querySelectorAll('button').forEach(b => b.onclick = () => vsElegirOS(lista[+b.dataset.i]));
+            cont.style.display = 'block';
+        });
+    }, 250);
+}
+document.addEventListener('click', e => {
+    ['vs_cliente_sug', 'vs_os_sug'].forEach(id => {
+        const c = document.getElementById(id);
+        if (c && !c.parentElement.contains(e.target)) c.style.display = 'none';
+    });
+});
+function vsValidar() {
+    if (!vsActivo()) return true;
+    if (!document.getElementById('vs_cliente_ruc').value) {
+        Swal.fire('Falta el cliente', 'Sale como venta: busca y elige el cliente al que se le vende (RUC o DNI). Si el material vuelve al inventario, desmarca "Sale como VENTA".', 'warning');
+        return false;
+    }
+    return true;
+}
+</script>

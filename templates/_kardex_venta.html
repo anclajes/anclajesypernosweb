@@ -1,0 +1,165 @@
+{# Kardex (Anclajes e Import Bolts): salidas a servicio (maestranza / transformación) que salieron como VENTA.
+   Uso: {% import '_kardex_venta.html' as kv with context %}  ·  ver modulos/kardex/venta_servicio.py #}
+
+{% macro estilos() %}
+<style>
+    .kx-venta { display: inline-flex; align-items: center; gap: 4px; font-size: .66rem; font-weight: 800; letter-spacing: .03em; border-radius: 6px; padding: 1px 7px;
+                background: #dcfce7; color: #166534; border: 1px solid #86efac; }
+    .kx-vs { font-size: .74rem; margin-top: 3px; line-height: 1.35; }
+    .kx-vs .lbl { color: #64748b; }
+    .kx-occ { display: inline-flex; align-items: center; gap: 3px; font-weight: 800; color: #0B3D91; text-decoration: none; border-bottom: 1px dashed #93c5fd; }
+    .kx-occ:hover { color: #1d4ed8; }
+    .kx-sin-oc { color: #b45309; font-weight: 700; }
+    .kx-os { display: inline-flex; align-items: center; gap: 3px; font-weight: 700; color: #6d28d9; text-decoration: none; }
+    .kx-vs-edit { font-size: .74rem; }
+    .kv-chip { display: flex; align-items: center; gap: 8px; background: #f5f3ff; border: 1px solid #ddd6fe; border-radius: 9px; padding: 5px 9px; font-size: .76rem; margin-top: 4px; }
+    .kv-chip .btn-link { margin-left: auto; color: #b91c1c; }
+    .kv-sug { z-index: 1065; max-height: 220px; overflow-y: auto; }
+    .kv-sug .list-group-item { font-size: .76rem; }
+    .kv-sug .mismo { font-size: .6rem; font-weight: 800; background: #dcfce7; color: #166534; border-radius: 5px; padding: 0 5px; }
+</style>
+{% endmacro %}
+
+{# Celda "Motivo / Referencia" de una venta tras servicio #}
+{% macro motivo(m, os_por_mov, puede_editar) %}{% set os_ = (os_por_mov or {}).get(m.id) %}
+    <span class="kx-venta" title="Salió a {{ m.motivo }} y se vendió: no vuelve al inventario"><i class="bi bi-cart-check-fill"></i> VENTA</span>
+    <span class="text-muted">tras {{ m.motivo }}</span>{% if m.detalle_motivo %} · <span class="fw-semibold">{{ m.detalle_motivo }}</span>{% endif %}
+    <div class="kx-vs"><span class="lbl">Cliente:</span> <b>{{ m.cliente_razon }}</b> <span class="text-muted">{{ m.cliente_ruc }}</span></div>
+    <div class="kx-vs"><span class="lbl">OC cliente:</span>
+        {% if m.oc_cliente %}<a class="kx-occ" href="{{ url_for(request.endpoint, oc_cliente=m.oc_cliente) }}" title="Ver todas las salidas de esta OC del cliente"><i class="bi bi-receipt"></i> {{ m.oc_cliente }}</a>
+        {% else %}<span class="kx-sin-oc">sin OC</span>{% endif %}
+        {% if os_ %} · <a class="kx-os" href="{{ url_for(request.endpoint, os=os_.id) }}" title="Ver todos los movimientos de esta orden de servicio"><i class="bi bi-tools"></i> {{ oc_codigo(os_) }}</a>
+            {% if session.get('role') in ['admin', 'logistica', 'administracion'] %}<a href="{{ url_for('oc_detalle', orden_id=os_.id) }}" class="text-muted" title="Abrir la orden de servicio"><i class="bi bi-box-arrow-up-right"></i></a>{% endif %}
+        {% endif %}
+        {% if puede_editar %}<button type="button" class="btn btn-link p-0 ms-1 kx-vs-edit" title="Poner o corregir la OC del cliente, el cliente o la orden de servicio"
+            onclick='kvAbrir({{ {"id": m.id, "sku": m.product.sku if m.product else "", "cant": m.cantidad, "oc": m.oc_cliente or "", "ruc": m.cliente_ruc or "",
+                                 "razon": m.cliente_razon or "", "taller_ruc": m.ruc_proveedor or "", "os_id": os_.id if os_ else "",
+                                 "os_txt": (oc_codigo(os_) ~ " · " ~ os_.razon_social) if os_ else ""}|tojson|forceescape }})'>
+            <i class="bi bi-pencil-square"></i>{% if not m.oc_cliente %} Poner OC{% endif %}</button>{% endif %}
+    </div>
+{% endmacro %}
+
+{# Aviso arriba de la tabla cuando se filtra por OC del cliente / Orden de Servicio / solo ventas tras servicio #}
+{% macro banner(vs_filtro) %}{% if vs_filtro %}
+<div class="alert d-flex justify-content-between align-items-center flex-wrap gap-2 py-2 mb-2 shadow-sm" style="background:#f0fdf4; border:1px solid #86efac;">
+    <div class="small">
+        <i class="bi bi-cart-check-fill text-success"></i>
+        {% if vs_filtro.oc_cliente %}Salidas vendidas de la <strong>OC del cliente {{ vs_filtro.oc_cliente }}</strong>{% endif %}
+        {% if vs_filtro.os_id %}{% if vs_filtro.oc_cliente %} · {% endif %}Movimientos de la <strong>{{ oc_codigo(vs_filtro.os) if vs_filtro.os else 'orden de servicio ' ~ vs_filtro.os_id }}</strong>{% if vs_filtro.os %} · {{ vs_filtro.os.razon_social }}{% endif %}{% endif %}
+        {% if vs_filtro.solo and not vs_filtro.oc_cliente and not vs_filtro.os_id %}Solo <strong>ventas tras servicio</strong> (maestranza / transformación){% endif %}
+        <span class="text-muted ms-1">— aquí solo este inventario.</span>
+    </div>
+    {% set _a = request.args.to_dict() %}{% for k in ['oc_cliente', 'os', 'venta_srv', 'page'] %}{% set _ = _a.pop(k, None) %}{% endfor %}
+    <a href="{{ url_for(request.endpoint, **_a) }}" class="btn btn-sm btn-outline-success"><i class="bi bi-x-circle"></i> Quitar filtro</a>
+</div>
+{% endif %}{% endmacro %}
+
+{# Ventana para editar después: OC del cliente, cliente y orden de servicio #}
+{% macro modal(origen) %}
+<div class="modal fade" id="modalKardexVenta" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <form method="POST" id="formKardexVenta" onsubmit="return kvValidar()">
+                <input type="hidden" name="volver" value="{{ request.full_path }}">
+                <div class="modal-header py-2 text-white" style="background:#15803d;">
+                    <h6 class="modal-title fw-bold"><i class="bi bi-cart-check-fill"></i> Venta tras servicio</h6>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="small text-muted mb-2" id="kv_mov"></div>
+                    <label class="small fw-bold mb-1"><i class="bi bi-receipt"></i> N° de OC del cliente</label>
+                    <input type="text" name="oc_cliente" id="kv_oc" maxlength="50" class="form-control form-control-sm text-uppercase mb-1" placeholder="Ej: OC-4512 (vacío = sin OC)">
+                    <div class="form-text mb-2" style="font-size:.68rem;">Con la misma OC se agrupan todas sus salidas en el Kardex (clic en el número).</div>
+
+                    <label class="small fw-bold mb-1"><i class="bi bi-person-badge"></i> Cliente *</label>
+                    <div class="row g-2">
+                        <div class="col-5"><input type="text" name="cliente_ruc" id="kv_ruc" maxlength="11" inputmode="numeric" class="form-control form-control-sm" placeholder="RUC / DNI"></div>
+                        <div class="col-7"><div class="input-group input-group-sm"><input type="text" name="cliente_razon" id="kv_razon" maxlength="200" class="form-control text-uppercase" placeholder="Razón social">
+                            <button type="button" class="btn btn-outline-primary" onclick="kvBuscarCliente()" title="Completar con la cartera o SUNAT"><i class="bi bi-search"></i></button></div></div>
+                    </div>
+                    <div id="kv_cli_msg" class="small mt-1"></div>
+
+                    <label class="small fw-bold mt-3 mb-1"><i class="bi bi-tools"></i> Orden de Servicio del taller <span class="fw-normal text-muted">(opcional)</span></label>
+                    <input type="hidden" name="orden_servicio_id" id="kv_os_id">
+                    <div class="position-relative" id="kv_os_caja">
+                        <input type="text" id="kv_os_buscar" class="form-control form-control-sm" placeholder="Busca la OS: número, taller o servicio" autocomplete="off"
+                               oninput="kvBuscarOS(this.value)" onfocus="kvBuscarOS(this.value)">
+                        <div id="kv_os_sug" class="list-group position-absolute w-100 shadow-sm kv-sug" style="display:none;"></div>
+                    </div>
+                    <div id="kv_os_chip" class="kv-chip d-none"></div>
+                </div>
+                <div class="modal-footer p-2"><button class="btn btn-success w-100 fw-bold" id="kv_btn"><i class="bi bi-save"></i> Guardar</button></div>
+            </form>
+        </div>
+    </div>
+</div>
+<script>
+let kvTallerRuc = '', kvTimer = null;
+function kvEsc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function kvAbrir(d) {
+    const f = document.getElementById('formKardexVenta');
+    f.action = `/kardex/{{ origen }}/movimiento/${d.id}/venta_servicio`;
+    document.getElementById('kv_mov').textContent = `${d.sku} · salida de ${d.cant}`;
+    document.getElementById('kv_oc').value = d.oc;
+    document.getElementById('kv_ruc').value = d.ruc;
+    document.getElementById('kv_razon').value = d.razon;
+    document.getElementById('kv_cli_msg').innerHTML = '';
+    kvTallerRuc = d.taller_ruc || '';
+    if (d.os_id) kvPonerOS(d.os_id, d.os_txt); else kvQuitarOS();
+    document.getElementById('kv_btn').disabled = false;
+    new bootstrap.Modal(document.getElementById('modalKardexVenta')).show();
+    setTimeout(() => document.getElementById('kv_oc').focus(), 350);
+}
+function kvPonerOS(id, txt) {
+    document.getElementById('kv_os_id').value = id;
+    document.getElementById('kv_os_caja').style.display = 'none';
+    document.getElementById('kv_os_sug').style.display = 'none';
+    const chip = document.getElementById('kv_os_chip');
+    chip.innerHTML = `<i class="bi bi-tools" style="color:#7c3aed;"></i><span>${kvEsc(txt)}</span><button type="button" class="btn btn-link p-0" title="Quitar la orden de servicio" onclick="kvQuitarOS()"><i class="bi bi-x-circle-fill"></i></button>`;
+    chip.classList.remove('d-none');
+}
+function kvQuitarOS() {
+    document.getElementById('kv_os_id').value = '';
+    document.getElementById('kv_os_buscar').value = '';
+    document.getElementById('kv_os_chip').classList.add('d-none');
+    document.getElementById('kv_os_caja').style.display = '';
+}
+function kvBuscarOS(txt) {
+    clearTimeout(kvTimer);
+    kvTimer = setTimeout(() => fetch(`/kardex/api/os_buscar?q=${encodeURIComponent((txt || '').trim())}&ruc=${encodeURIComponent(kvTallerRuc)}`).then(r => r.json()).then(d => {
+        const cont = document.getElementById('kv_os_sug');
+        const lista = d.ordenes || [];
+        cont.innerHTML = lista.length ? lista.map((o, i) => `<button type="button" class="list-group-item list-group-item-action py-1 px-2" data-i="${i}">
+            <b>${kvEsc(o.codigo)}</b> ${o.mismo_taller ? '<span class="mismo">MISMO TALLER</span>' : ''} · ${kvEsc(o.proveedor)}
+            <div class="text-muted">${kvEsc(o.estado)} · ${kvEsc(o.fecha)}${o.detalle ? ' · ' + kvEsc(o.detalle) : ''}</div></button>`).join('')
+            : '<div class="list-group-item text-muted">No hay órdenes de servicio con ese texto.</div>';
+        cont.querySelectorAll('button').forEach(b => b.onclick = () => { const o = lista[+b.dataset.i]; kvPonerOS(o.id, `${o.codigo} · ${o.proveedor}`); });
+        cont.style.display = 'block';
+    }), 250);
+}
+function kvBuscarCliente() {
+    const ruc = document.getElementById('kv_ruc').value.replace(/\D/g, '');
+    const msg = document.getElementById('kv_cli_msg');
+    if (ruc.length !== 8 && ruc.length !== 11) { msg.innerHTML = '<span class="text-danger">Escribe el RUC (11) o DNI (8).</span>'; return; }
+    msg.innerHTML = '<span class="text-muted">Buscando...</span>';
+    fetch(`/ordenes/api/cliente?q=${ruc}&sunat=1`).then(r => r.json()).then(d => {
+        const c = (d.clientes || []).find(x => x.ruc === ruc);
+        if (c) { document.getElementById('kv_razon').value = c.razon; msg.innerHTML = `<span class="text-success"><i class="bi bi-check-circle-fill"></i> ${kvEsc(c.origen)}</span>`; }
+        else msg.innerHTML = `<span class="text-danger">${kvEsc(d.msg || 'No se encontró: escribe la razón social.')}</span>`;
+    }).catch(() => { msg.innerHTML = '<span class="text-danger">No se pudo buscar.</span>'; });
+}
+document.addEventListener('click', e => {
+    const c = document.getElementById('kv_os_sug');
+    if (c && !c.parentElement.contains(e.target)) c.style.display = 'none';
+});
+function kvValidar() {
+    const ruc = document.getElementById('kv_ruc').value.replace(/\D/g, '');
+    if ((ruc.length !== 8 && ruc.length !== 11) || document.getElementById('kv_razon').value.trim().length < 3) {
+        Swal.fire('Falta el cliente', 'Escribe el RUC (o DNI) y la razón social del cliente.', 'warning');
+        return false;
+    }
+    const b = document.getElementById('kv_btn'); b.disabled = true; b.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Guardando...';
+    return true;
+}
+</script>
+{% endmacro %}

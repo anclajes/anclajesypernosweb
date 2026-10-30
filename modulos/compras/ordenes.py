@@ -555,6 +555,7 @@ def oc_guardar():
                            if reaprobacion else 'Enviada a Gerencia para aprobación')
                 _notif_orden_enviada(orden, reaprobacion)
             _req_avisar_orden(orden, reqs_antes)
+            vinculados_kardex = _vs_vincular_desde_form(orden, f)     # OS: movimientos del Kardex ya registrados (venta tras servicio)
             registrar_log(f"{'Envió a Gerencia' if enviar else 'Guardó'} la {TIPOS_OC[orden.tipo]} {_oc_codigo(orden)} "
                           f"({orden.razon_social}, {MONEDAS_OC[orden.moneda]['simbolo']} {orden.total:,.2f})", 'bi-cart-check', 'text-primary')
             db.session.commit()
@@ -567,7 +568,8 @@ def oc_guardar():
                 flash('⛔ Otro usuario registró una orden al mismo tiempo. Vuelve a intentarlo.')
                 return redirect(volver)
     flash(f"✅ {_oc_codigo(orden)} " + (f"editada (Rev. {orden.revision}) y enviada otra vez a Gerencia: queda POR APROBAR con tu motivo." if reaprobacion
-                                        else ('enviada a Gerencia para aprobación' if enviar else 'guardada como borrador') + '.'))
+                                        else ('enviada a Gerencia para aprobación' if enviar else 'guardada como borrador') + '.')
+          + (f" Vinculada a {len(vinculados_kardex)} movimiento(s) del Kardex." if vinculados_kardex else ''))
     return redirect(url_for('oc_detalle', orden_id=orden.id))
 
 

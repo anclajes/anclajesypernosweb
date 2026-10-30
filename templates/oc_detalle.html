@@ -94,6 +94,8 @@
     .sol-chip.mot { background: #ede9fe; color: #5b21b6; } .sol-chip.cli { background: #e0f2fe; color: #075985; }
     .sello.atraso { background: #fef2f2; border: 1.5px solid #fca5a5; color: #7f1d1d; }
     .sello.parcial { background: #eff6ff; border: 1.5px solid #93c5fd; color: #1e3a8a; }
+    .sello.cert { background: #fff7ed; border: 1.5px dashed #fb923c; color: #7c2d12; }
+    .doc-tipo .nom .pend-cert { background: #ffedd5; color: #9a3412; border-radius: 6px; padding: 0 6px; font-size: .62rem; font-weight: 800; margin-left: 4px; }
     .parcial-items { display: flex; flex-wrap: wrap; gap: 4px 6px; margin: 4px 0; }
     .parcial-items span { font-size: .76rem; background: #fff; border: 1px solid #bfdbfe; border-radius: 7px; padding: 1px 8px; }
     .parcial-items span.ok { border-color: #86efac; color: #166534; }
@@ -179,6 +181,11 @@
                 <span class="{{ 'ok' if d.pendiente <= 0 else '' }}"><b>{{ d.item.codigo or d.item.descripcion[:30] }}</b>: llegó {{ d.llego|cant }} de {{ d.pedido|cant }} {{ d.item.um }}{% if d.pendiente > 0 %} · <b>faltan {{ d.pendiente|cant }}</b>{% else %} <i class="bi bi-check-lg"></i>{% endif %}</span>{% endfor %}</div>
             <div class="small">{{ rec.entregas|length }} entrega(s) registradas. Lo que ya llegó y tiene conformidad pasa a Almacén sin esperar el resto.
                 Cuando llegue lo que falta, pulsa <b>Registrar otra entrega</b>; si ya no llegará, usa <b>No llegará el resto</b>.</div></div></div>
+    {% endif %}
+    {% if orden.requiere_certificado and orden.estado in ['APROBADA', 'RECIBIDA', 'CONFORME'] and not (docs|selectattr('tipo', 'equalto', 'CERTIFICADO')|list) %}
+        <div class="sello cert mb-2" id="avisoCertificado"><i class="bi bi-award"></i><div><b>Falta subir el certificado de calidad</b> · importación
+            <div class="small">No frena la llegada, la conformidad ni el ingreso al inventario: súbelo apenas lo envíe el proveedor.
+                {% if p.documentos %}<a href="#panelDocs" class="fw-bold">Subirlo ahora <i class="bi bi-arrow-down"></i></a>{% endif %}</div></div></div>
     {% endif %}
     {% if orden.saldo_cerrado_motivo %}
         <div class="sello anul mb-2"><i class="bi bi-scissors"></i><div><b>Saldo cerrado: lo que faltaba ya no llegará</b>
@@ -394,6 +401,47 @@
         </div>
         {% endif %}
 
+        {% if orden.tipo == 'OS' %}{% set kx_os = os_kardex(orden) %}
+        {% set puede_vinc = session.get('role') in ['admin', 'logistica'] and orden.estado not in ['ANULADA', 'RECHAZADA'] %}
+        {% set kx_cand = os_kardex_candidatos(orden) if puede_vinc else [] %}
+        {% if kx_os or kx_cand %}
+        <div class="panel" id="panelKardex">
+            <div class="panel-t"><i class="bi bi-arrow-left-right"></i> Movimientos del Kardex (venta tras servicio)
+                {% if kx_os %}<span class="ms-auto small fw-normal text-muted" style="text-transform:none; letter-spacing:0;">{{ kx_os|length }} movimiento(s) · {{ '{:,.2f}'.format(kx_os|sum(attribute='peso')) }} kg</span>{% endif %}</div>
+            {% if kx_os %}
+            <div class="table-responsive"><table class="table table-sm align-middle mb-2 kx-os-tabla">
+                <thead><tr class="small text-muted"><th>Fecha</th><th>Producto</th><th class="text-end">Salió</th><th>Cliente</th><th>OC cliente</th>{% if puede_vinc %}<th></th>{% endif %}</tr></thead>
+                <tbody>{% for k in kx_os %}<tr class="small">
+                    <td class="text-nowrap">{{ k.fecha }}<div class="text-muted" style="font-size:.66rem;">{{ k.origen_txt }}</div></td>
+                    <td><b>{{ k.sku }}</b><div class="text-muted" style="font-size:.7rem;">{{ k.nombre[:60] }}</div></td>
+                    <td class="text-end num fw-bold">{{ '{:,}'.format(k.cantidad) }}</td>
+                    <td>{{ k.cliente }}<div class="text-muted" style="font-size:.66rem;">{{ k.cliente_ruc }}</div></td>
+                    <td>{% if k.oc_cliente %}<a href="{{ url_for('ver_kardex_importbolts' if k.origen == 'IMPORTBOLTS' else 'ver_kardex', oc_cliente=k.oc_cliente) }}" class="fw-bold">{{ k.oc_cliente }}</a>{% else %}<span class="text-warning-emphasis">sin OC</span>{% endif %}</td>
+                    {% if puede_vinc %}<td class="text-end"><form method="POST" action="{{ url_for('vs_os_desvincular', orden_id=orden.id) }}" class="m-0" onsubmit="return confirmar(this, '¿Quitar este movimiento de la orden? (sigue en el Kardex)')">
+                        <input type="hidden" name="mov" value="{{ k.clave }}"><button class="btn btn-link btn-sm text-danger p-0" title="Quitar de esta orden"><i class="bi bi-x-circle"></i></button></form></td>{% endif %}
+                </tr>{% endfor %}</tbody>
+            </table></div>
+            {% endif %}
+            {% if kx_cand %}
+            <details class="small" {{ 'open' if not kx_os }}>
+                <summary class="fw-bold text-primary" style="cursor:pointer;"><i class="bi bi-link-45deg"></i> Vincular salidas ya registradas en el Kardex ({{ kx_cand|length }})</summary>
+                <div class="text-muted mt-1 mb-2" style="font-size:.72rem;">Salidas a maestranza / transformación que salieron como <b>venta</b> y aún no tienen orden de servicio. Las del <b>mismo taller</b> van primero.</div>
+                <form method="POST" action="{{ url_for('vs_os_vincular', orden_id=orden.id) }}">
+                    <div class="kx-cand">{% for k in kx_cand %}
+                    <label class="d-flex gap-2 align-items-start border rounded-3 p-2 mb-1 {{ 'border-success' if k.mismo_taller }}">
+                        <input type="checkbox" class="form-check-input mt-1" name="movs" value="{{ k.clave }}">
+                        <span class="flex-grow-1"><b>{{ k.sku }}</b> · salió <b>{{ '{:,}'.format(k.cantidad) }}</b> · {{ k.fecha }} <span class="text-muted">({{ k.origen_txt }})</span>
+                            {% if k.mismo_taller %}<span class="badge text-bg-success ms-1" style="font-size:.58rem;">MISMO TALLER</span>{% endif %}
+                            <div class="text-muted" style="font-size:.7rem;">Taller: {{ k.taller or '—' }} · Cliente: {{ k.cliente }}{% if k.oc_cliente %} · OC {{ k.oc_cliente }}{% endif %}</div></span>
+                    </label>{% endfor %}</div>
+                    <button class="btn btn-sm btn-primary mt-1"><i class="bi bi-link-45deg"></i> Vincular los marcados</button>
+                </form>
+            </details>
+            {% endif %}
+        </div>
+        {% endif %}
+        {% endif %}
+
         {% if observaciones %}
         <div class="panel">
             <div class="panel-t"><i class="bi bi-chat-left-text"></i> Observaciones registradas</div>
@@ -448,11 +496,11 @@
             {% endif %}
         </div>
 
-        <div class="panel">
+        <div class="panel" id="panelDocs">
             <div class="panel-t"><i class="bi bi-paperclip"></i> Documentos
                 {% if docs|selectattr('tipo', 'equalto', 'FACTURA')|list %}<a class="ms-auto btn btn-sm btn-outline-primary py-0" style="text-transform:none; letter-spacing:0;" href="{{ url_for('oc_comparar', orden_id=orden.id) }}"><i class="bi bi-layout-split"></i> Factura vs OC</a>{% endif %}</div>
             <div class="form-text mb-2" style="font-size:.7rem;">Se pueden subir <b>en cualquier momento</b> (la cotización desde el inicio; guía, factura y certificado apenas lleguen).
-                Para la conformidad es obligatoria la <b>guía o la factura</b>{% if orden.requiere_certificado %} y el <b>certificado de calidad</b>{% endif %}; para marcarla pagada, la <b>factura</b>. PDF o foto, máx. 5MB.</div>
+                Para la conformidad es obligatoria la <b>guía o la factura</b>; para marcarla pagada, la <b>factura</b>. El <b>certificado de calidad</b> es opcional{% if orden.requiere_certificado %} (en importaciones queda como <b>pendiente</b> hasta que se suba){% endif %}. PDF o foto, máx. 5MB.</div>
             <div class="docs-grid">
             {% for tipo, nombre, icono, campo in [('GUIA', 'Guía de remisión', 'bi-truck', 'numero_guia'), ('FACTURA', 'Factura', 'bi-receipt', 'numero_factura'),
                                                    ('CERTIFICADO', 'Certificado de calidad', 'bi-award', None), ('COTIZACION', 'Cotización', 'bi-file-earmark-text', None),
@@ -465,7 +513,7 @@
                     <div class="flex-grow-1" style="min-width:0;">
                         <div class="nom">{{ nombre }}
                             {% if tipo in ['GUIA', 'FACTURA'] %}{% if lista %}<span class="ok">adjunta</span>{% elif orden.estado in ['RECIBIDA'] %}<span class="falta">falta</span>{% endif %}{% endif %}
-                            {% if tipo == 'CERTIFICADO' and orden.requiere_certificado %}{% if lista %}<span class="ok">adjunto</span>{% else %}<span class="oblig">obligatorio</span>{% endif %}{% endif %}</div>
+                            {% if tipo == 'CERTIFICADO' and orden.requiere_certificado %}{% if lista %}<span class="ok">adjunto</span>{% else %}<span class="pend-cert">PENDIENTE</span>{% endif %}{% endif %}</div>
                         {% if campo %}<div class="nro">N° <b>{{ orden[campo] or '—' }}</b>
                             {% if p.documentos and not (tipo == 'GUIA' and rec.entregas|length > 1) %}<button type="button" class="btn btn-link btn-sm p-0 ms-1" style="font-size:.7rem;" onclick="editarNumero('{{ campo }}', '{{ nombre }}', {{ (orden[campo] or '')|tojson|forceescape }})"><i class="bi bi-pencil"></i></button>{% endif %}</div>
                         {% elif tipo == 'COTIZACION' and orden.cotizacion %}<div class="nro">N° <b>{{ orden.cotizacion }}</b></div>{% endif %}
@@ -511,7 +559,7 @@
                                    'KARDEX': 'Todo ingresado al inventario', 'INGRESO_ITEM': 'Ítem ingresado al inventario', 'INGRESO_DESHECHO': 'Se quitó una marca de ingreso',
                                    'INSUMOS': 'Insumos internos', 'PAGO': 'Marcada como PAGADA', 'PAGO_DESHECHO': 'Se quitó la marca de pagada', 'SEGUIMIENTO': 'Seguimiento de la OS (Almacén)',
                                    'EDITADA_APROBADA': 'EDITADA DESPUÉS DE APROBADA (vuelve a Gerencia)',
-                                   'EMPRESA': 'Cambio de empresa',
+                                   'EMPRESA': 'Cambio de empresa', 'KARDEX_OS': 'Kardex vinculado (venta tras servicio)',
                                    'SALDO_CERRADO': 'No llegará el resto (saldo cerrado)'}.get(ev.accion, ev.accion) }}</div>
                 <div class="s">{{ ev.fecha.strftime('%d/%m/%Y %H:%M') }} · <b>{{ ev.usuario.nombre_completo if ev.usuario else 'Sistema' }}</b></div>
                 {% if ev.detalle %}<div class="s">{{ ev.detalle }}</div>{% endif %}
@@ -604,7 +652,7 @@
     <div class="form-text mb-1" style="margin-top:-4px;"><i class="bi bi-info-circle"></i> Cada entrega tiene <b>su propia guía</b>. La factura, la cotización y la OC son una sola para toda la orden{% if orden.numero_factura %} (ya está guardada){% endif %}.</div>
     {{ campo_doc('GUIA', 'Guía de remisión de esta entrega', icono='bi-truck', lista_ext=([] if rec.entregas else none)) }}
     {{ campo_doc('FACTURA', 'Factura', icono='bi-receipt') }}
-    {% if orden.tipo == 'OC' %}{{ campo_doc('CERTIFICADO', 'Certificado de calidad' ~ (' (obligatorio para la conformidad)' if orden.requiere_certificado else ''), icono='bi-award') }}{% endif %}
+    {% if orden.tipo == 'OC' %}{{ campo_doc('CERTIFICADO', 'Certificado de calidad' ~ (' (si ya lo tienes; si no, súbelo después)' if orden.requiere_certificado else ''), icono='bi-award') }}{% endif %}
     <label class="small fw-bold">Nota (opcional)</label><textarea name="nota" class="form-control" rows="2" maxlength="500" placeholder="Ej: llegaron en 2 cajas, transportista Juan"></textarea>
     <div class="form-text">Después de revisar{{ ' el servicio' if orden.tipo == 'OS' else ' el material' }}, da la <b>conformidad de esta entrega</b>. Si la factura llega después, adjúntala luego.</div>
 </div><div class="modal-footer p-2"><button class="btn btn-primary w-100 fw-bold"><i class="bi bi-truck"></i> {{ 'Registrar entrega' if orden.tipo == 'OS' else 'Registrar llegada' }}</button></div></form>
@@ -631,9 +679,9 @@
     {% set hay_cert = docs|selectattr('tipo', 'equalto', 'CERTIFICADO')|list %}
     {{ campo_doc('GUIA', 'Guía de remisión' ~ (' de la entrega ' ~ ec.numero if rec.entregas|length > 1 else ''), oblig=not hay_doc, icono='bi-truck', lista_ext=guias_ec) }}
     {{ campo_doc('FACTURA', 'Factura', oblig=not hay_doc, icono='bi-receipt') }}
-    {% if orden.requiere_certificado %}{{ campo_doc('CERTIFICADO', 'Certificado de calidad', oblig=not hay_cert, icono='bi-award') }}{% endif %}
-    {% if not hay_doc or (orden.requiere_certificado and not hay_cert) %}<div class="alert alert-warning py-1 px-2 small mb-2"><i class="bi bi-exclamation-triangle-fill"></i> Obligatorio: adjunta aquí
-        {% if not hay_doc %}la <b>guía o la factura</b>{% endif %}{% if not hay_doc and orden.requiere_certificado and not hay_cert %} y {% endif %}{% if orden.requiere_certificado and not hay_cert %}el <b>certificado de calidad</b> (compra para el inventario){% endif %}.</div>{% endif %}
+    {% if orden.tipo == 'OC' %}{{ campo_doc('CERTIFICADO', 'Certificado de calidad', icono='bi-award') }}{% endif %}
+    {% if not hay_doc %}<div class="alert alert-warning py-1 px-2 small mb-2"><i class="bi bi-exclamation-triangle-fill"></i> Obligatorio: adjunta aquí la <b>guía o la factura</b>.</div>{% endif %}
+    {% if orden.requiere_certificado and not hay_cert %}<div class="small mb-2" style="color:#9a3412;"><i class="bi bi-award"></i> Falta el <b>certificado de calidad</b> de esta importación: si aún no llega, da la conformidad igual y súbelo después.</div>{% endif %}
     <div class="small fw-bold mb-1"><i class="bi bi-check2-square"></i> Revisión</div>
     <p class="small text-muted mb-2">Marca solo si revisaste todo. Queda registrado con tu nombre, fecha y hora.</p>
     {% set chks = [('chk_estado', 'El servicio se hizo bien', 'Medidas, acabado y calidad como se pidió'), ('chk_cantidad', 'La cantidad es la correcta', 'Coincide con lo pedido en la orden'),
@@ -725,7 +773,6 @@ document.getElementById('formLlegada')?.addEventListener('submit', function (e) 
     const completa = ins.every(i => Math.abs((parseFloat(i.value) || 0) - parseFloat(i.dataset.max)) < 1e-6);
     if (completa) { this.querySelector('input[name=modo][value=TOTAL]').checked = true; }
 });
-const PIDE_CERT = {{ 'true' if orden.requiere_certificado and not (docs|selectattr('tipo', 'equalto', 'CERTIFICADO')|list) else 'false' }};
 const HAY_FACTURA = {{ 'true' if docs|selectattr('tipo', 'equalto', 'FACTURA')|list else 'false' }};
 document.getElementById('formConforme')?.addEventListener('submit', function (e) {
     if ([...this.querySelectorAll('input[type=checkbox]')].some(c => !c.checked)) {
@@ -733,9 +780,6 @@ document.getElementById('formConforme')?.addEventListener('submit', function (e)
     }
     if (!HAY_DOC && !this.doc_GUIA.files.length && !this.doc_FACTURA.files.length) {
         e.preventDefault(); return Swal.fire('Falta un documento', 'Adjunta la guía o la factura (PDF o foto).', 'warning');
-    }
-    if (PIDE_CERT && !this.doc_CERTIFICADO.files.length) {
-        e.preventDefault(); return Swal.fire('Falta el certificado de calidad', 'Es una compra para el inventario: adjunta el certificado de calidad (PDF o foto).', 'warning');
     }
 });
 document.getElementById('formPagar')?.addEventListener('submit', function (e) {

@@ -32,15 +32,22 @@ modulos/
                          lo que viene en OC aprobadas (en camino / llegó / por sumar / sumado hace X días) y la línea de tiempo
     entregas.py          llegadas totales/parciales, conformidad, pago y factura, cuentas bancarias,
                          cliente, ingresos pendientes al inventario e ingreso al Kardex
+    certificados.py      CERTIFICADOS POR SUBIR (/ordenes/certificados): importaciones sin certificado de calidad
+                         (el certificado es opcional: nunca frena la conformidad ni el ingreso)
     pdf_proveedores_config.py   PDF de la orden, proveedores y contactos, buscador de productos, configuración
     requerimientos.py    requerimientos de compra (Inventario General o Insumos internos), seguimiento, novedades
     vaciar_menu.py       vaciar datos de órdenes (pruebas) y los números del menú
+  kardex/              KARDEX (lo nuevo; el resto del Kardex sigue en app.py)
+    venta_servicio.py    salida a MAESTRANZA / TRANSFORMACIÓN que sale como VENTA (cliente, OC del cliente opcional y
+                         editable después) y su vínculo con las Órdenes de Servicio (desde el movimiento, el Kardex o la OS)
   avisos/              CAMPANA Y AVISOS
     modelos.py           Notificacion, NotificacionConfig, PushSuscripcion
     notificaciones.py    tipos de aviso, configuración por usuario, API de la campana, aprobación rápida
     push.py              aviso de Windows con la página cerrada (Web Push, /sw.js)
 templates/             plantillas (todas en una carpeta; prefijos: oc_*, insumos_*, notificaciones, _campana...)
                        _en_camino.html: panel, botones por producto y ventana de "En camino" (se usa en los 3 inventarios)
+                       _mov_venta_servicio.html: bloque "Sale como VENTA" del Movimiento de Kardex (los 2 inventarios)
+                       _kardex_venta.html: cómo se ve la venta tras servicio en los 2 Kardex y su ventana de edición
 ```
 
 ## Cómo se cargan los archivos de `modulos/`
@@ -86,10 +93,19 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
 
 - Precio por pieza (USD/PCS, hasta 7 decimales) como la factura comercial; se guarda también el precio por 1000 piezas (derivado).
   Las órdenes antiguas (por 1000 piezas) ya tienen su precio por pieza en `precio_unitario`.
+- Certificado de calidad: opcional. En importaciones queda "pendiente" (aviso en la orden y lista "Certificados por subir").
 - Proveedor del exterior sin Tax ID: se guarda con un código temporal `SINTAXID001...` y se completa desde la orden
   ("Completar Tax ID"); se corrige también en sus órdenes.
 - Requerimientos: los crean admin, logistica, almacen y almacen_visor; los atienden admin y logistica.
 - Insumos: editan admin, almacen y logistica.
+
+## Kardex
+
+- Salida con motivo que "Inicia una OC" (Catálogos → Motivos, ej. REQUERIMIENTO DE MAESTRANZA): por defecto **sale como VENTA**
+  (no se abre proceso por OC). Pide el cliente; la OC del cliente y la Orden de Servicio son opcionales y se completan después
+  desde el Kardex (lápiz). En el Kardex sale como VENTA y cuenta en los dashboards de ventas (toneladas).
+  Filtros: `?oc_cliente=`, `?os=`, `?venta_srv=1`. Desmarcada, sigue el proceso por OC de siempre (salida → reingreso → venta final).
+- Borrar un código del Maestro: el "Saldo Inicial" (carga del Excel) no cuenta como movimiento; si es el único, se borra con el código.
 
 ## Pruebas (en el entorno de Claude)
 

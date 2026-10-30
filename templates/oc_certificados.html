@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Certificados por subir{% endblock %}
+{% block subtitle %}Importaciones a las que les falta el certificado de calidad{% endblock %}
+{% block content %}
+{% include '_oc_nav.html' %}
+<style>
+    .cert-info { background: #fff7ed; border: 1px solid #fed7aa; color: #7c2d12; border-radius: 12px; padding: 10px 14px; font-size: .8rem; margin-bottom: 12px; }
+    .cert-tabla { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; overflow: hidden; }
+    .cert-fila { display: grid; grid-template-columns: minmax(150px, 1.1fr) minmax(0, 2fr) minmax(130px, .9fr) minmax(190px, 1fr); gap: 8px 16px;
+                 align-items: center; padding: 11px 14px; border-bottom: 1px solid #f1f5f9; }
+    .cert-fila:last-child { border-bottom: 0; }
+    .cert-cab { background: #f8fafc; font-size: .66rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: #64748b; padding-top: 8px; padding-bottom: 8px; }
+    .cert-fila .prov { font-weight: 700; font-size: .84rem; overflow-wrap: anywhere; }
+    .cert-fila .its { font-size: .72rem; color: #64748b; margin-top: 2px; overflow-wrap: anywhere; }
+    .lleg { font-size: .74rem; font-weight: 800; border-radius: 20px; padding: 2px 9px; white-space: nowrap; display: inline-block; }
+    .lleg.camino { background: #eff6ff; color: #1d4ed8; }
+    .lleg.llego { background: #fef3c7; color: #92400e; }
+    .lleg.viejo { background: #fee2e2; color: #991b1b; }
+    .cert-sub { display: flex; gap: 6px; align-items: center; justify-content: flex-end; }
+    .cert-sub label.btn { position: relative; overflow: hidden; }
+    .cert-sub input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+    .cert-vacio { text-align: center; padding: 40px 16px; color: #64748b; }
+    .cert-vacio .bi { font-size: 2.4rem; color: #16a34a; }
+    @media (max-width: 767.98px) {
+        .cert-fila { grid-template-columns: 1fr; gap: 4px; }
+        .cert-cab { display: none; }
+        .cert-sub { justify-content: flex-start; margin-top: 4px; }
+    }
+</style>
+
+<div class="cert-info"><i class="bi bi-award-fill"></i>
+    El certificado de calidad es <b>opcional</b>: no frena la llegada, la conformidad ni el ingreso al inventario.
+    En las <b>importaciones</b> queda aquí como pendiente hasta que se suba (también se puede subir desde la orden, en Documentos).</div>
+
+<div class="cert-tabla">
+    {% if filas %}
+    <div class="cert-fila cert-cab"><div>Orden</div><div>Proveedor y productos</div><div>Llegada</div><div class="text-md-end">Certificado</div></div>
+    {% for f in filas %}{% set o = f.orden %}{% set est = estados.get(o.estado, {}) %}
+    <div class="cert-fila" id="cert{{ o.id }}">
+        <div>
+            <a href="{{ url_for('oc_detalle', orden_id=o.id) }}" class="oc-num"><span class="oc-tipo {{ o.tipo }}">{{ o.tipo }}</span> {{ oc_numero_txt(o) }}</a>
+            <div class="small text-muted">{{ (o.empresa or 'ANCLAJES')|title }}{% if f.aprobada %} · aprobada {{ f.aprobada.strftime('%d/%m/%Y') }}{% endif %}</div>
+        </div>
+        <div>
+            <div class="prov">{{ o.razon_social }}</div>
+            <div class="its">{% for i in o.items[:3] %}{{ i.codigo or i.descripcion[:40] }}{{ ', ' if not loop.last }}{% endfor %}{% if o.items|length > 3 %} y {{ o.items|length - 3 }} más{% endif %}</div>
+        </div>
+        <div>
+            {% if f.llego %}
+            <span class="lleg {{ 'viejo' if f.dias > 15 else 'llego' }}" title="{{ est.txt }}"><i class="bi bi-box-seam"></i> Llegó {{ f.llego.strftime('%d/%m/%Y') }}</span>
+            <div class="small text-muted mt-1">{{ 'hoy' if f.dias == 0 else ('hace ' ~ f.dias ~ ' día' ~ ('s' if f.dias != 1 else '')) }} · {{ est.txt }}</div>
+            {% else %}
+            <span class="lleg camino"><i class="bi bi-truck"></i> En camino</span>
+            <div class="small text-muted mt-1">aún no llega</div>
+            {% endif %}
+        </div>
+        <div class="cert-sub">
+            {% if puede_subir %}
+            <form method="POST" action="{{ url_for('oc_documento', orden_id=o.id) }}" enctype="multipart/form-data" class="m-0">
+                <input type="hidden" name="tipo" value="CERTIFICADO"><input type="hidden" name="volver" value="certificados">
+                <label class="btn btn-sm btn-warning fw-bold"><i class="bi bi-upload"></i> Subir certificado
+                    <input type="file" name="doc_CERTIFICADO" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*" onchange="subirCertificado(this)"></label>
+            </form>
+            {% else %}<span class="small text-muted">Lo sube Logística</span>{% endif %}
+        </div>
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="cert-vacio"><i class="bi bi-patch-check-fill"></i>
+        <div class="fw-bold mt-2">No hay certificados pendientes</div>
+        <div class="small">Todas las importaciones aprobadas tienen su certificado de calidad.</div></div>
+    {% endif %}
+</div>
+
+<script>
+function subirCertificado(input) {
+    const f = input.files && input.files[0];
+    if (!f) return;
+    const ext = (f.name.split('.').pop() || '').toLowerCase();
+    let error = '';
+    if (!['pdf', 'jpg', 'jpeg', 'png', 'webp'].includes(ext)) error = 'Solo PDF o foto (JPG, PNG, WEBP).';
+    else if (f.size > {{ max_bytes }}) error = `El archivo pesa ${(f.size / 1048576).toFixed(1)}MB y el máximo es 5MB.`;
+    if (error) { input.value = ''; return Swal.fire({ icon: 'warning', title: 'Archivo no permitido', text: error }); }
+    const lbl = input.closest('label');
+    lbl.classList.add('disabled');
+    lbl.firstElementChild.className = 'spinner-border spinner-border-sm';
+    input.form.submit();
+}
+</script>
+{% endblock %}

@@ -124,7 +124,7 @@
                     <option value="{{ k }}" {{ 'selected' if k == pago_f }}>{{ t }}</option>{% endfor %}</select></div>
             <div class="col-6 col-md-3 col-xl-2"><label>Documentos</label>
                 <select name="docs" class="form-select form-select-sm auto"><option value="">Todos</option>
-                    {% for k, t in [('sin_factura', 'Sin factura'), ('sin_guia', 'Sin guía'), ('sin_certificado', 'Sin certificado (obligatorio)')] %}
+                    {% for k, t in [('sin_factura', 'Sin factura'), ('sin_guia', 'Sin guía'), ('sin_certificado', 'Certificado pendiente (importación)')] %}
                     <option value="{{ k }}" {{ 'selected' if k == docs_f }}>{{ t }}</option>{% endfor %}</select></div>
             <div class="col-6 col-md-3 col-xl-2"><label>Desde</label><input type="date" name="desde" class="form-control form-control-sm auto" value="{{ desde.isoformat() if desde else '' }}"></div>
             <div class="col-6 col-md-3 col-xl-2"><label>Hasta</label><input type="date" name="hasta" class="form-control form-control-sm auto" value="{{ hasta.isoformat() if hasta else '' }}"></div>
@@ -191,7 +191,7 @@
     {% endfor %}
     {% if o.requiere_certificado or 'CERTIFICADO' in tp %}{% set d = ds|selectattr('tipo', 'equalto', 'CERTIFICADO')|first %}
     {% if d %}<a class="dm ok" href="{{ url_for('oc_documento_ver', doc_id=d.id) }}" target="_blank" title="Certificado de calidad">CC</a>
-    {% else %}<span class="dm {{ 'oblig' if o.estado in ['RECIBIDA'] else 'no' }}" title="Falta el certificado de calidad (obligatorio)">CC</span>{% endif %}{% endif %}
+    {% else %}<span class="dm {{ 'oblig' if o.estado in ['RECIBIDA', 'CONFORME'] else 'no' }}" title="Falta subir el certificado de calidad (importación · no frena el flujo)">CC</span>{% endif %}{% endif %}
     {% if vista == 'conformes' %}
     {% if o.numero_guia %}<div class="sub">Guía {{ o.numero_guia }}</div>{% endif %}
     {% if o.numero_factura %}<div class="sub">Fact. {{ o.numero_factura }}</div>{% endif %}
