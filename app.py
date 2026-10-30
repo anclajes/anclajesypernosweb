@@ -4051,8 +4051,18 @@ def _filtro_hace(fecha):
     return fecha.strftime('%d/%m/%y %H:%M')
 
 # --- MODIFICAR LA RUTA NUEVA_VENTA EN APP.PY ---
+ROLES_COTIZAN = ['admin', 'administracion']   # por ahora el Vendedor no hace cotizaciones (módulo en pruebas)
+
+
 @app.route('/nueva_venta', methods=['GET', 'POST'])
 def nueva_venta():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    if session.get('role') not in ROLES_COTIZAN:
+        if request.method == 'POST':
+            return {'status': 'error', 'msg': 'Las cotizaciones están desactivadas por ahora para tu usuario.'}, 403
+        flash('Las cotizaciones están desactivadas por ahora.')
+        return redirect(url_for('index'))
     # --- MÉTODO POST (GUARDAR COTIZACIÓN) ---
     if request.method == 'POST':
         try:
@@ -9463,6 +9473,71 @@ def anular_cotizacion(order_id):
     
     db.session.commit()
     return {'status': 'success', 'msg': 'Cotización anulada correctamente.'}
+
+# --- BORRAR DEFINITIVAMENTE UNA COTIZACIÓN DE PRUEBA (solo Gerencia) ---
+ESTADOS_COT_NO_BORRABLES = ['Despachado', 'Entregado', 'Devuelto', 'Despacho Cancelado']
+
+
+def _cotizacion_bloqueos_borrado(orden):
+    """Lo que impide borrar una cotización: si movió stock, tiene pagos o traslados, es una venta real."""
+    codigo = f"COT-{orden.id:05d}"
+    bloqueos = []
+    if orden.estado in ESTADOS_COT_NO_BORRABLES:
+        bloqueos.append(f'está "{orden.estado}"')
+    n = sum(M.query.filter(M.motivo.like(f'%{codigo}%')).count() for M in (ProductMovement, ProductMovementImportBolts))
+    if n:
+        bloqueos.append(f'{n} movimiento(s) en el Kardex')
+    if Payment.query.filter_by(order_id=orden.id).count():
+        bloqueos.append('pagos registrados')
+    if IntercompanyTransfer.query.filter_by(order_id=orden.id).count():
+        bloqueos.append('traslados inter-empresa')
+    return bloqueos
+
+
+@app.route('/api/eliminar_cotizacion/<int:order_id>', methods=['POST'])
+def eliminar_cotizacion_prueba(order_id):
+    """Borra por completo una cotización de PRUEBA (con sus ítems y su PDF de OC) para que sus productos ya no queden
+    "ligados" a ella (por ejemplo, para poder borrar un código duplicado del Maestro). Solo si no movió stock ni tiene pagos.
+    Después, la numeración sigue desde la última cotización que queda (si no queda ninguna, vuelve a empezar en 1)."""
+    if session.get('role') != 'admin':
+        return {'status': 'error', 'msg': 'Solo Gerencia puede borrar cotizaciones.'}, 403
+    orden = Order.query.get_or_404(order_id)
+    codigo = f"COT-{orden.id:05d}"
+    if ((request.get_json(silent=True) or {}).get('confirmar') or '').strip().upper() != codigo:
+        return {'status': 'error', 'msg': f'Escribe {codigo} para confirmar.'}, 400
+    bloqueos = _cotizacion_bloqueos_borrado(orden)
+    if bloqueos:
+        return {'status': 'error', 'msg': f'No se puede borrar {codigo}: ' + ', '.join(bloqueos) + '. Es una venta real: anúlala en vez de borrarla.'}
+    try:
+        archivo = orden.archivo_oc
+        detalles = OrderDetail.query.filter_by(order_id=orden.id).all()
+        ids_det = [d.id for d in detalles]
+        if ids_det:
+            OrderKitComponent.query.filter(OrderKitComponent.order_detail_id.in_(ids_det)).delete(synchronize_session=False)
+        for d in detalles:
+            db.session.delete(d)
+        db.session.flush()
+        cliente = orden.cliente.nombre if orden.cliente else ''
+        total = f"{orden.moneda or 'PEN'} {orden.total or 0:,.2f}"
+        db.session.delete(orden)
+        db.session.flush()
+        # La numeración (COT-000NN = id) sigue desde la última cotización que queda
+        if db.engine.dialect.name == 'postgresql':
+            db.session.execute(text("SELECT setval(pg_get_serial_sequence('\"order\"', 'id'), "
+                                    "COALESCE((SELECT MAX(id) FROM \"order\"), 0) + 1, false)"))
+        registrar_log(f"BORRÓ la cotización de prueba {codigo} ({cliente}, {total}, {len(detalles)} ítem(s))", 'bi-trash3-fill', 'text-danger')
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        return {'status': 'error', 'msg': f'No se pudo borrar: {e}'}, 500
+    if archivo:
+        try:
+            s3_client.delete_object(Bucket=S3_BUCKET_NAME, Key=archivo)
+        except Exception as e:
+            print(f"Aviso: no se pudo borrar el PDF de la OC de {codigo} en S3: {e}")
+    siguiente = (db.session.query(func.max(Order.id)).scalar() or 0) + 1
+    return {'status': 'success', 'msg': f'{codigo} borrada con sus {len(detalles)} ítem(s). La próxima cotización será la COT-{siguiente:05d}.'}
+
 
 # =======================================================
 # MÓDULO DE ALMACÉN: PICKING LITE (SALIDAS)

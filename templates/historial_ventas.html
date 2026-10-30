@@ -657,6 +657,12 @@
                         <i class="bi bi-trash3"></i> Anular Cotización
                     </button>
                     
+                    {% if session.get('role') == 'admin' %}
+                    <!-- Solo Gerencia: borrar por completo una cotización de PRUEBA (no si ya movió stock o tiene pagos) -->
+                    <button id="btn_borrar_prueba" class="btn btn-sm btn-outline-dark border-0 fw-bold d-none" onclick="borrarCotizacionPrueba()" title="Borrar por completo (solo datos de prueba)">
+                        <i class="bi bi-x-circle"></i> Borrar (prueba)
+                    </button>
+                    {% endif %}
                     <a href="#" id="btn_descargar_modal" class="btn btn-sm btn-outline-secondary shadow-sm">
                         <i class="bi bi-file-pdf"></i> Descargar PDF
                     </a>
@@ -1240,6 +1246,8 @@ document.addEventListener("DOMContentLoaded", function() {
         panelGerencia.classList.add('d-none'); 
         panelVendedor.classList.add('d-none');
         btnAnular.classList.add('d-none');
+        const btnBorrar = document.getElementById('btn_borrar_prueba');
+        if (btnBorrar) btnBorrar.classList.toggle('d-none', ['Despachado', 'Entregado', 'Devuelto', 'Despacho Cancelado'].includes(estado));
 
         const miUsuarioId = parseInt("{{ session.get('user_id') }}");
         const esMiCotizacion = (parseInt(vendedor_id) === miUsuarioId);
@@ -1415,6 +1423,31 @@ function iniciarAnulacion() {
                 })
                 .catch(() => Swal.fire('Error', 'Fallo de conexión con el servidor.', 'error'));
             }
+        });
+    }, 150);
+}
+
+// Solo Gerencia: borra por completo una cotización de prueba (escribiendo su código)
+function borrarCotizacionPrueba() {
+    const codigo = 'COT-' + String(ordenIdActual).padStart(5, '0');
+    const modalEl = document.getElementById('modalDetalleCompleto');
+    const modal = modalEl ? bootstrap.Modal.getInstance(modalEl) : null;
+    if (modal) modal.hide();
+    setTimeout(() => {
+        Swal.fire({
+            icon: 'warning', title: `¿Borrar ${codigo} por completo?`, width: 600,
+            html: `<div class="text-start small">Úsalo solo con <b>cotizaciones de prueba</b>: se borra con todos sus ítems y ya no queda ligada a ningún producto.
+                   No se puede borrar si ya movió stock (despacho), si tiene pagos o traslados: en ese caso anúlala.
+                   <div class="mt-2 text-danger fw-bold">No se puede deshacer. Escribe ${codigo} para confirmar:</div></div>`,
+            input: 'text', inputPlaceholder: codigo, showCancelButton: true,
+            confirmButtonColor: '#212529', confirmButtonText: 'Borrar definitivamente', cancelButtonText: 'Cancelar',
+            inputValidator: v => (v || '').trim().toUpperCase() !== codigo ? `Escribe ${codigo}` : null
+        }).then(r => {
+            if (!r.isConfirmed) return;
+            fetch(`/api/eliminar_cotizacion/${ordenIdActual}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirmar: r.value }) })
+                .then(x => x.json())
+                .then(d => d.status === 'success' ? Swal.fire('Borrada', d.msg, 'success').then(() => location.reload()) : Swal.fire('No se pudo borrar', d.msg, 'error'))
+                .catch(() => Swal.fire('Error', 'Fallo de conexión con el servidor.', 'error'));
         });
     }, 150);
 }
