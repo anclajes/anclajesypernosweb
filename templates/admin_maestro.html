@@ -165,7 +165,7 @@
                                     onclick="abrirEditarMaestro({{ m.sku|tojson|forceescape }}, {{ m.nombre|tojson|forceescape }}, {{ m.familia|tojson|forceescape }}, {{ (m.calidad or '')|tojson|forceescape }}, {{ m.peso_nominal_kg|default(0, true)|tojson|forceescape }})">
                                 <i class="bi bi-pencil"></i>
                             </button>
-                            {% if session.get('role') == 'admin' %}
+                            {% if session.get('role') in ['admin', 'almacen'] %}
                             <button class="btn btn-sm btn-outline-danger" title="Eliminar (solo si no tiene movimientos —aparte del Saldo Inicial— ni ventas en ningún inventario)"
                                     onclick="eliminarProductoMaestro('{{ m.sku }}')">
                                 <i class="bi bi-trash"></i>
@@ -588,7 +588,7 @@ function guardarEdicionMaestro(event) {
 </script>
 {% endif %}
 
-{% if session.get('role') == 'admin' %}
+{% if session.get('role') in ['admin', 'almacen'] %}
 <script>
 function eliminarProductoMaestro(sku) {
     Swal.fire({

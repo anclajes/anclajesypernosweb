@@ -6827,6 +6827,9 @@ def admin_maestro_nuevo():
         return redirect(url_for('admin_maestro_nuevo'))
 
 
+ROLES_ELIMINAN_MAESTRO = ['admin', 'almacen']   # Gerencia y Jefe de Almacén
+
+
 @app.route('/admin/maestro/<sku>/eliminar', methods=['POST'])
 def admin_maestro_eliminar(sku):
     """Borra por completo un código del Maestro y de ambos inventarios (Anclajes e
@@ -6835,7 +6838,7 @@ def admin_maestro_eliminar(sku):
     tiene NINGÚN rastro de uso real todavía: sin movimientos de Kardex, sin ventas/cotizaciones,
     sin kits, sin traslados inter-empresa y sin conteos de auditoría — en cualquiera de los dos
     inventarios. Si tiene aunque sea uno de esos, se bloquea (para eso está "Desactivar")."""
-    if session.get('role') != 'admin':
+    if session.get('role') not in ROLES_ELIMINAN_MAESTRO:
         return {'status': 'error', 'msg': 'No autorizado'}, 403
 
     sku = sku.strip().upper()
