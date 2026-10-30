@@ -6,7 +6,7 @@
 {% macro px(v) %}{% if v is none %}—{% elif (v * 100)|round(6) == ((v * 100)|round(0)) %}{{ '{:,.2f}'.format(v) }}{% else %}{{ '{:,.4f}'.format(v).rstrip('0') }}{% endif %}{% endmacro %}
 {% macro dinero(v) %}{{ '{:,.2f}'.format(v or 0) }}{% endmacro %}
 {% set base_args = {'periodo': f.periodo, 'desde': f.desde.isoformat() if f.desde and f.periodo == 'rango' else '', 'hasta': f.hasta.isoformat() if f.hasta else '',
-                    'empresa': f.empresa, 'tipo': f.tipo, 'clase': f.clase, 'moneda': f.moneda, 'prov': f.prov, 'q': f.q} %}
+                    'empresa': f.empresa, 'tipo': f.tipo, 'clase': f.clase, 'moneda': f.moneda, 'prov': f.prov, 'q': f.q, 'etapa': f.etapa} %}
 <style>
     .mp-filtros { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 10px 12px; margin-bottom: 12px; }
     .mp-filtros label { font-size: .66rem; font-weight: 800; color: #64748b; text-transform: uppercase; margin-bottom: 1px; display: block; }
@@ -73,13 +73,15 @@
         <div class="col-6 col-md-3 col-xl-3"><label>Qué se compró</label>
             <select name="clase" class="form-select form-select-sm auto"><option value="">Todo</option>
                 {% for k, c in clases.items() %}<option value="{{ k }}" {{ 'selected' if f.clase == k }}>{{ c.txt }}</option>{% endfor %}</select></div>
+        <div class="col-6 col-md-3 col-xl-2"><label>Qué compras cuentan</label>
+            <select name="etapa" class="form-select form-select-sm auto">{% for k, (t, _) in etapas.items() %}<option value="{{ k }}" {{ 'selected' if f.etapa == k }}>{{ t }}</option>{% endfor %}</select></div>
         <div class="col-6 col-md-3 col-xl-2"><label>Moneda</label>
             <select name="moneda" class="form-select form-select-sm auto"><option value="">Soles y dólares</option>
                 {% for k, m in monedas.items() %}<option value="{{ k }}" {{ 'selected' if f.moneda == k }}>{{ m.nombre }}</option>{% endfor %}</select></div>
-        <div class="col-12 col-md-5 col-xl-3"><label>Proveedor</label>
+        <div class="col-12 col-md-5 col-xl-2"><label>Proveedor</label>
             <select name="prov" class="form-select form-select-sm auto"><option value="">Todos los proveedores</option>
                 {% for pk, nombre in opciones_prov %}<option value="{{ pk }}" {{ 'selected' if f.prov == pk }}>{{ nombre }}</option>{% endfor %}</select></div>
-        <div class="col-12 col-md-7 col-xl-4"><label>Producto, código, familia o proveedor</label>
+        <div class="col-12 col-md-7 col-xl-3"><label>Producto, código, familia o proveedor</label>
             <input type="search" name="q" value="{{ f.q }}" class="form-control form-control-sm" placeholder="Ej: perno 1/2 grado 5 · guantes · galvanizado"></div>
         <div class="col-12 col-xl-3 d-flex gap-2">
             <button class="btn btn-sm btn-primary flex-fill"><i class="bi bi-search"></i> Buscar</button>
@@ -110,7 +112,7 @@
 <div class="text-center text-muted py-5 bg-white rounded-3 border"><i class="bi bi-tags display-6 opacity-25"></i>
     <p class="mt-2 mb-0">No hay compras aprobadas con estos filtros. Prueba con otro periodo ("Todo") o quita filtros.</p></div>
 {% elif vista == 'resumen' %}
-<div class="ayuda-mp"><i class="bi bi-info-circle"></i> Se usan los ítems de las órdenes <b>aprobadas</b> (aprobada, llegó o conforme). Los precios van <b>sin IGV</b> y solo se comparan
+<div class="ayuda-mp"><i class="bi bi-info-circle"></i> {% if f.etapa == 'conformes' %}Se usan solo las órdenes que ya <b>llegaron y quedaron conformes</b>.{% else %}Se usan los ítems de las órdenes <b>aprobadas</b> por Gerencia (aprobada, llegó o conforme): desde ahí el precio ya está pactado.{% endif %} Los precios van <b>sin IGV</b> y solo se comparan
     dentro de la <b>misma moneda y U.M.</b> <b>Ahorro potencial</b> = lo que se habría ahorrado comprando cada vez al mejor precio del periodo.</div>
 <div class="row g-3 mb-3">
     <div class="col-12 col-xl-8"><div class="card-g"><h6><i class="bi bi-calendar3"></i> Compras por mes</h6><div class="ay">Monto sin IGV por mes de la orden. Soles (barras) y dólares (línea) en ejes separados.</div>

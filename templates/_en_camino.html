@@ -1,0 +1,125 @@
+{# "En camino": lo comprado con órdenes aprobadas que todavía no está (o recién se sumó) en este inventario. Solo Gerencia.
+   Uso:  {% import '_en_camino.html' as camino with context %}  {% set ec = en_camino('GENERAL', 'ANCLAJES') %}
+         {{ camino.panel(ec, 'Anclajes') }} · en cada producto {{ camino.badge(ec, p.sku|upper) }} · al final {{ camino.script(ec) }} #}
+
+{% macro estilos() %}
+<style>
+    .ec-panel { background: #fff; border: 1px solid #fde68a; border-left: 4px solid #f59e0b; border-radius: 12px; margin-bottom: 12px; }
+    .ec-panel > summary { list-style: none; cursor: pointer; padding: 9px 14px; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: .82rem; }
+    .ec-panel > summary::-webkit-details-marker { display: none; }
+    .ec-panel > summary .tit { font-weight: 800; color: #92400e; }
+    .ec-panel > summary .ver { margin-left: auto; font-weight: 700; color: #0B3D91; font-size: .76rem; }
+    .ec-panel[open] > summary .ver .bi { transform: rotate(180deg); }
+    .ec-res { font-size: .72rem; font-weight: 700; border-radius: 20px; padding: 2px 9px; border: 1px solid var(--b, #e2e8f0); color: var(--c, #334155); background: var(--f, #f8fafc); white-space: nowrap; text-decoration: none; }
+    .ec-ords { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 10px; padding: 4px 14px 14px; }
+    .ec-ord { border: 1px solid #e2e8f0; border-radius: 12px; padding: 9px 11px; border-top: 3px solid var(--c, #b45309); background: #fff; }
+    .ec-ord .cab { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+    .ec-ord .cod { font-weight: 800; color: #0f172a; text-decoration: none; font-size: .86rem; }
+    .ec-ord .prov { font-size: .74rem; color: #475569; overflow-wrap: anywhere; }
+    .ec-imp { font-size: .6rem; font-weight: 800; color: #fff; background: #0f766e; border-radius: 5px; padding: 0 6px; }
+    .ec-et { font-size: .64rem; font-weight: 800; border-radius: 6px; padding: 1px 7px; color: var(--c); background: var(--f); border: 1px solid var(--b); white-space: nowrap; }
+    .ec-lin { font-size: .74rem; border-top: 1px dashed #e2e8f0; padding-top: 5px; margin-top: 6px; }
+    .ec-lin div { display: flex; gap: 6px; justify-content: space-between; }
+    .ec-lin .ds { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+    .ec-tl { display: flex; margin: 8px 0 2px; }
+    .ec-tl .p { flex: 1 1 0; text-align: center; position: relative; font-size: .6rem; color: #94a3b8; font-weight: 700; line-height: 1.15; }
+    .ec-tl .p::before { content: ''; position: absolute; top: 6px; left: -50%; width: 100%; height: 3px; background: #e2e8f0; }
+    .ec-tl .p:first-child::before { display: none; }
+    .ec-tl .p .b { width: 14px; height: 14px; border-radius: 50%; background: #e2e8f0; display: inline-block; position: relative; z-index: 1; margin-bottom: 2px; border: 2px solid #fff; box-shadow: 0 0 0 1px #e2e8f0; }
+    .ec-tl .p.hecho { color: #15803d; } .ec-tl .p.hecho .b, .ec-tl .p.hecho::before { background: #16a34a; }
+    .ec-tl .p.actual { color: #b45309; } .ec-tl .p.actual .b { background: #f59e0b; box-shadow: 0 0 0 3px #fde68a; }
+    .ec-tl .p.atrasado { color: #dc2626; } .ec-tl .p.atrasado .b { background: #dc2626; box-shadow: 0 0 0 3px #fecaca; }
+    .ec-tl .p small { display: block; font-weight: 600; color: #64748b; }
+    .ec-chips { display: flex; flex-direction: column; align-items: center; gap: 2px; margin-top: 3px; }
+    .ec-chip { border: 1px solid var(--b); background: var(--f); color: var(--c); font-size: .64rem; font-weight: 800; border-radius: 20px; padding: 1px 8px; white-space: nowrap; line-height: 1.5; cursor: pointer; }
+    .ec-chip:hover { filter: brightness(.96); }
+    .ec-fondo { position: fixed; inset: 0; background: rgba(15,23,42,.5); z-index: 1095; display: none; align-items: flex-start; justify-content: center; padding: 5vh 12px; overflow-y: auto; }
+    .ec-fondo.abierto { display: flex; }
+    .ec-caja { background: #fff; border-radius: 16px; width: 640px; max-width: 100%; box-shadow: 0 24px 60px rgba(0,0,0,.3); overflow: hidden; }
+    .ec-caja .cab-m { padding: 11px 16px; background: #0f172a; color: #fff; display: flex; gap: 10px; align-items: center; }
+    .ec-caja .cab-m h6 { margin: 0; font-weight: 800; color: #fff !important; }
+    .ec-caja .cab-m button { margin-left: auto; border: 0; background: rgba(255,255,255,.15); color: #fff; width: 30px; height: 30px; border-radius: 50%; }
+    .ec-caja .cue { padding: 12px 16px; display: grid; gap: 10px; }
+    .ec-caja .nota { font-size: .7rem; color: #64748b; padding: 0 16px 12px; }
+</style>
+{% endmacro %}
+
+{% macro panel(ec, nombre) %}{% if ec and (ec.ordenes or ec.resumen.por_aprobar) %}{% set r = ec.resumen %}{% set E = ec.etapas %}
+{{ estilos() }}
+<details class="ec-panel" id="ecPanel">
+    <summary><i class="bi bi-truck text-warning fs-5"></i> <span class="tit">Compras en camino a {{ nombre }}</span>
+        {% if r.en_camino %}<span class="ec-res" style="--c:{{ E.EN_CAMINO.color }};--f:{{ E.EN_CAMINO.fondo }};--b:{{ E.EN_CAMINO.borde }};"><i class="bi bi-truck"></i> {{ r.en_camino }} orden(es) en camino{% if r.importacion %} · {{ r.importacion }} importación{% endif %}</span>{% endif %}
+        {% if r.proxima %}<span class="ec-res">Próxima llegada {{ r.proxima }} ({{ r.proxima_hace }})</span>{% endif %}
+        {% if r.atrasadas %}<span class="ec-res" style="--c:#b91c1c;--f:#fef2f2;--b:#fecaca;"><i class="bi bi-alarm"></i> {{ r.atrasadas }} atrasada(s)</span>{% endif %}
+        {% if r.sin_fecha %}<span class="ec-res">{{ r.sin_fecha }} sin fecha confirmada</span>{% endif %}
+        {% if r.por_conformidad %}<span class="ec-res" style="--c:{{ E.POR_CONFORMIDAD.color }};--f:{{ E.POR_CONFORMIDAD.fondo }};--b:{{ E.POR_CONFORMIDAD.borde }};">{{ r.por_conformidad }} llegó · por revisar</span>{% endif %}
+        {% if r.por_ingresar %}<span class="ec-res" style="--c:{{ E.POR_INGRESAR.color }};--f:{{ E.POR_INGRESAR.fondo }};--b:{{ E.POR_INGRESAR.borde }};">{{ r.por_ingresar }} por sumar al stock</span>{% endif %}
+        {% if r.ingresadas %}<span class="ec-res" style="--c:{{ E.INGRESADO.color }};--f:{{ E.INGRESADO.fondo }};--b:{{ E.INGRESADO.borde }};"><i class="bi bi-check2"></i> {{ r.ingresadas }} sumada(s) en los últimos {{ r.dias_reciente }} días</span>{% endif %}
+        {% if r.por_aprobar %}<a class="ec-res" href="{{ url_for('oc_lista', vista='aprobar') }}" onclick="event.stopPropagation();" title="Todavía no son seguras: falta la aprobación de Gerencia">{{ r.por_aprobar }} OC por aprobar</a>{% endif %}
+        {% if ec.ordenes %}<span class="ver">Ver detalle <i class="bi bi-chevron-down"></i></span>{% endif %}
+    </summary>
+    {% if ec.ordenes %}
+    <div class="ec-ords">
+        {% for o in ec.ordenes %}{% set e = E[o.etapa] %}
+        <div class="ec-ord" style="--c: {{ 'var(--danger,#dc2626)' if o.atrasada and o.etapa == 'EN_CAMINO' else e.color }};">
+            <div class="cab"><a class="cod" href="{{ o.url }}">{{ o.codigo }}</a>{% if o.importacion %}<span class="ec-imp">IMPORTACIÓN</span>{% endif %}
+                <span class="ec-et ms-auto" style="--c:{{ e.color }};--f:{{ e.fondo }};--b:{{ e.borde }};"><i class="bi {{ e.icono }}"></i> {{ e.txt }}</span></div>
+            <div class="prov">{{ o.proveedor }} · {{ o.monto }} · aprobada {{ o.aprobada }}</div>
+            <div class="ec-tl">{% for p in o.pasos %}<div class="p {{ p.estado }}"><span class="b"></span><br>{{ p.txt }}{% if p.fecha %}<small>{{ p.fecha }}</small>{% endif %}</div>{% endfor %}</div>
+            <div class="ec-lin">{% for ln in o.lineas[:6] %}
+                <div><span class="ds" title="{{ ln.descripcion }}">{% if ln.codigo %}<b>{{ ln.codigo }}</b> {% endif %}{{ ln.descripcion }}</span>
+                    <span class="text-nowrap">{% for pt in ln.partes %}{% set ee = E[pt.etapa] %}<span style="color:{{ ee.color }}; font-weight:700;">{{ '+' if pt.etapa == 'EN_CAMINO' }}{{ pt.cant|cant }} {{ ln.um }} {{ ee.corto }}</span>{% if not loop.last %} · {% endif %}{% endfor %}</span></div>
+                {% endfor %}{% if o.lineas|length > 6 %}<div class="text-muted">y {{ o.lineas|length - 6 }} producto(s) más…</div>{% endif %}</div>
+        </div>
+        {% endfor %}
+    </div>
+    <div class="px-3 pb-2" style="font-size:.7rem; color:#64748b;"><i class="bi bi-info-circle"></i> Solo órdenes <b>aprobadas</b> por Gerencia. Lo ya sumado al inventario se muestra {{ r.dias_reciente }} días y luego desaparece. Solo lo ve Gerencia.</div>
+    {% endif %}
+</details>
+{% endif %}{% endmacro %}
+
+{% macro badge(ec, clave) %}{% if ec %}{% set ls = ec['items'].get(clave) %}{% if ls %}
+<div class="ec-chips">{% for k, t in en_camino_totales(ls) %}{% set e = ec.etapas[k] %}
+    <button type="button" class="ec-chip" data-ec="{{ clave }}" style="--c:{{ e.color }};--f:{{ e.fondo }};--b:{{ e.borde }};" title="{{ e.txt }} · clic para ver la orden">
+        <i class="bi {{ e.icono }}"></i> {{ '+' if k in ('EN_CAMINO', 'INGRESADO') }}{{ t.cant|cant }} {{ e.corto }}{% if k == 'INGRESADO' and t.hace %} {{ t.hace }}{% endif %}</button>
+{% endfor %}</div>
+{% endif %}{% endif %}{% endmacro %}
+
+{% macro script(ec) %}{% if ec and ec['items'] %}
+<div class="ec-fondo" id="ecModal"><div class="ec-caja"><div class="cab-m"><i class="bi bi-truck"></i><h6 id="ecTitulo">Compras de este producto</h6>
+    <button type="button" onclick="document.getElementById('ecModal').classList.remove('abierto')" aria-label="Cerrar"><i class="bi bi-x-lg"></i></button></div>
+    <div class="cue" id="ecCuerpo"></div>
+    <div class="nota">Solo órdenes <b>aprobadas</b> por Gerencia. Lo sumado al inventario se muestra {{ ec.resumen.dias_reciente }} días.</div></div></div>
+<script>
+(function () {
+    const EC = {{ ec['items']|tojson }}, ET = {{ ec.etapas|tojson }};
+    const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const num = n => Number(n || 0).toLocaleString('es-PE', { maximumFractionDigits: 3 });
+    const modal = document.getElementById('ecModal');
+    modal.addEventListener('click', e => { if (e.target === modal) modal.classList.remove('abierto'); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') modal.classList.remove('abierto'); });
+    function ver(clave, titulo) {
+        const ls = EC[clave] || [];
+        document.getElementById('ecTitulo').textContent = titulo || 'Compras de este producto';
+        document.getElementById('ecCuerpo').innerHTML = ls.map(l => {
+            const e = ET[l.etapa];
+            const partes = Object.entries(l.partes).map(([k, v]) => `<span style="color:${ET[k].color}; font-weight:800;">${k === 'EN_CAMINO' || k === 'INGRESADO' ? '+' : ''}${num(v)} ${esc(l.um)} ${esc(ET[k].corto)}${k === 'INGRESADO' && l.ingreso_hace ? ' ' + esc(l.ingreso_hace) + ' (' + esc(l.ingreso) + ')' : ''}</span>`).join(' · ');
+            return `<div class="ec-ord" style="--c:${l.atrasada && l.etapa === 'EN_CAMINO' ? '#dc2626' : e.color};">
+                <div class="cab"><a class="cod" href="${esc(l.url)}">${esc(l.codigo)}</a>${l.importacion ? '<span class="ec-imp">IMPORTACIÓN</span>' : ''}
+                    <span class="ec-et ms-auto" style="--c:${e.color};--f:${e.fondo};--b:${e.borde};"><i class="bi ${e.icono}"></i> ${esc(e.txt)}</span></div>
+                <div class="prov">${esc(l.proveedor)} · aprobada ${esc(l.aprobada)}${l.etapa !== 'EN_CAMINO' ? '' : ' · ' + (l.esperada ? (l.atrasada ? '<b class="text-danger">debía llegar el ' + esc(l.esperada) + '</b>' : 'llega el <b>' + esc(l.esperada) + '</b>') : '<b>sin fecha de llegada confirmada</b>')}</div>
+                <div class="ec-lin"><div><span>Pedido <b>${num(l.pedido)} ${esc(l.um)}</b>${l.llego ? ' · llegó ' + num(l.llego) : ''}</span><span>${partes}</span></div></div>
+                <div class="ec-tl">${l.pasos.map(p => `<div class="p ${p.estado}"><span class="b"></span><br>${esc(p.txt)}${p.fecha ? '<small>' + esc(p.fecha) + '</small>' : ''}</div>`).join('')}</div></div>`;
+        }).join('') || '<div class="text-muted small">Nada en camino.</div>';
+        modal.classList.add('abierto');
+    }
+    document.addEventListener('click', e => {
+        const b = e.target.closest('[data-ec]'); if (!b) return;
+        const fila = b.closest('tr');
+        const t = fila ? [...fila.querySelectorAll('td')].slice(0, 2).map(td => td.innerText.split('\n')[0].trim()).filter(Boolean).join(' · ') : '';
+        ver(b.dataset.ec, t);
+    });
+    window.ecVer = ver;
+})();
+</script>
+{% endif %}{% endmacro %}

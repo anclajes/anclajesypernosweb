@@ -243,7 +243,7 @@
                 <div class="prov-ico"><i class="bi bi-building"></i></div>
                 <div style="min-width:0;">
                     <div class="nom">{{ orden.razon_social }}</div>
-                    <div class="sub">{{ 'Tax ID' if orden.es_importacion else 'RUC' }} <b>{{ orden.ruc }}</b>{% if orden.direccion %} · {{ orden.direccion }}{% endif %}</div>
+                    <div class="sub">{{ 'Tax ID' if orden.es_importacion else 'RUC' }} {% if (orden.ruc or '').startswith(tax_temporal) %}<b class="text-danger">pendiente</b> <span class="text-muted">(complétalo al editar la orden: proveedor → Completar Tax ID)</span>{% else %}<b>{{ orden.ruc }}</b>{% endif %}{% if orden.direccion %} · {{ orden.direccion }}{% endif %}</div>
                     <div class="contacto-box">
                         <span><i class="bi bi-person-fill text-primary"></i> <b>{{ orden.contacto }}</b>{% if contacto and contacto.cargo %} <span class="text-muted">({{ contacto.cargo }})</span>{% endif %}</span>
                         <a href="tel:{{ orden.telefono|replace(' ', '') }}"><i class="bi bi-telephone-fill"></i> {{ orden.telefono }}</a>
@@ -297,7 +297,7 @@
             <div class="table-responsive">
             <table class="table mb-0 tabla-items">
                 {% if orden.es_importacion %}
-                <thead><tr><th class="ps-3">#</th><th>Descripción</th><th class="text-end">Cant. / PCS</th><th class="text-end">KGS / MPCS</th><th class="text-end">Total KGS</th><th class="text-end">USD / 1000 PCS</th><th class="text-end">Total USD</th>
+                <thead><tr><th class="ps-3">#</th><th>Descripción</th><th class="text-end">Cant. (PCS)</th><th class="text-end">KGS / 1000 PCS</th><th class="text-end">Total KGS</th><th class="text-end">USD / PCS</th><th class="text-end">Amount USD</th>
                 {% else %}
                 <thead><tr><th class="ps-3">#</th><th>Descripción</th><th class="text-end">Cant.</th><th>U.M.</th>{% if hay_peso %}<th class="text-end">Peso</th>{% endif %}<th class="text-end">P. Unit.</th><th class="text-end">Total</th>
                 {% endif %}
@@ -314,7 +314,7 @@
                         {% if orden.es_importacion %}
                         <td class="text-end num">{{ i.cantidad|cant }}</td><td class="text-end num">{{ '{:,.2f}'.format(i.kgs_mpcs) if i.kgs_mpcs is not none else '—' }}</td>
                         <td class="text-end num">{{ '{:,.2f}'.format(i.peso_total) if i.peso_total else '—' }}</td>
-                        <td class="text-end num">{{ '{:,.4f}'.format(i.precio_mil).rstrip('0').rstrip('.') if i.precio_mil is not none else '—' }}</td>
+                        <td class="text-end num">{{ i.precio_unitario|usd_pcs }}{% if i.precio_mil is not none %}<div class="text-muted" style="font-size:.66rem;">{{ '{:,.4f}'.format(i.precio_mil).rstrip('0').rstrip('.') }} / 1000 PCS</div>{% endif %}</td>
                         <td class="text-end num fw-semibold">{{ '{:,.2f}'.format(i.total) }}</td>
                         {% else %}
                         <td class="text-end num">{{ i.cantidad|cant }}</td><td>{{ i.um }}</td>

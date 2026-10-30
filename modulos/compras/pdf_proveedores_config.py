@@ -148,16 +148,38 @@ def oc_api_proveedor_ext():
     razon = ' '.join((f.get('razon_social') or '').split()).upper()[:200]
     pais = ' '.join((f.get('pais') or '').split()).upper()[:60]
     direccion = ' '.join((f.get('direccion') or '').split())[:250]
+    ahora = hora_peru()
+    if f.get('sin_tax') == '1' and not f.get('prov_id', type=int):
+        # todavía no se tiene el Tax ID: se pone uno TEMPORAL (SINTAXID001...) y se completa después desde la orden
+        usados = {x.ruc for x in OCProveedor.query.all() if (x.ruc or '').startswith(TAX_TEMPORAL)}
+        n = 1
+        while f"{TAX_TEMPORAL}{n:03d}" in usados:
+            n += 1
+        tax = f"{TAX_TEMPORAL}{n:03d}"
     if len(tax) < 3:
-        return {'status': 'error', 'msg': 'Escribe el Tax ID / N° de registro del proveedor (mínimo 3 letras o números).'}
+        return {'status': 'error', 'msg': 'Escribe el Tax ID / N° de registro del proveedor (mínimo 3 letras o números), o marca "Todavía no tengo el Tax ID".'}
     if len(razon) < 3:
         return {'status': 'error', 'msg': 'Escribe la razón social del proveedor.'}
     if not pais:
         return {'status': 'error', 'msg': 'Escribe el país del proveedor.'}
     p = next((x for x in OCProveedor.query.filter(OCProveedor.ruc == tax).all()), None)
-    ahora = hora_peru()
     if p and not p.es_extranjero:
         return {'status': 'error', 'msg': f'Ese número ya está registrado como proveedor peruano ({p.razon_social}).'}
+    corregir = OCProveedor.query.get(f.get('prov_id', type=int)) if f.get('prov_id', type=int) else None
+    if corregir and corregir.es_extranjero and (not p or p.id == corregir.id):
+        # completar / corregir el Tax ID (y datos) de un proveedor del exterior ya guardado: sus órdenes no anuladas también se corrigen
+        viejo = corregir.ruc
+        corregir.ruc, corregir.razon_social, corregir.pais, corregir.direccion = tax, razon, pais, direccion or corregir.direccion
+        corregir.actualizado_por, corregir.fecha_actualizacion = session.get('nombre', ''), ahora
+        if viejo != tax:
+            for o in OrdenCompra.query.filter(OrdenCompra.oc_proveedor_id == corregir.id).all():
+                if o.ruc == viejo and o.estado not in ('ANULADA', 'RECHAZADA'):
+                    o.ruc = tax
+        registrar_log(f"Corrigió el proveedor del exterior {razon}: Tax ID {viejo} → {tax}", 'bi-globe-americas', 'text-primary')
+        db.session.commit()
+        return {'status': 'success', 'msg': 'Tax ID y datos del proveedor actualizados (también en sus órdenes).', 'proveedor': _proveedor_oc_json(corregir)}
+    if corregir and p and p.id != corregir.id:
+        return {'status': 'error', 'msg': f'Ese Tax ID ya es de otro proveedor de la lista ({p.razon_social}).'}
     if p:
         p.razon_social, p.pais, p.direccion = razon, pais, direccion or p.direccion
         p.actualizado_por, p.fecha_actualizacion = session.get('nombre', ''), ahora

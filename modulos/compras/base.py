@@ -705,6 +705,28 @@ app.add_template_filter(_oc_resaltado, 'resaltado')
 
 
 ESTADOS_REEDITABLES_OC = ('APROBADA', 'RECIBIDA', 'CONFORME')
+TAX_TEMPORAL = 'SINTAXID'     # proveedor del exterior registrado sin Tax ID todavía (se completa después)
+# Condiciones de pago que se suelen usar en importaciones (se agregan con un clic; se pueden escribir otras)
+CONDICIONES_PAGO_IMP = ['PAGO A 90 DÍAS DE RECIBIDA LA COPIA DEL B/L (PAID IN 90 DAYS ONCE RECEIVED THE COPY OF B/L)',
+                        'PAGO A 60 DÍAS DE RECIBIDA LA COPIA DEL B/L (PAID IN 60 DAYS ONCE RECEIVED THE COPY OF B/L)',
+                        'DEPÓSITO ANTES DE LA PRODUCCIÓN (DEPOSIT BEFORE PRODUCTION)',
+                        'SALDO CONTRA COPIA DEL B/L (BALANCE AGAINST COPY OF B/L)',
+                        'SALDO ANTES DEL EMBARQUE (BALANCE BEFORE SHIPMENT)',
+                        'T/T 100% ANTES DEL EMBARQUE (100% T/T BEFORE SHIPMENT)',
+                        'CARTA DE CRÉDITO A LA VISTA (L/C AT SIGHT)',
+                        'PAGO CONTRA DOCUMENTOS (CAD - CASH AGAINST DOCUMENTS)']
+app.add_template_global(TAX_TEMPORAL, 'tax_temporal')
+
+
+def _usd_pcs_txt(v):
+    """Precio por pieza de importación: hasta 7 decimales sin ceros de más (0.8038509 · 0.0271499 · 0.16)."""
+    if v is None:
+        return '-'
+    t = f"{v:,.7f}".rstrip('0')
+    return t if len(t.split('.')[1]) >= 2 else f"{v:,.2f}"
+
+
+app.add_template_filter(_usd_pcs_txt, 'usd_pcs')
 
 
 def _oc_bloqueo_reedicion(orden):
@@ -960,6 +982,7 @@ def _leer_orden_form(f, orden=None):
     detalle_l = f.getlist('detalle[]') + [''] * n_filas
     piezas_l = f.getlist('piezas[]') + [''] * n_filas
     pmil_l = f.getlist('precio_mil[]') + [''] * n_filas
+    por_pcs = (f.get('imp_precio_por') or '').upper() == 'PCS'     # formulario nuevo: precio de importación por pieza
     servicios_ok = {(v.valor or '').upper() for v in _oc_catalogo('OC_SERVICIO', incluir_inactivos=True)}
     servicios_ok |= {(i.tipo_servicio or '').upper() for i in orden.items} if orden else set()
     filas = zip(f.getlist('descripcion[]'), f.getlist('cantidad[]'), f.getlist('um[]'), f.getlist('precio_unitario[]'),
@@ -972,15 +995,24 @@ def _leer_orden_form(f, orden=None):
         cantidad, precio = _num(cant), _num(pu)
         kgs_mpcs, precio_mil = None, None
         if es_imp:
-            precio_mil = _num(pmil_l[n - 1]) if (pmil_l[n - 1] or '').strip() else None
+            # Importación: el precio se escribe en USD POR PIEZA (USD/PCS, como la factura comercial, hasta 7 decimales).
+            # Órdenes antiguas: venía en USD por cada 1000 piezas (precio_mil); se sigue aceptando.
             kgs_mpcs = _num(kgs_l[n - 1]) if (kgs_l[n - 1] or '').strip() else None
-            if precio_mil is None or precio_mil < 0:
-                errores.append(f'Ítem {n}: escribe el precio en USD por cada 1000 piezas.')
-                continue
+            if por_pcs:
+                if precio is None or precio < 0:
+                    errores.append(f'Ítem {n}: escribe el precio en USD por pieza (USD/PCS).')
+                    continue
+            else:
+                precio_mil = _num(pmil_l[n - 1]) if (pmil_l[n - 1] or '').strip() else None
+                if precio_mil is None or precio_mil < 0:
+                    errores.append(f'Ítem {n}: escribe el precio en USD por cada 1000 piezas.')
+                    continue
+                precio = precio_mil / 1000
             if kgs_mpcs is not None and not 0 <= kgs_mpcs <= 1_000_000:
-                errores.append(f'Ítem {n}: los KGS por millar no son válidos.')
+                errores.append(f'Ítem {n}: los KGS por 1000 piezas no son válidos.')
                 continue
-            precio = precio_mil / 1000
+            precio = round(precio, 7)
+            precio_mil = round(precio * 1000, 4)
         precio_con = None
         if con_igv and precio is not None:
             precio_con, precio = precio, precio / (1 + IGV_OC)
@@ -1076,9 +1108,9 @@ def _leer_orden_form(f, orden=None):
         total_con = round(cantidad * precio_con, 2) if con_igv else None
         if con_igv:
             totales_con_igv.append(total_con)
-        items.append({'descripcion': desc, 'cantidad': round(cantidad, 4), 'um': um, 'precio_unitario': round(precio, 6 if (es_imp or con_igv) else 4), 'req_item_id': req_item_id,
+        items.append({'descripcion': desc, 'cantidad': round(cantidad, 4), 'um': um, 'precio_unitario': round(precio, 7 if es_imp else (6 if con_igv else 4)), 'req_item_id': req_item_id,
                       'precio_con_igv': round(precio_con, 4) if con_igv else None,
-                      'total': round(total_con / (1 + IGV_OC), 2) if con_igv else round(cantidad * precio_mil / 1000 if es_imp else cantidad * precio, 2), 'origen': origen, 'codigo': codigo, 'insumo_id': ins_id,
+                      'total': round(total_con / (1 + IGV_OC), 2) if con_igv else round(cantidad * precio, 2), 'origen': origen, 'codigo': codigo, 'insumo_id': ins_id,
                       'kgs_mpcs': round(kgs_mpcs, 4) if kgs_mpcs is not None else None, 'precio_mil': round(precio_mil, 4) if es_imp else None,
                       'detalle': detalle_it, 'piezas': piezas_it,
                       'familia': _limpio(familia, 200) or None, 'calidad': _limpio(calidad, 200) or None,

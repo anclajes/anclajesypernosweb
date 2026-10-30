@@ -4,6 +4,7 @@
 {% block subtitle %}Almacén Import Bolts & Estructure S.A.C.{% endblock %}
 
 {% block content %}
+{% import '_en_camino.html' as camino with context %}{% set ec = en_camino('GENERAL', 'IMPORTBOLTS') %}
 <!-- INYECCIÓN DE COLORES CORPORATIVOS PARA IMPORT BOLTS -->
 <style>
     :root {
@@ -372,6 +373,7 @@
 </div>
 
 <!-- TABLA PRINCIPAL RESPONSIVE -->
+{{ camino.panel(ec, 'Import Bolts') }}
 <div class="card shadow-sm mb-3 border-0 rounded overflow-hidden">
     <div class="card-body p-0 table-responsive">
         <table class="table table-hover table-striped mb-0 align-middle small text-nowrap">
@@ -435,6 +437,7 @@
                             <i class="bi bi-arrow-left-right"></i>
                         </button>
                         {% endif %}
+                        {{ camino.badge(ec, (p.sku or '')|upper) }}
                     </td>
                     
                     <td class="text-end text-muted">{% if p.precio_unidad > 0 %} $ {{ "%.2f"|format(p.precio_unidad) }} {% else %} - {% endif %}</td>
@@ -2949,4 +2952,5 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 });
 </script>
+{{ camino.script(ec) }}
 {% endblock %}

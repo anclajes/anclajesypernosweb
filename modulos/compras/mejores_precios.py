@@ -14,6 +14,9 @@
 #     suma de (precio pagado - mejor precio) x cantidad.
 
 ESTADOS_PRECIOS = ('APROBADA', 'RECIBIDA', 'CONFORME')
+# Desde cuándo cuenta una compra: al APROBARSE (el precio ya está pactado con el proveedor) o solo cuando llegó y quedó CONFORME
+ETAPAS_PRECIOS = {'aprobadas': ('Aprobadas (precio pactado)', ('APROBADA', 'RECIBIDA', 'CONFORME')),
+                  'conformes': ('Solo recibidas y conformes', ('CONFORME',))}
 CLASES_PRECIOS = {'GENERAL': {'txt': 'Inventario General', 'corto': 'Producto', 'color': '#0B3D91', 'icono': 'bi-box-seam'},
                   'INSUMOS': {'txt': 'Insumos internos', 'corto': 'Insumo', 'color': '#0f766e', 'icono': 'bi-tools'},
                   'SERVICIO': {'txt': 'Servicios (OS)', 'corto': 'Servicio', 'color': '#7c3aed', 'icono': 'bi-gear'}}
@@ -48,7 +51,7 @@ def _oc_precios(emp_sel='TODAS', q='', desde=None, hasta=None, tipo='OC'):
 
 
 def _mp_filtros_por_defecto(**kw):
-    f = {'empresa': 'TODAS', 'tipo': '', 'clase': '', 'moneda': '', 'prov': '', 'q': '', 'desde': None, 'hasta': None}
+    f = {'empresa': 'TODAS', 'tipo': '', 'clase': '', 'moneda': '', 'prov': '', 'q': '', 'desde': None, 'hasta': None, 'etapa': 'aprobadas'}
     f.update({k: v for k, v in kw.items() if k in f})
     return f
 
@@ -71,7 +74,8 @@ def _mp_filtros():
     return {'empresa': emp if emp in EMPRESAS_OC else 'TODAS', 'tipo': tipo if tipo in TIPOS_OC else '',
             'clase': clase if clase in CLASES_PRECIOS else '', 'moneda': moneda if moneda in MONEDAS_OC else '',
             'prov': (request.args.get('prov') or '').strip()[:40], 'q': ' '.join((request.args.get('q') or '').split())[:80],
-            'desde': desde, 'hasta': hasta, 'periodo': periodo}
+            'desde': desde, 'hasta': hasta, 'periodo': periodo,
+            'etapa': request.args.get('etapa') if request.args.get('etapa') in ETAPAS_PRECIOS else 'aprobadas'}
 
 
 def _mp_clase(o):
@@ -90,7 +94,8 @@ def _mp_prov_clave(o):
 
 def _mp_compras(f):
     """Una fila por ítem comprado (de las órdenes aprobadas que cumplen los filtros)."""
-    ordenes = OrdenCompra.query.filter(OrdenCompra.estado.in_(list(ESTADOS_PRECIOS))).all()
+    estados = ETAPAS_PRECIOS.get(f.get('etapa') or 'aprobadas', ETAPAS_PRECIOS['aprobadas'])[1]
+    ordenes = OrdenCompra.query.filter(OrdenCompra.estado.in_(list(estados))).all()
     terminos = [t for t in _txt_sin_tildes(f.get('q') or '').upper().split() if t]
     compras = []
     for o in ordenes:
@@ -324,7 +329,7 @@ def oc_precios():
     opciones_prov = sorted({(c['prov_clave'], c['proveedor']) for c in _mp_compras({**f, 'prov': '', 'q': ''})}, key=lambda x: _clave_alfabetica(x[1]))
     return render_template('oc_precios.html', f=f, vista=vista, vistas=VISTAS_PRECIOS, orden=orden, ordenes_productos=ORDENES_PRODUCTOS,
                            res=res, lista=lista, total_lista=total_lista, pagina=pagina, paginas=max(1, -(-total_lista // por_pag)),
-                           clases=CLASES_PRECIOS, tipos=TIPOS_OC, empresas_oc=EMPRESAS_OC, monedas=MONEDAS_OC, igv=IGV_OC,
+                           clases=CLASES_PRECIOS, etapas=ETAPAS_PRECIOS, tipos=TIPOS_OC, empresas_oc=EMPRESAS_OC, monedas=MONEDAS_OC, igv=IGV_OC,
                            opciones_prov=opciones_prov, seccion='precios', puede_ver_oc=session.get('role') in ROLES_OC_VEN,
                            hoy=hora_peru().date())
 
@@ -342,7 +347,8 @@ def _mp_excel(f, compras, productos, proveedores):
                   f"{'OC y OS' if not f['tipo'] else TIPOS_OC[f['tipo']]} · {CLASES_PRECIOS[f['clase']]['txt'] if f['clase'] else 'Productos, insumos y servicios'} · "
                   f"{('del ' + f['desde'].strftime('%d/%m/%Y')) if f['desde'] else 'desde el inicio'} "
                   f"{('al ' + f['hasta'].strftime('%d/%m/%Y')) if f['hasta'] else 'a hoy'}"
-                  f"{' · solo ' + MONEDAS_OC[f['moneda']]['nombre'] if f['moneda'] else ''}{' · búsqueda: ' + f['q'] if f['q'] else ''}")
+                  f"{' · solo ' + MONEDAS_OC[f['moneda']]['nombre'] if f['moneda'] else ''}{' · búsqueda: ' + f['q'] if f['q'] else ''}"
+                  f" · {ETAPAS_PRECIOS[f.get('etapa') or 'aprobadas'][0]}")
     nota = f"Órdenes aprobadas · precios SIN IGV · soles y dólares por separado · {filtro_txt}"
     # ---- Resumen ----
     ws = wb.active

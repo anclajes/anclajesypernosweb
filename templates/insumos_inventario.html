@@ -2,6 +2,7 @@
 {% block title %}Insumos internos{% endblock %}
 {% block subtitle %}Inventario {{ empresas[empresa].corto }}{% endblock %}
 {% block content %}
+{% import '_en_camino.html' as camino with context %}{% set ec = en_camino('INSUMOS', empresa) %}
 {% include '_insumos_nav.html' %}
 <style>
     .emp-switch a { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 10px; border: 2px solid #e2e8f0;
@@ -72,6 +73,7 @@
     <div class="col-12 col-md-1"><button class="btn btn-primary w-100"><i class="bi bi-funnel"></i></button></div>
 </form>
 
+{{ camino.panel(ec, 'Insumos ' ~ empresas[empresa].corto) }}
 <div class="card border-0 shadow-sm">
     <div class="card-body p-0 table-responsive">
         <table class="table table-hover align-middle mb-0 small tabla-ins">
@@ -88,7 +90,7 @@
                     <td class="ps-3 fw-bold text-nowrap">{{ f.i.codigo }}</td>
                     <td>{{ f.i.descripcion }}{% if not f.i.activo %} <span class="badge bg-secondary">Inactivo</span>{% endif %}</td>
                     <td><span class="badge bg-light text-dark border">{{ f.i.categoria or '-' }}</span></td>
-                    <td class="text-center text-nowrap"><span class="stock-chip num {{ 'bajo' if f.bajo }} {{ 'cero' if not f.stock }}">{{ f.stock|cant }}</span> <span class="text-muted">{{ f.i.unidad }}</span></td>
+                    <td class="text-center text-nowrap"><span class="stock-chip num {{ 'bajo' if f.bajo }} {{ 'cero' if not f.stock }}">{{ f.stock|cant }}</span> <span class="text-muted">{{ f.i.unidad }}</span>{{ camino.badge(ec, f.i.id) }}</td>
                     <td class="text-center num">{{ f.minimo|cant if f.minimo else '-' }}</td>
                     <td class="text-end num text-nowrap">
                         {% if f.stock_pen > 0 or not f.stock_usd %}<div>{{ f.costo|soles if f.costo else '-' }}{% if f.stock_usd %} <span class="text-muted" style="font-size:.7rem;">({{ f.stock_pen|cant }} und)</span>{% endif %}
@@ -139,4 +141,5 @@ function configStock(id, nombre, minimo, almacen) {
     });
 }
 </script>
+{{ camino.script(ec) }}
 {% endblock %}

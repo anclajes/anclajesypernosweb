@@ -212,7 +212,9 @@
                     <input class="form-check-input" type="checkbox" role="switch" name="es_importacion" value="1" id="es_importacion" {{ 'checked' if pv.es_importacion }} onchange="pintarImportacion(true)">
                     <label class="form-check-label fw-bold" for="es_importacion"><i class="bi bi-globe-americas"></i> Orden de IMPORTACIÓN (proveedor del exterior)</label>
                 </div>
-                <div class="small text-muted">En <b>dólares</b>, <b>sin IGV</b>, precio por cada <b>1000 piezas</b> (USD/1000 PCS) y peso por millar (KGS/MPCS). Mismo flujo: aprobación, llegada, conformidad e ingreso al inventario (entra la <b>CANTIDAD / PCS</b>).</div>
+                <input type="hidden" name="imp_precio_por" value="PCS">
+                <div class="small text-muted">En <b>dólares</b>, <b>sin IGV</b>, con el formato de la factura comercial: <b>QUANTITY (PCS)</b>, <b>KGS/1000PCS</b>, <b>TOTAL KGS</b>,
+                    precio por pieza <b>USD/PCS</b> (hasta 7 decimales, ej. 0.0271499) y <b>AMOUNT/USD</b>. Mismo flujo: aprobación, llegada, conformidad e ingreso al inventario (entra la <b>CANTIDAD / PCS</b>).</div>
             </div>
         <!-- PROVEEDOR -->
         <div class="card border-0 shadow-sm mb-3"><div class="card-body">
@@ -247,14 +249,19 @@
             </div>
             <div id="provManual" style="display:none;" class="mb-2">
                 <div class="row g-2">
-                    <div class="col-5"><div class="lbl req" id="m_ruc_lbl">RUC</div><input type="text" id="m_ruc" class="form-control" maxlength="20"></div>
+                    <div class="col-5"><div class="lbl req" id="m_ruc_lbl">RUC</div><input type="text" id="m_ruc" class="form-control" maxlength="20">
+                        <input type="hidden" id="m_prov_id" value="">
+                        <div class="form-check solo-imp mt-1" style="display:none;"><input class="form-check-input" type="checkbox" id="m_sin_tax" onchange="pintarSinTax()">
+                            <label class="form-check-label small" for="m_sin_tax">Todavía no tengo el Tax ID</label></div></div>
                     <div class="col-7"><div class="lbl req">Razón social</div><input type="text" id="m_razon" class="form-control" maxlength="200"></div>
                     <div class="col-12 col-sm-4 solo-imp" style="display:none;"><div class="lbl req">País</div><input type="text" id="m_pais" class="form-control text-uppercase" maxlength="60" placeholder="Ej: CHINA"></div>
                     <div class="col-12" id="colMDir"><div class="lbl">Dirección</div><input type="text" id="m_dir" class="form-control" maxlength="250"></div>
                     <div class="col-12 solo-imp" style="display:none;">
                         <button type="button" class="btn btn-primary btn-sm fw-bold" onclick="guardarExt()"><i class="bi bi-save"></i> Guardar proveedor del exterior</button>
                         <button type="button" class="btn btn-outline-secondary btn-sm" onclick="cambiarProv()">Cancelar</button>
-                        <div class="form-text">Queda en la lista de proveedores (sin SUNAT). Después le agregas contactos y cuentas bancarias (SWIFT).</div></div>
+                        <div class="form-text">Queda en la lista de proveedores (sin SUNAT). Después le agregas contactos y cuentas bancarias (SWIFT).
+                            <b>Tax ID:</b> en China es el <b>código de crédito social unificado</b> (18 letras y números) de su <i>Business License</i>; pídeselo al proveedor.
+                            Si aún no lo tienes, marca "Todavía no tengo el Tax ID" y complétalo después.</div></div>
                 </div>
             </div>
             <button type="button" class="btn btn-link btn-sm px-0" onclick="aMano()" id="btnAMano"><i class="bi bi-pencil"></i> SUNAT no responde: escribir los datos a mano</button>
@@ -315,7 +322,14 @@
             <div id="boxImpCond" style="display:none;">
                 <div class="lbl req mt-3">Condiciones de pago</div>
                 <div id="pagosImp"></div>
-                <button type="button" class="btn btn-sm btn-outline-primary" onclick="agregarPago()"><i class="bi bi-plus-lg"></i> Agregar línea</button>
+                <div class="d-flex flex-wrap gap-2 align-items-center">
+                    <button type="button" class="btn btn-sm btn-outline-primary" onclick="agregarPago()"><i class="bi bi-plus-lg"></i> Agregar línea</button>
+                    <select class="form-select form-select-sm" id="selPagoImp" style="max-width: 440px;" onchange="agregarPagoLista(this)">
+                        <option value="">+ Agregar de la lista (opcional)…</option>
+                        <optgroup label="Importación">{% for c in condiciones_imp %}<option>{{ c }}</option>{% endfor %}</optgroup>
+                        {% if condiciones %}<optgroup label="Las de la OC normal">{% for c in condiciones %}<option>{{ c }}</option>{% endfor %}</optgroup>{% endif %}
+                    </select>
+                </div>
                 <div class="form-text">Con <b>%</b> se calcula el monto sobre el total: "Depósito del 15.0% $13,934.28". Sin % queda como texto (ej. "El saldo debe pagarse en 60 días una vez recibido el B/L").</div>
                 <div class="lbl mt-3">Condiciones comerciales</div>
                 <textarea name="condiciones_comerciales" id="condiciones_comerciales" class="form-control" rows="4" maxlength="2000" placeholder="Incoterm, puerto, documentos del embarque...">{{ pv.condiciones_comerciales or '' }}</textarea>
@@ -440,10 +454,10 @@
             <div class="col-6 col-md-8 i-os-box align-self-end" style="display:none; font-size:.7rem; color:#64748b;"><i class="bi bi-info-circle"></i> Solo informativo: si el servicio se cobra por <b>kilo</b>, escribe cuántas piezas van (sale en la OS y el PDF).</div>
             <div class="col-4 col-md-2"><label class="i-lbl-cant">Cantidad *</label><input type="number" name="cantidad[]" step="any" min="0" class="form-control form-control-sm i-cant" inputmode="decimal"></div>
             <div class="col-4 col-md-3"><label>U.M. *</label><select name="um[]" class="form-select form-select-sm i-um"></select></div>
-            <div class="col-4 col-md-3 i-local"><label class="i-lbl-pu">P. Unit. *</label><input type="number" name="precio_unitario[]" step="any" min="0" class="form-control form-control-sm i-pu" inputmode="decimal"></div>
-            <div class="col-4 col-md-3 i-imp" style="display:none;"><label>USD / 1000 PCS *</label><input type="number" name="precio_mil[]" step="any" min="0" class="form-control form-control-sm i-pmil" inputmode="decimal"></div>
+            <div class="col-4 col-md-3 i-local i-pu-box"><label class="i-lbl-pu">P. Unit. *</label><input type="number" name="precio_unitario[]" step="any" min="0" class="form-control form-control-sm i-pu" inputmode="decimal"></div>
+            <input type="hidden" name="precio_mil[]" class="i-pmil">
             <div class="col-12 col-md-4 text-end"><label class="i-lbl-tot">Total</label><div class="tot i-tot">0.00</div><div class="i-sin text-muted" style="font-size:.68rem;"></div></div>
-            <div class="col-6 col-md-3 i-imp" style="display:none;"><label>KGS / MPCS</label><input type="number" name="kgs_mpcs[]" step="any" min="0" class="form-control form-control-sm i-kgs" inputmode="decimal" placeholder="kg por millar"></div>
+            <div class="col-6 col-md-3 i-imp" style="display:none;"><label>KGS / 1000 PCS</label><input type="number" name="kgs_mpcs[]" step="any" min="0" class="form-control form-control-sm i-kgs" inputmode="decimal" placeholder="kg por 1000 piezas"></div>
             <div class="col-6 col-md-4 i-imp align-self-end small" style="display:none;">Total KGS: <b class="i-tkg">0</b></div>
             <div class="col-12 i-peso-box"><div class="peso-linea"><i class="bi bi-speedometer2"></i> Peso <span class="text-muted">(opcional)</span>
                 <select name="peso_modo[]" class="form-select form-select-sm i-pmodo"><option value="U">kg por unidad</option><option value="T">kg total del ítem</option></select>
@@ -488,6 +502,7 @@ const SERVICIOS = {{ servicios|tojson }};
 const ES_ADMIN = {{ 'true' if session.get('role') == 'admin' else 'false' }};
 const PUEDE_INSUMOS = {{ 'true' if puede_insumos else 'false' }};
 const ES_EDICION = {{ 'true' if orden else 'false' }};
+const TAX_TEMPORAL = {{ tax_temporal|tojson }};
 const EMPRESA_ORIGINAL = {{ ((orden.empresa or 'ANCLAJES') if orden else '')|tojson }};
 const CODIGO_ORIGINAL = {{ (oc_codigo(orden) if orden else '')|tojson }};
 const ES_REAPROBACION = {{ 'true' if reaprob else 'false' }};
@@ -663,8 +678,8 @@ function pintarConIgv() {
     porId('boxConIgv').style.display = esImp() ? 'none' : '';
     porId('boxConIgv').classList.toggle('on', on);
     porId('lblPrecios').innerHTML = esImp() ? 'Precios <b>SIN IGV</b> (importación)' : (on ? 'Precios <b>CON IGV</b>' : 'Precios <b>SIN IGV</b>');
-    document.querySelectorAll('#items .i-lbl-pu').forEach(x => x.textContent = on ? 'P. Unit. c/IGV *' : 'P. Unit. *');
-    document.querySelectorAll('#items .i-lbl-tot').forEach(x => x.textContent = on ? 'Total c/IGV' : 'Total');
+    document.querySelectorAll('#items .i-lbl-pu').forEach(x => x.textContent = esImp() ? 'USD / PCS *' : (on ? 'P. Unit. c/IGV *' : 'P. Unit. *'));
+    document.querySelectorAll('#items .i-lbl-tot').forEach(x => x.textContent = esImp() ? 'Amount USD' : (on ? 'Total c/IGV' : 'Total'));
     recalcular();
 }
 function recalcular() {
@@ -674,20 +689,26 @@ function recalcular() {
         const cant = parseFloat(f.querySelector('.i-cant').value) || 0;
         let t;
         if (imp) {
-            const pm = f.querySelector('.i-pmil').value, kg = parseFloat(f.querySelector('.i-kgs').value) || 0;
-            if (pm !== '') f.querySelector('.i-pu').value = (parseFloat(pm) || 0) / 1000;
-            t = r2(cant * (parseFloat(pm) || 0) / 1000);
+            // precio por pieza (USD/PCS); el precio por 1000 piezas se guarda como dato derivado
+            const pu = f.querySelector('.i-pu').value, kg = parseFloat(f.querySelector('.i-kgs').value) || 0;
+            f.querySelector('.i-pmil').value = pu !== '' ? Math.round((parseFloat(pu) || 0) * 1000 * 10000) / 10000 : '';
+            t = r2(cant * (parseFloat(pu) || 0));
             const tk = cant * kg / 1000; f.querySelector('.i-tkg').textContent = fmtKg(tk); peso += tk; pcs += cant;
         } else {
             t = r2(cant * (parseFloat(f.querySelector('.i-pu').value) || 0));
             peso += f.querySelector('.i-um').value === 'KG' ? cant : pesoFila(f);
         }
         const sinIgv = f.querySelector('.i-sin');
-        if (ci) {   // el total con IGV manda (como la factura); el valor sin IGV sale de dividir entre 1.18
+        if (imp) {
+            const pu = parseFloat(f.querySelector('.i-pu').value);
+            sinIgv.textContent = pu > 0 ? `US$ ${(pu * 1000).toLocaleString('es-PE', { maximumFractionDigits: 4 })} por 1000 PCS` : '';
+            f.querySelector('.i-tot').textContent = `${moneda()} ${fmt(t)}`; sub += t;
+        }
+        else if (ci) {   // el total con IGV manda (como la factura); el valor sin IGV sale de dividir entre 1.18
             totCon += t; const s_ = r2(t / (1 + IGV));
             f.querySelector('.i-tot').textContent = `${moneda()} ${fmt(t)}`; sinIgv.textContent = `sin IGV ${moneda()} ${fmt(s_)}`; sub += s_;
         } else {
-            f.querySelector('.i-tot').textContent = `${moneda()} ${fmt(t)}`; sinIgv.textContent = ''; sub += t;
+            f.querySelector('.i-tot').textContent = `${moneda()} ${fmt(t)}`; if (!imp) sinIgv.textContent = ''; sub += t;
         }
     });
     sub = r2(sub); const igv = imp ? 0 : (ci ? r2(r2(totCon) - sub) : r2(sub * IGV));
@@ -716,6 +737,11 @@ function agregarPago(d) {
     porId('pagosImp').appendChild(div);
     recalcular();
 }
+function agregarPagoLista(sel) {
+    const v = sel.value; sel.value = ''; if (!v) return;
+    const vacia = [...document.querySelectorAll('#pagosImp .p-txt')].find(x => !x.value.trim());
+    if (vacia) { vacia.value = v; vacia.closest('.pago-l').querySelector('.p-pct').focus(); } else agregarPago({ texto: v });
+}
 function pintarMontosPago(total) {
     document.querySelectorAll('#pagosImp .pago-l').forEach(l => {
         const pct = parseFloat(l.querySelector('.p-pct').value) || 0;
@@ -733,7 +759,8 @@ function pintarImportacion(cambio) {
     if (imp) { porId('aplica_detraccion').checked = false; const usd = porId('mon_USD'); if (usd) usd.checked = true; }
     document.querySelectorAll('#formOC input[name=moneda]').forEach(r => r.disabled = imp && r.value !== 'USD');
     document.querySelectorAll('#items .i-imp').forEach(x => x.style.display = imp ? '' : 'none');
-    document.querySelectorAll('#items .i-local').forEach(x => x.style.display = imp ? 'none' : '');
+    document.querySelectorAll('#items .i-local').forEach(x => x.style.display = (imp && !x.classList.contains('i-pu-box')) ? 'none' : '');
+    document.querySelectorAll('#items .i-pu').forEach(x => x.step = imp ? '0.0000001' : 'any');
     document.querySelectorAll('#items .item').forEach(pintarPesoFila);
     document.querySelectorAll('#items .i-lbl-cant').forEach(x => x.textContent = imp ? 'Cantidad / PCS *' : 'Cantidad *');
     porId('m_ruc_lbl').textContent = imp ? 'Tax ID / N° de registro' : 'RUC';
@@ -741,8 +768,6 @@ function pintarImportacion(cambio) {
     if (cambio && provActual && !!provActual.extranjero !== imp) cambiarProv();
     pintarProvModo();
     if (imp && cambio) {
-        // el precio unitario que ya estaba escrito pasa a USD por 1000 piezas
-        document.querySelectorAll('#items .item').forEach(f => { const pu = f.querySelector('.i-pu').value, pm = f.querySelector('.i-pmil'); if (pu !== '' && pm.value === '') pm.value = r2(parseFloat(pu) * 1000); });
         // sugerencias de Configuración, solo si está vacío
         const def = IMP_DEF[empresa()] || {};
         if (!porId('pagosImp').children.length) ((def.pagos || []).length ? def.pagos : [{}]).forEach(agregarPago);
@@ -856,7 +881,8 @@ function agregarItem(datos) {
     fila.querySelector('.i-um').addEventListener('change', () => { pintarPesoFila(fila); recalcular(); });
     const imp0 = esImp();
     fila.querySelectorAll('.i-imp').forEach(x => x.style.display = imp0 ? '' : 'none');
-    fila.querySelectorAll('.i-local').forEach(x => x.style.display = imp0 ? 'none' : '');
+    fila.querySelectorAll('.i-local').forEach(x => x.style.display = (imp0 && !x.classList.contains('i-pu-box')) ? 'none' : '');
+    if (imp0) { fila.querySelector('.i-lbl-pu').textContent = 'USD / PCS *'; fila.querySelector('.i-lbl-tot').textContent = 'Amount USD'; }
     fila.querySelector('.i-lbl-cant').textContent = imp0 ? 'Cantidad / PCS *' : 'Cantidad *';
     pintarPesoFila(fila);
     if (conIgv()) { fila.querySelector('.i-lbl-pu').textContent = 'P. Unit. c/IGV *'; fila.querySelector('.i-lbl-tot').textContent = 'Total c/IGV'; }
@@ -986,7 +1012,10 @@ function mostrarProveedor(p, msg) {
     porId('pc_nombre').textContent = p.razon_social; porId('pc_ruc').textContent = (p.extranjero ? 'Tax ID ' : 'RUC ') + p.ruc; porId('pc_dir').textContent = p.direccion || '';
     const est = [p.sunat_estado, p.sunat_condicion].filter(Boolean);
     porId('btnActSunat').style.display = p.extranjero ? 'none' : '';
-    porId('pc_sunat').innerHTML = p.extranjero ? `<span class="chip gris"><i class="bi bi-globe-americas"></i> Proveedor del exterior${p.pais ? ' · ' + esc(p.pais) : ''}</span>` : est.length ? est.map(x => `<span class="chip ${/ACTIVO|HABIDO/.test(x) && !/NO /.test(x) ? 'ok' : 'mal'}">${esc(x)}</span>`).join(' ') + (p.sunat_fecha ? ` <span class="chip gris">SUNAT ${esc(p.sunat_fecha)}</span>` : '')
+    const taxPend = p.extranjero && (p.ruc || '').startsWith(TAX_TEMPORAL);
+    if (taxPend) porId('pc_ruc').textContent = 'Tax ID pendiente';
+    porId('pc_sunat').innerHTML = p.extranjero ? `<span class="chip gris"><i class="bi bi-globe-americas"></i> Proveedor del exterior${p.pais ? ' · ' + esc(p.pais) : ''}</span>` +
+        (taxPend ? ` <span class="chip mal">Sin Tax ID</span> <button type="button" class="btn btn-link btn-sm p-0" onclick="completarTax()">Completar Tax ID</button>` : '') : est.length ? est.map(x => `<span class="chip ${/ACTIVO|HABIDO/.test(x) && !/NO /.test(x) ? 'ok' : 'mal'}">${esc(x)}</span>`).join(' ') + (p.sunat_fecha ? ` <span class="chip gris">SUNAT ${esc(p.sunat_fecha)}</span>` : '')
                                          : '<span class="chip gris">escrito a mano</span>';
     porId('provCard').style.display = 'block'; porId('provBuscar').style.display = 'none'; porId('provManual').style.display = 'none';
     porId('btnAMano').style.display = 'none'; porId('sugProv').style.display = 'none';
@@ -1018,6 +1047,7 @@ function buscarSunat(actualizar) {
 }
 function aMano() {
     provActual = null; contactos = [];
+    porId('m_prov_id').value = ''; porId('m_sin_tax').checked = false; porId('m_sin_tax').closest('.form-check').style.display = esImp() ? '' : 'none'; pintarSinTax();
     porId('oc_proveedor_id').value = ''; porId('contacto_id').value = '';
     porId('provBuscar').style.display = 'none'; porId('provCard').style.display = 'none'; porId('provManual').style.display = 'block'; porId('btnAMano').style.display = 'none';
     porId('boxCuentas').style.display = 'none';
@@ -1029,8 +1059,22 @@ function aMano() {
     porId('m_ruc').focus();
 }
 
+function pintarSinTax() {
+    const sin = porId('m_sin_tax').checked;
+    porId('m_ruc').disabled = sin; if (sin) porId('m_ruc').value = '';
+    porId('m_ruc').placeholder = sin ? 'Se pone uno temporal' : '';
+}
+function completarTax() {
+    // proveedor del exterior guardado con Tax ID temporal: se abre el formulario para escribir el verdadero
+    const p = provActual; if (!p) return;
+    aMano();
+    porId('m_prov_id').value = p.id; porId('m_ruc').value = ''; porId('m_razon').value = p.razon_social || ''; porId('m_pais').value = p.pais || ''; porId('m_dir').value = p.direccion || '';
+    porId('m_sin_tax').checked = false; porId('m_sin_tax').closest('.form-check').style.display = 'none'; pintarSinTax();
+    porId('provMsg').innerHTML = '<span class="text-primary">Escribe el Tax ID verdadero y pulsa Guardar: se corrige en el proveedor y en sus órdenes.</span>';
+}
 function guardarExt() {
-    post(`{{ url_for('oc_api_proveedor_ext') }}`, { tax_id: porId('m_ruc').value, razon_social: porId('m_razon').value, pais: porId('m_pais').value, direccion: porId('m_dir').value })
+    post(`{{ url_for('oc_api_proveedor_ext') }}`, { tax_id: porId('m_ruc').value, razon_social: porId('m_razon').value, pais: porId('m_pais').value, direccion: porId('m_dir').value,
+                                                    sin_tax: porId('m_sin_tax').checked ? '1' : '', prov_id: porId('m_prov_id').value })
         .then(d => {
             if (d.status !== 'success') return Swal.fire('Falta información', d.msg, 'warning');
             mostrarProveedor(d.proveedor, `<span class="text-success"><i class="bi bi-check-circle-fill"></i> ${esc(d.msg)}</span>`);
@@ -1181,7 +1225,7 @@ porId('formOC').addEventListener('submit', function (e) {
     const filas = [...document.querySelectorAll('#items .item')].filter(f => f.querySelector('.i-desc').value.trim() || f.querySelector('.i-cant').value || f.querySelector('.i-pu').value || f.querySelector('.i-pmil').value);
     if (!filas.length) err.push('Agrega al menos un ítem.');
     filas.forEach((f, i) => {
-        if (f.querySelector('.i-desc').value.trim().length < 2 || !(parseFloat(f.querySelector('.i-cant').value) > 0) || !f.querySelector('.i-um').value || (esImp() ? f.querySelector('.i-pmil').value === '' : f.querySelector('.i-pu').value === ''))
+        if (f.querySelector('.i-desc').value.trim().length < 2 || !(parseFloat(f.querySelector('.i-cant').value) > 0) || !f.querySelector('.i-um').value || f.querySelector('.i-pu').value === '')
             err.push(`Ítem ${i + 1}: completa descripción, cantidad, U.M. y precio.`);
         if (tipo() === 'OS' && !f.querySelector('.i-serv').value) err.push(`Ítem ${i + 1}: elige el tipo de servicio.`);
         if (f.querySelector('.ficha.falta')) err.push(`Ítem ${i + 1}: elige ${destino() === 'INSUMOS' ? 'el insumo del maestro' : 'el producto del inventario ' + corto()} de la lista (no se puede escribir a mano).`);

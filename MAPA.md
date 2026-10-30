@@ -28,6 +28,8 @@ modulos/
                          detalle y flujo (enviar, aprobar, rechazar, anular, observación)
     mejores_precios.py   MEJORES PRECIOS (/ordenes/precios, también el menú "Mejores Precios"): por producto, por proveedor,
                          detalle, gráficos, ahorro potencial y Excel con gráficos (productos, insumos y servicios)
+    en_camino.py         EN CAMINO (solo Gerencia): en los inventarios de Anclajes, Import Bolts e Insumos, por producto,
+                         lo que viene en OC aprobadas (en camino / llegó / por sumar / sumado hace X días) y la línea de tiempo
     entregas.py          llegadas totales/parciales, conformidad, pago y factura, cuentas bancarias,
                          cliente, ingresos pendientes al inventario e ingreso al Kardex
     pdf_proveedores_config.py   PDF de la orden, proveedores y contactos, buscador de productos, configuración
@@ -38,6 +40,7 @@ modulos/
     notificaciones.py    tipos de aviso, configuración por usuario, API de la campana, aprobación rápida
     push.py              aviso de Windows con la página cerrada (Web Push, /sw.js)
 templates/             plantillas (todas en una carpeta; prefijos: oc_*, insumos_*, notificaciones, _campana...)
+                       _en_camino.html: panel, botones por producto y ventana de "En camino" (se usa en los 3 inventarios)
 ```
 
 ## Cómo se cargan los archivos de `modulos/`
@@ -77,7 +80,14 @@ Próximos candidatos para separar (cuando se trabajen): inventario Anclajes/Impo
 
 admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectura del Inventario General), vendedor, chofer.
 - Compras: ven `ROLES_OC_VEN` (admin, logistica, administracion); editan admin y logistica; aprueba solo admin.
-- Mejores precios: solo `ROLES_OC_VEN` (admin, logistica, administracion).
+- Mejores precios: solo `ROLES_OC_VEN` (admin, logistica, administracion). En camino: solo admin (Gerencia).
+
+## Importaciones
+
+- Precio por pieza (USD/PCS, hasta 7 decimales) como la factura comercial; se guarda también el precio por 1000 piezas (derivado).
+  Las órdenes antiguas (por 1000 piezas) ya tienen su precio por pieza en `precio_unitario`.
+- Proveedor del exterior sin Tax ID: se guarda con un código temporal `SINTAXID001...` y se completa desde la orden
+  ("Completar Tax ID"); se corrige también en sus órdenes.
 - Requerimientos: los crean admin, logistica, almacen y almacen_visor; los atienden admin y logistica.
 - Insumos: editan admin, almacen y logistica.
 

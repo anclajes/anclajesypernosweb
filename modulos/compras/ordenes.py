@@ -387,6 +387,7 @@ def _contexto_form_oc(orden=None, datos_previos=None):
     motivos.sort(key=lambda m: m.id)
     return dict(orden=orden, previo=datos_previos, bloqueo_empresa=_oc_bloqueo_cambio_empresa(orden) if orden else None, tipos=TIPOS_OC, destinos=DESTINOS_OC, monedas=MONEDAS_OC, empresas_oc=EMPRESAS_OC,
                 ums=[v.valor for v in _oc_catalogo('OC_UM')], condiciones=[v.valor for v in _oc_catalogo('OC_CONDICION_PAGO')],
+                condiciones_imp=CONDICIONES_PAGO_IMP,
                 cfg=_oc_cfg(orden.empresa if orden else 'ANCLAJES'), igv=IGV_OC, hoy=hora_peru().date(), seccion='nueva',
                 cfgs={e: _oc_cfg(e) for e in EMPRESAS_OC}, detraccion_def=DETRACCION_DEF,
                 siguiente={f'{e}|{t}': _oc_numero_txt(None, _siguiente_numero_oc(t, e), e) for e in EMPRESAS_OC for t in TIPOS_OC},
