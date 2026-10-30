@@ -597,27 +597,53 @@ function eliminarProductoMaestro(sku) {
               'Solo funciona si el código todavía no tiene movimientos de Kardex, ventas/cotizaciones, kits, ' +
               'traslados inter-empresa ni conteos de auditoría en ninguno de los dos inventarios — pensado para ' +
               'corregir un error de digitación o un código repetido.<br>' +
-              '<span class="text-muted small">El <b>Saldo Inicial</b> (carga del Excel) no cuenta: si es su único movimiento, se borra junto con el código.</span>' +
+              '<span class="text-muted small">El <b>Saldo Inicial</b> (carga del Excel) no cuenta: si es su único movimiento, se borra junto con el código. ' +
+              'Si solo tiene un <b>conteo de auditoría</b>, Gerencia puede borrarlo junto con su auditoría.</span>' +
               '<br><br><strong>Esta acción no se puede deshacer.</strong>',
         icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Sí, eliminar'
     }).then(result => {
         if (!result.isConfirmed) return;
-        fetch(`/admin/maestro/${encodeURIComponent(sku)}/eliminar`, { method: 'POST' })
-            .then(r => r.json())
-            .then(data => {
-                if (data.status !== 'success') {
-                    Swal.fire({ icon: 'error', title: 'No se pudo eliminar', text: data.msg, width: 600 });
-                    return;
-                }
-                const fila = document.getElementById(`fila-maestro-${sku}`);
-                if (fila) fila.remove();
-                Swal.fire({ icon: 'success', title: 'Eliminado', text: data.msg, timer: 2200, showConfirmButton: false });
-            })
-            .catch(err => {
-                console.error('Error en eliminarProductoMaestro:', err);
-                Swal.fire('Error', 'No se pudo comunicar con el servidor.', 'error');
-            });
+        enviarEliminarMaestro(sku, false);
     });
+}
+
+function enviarEliminarMaestro(sku, forzarAuditoria) {
+    const fd = new FormData();
+    if (forzarAuditoria) fd.append('forzar_auditoria', '1');
+    fetch(`/admin/maestro/${encodeURIComponent(sku)}/eliminar`, { method: 'POST', body: fd })
+        .then(r => r.json())
+        .then(data => {
+            if (data.status !== 'success') {
+                if (data.puede_forzar && !forzarAuditoria) return confirmarBorrarConAuditoria(sku, data);
+                Swal.fire({ icon: 'error', title: 'No se pudo eliminar', text: data.msg, width: 600 });
+                return;
+            }
+            const fila = document.getElementById(`fila-maestro-${sku}`);
+            if (fila) fila.remove();
+            Swal.fire({ icon: 'success', title: 'Eliminado', text: data.msg, timer: 2600, showConfirmButton: false });
+        })
+        .catch(err => {
+            console.error('Error en eliminarProductoMaestro:', err);
+            Swal.fire('Error', 'No se pudo comunicar con el servidor.', 'error');
+        });
+}
+
+// Código duplicado que solo tiene su conteo de auditoría: Gerencia puede borrarlo con su auditoría (escribiendo el código)
+function confirmarBorrarConAuditoria(sku, data) {
+    const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    Swal.fire({
+        icon: 'warning', width: 620,
+        title: `"${esc(sku)}" tiene auditoría`,
+        html: `<div class="text-start small">No tiene ventas ni movimientos reales, pero tiene:<ul class="mb-2">` +
+              (data.conteos || []).map(c => `<li>${esc(c)}</li>`).join('') +
+              (data.ajustes_kardex ? `<li>${data.ajustes_kardex} ajuste(s) de conteo en el Kardex</li>` : '') + `</ul>` +
+              `Se borra el código del Maestro y de ambos inventarios <b>junto con esos conteos</b> (fotos, bitácora y correcciones)` +
+              `${data.ajustes_kardex ? ' y sus ajustes del Kardex' : ''}. Su stock actual (<b>${data.stock || 0}</b>) desaparece con él.` +
+              `<div class="mt-2 text-danger fw-bold">No se puede deshacer. Escribe el código para confirmar:</div></div>`,
+        input: 'text', inputPlaceholder: sku,
+        showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Borrar con su auditoría', cancelButtonText: 'Cancelar',
+        inputValidator: v => (v || '').trim().toUpperCase() !== String(sku).toUpperCase() ? 'Escribe el código exacto' : null
+    }).then(r => { if (r.isConfirmed) enviarEliminarMaestro(sku, true); });
 }
 </script>
 {% endif %}

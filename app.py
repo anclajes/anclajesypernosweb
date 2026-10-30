@@ -6828,6 +6828,7 @@ def admin_maestro_nuevo():
 
 
 ROLES_ELIMINAN_MAESTRO = ['admin', 'almacen']   # Gerencia y Jefe de Almacén
+ROLES_FUERZAN_BORRADO_AUDITORIA = ['admin']     # borrar también los conteos de auditoría: solo Gerencia
 
 
 @app.route('/admin/maestro/<sku>/eliminar', methods=['POST'])
@@ -6851,32 +6852,50 @@ def admin_maestro_eliminar(sku):
 
     # El "Saldo Inicial" (carga de datos al importar/crear el producto) NO cuenta como uso real: si es el único
     # movimiento (sin documentos ni proceso por OC), se borra junto con el producto.
-    bloqueos, iniciales = [], []
+    # Los CONTEOS DE AUDITORÍA bloquean, salvo que Gerencia confirme borrarlos también (forzar_auditoria=1, escribiendo
+    # el código): pensado para un código duplicado que solo tiene su auditoría aplicada. Se borran el conteo, sus fotos,
+    # su bitácora, sus correcciones y sus ajustes "Conteo Físico #N" del Kardex.
+    forzar_aud = request.form.get('forzar_auditoria') == '1' and session.get('role') in ROLES_FUERZAN_BORRADO_AUDITORIA
+    bloqueos, iniciales, registros_aud, movs_aud = [], [], [], []
     if prod_anclajes:
-        ini, n = _movimientos_que_bloquean_borrado('ANCLAJES', prod_anclajes.id)
+        regs = RegistroAuditoria.query.filter_by(product_id=prod_anclajes.id).all()
+        registros_aud += [('ANCLAJES', r) for r in regs]
+        ini, n, m_aud = _movimientos_que_bloquean_borrado('ANCLAJES', prod_anclajes.id, regs)
         iniciales += ini
-        if n: bloqueos.append(f'{n} movimiento(s) de Kardex en Anclajes (aparte del Saldo Inicial)')
+        movs_aud += m_aud
+        if n: bloqueos.append(f'{n} movimiento(s) de Kardex en Anclajes (aparte del Saldo Inicial y de la auditoría)')
         n = OrderDetail.query.filter_by(product_id=prod_anclajes.id).count()
         if n: bloqueos.append(f'{n} línea(s) de cotización/pedido en Anclajes')
         n = OrderKitComponent.query.filter_by(product_id=prod_anclajes.id).count()
         if n: bloqueos.append(f'{n} uso(s) como componente de kit')
-        n = RegistroAuditoria.query.filter_by(product_id=prod_anclajes.id).count()
-        if n: bloqueos.append(f'{n} conteo(s) de auditoría en Anclajes')
     if prod_importbolts:
-        ini, n = _movimientos_que_bloquean_borrado('IMPORTBOLTS', prod_importbolts.id)
+        regs = RegistroAuditoria.query.filter_by(product_importbolts_id=prod_importbolts.id).all()
+        registros_aud += [('IMPORTBOLTS', r) for r in regs]
+        ini, n, m_aud = _movimientos_que_bloquean_borrado('IMPORTBOLTS', prod_importbolts.id, regs)
         iniciales += ini
-        if n: bloqueos.append(f'{n} movimiento(s) de Kardex en ImportBolts (aparte del Saldo Inicial)')
+        movs_aud += m_aud
+        if n: bloqueos.append(f'{n} movimiento(s) de Kardex en ImportBolts (aparte del Saldo Inicial y de la auditoría)')
         n = OrderDetail.query.filter_by(product_id_importbolts=prod_importbolts.id).count()
         if n: bloqueos.append(f'{n} línea(s) de cotización/pedido en ImportBolts')
         n = IntercompanyTransfer.query.filter_by(product_importbolts_id=prod_importbolts.id).count()
         if n: bloqueos.append(f'{n} traslado(s) inter-empresa')
-        n = RegistroAuditoria.query.filter_by(product_importbolts_id=prod_importbolts.id).count()
-        if n: bloqueos.append(f'{n} conteo(s) de auditoría en ImportBolts')
 
     if bloqueos:
-        return {'status': 'error', 'msg': f'No se puede eliminar "{sku}": tiene ' + '; '.join(bloqueos) +
-                                           '. Ya no se considera un simple error de digitación — usa "Desactivar" '
+        return {'status': 'error', 'msg': f'No se puede eliminar "{sku}": tiene ' + '; '.join(bloqueos)
+                                           + (f'; además {len(registros_aud)} conteo(s) de auditoría' if registros_aud else '')
+                                           + '. Ya no se considera un simple error de digitación — usa "Desactivar" '
                                            'en cada inventario en vez de borrarlo, para no perder ese historial.'}
+    if registros_aud and not forzar_aud:
+        detalle = [f"Conteo #{r.id} · {'Import Bolts' if o == 'IMPORTBOLTS' else 'Anclajes'} · {r.estado_registro or ''} · "
+                   f"{r.cantidad_total or 0} {r.unidad_medida or 'UN'}"
+                   + (f" · {r.fecha_registro.strftime('%d/%m/%Y')}" if r.fecha_registro else '') for o, r in registros_aud]
+        puede = session.get('role') in ROLES_FUERZAN_BORRADO_AUDITORIA
+        return {'status': 'error', 'puede_forzar': puede, 'conteos': detalle, 'ajustes_kardex': len(movs_aud),
+                'stock': sum(int(p.stock_actual or 0) for p in (prod_anclajes, prod_importbolts) if p),
+                'msg': f'"{sku}" no tiene ventas ni movimientos reales, pero tiene {len(registros_aud)} conteo(s) de auditoría'
+                       + (f' y {len(movs_aud)} ajuste(s) de conteo en el Kardex' if movs_aud else '') + '. '
+                       + ('Puedes borrarlo junto con su auditoría (confirmando con el código).' if puede
+                          else 'Solo Gerencia puede borrarlo junto con su auditoría.')}
 
     try:
         usuario_actual = session.get('username', 'Sistema')
@@ -6907,6 +6926,26 @@ def admin_maestro_eliminar(sku):
             db.session.delete(mov)
         db.session.flush()
 
+        # Borrado confirmado por Gerencia: también su auditoría (conteos, fotos, bitácora, correcciones y ajustes del Kardex)
+        claves_aud = []
+        if forzar_aud and registros_aud:
+            for mov in movs_aud:
+                db.session.delete(mov)
+            for _, r in registros_aud:
+                for corr in CorreccionAuditoria.query.filter_by(registro_id=r.id).all():
+                    for ft in CorreccionAuditoriaFoto.query.filter_by(correccion_id=corr.id).all():
+                        claves_aud.append(ft.s3_key)
+                        db.session.delete(ft)
+                    db.session.delete(corr)
+                for ft in RegistroAuditoriaFoto.query.filter_by(registro_id=r.id).all():
+                    claves_aud.append(ft.s3_key)
+                    db.session.delete(ft)
+                RegistroAuditoriaValorExtra.query.filter_by(registro_id=r.id).delete(synchronize_session=False)
+                RegistroAuditoriaLog.query.filter_by(registro_id=r.id).delete(synchronize_session=False)
+                db.session.flush()
+                db.session.delete(r)
+            db.session.flush()
+
         if prod_anclajes:
             db.session.delete(prod_anclajes)
         if prod_importbolts:
@@ -6918,16 +6957,25 @@ def admin_maestro_eliminar(sku):
             sku=sku, inventario='MAESTRO+AMBOS', campo='eliminacion',
             valor_anterior=detalle_eliminado,
             valor_nuevo=_recortar_para_log('Eliminado del Maestro y de ambos inventarios'
-                                           + (f' (con su Saldo Inicial, stock {stock_borrado})' if iniciales else '')),
+                                           + (f' (con su Saldo Inicial, stock {stock_borrado})' if iniciales else '')
+                                           + (f' + {len(registros_aud)} conteo(s) de auditoría' if forzar_aud and registros_aud else '')),
             familia=familia_log, calidad=calidad_log,
         ))
 
         registrar_log(f"Eliminó el producto {sku} del Maestro (sin movimientos reales ni ventas) y de ambos inventarios"
-                      + (f" · se borró su Saldo Inicial (stock {stock_borrado})" if iniciales else ''),
+                      + (f" · se borró su Saldo Inicial (stock {stock_borrado})" if iniciales else '')
+                      + (f" · también {len(registros_aud)} conteo(s) de auditoría (#{', #'.join(str(r.id) for _, r in registros_aud)})"
+                         f" y {len(movs_aud)} ajuste(s) del Kardex · stock que tenía: {stock_borrado}" if forzar_aud and registros_aud else ''),
                       "bi-trash-fill", "text-danger")
         db.session.commit()
+        for k in claves_aud:
+            try:
+                s3_client.delete_object(Bucket=S3_BUCKET_NAME, Key=k)
+            except Exception as e:
+                print(f"Aviso: no se pudo borrar foto de auditoría de S3 ({k}): {e}")
         return {'status': 'success', 'msg': f'Producto "{sku}" eliminado del Maestro y de ambos inventarios'
-                                           + (f' (junto con su Saldo Inicial: stock {stock_borrado}).' if iniciales else '.')}
+                                           + (f' (junto con su Saldo Inicial: stock {stock_borrado})' if iniciales else '')
+                                           + (f', con {len(registros_aud)} conteo(s) de auditoría' if forzar_aud and registros_aud else '') + '.'}
     except Exception as e:
         db.session.rollback()
         return {'status': 'error', 'msg': f'Error al eliminar: {str(e)}'}, 500
@@ -6937,16 +6985,18 @@ def _es_saldo_inicial(mov):
     return (mov.motivo or '').strip().upper().startswith('SALDO INICIAL')
 
 
-def _movimientos_que_bloquean_borrado(origen, product_id):
-    """([movimientos 'Saldo Inicial' que se pueden borrar], n° de movimientos que SÍ bloquean el borrado).
-    Un Saldo Inicial bloquea si tiene documentos adjuntos, proceso por OC o vino de una orden de compra."""
+def _movimientos_que_bloquean_borrado(origen, product_id, registros_aud=()):
+    """([Saldo Inicial que se pueden borrar], n° de movimientos que SÍ bloquean, [ajustes "Conteo Físico #N (" de esos
+    conteos de auditoría]). Ninguno se puede borrar si tiene documentos adjuntos, proceso por OC o vino de una orden de compra."""
     Modelo = ProductMovementImportBolts if origen == 'IMPORTBOLTS' else ProductMovement
     col_doc = MovimientoDocumento.movimiento_ib_id if origen == 'IMPORTBOLTS' else MovimientoDocumento.movimiento_id
     movs = Modelo.query.filter_by(product_id=product_id).all()
     con_docs = {r[0] for r in db.session.query(col_doc).filter(col_doc.in_([m.id for m in movs])).all()} if movs else set()
-    iniciales = [m for m in movs if _es_saldo_inicial(m) and m.id not in con_docs
-                 and not m.proceso_oc_id and not getattr(m, 'orden_compra_id', None)]
-    return iniciales, len(movs) - len(iniciales)
+    limpio = lambda m: m.id not in con_docs and not m.proceso_oc_id and not getattr(m, 'orden_compra_id', None)
+    marcas = [f"Conteo Físico #{r.id} (" for r in registros_aud]
+    iniciales = [m for m in movs if _es_saldo_inicial(m) and limpio(m)]
+    de_auditoria = [m for m in movs if m not in iniciales and limpio(m) and any(x in (m.motivo or '') for x in marcas)]
+    return iniciales, len(movs) - len(iniciales) - len(de_auditoria), de_auditoria
 
 
 def _recortar_para_log(texto, largo=97):

@@ -28,6 +28,8 @@
     .res-prod { border: 1px solid #e2e8f0; border-radius: 10px; padding: 7px 10px; margin-bottom: 6px; cursor: pointer; font-size: .8rem; }
     .res-prod:hover { border-color: #0B3D91; background: #eff6ff; }
     .res-prod .sku { font-weight: 800; color: #0B3D91; }
+    .est { display: inline-block; font-size: .68rem; font-weight: 800; border-radius: 6px; padding: 0 6px; background: #fef3c7; color: #92400e; }
+    .est.sin { background: #f1f5f9; color: #64748b; font-weight: 700; }
     .pag-mp { display: flex; flex-wrap: wrap; gap: 6px; justify-content: space-between; align-items: center; margin: 6px 0; }
     .doc-sel { font-size: .74rem; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 3px 8px; display: inline-flex; gap: 6px; align-items: center; margin: 3px 3px 0 0; }
 </style>
@@ -199,13 +201,18 @@ function pintarMotivo() {
 }
 function numerar() { document.querySelectorAll('#items .rq-item').forEach((f, i) => f.querySelector('.n').textContent = (esIns() ? 'INSUMO ' : 'PRODUCTO ') + (i + 1)); }
 function opcionesUM(sel, v) { const l = UMS.slice(); if (v && !l.includes(v)) l.push(v); sel.innerHTML = '<option value="">—</option>' + l.map(u => `<option>${esc(u)}</option>`).join(''); sel.value = v || ''; }
+// Estado del producto (NACIONAL, OXIDADO, ROTO...) bien visible: así se distinguen dos códigos de descripción parecida
+function estadoTag(p) {
+    if (!p || p.origen === 'INSUMO') return '';
+    return p.estado ? `<span class="est" title="Estado del producto en el inventario">${esc(p.estado)}</span>` : '<span class="est sin" title="Este producto no tiene estado">SIN ESTADO</span>';
+}
 function fichaProd(fila, p) {
     fila._p = p || null;
     fila.querySelector('.i-cod').value = p ? p.sku : '';
     const box = fila.querySelector('.i-prod'), busca = fila.querySelector('.i-busca');
     if (p) {
         busca.value = p.descripcion; busca.readOnly = true;
-        box.innerHTML = `<div class="prod ok"><i class="bi bi-link-45deg"></i> <b>${esc(p.sku)}</b>${p.familia ? ' · ' + esc(p.familia) : ''}${p.calidad ? ' · ' + esc(p.calidad) : ''}` +
+        box.innerHTML = `<div class="prod ok"><i class="bi bi-link-45deg"></i> <b>${esc(p.sku)}</b> ${estadoTag(p)}${p.familia ? ' · ' + esc(p.familia) : ''}${p.calidad ? ' · ' + esc(p.calidad) : ''}` +
             stockTxt(p) + ` <button type="button" class="btn btn-link btn-sm p-0 ms-1 cambiar">cambiar</button></div>`;
         box.querySelector('.cambiar').onclick = () => { fichaProd(fila, null); busca.value = ''; busca.focus(); };
     } else {
@@ -234,7 +241,7 @@ function agregarItem(d) {
                                                          : '<div class="list-group-item small text-danger">No está en el inventario. Pide al encargado que lo cree en el Maestro.</div>');
             lista.forEach(p => {
                 const b = document.createElement('button'); b.type = 'button'; b.className = 'list-group-item list-group-item-action py-1 px-2 small';
-                b.innerHTML = `<b>${esc(p.sku)}</b> — ${esc(p.descripcion)}<div class="text-muted">${esc([p.familia, p.calidad].filter(Boolean).join(' · '))}${stockTxt(p)}</div>`;
+                b.innerHTML = `<b>${esc(p.sku)}</b> ${estadoTag(p)} — ${esc(p.descripcion)}<div class="text-muted">${esc([p.familia, p.calidad].filter(Boolean).join(' · '))}${stockTxt(p)}</div>`;
                 b.onmousedown = e => e.preventDefault();
                 b.onclick = () => { sug.style.display = 'none'; elegir(fila, p); };
                 sug.appendChild(b);
@@ -290,7 +297,7 @@ function buscarModal(pagina) {
                 const cont = porId('mp_res'); cont.innerHTML = paginador(d);
                 (d.results || []).forEach(p => {
                     const div = document.createElement('div'); div.className = 'res-prod';
-                    div.innerHTML = `<span class="sku">${esc(p.sku)}</span> — ${esc(p.descripcion)}<div class="text-muted small">${esc([p.familia, p.calidad, p.estado].filter(Boolean).join(' · '))}${stockTxt(p)}</div>`;
+                    div.innerHTML = `<span class="sku">${esc(p.sku)}</span> ${estadoTag(p)} — ${esc(p.descripcion)}<div class="text-muted small">${esc([p.familia, p.calidad].filter(Boolean).join(' · '))}${stockTxt(p)}</div>`;
                     if (p.origen === 'INSUMO' && p.familia) div.title = 'Categoría: ' + p.familia;
                     div.onclick = () => { elegir(filaBuscando, p); bootstrap.Modal.getOrCreateInstance(porId('modalProd')).hide(); };
                     cont.appendChild(div);
