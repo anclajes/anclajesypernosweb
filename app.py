@@ -10,7 +10,7 @@ from models import (InsumoArea, InsumoTrabajador, Insumo, InsumoStock, InsumoIng
                     InsumoSalida, InsumoSalidaDetalle, InsumoMovimiento, InsumoDocumento, InsumoProveedor)
 from models import OCProveedor, OrdenCompra, OrdenCompraItem, OrdenCompraEvento, OrdenCompraDocumento, OCConfig, OCContacto, OCMotivoRechazo, OCCuentaBancaria, OCMotivoCompra
 from models import RequerimientoCompra, RequerimientoItem, RequerimientoDocumento, RequerimientoEvento, RequerimientoVisto
-from models import Notificacion, NotificacionConfig, PushSuscripcion
+from models import Notificacion, NotificacionConfig, PushSuscripcion, AvisoAgente
 from models import OrdenCompraEntrega, OrdenCompraEntregaItem
 from flask import g
 from models import ProductMovement
@@ -15754,6 +15754,7 @@ MODULOS_EN_ARCHIVOS = [
     'modulos/kardex/venta_servicio.py',
     'modulos/avisos/notificaciones.py',
     'modulos/avisos/push.py',
+    'modulos/avisos/agente.py',
 ]
 
 

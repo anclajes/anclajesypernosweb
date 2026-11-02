@@ -124,7 +124,7 @@
     // ---------- aviso de Windows ----------
     function permisoWin() { return ('Notification' in window) ? Notification.permission : 'no'; }
     function avisoWindows(t, cuerpo, tag, alClic, insistente) {
-        if (!datos || !datos.cfg.windows || permisoWin() !== 'granted') return;
+        if (!datos || !datos.cfg.windows || datos.agente || permisoWin() !== 'granted') return;   // con el Programa de avisos sale por él
         try {
             const n = new Notification(t, { body: cuerpo, tag: tag, icon: LOGO, requireInteraction: !!insistente });
             n.onclick = () => { window.focus(); n.close(); if (alClic) alClic(); };

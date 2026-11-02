@@ -129,13 +129,16 @@ def _push_procesar(trabajos, priv, pub, sub, espera=0):
     return resultado
 
 
-def _push_a_usuarios(por_usuario, espera=0, en_hilo=None):
-    """por_usuario: {user_id: datos del aviso}. Solo a quien tiene el aviso de Windows activado."""
+def _push_a_usuarios(por_usuario, espera=0, en_hilo=None, sin_windows=()):
+    """por_usuario: {user_id: datos del aviso}. Solo a quien tiene el aviso de Windows activado.
+    sin_windows: usuarios con el Programa de avisos funcionando: a sus navegadores de Windows no se les manda (ya le sale por el programa)."""
     priv, pub = _push_claves()
     if not priv or not por_usuario:
         return []
     trabajos = []
     for s_ in PushSuscripcion.query.filter(PushSuscripcion.user_id.in_(list(por_usuario))).all():
+        if s_.user_id in sin_windows and 'Windows' in (s_.navegador or ''):
+            continue
         trabajos.append({'sub_id': s_.id, 'endpoint': s_.endpoint, 'p256dh': s_.p256dh, 'auth': s_.auth, 'datos': por_usuario[s_.user_id]})
     if not trabajos:
         return []
@@ -163,7 +166,7 @@ def _push_despachar(resp):
                 continue
             por_usuario[n.user_id] = {'title': n.titulo, 'body': n.texto or '', 'url': url_for('notif_ir', notif_id=n.id), 'tag': f'erp-{n.id}',
                                       'insistente': n.tipo == 'OC_POR_APROBAR', 'icon': logo}
-        _push_a_usuarios(por_usuario)
+        _push_a_usuarios(por_usuario, sin_windows=_agente_usuarios_activos(list(por_usuario)))
     except Exception:
         db.session.rollback()
         app.logger.exception("No se pudo despachar los avisos push")

@@ -44,6 +44,10 @@ modulos/
     modelos.py           Notificacion, NotificacionConfig, PushSuscripcion
     notificaciones.py    tipos de aviso, configuración por usuario, API de la campana, aprobación rápida
     push.py              aviso de Windows con la página cerrada (Web Push, /sw.js)
+    agente.py            PROGRAMA DE AVISOS de Windows: llega con el navegador CERRADO del todo. Instalador .cmd por PC
+                         (Campana → Configurar), el programa (PowerShell) pregunta cada minuto a /notificaciones/agente/api
+                         con su clave (tabla aviso_agente, solo la huella). "Quitar" → el programa se desinstala solo.
+                         Mientras funciona, el Web Push y la campana no repiten el aviso de Windows de ese usuario.
 templates/             plantillas (todas en una carpeta; prefijos: oc_*, insumos_*, notificaciones, _campana...)
                        _en_camino.html: panel, botones por producto y ventana de "En camino" (se usa en los 3 inventarios)
                        _mov_venta_servicio.html: bloque "Sale como VENTA" del Movimiento de Kardex (los 2 inventarios)
@@ -106,6 +110,13 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
   desde el Kardex (lápiz). En el Kardex sale como VENTA y cuenta en los dashboards de ventas (toneladas).
   Filtros: `?oc_cliente=`, `?os=`, `?venta_srv=1`. Desmarcada, sigue el proceso por OC de siempre (salida → reingreso → venta final).
 - Borrar un código del Maestro: el "Saldo Inicial" (carga del Excel) no cuenta como movimiento; si es el único, se borra con el código.
+
+## Avisos de Windows
+
+- Página abierta: la campana (cada 30 s). Pestaña cerrada pero navegador abierto: Web Push (`push.py`).
+- Navegador cerrado del todo / PC recién prendida: Programa de avisos (`agente.py`). Se instala en
+  `%LOCALAPPDATA%\AvisosImportBolts` y arranca con Windows (acceso directo en la carpeta Inicio del usuario).
+  No necesita administrador. Usa la misma configuración del usuario (tipos, recordar cada X min).
 
 ## Pruebas (en el entorno de Claude)
 

@@ -191,7 +191,8 @@ def notif_api():
                                'aprobar': n.tipo == 'OC_POR_APROBAR' and rol in ROLES_OC_APRUEBAN})
         no_leidas = sum(1 for n in novedades if not n['leida'])
         return {'status': 'ok', 'activo': True, 'cfg': cfg, 'por_aprobar': por_aprobar, 'novedades': novedades, 'nuevas': nuevas,
-                'no_leidas': no_leidas, 'total': len(por_aprobar) + no_leidas, 'ultimo_id': ult, 'consulta_seg': CONSULTA_NOTIF_SEG}
+                'no_leidas': no_leidas, 'total': len(por_aprobar) + no_leidas, 'ultimo_id': ult, 'consulta_seg': CONSULTA_NOTIF_SEG,
+                'agente': uid in _agente_usuarios_activos([uid])}   # con el Programa de avisos, el aviso de Windows sale por él (no doble)
     except Exception:
         db.session.rollback()
         app.logger.exception("Campana: no se pudo leer los avisos")
@@ -283,6 +284,7 @@ def notif_pagina():
     historial = Notificacion.query.filter(Notificacion.user_id == uid).order_by(Notificacion.id.desc()).limit(60).all()
     return render_template('notificaciones.html', cfg=_notif_cfg(uid, rol), tipos=TIPOS_NOTIF, recordar=RECORDAR_NOTIF, sonidos=SONIDOS_NOTIF,
                            historial=historial, ahora=ahora, hace=_hace_txt, consulta_seg=CONSULTA_NOTIF_SEG,
-                           navegadores=PushSuscripcion.query.filter_by(user_id=uid).order_by(PushSuscripcion.id).all(), push_disponible=PUSH_DISPONIBLE)
+                           navegadores=PushSuscripcion.query.filter_by(user_id=uid).order_by(PushSuscripcion.id).all(), push_disponible=PUSH_DISPONIBLE,
+                           agentes=_agente_lista(uid), agente_activo_min=AGENTE_ACTIVO_MIN, agente_seg=AGENTE_CONSULTA_SEG)
 
 

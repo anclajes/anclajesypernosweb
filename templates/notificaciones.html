@@ -17,6 +17,7 @@
     .nf-h .x { font-size: .72rem; color: #64748b; overflow-wrap: anywhere; }
     .estado-win { font-size: .78rem; border-radius: 10px; padding: 7px 10px; }
     .nf-cerrada { border: 1px dashed #93c5fd; border-radius: 10px; padding: 8px 10px; background: #f8fbff; }
+    .nf-agente { border: 1px solid #bbf7d0; border-radius: 10px; padding: 8px 10px; background: #f7fef9; }
     .nav-push { display: flex; gap: 6px; align-items: center; font-size: .78rem; padding: 3px 0; border-bottom: 1px solid #eef2f7; flex-wrap: wrap; }
 </style>
 
@@ -66,18 +67,46 @@
                     <button type="button" class="btn btn-sm btn-outline-secondary" onclick="probarPush(0)">Probar ahora</button>
                 </div>
                 <div class="small mt-1" id="resPush"></div>
-                <details class="small mt-2"><summary>Para que llegue también con el navegador cerrado</summary>
-                    <div class="text-muted mt-1"><b>Chrome:</b> Configuración → Sistema → activar <i>"Seguir ejecutando aplicaciones en segundo plano al cerrar Google Chrome"</i>.<br>
-                        <b>Edge:</b> Configuración → Sistema y rendimiento → activar <i>"Continuar ejecutando extensiones y aplicaciones en segundo plano cuando Microsoft Edge esté cerrado"</i>.<br>
-                        <b>Brave:</b> escribe <code>brave://settings/system</code> y activa <i>"Continue running background apps when Brave is closed"</i>.<br>
-                        Así, al cerrar con la X el navegador sigue funcionando escondido (ícono junto al reloj de Windows) y los avisos llegan.
-                        Si lo cierras desde ese ícono con "Salir", o reinicias la PC y no abres el navegador, el aviso llega recién cuando lo vuelvas a abrir.<br>
-                        <b>Para que arranque solo al prender la PC (sin abrir ventana):</b> tecla Windows + R → escribe <code>shell:startup</code> → Enter;
-                        en esa carpeta: clic derecho → Nuevo → Acceso directo → pega la ruta del navegador seguida de <code>--no-startup-window</code>, por ejemplo<br>
-                        <code>"C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe" --no-startup-window</code><br>
-                        <code>"C:\Program Files\Google\Chrome\Application\chrome.exe" --no-startup-window</code><br>
-                        Si la computadora está apagada, el aviso llega al prenderla (si no pasó más de un día).</div></details>
+                <details class="small mt-2"><summary>Otra forma, sin instalar nada (dejar el navegador en segundo plano)</summary>
+                    <div class="text-muted mt-1">Lo más seguro es el <b>Programa de avisos</b> (abajo). Si no se puede instalar, en el navegador:<br>
+                        <b>Chrome:</b> Configuración → Sistema → <i>"Seguir ejecutando aplicaciones en segundo plano al cerrar Google Chrome"</i>.
+                        <b>Edge:</b> Configuración → Sistema y rendimiento → <i>"Continuar ejecutando extensiones y aplicaciones en segundo plano…"</i>.
+                        <b>Brave:</b> <code>brave://settings/system</code> → <i>"Continue running background apps when Brave is closed"</i>.<br>
+                        Depende de cada navegador y no siempre funciona: si lo cierras con "Salir" o reinicias la PC sin abrirlo, no llega.</div></details>
                 {% endif %}
+            </div>
+
+            <div class="nf-agente mb-2">
+                <div class="small fw-bold"><i class="bi bi-pc-display"></i> Con el navegador CERRADO del todo: Programa de avisos <span class="badge text-bg-success">recomendado</span></div>
+                <div class="small text-muted mb-1">Un programita de Windows que arranca solo al prender la PC y te muestra el aviso aunque Chrome, Edge o Brave
+                    estén cerrados (no abre ninguna ventana). Usa la misma configuración de esta página (qué avisos, cada cuánto recordar).
+                    Mientras funciona, el aviso de Windows de esa computadora sale solo por el programa (no repetido).</div>
+                {% for a in agentes %}{% set vivo = a.ultimo_contacto and (ahora - a.ultimo_contacto).total_seconds() < agente_activo_min * 60 %}
+                <div class="nav-push" id="ag{{ a.id }}"><i class="bi bi-pc-display"></i> <b>{{ a.nombre_pc or 'Computadora' }}</b>
+                    {% if not a.ultimo_contacto %}<span class="badge text-bg-warning">descargado, falta instalar</span>
+                    {% elif vivo %}<span class="badge text-bg-success">funcionando</span>
+                    {% else %}<span class="badge text-bg-secondary">apagada o sin internet</span>{% endif %}
+                    <span class="text-muted">{% if a.ultimo_contacto %}última conexión {{ hace(a.ultimo_contacto, ahora) }}{% else %}descargado {{ hace(a.fecha, ahora) }}{% endif %}</span>
+                    <button type="button" class="btn btn-link btn-sm text-danger p-0 ms-auto" onclick="quitarAgente({{ a.id }})">Quitar</button></div>
+                {% else %}
+                <div class="small text-muted fst-italic mb-1">Ninguna computadora todavía.</div>
+                {% endfor %}
+                <div class="d-flex flex-wrap gap-2 mt-2">
+                    <button type="submit" form="formAgente" class="btn btn-sm btn-primary"><i class="bi bi-download"></i> Descargar instalador para esta PC</button>
+                    {% if agentes %}<button type="button" class="btn btn-sm btn-outline-primary" onclick="probarAgente()"><i class="bi bi-send"></i> Probar (llega en máx. {{ agente_seg }} s)</button>{% endif %}
+                </div>
+                <div class="small mt-1" id="resAgente"></div>
+                <details class="small mt-2"><summary>Cómo se instala (1 minuto, sin ser administrador)</summary>
+                    <ol class="text-muted mt-1 mb-0 ps-3">
+                        <li>Pulsa <b>Descargar instalador para esta PC</b>. Si el navegador dice que el archivo puede ser peligroso: <i>Conservar</i>.</li>
+                        <li>Abre <code>Instalar-Avisos-ImportBolts.cmd</code> (doble clic). Si Windows muestra <i>"Windows protegió su PC"</i>:
+                            <i>Más información → Ejecutar de todas formas</i>.</li>
+                        <li>Sale una ventana negra que dice <b>LISTO</b> y un aviso "Avisos instalados". Ciérrala y borra el archivo.</li>
+                        <li>Pulsa <b>Probar</b>, cierra el navegador del todo y en menos de un minuto te llega el aviso.</li>
+                    </ol>
+                    <div class="text-muted mt-1">Cada instalador sirve para <b>una</b> computadora y un usuario (lleva su propia clave). Para quitarlo, pulsa <b>Quitar</b>:
+                        el programa se desinstala solo en esa PC. Si no ves el aviso, revisa que Windows no esté en "No molestar" (Inicio → Configuración → Sistema → Notificaciones).</div>
+                </details>
             </div>
 
             <div class="nf-t mt-3"><i class="bi bi-alarm"></i> Recordatorio de lo pendiente</div>
@@ -88,6 +117,7 @@
                 En la ventana puedes pulsar "Recordarme más tarde".</div>
             <button class="btn btn-success fw-bold w-100 mt-3"><i class="bi bi-check2-circle"></i> Guardar</button>
         </form>
+        <form method="POST" action="{{ url_for('agente_instalador') }}" id="formAgente" class="d-none"></form>
     </div>
     <div class="col-12 col-lg-6">
         <div class="nf-card">
@@ -155,6 +185,22 @@
             if (m) res.innerHTML = '<div class="p-2 rounded" style="background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;"><b>Esta computadora no quedó registrada:</b> ' + esc(m) + '</div>';
         });
     }, 1800);
+    window.quitarAgente = function (id) {
+        if (!confirm('¿Quitar el programa de avisos de esa computadora? Se desinstala solo en su próxima conexión.')) return;
+        const fd = new FormData(); fd.append('id', id);
+        fetch({{ url_for('agente_quitar')|tojson }}, { method: 'POST', body: fd, credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+            .then(() => { const e = document.getElementById('ag' + id); if (e) e.remove(); });
+    };
+    window.probarAgente = function () {
+        const res = document.getElementById('resAgente');
+        res.textContent = 'Enviando…';
+        fetch({{ url_for('agente_prueba')|tojson }}, { method: 'POST', credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+            .then(r => r.json()).then(d => {
+                res.innerHTML = d.status === 'ok'
+                    ? `<span class="text-success fw-bold">Listo: ya puedes cerrar el navegador del todo. En menos de ${d.seg} segundos te llega el aviso de prueba en ${d.n} computadora(s).</span>`
+                    : '<span class="text-danger">' + esc(d.msg || 'No se pudo enviar') + '</span>';
+            }).catch(() => { res.innerHTML = '<span class="text-danger">No se pudo enviar.</span>'; });
+    };
     window.quitarNav = function (id) {
         const fd = new FormData(); fd.append('id', id);
         fetch({{ url_for('push_quitar')|tojson }}, { method: 'POST', body: fd, credentials: 'same-origin', headers: { 'Accept': 'application/json' } })

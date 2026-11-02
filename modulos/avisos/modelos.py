@@ -2,7 +2,7 @@
 Se importan al final de models.py: "from models import X" sigue funcionando igual. Ver MAPA.md."""
 from models import db, hora_peru
 
-__all__ = ['Notificacion', 'PushSuscripcion', 'NotificacionConfig']
+__all__ = ['Notificacion', 'PushSuscripcion', 'NotificacionConfig', 'AvisoAgente']
 
 
 class Notificacion(db.Model):
@@ -35,6 +35,21 @@ class PushSuscripcion(db.Model):
     fecha = db.Column(db.DateTime, default=hora_peru)
     ultimo_envio = db.Column(db.DateTime)
     fallos = db.Column(db.Integer, default=0)
+
+
+class AvisoAgente(db.Model):
+    """Computadora con el "Programa de avisos" instalado: un programita de Windows (sin navegador) que pregunta al
+    sistema cada minuto y muestra el aviso de Windows aunque el navegador esté cerrado del todo.
+    Se identifica con una clave propia (solo se guarda su huella SHA-256). Al quitarla aquí, el programa se desinstala solo."""
+    __tablename__ = 'aviso_agente'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    token_hash = db.Column(db.String(64), nullable=False, unique=True, index=True)
+    nombre_pc = db.Column(db.String(60))                       # nombre de la computadora (lo manda el programa)
+    version = db.Column(db.String(20))
+    fecha = db.Column(db.DateTime, default=hora_peru)          # cuándo se descargó el instalador
+    ultimo_contacto = db.Column(db.DateTime)                   # última vez que preguntó (None = todavía no se instaló)
+    prueba = db.Column(db.Boolean, default=False)              # aviso de prueba pendiente para la próxima consulta
 
 
 class NotificacionConfig(db.Model):
