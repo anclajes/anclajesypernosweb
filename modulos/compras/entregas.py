@@ -259,6 +259,7 @@ def oc_conforme(orden_id):
                + (' · ORDEN COMPLETA' if etapa == 'CONFORME' else (f" · por llegar: {_oc_faltan_txt(orden)}" if etapa == 'APROBADA' else '')))
     _req_notificar_orden(orden, 'OC_CONFORME', f"{_oc_codigo(orden)}: entrega {e.numero} conforme" + (' (orden completa)' if etapa == 'CONFORME' else ''))
     _oc_revisar_ingreso_completo(orden)
+    _notif_por_ingresar(orden, e)          # aviso a Almacén: material / insumos / servicio por ingresar
     registrar_log(f"Dio CONFORMIDAD a la entrega {e.numero} de la {_oc_codigo(orden)}", 'bi-check-circle-fill', 'text-success')
     db.session.commit()
     _borrar_de_s3(viejas)
@@ -304,6 +305,8 @@ def oc_cerrar_saldo(orden_id):
     _oc_evento(orden, 'SALDO_CERRADO', f"No llegará el resto ({', '.join(cerrados)}): {motivo}")
     _req_notificar_orden(orden, 'OC_SALDO', f"{_oc_codigo(orden)}: se cerró lo que faltaba llegar ({motivo})")
     _oc_revisar_ingreso_completo(orden)
+    if orden.estado == 'CONFORME' and orden.destino == 'INSUMOS':
+        _notif_por_ingresar(orden)         # aviso a Almacén: insumos por registrar
     db.session.commit()
     flash('✅ Saldo cerrado: la orden se completa con lo que llegó.' + (' Queda CONFORME.' if etapa == 'CONFORME' else ''))
     return redirect(destino)

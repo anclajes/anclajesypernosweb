@@ -21,7 +21,17 @@ TIPOS_NOTIF = {
                      'roles': ['admin', 'logistica'], 'defecto': ['logistica'], 'icono': 'bi-x-octagon-fill', 'color': '#dc2626'},
     'REQ_NUEVO': {'txt': 'Requerimientos de compra nuevos', 'ayuda': 'Cuando Almacén u otra área pide productos o insumos que faltan.',
                   'roles': ['admin', 'logistica'], 'defecto': ['logistica'], 'icono': 'bi-clipboard-plus', 'color': '#7c3aed'},
+    'ING_PENDIENTE': {'txt': 'Material conforme por ingresar al inventario', 'ayuda': 'Cuando Logística da la conformidad de una entrega con OC '
+                      '(Anclajes o Import Bolts) y queda en "Ingresos pendientes (OC)". También las órdenes de servicio terminadas. '
+                      'Se recuerda mientras falte ingresarlo.',
+                      'roles': ['admin', 'almacen', 'logistica'], 'defecto': ['almacen'], 'icono': 'bi-box-arrow-in-down', 'color': '#0891b2'},
+    'INSUMO_PENDIENTE': {'txt': 'Insumos internos por registrar (OC conforme)', 'ayuda': 'Cuando una compra de insumos internos llegó completa y '
+                         'está conforme: queda en Insumos internos → "Pendientes de Orden de Compra" (Anclajes o Import Bolts). '
+                         'Se recuerda mientras falte registrarla.',
+                         'roles': ['admin', 'almacen', 'logistica'], 'defecto': ['almacen'], 'icono': 'bi-basket2-fill', 'color': '#ca8a04'},
 }
+TIPOS_POR_INGRESAR = ('ING_PENDIENTE', 'INSUMO_PENDIENTE')       # salen en "Por ingresar" de la campana mientras sigan pendientes
+TIPOS_INSISTENTES = ('OC_POR_APROBAR',) + TIPOS_POR_INGRESAR     # su aviso de Windows se queda en pantalla hasta cerrarlo
 RECORDAR_NOTIF = [(0, 'Solo cuando llega una nueva'), (15, 'Cada 15 minutos'), (30, 'Cada 30 minutos'), (60, 'Cada hora'),
                   (120, 'Cada 2 horas'), (240, 'Cada 4 horas')]
 SONIDOS_NOTIF = {'campana': 'Campana (ding-dong)', 'alerta': 'Alerta (más fuerte, 3 tonos)', 'suave': 'Suave (un tono)'}
@@ -112,6 +122,87 @@ def _notif_req_nuevo(r, n_items):
                  url_for('oc_req_detalle', req_id=r.id), req=r, empresa=None, excluir=session.get('user_id'))
 
 
+def _notif_por_ingresar(orden, entrega=None):
+    """Logística dio la conformidad (o cerró el saldo): avisa a Almacén que hay algo por ingresar al inventario."""
+    try:
+        corto = EMPRESAS_OC.get(orden.empresa or 'ANCLAJES', {}).get('corto', '')
+        emp = orden.empresa or 'ANCLAJES'
+        if orden.destino == 'INSUMOS':
+            if orden.estado != 'CONFORME' or orden.insumo_ingreso_id:
+                return 0
+            return _notif_crear('INSUMO_PENDIENTE', f"Insumos por registrar · {_oc_codigo(orden)} · {corto}",
+                                f"{orden.razon_social} · {len(orden.items)} ítem(s) · llegó todo y está conforme",
+                                url_for('insumos_pendientes_oc', empresa=emp), orden=orden, excluir=session.get('user_id'))
+        if orden.destino != 'GENERAL':
+            return 0
+        if orden.tipo == 'OS':
+            if orden.estado != 'CONFORME' or orden.fecha_kardex:
+                return 0
+            return _notif_crear('ING_PENDIENTE', f"{_oc_codigo(orden)} terminada · registra su seguimiento · {corto}",
+                                f"{orden.razon_social} · orden de servicio conforme", url_for('oc_ingresos_pendientes', empresa=emp),
+                                orden=orden, excluir=session.get('user_id'))
+        if not entrega:
+            return 0
+        n = len([ei for ei in entrega.items if not ei.fecha_ingreso])
+        if not n:
+            return 0
+        return _notif_crear('ING_PENDIENTE', f"Material por ingresar · {_oc_codigo(orden)} · {corto}",
+                            f"{orden.razon_social} · entrega {entrega.numero}: {n} producto(s) conforme(s)"
+                            + (f" · guía {entrega.numero_guia}" if getattr(entrega, 'numero_guia', None) else ''),
+                            url_for('oc_ingresos_pendientes', empresa=emp), orden=orden, excluir=session.get('user_id'))
+    except Exception:
+        app.logger.exception("No se pudo crear el aviso de ingreso pendiente")
+        return 0
+
+
+def _notif_por_ingresar_json(ahora, cfg):
+    """Lo que Almacén tiene por ingresar AHORA (se calcula de las órdenes: desaparece solo al ingresarlo)."""
+    salida = []
+
+    def fila(o, tipo, detalle, desde, url):
+        emp = EMPRESAS_OC.get(o.empresa or 'ANCLAJES', {})
+        horas = round((ahora - desde).total_seconds() / 3600, 1) if desde else 0
+        salida.append({'id': o.id, 'codigo': _oc_codigo(o), 'tipo': tipo, 'empresa_txt': emp.get('corto', ''), 'color': emp.get('color', '#0B3D91'),
+                       'proveedor': o.razon_social or '', 'detalle': detalle, 'hace': _hace_txt(desde, ahora), 'horas': horas,
+                       'atrasada': horas >= 24, 'url': url, '_desde': desde or ahora})
+    try:
+        if cfg['tipos'].get('ING_PENDIENTE'):
+            por_orden = {}
+            for o, e, pend in _entregas_por_ingresar():
+                d = por_orden.setdefault(o.id, {'o': o, 'n': 0, 'desde': e.fecha_conforme})
+                d['n'] += len(pend)
+                d['desde'] = min(d['desde'] or e.fecha_conforme, e.fecha_conforme)
+            for d in por_orden.values():
+                fila(d['o'], 'MATERIAL', f"{d['n']} producto(s) por ingresar", d['desde'],
+                     url_for('oc_ingresos_pendientes', empresa=d['o'].empresa or 'ANCLAJES'))
+            for o in _os_por_seguir():
+                if o.destino == 'GENERAL':
+                    fila(o, 'SERVICIO', 'servicio terminado · registrar seguimiento', o.fecha_conforme,
+                         url_for('oc_ingresos_pendientes', empresa=o.empresa or 'ANCLAJES'))
+        if cfg['tipos'].get('INSUMO_PENDIENTE'):
+            for o in _ordenes_pendientes_insumos():
+                fila(o, 'INSUMOS', f"insumos internos · {len(o.items)} ítem(s) por registrar", o.fecha_conforme,
+                     url_for('insumos_pendientes_oc', empresa=o.empresa or 'ANCLAJES'))
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("Campana: no se pudo calcular lo pendiente de ingresar")
+        return []
+    salida.sort(key=lambda x: (x['_desde'], x['id']))
+    for x in salida:
+        x.pop('_desde', None)
+    return salida
+
+
+def _notif_resolver_por_ingresar(uid, vivas_ids, ahora):
+    """Los avisos de "por ingresar" que ya se ingresaron se dan por leídos solos."""
+    cambio = False
+    for n in Notificacion.query.filter(Notificacion.user_id == uid, Notificacion.tipo.in_(TIPOS_POR_INGRESAR), Notificacion.leida.is_(False)).all():
+        if n.orden_id not in vivas_ids:
+            n.leida, n.fecha_leida, cambio = True, ahora, True
+    if cambio:
+        db.session.commit()
+
+
 def _hace_txt(fecha, ahora):
     if not fecha:
         return ''
@@ -167,12 +258,14 @@ def notif_api():
         por_aprobar = []
         if cfg['tipos'].get('OC_POR_APROBAR'):
             por_aprobar = _notif_por_aprobar_json(ahora, rol in ROLES_OC_APRUEBAN)
+        por_ingresar = _notif_por_ingresar_json(ahora, cfg)
+        _notif_resolver_por_ingresar(uid, {x['id'] for x in por_ingresar}, ahora)
         lista = (Notificacion.query.filter(Notificacion.user_id == uid).order_by(Notificacion.id.desc()).limit(40).all())
         ult = max([n.id for n in lista] or [0])
         novedades = []
         for n in lista:
-            if n.tipo == 'OC_POR_APROBAR':
-                continue                     # están en la sección "Por aprobar" (las resueltas ya no interesan)
+            if n.tipo == 'OC_POR_APROBAR' or n.tipo in TIPOS_POR_INGRESAR:
+                continue                     # están en "Por aprobar" / "Por ingresar" (las resueltas ya no interesan)
             if len(novedades) >= 15:
                 break
             info = TIPOS_NOTIF.get(n.tipo, {})
@@ -188,10 +281,11 @@ def notif_api():
                 nuevas.append({'id': n.id, 'tipo': n.tipo, 'titulo': n.titulo, 'texto': n.texto or '', 'icono': info.get('icono', 'bi-bell'),
                                'color': info.get('color', '#0B3D91'), 'ir': url_for('notif_ir', notif_id=n.id),
                                'resumen': url_for('notif_orden', orden_id=n.orden_id) if n.tipo == 'OC_POR_APROBAR' and n.orden_id else '',
-                               'aprobar': n.tipo == 'OC_POR_APROBAR' and rol in ROLES_OC_APRUEBAN})
+                               'aprobar': n.tipo == 'OC_POR_APROBAR' and rol in ROLES_OC_APRUEBAN,
+                               'insistente': n.tipo in TIPOS_INSISTENTES, 'url': n.url or ''})
         no_leidas = sum(1 for n in novedades if not n['leida'])
-        return {'status': 'ok', 'activo': True, 'cfg': cfg, 'por_aprobar': por_aprobar, 'novedades': novedades, 'nuevas': nuevas,
-                'no_leidas': no_leidas, 'total': len(por_aprobar) + no_leidas, 'ultimo_id': ult, 'consulta_seg': CONSULTA_NOTIF_SEG,
+        return {'status': 'ok', 'activo': True, 'cfg': cfg, 'por_aprobar': por_aprobar, 'por_ingresar': por_ingresar, 'novedades': novedades,
+                'nuevas': nuevas, 'no_leidas': no_leidas, 'total': len(por_aprobar) + len(por_ingresar) + no_leidas, 'ultimo_id': ult, 'consulta_seg': CONSULTA_NOTIF_SEG,
                 'agente': uid in _agente_usuarios_activos([uid])}   # con el Programa de avisos, el aviso de Windows sale por él (no doble)
     except Exception:
         db.session.rollback()

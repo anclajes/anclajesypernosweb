@@ -223,7 +223,7 @@
         const total = datos ? datos.total : 0;
         cnt.style.display = total ? '' : 'none';
         cnt.textContent = total > 99 ? '99+' : total;
-        btn.classList.toggle('hay', !!(datos && datos.por_aprobar.length));
+        btn.classList.toggle('hay', !!(datos && (datos.por_aprobar.length || (datos.por_ingresar || []).length)));
         btn.title = total ? `${total} aviso(s) pendiente(s)` : 'Avisos';
     }
     function tarjetaOC(o) {
@@ -236,9 +236,18 @@
             <div class="d-flex gap-2 mt-2">${o.aprobar ? `<button type="button" class="btn btn-warning" data-revisar="${o.id}"><i class="bi bi-patch-check"></i> Revisar y aprobar</button>` : ''}
                 <a class="btn btn-outline-secondary" href="${esc(o.url)}">Abrir orden</a></div></div>`;
     }
+    const ICONO_ING = { MATERIAL: 'bi-box-arrow-in-down', SERVICIO: 'bi-tools', INSUMOS: 'bi-basket2-fill' };
+    function tarjetaIng(x) {
+        return `<div class="cp-oc" style="--c:${esc(x.color)};">
+            <div class="l1"><span class="cod"><i class="bi ${ICONO_ING[x.tipo] || 'bi-box'}"></i> ${esc(x.codigo)}</span><span class="emp">${esc(x.empresa_txt)}</span>
+                <span class="hace ${x.atrasada ? 'mal' : ''}">${x.atrasada ? '<i class="bi bi-exclamation-triangle-fill"></i> ' : ''}${esc(x.hace)}</span></div>
+            <div class="prov">${esc(x.proveedor)}</div>
+            <div class="sub mt-1">${esc(x.detalle)}</div>
+            <div class="d-flex gap-2 mt-2"><a class="btn btn-info text-white" href="${esc(x.url)}"><i class="bi bi-box-arrow-in-down"></i> ${x.tipo === 'INSUMOS' ? 'Registrar' : 'Ir a ingresar'}</a></div></div>`;
+    }
     function pintarPanel() {
         if (!datos) { panel.innerHTML = '<div class="cp-vacio">Cargando…</div>'; return; }
-        const pa = datos.por_aprobar, nv = datos.novedades;
+        const pa = datos.por_aprobar, nv = datos.novedades, pi = datos.por_ingresar || [];
         let h = `<div class="cp-cab"><i class="bi bi-bell-fill text-warning"></i><b>Avisos</b>
             ${datos.no_leidas ? '<button type="button" class="btn btn-link p-0 ms-auto" id="cpLeer">Marcar leídos</button>' : '<span class="ms-auto"></span>'}
             <a href="${URL_PAG}" title="Configurar avisos"><i class="bi bi-gear"></i> Configurar</a></div>`;
@@ -248,11 +257,12 @@
         else if (datos.cfg.windows && pw === 'denied') h += `<div class="cp-win" style="background:#fef2f2;border-color:#fecaca;color:#991b1b;"><i class="bi bi-slash-circle"></i> Los avisos de Windows están <b>bloqueados</b> en este navegador:
             haz clic en el candado de la barra de direcciones → Notificaciones → Permitir.</div>`;
         if (pa.length) h += `<div class="cp-sec"><i class="bi bi-hourglass-split"></i> Por aprobar (${pa.length})</div>` + pa.map(tarjetaOC).join('');
+        if (pi.length) h += `<div class="cp-sec"><i class="bi bi-box-arrow-in-down"></i> Por ingresar al inventario (${pi.length})</div>` + pi.map(tarjetaIng).join('');
         if (nv.length) h += `<div class="cp-sec nov">Novedades${datos.no_leidas ? ` (${datos.no_leidas} sin leer)` : ''}</div>` + nv.map(n =>
             `<a class="cp-nov ${n.leida ? '' : 'nueva'}" href="${esc(n.ir)}" style="--c:${esc(n.color)};"><span class="ic"><i class="bi ${esc(n.icono)}"></i></span>
                 <span class="flex-grow-1"><span class="t d-block">${esc(n.titulo)}</span><span class="x d-block">${esc(n.texto)}</span><span class="x">${esc(n.hace)}</span></span>
                 ${n.leida ? '' : '<span class="punto"></span>'}</a>`).join('');
-        if (!pa.length && !nv.length) h += '<div class="cp-vacio"><i class="bi bi-check2-circle fs-3 d-block text-success"></i>Todo al día: no hay avisos.</div>';
+        if (!pa.length && !pi.length && !nv.length) h += '<div class="cp-vacio"><i class="bi bi-check2-circle fs-3 d-block text-success"></i>Todo al día: no hay avisos.</div>';
         h += `<div class="cp-pie"><a href="${URL_PAG}">Ver todos los avisos</a><span class="text-muted fw-normal">Se actualiza solo</span></div>`;
         panel.innerHTML = h;
         panel.querySelectorAll('[data-revisar]').forEach(b => b.onclick = () => abrirAprobar(b.dataset.revisar));
@@ -282,19 +292,28 @@
         return d;
     }
     function avisarNueva(n) {
-        const esOC = n.tipo === 'OC_POR_APROBAR';
-        const cab = esOC ? '<i class="bi bi-bell-fill"></i> NUEVA ORDEN POR APROBAR' : '<i class="bi bi-bell-fill"></i> NUEVO AVISO';
+        const esOC = n.tipo === 'OC_POR_APROBAR', esIng = n.tipo === 'ING_PENDIENTE' || n.tipo === 'INSUMO_PENDIENTE';
+        const cab = esOC ? '<i class="bi bi-bell-fill"></i> NUEVA ORDEN POR APROBAR' : esIng ? '<i class="bi bi-bell-fill"></i> NUEVO INGRESO PENDIENTE' : '<i class="bi bi-bell-fill"></i> NUEVO AVISO';
         const acc = (n.aprobar ? `<button type="button" class="btn btn-warning btn-sm" data-revisar="${String(n.resumen).match(/(\d+)$/)[1]}"><i class="bi bi-patch-check"></i> Revisar y aprobar</button>` : '')
-            + `<a class="btn btn-outline-secondary btn-sm" href="${esc(n.ir)}">${esOC ? 'Abrir orden' : 'Ver'}</a>`;
+            + (esIng ? `<a class="btn btn-info text-white btn-sm" href="${esc(n.ir)}"><i class="bi bi-box-arrow-in-down"></i> Ir a ingresar</a>`
+                     : `<a class="btn btn-outline-secondary btn-sm" href="${esc(n.ir)}">${esOC ? 'Abrir orden' : 'Ver'}</a>`);
         toast('nt' + n.id, n.color, n.icono, cab, `<div class="tt">${esc(n.titulo)}</div><div class="tx">${esc(n.texto)}</div>`, acc);
-        if (!pushActivo()) avisoWindows(n.titulo, n.texto, 'erp-' + n.id, () => { if (n.aprobar) abrirAprobar(String(n.resumen).match(/(\d+)$/)[1]); else location.href = n.ir; }, esOC);
+        if (!pushActivo()) avisoWindows(n.titulo, n.texto, 'erp-' + n.id, () => { if (n.aprobar) abrirAprobar(String(n.resumen).match(/(\d+)$/)[1]); else location.href = n.ir; }, esOC || esIng);
     }
     function recordar() {
-        const pa = datos.por_aprobar, nl = datos.novedades.filter(n => !n.leida);
-        if (!pa.length && !nl.length) return false;
+        const pa = datos.por_aprobar, nl = datos.novedades.filter(n => !n.leida), pi = datos.por_ingresar || [];
+        if (!pa.length && !nl.length && !pi.length) return false;
         let cuerpo = '', acc = '';
+        if (pi.length) {
+            cuerpo += `<div class="tt">Tienes ${pi.length} pendiente(s) por ingresar al inventario</div><ul class="lst">` +
+                pi.slice(0, 4).map(x => `<li><b>${esc(x.codigo)}</b><span class="text-truncate">${esc(x.empresa_txt)} · ${esc(x.detalle)}</span><span class="m">${esc(x.hace)}</span></li>`).join('') +
+                (pi.length > 4 ? `<li class="text-muted">y ${pi.length - 4} más…</li>` : '') + '</ul>';
+            const vieja = pi.filter(x => x.atrasada).length;
+            if (vieja) cuerpo += `<div class="tx text-danger fw-bold mt-1"><i class="bi bi-exclamation-triangle-fill"></i> ${vieja} lleva(n) más de un día esperando.</div>`;
+            acc += `<a class="btn btn-info text-white btn-sm" href="${esc(pi[0].url)}"><i class="bi bi-box-arrow-in-down"></i> Ir a ingresar</a>`;
+        }
         if (pa.length) {
-            cuerpo += `<div class="tt">Tienes ${pa.length} orden(es) esperando tu aprobación</div><ul class="lst">` +
+            cuerpo += `<div class="tt ${pi.length ? 'mt-2' : ''}">Tienes ${pa.length} orden(es) esperando tu aprobación</div><ul class="lst">` +
                 pa.slice(0, 4).map(o => `<li><b>${esc(o.codigo)}</b><span class="text-truncate">${esc(o.empresa_txt)} · ${esc(o.proveedor)}</span><span class="m">${esc(o.monto)}</span></li>`).join('') +
                 (pa.length > 4 ? `<li class="text-muted">y ${pa.length - 4} más…</li>` : '') + '</ul>';
             const vieja = pa.filter(o => o.atrasada).length;
@@ -302,13 +321,14 @@
             acc += pa[0].aprobar ? `<button type="button" class="btn btn-warning btn-sm" data-revisar="${pa[0].id}"><i class="bi bi-patch-check"></i> Revisar ${pa.length > 1 ? 'la primera' : 'y aprobar'}</button>` : '';
             acc += `<button type="button" class="btn btn-outline-primary btn-sm" onclick="document.getElementById('campanaBtn').click(); this.closest('.nt').remove();">Ver todas</button>`;
         }
-        if (nl.length) cuerpo += `<div class="tx ${pa.length ? 'mt-2' : 'tt'}">${nl.length} aviso(s) sin leer: ${esc(nl[0].titulo)}${nl.length > 1 ? '…' : ''}</div>`;
+        if (nl.length) cuerpo += `<div class="tx ${pa.length || pi.length ? 'mt-2' : 'tt'}">${nl.length} aviso(s) sin leer: ${esc(nl[0].titulo)}${nl.length > 1 ? '…' : ''}</div>`;
         if (!pa.length) acc += `<button type="button" class="btn btn-outline-primary btn-sm" onclick="document.getElementById('campanaBtn').click(); this.closest('.nt').remove();">Ver avisos</button>`;
         acc += '<button type="button" class="btn btn-link btn-sm text-muted" data-luego="1">Recordarme más tarde</button>';
-        toast('ntRecordar', pa.length ? '#d97706' : '#0B3D91', 'bi-bell-fill', 'PENDIENTES POR REVISAR', cuerpo, acc, () => guardar(K_REC, Date.now()));
-        avisoWindows(pa.length ? `${pa.length} orden(es) por aprobar` : `${nl.length} aviso(s) sin leer`,
-                     pa.length ? pa.slice(0, 3).map(o => `${o.codigo} · ${o.empresa_txt} · ${o.monto}`).join('\n') : nl[0].titulo, 'erp-recordatorio',
-                     () => { if (pa.length && pa[0].aprobar) abrirAprobar(pa[0].id); else btn.click(); }, false);
+        toast('ntRecordar', pa.length ? '#d97706' : pi.length ? '#0891b2' : '#0B3D91', 'bi-bell-fill', 'PENDIENTES POR REVISAR', cuerpo, acc, () => guardar(K_REC, Date.now()));
+        avisoWindows(pa.length ? `${pa.length} orden(es) por aprobar` : pi.length ? `${pi.length} pendiente(s) por ingresar al inventario` : `${nl.length} aviso(s) sin leer`,
+                     pa.length ? pa.slice(0, 3).map(o => `${o.codigo} · ${o.empresa_txt} · ${o.monto}`).join('\n')
+                     : pi.length ? pi.slice(0, 3).map(x => `${x.codigo} · ${x.empresa_txt} · ${x.detalle}`).join('\n') : nl[0].titulo, 'erp-recordatorio',
+                     () => { if (pa.length && pa[0].aprobar) abrirAprobar(pa[0].id); else if (pi.length) location.href = pi[0].url; else btn.click(); }, false);
         return true;
     }
 
@@ -374,7 +394,7 @@
                 else if (d.nuevas.length && Number(ultAhora) < d.ultimo_id) {
                     guardar(K_ULT, d.ultimo_id);
                     if (d.cfg.popup) d.nuevas.slice(-3).forEach(avisarNueva);
-                    else if (!pushActivo()) d.nuevas.slice(-3).forEach(n => avisoWindows(n.titulo, n.texto, 'erp-' + n.id, () => location.href = n.ir, n.tipo === 'OC_POR_APROBAR'));
+                    else if (!pushActivo()) d.nuevas.slice(-3).forEach(n => avisoWindows(n.titulo, n.texto, 'erp-' + n.id, () => location.href = n.ir, !!n.insistente));
                     if (d.cfg.sonido) sonar(d.cfg.sonido_tipo, d.cfg.volumen);
                     btn.classList.remove('sacude'); void btn.offsetWidth; btn.classList.add('sacude');
                     parpadear(`🔔 (${d.total}) ${d.nuevas[d.nuevas.length - 1].titulo}`);

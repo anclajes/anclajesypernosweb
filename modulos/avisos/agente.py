@@ -95,23 +95,29 @@ def agente_api():
         ult = max([n.id for n in lista] or [0])
         ids_oc = [n.orden_id for n in lista if n.tipo == 'OC_POR_APROBAR' and n.orden_id and not n.leida]
         vivas = {o.id for o in OrdenCompra.query.filter(OrdenCompra.id.in_(ids_oc or [0]), OrdenCompra.estado == 'ENVIADA').all()}
-        no_leidas = sum(1 for n in lista if not n.leida and n.tipo != 'OC_POR_APROBAR')
+        por_ingresar = _notif_por_ingresar_json(ahora, cfg)
+        vivas_ing = {x['id'] for x in por_ingresar}
+        _notif_resolver_por_ingresar(u.id, vivas_ing, ahora)
+        n_ingresar = len(por_ingresar)
+        no_leidas = sum(1 for n in lista if not n.leida and n.tipo != 'OC_POR_APROBAR' and n.tipo not in TIPOS_POR_INGRESAR)
         desde = request.args.get('desde', type=int)
         nuevas = []
         if desde is not None:
-            for n in sorted([x for x in lista if x.id > desde and not x.leida and (x.tipo != 'OC_POR_APROBAR' or x.orden_id in vivas)],
-                            key=lambda x: x.id)[-5:]:
+            for n in sorted([x for x in lista if x.id > desde and not x.leida and (x.tipo != 'OC_POR_APROBAR' or x.orden_id in vivas)
+                             and (x.tipo not in TIPOS_POR_INGRESAR or x.orden_id in vivas_ing)], key=lambda x: x.id)[-5:]:
                 nuevas.append({'id': n.id, 'titulo': n.titulo, 'texto': n.texto or '', 'url': url_for('notif_ir', notif_id=n.id),
-                               'insistente': n.tipo == 'OC_POR_APROBAR'})
+                               'insistente': n.tipo in TIPOS_INSISTENTES})
         partes = []
         if n_aprobar:
             partes.append(f"{n_aprobar} orden{'es' if n_aprobar != 1 else ''} por aprobar")
+        if n_ingresar:
+            partes.append(f"{n_ingresar} por ingresar al inventario")
         if no_leidas:
             partes.append(f"{no_leidas} novedad{'es' if no_leidas != 1 else ''} sin leer")
         db.session.commit()
         return {'status': 'ok', 'windows': bool(cfg['windows']), 'nuevas': nuevas, 'ultimo_id': ult,
-                'pendientes': n_aprobar + no_leidas, 'resumen': ' · '.join(partes), 'recordar_min': cfg['recordar_min'],
-                'consulta_seg': AGENTE_CONSULTA_SEG, 'abrir': url_for('index'), 'campana': url_for('notif_pagina'),
+                'pendientes': n_aprobar + n_ingresar + no_leidas, 'resumen': ' · '.join(partes), 'recordar_min': cfg['recordar_min'],
+                'consulta_seg': AGENTE_CONSULTA_SEG, 'abrir': (por_ingresar[0]['url'] if n_ingresar and not n_aprobar else url_for('index')), 'campana': url_for('notif_pagina'),
                 'prueba': prueba, 'usuario': u.nombre_completo or u.username}
     except Exception:
         db.session.rollback()

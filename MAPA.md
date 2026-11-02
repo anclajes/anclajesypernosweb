@@ -135,6 +135,13 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
 
 ## Avisos de Windows
 
+- Quién recibe qué (`TIPOS_NOTIF` en `notificaciones.py`; cada usuario lo cambia en Campana → Configurar):
+  Gerencia: OC/OS por aprobar. Logística: aprobadas, rechazadas, requerimientos nuevos.
+  **Jefe de Almacén (rol `almacen`)**: solo `ING_PENDIENTE` (material conforme por ingresar al inventario y OS terminadas,
+  "Ingresos pendientes (OC)") e `INSUMO_PENDIENTE` (compras de insumos internos conformes, "Pendientes de Orden de Compra",
+  Anclajes o Import Bolts). Se crean al dar la conformidad (`oc_conforme`) o al cerrar el saldo (`_notif_por_ingresar`).
+  Salen en la sección "Por ingresar" de la campana, calculada de las órdenes (`_notif_por_ingresar_json`): desaparecen
+  solas al ingresarlo y se recuerdan cada X min mientras sigan pendientes. Su aviso de Windows se queda hasta cerrarlo.
 - Página abierta: la campana (cada 30 s). Pestaña cerrada pero navegador abierto: Web Push (`push.py`).
 - Navegador cerrado del todo / PC recién prendida: Programa de avisos (`agente.py`). Se instala en
   `%LOCALAPPDATA%\AvisosImportBolts` y arranca con Windows (acceso directo en la carpeta Inicio del usuario).

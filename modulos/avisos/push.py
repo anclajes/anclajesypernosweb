@@ -165,7 +165,7 @@ def _push_despachar(resp):
             if n.leida or not _notif_cfg(n.user_id, roles.get(n.user_id))['windows']:
                 continue
             por_usuario[n.user_id] = {'title': n.titulo, 'body': n.texto or '', 'url': url_for('notif_ir', notif_id=n.id), 'tag': f'erp-{n.id}',
-                                      'insistente': n.tipo == 'OC_POR_APROBAR', 'icon': logo}
+                                      'insistente': n.tipo in TIPOS_INSISTENTES, 'icon': logo}
         _push_a_usuarios(por_usuario, sin_windows=_agente_usuarios_activos(list(por_usuario)))
     except Exception:
         db.session.rollback()
