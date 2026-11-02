@@ -27,6 +27,11 @@
     .kx-ficha { border-radius: 14px; }
     .kx-ficha .k { font-size: .68rem; font-weight: 700; text-transform: uppercase; color: #6c757d; }
     .kx-ficha .v { font-size: 1.15rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+    .lote-chip { font-size: .72rem; font-weight: 700; border-radius: 6px; padding: 2px 7px; background: #eff6ff; color: #1e3a8a; border: 1px solid #bfdbfe; white-space: nowrap; }
+    .lote-chip.usd { background: #f0fdfa; color: #0f766e; border-color: #99f6e4; }
+    .lote-chip.sp { background: #fef3c7; color: #92400e; border-color: #fcd34d; }
+    tr.mov-anulado td { opacity: .5; }
+    tr.mov-anulado td.kx-motivo { opacity: .75; }
     .kx-sp { display: inline-block; font-size: .6rem; font-weight: 800; border-radius: 5px; padding: 1px 6px; background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
     .kx-oc { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 3px; }
     .kx-oc .oc-chip { font-size: .62rem; font-weight: 800; color: #1e3a8a; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 5px; padding: 1px 6px; text-decoration: none; }
@@ -97,22 +102,27 @@
 <div class="card shadow-sm border-0 kx-ficha mb-3"><div class="card-body py-2 d-flex flex-wrap gap-4 align-items-center">
     <div class="me-auto"><div class="k">{{ insumo.codigo }}</div><div class="fw-bold">{{ insumo.descripcion }}</div><div class="text-muted small">{{ insumo.categoria or '' }} · {{ insumo.unidad }}</div></div>
     <div><div class="k">Stock</div><div class="v">{{ stock.stock_actual|cant if stock else '0' }}</div></div>
-    {% set q_usd = (stock.stock_usd or 0) if stock else 0 %}{% set q_pen = ((stock.stock_actual or 0) - q_usd - (stock.stock_sin_costo or 0)) if stock else 0 %}
-    <div><div class="k">Costo prom. S/{% if q_usd %} ({{ q_pen|cant }} und){% endif %}</div><div class="v">{{ (stock.costo_promedio if stock else 0)|soles }}</div>
-        {% if puede_ajustar %}<button type="button" class="btn btn-link btn-sm p-0" onclick="ajustarCosto({{ insumo.id }}, '{{ empresa }}', {{ (insumo.codigo ~ ' · ' ~ insumo.descripcion)|tojson|forceescape }}, {{ (stock.costo_promedio if stock else 0)|tojson }}, {{ q_pen|tojson }}, 'PEN')"><i class="bi bi-pencil"></i> Editar</button>{% endif %}</div>
-    {% if q_usd %}<div><div class="k">Costo prom. US$ ({{ q_usd|cant }} und)</div><div class="v" style="color:#0f766e;">US$ {{ '{:,.2f}'.format(stock.costo_usd or 0) }}</div>
-        {% if puede_ajustar %}<button type="button" class="btn btn-link btn-sm p-0" onclick="ajustarCosto({{ insumo.id }}, '{{ empresa }}', {{ (insumo.codigo ~ ' · ' ~ insumo.descripcion)|tojson|forceescape }}, {{ (stock.costo_usd or 0)|tojson }}, {{ q_usd|tojson }}, 'USD')"><i class="bi bi-pencil"></i> Editar</button>{% endif %}</div>{% endif %}
-    {% set q_sc = (stock.stock_sin_costo or 0) if stock else 0 %}
-    {% if q_sc %}<div title="Entraron con precio pendiente: no cuentan en el costo promedio ni en el valor"><div class="k">Sin precio</div><div class="v text-warning-emphasis">{{ q_sc|cant }} und</div></div>{% endif %}
-    <div><div class="k">Valor</div><div class="v">{{ montos_txt(q_pen * ((stock.costo_promedio or 0) if stock else 0), q_usd * ((stock.costo_usd or 0) if stock else 0)) }}</div></div>
+    {% set rl = namespace(pen=0, usd=0, sc=0) %}{% for l in lotes_ficha %}{% if l.costo_unitario is none %}{% set rl.sc = rl.sc + l.cantidad_restante %}{% elif l.moneda == 'USD' %}{% set rl.usd = rl.usd + l.cantidad_restante * l.costo_unitario %}{% else %}{% set rl.pen = rl.pen + l.cantidad_restante * l.costo_unitario %}{% endif %}{% endfor %}
+    <div style="max-width: 520px;"><div class="k">Precios en stock (salen en este orden)</div>
+        <div class="d-flex flex-wrap gap-1 mt-1">{% for l in lotes_ficha[:6] %}
+            <span class="lote-chip {{ 'sp' if l.costo_unitario is none }} {{ 'usd' if l.moneda == 'USD' and l.costo_unitario is not none }}" title="Lote #{{ l.id }} · {{ l.fecha.strftime('%d/%m/%Y') }}{{ (' · ' ~ l.proveedor) if l.proveedor else '' }}{{ (' · ' ~ l.documento) if l.documento else '' }}">
+                {% if loop.first %}<i class="bi bi-arrow-right-circle-fill"></i> {% endif %}{{ dinero(l.costo_unitario, l.moneda) if l.costo_unitario is not none else 'sin precio' }} × {{ l.cantidad_restante|cant }}</span>
+        {% else %}<span class="text-muted small">Sin stock</span>{% endfor %}{% if lotes_ficha|length > 6 %}<span class="text-muted small">+{{ lotes_ficha|length - 6 }} lote(s)</span>{% endif %}</div>
+        <a class="small" href="{{ url_for('insumos_ficha', insumo_id=insumo.id, empresa=empresa) }}"><i class="bi bi-tags"></i> Ver lotes, precios e historial</a></div>
+    <div><div class="k">Valor real (suma de lotes)</div><div class="v">{{ montos_txt(rl.pen, rl.usd) }}</div>{% if rl.sc %}<div class="small text-warning-emphasis">+ {{ rl.sc|cant }} und sin precio</div>{% endif %}</div>
 </div></div>
 {% endif %}
 
 <div class="d-flex flex-wrap gap-2 mb-2">
-    <span class="badge rounded-pill text-bg-dark px-3 py-2"><i class="bi bi-calculator"></i> {{ movs|length }} movimiento(s){% if movs|length == 500 %} (los 500 más recientes){% endif %}</span>
-    <span class="badge rounded-pill bg-success-subtle text-success border border-success px-3 py-2">Entradas: {{ montos_txt(tot_entradas, tot_entradas_usd) }}</span>
-    <span class="badge rounded-pill bg-danger-subtle text-danger border border-danger px-3 py-2">Salidas: {{ montos_txt(tot_salidas, tot_salidas_usd) }}</span>
-    <span class="small text-muted align-self-center">Soles y dólares por separado (lo comprado en US$ no se convierte).</span>
+    <span class="badge rounded-pill text-bg-dark px-3 py-2"><i class="bi bi-calculator"></i> {{ total_movs }} movimiento(s){% if total_movs > movs|length %} (se muestran los {{ movs|length }} más recientes){% endif %}</span>
+    <span class="badge rounded-pill bg-success-subtle text-success border border-success px-3 py-2">Entradas: {{ montos_txt(tot_entradas, tot_entradas_usd) }}{% if sc_ent %} + {{ sc_ent|cant }} und sin precio{% endif %}</span>
+    <span class="badge rounded-pill bg-danger-subtle text-danger border border-danger px-3 py-2">Salidas: {{ montos_txt(tot_salidas, tot_salidas_usd) }}{% if sc_sal %} + {{ sc_sal|cant }} und sin precio{% endif %}</span>
+    {% if n_anulados %}
+    {% set args_a = request.args.to_dict() %}{% set _ = args_a.update({'empresa': empresa, 'ocultar': '' if ocultar else '1'}) %}
+    <a class="badge rounded-pill bg-secondary-subtle text-secondary-emphasis border border-secondary px-3 py-2 text-decoration-none" href="{{ url_for('insumos_kardex', **args_a) }}"
+       title="Los ingresos y salidas anulados, y sus anulaciones, NO cuentan en los totales"><i class="bi bi-eye{{ '' if ocultar else '-slash' }}"></i> {{ n_anulados }} anulado(s): {{ 'mostrar' if ocultar else 'ocultar' }}</a>
+    {% endif %}
+    <span class="small text-muted align-self-center">Totales sin anulados · soles y dólares por separado (no se convierte).</span>
 </div>
 
 <div class="card shadow-sm border-0">
@@ -127,14 +137,15 @@
                     <th>Concepto / Referencia</th>
                     <th>Proveedor / Área</th>
                     <th class="text-end">Costo unit.<br><span class="fw-normal opacity-75">Total</span></th>
-                    <th class="text-end">Costo prom.<br><span class="fw-normal opacity-75">Valor del saldo</span></th>
+                    <th class="text-end">Lote<br><span class="fw-normal opacity-75">queda en el lote</span></th>
                     <th class="pe-3">Usuario</th>
                 </tr>
             </thead>
             <tbody>
             {% for m in movs %}
                 {% set ent = m.tipo == 'ENTRADA' %}{% set sal = m.tipo == 'SALIDA' %}{% set ing = ingresos.get(m.ingreso_id) %}{% set mon = m.moneda or 'PEN' %}
-                <tr>
+                {% set es_anul = m.id in anulado %}
+                <tr class="{{ 'mov-anulado' if es_anul }}">
                     <td class="ps-3 text-nowrap"><div class="fw-semibold text-dark">{{ m.fecha.strftime('%d/%m/%y') }}</div><div class="text-muted">{{ m.fecha.strftime('%H:%M') }}</div></td>
                     <td class="kx-producto">
                         <a href="{{ url_for('insumos_kardex', empresa=empresa, insumo_id=m.insumo_id) }}" class="d-block text-dark fw-bold text-decoration-none">{{ m.insumo.codigo }}</a>
@@ -155,7 +166,8 @@
                         {% elif m.salida_id %}<a href="{{ url_for('insumos_salida_detalle', salida_id=m.salida_id) }}" class="fw-bold text-dark">/ {{ m.referencia }}</a>
                         {% elif m.referencia %}<span class="fw-bold text-dark">/ {{ m.referencia }}</span>{% endif %}
                         {% if mon == 'USD' %}<span class="badge" style="background:#ccfbf1; color:#0f766e; font-size:.6rem;">EN DÓLARES</span>{% endif %}
-                        {% if mon == 'SC' %}<span class="kx-sp" title="Precio pendiente: no cambia el costo promedio ni suma al gasto">SIN PRECIO</span>{% endif %}
+                        {% if mon == 'SC' %}<span class="kx-sp" title="Lote con precio pendiente: se recalcula cuando se le pone el precio">SIN PRECIO</span>{% endif %}
+                        {% if es_anul %}<span class="badge bg-secondary" style="font-size:.6rem;" title="No cuenta en los totales">{{ 'ANULACIÓN' if m.concepto == 'ANULACION' else 'ANULADO' }}</span>{% endif %}
                         {% if ing %}{% set oc_m = ocs.get(ing.id) %}
                         {% if oc_m or docs_ing.get(ing.id) %}<div class="kx-oc">
                             {% if oc_m %}<a class="oc-chip" href="{{ url_for('oc_pdf', orden_id=oc_m.id, ver=1) }}" target="_blank" title="Ver el PDF de la orden de compra"><i class="bi bi-cart-check"></i> {{ oc_codigo(oc_m) }}</a>{% endif %}
@@ -169,17 +181,22 @@
                         {% else %}<span class="text-muted">-</span>{% endif %}
                     </td>
                     <td class="text-end text-nowrap num">
-                        {% if m.concepto == 'AJUSTE_COSTO' %}
+                        {% if m.concepto in ['AJUSTE_COSTO', 'VALORIZACION'] and m.lote_id %}
+                        <div class="fw-semibold">{{ dinero(m.costo_unitario, mon) }}</div><div class="text-muted" style="font-size:.68rem;">nuevo precio del lote</div>
+                        {% elif m.concepto == 'AJUSTE_COSTO' %}
                         <div title="Costo anterior"><s class="text-muted">{{ dinero(m.costo_unitario, mon) }}</s></div>
                         <div class="{{ 'text-success' if (m.costo_total or 0) >= 0 else 'text-danger' }}" style="font-size:.72rem;" title="Cambio en el valor del stock">{{ '+' if (m.costo_total or 0) >= 0 }}{{ dinero(m.costo_total, mon) }}</div>
                         {% elif mon == 'SC' %}
-                        <span class="kx-sp">Sin precio</span><div class="text-muted" style="font-size:.68rem;">no cuenta en el costo</div>
+                        <span class="kx-sp">Sin precio</span><div class="text-muted" style="font-size:.68rem;">pendiente</div>
                         {% else %}
                         <div>{{ dinero(m.costo_unitario, mon) }}</div><div class="text-muted" style="font-size:.72rem;">{{ dinero(m.costo_total, mon) }}</div>
                         {% endif %}
                     </td>
                     {% set q_mon = m.stock_moneda_despues if m.stock_moneda_despues is not none else m.stock_despues %}
-                    {% if mon == 'SC' %}
+                    {% if m.lote_id %}
+                    <td class="text-end text-nowrap num"><a class="fw-semibold text-decoration-none" href="{{ url_for('insumos_ficha', insumo_id=m.insumo_id, empresa=empresa) }}#lote{{ m.lote_id }}" title="Ver el lote">Lote #{{ m.lote_id }}</a>
+                        <div class="text-muted" style="font-size:.72rem;">{{ (q_mon or 0)|cant }} und{% if mon != 'SC' and (q_mon or 0) > 0 %} · {{ dinero((q_mon or 0) * (m.costo_prom_despues or 0), mon) }}{% endif %}</div></td>
+                    {% elif mon == 'SC' %}
                     <td class="text-end text-nowrap num"><div class="text-muted" style="font-size:.72rem;">Sin precio que quedan</div><div class="fw-semibold text-warning-emphasis">{{ (q_mon or 0)|cant }} und</div></td>
                     {% else %}
                     <td class="text-end text-nowrap num {{ 'text-teal' if mon == 'USD' }}"><div class="fw-semibold" {% if mon == 'USD' %}style="color:#0f766e;"{% endif %}>{{ dinero(m.costo_prom_despues, mon) }}</div>
@@ -195,7 +212,7 @@
         </table>
     </div>
 </div>
-{% include '_insumos_costo.html' %}
+
 <script>
 document.addEventListener('DOMContentLoaded', () => {
     if (window.jQuery && jQuery.fn.select2) jQuery('.filtro-s2-k').select2({ width: '100%', allowClear: true, placeholder: 'Todos los insumos' })

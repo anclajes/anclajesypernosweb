@@ -17,10 +17,15 @@
     .ins-kpi { font-size: 1.3rem; font-weight: 800; font-variant-numeric: tabular-nums; color: #0f172a; line-height: 1.15; }
     .ins-dato { font-size: .7rem; text-transform: uppercase; letter-spacing: .04em; color: #64748b; font-weight: 700; }
     .num { font-variant-numeric: tabular-nums; }
+    .lote-chip { display: inline-block; font-size: .7rem; font-weight: 700; border-radius: 6px; padding: 1px 6px; margin: 1px 0; background: #eff6ff; color: #1e3a8a;
+                 border: 1px solid #bfdbfe; white-space: nowrap; text-decoration: none; font-variant-numeric: tabular-nums; }
+    .lote-chip.usd { background: #f0fdfa; color: #0f766e; border-color: #99f6e4; }
+    .lote-chip.sp { background: #fef3c7; color: #92400e; border-color: #fcd34d; }
+    a.lote-chip:hover { filter: brightness(.95); }
 </style>
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
     <h4 class="fw-bold mb-0"><i class="bi bi-tools"></i> Insumos internos</h4>
-    <span class="text-muted small">Material de uso interno · costo promedio con IGV</span>
+    <span class="text-muted small">Material de uso interno · precio real por lote (PEPS), con IGV</span>
 </div>
 <nav class="ins-nav">
     <a href="{{ url_for('insumos_inventario') }}" class="{{ 'activa' if seccion == 'inventario' }}"><i class="bi bi-boxes"></i> Inventario</a>
@@ -34,6 +39,7 @@
     <a href="{{ url_for('insumos_ingresos') }}" class="{{ 'activa' if seccion == 'ingresos' }}"><i class="bi bi-journal-arrow-down"></i> Ingresos</a>
     <a href="{{ url_for('insumos_kardex') }}" class="{{ 'activa' if seccion == 'kardex' }}"><i class="bi bi-clock-history"></i> Kardex</a>
     <a href="{{ url_for('insumos_gasto') }}" class="{{ 'activa' if seccion == 'gasto' }}"><i class="bi bi-pie-chart"></i> Gasto por área</a>
+    <a href="{{ url_for('insumos_estadisticas') }}" class="{{ 'activa' if seccion == 'estadisticas' }}"><i class="bi bi-graph-up-arrow"></i> Estadísticas y precios</a>
     <a href="{{ url_for('insumos_maestro') }}" class="{{ 'activa' if seccion == 'maestro' }}"><i class="bi bi-list-columns"></i> Maestro</a>
     {% if puede_editar_insumos %}
     <a href="{{ url_for('insumos_config') }}" class="{{ 'activa' if seccion == 'config' }}"><i class="bi bi-gear"></i> Configuración</a>

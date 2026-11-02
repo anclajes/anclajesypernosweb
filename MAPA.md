@@ -14,11 +14,13 @@ app.py                 núcleo y módulos antiguos (todavía juntos) + carga de 
 models.py              modelos del núcleo + importa los modelos de cada módulo (al final)
 modulos/
   insumos/             INSUMOS INTERNOS
-    modelos.py           tablas: Insumo, InsumoStock, ingresos, salidas, movimientos, documentos...
-    base.py              empresas, permisos (_ruta_insumos), tablas, stock por moneda (S/ y US$), funciones comunes
+    modelos.py           tablas: Insumo, InsumoStock, InsumoLote, InsumoSalidaLote, ingresos, salidas, movimientos, documentos...
+    base.py              empresas, permisos (_ruta_insumos), tablas, LOTES PEPS (entrar/sacar/poner precio), migración a lotes
     inventario.py        inventario por empresa, importar Excel, maestro de insumos, proveedores de insumos
-    movimientos.py       ingresos (factura / desde OC), salidas (PDF y firma), kardex valorizado
-    gasto_config.py      gasto por área, configuración, ajuste del costo promedio, vaciar el módulo
+    movimientos.py       ingresos (factura / desde OC), salidas (PDF y firma), kardex valorizado, precio de un lote
+    gasto_config.py      gasto por área, configuración, vaciar el módulo
+    estadisticas.py      ficha de precios de un insumo (/insumos/ficha/<id>: lotes, históricos, gráfico por proveedor)
+                         y ESTADÍSTICAS (/insumos/estadisticas: mejores precios, proveedores, más comprado / gastado / consumido, alertas)
   compras/             ÓRDENES DE COMPRA / SERVICIO y REQUERIMIENTOS
     modelos.py           tablas: OrdenCompra, OrdenCompraItem, entregas, eventos, documentos, proveedores,
                          cuentas, motivos, requerimientos, OCConfig
@@ -103,21 +105,24 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
 - Requerimientos: los crean admin, logistica, almacen y almacen_visor; los atienden admin y logistica.
 - Insumos: editan admin, almacen y logistica.
 
-## Insumos: precio pendiente y documentos de la OC
+## Insumos: lotes PEPS, precio pendiente y documentos de la OC
 
+- **Sin promedios: cada compra es un LOTE** (`insumo_lote`) con su precio real (S/ o US$, sin convertir). Las salidas sacan
+  **primero del lote más antiguo** (orden por `fecha`, `id`); si toman de dos lotes, cada parte va a su precio
+  (`insumo_salida_lote` guarda de qué lote salió cada parte). `insumo_stock` solo guarda totales, recalculados desde los lotes
+  (`_sincronizar_stock`); su `costo_promedio` es solo de referencia. El valor del inventario es la suma exacta de los lotes.
+- **Paso a lotes (una vez, al arrancar):** `_migrar_a_lotes` convierte el stock que había en lotes "Saldo anterior" a su costo
+  promedio (si era 0, quedan **sin precio**). Marca `SystemConfig('insumos_lotes')`. Con Postgres usa un candado para que lo haga un solo proceso.
 - **# Factura opcional** en Nuevo ingreso (se agrega o corrige después en el detalle del ingreso).
-- **Precio pendiente** (casilla por ítem): las unidades entran al stock en una parte aparte, "sin precio"
-  (`insumo_stock.stock_sin_costo`, movimientos con `moneda='SC'`). No cambian el costo promedio ni el valor del inventario
-  ni suman al gasto. Al sacar, sale primero lo que tiene precio; lo sin precio sale al final a costo 0
-  (`insumo_salida_detalle.cantidad_sin_costo` y `origen_sin_costo` = de qué ingreso salió).
-- Completar el precio: botón **Poner precio** en el ingreso, o en una **reposición** marcar "usar el precio de esta compra"
-  para las unidades sin precio (misma moneda). Queda en el Kardex como **PRECIO COMPLETADO** (`concepto='VALORIZACION'`).
-  Lo que ya salió antes de tener precio se queda a costo 0. Funciones en `modulos/insumos/base.py`
-  (`_valorizar_sin_costo`, `_completar_precio_detalle`, `_valorizar_huerfanos`).
-- Carga desde Excel sin costo (y sin costo promedio previo): entra "sin precio" (antes entraba a S/ 0 y bajaba el promedio).
+- **Precio pendiente:** el lote entra con `costo_unitario = None`. Sale en su turno "sin precio" (movimiento `moneda='SC'`).
+  Al ponerle el precio (`_poner_precio_lote`: en el ingreso, en la ficha del insumo o con "usar el precio de esta compra" en
+  una reposición) **se recalculan todas sus salidas** y el gasto por área. Corregir un precio ya puesto: solo Gerencia, con motivo
+  (Kardex: AJUSTE DE COSTO). Poner un precio pendiente: Kardex PRECIO COMPLETADO (`concepto='VALORIZACION'`).
+- **Anulaciones:** anular un ingreso exige su lote completo (lote ANULADO). Anular una salida devuelve lo despachado a los mismos lotes.
+  En el Kardex, lo anulado y su anulación se marcan y **no cuentan en los totales** (botón para ocultarlos).
+- Carga desde Excel: lo que se agrega entra como lote "Carga Excel" con el costo del archivo (vacío = sin precio); lo que sobra se descuenta por PEPS.
 - La OC de cada ingreso se guarda en `insumo_ingreso.orden_compra_id` (los antiguos se encuentran por `orden_compra.insumo_ingreso_id`).
-  Kardex, Ingresos y el detalle muestran la OC (PDF) y todos sus documentos con ver/descargar; el Kardex muestra también
-  las OC conformes que todavía no se registran. Menú reutilizable: `templates/_oc_docs_menu.html`.
+  Kardex, Ingresos y el detalle muestran la OC (PDF) y todos sus documentos con ver/descargar. Menú reutilizable: `templates/_oc_docs_menu.html`.
 - Órdenes de compra (lista): muestra quién **creó** la orden, filtro "Creó", y el menú 📎 con todos los documentos.
 
 ## Kardex

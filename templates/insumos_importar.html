@@ -41,10 +41,12 @@
         Antes de guardar verás una <b>vista previa</b>.</p>
     <div class="small fw-bold mb-1">Columnas (la primera fila del Excel):</div>
     <div class="cols mb-2"><span>Código</span><span>Descripción</span><span>Categoría</span><span>Stock</span>
-        <span class="opc">Mínimo (opcional)</span><span class="opc">Costo prom. (opcional, S/ con IGV)</span><span class="opc">Unidad (opcional)</span></div>
+        <span class="opc">Mínimo (opcional)</span><span class="opc">Costo unit. (opcional, S/ con IGV)</span><span class="opc">Unidad (opcional)</span></div>
     <ul class="small text-muted mb-3 ps-3">
         <li>Se busca cada insumo por <b>Código</b>; si no tiene, por la <b>Descripción</b> exacta. Si no existe, se crea (sin código se genera uno: INS-00025).</li>
-        <li><b>Stock</b>: el que debe quedar en {{ empresas[empresa].corto }} (no se suma: reemplaza). <b>Mínimo</b> y <b>Costo prom.</b> se actualizan solo si vienen escritos.</li>
+        <li><b>Stock</b>: el que debe quedar en {{ empresas[empresa].corto }} (no se suma: reemplaza). <b>Mínimo</b> se actualiza solo si viene escrito.</li>
+        <li><b>Costo unit.</b>: si el stock del archivo es <b>mayor</b>, lo que se agrega entra como un <b>lote</b> con ese precio (vacío = lote <b>sin precio</b>, se completa después).
+            Si es <b>menor</b>, se descuenta de los lotes más antiguos (PEPS). Los lotes que ya hay no cambian de precio.</li>
         <li>Las categorías y unidades nuevas se agregan a las listas.</li>
     </ul>
     <div class="d-flex flex-wrap gap-2 mb-3">
@@ -70,7 +72,7 @@
     {% if resumen.errores %}<div class="alert alert-danger py-2 small"><i class="bi bi-x-octagon-fill"></i> Hay filas con error (en rojo): corrígelas en el Excel y vuelve a subirlo. No se importa nada mientras haya errores.</div>{% endif %}
     <div class="table-responsive" style="max-height: 60vh;"><table class="table table-sm tabla-imp mb-0">
         <thead class="sticky-top bg-white"><tr><th>Fila</th><th></th><th>Código</th><th>Descripción</th><th>Categoría</th><th class="text-end">Stock actual</th><th class="text-end">Stock nuevo</th>
-            <th class="text-end">Dif.</th><th class="text-end">Mínimo</th><th class="text-end">Costo prom.</th><th>Observaciones</th></tr></thead>
+            <th class="text-end">Dif.</th><th class="text-end">Mínimo</th><th class="text-end">Costo unit.</th><th>Observaciones</th></tr></thead>
         <tbody>{% for r in filas %}
         <tr class="{{ 'err' if r.errores }}"><td class="text-muted">{{ r.fila }}</td>
             <td>{% if r.nuevo %}<span class="chip nuevo">NUEVO</span>{% else %}<span class="chip exis">EXISTE</span>{% endif %}</td>

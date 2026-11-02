@@ -365,44 +365,13 @@ def insumos_config_formato():
     return redirect(url_for('insumos_config', tab='formato'))
 
 
-# ---------------------------- AJUSTE DEL COSTO PROMEDIO (con auditoría) ----------------------------
+# ---------------------------- AJUSTE DE COSTO ----------------------------
+# Ya no se edita un "costo promedio": cada lote tiene su precio real. Para corregir un precio se usa la ficha de precios
+# del insumo (Gerencia, con motivo): /insumos/lote/<id>/precio (en movimientos.py). Esta ruta queda solo por compatibilidad.
 @app.route('/insumos/stock/<int:insumo_id>/<empresa>/costo', methods=['POST'])
 @_ruta_insumos(solo_admin=True, como_json=True)
 def insumos_ajustar_costo(insumo_id, empresa):
-    """Gerencia corrige el costo promedio de un insumo en una empresa. Queda en el Kardex (AJUSTE DE COSTO) con
-    el costo anterior, el nuevo, quién, cuándo y por qué. Las salidas ya registradas NO cambian; las siguientes
-    se valorizan con el costo nuevo."""
-    empresa = empresa.upper()
-    ins = Insumo.query.get(insumo_id)
-    if empresa not in EMPRESAS_INSUMOS or not ins:
-        return {'status': 'error', 'msg': 'Datos inválidos'}
-    moneda = 'USD' if (request.form.get('moneda') or '').upper() == 'USD' else 'PEN'
-    sim = MONEDAS_INSUMOS[moneda]
-    nuevo = _num(request.form.get('costo'))
-    motivo = ' '.join((request.form.get('motivo') or '').split())[:255]
-    if nuevo is None or nuevo < 0:
-        return {'status': 'error', 'msg': f'Escribe el nuevo costo promedio ({sim} por unidad).'}
-    if len(motivo) < 5:
-        return {'status': 'error', 'msg': 'Escribe el motivo del ajuste (queda en la auditoría).'}
-    st = _stock_de(ins.id, empresa)
-    stock, antes = _bolsa(st, moneda)
-    if abs(round(nuevo, 6) - round(antes, 6)) < 1e-9:
-        return {'status': 'error', 'msg': 'Es el mismo costo que ya tiene.'}
-    ahora = hora_peru()
-    if moneda == 'USD':
-        st.costo_usd = round(nuevo, 6)
-    else:
-        st.costo_promedio = round(nuevo, 6)
-    total = float(st.stock_actual or 0)
-    db.session.add(InsumoMovimiento(
-        empresa=empresa, insumo_id=ins.id, fecha=ahora, tipo='AJUSTE', concepto='AJUSTE_COSTO', cantidad=0,
-        costo_unitario=antes, costo_total=round(stock * (nuevo - antes), 2), stock_antes=total, stock_despues=total,
-        **_datos_mov_moneda(st, moneda), referencia=f'Costo promedio {sim} {antes:,.4f} → {sim} {nuevo:,.4f}'[:120],
-        observacion=motivo, user_id=session.get('user_id'), fecha_registro=ahora))
-    registrar_log(f"Ajustó el costo promedio ({sim}) de {ins.codigo} en {EMPRESAS_INSUMOS[empresa]['corto']}: {sim} {antes:,.4f} → {sim} {nuevo:,.4f} ({motivo})",
-                  'bi-currency-exchange', 'text-warning')
-    db.session.commit()
-    return {'status': 'success'}
+    return {'status': 'error', 'msg': 'Ahora cada compra es un lote con su precio real: corrige el precio del lote en la ficha de precios del insumo.'}
 
 
 @app.route('/insumos/maestro/<int:insumo_id>/borrar', methods=['POST'])
@@ -441,7 +410,8 @@ def insumos_vaciar():
         except Exception:
             db.session.rollback()
             app.logger.exception("No se pudo soltar las OC de los ingresos de insumos")
-        for modelo in (InsumoDocumento, InsumoMovimiento, InsumoSalidaDetalle, InsumoSalida, InsumoIngresoDetalle, InsumoIngreso, InsumoStock):
+        for modelo in (InsumoDocumento, InsumoMovimiento, InsumoSalidaLote, InsumoLote, InsumoSalidaDetalle, InsumoSalida,
+                       InsumoIngresoDetalle, InsumoIngreso, InsumoStock):
             modelo.query.delete(synchronize_session=False)
         if maestro:
             try:      # las órdenes de compra de insumos conservan su descripción, pero ya no apuntan al insumo borrado

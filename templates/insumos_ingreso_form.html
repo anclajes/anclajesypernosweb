@@ -155,7 +155,7 @@
                 <span class="text-muted">Total del ingreso <span id="lblMonTotal">(con IGV)</span></span>
                 <span class="total-ingreso" id="totalIngreso">S/ 0.00</span>
             </div>
-            <div class="form-text">El costo de cada insumo se calcula como <b>promedio ponderado</b> entre lo que ya había y esta compra.</div>
+            <div class="form-text">Cada insumo de esta compra queda como un <b>lote</b> con su precio real. Las salidas sacan primero del lote más antiguo (PEPS), cada uno a su precio.</div>
             <button type="submit" class="btn btn-success btn-lg w-100 fw-bold mt-3" id="btnGuardar"><i class="bi bi-check2-circle"></i> Registrar ingreso</button>
         </div></div>
     </div>
@@ -184,13 +184,13 @@
                     <input class="form-check-input chk-pend" type="checkbox">
                     <label class="form-check-label chk-lbl">Precio pendiente <span class="fw-normal">(todavía no sé el precio)</span></label></div>
             </div>
-            <div class="col-12 aviso-pend" style="display:none;"><div class="pend-nota"><i class="bi bi-hourglass-split"></i> Entra al stock <b>sin precio</b>: no cambia el costo promedio ni suma al gasto por área.
-                Cuando tengas la factura, ponle el precio en el ingreso (o en la próxima compra de este insumo).</div></div>
+            <div class="col-12 aviso-pend" style="display:none;"><div class="pend-nota"><i class="bi bi-hourglass-split"></i> Entra como un lote <b>sin precio</b>. Si sale antes de tener precio, sale "sin precio";
+                cuando le pongas el precio (en el ingreso, en la ficha del insumo o en la próxima compra) se recalculan esas salidas.</div></div>
             <div class="col-12 valorizar" style="display:none;">
                 <input type="hidden" name="valorizar_sc[]" class="h-val" value="">
                 <div class="val-nota form-check mb-0"><input class="form-check-input chk-val" type="checkbox">
-                    <label class="form-check-label"><i class="bi bi-tag-fill"></i> Este insumo tiene <b class="n-sc"></b> und <b>sin precio</b>. Usar el precio de esta compra también para esas unidades
-                        <span class="d-block fw-normal text-muted" style="font-size:.68rem;">(solo las ingresadas en la misma moneda; pasan al costo promedio y queda en el Kardex como "Precio completado")</span></label></div>
+                    <label class="form-check-label"><i class="bi bi-tag-fill"></i> Este insumo tiene lotes <b>sin precio</b> (<b class="n-sc"></b> und). Ponerles el precio de esta compra
+                        <span class="d-block fw-normal text-muted" style="font-size:.68rem;">(solo los de la misma moneda o de saldo anterior / Excel; sus salidas se recalculan y queda en el Kardex como "Precio completado")</span></label></div>
             </div>
         </div>
     </div>
@@ -225,8 +225,8 @@ function pintarInfo(fila) {
     if (!d) { info.innerHTML = ''; return; }
     const usd = monedaIngreso() === 'USD';
     info.innerHTML = `<span class="badge bg-light text-dark border">${esc(d.unidad)}</span> Stock actual: <b>${fmt(d.stock, 0)}</b>` +
-        (d.stock - (d.stock_usd || 0) > 0 || !d.stock_usd ? ` · costo prom. en soles: <b>S/ ${fmt(d.costo, 2)}</b>` : '') +
-        (d.stock_usd ? ` · <span style="color:#0f766e;">${fmt(d.stock_usd, 0)} comprados en dólares a <b>US$ ${fmt(d.costo_usd, 2)}</b></span>` : '') +
+        ((d.lotes || []).length ? ' · precios en stock: ' + d.lotes.slice(0, 4).map(([q, c, m]) => c === null || c === undefined
+            ? `<span class="text-warning-emphasis">sin precio × ${fmt(q, 0)}</span>` : `<b${m === 'USD' ? ' style="color:#0f766e;"' : ''}>${m === 'USD' ? 'US$' : 'S/'} ${fmt(c, 2)}</b> × ${fmt(q, 0)}`).join(' · ') : '') +
         (d.stock_sc ? ` · <span class="badge bg-warning-subtle text-warning-emphasis border border-warning">${fmt(d.stock_sc, 0)} sin precio</span>` : '') +
         (d.categoria ? ' · ' + esc(d.categoria) : '');
     const min = fila.querySelector('.c-min');

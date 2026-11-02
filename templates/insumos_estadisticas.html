@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+{% block title %}Insumos internos{% endblock %}
+{% block subtitle %}Estadísticas y precios{% endblock %}
+{% block content %}
+{% include '_insumos_nav.html' %}
+{% macro dinero(v, mon) %}{{ ('US$ ' ~ '{:,.2f}'.format(v or 0)) if mon == 'USD' else ('S/ ' ~ '{:,.2f}'.format(v or 0)) }}{% endmacro %}
+{% macro pu(v, mon) %}{{ 'US$' if mon == 'USD' else 'S/' }} {{ '{:,.2f}'.format(v or 0) }}{% endmacro %}
+<style>
+    .est-kpi { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 10px 14px; height: 100%; }
+    .est-kpi .k { font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: #64748b; }
+    .est-kpi .v { font-size: 1.25rem; font-weight: 800; font-variant-numeric: tabular-nums; color: #0f172a; line-height: 1.2; }
+    .est-kpi .v.usd { color: #0f766e; font-size: 1.05rem; }
+    .sec-t { font-size: .8rem; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: #475569; margin: 20px 0 6px; }
+    .tabla-est th { font-size: .66rem; text-transform: uppercase; letter-spacing: .03em; white-space: nowrap; color: #64748b; }
+    .tabla-est td { font-size: .8rem; vertical-align: middle; }
+    .graf-caja { position: relative; height: 270px; }
+    .barra { height: 8px; border-radius: 4px; background: #e2e8f0; overflow: hidden; }
+    .barra > div { height: 100%; background: #2a78d6; border-radius: 4px; }
+    .chip-alerta { font-size: .66rem; font-weight: 800; border-radius: 6px; padding: 1px 7px; }
+    .usd { color: #0f766e; }
+</style>
+
+<form method="GET" class="row g-2 align-items-end mb-3">
+    <div class="col-6 col-md-2"><label class="small fw-bold text-muted">Empresa</label>
+        <select name="empresa" class="form-select form-select-sm" onchange="this.form.submit()"><option value="AMBAS">Las dos</option>
+            {% for k, e in empresas.items() %}<option value="{{ k }}" {{ 'selected' if k == empresa }}>{{ e.corto }}</option>{% endfor %}</select></div>
+    <div class="col-6 col-md-2"><label class="small fw-bold text-muted">Desde</label><input type="date" name="desde" value="{{ desde.isoformat() }}" class="form-control form-control-sm" onchange="this.form.submit()"></div>
+    <div class="col-6 col-md-2"><label class="small fw-bold text-muted">Hasta</label><input type="date" name="hasta" value="{{ hasta.isoformat() }}" class="form-control form-control-sm" onchange="this.form.submit()"></div>
+    <div class="col-6 col-md-3"><label class="small fw-bold text-muted">Categoría</label>
+        <select name="categoria" class="form-select form-select-sm filtro-cat" data-placeholder="Todas las categorías"><option value=""></option>
+            {% for c in categorias_filtro %}<option value="{{ c }}" {{ 'selected' if c == categoria }}>{{ c }}</option>{% endfor %}</select></div>
+    <div class="col-12 col-md-3 small text-muted">Soles y dólares por separado (no se convierte). Solo ingresos y salidas <b>no anulados</b>.</div>
+</form>
+
+<div class="row g-2">
+    <div class="col-6 col-lg-2"><div class="est-kpi"><div class="k">Comprado</div><div class="v">{{ dinero(kpi.comprado, 'PEN') }}</div>{% if kpi.comprado_usd %}<div class="v usd">{{ dinero(kpi.comprado_usd, 'USD') }}</div>{% endif %}<div class="small text-muted">{{ kpi.n_compras }} compra(s)</div></div></div>
+    <div class="col-6 col-lg-2"><div class="est-kpi"><div class="k">Consumido (gasto real)</div><div class="v">{{ dinero(kpi.consumido, 'PEN') }}</div>{% if kpi.consumido_usd %}<div class="v usd">{{ dinero(kpi.consumido_usd, 'USD') }}</div>{% endif %}<div class="small text-muted">{{ kpi.n_salidas }} salida(s){% if kpi.sc_consumido %} · {{ kpi.sc_consumido|cant }} und sin precio{% endif %}</div></div></div>
+    <div class="col-6 col-lg-2"><div class="est-kpi"><div class="k">Inventario hoy</div><div class="v">{{ dinero(kpi.valor, 'PEN') }}</div>{% if kpi.valor_usd %}<div class="v usd">{{ dinero(kpi.valor_usd, 'USD') }}</div>{% endif %}<div class="small text-muted">suma real de los lotes</div></div></div>
+    <div class="col-6 col-lg-2"><div class="est-kpi"><div class="k">Proveedores</div><div class="v">{{ kpi.n_prov }}</div><div class="small text-muted">con compras en el periodo</div></div></div>
+    <div class="col-6 col-lg-2"><div class="est-kpi"><div class="k">Por agotarse</div><div class="v {{ 'text-danger' if alertas.agotar }}">{{ alertas.agotar|length }}</div><div class="small text-muted">menos de 15 días o bajo el mínimo</div></div></div>
+    <div class="col-6 col-lg-2"><div class="est-kpi"><div class="k">Lotes sin precio</div><div class="v {{ 'text-warning-emphasis' if kpi.lotes_sp }}">{{ kpi.lotes_sp }}</div><div class="small text-muted">falta la factura</div></div></div>
+</div>
+
+<div class="row g-3">
+    <div class="col-12 col-xl-7">
+        <div class="sec-t"><i class="bi bi-bar-chart"></i> Compras vs consumo por mes</div>
+        <div class="card border-0 shadow-sm"><div class="card-body">
+            {% if hay_usd %}<div class="btn-group btn-group-sm mb-2"><input type="radio" class="btn-check" name="mmon" id="mm_pen" value="PEN" checked><label class="btn btn-outline-secondary" for="mm_pen">Soles</label>
+                <input type="radio" class="btn-check" name="mmon" id="mm_usd" value="USD"><label class="btn btn-outline-secondary" for="mm_usd">Dólares</label></div>{% endif %}
+            <div class="graf-caja"><canvas id="gMes" aria-label="Comprado y consumido por mes"></canvas></div>
+            <details class="mt-2 small"><summary class="text-muted">Ver como tabla</summary>
+                <table class="table table-sm mt-1 tabla-est"><thead><tr><th>Mes</th><th class="text-end">Comprado S/</th><th class="text-end">Consumido S/</th>{% if hay_usd %}<th class="text-end">Comprado US$</th><th class="text-end">Consumido US$</th>{% endif %}</tr></thead>
+                <tbody>{% for m in meses %}<tr><td>{{ m }}</td><td class="text-end">{{ '{:,.2f}'.format(mensual.PEN.comprado[loop.index0]) }}</td><td class="text-end">{{ '{:,.2f}'.format(mensual.PEN.consumido[loop.index0]) }}</td>
+                    {% if hay_usd %}<td class="text-end">{{ '{:,.2f}'.format(mensual.USD.comprado[loop.index0]) }}</td><td class="text-end">{{ '{:,.2f}'.format(mensual.USD.consumido[loop.index0]) }}</td>{% endif %}</tr>{% endfor %}</tbody></table></details>
+        </div></div>
+    </div>
+    <div class="col-12 col-xl-5">
+        <div class="sec-t"><i class="bi bi-exclamation-triangle"></i> Alertas</div>
+        <div class="card border-0 shadow-sm"><div class="card-body p-0" style="max-height: 340px; overflow-y: auto;">
+            <table class="table table-sm mb-0 tabla-est"><tbody>
+            {% for f in alertas.agotar[:12] %}<tr><td class="ps-3"><span class="chip-alerta bg-danger-subtle text-danger-emphasis"><i class="bi bi-battery-low"></i> Por agotarse</span></td>
+                <td><a class="text-dark" href="{{ url_for('insumos_ficha', insumo_id=f.insumo.id, empresa=f.empresa) }}">{{ f.insumo.codigo }}</a> <span class="text-muted">{{ f.insumo.descripcion|truncate(32, True, '…') }}</span>
+                    <div class="text-muted" style="font-size:.68rem;">{{ empresas[f.empresa].corto }} · stock {{ f.stock|cant }}{% if f.minimo %} (mín. {{ f.minimo|cant }}){% endif %}{% if f.cobertura is not none %} · alcanza ~{{ f.cobertura }} día(s){% endif %}</div></td></tr>{% endfor %}
+            {% for f in alertas.sube[:10] %}<tr><td class="ps-3"><span class="chip-alerta bg-warning-subtle text-warning-emphasis"><i class="bi bi-graph-up-arrow"></i> Precio subió</span></td>
+                <td><a class="text-dark" href="{{ url_for('insumos_ficha', insumo_id=f.insumo.id, empresa=empresa if empresa != 'AMBAS' else f.ultimo.empresa) }}">{{ f.insumo.codigo }}</a> <span class="text-muted">{{ f.insumo.descripcion|truncate(32, True, '…') }}</span>
+                    <div class="text-muted" style="font-size:.68rem;">última {{ pu(f.ultimo.precio, f.moneda) }} vs prom. {{ pu(f.promedio, f.moneda) }}{% if f.recomendado %} · conviene {{ f.recomendado.proveedor|truncate(28, True, '…') }}{% endif %}</div></td></tr>{% endfor %}
+            {% for f in alertas.quieto[:10] %}<tr><td class="ps-3"><span class="chip-alerta bg-secondary-subtle text-secondary-emphasis"><i class="bi bi-pause-circle"></i> Sin movimiento</span></td>
+                <td><a class="text-dark" href="{{ url_for('insumos_ficha', insumo_id=f.insumo.id, empresa=f.empresa) }}">{{ f.insumo.codigo }}</a> <span class="text-muted">{{ f.insumo.descripcion|truncate(32, True, '…') }}</span>
+                    <div class="text-muted" style="font-size:.68rem;">{{ empresas[f.empresa].corto }} · stock {{ f.stock|cant }} · {{ ('última salida ' ~ f.ultima.strftime('%d/%m/%Y')) if f.ultima else 'nunca salió' }}</div></td></tr>{% endfor %}
+            {% if not (alertas.agotar or alertas.sube or alertas.quieto) %}<tr><td class="text-center text-muted py-4">Sin alertas.</td></tr>{% endif %}
+            </tbody></table>
+        </div></div>
+    </div>
+</div>
+
+<div class="sec-t"><i class="bi bi-trophy"></i> Mejores precios por insumo y a quién conviene comprar</div>
+<div class="card border-0 shadow-sm"><div class="card-body p-0 table-responsive" style="max-height: 520px;">
+    <table class="table table-sm table-hover mb-0 tabla-est">
+        <thead class="table-light sticky-top"><tr><th class="ps-3">Insumo</th><th class="text-end">Compras</th><th class="text-end">Último precio</th><th class="text-end">Mejor precio</th>
+            <th class="text-end">Prom. pagado</th><th class="text-end" title="Cuánto más caro fue el último precio frente al mejor">Último vs mejor</th><th>Conviene comprar a</th></tr></thead>
+        <tbody>
+        {% for f in precios %}
+        <tr><td class="ps-3"><a class="fw-semibold text-dark" href="{{ url_for('insumos_ficha', insumo_id=f.insumo.id, empresa=empresa if empresa != 'AMBAS' else f.ultimo.empresa) }}">{{ f.insumo.codigo }}</a>
+                <span class="text-muted">{{ f.insumo.descripcion|truncate(40, True, '…') }}</span>{% if f.moneda == 'USD' %} <span class="badge" style="background:#ccfbf1; color:#0f766e;">US$</span>{% endif %}</td>
+            <td class="text-end">{{ f.n }}</td>
+            <td class="text-end text-nowrap"><b>{{ pu(f.ultimo.precio, f.moneda) }}</b><div class="text-muted" style="font-size:.66rem;">{{ f.ultimo.proveedor|truncate(22, True, '…') }} · {{ f.ultimo.fecha.strftime('%d/%m/%y') }}</div></td>
+            <td class="text-end text-nowrap"><b class="text-success">{{ pu(f.mejor.precio, f.moneda) }}</b><div class="text-muted" style="font-size:.66rem;">{{ f.mejor.proveedor|truncate(22, True, '…') }} · {{ f.mejor.fecha.strftime('%d/%m/%y') }}</div></td>
+            <td class="text-end text-nowrap">{{ pu(f.promedio, f.moneda) }}<div class="text-muted" style="font-size:.66rem;">máx. {{ pu(f.maximo, f.moneda) }}</div></td>
+            <td class="text-end text-nowrap">{% if f.dif_pct > 0 %}<span class="text-danger fw-bold">+{{ f.dif_pct }}%</span><div class="text-muted" style="font-size:.66rem;">pagaste {{ pu(f.sobrecosto, f.moneda) }} de más</div>{% else %}<span class="text-success"><i class="bi bi-check2"></i> el mejor</span>{% endif %}</td>
+            <td>{% if f.recomendado %}<i class="bi bi-star-fill text-warning"></i> <b>{{ f.recomendado.proveedor|truncate(30, True, '…') }}</b><div class="text-muted" style="font-size:.66rem;">prom. {{ pu(f.recomendado.prom, f.moneda) }} · {{ f.recomendado.n }} compra(s)</div>{% endif %}</td></tr>
+        {% else %}<tr><td colspan="7" class="text-center text-muted py-4">No hay compras con precio en este periodo.</td></tr>{% endfor %}
+        </tbody>
+    </table>
+</div></div>
+<div class="small text-muted mt-1"><i class="bi bi-star-fill text-warning"></i> "Conviene comprar a": el proveedor con <b>menor precio promedio</b> entre los que vendieron ese insumo en el último año.</div>
+
+<div class="row g-3">
+    <div class="col-12 col-xl-6">
+        <div class="sec-t"><i class="bi bi-building"></i> Proveedores</div>
+        <div class="card border-0 shadow-sm"><div class="card-body p-0 table-responsive" style="max-height: 420px;">
+            <table class="table table-sm mb-0 tabla-est"><thead class="table-light sticky-top"><tr><th class="ps-3">Proveedor</th><th class="text-end">Comprado</th><th class="text-end">Compras</th><th class="text-end">Insumos</th>
+                <th class="text-end" title="En cuántos insumos tiene el mejor precio">Mejor precio en</th><th class="text-end pe-3">Última</th></tr></thead>
+            <tbody>{% set maxp = (proveedores|map(attribute='total')|max) if proveedores else 1 %}
+            {% for p in proveedores %}<tr><td class="ps-3"><b>{{ p.proveedor|truncate(34, True, '…') }}</b><div class="text-muted" style="font-size:.66rem;">{{ p.ruc or 'Sin RUC' }}</div>
+                    <div class="barra mt-1" style="max-width: 180px;"><div style="width: {{ (100 * p.total / maxp)|round|int if maxp else 0 }}%; {{ 'background:#1baf7a;' if p.moneda == 'USD' }}"></div></div></td>
+                <td class="text-end text-nowrap fw-semibold {{ 'usd' if p.moneda == 'USD' }}">{{ dinero(p.total, p.moneda) }}</td><td class="text-end">{{ p.n }}</td><td class="text-end">{{ p.n_ins }}</td>
+                <td class="text-end">{% if p.mejor_en %}<span class="text-success fw-bold">{{ p.mejor_en }}</span>{% else %}<span class="text-muted">0</span>{% endif %}</td>
+                <td class="text-end pe-3 text-nowrap">{{ p.ultima.strftime('%d/%m/%y') }}</td></tr>
+            {% else %}<tr><td colspan="6" class="text-center text-muted py-3">Sin compras.</td></tr>{% endfor %}</tbody></table>
+        </div></div>
+    </div>
+    <div class="col-12 col-xl-6">
+        <div class="sec-t"><i class="bi bi-cart-plus"></i> Lo que más se compra</div>
+        <div class="card border-0 shadow-sm"><div class="card-body p-0 table-responsive" style="max-height: 420px;">
+            <table class="table table-sm mb-0 tabla-est"><thead class="table-light sticky-top"><tr><th class="ps-3">Insumo</th><th class="text-end">Cantidad</th><th class="text-end">Compras</th><th class="text-end pe-3">Monto</th></tr></thead>
+            <tbody>{% for t in top_compra %}<tr><td class="ps-3"><a class="text-dark" href="{{ url_for('insumos_ficha', insumo_id=t.insumo.id, empresa=empresa if empresa != 'AMBAS' else 'ANCLAJES') }}">{{ t.insumo.codigo }}</a> <span class="text-muted">{{ t.insumo.descripcion|truncate(34, True, '…') }}</span></td>
+                <td class="text-end">{{ t.cant|cant }} {{ t.insumo.unidad }}</td><td class="text-end">{{ t.n }}</td><td class="text-end pe-3 fw-semibold text-nowrap {{ 'usd' if t.moneda == 'USD' }}">{{ dinero(t.total, t.moneda) }}</td></tr>
+            {% else %}<tr><td colspan="4" class="text-center text-muted py-3">Sin compras.</td></tr>{% endfor %}</tbody></table>
+        </div></div>
+    </div>
+</div>
+
+<div class="row g-3 mb-3">
+    <div class="col-12 col-xl-6">
+        <div class="sec-t"><i class="bi bi-cash-stack"></i> Lo que más se gasta (consumo valorizado)</div>
+        <div class="card border-0 shadow-sm"><div class="card-body p-0 table-responsive" style="max-height: 420px;">
+            <table class="table table-sm mb-0 tabla-est"><thead class="table-light sticky-top"><tr><th class="ps-3">Insumo</th><th>Más lo usa</th><th class="text-end">Cantidad</th><th class="text-end pe-3">Gasto</th></tr></thead>
+            <tbody>{% for t in top_consumo_monto %}<tr><td class="ps-3">{{ t.insumo.codigo }} <span class="text-muted">{{ t.insumo.descripcion|truncate(30, True, '…') }}</span></td><td class="small">{{ t.area_top }}</td>
+                <td class="text-end">{{ t.cant|cant }}</td><td class="text-end pe-3 fw-semibold text-nowrap">{{ montos_txt(t.total, t.total_usd) }}{% if t.sc %}<div class="text-warning-emphasis" style="font-size:.66rem;">+ {{ t.sc|cant }} sin precio</div>{% endif %}</td></tr>
+            {% else %}<tr><td colspan="4" class="text-center text-muted py-3">Sin salidas.</td></tr>{% endfor %}</tbody></table>
+        </div></div>
+    </div>
+    <div class="col-12 col-xl-6">
+        <div class="sec-t"><i class="bi bi-box-arrow-up"></i> Lo que más sale (por cantidad)</div>
+        <div class="card border-0 shadow-sm"><div class="card-body p-0 table-responsive" style="max-height: 420px;">
+            <table class="table table-sm mb-0 tabla-est"><thead class="table-light sticky-top"><tr><th class="ps-3">Insumo</th><th class="text-end">Salidas</th><th class="text-end pe-3">Cantidad</th></tr></thead>
+            <tbody>{% set maxc = (top_consumo_cant|map(attribute='cant')|max) if top_consumo_cant else 1 %}
+            {% for t in top_consumo_cant %}<tr><td class="ps-3">{{ t.insumo.codigo }} <span class="text-muted">{{ t.insumo.descripcion|truncate(30, True, '…') }}</span>
+                    <div class="barra mt-1" style="max-width: 220px;"><div style="width: {{ (100 * t.cant / maxc)|round|int if maxc else 0 }}%;"></div></div></td>
+                <td class="text-end">{{ t.n }}</td><td class="text-end pe-3 fw-semibold">{{ t.cant|cant }} {{ t.insumo.unidad }}</td></tr>
+            {% else %}<tr><td colspan="3" class="text-center text-muted py-3">Sin salidas.</td></tr>{% endfor %}</tbody></table>
+        </div></div>
+    </div>
+</div>
+
+{% if sin_precio %}
+<div class="sec-t text-warning-emphasis"><i class="bi bi-hourglass-split"></i> Lotes sin precio (falta la factura)</div>
+<div class="card border-0 shadow-sm mb-3"><div class="card-body p-0 table-responsive"><table class="table table-sm mb-0 tabla-est">
+    <thead class="table-light"><tr><th class="ps-3">Insumo</th><th>Empresa</th><th>Lote</th><th>Llegó</th><th class="text-end">Entró</th><th class="text-end pe-3">Queda</th></tr></thead>
+    <tbody>{% for l in sin_precio %}<tr><td class="ps-3"><a href="{{ url_for('insumos_ficha', insumo_id=l.insumo_id, empresa=l.empresa) }}#lote{{ l.id }}">{{ l.insumo.codigo }}</a> <span class="text-muted">{{ l.insumo.descripcion|truncate(34, True, '…') }}</span></td>
+        <td>{{ empresas[l.empresa].corto }}</td><td>#{{ l.id }} · {{ l.documento or '' }}</td><td>{{ l.fecha.strftime('%d/%m/%Y') }}</td><td class="text-end">{{ l.cantidad_inicial|cant }}</td><td class="text-end pe-3">{{ l.cantidad_restante|cant }}</td></tr>{% endfor %}</tbody></table></div></div>
+{% endif %}
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+(() => {
+    const M = {{ mensual|tojson }}, MESES = {{ meses|tojson }};
+    let g = null;
+    function pintar(mon) {
+        const sim = mon === 'USD' ? 'US$' : 'S/';
+        if (g) g.destroy();
+        g = new Chart(document.getElementById('gMes'), { type: 'bar',
+            data: { labels: MESES, datasets: [
+                { label: 'Comprado', data: M[mon].comprado, backgroundColor: '#2a78d6', borderRadius: 4, borderSkipped: 'bottom', maxBarThickness: 22 },
+                { label: 'Consumido', data: M[mon].consumido, backgroundColor: '#eb6834', borderRadius: 4, borderSkipped: 'bottom', maxBarThickness: 22 }] },
+            options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+                plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 11 } } },
+                    tooltip: { callbacks: { label: c => ` ${c.dataset.label}: ${sim} ${Number(c.raw).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` } } },
+                scales: { x: { grid: { display: false }, ticks: { font: { size: 10 } } },
+                          y: { beginAtZero: true, grid: { color: '#eef2f7' }, ticks: { font: { size: 10 }, callback: v => sim + ' ' + Number(v).toLocaleString('es-PE') } } } } });
+    }
+    pintar('PEN');
+    document.querySelectorAll('input[name=mmon]').forEach(r => r.addEventListener('change', () => pintar(r.value)));
+})();
+</script>
+{% endblock %}

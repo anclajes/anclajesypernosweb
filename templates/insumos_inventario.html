@@ -30,7 +30,7 @@
     <div class="col-6 col-md-3"><div class="card border-0 shadow-sm h-100"><div class="card-body py-2">
         <div class="ins-dato">Insumos con stock</div><div class="ins-kpi">{{ kpi['items'] }}</div></div></div></div>
     <div class="col-6 col-md-3"><div class="card border-0 shadow-sm h-100"><div class="card-body py-2">
-        <div class="ins-dato">Valor del inventario</div><div class="ins-kpi">{{ kpi.valor|soles }}</div>{% if kpi.valor_usd %}<div class="ins-kpi" style="color:#0f766e;">US$ {{ '{:,.2f}'.format(kpi.valor_usd) }}</div>{% endif %}<div class="text-muted small">a costo promedio</div>
+        <div class="ins-dato">Valor del inventario</div><div class="ins-kpi">{{ kpi.valor|soles }}</div>{% if kpi.valor_usd %}<div class="ins-kpi" style="color:#0f766e;">US$ {{ '{:,.2f}'.format(kpi.valor_usd) }}</div>{% endif %}<div class="text-muted small">suma real de los lotes</div>
         {% if kpi.sin_precio %}<a class="small text-warning-emphasis" href="{{ url_for('insumos_ingresos', empresa=empresa, pend=1) }}" title="Insumos con unidades de precio pendiente (no entran en este valor)"><i class="bi bi-hourglass-split"></i> {{ kpi.sin_precio }} con precio pendiente</a>{% endif %}</div></div></div>
     <div class="col-6 col-md-3"><div class="card border-0 shadow-sm h-100"><div class="card-body py-2">
         <div class="ins-dato">Bajo stock mínimo</div><div class="ins-kpi {{ 'text-danger' if kpi.bajo }}">{{ kpi.bajo }}</div>
@@ -81,29 +81,31 @@
             <thead class="table-dark">
                 <tr>
                     <th class="ps-3">Código</th><th>Descripción</th><th>Categoría</th><th class="text-center">Stock</th>
-                    <th class="text-center">Mínimo</th><th class="text-end">Costo prom.</th><th class="text-end">Valor</th><th>Almacén</th>
+                    <th class="text-center">Mínimo</th><th title="Precio unitario de cada lote que queda, en el orden en que sale (el primero sale antes)">Precios en stock <span class="fw-normal opacity-75">(PEPS)</span></th>
+                    <th class="text-end" title="Precio de la última compra">Últ. compra</th><th class="text-end">Valor</th><th>Almacén</th>
                     <th class="pe-3 text-end"></th>
                 </tr>
             </thead>
             <tbody>
             {% for f in filas %}
                 <tr class="{{ 'opacity-50' if not f.i.activo }}">
-                    <td class="ps-3 fw-bold text-nowrap">{{ f.i.codigo }}</td>
+                    <td class="ps-3 fw-bold text-nowrap"><a class="text-dark text-decoration-none" href="{{ url_for('insumos_ficha', insumo_id=f.i.id, empresa=empresa) }}" title="Lotes, precios e historial">{{ f.i.codigo }}</a></td>
                     <td>{{ f.i.descripcion }}{% if not f.i.activo %} <span class="badge bg-secondary">Inactivo</span>{% endif %}</td>
                     <td><span class="badge bg-light text-dark border">{{ f.i.categoria or '-' }}</span></td>
                     <td class="text-center text-nowrap"><span class="stock-chip num {{ 'bajo' if f.bajo }} {{ 'cero' if not f.stock }}">{{ f.stock|cant }}</span> <span class="text-muted">{{ f.i.unidad }}</span>{{ camino.badge(ec, f.i.id) }}
-                        {% if f.stock_sc > 0.000001 %}<div><a href="{{ url_for('insumos_ingresos', empresa=empresa, pend=1) }}" class="badge text-decoration-none" style="background:#fef3c7; color:#92400e; border:1px solid #fcd34d; font-size:.62rem;" title="Precio pendiente: no cuentan en el costo promedio ni en el valor del inventario">{{ f.stock_sc|cant }} sin precio</a></div>{% endif %}</td>
+                        {% if f.stock_sc > 0.000001 %}<div><a href="{{ url_for('insumos_ingresos', empresa=empresa, pend=1) }}" class="badge text-decoration-none" style="background:#fef3c7; color:#92400e; border:1px solid #fcd34d; font-size:.62rem;" title="Lotes con precio pendiente: no suman al valor hasta que se les ponga el precio">{{ f.stock_sc|cant }} sin precio</a></div>{% endif %}</td>
                     <td class="text-center num">{{ f.minimo|cant if f.minimo else '-' }}</td>
-                    <td class="text-end num text-nowrap">
-                        {% if f.stock_pen > 0 or not f.stock_usd %}<div>{{ f.costo|soles if f.costo else '-' }}{% if f.stock_usd %} <span class="text-muted" style="font-size:.7rem;">({{ f.stock_pen|cant }} und)</span>{% endif %}
-                        {% if puede_ajustar %}<button type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline" title="Editar costo promedio en soles (queda en auditoría)"
-                            onclick="ajustarCosto({{ f.i.id }}, '{{ empresa }}', {{ (f.i.codigo ~ ' · ' ~ f.i.descripcion)|tojson|forceescape }}, {{ f.costo|tojson }}, {{ f.stock_pen|tojson }}, 'PEN')"><i class="bi bi-pencil-square"></i></button>{% endif %}</div>{% endif %}
-                        {% if f.stock_usd %}<div style="color:#0f766e;" title="Lo comprado en dólares (se lleva aparte, sin convertir)">US$ {{ '{:,.2f}'.format(f.costo_usd) }} <span class="text-muted" style="font-size:.7rem;">({{ f.stock_usd|cant }} und)</span>
-                        {% if puede_ajustar %}<button type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline" title="Editar costo promedio en dólares"
-                            onclick="ajustarCosto({{ f.i.id }}, '{{ empresa }}', {{ (f.i.codigo ~ ' · ' ~ f.i.descripcion)|tojson|forceescape }}, {{ f.costo_usd|tojson }}, {{ f.stock_usd|tojson }}, 'USD')"><i class="bi bi-pencil-square"></i></button>{% endif %}</div>{% endif %}</td>
+                    <td class="num" style="min-width: 150px;">{% for l in f.lotes[:3] %}
+                        <a href="{{ url_for('insumos_ficha', insumo_id=f.i.id, empresa=empresa) }}#lote{{ l.id }}" class="lote-chip {{ 'sp' if l.costo_unitario is none }} {{ 'usd' if l.moneda == 'USD' and l.costo_unitario is not none }}"
+                           title="Lote #{{ l.id }} · llegó {{ l.fecha.strftime('%d/%m/%Y') }}{{ (' · ' ~ l.proveedor) if l.proveedor else '' }}">{% if l.costo_unitario is none %}sin precio{% else %}{{ 'US$' if l.moneda == 'USD' else 'S/' }} {{ '{:,.2f}'.format(l.costo_unitario) }}{% endif %} × {{ l.cantidad_restante|cant }}</a>
+                        {% else %}<span class="text-muted">-</span>{% endfor %}
+                        {% if f.lotes|length > 3 %}<a class="small text-muted" href="{{ url_for('insumos_ficha', insumo_id=f.i.id, empresa=empresa) }}">+{{ f.lotes|length - 3 }} lote(s)</a>{% endif %}</td>
+                    <td class="text-end num text-nowrap">{% if f.ultimo %}<div class="{{ 'text-teal' if f.ultimo.moneda == 'USD' }}" {% if f.ultimo.moneda == 'USD' %}style="color:#0f766e;"{% endif %}>{{ 'US$' if f.ultimo.moneda == 'USD' else 'S/' }} {{ '{:,.2f}'.format(f.ultimo.costo_unitario) }}</div>
+                        <div class="text-muted" style="font-size:.66rem;">{{ f.ultimo.fecha.strftime('%d/%m/%y') }}</div>{% else %}<span class="text-muted">-</span>{% endif %}</td>
                     <td class="text-end num fw-semibold text-nowrap">{% if f.valor or f.valor_usd %}{% if f.valor or not f.valor_usd %}<div>{{ f.valor|soles }}</div>{% endif %}{% if f.valor_usd %}<div style="color:#0f766e;">US$ {{ '{:,.2f}'.format(f.valor_usd) }}</div>{% endif %}{% else %}-{% endif %}</td>
                     <td class="text-muted">{{ f.s.almacen if f.s and f.s.almacen else '-' }}</td>
                     <td class="pe-3 text-end text-nowrap">
+                        <a class="btn btn-sm btn-outline-success py-0" title="Lotes, precios e historial" href="{{ url_for('insumos_ficha', insumo_id=f.i.id, empresa=empresa) }}"><i class="bi bi-tags"></i></a>
                         <a class="btn btn-sm btn-outline-secondary py-0" title="Kardex" href="{{ url_for('insumos_kardex', empresa=empresa, insumo_id=f.i.id) }}"><i class="bi bi-clock-history"></i></a>
                         {% if puede_editar %}
                         <button class="btn btn-sm btn-outline-primary py-0" title="Stock mínimo y almacén"
@@ -112,7 +114,7 @@
                     </td>
                 </tr>
             {% else %}
-                <tr><td colspan="9" class="text-center text-muted py-5"><i class="bi bi-box2 display-6 opacity-25"></i>
+                <tr><td colspan="10" class="text-center text-muted py-5"><i class="bi bi-box2 display-6 opacity-25"></i>
                     <p class="mt-2 mb-0">No hay insumos {{ 'con estos filtros' if q or categoria or bajo else 'en el maestro todavía' }}.
                     {% if puede_editar and not (q or categoria or bajo) %}<br>Créalos en <a href="{{ url_for('insumos_maestro') }}">Maestro</a> y luego registra un <a href="{{ url_for('insumos_ingreso_nuevo', empresa=empresa) }}">ingreso</a>.{% endif %}</p></td></tr>
             {% endfor %}
@@ -121,8 +123,7 @@
     </div>
 </div>
 
-{% if puede_ajustar %}<div class="text-end small mt-2"><a href="{{ url_for('insumos_kardex', empresa=empresa, concepto='AJUSTE_COSTO') }}"><i class="bi bi-shield-check"></i> Ver auditoría de ajustes de costo</a></div>{% endif %}
-{% include '_insumos_costo.html' %}
+<div class="text-end small mt-2"><a href="{{ url_for('insumos_kardex', empresa=empresa, concepto='AJUSTE_COSTO') }}"><i class="bi bi-shield-check"></i> Ver auditoría de correcciones de precio</a></div>
 <script>
 const ALMACENES = {{ almacenes|map(attribute='valor')|list|tojson }};
 function configStock(id, nombre, minimo, almacen) {

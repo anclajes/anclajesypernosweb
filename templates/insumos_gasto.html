@@ -30,8 +30,8 @@
     <div class="col-6 col-md-4"><div class="card border-0 shadow-sm h-100"><div class="card-body py-2">
         <div class="ins-dato">Salidas</div><div class="ins-kpi">{{ n_salidas }}</div><div class="text-muted small">sin contar anuladas</div></div></div></div>
     <div class="col-12 col-md-4"><div class="card border-0 shadow-sm h-100"><div class="card-body py-2 small text-muted">
-        <i class="bi bi-info-circle-fill text-primary"></i> Cada salida se valoriza al <b>costo promedio</b> del insumo en ese momento
-        (precio con IGV de las facturas, promediado con lo que ya había). Por eso, aunque la factura sea por 100 unidades, cada área carga solo lo que sacó.
+        <i class="bi bi-info-circle-fill text-primary"></i> Cada salida se valoriza con el <b>precio real del lote</b> del que sale (con IGV, en orden de llegada: primero el más antiguo).
+        Aunque la factura sea por 100 unidades, cada área carga solo lo que sacó, al precio de esa compra.
         <div class="mt-1"><i class="bi bi-currency-dollar text-success"></i> Lo comprado en <b>dólares</b> se gasta en dólares: <b>soles y dólares van por separado</b> (no se convierten ni se suman).</div></div></div></div>
 </div>
 

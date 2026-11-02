@@ -7,7 +7,7 @@ from models import AccesoUsuario
 from models import ProcesoOC, MovimientoDocumento
 from models import ActividadUsuario, ActividadHora, AlertaSeguridad
 from models import (InsumoArea, InsumoTrabajador, Insumo, InsumoStock, InsumoIngreso, InsumoIngresoDetalle,
-                    InsumoSalida, InsumoSalidaDetalle, InsumoMovimiento, InsumoDocumento, InsumoProveedor)
+                    InsumoSalida, InsumoSalidaDetalle, InsumoMovimiento, InsumoDocumento, InsumoProveedor, InsumoLote, InsumoSalidaLote)
 from models import OCProveedor, OrdenCompra, OrdenCompraItem, OrdenCompraEvento, OrdenCompraDocumento, OCConfig, OCContacto, OCMotivoRechazo, OCCuentaBancaria, OCMotivoCompra
 from models import RequerimientoCompra, RequerimientoItem, RequerimientoDocumento, RequerimientoEvento, RequerimientoVisto
 from models import Notificacion, NotificacionConfig, PushSuscripcion, AvisoAgente
@@ -14409,6 +14409,8 @@ TABLAS_RESET_ORDEN = [
     ('oc_proveedor', OCProveedor),
     ('insumo_documento', InsumoDocumento),          # insumos internos: hijos primero
     ('insumo_movimiento', InsumoMovimiento),
+    ('insumo_salida_lote', InsumoSalidaLote),
+    ('insumo_lote', InsumoLote),
     ('insumo_salida_detalle', InsumoSalidaDetalle),
     ('insumo_salida', InsumoSalida),
     ('insumo_ingreso_detalle', InsumoIngresoDetalle),
@@ -14503,6 +14505,8 @@ TABLAS_TODAS_ORDEN = [
     ('insumo_salida_detalle', InsumoSalidaDetalle),
     ('insumo_movimiento', InsumoMovimiento),
     ('insumo_documento', InsumoDocumento),
+    ('insumo_lote', InsumoLote),
+    ('insumo_salida_lote', InsumoSalidaLote),
     ('oc_proveedor', OCProveedor),
     ('oc_contacto', OCContacto),
     ('oc_motivo_rechazo', OCMotivoRechazo),
@@ -15742,6 +15746,7 @@ MODULOS_EN_ARCHIVOS = [
     'modulos/insumos/inventario.py',
     'modulos/insumos/movimientos.py',
     'modulos/insumos/gasto_config.py',
+    'modulos/insumos/estadisticas.py',
     'modulos/compras/base.py',
     'modulos/compras/ordenes.py',
     'modulos/compras/mejores_precios.py',

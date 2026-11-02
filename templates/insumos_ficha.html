@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% block title %}Insumos internos{% endblock %}
+{% block subtitle %}Lotes y precios · {{ ins.codigo }}{% endblock %}
+{% block content %}
+{% include '_insumos_nav.html' %}
+{% macro dinero(v, mon) %}{{ ('US$ ' ~ '{:,.2f}'.format(v or 0)) if mon == 'USD' else ('S/ ' ~ '{:,.2f}'.format(v or 0)) }}{% endmacro %}
+{% macro precio(v, mon) %}{% if v is none %}<span class="lote-chip sp">sin precio</span>{% else %}<span class="{{ 'txt-usd' if mon == 'USD' }}">{{ 'US$' if mon == 'USD' else 'S/' }} {{ '{:,.4f}'.format(v).rstrip('0').rstrip('.') if (v * 100) % 1 else '{:,.2f}'.format(v) }}</span>{% endif %}{% endmacro %}
+{% macro origen(l) %}{{ {'COMPRA': 'Compra', 'INICIAL': 'Saldo anterior', 'EXCEL': 'Carga Excel', 'DEVOLUCION': 'Devolución'}.get(l.origen, l.origen) }}{% endmacro %}
+<style>
+    .ficha-cab { border-radius: 14px; }
+    .ficha-cab .k { font-size: .68rem; font-weight: 700; text-transform: uppercase; color: #64748b; }
+    .ficha-cab .v { font-size: 1.2rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+    .txt-usd { color: #0f766e; }
+    .tabla-lotes th { font-size: .66rem; text-transform: uppercase; letter-spacing: .03em; white-space: nowrap; }
+    .tabla-lotes td { font-size: .8rem; vertical-align: middle; }
+    .turno { display: inline-flex; align-items: center; justify-content: center; min-width: 26px; height: 22px; border-radius: 11px; font-size: .68rem; font-weight: 800;
+             background: #e2e8f0; color: #334155; }
+    .turno.primero { background: #0f172a; color: #fff; }
+    .barra-lote { height: 6px; border-radius: 3px; background: #e2e8f0; overflow: hidden; min-width: 70px; }
+    .barra-lote > div { height: 100%; background: #2a78d6; border-radius: 3px; }
+    tr:target td { background: #fef9c3 !important; }
+    .sec-t { font-size: .78rem; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: #475569; margin: 18px 0 6px; }
+    .graf-caja { position: relative; height: 260px; }
+</style>
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+    <div><a href="{{ url_for('insumos_inventario', empresa=empresa) }}" class="small text-decoration-none"><i class="bi bi-arrow-left"></i> Inventario {{ empresas[empresa].corto }}</a></div>
+    <div class="d-flex gap-2">
+        {% for k, e in empresas.items() if k != empresa %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('insumos_ficha', insumo_id=ins.id, empresa=k) }}"><i class="bi bi-arrow-left-right"></i> Ver en {{ e.corto }}</a>{% endfor %}
+        <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('insumos_kardex', empresa=empresa, insumo_id=ins.id) }}"><i class="bi bi-clock-history"></i> Kardex</a>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm ficha-cab mb-3" style="border-left: 6px solid {{ empresas[empresa].color }} !important;"><div class="card-body d-flex flex-wrap gap-4 align-items-center">
+    <div class="me-auto"><div class="k">{{ ins.codigo }} · {{ empresas[empresa].corto }}</div><div class="fw-bold fs-5">{{ ins.descripcion }}</div>
+        <div class="text-muted small">{{ ins.categoria or 'Sin categoría' }} · {{ ins.unidad }}</div></div>
+    <div><div class="k">Stock</div><div class="v">{{ (st.stock_actual if st else 0)|cant }} <span class="fs-6 fw-normal text-muted">{{ ins.unidad }}</span></div></div>
+    <div><div class="k">Lotes con saldo</div><div class="v">{{ vigentes|length }}</div></div>
+    <div><div class="k">Valor real</div><div class="v">{{ montos_txt(r.v_pen, r.v_usd) }}</div>{% if r.q_sc %}<div class="small text-warning-emphasis">+ {{ r.q_sc|cant }} und sin precio</div>{% endif %}</div>
+    {% if vigentes %}{% set p = vigentes[0] %}<div><div class="k">Sale ahora a</div><div class="v">{{ precio(p.costo_unitario, p.moneda) }}</div><div class="small text-muted">lote #{{ p.id }} · quedan {{ p.cantidad_restante|cant }}</div></div>{% endif %}
+</div></div>
+
+<div class="alert alert-light border small py-2"><i class="bi bi-info-circle text-primary"></i> Cada compra es un <b>lote</b> con su <b>precio real</b>. Las salidas sacan <b>primero del lote más antiguo</b> (PEPS):
+    si una salida toma de dos lotes, cada parte se cobra a su precio. Soles y dólares no se mezclan.</div>
+
+<div class="sec-t"><i class="bi bi-stack"></i> Lotes en stock — en el orden en que salen</div>
+<div class="card border-0 shadow-sm"><div class="card-body p-0 table-responsive">
+    <table class="table table-hover mb-0 tabla-lotes">
+        <thead class="table-dark"><tr><th class="ps-3 text-center">Turno</th><th>Lote</th><th>Llegó</th><th>Origen / proveedor</th><th>Documento</th>
+            <th class="text-end">Precio unit.</th><th class="text-end">Entró</th><th>Queda</th><th class="text-end">Valor</th><th class="pe-3"></th></tr></thead>
+        <tbody>
+        {% for l in vigentes %}
+        <tr id="lote{{ l.id }}">
+            <td class="ps-3 text-center"><span class="turno {{ 'primero' if loop.first }}" title="{{ 'Sale ahora' if loop.first else 'Sale después' }}">{{ loop.index }}°</span></td>
+            <td class="fw-bold">#{{ l.id }}</td>
+            <td class="text-nowrap">{{ l.fecha.strftime('%d/%m/%Y') }}</td>
+            <td><span class="badge text-bg-light border">{{ origen(l) }}</span> {{ l.proveedor or '' }}</td>
+            <td class="small">{% if l.ingreso_id %}<a href="{{ url_for('insumos_ingreso_detalle', ingreso_id=l.ingreso_id) }}">{{ l.documento or ('Ingreso #' ~ l.ingreso_id) }}</a>{% else %}{{ l.documento or '-' }}{% endif %}</td>
+            <td class="text-end text-nowrap fw-semibold">{{ precio(l.costo_unitario, l.moneda) }}
+                {% if l.fecha_precio %}<div class="text-muted" style="font-size:.64rem;" title="Precio puesto después">{{ l.fecha_precio.strftime('%d/%m/%y') }} · {{ l.precio_por or '' }}</div>{% endif %}</td>
+            <td class="text-end num">{{ l.cantidad_inicial|cant }}</td>
+            <td style="min-width: 110px;"><div class="d-flex align-items-center gap-2"><b class="num">{{ l.cantidad_restante|cant }}</b>
+                <div class="barra-lote flex-grow-1" title="{{ (100 * l.cantidad_restante / l.cantidad_inicial)|round|int if l.cantidad_inicial else 0 }}% del lote"><div style="width: {{ (100 * l.cantidad_restante / l.cantidad_inicial)|round|int if l.cantidad_inicial else 0 }}%;"></div></div></div></td>
+            <td class="text-end num text-nowrap">{{ dinero(l.cantidad_restante * l.costo_unitario, l.moneda) if l.costo_unitario is not none else '—' }}</td>
+            <td class="pe-3 text-end text-nowrap">
+                {% if l.costo_unitario is none and puede_editar %}<button class="btn btn-sm btn-warning py-0 fw-bold" onclick="precioLote({{ l.id }}, {{ (ins.codigo ~ ' · ' ~ ins.descripcion)|tojson|forceescape }}, null, {{ (l.moneda or 'PEN')|tojson }}, {{ l.cantidad_inicial|tojson }}, {{ (l.cantidad_inicial - l.cantidad_restante)|round(3)|tojson }}, {{ (not l.ingreso_id)|tojson }})"><i class="bi bi-tag"></i> Poner precio</button>
+                {% elif l.costo_unitario is not none and es_admin %}<button class="btn btn-sm btn-link py-0" title="Corregir el precio (Gerencia, con motivo)" onclick="precioLote({{ l.id }}, {{ (ins.codigo ~ ' · ' ~ ins.descripcion)|tojson|forceescape }}, {{ l.costo_unitario|tojson }}, {{ (l.moneda or 'PEN')|tojson }}, {{ l.cantidad_inicial|tojson }}, {{ (l.cantidad_inicial - l.cantidad_restante)|round(3)|tojson }}, {{ (not l.ingreso_id)|tojson }})"><i class="bi bi-pencil"></i></button>{% endif %}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="10" class="text-center text-muted py-4">No hay stock de este insumo en {{ empresas[empresa].corto }}.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div></div>
+
+{% if pend_vacios %}
+<div class="sec-t text-warning-emphasis"><i class="bi bi-hourglass-split"></i> Lotes ya vacíos que todavía no tienen precio</div>
+<div class="alert py-2 small mb-2" style="background:#fffbeb; border:1px solid #fcd34d;">Ya salió todo, pero sin precio: al ponérselo se <b>recalculan sus salidas</b> y el gasto por área queda completo.</div>
+<div class="card border-0 shadow-sm"><div class="card-body p-0 table-responsive"><table class="table mb-0 tabla-lotes">
+    <thead class="table-light"><tr><th class="ps-3">Lote</th><th>Llegó</th><th>Origen / proveedor</th><th>Documento</th><th class="text-end">Entró</th><th class="text-end">Salidas</th><th class="pe-3"></th></tr></thead>
+    <tbody>{% for l in pend_vacios %}
+    <tr id="lote{{ l.id }}"><td class="ps-3 fw-bold">#{{ l.id }}</td><td>{{ l.fecha.strftime('%d/%m/%Y') }}</td><td><span class="badge text-bg-light border">{{ origen(l) }}</span> {{ l.proveedor or '' }}</td>
+        <td class="small">{% if l.ingreso_id %}<a href="{{ url_for('insumos_ingreso_detalle', ingreso_id=l.ingreso_id) }}">{{ l.documento or ('Ingreso #' ~ l.ingreso_id) }}</a>{% else %}{{ l.documento or '-' }}{% endif %}</td>
+        <td class="text-end num">{{ l.cantidad_inicial|cant }}</td><td class="text-end">{{ usos.get(l.id, {}).get('n', 0) }}</td>
+        <td class="pe-3 text-end">{% if puede_editar %}<button class="btn btn-sm btn-warning py-0 fw-bold" onclick="precioLote({{ l.id }}, {{ (ins.codigo ~ ' · ' ~ ins.descripcion)|tojson|forceescape }}, null, {{ (l.moneda or 'PEN')|tojson }}, {{ l.cantidad_inicial|tojson }}, {{ l.cantidad_inicial|tojson }}, {{ (not l.ingreso_id)|tojson }})"><i class="bi bi-tag"></i> Poner precio</button>{% endif %}</td></tr>
+    {% endfor %}</tbody></table></div></div>
+{% endif %}
+
+<div class="row g-3 mt-0">
+    <div class="col-12 col-xl-7">
+        <div class="sec-t"><i class="bi bi-graph-up"></i> Precio pagado en cada compra</div>
+        <div class="card border-0 shadow-sm"><div class="card-body">
+            {% if graf %}
+            {% if graf|length > 1 %}<div class="btn-group btn-group-sm mb-2" role="group">
+                {% for mon in graf %}<input type="radio" class="btn-check" name="gmon" id="gm_{{ mon }}" value="{{ mon }}" {{ 'checked' if loop.first }}><label class="btn btn-outline-secondary" for="gm_{{ mon }}">{{ 'Soles' if mon == 'PEN' else 'Dólares' }}</label>{% endfor %}</div>{% endif %}
+            <div class="graf-caja"><canvas id="gPrecios" aria-label="Precio unitario por compra y proveedor"></canvas></div>
+            {% else %}<div class="text-muted small py-4 text-center">Todavía no hay compras con precio de este insumo en {{ empresas[empresa].corto }}.</div>{% endif %}
+        </div></div>
+    </div>
+    <div class="col-12 col-xl-5">
+        <div class="sec-t"><i class="bi bi-trophy"></i> Por proveedor</div>
+        {% for f in resumen %}
+        <div class="card border-0 shadow-sm mb-2"><div class="card-body p-0">
+            <div class="px-3 pt-2 small d-flex flex-wrap gap-3"><span class="fw-bold">{{ 'Soles' if f.moneda == 'PEN' else 'Dólares' }}</span>
+                <span>Último <b>{{ precio(f.ultimo.precio, f.moneda) }}</b></span><span>Mejor <b class="text-success">{{ precio(f.mejor.precio, f.moneda) }}</b></span>
+                <span>Máx. <b>{{ precio(f.maximo, f.moneda) }}</b></span><span class="text-muted">Prom. pagado {{ precio(f.promedio, f.moneda) }}</span></div>
+            <table class="table table-sm mb-0 mt-1 tabla-lotes"><thead><tr><th class="ps-3">Proveedor</th><th class="text-end">Compras</th><th class="text-end">Mejor</th><th class="text-end">Prom.</th><th class="text-end pe-3">Última</th></tr></thead>
+                <tbody>{% for p in f.provs %}<tr><td class="ps-3">{% if f.recomendado and p.proveedor == f.recomendado.proveedor %}<i class="bi bi-star-fill text-warning" title="Mejor opción: menor precio promedio entre los que vendieron en el último año"></i> {% endif %}{{ p.proveedor }}</td>
+                    <td class="text-end">{{ p.n }}</td><td class="text-end">{{ precio(p.min, f.moneda) }}</td><td class="text-end">{{ precio(p.prom, f.moneda) }}</td>
+                    <td class="text-end pe-3 text-nowrap">{{ precio(p.ultimo.precio, f.moneda) }}<div class="text-muted" style="font-size:.64rem;">{{ p.ultimo.fecha.strftime('%d/%m/%y') }}</div></td></tr>{% endfor %}</tbody></table>
+        </div></div>
+        {% else %}<div class="text-muted small">Sin compras con precio.</div>{% endfor %}
+    </div>
+</div>
+
+<div class="sec-t"><i class="bi bi-receipt"></i> Historial de compras</div>
+<div class="card border-0 shadow-sm"><div class="card-body p-0 table-responsive" style="max-height: 420px;">
+    <table class="table table-sm table-hover mb-0 tabla-lotes"><thead class="table-light sticky-top"><tr><th class="ps-3">Fecha</th><th>Proveedor</th><th>Factura</th><th class="text-end">Cantidad</th><th class="text-end">Precio unit.</th><th class="text-end pe-3">Total</th></tr></thead>
+    <tbody>{% for c in compras %}<tr><td class="ps-3 text-nowrap">{{ c.fecha.strftime('%d/%m/%Y') }}</td><td>{{ c.proveedor }}</td>
+        <td><a href="{{ url_for('insumos_ingreso_detalle', ingreso_id=c.ingreso.id) }}">{{ c.factura or ('Ingreso #' ~ c.ingreso.id) }}</a></td>
+        <td class="text-end num">{{ c.cantidad|cant }}</td><td class="text-end num fw-semibold">{{ precio(c.precio, c.moneda) }}</td><td class="text-end num pe-3">{{ dinero(c.total, c.moneda) }}</td></tr>
+    {% else %}<tr><td colspan="6" class="text-center text-muted py-3">Sin compras registradas.</td></tr>{% endfor %}</tbody></table>
+</div></div>
+
+<div class="sec-t"><i class="bi bi-archive"></i> Lotes históricos (ya vacíos o anulados)</div>
+<div class="card border-0 shadow-sm mb-3"><div class="card-body p-0 table-responsive" style="max-height: 420px;">
+    <table class="table table-sm mb-0 tabla-lotes"><thead class="table-light sticky-top"><tr><th class="ps-3">Lote</th><th>Llegó</th><th>Origen / proveedor</th><th>Documento</th><th class="text-end">Precio unit.</th><th class="text-end">Entró</th><th class="text-end">Salidas</th><th class="pe-3">Estado</th></tr></thead>
+    <tbody>{% for l in historicos %}<tr id="lote{{ l.id }}" class="{{ 'opacity-50' if l.estado == 'ANULADO' }}">
+        <td class="ps-3 fw-bold">#{{ l.id }}</td><td class="text-nowrap">{{ l.fecha.strftime('%d/%m/%Y') }}</td><td><span class="badge text-bg-light border">{{ origen(l) }}</span> {{ l.proveedor or '' }}</td>
+        <td class="small">{% if l.ingreso_id %}<a href="{{ url_for('insumos_ingreso_detalle', ingreso_id=l.ingreso_id) }}">{{ l.documento or ('Ingreso #' ~ l.ingreso_id) }}</a>{% else %}{{ l.documento or '-' }}{% endif %}</td>
+        <td class="text-end">{{ precio(l.costo_unitario, l.moneda) }}</td><td class="text-end num">{{ l.cantidad_inicial|cant }}</td><td class="text-end">{{ usos.get(l.id, {}).get('n', 0) }}</td>
+        <td class="pe-3">{% if l.estado == 'ANULADO' %}<span class="badge bg-secondary">Anulado</span>{% else %}<span class="badge text-bg-light border">Vacío</span>{% endif %}</td></tr>
+    {% else %}<tr><td colspan="8" class="text-center text-muted py-3">Todavía no hay lotes vacíos.</td></tr>{% endfor %}</tbody></table>
+</div></div>
+
+{% include '_insumos_costo.html' %}
+{% if graf %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+(() => {
+    const G = {{ graf|tojson }};
+    const PAL = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#64748b'];
+    let graf = null;
+    const corta = t => t.length > 26 ? t.slice(0, 25) + '…' : t;
+    function pintar(mon) {
+        const sim = mon === 'USD' ? 'US$' : 'S/';
+        const fechas = [...new Set(G[mon].flatMap(s => s.puntos.map(p => p.x)))].sort();
+        if (graf) graf.destroy();
+        graf = new Chart(document.getElementById('gPrecios'), {
+            type: 'line',
+            data: { labels: fechas, datasets: G[mon].map((s, i) => ({
+                label: corta(s.nombre), data: fechas.map(f => { const p = s.puntos.find(q => q.x === f); return p ? p.y : null; }), puntos: s.puntos,
+                borderColor: PAL[i % PAL.length], backgroundColor: PAL[i % PAL.length], borderWidth: 2, pointRadius: 4, pointHoverRadius: 6,
+                pointBorderColor: '#fff', pointBorderWidth: 2, spanGaps: true, tension: 0 })) },
+            options: { maintainAspectRatio: false, interaction: { mode: 'nearest', intersect: false },
+                plugins: { legend: { display: G[mon].length > 1, position: 'bottom', labels: { boxWidth: 10, font: { size: 11 } } },
+                    tooltip: { callbacks: { title: it => it[0].label.split('-').reverse().join('/'),
+                        label: c => ` ${c.dataset.label}: ${sim} ${Number(c.raw).toFixed(2)}` } } },
+                scales: { x: { grid: { display: false }, ticks: { font: { size: 10 }, callback(v) { return this.getLabelForValue(v).split('-').reverse().slice(0, 2).join('/'); } } },
+                          y: { grid: { color: '#eef2f7' }, ticks: { font: { size: 10 }, callback: v => sim + ' ' + v } } } }
+        });
+    }
+    const monedas = Object.keys(G);
+    pintar(monedas[0]);
+    document.querySelectorAll('input[name=gmon]').forEach(r => r.addEventListener('change', () => pintar(r.value)));
+})();
+</script>
+{% endif %}
+{% endblock %}

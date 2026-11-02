@@ -20,6 +20,15 @@ def insumos_inventario():
     ver = request.args.get('ver', 'activos')
     insumos = Insumo.query.order_by(Insumo.codigo).all()
     stocks = {s.insumo_id: s for s in InsumoStock.query.filter_by(empresa=empresa).all()}
+    # lotes vigentes (en el orden en que salen) y el último precio de compra de cada insumo
+    lotes = {}
+    for l in (InsumoLote.query.filter(InsumoLote.empresa == empresa, InsumoLote.estado == 'ACTIVO', InsumoLote.cantidad_restante > 1e-9)
+              .order_by(InsumoLote.fecha, InsumoLote.id).all()):
+        lotes.setdefault(l.insumo_id, []).append(l)
+    ultimo = {}
+    for l in (InsumoLote.query.filter(InsumoLote.empresa == empresa, InsumoLote.estado == 'ACTIVO', InsumoLote.origen == 'COMPRA',
+                                      InsumoLote.costo_unitario.isnot(None)).order_by(InsumoLote.fecha, InsumoLote.id).all()):
+        ultimo[l.insumo_id] = l
     filas = []
     for i in insumos:
         if ver == 'activos' and not i.activo:
@@ -36,7 +45,7 @@ def insumos_inventario():
         q_pen, c_pen = _bolsa(s, 'PEN') if s else (0.0, 0.0)
         q_usd, c_usd = _bolsa(s, 'USD') if s else (0.0, 0.0)
         filas.append({'i': i, 's': s, 'stock': stock, 'minimo': minimo, 'costo': c_pen, 'costo_usd': c_usd, 'stock_pen': q_pen, 'stock_usd': q_usd,
-                      'stock_sc': _bolsa(s, 'SC')[0] if s else 0.0,
+                      'stock_sc': _bolsa(s, 'SC')[0] if s else 0.0, 'lotes': lotes.get(i.id, []), 'ultimo': ultimo.get(i.id),
                       'valor': q_pen * c_pen, 'valor_usd': q_usd * c_usd, 'bajo': minimo > 0 and stock <= minimo})
     ahora = hora_peru()
     inicio_mes = datetime(ahora.year, ahora.month, 1)
@@ -81,6 +90,7 @@ COLUMNAS_IMPORT_INSUMOS = {      # cabecera normalizada -> campo
     'STOCK': 'stock', 'STOCK ACTUAL': 'stock', 'CANTIDAD': 'stock',
     'MINIMO': 'minimo', 'STOCK MINIMO': 'minimo', 'MIN': 'minimo',
     'COSTO PROM': 'costo', 'COSTO PROMEDIO': 'costo', 'COSTO': 'costo', 'COSTO UNITARIO': 'costo', 'COSTO PROM S': 'costo',
+    'COSTO UNIT': 'costo', 'PRECIO UNIT': 'costo', 'PRECIO UNITARIO': 'costo', 'PRECIO': 'costo',
     'UNIDAD': 'unidad', 'UM': 'unidad', 'U M': 'unidad', 'UNIDAD DE MEDIDA': 'unidad',
 }
 MAX_FILAS_IMPORT_INSUMOS = 3000
@@ -186,8 +196,10 @@ def _analizar_import_insumos(filas, empresa):
         r['costo_antes'] = round(float(st.costo_promedio or 0), 6) if st else 0.0
         r['minimo_antes'] = round(float(st.stock_minimo or 0), 6) if st else 0.0
         r['dif'] = round((r['stock'] or 0) - r['stock_antes'], 6) if r['stock'] is not None else 0
-        if r['stock'] and r['costo'] is None and not r['costo_antes']:
-            r['avisos'].append('Sin costo: el stock entra SIN PRECIO (no afecta el costo promedio); se valoriza con la próxima factura.')
+        if r['dif'] > 1e-9 and r['costo'] is None:
+            r['avisos'].append('Sin costo: lo que se agrega entra como lote SIN PRECIO (se completa con la factura).')
+        if r['costo'] is not None and r['dif'] <= 1e-9:
+            r['avisos'].append('El costo solo se usa para las unidades que se agregan: aquí no se agrega nada (no cambia los lotes que ya hay).')
         if r['unidad'] and r['unidad'] not in unidades and r['nuevo']:
             r['avisos'].append(f"Unidad {r['unidad']} nueva: se agrega a la lista.")
         res.append(r)
@@ -269,34 +281,25 @@ def insumos_importar():
                 st.stock_minimo = r['minimo']
             dif = round(r['stock'] - float(st.stock_actual or 0), 6)
             if dif > 1e-9:
-                costo = r['costo'] if r['costo'] is not None else float(st.costo_promedio or 0)
-                # sin costo en el Excel ni costo promedio: entra SIN PRECIO (no baja el promedio a 0); se valoriza con la próxima factura
-                mon_imp = 'PEN' if costo > 0 or r['costo'] is not None else 'SC'
-                antes, _ = _entrada_a_stock(st, dif, costo, mon_imp)
+                # lo que falta entra como un LOTE "carga Excel" con el costo del archivo (o SIN PRECIO si no trae costo)
+                lote, antes = _nuevo_lote(st, dif, r['costo'], 'PEN', ahora, 'EXCEL', documento=ref)
                 db.session.add(InsumoMovimiento(empresa=empresa, insumo_id=ins.id, fecha=ahora, tipo='ENTRADA', concepto='IMPORTACION', cantidad=dif,
-                                                costo_unitario=round(costo, 6), costo_total=round(dif * costo, 2), stock_antes=antes,
-                                                stock_despues=st.stock_actual, **_datos_mov_moneda(st, mon_imp), referencia=ref,
-                                                observacion='Stock según el Excel (inventario inicial o conteo)' + (' · sin precio' if mon_imp == 'SC' else ''),
+                                                costo_unitario=round(r['costo'] or 0, 6), costo_total=round(dif * (r['costo'] or 0), 2), stock_antes=antes,
+                                                stock_despues=st.stock_actual, **_datos_mov_lote(lote), referencia=ref,
+                                                observacion='Stock según el Excel (inventario inicial o conteo)' + (' · sin precio' if r['costo'] is None else ''),
                                                 user_id=session.get('user_id'), fecha_registro=ahora))
                 st.ultimo_ingreso = ahora
                 movs += 1
             elif dif < -1e-9:
-                antes, partes = _salida_por_monedas(st, -dif)
-                for mon, cant_p, costo in partes:
+                # había más en el sistema: se descuenta de los lotes en orden de llegada (PEPS)
+                antes, partes = _sacar_de_lotes(st, -dif)
+                for lote, cant_p, costo, mon in partes:
                     db.session.add(InsumoMovimiento(empresa=empresa, insumo_id=ins.id, fecha=ahora, tipo='SALIDA', concepto='IMPORTACION', cantidad=cant_p,
-                                                    costo_unitario=round(costo, 6), costo_total=round(cant_p * costo, 2), stock_antes=antes,
-                                                    stock_despues=st.stock_actual, **_datos_mov_moneda(st, mon), referencia=ref,
+                                                    costo_unitario=round(costo or 0, 6), costo_total=round(cant_p * (costo or 0), 2), stock_antes=antes,
+                                                    stock_despues=st.stock_actual, **_datos_mov_lote(lote), referencia=ref,
                                                     observacion='Stock según el Excel (conteo): había más en el sistema', user_id=session.get('user_id'),
                                                     fecha_registro=ahora))
                 movs += 1
-            if r['costo'] is not None and abs(round(r['costo'], 6) - round(float(st.costo_promedio or 0), 6)) > 1e-9:
-                antes_c, stock_c = float(st.costo_promedio or 0), _bolsa(st, 'PEN')[0]
-                st.costo_promedio = round(r['costo'], 6)
-                db.session.add(InsumoMovimiento(empresa=empresa, insumo_id=ins.id, fecha=ahora, tipo='AJUSTE', concepto='AJUSTE_COSTO', cantidad=0,
-                                                costo_unitario=antes_c, costo_total=round(stock_c * (r['costo'] - antes_c), 2), stock_antes=stock_c,
-                                                stock_despues=stock_c, **_datos_mov_moneda(st, 'PEN'),
-                                                referencia=f'Costo promedio S/ {antes_c:,.4f} → S/ {r["costo"]:,.4f}'[:120],
-                                                observacion=f'{ref} (costo prom. del archivo)'[:255], user_id=session.get('user_id'), fecha_registro=ahora))
         registrar_log(f"Importó {len(res)} insumo(s) desde Excel al inventario {EMPRESAS_INSUMOS[empresa]['corto']}: {creados} nuevo(s), "
                       f"{movs} cambio(s) de stock", 'bi-file-earmark-excel', 'text-success')
         db.session.commit()
@@ -322,11 +325,11 @@ def insumos_importar_plantilla():
         for i in Insumo.query.filter_by(activo=True).order_by(Insumo.codigo).all():
             st = stocks.get(i.id)
             filas.append([i.codigo, i.descripcion, i.categoria or '', round(float(st.stock_actual or 0), 4) if st else 0,
-                          round(float(st.stock_minimo or 0), 4) if st else 0, round(float(st.costo_promedio or 0), 4) if st else None, i.unidad or ''])
+                          round(float(st.stock_minimo or 0), 4) if st else 0, None, i.unidad or ''])     # costo vacío: lo que sobre en el conteo entra sin precio
     else:
         filas = [['GUA-001', 'GUANTES DE NITRILO TALLA M', 'EPP / SEGURIDAD', 24, 10, 3.5, 'PAR'],
                  ['', 'CINTA DE EMBALAJE 2"', 'OFICINA', 12, 5, None, 'UND']]
-    _xlsx_hoja(wb, 'Insumos', ['Código', 'Descripción', 'Categoría', 'Stock', 'Mínimo', 'Costo prom.', 'Unidad'], filas,
+    _xlsx_hoja(wb, 'Insumos', ['Código', 'Descripción', 'Categoría', 'Stock', 'Mínimo', 'Costo unit.', 'Unidad'], filas,
                anchos={0: 14, 1: 45, 2: 22, 3: 10, 4: 10, 5: 12, 6: 10}, formatos={3: '#,##0.####', 4: '#,##0.####', 5: '#,##0.00##'}, primera=True)
     return _xlsx_respuesta(wb, f"insumos_{empresa.lower()}_{'conteo' if filas and request.args.get('con_stock') == '1' else 'plantilla'}.xlsx")
 

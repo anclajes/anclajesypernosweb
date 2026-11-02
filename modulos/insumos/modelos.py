@@ -2,14 +2,15 @@
 Se importan al final de models.py: "from models import X" sigue funcionando igual. Ver MAPA.md."""
 from models import db, hora_peru
 
-__all__ = ['InsumoArea', 'InsumoTrabajador', 'Insumo', 'InsumoStock', 'InsumoProveedor', 'InsumoIngreso', 'InsumoIngresoDetalle', 'InsumoSalida', 'InsumoSalidaDetalle', 'InsumoMovimiento', 'InsumoDocumento']
+__all__ = ['InsumoArea', 'InsumoTrabajador', 'Insumo', 'InsumoStock', 'InsumoProveedor', 'InsumoIngreso', 'InsumoIngresoDetalle', 'InsumoSalida', 'InsumoSalidaDetalle', 'InsumoMovimiento', 'InsumoDocumento', 'InsumoLote', 'InsumoSalidaLote']
 
 
 # =====================================================================================
 # INSUMOS INTERNOS: material de uso interno (EPP, limpieza, oficina, repuestos...) con
 # un MAESTRO único y STOCK separado por empresa (Anclajes / Import Bolts).
-# Valorizado a COSTO PROMEDIO PONDERADO (precios con IGV): cada ingreso recalcula el costo
-# promedio del stock; cada salida se valoriza a ese costo y se carga al área que la pidió.
+# Valorizado POR LOTES en orden de llegada (PEPS, precios con IGV): cada compra es un lote con su precio
+# real; las salidas sacan primero del lote más antiguo y se cargan al área con el precio de ese lote.
+# InsumoStock guarda los TOTALES (se recalculan desde los lotes); el "costo promedio" queda solo como referencia.
 # =====================================================================================
 class InsumoArea(db.Model):
     """Áreas / secciones a las que se carga el gasto (Producción, Almacén, Mantenimiento...)."""
@@ -73,6 +74,45 @@ class InsumoStock(db.Model):
 
     insumo = db.relationship('Insumo', backref='stocks')
     __table_args__ = (db.UniqueConstraint('insumo_id', 'empresa', name='uq_insumo_stock_empresa'),)
+
+
+class InsumoLote(db.Model):
+    """Un LOTE = lo que entró en una compra (o el saldo que había al pasar a lotes), con su precio real.
+    Salen en orden de llegada (fecha, id): primero el más antiguo. costo_unitario None = PRECIO PENDIENTE."""
+    __tablename__ = 'insumo_lote'
+    id = db.Column(db.Integer, primary_key=True)
+    empresa = db.Column(db.String(15), nullable=False, index=True)
+    insumo_id = db.Column(db.Integer, db.ForeignKey('insumo.id'), nullable=False, index=True)
+    fecha = db.Column(db.DateTime, nullable=False, index=True)        # fecha de llegada (define el orden de salida)
+    moneda = db.Column(db.String(3), default='PEN')                  # PEN / USD (sin convertir)
+    costo_unitario = db.Column(db.Float, nullable=True)              # con IGV; None = precio pendiente
+    cantidad_inicial = db.Column(db.Float, nullable=False)
+    cantidad_restante = db.Column(db.Float, nullable=False)
+    origen = db.Column(db.String(12), default='COMPRA')              # COMPRA / INICIAL (saldo al pasar a lotes) / EXCEL / DEVOLUCION
+    ingreso_id = db.Column(db.Integer, db.ForeignKey('insumo_ingreso.id'), nullable=True, index=True)
+    ingreso_detalle_id = db.Column(db.Integer, db.ForeignKey('insumo_ingreso_detalle.id'), nullable=True, index=True)
+    proveedor = db.Column(db.String(200))
+    documento = db.Column(db.String(120))                            # "Factura F001-123 · OC N° 000045"
+    estado = db.Column(db.String(10), default='ACTIVO')              # ACTIVO / ANULADO (se anuló su ingreso)
+    precio_por = db.Column(db.String(100))                           # quién puso / corrigió el precio después
+    fecha_precio = db.Column(db.DateTime, nullable=True)
+    creado_en = db.Column(db.DateTime, default=hora_peru)
+
+    insumo = db.relationship('Insumo')
+
+
+class InsumoSalidaLote(db.Model):
+    """De qué lote salió cada parte de una salida (y a qué precio): así el gasto es el real de cada compra."""
+    __tablename__ = 'insumo_salida_lote'
+    id = db.Column(db.Integer, primary_key=True)
+    salida_id = db.Column(db.Integer, db.ForeignKey('insumo_salida.id'), nullable=False, index=True)
+    salida_detalle_id = db.Column(db.Integer, db.ForeignKey('insumo_salida_detalle.id'), nullable=False, index=True)
+    lote_id = db.Column(db.Integer, db.ForeignKey('insumo_lote.id'), nullable=False, index=True)
+    cantidad = db.Column(db.Float, nullable=False)
+    costo_unitario = db.Column(db.Float, nullable=True)              # None = salió sin precio (se completa al ponerle precio al lote)
+    moneda = db.Column(db.String(3), default='PEN')
+
+    lote = db.relationship('InsumoLote')
 
 
 class InsumoProveedor(db.Model):
@@ -224,6 +264,7 @@ class InsumoMovimiento(db.Model):
     ingreso_id = db.Column(db.Integer, db.ForeignKey('insumo_ingreso.id'), nullable=True)
     salida_id = db.Column(db.Integer, db.ForeignKey('insumo_salida.id'), nullable=True)
     area_id = db.Column(db.Integer, db.ForeignKey('insumo_area.id'), nullable=True)
+    lote_id = db.Column(db.Integer, nullable=True, index=True)          # lote del que entra / sale (PEPS)
     observacion = db.Column(db.String(255))
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     fecha_registro = db.Column(db.DateTime, default=hora_peru)

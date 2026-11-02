@@ -187,6 +187,7 @@
                         <li><a href="{{ url_for('insumos_salidas') }}" class="nav-link py-2 ps-3 {{ 'active' if request.endpoint in ['insumos_salidas', 'insumos_salida_detalle'] }}"><i class="bi bi-journal-arrow-up fs-6 me-2"></i> <span>Salidas</span></a></li>
                         <li><a href="{{ url_for('insumos_ingresos') }}" class="nav-link py-2 ps-3 {{ 'active' if request.endpoint in ['insumos_ingresos', 'insumos_ingreso_detalle'] }}"><i class="bi bi-journal-arrow-down fs-6 me-2"></i> <span>Ingresos</span></a></li>
                         <li><a href="{{ url_for('insumos_gasto') }}" class="nav-link py-2 ps-3 {{ 'active' if request.endpoint == 'insumos_gasto' }}"><i class="bi bi-pie-chart fs-6 me-2"></i> <span>Gasto por área</span></a></li>
+                        <li><a href="{{ url_for('insumos_estadisticas') }}" class="nav-link py-2 ps-3 {{ 'active' if request.endpoint in ['insumos_estadisticas', 'insumos_ficha'] }}"><i class="bi bi-graph-up-arrow fs-6 me-2"></i> <span>Estadísticas y precios</span></a></li>
                     </ul>
                 </div>
                 {% endif %}

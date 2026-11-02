@@ -33,8 +33,8 @@
     {% endif %}
 </div>
 {% if n_pend and ing.estado == 'REGISTRADO' %}<div class="alert py-2 small mx-3" style="background:#fffbeb; border:1px solid #fcd34d;"><i class="bi bi-hourglass-split text-warning"></i>
-    <b>{{ n_pend }} ítem(s) con precio pendiente.</b> Entraron al stock <b>sin precio</b>: no cambian el costo promedio ni suman al gasto por área. Cuando tengas la factura, pulsa <b>Poner precio</b>
-    (o márcalo en la próxima compra de ese insumo). Lo que salga antes de tener precio sale a costo 0.</div>{% endif %}
+    <b>{{ n_pend }} ítem(s) con precio pendiente.</b> Entraron como lotes <b>sin precio</b>. Cuando tengas la factura, pulsa <b>Poner precio</b>
+    (o márcalo en la próxima compra de ese insumo): lo que ya salió de esos lotes se recalcula con ese precio.</div>{% endif %}
 {% if ing.estado == 'ANULADO' %}<div class="alert alert-secondary small py-2 mx-3"><i class="bi bi-x-octagon"></i> Anulado por <b>{{ ing.anulado_por }}</b> el {{ ing.fecha_anulacion.strftime('%d/%m/%Y %H:%M') if ing.fecha_anulacion else '' }}: {{ ing.motivo_anulacion }}</div>{% endif %}
 </div>
 <div class="row g-3">
@@ -80,24 +80,26 @@
         <div class="card border-0 shadow-sm"><div class="card-body p-0 table-responsive">
             <table class="table align-middle mb-0 small">
                 <thead class="table-light"><tr><th class="ps-3">Código</th><th>Descripción</th><th>Cód. prov.</th><th class="text-center">Cantidad</th>
-                    <th class="text-end">P. unit. c/IGV</th><th class="text-end">Total</th><th class="text-end pe-3" title="Costo promedio antes → después de este ingreso">Costo prom.</th></tr></thead>
+                    <th class="text-end">P. unit. c/IGV</th><th class="text-end">Total</th><th class="text-end pe-3" title="El lote de esta compra: cuánto queda y a qué precio sale">Lote</th></tr></thead>
                 <tbody>
                 {% for d in ing.detalles %}
                 <tr class="{{ 'fila-pend' if d.precio_pendiente }}"><td class="ps-3 fw-bold">{{ d.insumo.codigo }}</td><td>{{ d.insumo.descripcion }}
                         {% if d.fecha_precio %}<div class="text-success" style="font-size:.7rem;"><i class="bi bi-tag-fill"></i> Precio completado {{ d.fecha_precio.strftime('%d/%m/%Y') }}{% if d.precio_completado_por %} por {{ d.precio_completado_por }}{% endif %}
-                            {% if d.cantidad_valorizada is not none and d.cantidad_valorizada + 0.000001 < d.cantidad %} · {{ (d.cantidad - d.cantidad_valorizada)|cant }} und ya habían salido sin precio (a costo 0){% endif %}</div>{% endif %}</td>
+                            {% if d.cantidad_valorizada is not none and d.cantidad_valorizada + 0.000001 < d.cantidad %} · sus salidas previas ({{ (d.cantidad - d.cantidad_valorizada)|cant }} und) se recalcularon con este precio{% endif %}</div>{% endif %}</td>
                     <td class="text-muted">{{ d.codigo_proveedor or '-' }}</td>
                     <td class="text-center">{{ d.cantidad|cant }} {{ d.insumo.unidad }}</td>
+                    {% set lt = lotes.get(d.id) %}
                     {% if d.precio_pendiente %}
                     <td class="text-end" colspan="2"><span class="sp">PRECIO PENDIENTE</span>
-                        <div class="text-muted" style="font-size:.7rem;">{{ d.sin_costo_restante|cant }} de {{ d.cantidad|cant }} siguen en stock sin precio</div>
-                        {% if puede_editar and ing.estado == 'REGISTRADO' %}<button type="button" class="btn btn-sm btn-warning py-0 mt-1 fw-bold" onclick="ponerPrecio({{ d.id }}, {{ (d.insumo.codigo ~ ' · ' ~ d.insumo.descripcion)|tojson|forceescape }}, {{ d.cantidad|tojson }}, {{ d.sin_costo_restante|tojson }})"><i class="bi bi-tag"></i> Poner precio</button>{% endif %}</td>
-                    <td class="text-end pe-3 text-muted small">no cambia</td>
+                        {% if lt %}<div class="text-muted" style="font-size:.7rem;">{{ (lt.cantidad_inicial - lt.cantidad_restante)|cant }} und ya salieron sin precio: se recalculan al ponerlo</div>{% endif %}
+                        {% if puede_editar and ing.estado == 'REGISTRADO' %}<button type="button" class="btn btn-sm btn-warning py-0 mt-1 fw-bold" onclick="ponerPrecio({{ d.id }}, {{ (d.insumo.codigo ~ ' · ' ~ d.insumo.descripcion)|tojson|forceescape }}, {{ d.cantidad|tojson }}, {{ ((lt.cantidad_inicial - lt.cantidad_restante) if lt else 0)|tojson }})"><i class="bi bi-tag"></i> Poner precio</button>{% endif %}</td>
                     {% else %}
                     <td class="text-end">{{ m(d.precio_unitario) }}</td>
                     <td class="text-end fw-semibold">{{ m(d.precio_total) }}</td>
-                    <td class="text-end pe-3 text-nowrap"><span class="text-muted">{{ m(d.costo_prom_antes) }}</span> → <b>{{ m(d.costo_prom_despues) }}</b></td>
-                    {% endif %}</tr>
+                    {% endif %}
+                    <td class="text-end pe-3 text-nowrap">{% if lt %}<a href="{{ url_for('insumos_ficha', insumo_id=d.insumo_id, empresa=ing.empresa) }}" class="text-decoration-none" title="Ver los lotes y precios de este insumo">Lote #{{ lt.id }}</a>
+                        <div class="small {{ 'text-muted' if lt.cantidad_restante > 0.000001 else 'text-secondary' }}">{{ 'anulado' if lt.estado == 'ANULADO' else ('quedan ' ~ (lt.cantidad_restante|cant) if lt.cantidad_restante > 0.000001 else 'vacío (ya salió todo)') }}</div>
+                        {% else %}<span class="text-muted small">—</span>{% endif %}</td></tr>
                 {% endfor %}
                 </tbody>
                 <tfoot><tr><td colspan="5" class="text-end fw-bold">Total{{ ' (en dólares, sin convertir)' if ing.moneda == 'USD' else ' con IGV' }}{% if n_pend %} <span class="fw-normal text-muted">(sin los {{ n_pend }} ítem(s) con precio pendiente)</span>{% endif %}</td><td class="text-end fw-bold fs-6">{{ m(ing.total) }}</td><td></td></tr></tfoot>
@@ -109,15 +111,15 @@
     <input type="hidden" name="detalle_id" id="pr_det"><input type="hidden" name="precio_unitario" id="pr_unit"><input type="hidden" name="precio_total" id="pr_total"></form>
 <form method="POST" id="formAnular" action="{{ url_for('insumos_ingreso_anular', ingreso_id=ing.id) }}" class="d-none"><input type="hidden" name="motivo" id="motivoAnular"></form>
 <script>
-function ponerPrecio(detId, nombre, cantidad, restante) {
+function ponerPrecio(detId, nombre, cantidad, salieron) {
     const sim = {{ ('US$' if ing.moneda == 'USD' else 'S/')|tojson }};
     const esc = t => String(t).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     Swal.fire({ title: 'Poner precio', confirmButtonText: 'Guardar precio', cancelButtonText: 'Cancelar', showCancelButton: true, focusConfirm: false,
-        html: `<div class="text-start small mb-2"><b>${esc(nombre)}</b><br>Cantidad del ingreso: <b>${cantidad}</b> · siguen sin precio en stock: <b>${restante}</b></div>
+        html: `<div class="text-start small mb-2"><b>${esc(nombre)}</b><br>Cantidad del lote: <b>${cantidad}</b>${salieron ? ` · ya salieron: <b>${salieron}</b>` : ''}</div>
                <div class="row g-2 text-start"><div class="col-6"><label class="small fw-bold">Precio unit. con IGV (${sim})</label><input id="sw_unit" type="number" step="any" min="0" class="form-control"></div>
                <div class="col-6"><label class="small fw-bold">o Precio total con IGV (${sim})</label><input id="sw_total" type="number" step="any" min="0" class="form-control"></div></div>
-               <div class="small text-muted text-start mt-2">Las ${restante} und que siguen en stock pasan al costo promedio (queda en el Kardex como "Precio completado").
-               ${restante < cantidad ? 'Lo que ya salió sin precio se queda a costo 0 en esas salidas.' : ''}</div>`,
+               <div class="small text-muted text-start mt-2">El lote toma este precio (queda en el Kardex como "Precio completado").
+               ${salieron ? 'Las salidas que ya sacaron de este lote se recalculan con este precio (el gasto por área queda real).' : ''}</div>`,
         didOpen: () => {
             const u = document.getElementById('sw_unit'), t = document.getElementById('sw_total');
             u.addEventListener('input', () => { const v = parseFloat(u.value); t.value = v > 0 ? (v * cantidad).toFixed(2) : ''; });

@@ -64,7 +64,7 @@
             <div id="filas"></div>
             <button type="button" class="btn btn-outline-danger w-100 mb-3" onclick="agregarFila()"><i class="bi bi-plus-circle"></i> Agregar otro insumo</button>
             <div class="d-flex justify-content-between align-items-center border-top pt-2">
-                <span class="text-muted">Costo de esta salida <span class="small">(a costo promedio)</span></span>
+                <span class="text-muted">Costo de esta salida <span class="small">(precio real de cada lote, el más antiguo primero)</span></span>
                 <span class="total-salida" id="totalSalida">S/ 0.00</span>
             </div>
         </div></div>
@@ -136,18 +136,24 @@ function opcionesInsumos(sel) {
         `<option value="${i.id}" ${i.stock > 0 ? '' : 'disabled'}>${esc(i.codigo)} — ${esc(i.descripcion)} (stock ${fmtCant(i.stock)} ${esc(i.unidad)})</option>`).join('');
     sel.value = val;
 }
-// Lo comprado en soles y en dólares se lleva aparte: sale primero lo que entró antes, cada parte a su costo y en su moneda
+// PEPS: sale primero del lote más antiguo, cada parte con el precio REAL de su lote (S/ o US$, sin convertir).
+// Un lote sin precio (precio pendiente) sale "sin precio" y se recalcula cuando se le pone el precio.
 function costoSalida(d, cant) {
-    // lo SIN PRECIO (precio pendiente) sale al final y a costo 0
-    const sc = Math.min(d.stock_sc || 0, d.stock), usd = Math.min(d.stock_usd || 0, d.stock - sc), pen = Math.max(d.stock - usd - sc, 0);
-    const orden = d.primero === 'USD' ? [['USD', usd, d.costo_usd || 0], ['PEN', pen, d.costo]] : [['PEN', pen, d.costo], ['USD', usd, d.costo_usd || 0]];
-    let falta = cant; const r = { PEN: 0, USD: 0 };
-    orden.forEach(([m, q, c]) => { const t = Math.min(q, falta); if (t > 0) { r[m] += t * c; falta -= t; } });
-    falta -= Math.min(sc, falta);
-    if (falta > 0) r.PEN += falta * d.costo;
+    let falta = cant; const r = { PEN: 0, USD: 0, SC: 0 };
+    (d.lotes || []).forEach(([q, c, m]) => {
+        const t = Math.min(q, falta); if (t <= 0) return;
+        if (c === null || c === undefined) r.SC += t; else r[m === 'USD' ? 'USD' : 'PEN'] += t * c;
+        falta -= t;
+    });
     return r;
 }
-function montos(r) { const p = []; if (r.PEN || !r.USD) p.push('S/ ' + fmt(r.PEN)); if (r.USD) p.push('US$ ' + fmt(r.USD)); return p.join(' + '); }
+function montos(r) { const p = []; if (r.PEN || (!r.USD && !r.SC)) p.push('S/ ' + fmt(r.PEN)); if (r.USD) p.push('US$ ' + fmt(r.USD)); if (r.SC) p.push(fmtCant(r.SC) + ' und sin precio'); return p.join(' + '); }
+// precios de los lotes que quedan, en el orden en que salen: "S/ 5.00 × 3 → S/ 5.50 × 5"
+function lotesTxt(d) {
+    const l = (d.lotes || []).slice(0, 4).map(([q, c, m]) => c === null || c === undefined ? `<span class="text-warning-emphasis">sin precio × ${fmtCant(q)}</span>`
+        : `<span${m === 'USD' ? ' style="color:#0f766e;"' : ''}>${m === 'USD' ? 'US$' : 'S/'} ${fmt(c)} × ${fmtCant(q)}</span>`);
+    return l.length ? ' · lotes: ' + l.join(' → ') + ((d.lotes || []).length > 4 ? ' …' : '') : '';
+}
 function pintarFila(fila) {
     const d = datoInsumo(fila.querySelector('.sel-insumo').value);
     const info = fila.querySelector('.info');
@@ -156,17 +162,15 @@ function pintarFila(fila) {
     if (!d) { info.innerHTML = ''; recalcular(); return; }
     info.innerHTML = `<span class="badge bg-light text-dark border">${esc(d.unidad)}</span> Stock: <b>${fmtCant(d.stock)}</b>` +
         `${d.almacen ? ' · ' + esc(d.almacen) : ''}` +
-        (d.stock - (d.stock_usd || 0) > 0 || !d.stock_usd ? ` · costo prom.: S/ ${fmt(d.costo)}` : '') +
-        (d.stock_usd ? ` · <span style="color:#0f766e;">${fmtCant(d.stock_usd)} comprados en dólares a US$ ${fmt(d.costo_usd)}</span>` : '') +
-        (d.stock_sc ? ` · <span class="text-warning-emphasis" title="Precio pendiente: salen al final y a costo 0 (no suman al gasto)">${fmtCant(d.stock_sc)} sin precio</span>` : '') +
+        lotesTxt(d) +
         (desp ? ` · <b>${montos(costoSalida(d, Math.min(desp, d.stock)))}</b>` : '') + (desp > d.stock ? ' <span class="text-danger fw-bold">· no alcanza el stock</span>' : '');
     recalcular();
 }
 function recalcular() {
-    const total = { PEN: 0, USD: 0 };
+    const total = { PEN: 0, USD: 0, SC: 0 };
     document.querySelectorAll('#filas .fila-item').forEach(f => {
         const d = datoInsumo(f.querySelector('.sel-insumo').value);
-        if (d) { const r = costoSalida(d, Math.min(parseFloat(f.querySelector('.c-desp').value) || 0, d.stock)); total.PEN += r.PEN; total.USD += r.USD; }
+        if (d) { const r = costoSalida(d, Math.min(parseFloat(f.querySelector('.c-desp').value) || 0, d.stock)); total.PEN += r.PEN; total.USD += r.USD; total.SC += r.SC; }
     });
     document.getElementById('totalSalida').textContent = montos(total);
 }
