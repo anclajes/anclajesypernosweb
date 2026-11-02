@@ -138,10 +138,12 @@ function opcionesInsumos(sel) {
 }
 // Lo comprado en soles y en dólares se lleva aparte: sale primero lo que entró antes, cada parte a su costo y en su moneda
 function costoSalida(d, cant) {
-    const usd = Math.min(d.stock_usd || 0, d.stock), pen = Math.max(d.stock - usd, 0);
+    // lo SIN PRECIO (precio pendiente) sale al final y a costo 0
+    const sc = Math.min(d.stock_sc || 0, d.stock), usd = Math.min(d.stock_usd || 0, d.stock - sc), pen = Math.max(d.stock - usd - sc, 0);
     const orden = d.primero === 'USD' ? [['USD', usd, d.costo_usd || 0], ['PEN', pen, d.costo]] : [['PEN', pen, d.costo], ['USD', usd, d.costo_usd || 0]];
     let falta = cant; const r = { PEN: 0, USD: 0 };
     orden.forEach(([m, q, c]) => { const t = Math.min(q, falta); if (t > 0) { r[m] += t * c; falta -= t; } });
+    falta -= Math.min(sc, falta);
     if (falta > 0) r.PEN += falta * d.costo;
     return r;
 }
@@ -156,6 +158,7 @@ function pintarFila(fila) {
         `${d.almacen ? ' · ' + esc(d.almacen) : ''}` +
         (d.stock - (d.stock_usd || 0) > 0 || !d.stock_usd ? ` · costo prom.: S/ ${fmt(d.costo)}` : '') +
         (d.stock_usd ? ` · <span style="color:#0f766e;">${fmtCant(d.stock_usd)} comprados en dólares a US$ ${fmt(d.costo_usd)}</span>` : '') +
+        (d.stock_sc ? ` · <span class="text-warning-emphasis" title="Precio pendiente: salen al final y a costo 0 (no suman al gasto)">${fmtCant(d.stock_sc)} sin precio</span>` : '') +
         (desp ? ` · <b>${montos(costoSalida(d, Math.min(desp, d.stock)))}</b>` : '') + (desp > d.stock ? ' <span class="text-danger fw-bold">· no alcanza el stock</span>' : '');
     recalcular();
 }

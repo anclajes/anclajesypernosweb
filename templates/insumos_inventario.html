@@ -30,7 +30,8 @@
     <div class="col-6 col-md-3"><div class="card border-0 shadow-sm h-100"><div class="card-body py-2">
         <div class="ins-dato">Insumos con stock</div><div class="ins-kpi">{{ kpi['items'] }}</div></div></div></div>
     <div class="col-6 col-md-3"><div class="card border-0 shadow-sm h-100"><div class="card-body py-2">
-        <div class="ins-dato">Valor del inventario</div><div class="ins-kpi">{{ kpi.valor|soles }}</div>{% if kpi.valor_usd %}<div class="ins-kpi" style="color:#0f766e;">US$ {{ '{:,.2f}'.format(kpi.valor_usd) }}</div>{% endif %}<div class="text-muted small">a costo promedio</div></div></div></div>
+        <div class="ins-dato">Valor del inventario</div><div class="ins-kpi">{{ kpi.valor|soles }}</div>{% if kpi.valor_usd %}<div class="ins-kpi" style="color:#0f766e;">US$ {{ '{:,.2f}'.format(kpi.valor_usd) }}</div>{% endif %}<div class="text-muted small">a costo promedio</div>
+        {% if kpi.sin_precio %}<a class="small text-warning-emphasis" href="{{ url_for('insumos_ingresos', empresa=empresa, pend=1) }}" title="Insumos con unidades de precio pendiente (no entran en este valor)"><i class="bi bi-hourglass-split"></i> {{ kpi.sin_precio }} con precio pendiente</a>{% endif %}</div></div></div>
     <div class="col-6 col-md-3"><div class="card border-0 shadow-sm h-100"><div class="card-body py-2">
         <div class="ins-dato">Bajo stock mínimo</div><div class="ins-kpi {{ 'text-danger' if kpi.bajo }}">{{ kpi.bajo }}</div>
         {% if kpi.bajo %}<a class="small" href="{{ url_for('insumos_inventario', empresa=empresa, bajo=1) }}">Ver cuáles</a>{% endif %}</div></div></div>
@@ -90,7 +91,8 @@
                     <td class="ps-3 fw-bold text-nowrap">{{ f.i.codigo }}</td>
                     <td>{{ f.i.descripcion }}{% if not f.i.activo %} <span class="badge bg-secondary">Inactivo</span>{% endif %}</td>
                     <td><span class="badge bg-light text-dark border">{{ f.i.categoria or '-' }}</span></td>
-                    <td class="text-center text-nowrap"><span class="stock-chip num {{ 'bajo' if f.bajo }} {{ 'cero' if not f.stock }}">{{ f.stock|cant }}</span> <span class="text-muted">{{ f.i.unidad }}</span>{{ camino.badge(ec, f.i.id) }}</td>
+                    <td class="text-center text-nowrap"><span class="stock-chip num {{ 'bajo' if f.bajo }} {{ 'cero' if not f.stock }}">{{ f.stock|cant }}</span> <span class="text-muted">{{ f.i.unidad }}</span>{{ camino.badge(ec, f.i.id) }}
+                        {% if f.stock_sc > 0.000001 %}<div><a href="{{ url_for('insumos_ingresos', empresa=empresa, pend=1) }}" class="badge text-decoration-none" style="background:#fef3c7; color:#92400e; border:1px solid #fcd34d; font-size:.62rem;" title="Precio pendiente: no cuentan en el costo promedio ni en el valor del inventario">{{ f.stock_sc|cant }} sin precio</a></div>{% endif %}</td>
                     <td class="text-center num">{{ f.minimo|cant if f.minimo else '-' }}</td>
                     <td class="text-end num text-nowrap">
                         {% if f.stock_pen > 0 or not f.stock_usd %}<div>{{ f.costo|soles if f.costo else '-' }}{% if f.stock_usd %} <span class="text-muted" style="font-size:.7rem;">({{ f.stock_pen|cant }} und)</span>{% endif %}

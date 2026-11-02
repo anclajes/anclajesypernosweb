@@ -727,6 +727,7 @@ CONDICIONES_PAGO_IMP = ['PAGO A 90 DÍAS DE RECIBIDA LA COPIA DEL B/L (PAID IN 9
                         'CARTA DE CRÉDITO A LA VISTA (L/C AT SIGHT)',
                         'PAGO CONTRA DOCUMENTOS (CAD - CASH AGAINST DOCUMENTS)']
 app.add_template_global(TAX_TEMPORAL, 'tax_temporal')
+app.add_template_global(TIPOS_DOC_OC, 'tipos_doc_oc')     # menú de documentos (_oc_docs_menu.html)
 
 
 def _usd_pcs_txt(v):

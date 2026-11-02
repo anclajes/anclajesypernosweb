@@ -36,6 +36,7 @@ def insumos_inventario():
         q_pen, c_pen = _bolsa(s, 'PEN') if s else (0.0, 0.0)
         q_usd, c_usd = _bolsa(s, 'USD') if s else (0.0, 0.0)
         filas.append({'i': i, 's': s, 'stock': stock, 'minimo': minimo, 'costo': c_pen, 'costo_usd': c_usd, 'stock_pen': q_pen, 'stock_usd': q_usd,
+                      'stock_sc': _bolsa(s, 'SC')[0] if s else 0.0,
                       'valor': q_pen * c_pen, 'valor_usd': q_usd * c_usd, 'bajo': minimo > 0 and stock <= minimo})
     ahora = hora_peru()
     inicio_mes = datetime(ahora.year, ahora.month, 1)
@@ -46,7 +47,8 @@ def insumos_inventario():
               'valor': _bolsa(s, 'PEN')[0] * _bolsa(s, 'PEN')[1], 'valor_usd': _bolsa(s, 'USD')[0] * _bolsa(s, 'USD')[1]}
              for s in stocks.values()]
     kpi = {'items': sum(1 for t in todos if t['stock'] > 0), 'valor': sum(t['valor'] for t in todos), 'valor_usd': sum(t['valor_usd'] for t in todos),
-           'bajo': sum(1 for t in todos if t['min'] > 0 and t['stock'] <= t['min']), 'gasto_mes': gasto_mes, 'gasto_mes_usd': gasto_mes_usd}
+           'bajo': sum(1 for t in todos if t['min'] > 0 and t['stock'] <= t['min']), 'gasto_mes': gasto_mes, 'gasto_mes_usd': gasto_mes_usd,
+           'sin_precio': sum(1 for s_ in stocks.values() if _bolsa(s_, 'SC')[0] > 1e-9)}
     return render_template('insumos_inventario.html', empresa=empresa, empresas=EMPRESAS_INSUMOS, filas=filas, kpi=kpi,
                            q=q, categoria=categoria, bajo=bajo, ver=ver, categorias=_categorias_insumos(),
                            almacenes=_catalogo_insumos('INSUMO_ALMACEN'), puede_editar=session.get('role') in ROLES_INSUMOS_EDITAN,
@@ -184,8 +186,8 @@ def _analizar_import_insumos(filas, empresa):
         r['costo_antes'] = round(float(st.costo_promedio or 0), 6) if st else 0.0
         r['minimo_antes'] = round(float(st.stock_minimo or 0), 6) if st else 0.0
         r['dif'] = round((r['stock'] or 0) - r['stock_antes'], 6) if r['stock'] is not None else 0
-        if r['stock'] and not r['costo'] and not r['costo_antes']:
-            r['avisos'].append('Sin costo: el stock entra con costo 0 (puedes corregirlo después).')
+        if r['stock'] and r['costo'] is None and not r['costo_antes']:
+            r['avisos'].append('Sin costo: el stock entra SIN PRECIO (no afecta el costo promedio); se valoriza con la próxima factura.')
         if r['unidad'] and r['unidad'] not in unidades and r['nuevo']:
             r['avisos'].append(f"Unidad {r['unidad']} nueva: se agrega a la lista.")
         res.append(r)
@@ -268,12 +270,14 @@ def insumos_importar():
             dif = round(r['stock'] - float(st.stock_actual or 0), 6)
             if dif > 1e-9:
                 costo = r['costo'] if r['costo'] is not None else float(st.costo_promedio or 0)
-                antes, _ = _entrada_a_stock(st, dif, costo, 'PEN')
+                # sin costo en el Excel ni costo promedio: entra SIN PRECIO (no baja el promedio a 0); se valoriza con la próxima factura
+                mon_imp = 'PEN' if costo > 0 or r['costo'] is not None else 'SC'
+                antes, _ = _entrada_a_stock(st, dif, costo, mon_imp)
                 db.session.add(InsumoMovimiento(empresa=empresa, insumo_id=ins.id, fecha=ahora, tipo='ENTRADA', concepto='IMPORTACION', cantidad=dif,
                                                 costo_unitario=round(costo, 6), costo_total=round(dif * costo, 2), stock_antes=antes,
-                                                stock_despues=st.stock_actual, **_datos_mov_moneda(st, 'PEN'), referencia=ref,
-                                                observacion='Stock según el Excel (inventario inicial o conteo)', user_id=session.get('user_id'),
-                                                fecha_registro=ahora))
+                                                stock_despues=st.stock_actual, **_datos_mov_moneda(st, mon_imp), referencia=ref,
+                                                observacion='Stock según el Excel (inventario inicial o conteo)' + (' · sin precio' if mon_imp == 'SC' else ''),
+                                                user_id=session.get('user_id'), fecha_registro=ahora))
                 st.ultimo_ingreso = ahora
                 movs += 1
             elif dif < -1e-9:

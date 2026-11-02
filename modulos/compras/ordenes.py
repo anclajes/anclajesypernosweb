@@ -42,6 +42,7 @@ def oc_lista():
     tipo, destino = a.get('tipo', ''), a.get('destino', '')
     prov_id = a.get('proveedor', type=int)
     solicitante, motivo, pago_f, docs_f = a.get('solicitante', ''), a.get('motivo', ''), a.get('pago', ''), a.get('docs', '')
+    creador = a.get('creador', type=int)
     desde, hasta = _fecha_param('desde', None), _fecha_param('hasta', None)
     buscar = ' '.join((a.get('q') or '').split())
     docs = {}
@@ -60,6 +61,8 @@ def oc_lista():
         if solicitante and (_oc_solicitante_txt(o) or '').upper() != solicitante.upper():
             continue
         if motivo and (o.motivo_compra or '') != motivo:
+            continue
+        if creador and o.creado_por_id != creador:
             continue
         if pago_f:
             niv = pagos[o.id]['nivel']
@@ -81,7 +84,7 @@ def oc_lista():
             continue
         if buscar:
             texto = (f"{o.tipo} {_oc_numero_txt(o)} {o.numero:06d} {o.razon_social} {o.ruc or ''} {o.cotizacion or ''} {o.numero_factura or ''} {o.numero_guia or ''} "
-                     f"{_oc_solicitante_txt(o)} {o.cliente_razon or ''} {o.cliente_ruc or ''} {' '.join(i.descripcion for i in o.items)}").upper()
+                     f"{_oc_solicitante_txt(o)} {o.creado_por.nombre_completo if o.creado_por else ''} {o.cliente_razon or ''} {o.cliente_ruc or ''} {' '.join(i.descripcion for i in o.items)}").upper()
             if not all(t in texto for t in buscar.upper().split()):
                 continue
         ordenes.append(o)
@@ -103,12 +106,16 @@ def oc_lista():
     proveedores = sorted({(o.oc_proveedor_id, o.razon_social) for o in todas if o.oc_proveedor_id}, key=lambda x: _clave_alfabetica(x[1] or ''))
     solicitantes = sorted({_oc_solicitante_txt(o) for o in todas if _oc_solicitante_txt(o)}, key=_clave_alfabetica)
     motivos = sorted({o.motivo_compra for o in todas if o.motivo_compra})
-    filtros_activos = sum(1 for x in (tipo, destino, prov_id, solicitante, motivo, pago_f, docs_f, desde, hasta) if x)
+    # quién creó la orden (la cuenta que la registró)
+    creadores = sorted({(o.creado_por_id, o.creado_por.nombre_completo or o.creado_por.username) for o in todas if o.creado_por},
+                       key=lambda x: _clave_alfabetica(x[1] or ''))
+    filtros_activos = sum(1 for x in (tipo, destino, prov_id, solicitante, motivo, pago_f, docs_f, desde, hasta, creador) if x)
     return render_template('oc_lista.html', ordenes=ordenes, vista=vista, vistas_orden=VISTAS_OC_ORDEN,
                            nombres_vista={**{k: v[0] for k, v in VISTAS_OC.items()}, **VISTAS_OC_EXTRA}, conteo=conteo, docs=docs,
                            tipo=tipo, destino=destino, prov_id=prov_id, solicitante=solicitante, motivo=motivo, pago_f=pago_f, docs_f=docs_f,
                            desde=desde, hasta=hasta, buscar=buscar, hoy=hoy, pagos=pagos, atrasos=atrasos, kpi=kpi, resumen=resumen,
                            total_filtrado=total_filtrado, proveedores=proveedores, solicitantes=solicitantes, motivos=motivos,
+                           creadores=creadores, creador=creador,
                            filtros_activos=filtros_activos, estados=ESTADOS_OC, tipos=TIPOS_OC, destinos=DESTINOS_OC, monedas=MONEDAS_OC,
                            puede_editar=rol in ROLES_OC_EDITAN, aprueba=rol in ROLES_OC_APRUEBAN, seccion='lista', emp_sel=emp_sel, conteo_emp=conteo_emp, empresas_oc=EMPRESAS_OC)
 

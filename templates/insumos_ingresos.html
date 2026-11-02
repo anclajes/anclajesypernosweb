@@ -3,22 +3,26 @@
 {% block subtitle %}Ingresos (compras){% endblock %}
 {% block content %}
 {% include '_insumos_nav.html' %}
+{% from '_oc_docs_menu.html' import menu_docs_compra, estilos_docs_oc with context %}
+{{ estilos_docs_oc() }}
 <form method="GET" class="row g-2 align-items-end mb-3">
     <div class="col-6 col-md-2"><label class="small fw-bold text-muted">Empresa</label>
         <select name="empresa" class="form-select form-select-sm" onchange="this.form.submit()"><option value="TODAS">Las dos</option>
             {% for k, e in empresas.items() %}<option value="{{ k }}" {{ 'selected' if k == empresa }}>{{ e.corto }}</option>{% endfor %}</select></div>
     <div class="col-12 col-md-5"><label class="small fw-bold text-muted">Buscar</label>
-        <div class="input-group input-group-sm"><input type="text" name="q" class="form-control" value="{{ buscar }}" placeholder="Proveedor, RUC o N° de factura">
+        <div class="input-group input-group-sm"><input type="text" name="q" class="form-control" value="{{ buscar }}" placeholder="Proveedor, RUC, N° de factura o de la OC">
         <button class="btn btn-primary"><i class="bi bi-search"></i></button></div></div>
     <div class="col-12 col-md-3"><label class="small fw-bold text-muted">Categoría (de lo comprado)</label>
         <select name="categoria" class="form-select form-select-sm filtro-cat" data-placeholder="Todas las categorías">
             <option value=""></option>
             {% for c in categorias_filtro %}<option value="{{ c }}" {{ 'selected' if c == categoria }}>{{ c }}</option>{% endfor %}
         </select></div>
+    <div class="col-12 col-md-2"><div class="form-check mb-1"><input class="form-check-input" type="checkbox" name="pend" value="1" id="f_pend" {{ 'checked' if pend }} onchange="this.form.submit()">
+        <label class="form-check-label small fw-bold" for="f_pend">Solo con precio pendiente</label></div></div>
 </form>
 <div class="card border-0 shadow-sm"><div class="card-body p-0 table-responsive">
     <table class="table table-hover align-middle mb-0 small">
-        <thead class="table-dark"><tr><th class="ps-3">#</th><th>Fecha</th><th>Empresa</th><th>Proveedor</th><th>Factura</th><th class="text-center">Ítems</th>
+        <thead class="table-dark"><tr><th class="ps-3">#</th><th>Fecha</th><th>Empresa</th><th>Proveedor</th><th>Factura / OC</th><th class="text-center">Ítems</th>
             <th class="text-end">Total c/IGV</th><th>Docs</th><th class="pe-3"></th></tr></thead>
         <tbody>
         {% for i in ingresos %}
@@ -27,10 +31,13 @@
                 <td class="text-nowrap">{{ i.fecha.strftime('%d/%m/%Y') }}</td>
                 <td>{{ empresas[i.empresa].corto }}</td>
                 <td><b>{{ i.razon_social or '-' }}</b><div class="text-muted">{{ i.ruc or '' }}</div></td>
-                <td>{{ i.numero_factura or '-' }}</td>
-                <td class="text-center">{{ i.detalles|length }}</td>
+                {% set oc_i = ocs.get(i.id) %}{% set np = i.detalles|selectattr('precio_pendiente')|list|length %}
+                <td>{{ i.numero_factura or '' }}{% if not i.numero_factura %}<span class="text-muted">Sin factura</span>{% endif %}
+                    {% if oc_i %}<div><a class="badge text-bg-light border text-decoration-none" href="{{ url_for('oc_pdf', orden_id=oc_i.id, ver=1) }}" target="_blank" title="Ver el PDF de la orden"><i class="bi bi-cart-check text-primary"></i> {{ oc_codigo(oc_i) }}</a></div>{% endif %}</td>
+                <td class="text-center">{{ i.detalles|length }}{% if np and i.estado == 'REGISTRADO' %}<div><span class="badge" style="background:#fef3c7; color:#92400e; border:1px solid #fcd34d;" title="Ítems con precio pendiente">{{ np }} sin precio</span></div>{% endif %}</td>
                 <td class="text-end fw-semibold text-nowrap">{{ ('US$ ' ~ '{:,.2f}'.format(i.total or 0)) if i.moneda == 'USD' else i.total|soles }}</td>
-                <td>{% for d in docs.get(i.id, []) %}<a href="{{ url_for('insumos_documento', doc_id=d.id) }}" target="_blank" class="badge text-bg-light border text-decoration-none me-1"><i class="bi {{ 'bi-receipt' if d.tipo == 'FACTURA' else 'bi-truck' if d.tipo == 'GUIA' else 'bi-paperclip' }}"></i> {{ d.tipo|title }}</a>{% else %}<span class="text-muted">—</span>{% endfor %}</td>
+                <td class="text-nowrap">{% for d in docs.get(i.id, []) %}<a href="{{ url_for('insumos_documento', doc_id=d.id) }}" target="_blank" class="badge text-bg-light border text-decoration-none me-1"><i class="bi {{ 'bi-receipt' if d.tipo == 'FACTURA' else 'bi-truck' if d.tipo == 'GUIA' else 'bi-paperclip' }}"></i> {{ d.tipo|title }}</a>{% endfor %}
+                    {% if docs.get(i.id) or oc_i %}<div class="mt-1">{{ menu_docs_compra(i, docs.get(i.id, []), oc_i, docs_oc.get(oc_i.id, []) if oc_i else [], texto='Ver / descargar') }}</div>{% else %}<span class="text-muted">—</span>{% endif %}</td>
                 <td class="pe-3 text-end"><a href="{{ url_for('insumos_ingreso_detalle', ingreso_id=i.id) }}" class="btn btn-sm btn-outline-primary py-0"><i class="bi bi-eye"></i></a></td>
             </tr>
         {% else %}

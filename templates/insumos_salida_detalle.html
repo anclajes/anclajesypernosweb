@@ -54,8 +54,10 @@
                 {% for d in sal.detalles %}
                     <tr><td class="ps-3 fw-bold">{{ d.insumo.codigo }}</td><td>{{ d.insumo.descripcion }}</td>
                         <td class="text-center">{{ d.cantidad_solicitada|cant }} {{ d.unidad }}</td><td class="text-center fw-bold">{{ d.cantidad_despachada|cant }} {{ d.unidad }}</td>
-                        <td class="text-muted">{{ d.ubicacion or '-' }}</td><td class="text-end text-nowrap">{% if (d.cantidad_despachada or 0) - (d.cantidad_usd or 0) > 0.000001 %}<div>{{ d.costo_unitario|soles }}{% if d.cantidad_usd %} <span class="text-muted small">× {{ ((d.cantidad_despachada or 0) - d.cantidad_usd)|cant }}</span>{% endif %}</div>{% endif %}
-                            {% if d.cantidad_usd %}<div style="color:#0f766e;">US$ {{ '{:,.2f}'.format(d.costo_unitario_usd or 0) }} <span class="text-muted small">× {{ d.cantidad_usd|cant }}</span></div>{% endif %}</td>
+                        <td class="text-muted">{{ d.ubicacion or '-' }}</td>{% set q_sc = d.cantidad_sin_costo or 0 %}{% set q_pen = (d.cantidad_despachada or 0) - (d.cantidad_usd or 0) - q_sc %}
+                        <td class="text-end text-nowrap">{% if q_pen > 0.000001 %}<div>{{ d.costo_unitario|soles }}{% if d.cantidad_usd or q_sc %} <span class="text-muted small">× {{ q_pen|cant }}</span>{% endif %}</div>{% endif %}
+                            {% if d.cantidad_usd %}<div style="color:#0f766e;">US$ {{ '{:,.2f}'.format(d.costo_unitario_usd or 0) }} <span class="text-muted small">× {{ d.cantidad_usd|cant }}</span></div>{% endif %}
+                            {% if q_sc %}<div title="Precio pendiente: salió a costo 0 y no suma al gasto"><span class="badge" style="background:#fef3c7; color:#92400e; border:1px solid #fcd34d;">Sin precio</span> <span class="text-muted small">× {{ q_sc|cant }}</span></div>{% endif %}</td>
                         <td class="text-end pe-3 fw-semibold text-nowrap">{{ montos_txt(d.costo_total, d.costo_total_usd) }}</td></tr>
                 {% endfor %}
                 </tbody>

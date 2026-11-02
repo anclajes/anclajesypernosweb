@@ -26,6 +26,11 @@
     .prov-sug .ruc { font-variant-numeric: tabular-nums; font-weight: 700; color: #0B3D91; }
     .prov-elegido { border: 1.5px solid #86efac; background: #f0fdf4; border-radius: 10px; padding: 8px 10px; display: none; }
     .prov-elegido .nom { font-weight: 800; color: #14532d; }
+    .fila-item.pendiente { border-color: #fcd34d; background: #fffdf5; }
+    .fila-item .chk-lbl { font-size: .74rem; font-weight: 700; color: #92400e; text-transform: none; cursor: pointer; }
+    .pend-nota { font-size: .72rem; background: #fef3c7; color: #78350f; border-radius: 8px; padding: 5px 9px; }
+    .val-nota { font-size: .74rem; background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; border-radius: 8px; padding: 6px 9px 6px 2.1em; }
+    .val-nota label { text-transform: none; font-size: .74rem; color: #065f46; font-weight: 600; cursor: pointer; }
 </style>
 
 {% if oc_prefill %}
@@ -61,9 +66,9 @@
                 <div class="col-6"><label class="small fw-bold">Fecha *</label>
                     <input type="date" name="fecha" id="fecha_ingreso" class="form-control" value="{{ hoy.isoformat() }}" max="{{ hoy.isoformat() }}" required>
                     <div class="form-text" style="font-size:.68rem;">Puede ser una fecha anterior.</div></div>
-                <div class="col-6"><label class="small fw-bold"># Factura *</label>
-                    <input type="text" name="numero_factura" id="numero_factura" class="form-control text-uppercase" maxlength="50" placeholder="F001-12345" required>
-                    <div class="form-text" style="font-size:.68rem;">O el N° de boleta / recibo si es sin RUC.</div></div>
+                <div class="col-6"><label class="small fw-bold"># Factura <span class="fw-normal text-muted">(opcional)</span></label>
+                    <input type="text" name="numero_factura" id="numero_factura" class="form-control text-uppercase" maxlength="50" placeholder="F001-12345">
+                    <div class="form-text" style="font-size:.68rem;">O el N° de boleta / recibo. Si no la tienes (inventario de cosas antiguas), déjalo vacío: se puede agregar después.</div></div>
                 <div class="col-12"><label class="small fw-bold d-block">Moneda de la factura *</label>
                     <div class="btn-group w-100" role="group">
                         <input type="radio" class="btn-check" name="moneda" id="mon_PEN" value="PEN" checked onchange="cambioMoneda()" {{ 'disabled' if oc_prefill and oc_prefill.moneda == 'USD' }}>
@@ -173,6 +178,20 @@
             <div class="col-6 col-md-3"><label><span class="lbl-pu">Precio unit. c/IGV</span> <span class="sim-mon">S/</span></label><input name="precio_unitario[]" type="number" step="any" min="0" class="form-control form-control-sm c-pu"></div>
             <div class="col-6 col-md-3"><label><span class="lbl-pt">Precio total c/IGV</span> <span class="sim-mon">S/</span></label><input name="precio_total[]" type="number" step="any" min="0" class="form-control form-control-sm c-pt"></div>
             <div class="col-6 col-md-4"><label>Stock mínimo</label><input name="stock_minimo[]" type="number" step="any" min="0" class="form-control form-control-sm c-min"></div>
+            <div class="col-6 col-md-8 d-flex align-items-end">
+                <input type="hidden" name="precio_pendiente[]" class="h-pend" value="">
+                <div class="form-check mb-1" title="Para inventariar cosas que ya estaban (sin factura) o cuando todavía no se sabe el precio">
+                    <input class="form-check-input chk-pend" type="checkbox">
+                    <label class="form-check-label chk-lbl">Precio pendiente <span class="fw-normal">(todavía no sé el precio)</span></label></div>
+            </div>
+            <div class="col-12 aviso-pend" style="display:none;"><div class="pend-nota"><i class="bi bi-hourglass-split"></i> Entra al stock <b>sin precio</b>: no cambia el costo promedio ni suma al gasto por área.
+                Cuando tengas la factura, ponle el precio en el ingreso (o en la próxima compra de este insumo).</div></div>
+            <div class="col-12 valorizar" style="display:none;">
+                <input type="hidden" name="valorizar_sc[]" class="h-val" value="">
+                <div class="val-nota form-check mb-0"><input class="form-check-input chk-val" type="checkbox">
+                    <label class="form-check-label"><i class="bi bi-tag-fill"></i> Este insumo tiene <b class="n-sc"></b> und <b>sin precio</b>. Usar el precio de esta compra también para esas unidades
+                        <span class="d-block fw-normal text-muted" style="font-size:.68rem;">(solo las ingresadas en la misma moneda; pasan al costo promedio y queda en el Kardex como "Precio completado")</span></label></div>
+            </div>
         </div>
     </div>
 </template>
@@ -208,9 +227,30 @@ function pintarInfo(fila) {
     info.innerHTML = `<span class="badge bg-light text-dark border">${esc(d.unidad)}</span> Stock actual: <b>${fmt(d.stock, 0)}</b>` +
         (d.stock - (d.stock_usd || 0) > 0 || !d.stock_usd ? ` · costo prom. en soles: <b>S/ ${fmt(d.costo, 2)}</b>` : '') +
         (d.stock_usd ? ` · <span style="color:#0f766e;">${fmt(d.stock_usd, 0)} comprados en dólares a <b>US$ ${fmt(d.costo_usd, 2)}</b></span>` : '') +
+        (d.stock_sc ? ` · <span class="badge bg-warning-subtle text-warning-emphasis border border-warning">${fmt(d.stock_sc, 0)} sin precio</span>` : '') +
         (d.categoria ? ' · ' + esc(d.categoria) : '');
     const min = fila.querySelector('.c-min');
     if (!min.dataset.tocado) min.value = d.minimo || '';
+    pintarValorizar(fila, d);
+}
+// "Precio pendiente": la fila entra sin precio (no toca el costo promedio ni el gasto). Se completa después.
+function aplicarPendiente(fila) {
+    const pend = fila.querySelector('.chk-pend').checked;
+    fila.querySelector('.h-pend').value = pend ? '1' : '';
+    fila.classList.toggle('pendiente', pend);
+    fila.querySelectorAll('.c-pu, .c-pt').forEach(i => { i.readOnly = pend; i.classList.toggle('bg-light', pend); if (pend) i.value = ''; });   // readOnly (no disabled): se siguen enviando y las filas no se desordenan
+    fila.querySelector('.aviso-pend').style.display = pend ? 'block' : 'none';
+    pintarValorizar(fila, datoInsumo(fila.querySelector('.sel-insumo').value));
+    recalcular();
+}
+// Reposición con factura: si ese insumo tiene unidades "sin precio", ofrecer ponerles el precio de esta compra
+function pintarValorizar(fila, d) {
+    const caja = fila.querySelector('.valorizar'), chk = fila.querySelector('.chk-val');
+    const mostrar = !!d && (d.stock_sc || 0) > 0 && !fila.querySelector('.chk-pend').checked;
+    caja.style.display = mostrar ? 'block' : 'none';
+    if (mostrar) caja.querySelector('.n-sc').textContent = fmt(d.stock_sc, 0);
+    if (!mostrar) chk.checked = false;
+    fila.querySelector('.h-val').value = chk.checked ? '1' : '';
 }
 function activarSelect(sel, fila) {
     if (window.jQuery && jQuery.fn.select2) {
@@ -252,6 +292,12 @@ function agregarFila(insumoId) {
     pu.addEventListener('input', () => { fila.dataset.ultimo = 'unit'; desdeUnit(); });
     pt.addEventListener('input', () => { fila.dataset.ultimo = 'total'; desdeTotal(); });
     fila.querySelector('.c-min').addEventListener('input', e => e.target.dataset.tocado = '1');
+    const uid = 'f' + Math.random().toString(36).slice(2, 9);
+    const chkP = fila.querySelector('.chk-pend'), chkV = fila.querySelector('.chk-val');
+    chkP.id = uid + 'p'; chkP.nextElementSibling.htmlFor = chkP.id;
+    chkV.id = uid + 'v'; chkV.nextElementSibling.htmlFor = chkV.id;
+    chkP.addEventListener('change', () => aplicarPendiente(fila));
+    chkV.addEventListener('change', () => { fila.querySelector('.h-val').value = chkV.checked ? '1' : ''; });
     fila.querySelector('.quitar').addEventListener('click', () => {
         if (document.querySelectorAll('#filas .fila-item').length === 1) return;
         if (window.jQuery && jQuery(sel).data('select2')) jQuery(sel).select2('destroy');
@@ -384,10 +430,11 @@ document.getElementById('formIngreso').addEventListener('submit', function (e) {
     let error = '';
     if (!porId('insumo_proveedor_id').value && !porId('proveedor_id').value && !(porId('sinRuc').checked && porId('razon_social').value.trim().length >= 3))
         error = 'Elige un proveedor guardado, búscalo por su RUC en SUNAT, o marca "sin RUC" y escribe su nombre.';
-    else if (!porId('numero_factura').value.trim()) error = 'Escribe el número de factura (o del comprobante).';
     else if (!filas.length) error = 'Agrega al menos un insumo.';
-    else if (filas.some(f => !(parseFloat(f.querySelector('.c-cant').value) > 0) || !(parseFloat(f.querySelector('.c-pt').value) >= 0) || f.querySelector('.c-pt').value === ''))
-        error = 'Cada insumo necesita cantidad y precio (unitario o total).';
+    else if (filas.some(f => !(parseFloat(f.querySelector('.c-cant').value) > 0)))
+        error = 'Cada insumo necesita su cantidad.';
+    else if (filas.some(f => !f.querySelector('.chk-pend').checked && (!(parseFloat(f.querySelector('.c-pt').value) >= 0) || f.querySelector('.c-pt').value === '')))
+        error = 'Cada insumo necesita su precio (unitario o total). Si todavía no lo sabes, marca "Precio pendiente".';
     if (error) { e.preventDefault(); return Swal.fire('Falta información', error, 'warning'); }
     const btn = document.getElementById('btnGuardar'); btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Guardando...';
 });

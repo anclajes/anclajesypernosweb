@@ -103,6 +103,23 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
 - Requerimientos: los crean admin, logistica, almacen y almacen_visor; los atienden admin y logistica.
 - Insumos: editan admin, almacen y logistica.
 
+## Insumos: precio pendiente y documentos de la OC
+
+- **# Factura opcional** en Nuevo ingreso (se agrega o corrige después en el detalle del ingreso).
+- **Precio pendiente** (casilla por ítem): las unidades entran al stock en una parte aparte, "sin precio"
+  (`insumo_stock.stock_sin_costo`, movimientos con `moneda='SC'`). No cambian el costo promedio ni el valor del inventario
+  ni suman al gasto. Al sacar, sale primero lo que tiene precio; lo sin precio sale al final a costo 0
+  (`insumo_salida_detalle.cantidad_sin_costo` y `origen_sin_costo` = de qué ingreso salió).
+- Completar el precio: botón **Poner precio** en el ingreso, o en una **reposición** marcar "usar el precio de esta compra"
+  para las unidades sin precio (misma moneda). Queda en el Kardex como **PRECIO COMPLETADO** (`concepto='VALORIZACION'`).
+  Lo que ya salió antes de tener precio se queda a costo 0. Funciones en `modulos/insumos/base.py`
+  (`_valorizar_sin_costo`, `_completar_precio_detalle`, `_valorizar_huerfanos`).
+- Carga desde Excel sin costo (y sin costo promedio previo): entra "sin precio" (antes entraba a S/ 0 y bajaba el promedio).
+- La OC de cada ingreso se guarda en `insumo_ingreso.orden_compra_id` (los antiguos se encuentran por `orden_compra.insumo_ingreso_id`).
+  Kardex, Ingresos y el detalle muestran la OC (PDF) y todos sus documentos con ver/descargar; el Kardex muestra también
+  las OC conformes que todavía no se registran. Menú reutilizable: `templates/_oc_docs_menu.html`.
+- Órdenes de compra (lista): muestra quién **creó** la orden, filtro "Creó", y el menú 📎 con todos los documentos.
+
 ## Kardex
 
 - Salida con motivo que "Inicia una OC" (Catálogos → Motivos, ej. REQUERIMIENTO DE MAESTRANZA): por defecto **sale como VENTA**

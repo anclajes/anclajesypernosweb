@@ -61,9 +61,11 @@ class InsumoStock(db.Model):
     stock_minimo = db.Column(db.Float, default=0)
     costo_promedio = db.Column(db.Float, default=0)          # S/ por unidad, con IGV (de lo comprado en SOLES)
     # Lo comprado en DÓLARES se lleva aparte (sin convertir): cuántas unidades del stock son "en dólares" y su costo en US$.
-    # stock_actual = unidades en soles + stock_usd
+    # stock_actual = unidades en soles + stock_usd + stock_sin_costo
     stock_usd = db.Column(db.Float, default=0)
     costo_usd = db.Column(db.Float, default=0)               # US$ por unidad (con IGV si la factura lo lleva)
+    # unidades con PRECIO PENDIENTE (sin factura / inventario de cosas antiguas): no entran al costo promedio ni al gasto
+    stock_sin_costo = db.Column(db.Float, default=0)
     bolsa_antigua = db.Column(db.String(3), default='PEN')    # de qué moneda son las unidades más antiguas (salen primero)
     almacen = db.Column(db.String(100))                     # almacén / ubicación
     ultimo_ingreso = db.Column(db.DateTime, nullable=True)
@@ -108,6 +110,7 @@ class InsumoIngreso(db.Model):
     observacion = db.Column(db.String(300))
     total = db.Column(db.Float, default=0)
     insumo_proveedor_id = db.Column(db.Integer, db.ForeignKey('insumo_proveedor.id'), nullable=True)
+    orden_compra_id = db.Column(db.Integer, nullable=True, index=True)   # la OC de la que vino (se conserva aunque se anule el ingreso)
     estado = db.Column(db.String(10), default='REGISTRADO')       # REGISTRADO / ANULADO
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     fecha_registro = db.Column(db.DateTime, default=hora_peru)
@@ -126,12 +129,18 @@ class InsumoIngresoDetalle(db.Model):
     insumo_id = db.Column(db.Integer, db.ForeignKey('insumo.id'), nullable=False, index=True)
     codigo_proveedor = db.Column(db.String(60))
     cantidad = db.Column(db.Float, nullable=False)
-    precio_unitario = db.Column(db.Float, nullable=False)    # con IGV
+    precio_unitario = db.Column(db.Float, nullable=False)    # con IGV (0 mientras el precio está pendiente)
     precio_total = db.Column(db.Float, nullable=False)       # con IGV
     stock_antes = db.Column(db.Float)
     stock_despues = db.Column(db.Float)
     costo_prom_antes = db.Column(db.Float)
     costo_prom_despues = db.Column(db.Float)
+    # PRECIO PENDIENTE: entró sin precio (no toca el costo promedio). sin_costo_restante = cuánto de este ítem sigue en stock "sin precio".
+    precio_pendiente = db.Column(db.Boolean, default=False)
+    sin_costo_restante = db.Column(db.Float, default=0)
+    cantidad_valorizada = db.Column(db.Float, nullable=True)      # al completar el precio: cuántas unidades pasaron al costo promedio
+    precio_completado_por = db.Column(db.String(100))
+    fecha_precio = db.Column(db.DateTime, nullable=True)
 
     insumo = db.relationship('Insumo')
 
@@ -186,6 +195,8 @@ class InsumoSalidaDetalle(db.Model):
     cantidad_usd = db.Column(db.Float, default=0)     # de lo despachado, cuánto salió de lo comprado en dólares
     costo_unitario_usd = db.Column(db.Float, default=0)
     costo_total_usd = db.Column(db.Float, default=0)  # US$
+    cantidad_sin_costo = db.Column(db.Float, default=0)   # de lo despachado, cuánto era SIN PRECIO (precio pendiente): costo 0
+    origen_sin_costo = db.Column(db.String(500))          # de qué ingresos salió: "detalle_id:cantidad,..." (0 = sin ingreso)
     stock_antes = db.Column(db.Float)
     stock_despues = db.Column(db.Float)
 
@@ -200,14 +211,14 @@ class InsumoMovimiento(db.Model):
     insumo_id = db.Column(db.Integer, db.ForeignKey('insumo.id'), nullable=False, index=True)
     fecha = db.Column(db.DateTime, nullable=False, index=True)
     tipo = db.Column(db.String(10), nullable=False)          # ENTRADA / SALIDA
-    concepto = db.Column(db.String(30))                    # COMPRA / CONSUMO / AJUSTE / ANULACION
+    concepto = db.Column(db.String(30))                    # COMPRA / CONSUMO / AJUSTE_COSTO / ANULACION / IMPORTACION / VALORIZACION
     cantidad = db.Column(db.Float, nullable=False)
     costo_unitario = db.Column(db.Float, default=0)
     costo_total = db.Column(db.Float, default=0)
     stock_antes = db.Column(db.Float)
     stock_despues = db.Column(db.Float)
     costo_prom_despues = db.Column(db.Float)
-    moneda = db.Column(db.String(3), default='PEN')         # moneda del costo de este movimiento (PEN / USD)
+    moneda = db.Column(db.String(3), default='PEN')         # moneda del costo de este movimiento (PEN / USD / SC = sin precio)
     stock_moneda_despues = db.Column(db.Float)              # unidades que quedan compradas en ESA moneda (para el valor del saldo)
     referencia = db.Column(db.String(120))                 # "Factura F001-123" / "Consumo N° 000015"
     ingreso_id = db.Column(db.Integer, db.ForeignKey('insumo_ingreso.id'), nullable=True)

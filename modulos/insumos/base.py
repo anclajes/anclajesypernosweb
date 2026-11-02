@@ -18,6 +18,11 @@
 #       nuevo_promedio = (stock * promedio + cantidad * precio) / (stock + cantidad)
 #   y cada salida se valoriza a ese promedio -> así se sabe cuánto gasta cada área aunque la
 #   factura sea por 100 unidades y se saquen de a pocas y para áreas distintas.
+# - PRECIO PENDIENTE (sin factura / inventario de cosas antiguas): esas unidades entran al stock en una
+#   parte aparte, "sin precio" (stock_sin_costo). NO cambian el costo promedio ni suman al gasto. Al sacar,
+#   sale primero lo que sí tiene precio; lo "sin precio" sale al final (costo 0, marcado). Cuando llega la
+#   factura se completa el precio (en el ingreso o con la factura de una reposición) y recién ahí esas
+#   unidades pasan al costo promedio.
 # Las tablas se crean solas al arrancar (no hace falta ninguna ruta /fix_).
 # =====================================================================================
 from functools import wraps as _wraps_insumos
@@ -82,6 +87,13 @@ def _asegurar_insumos():
     _agregar_columnas_si_faltan('insumo_salida', [('total_costo_usd', 'FLOAT DEFAULT 0')])
     _agregar_columnas_si_faltan('insumo_salida_detalle', [('cantidad_usd', 'FLOAT DEFAULT 0'), ('costo_unitario_usd', 'FLOAT DEFAULT 0'),
                                                           ('costo_total_usd', 'FLOAT DEFAULT 0')])
+    # precio pendiente (unidades "sin precio") y la OC de la que vino el ingreso
+    _agregar_columnas_si_faltan('insumo_stock', [('stock_sin_costo', 'FLOAT DEFAULT 0')])
+    _agregar_columnas_si_faltan('insumo_ingreso', [('orden_compra_id', 'INTEGER')])
+    _agregar_columnas_si_faltan('insumo_ingreso_detalle', [('precio_pendiente', 'BOOLEAN DEFAULT FALSE'), ('sin_costo_restante', 'FLOAT DEFAULT 0'),
+                                                           ('cantidad_valorizada', 'FLOAT'), ('precio_completado_por', 'VARCHAR(100)'),
+                                                           ('fecha_precio', 'TIMESTAMP')])
+    _agregar_columnas_si_faltan('insumo_salida_detalle', [('cantidad_sin_costo', 'FLOAT DEFAULT 0'), ('origen_sin_costo', 'VARCHAR(500)')])
     from sqlalchemy import inspect as sa_inspect
     if 'insumo_proveedor_id' not in {c['name'] for c in sa_inspect(db.engine).get_columns('insumo_ingreso')}:
         es_pg = db.engine.dialect.name == 'postgresql'
@@ -193,12 +205,18 @@ app.add_template_global(_montos_txt, 'montos_txt')
 
 
 def _bolsa(st, moneda):
-    """(unidades, costo unitario) de lo comprado en esa moneda. Lo comprado en soles y en dólares se lleva por separado
-    (sin convertir): cada parte tiene su propio costo promedio."""
-    usd = float(st.stock_usd or 0) if st else 0.0
+    """(unidades, costo unitario) de cada parte del stock. Lo comprado en soles y en dólares se lleva por separado
+    (sin convertir): cada parte tiene su propio costo promedio. 'SC' = unidades SIN PRECIO (precio pendiente): costo 0 y
+    no entran al promedio.   stock_actual = soles + dólares + sin precio."""
+    if not st:
+        return 0.0, 0.0
+    usd = float(st.stock_usd or 0)
+    sc = float(st.stock_sin_costo or 0)
     if moneda == 'USD':
-        return usd, float(st.costo_usd or 0) if st else 0.0
-    return (float(st.stock_actual or 0) - usd, float(st.costo_promedio or 0)) if st else (0.0, 0.0)
+        return usd, float(st.costo_usd or 0)
+    if moneda == 'SC':
+        return sc, 0.0
+    return float(st.stock_actual or 0) - usd - sc, float(st.costo_promedio or 0)
 
 
 def _otra_moneda(m):
@@ -207,9 +225,14 @@ def _otra_moneda(m):
 
 def _entrada_a_stock(st, cantidad, precio_unitario, moneda='PEN'):
     """Suma al stock en la parte de SU moneda y recalcula el COSTO PROMEDIO PONDERADO de esa parte.
-    Devuelve (stock_antes total, costo prom. antes de esa moneda)."""
-    moneda = 'USD' if moneda == 'USD' else 'PEN'
+    Devuelve (stock_antes total, costo prom. antes de esa moneda).
+    moneda 'SC' (precio pendiente): suma a la parte "sin precio", sin tocar ningún costo promedio."""
     antes = float(st.stock_actual or 0)
+    if moneda == 'SC':
+        st.stock_sin_costo = round(float(st.stock_sin_costo or 0) + cantidad, 6)
+        st.stock_actual = round(antes + cantidad, 6)
+        return antes, 0.0
+    moneda = 'USD' if moneda == 'USD' else 'PEN'
     q, prom = _bolsa(st, moneda)
     otra_q, _ = _bolsa(st, _otra_moneda(moneda))
     nuevo_q = q + cantidad
@@ -224,22 +247,84 @@ def _entrada_a_stock(st, cantidad, precio_unitario, moneda='PEN'):
     return antes, prom
 
 
-def _salida_por_monedas(st, cantidad):
+def _repartir_fifo(pendientes, cantidad):
+    """Descuenta 'cantidad' de las unidades sin precio de cada ingreso pendiente, del más antiguo al más nuevo.
+    pendientes: detalles de ingreso con precio pendiente (con .id y .sin_costo_restante). Devuelve [(detalle_id, cantidad)];
+    lo que no alcanza a ningún ingreso (p. ej. stock cargado desde Excel sin costo) va con detalle_id 0."""
+    origenes, falta = [], cantidad
+    for d in pendientes:
+        if falta <= 1e-9:
+            break
+        r = float(d.sin_costo_restante or 0)
+        toma = min(r, falta)
+        if toma > 1e-9:
+            d.sin_costo_restante = round(r - toma, 6)
+            origenes.append((d.id, round(toma, 6)))
+            falta -= toma
+    if falta > 1e-9:
+        origenes.append((0, round(falta, 6)))
+    return origenes
+
+
+def _pendientes_sin_costo(st, moneda=None, excluir_ingreso=None):
+    """Detalles de ingreso (no anulados) de este insumo y empresa que todavía tienen el PRECIO PENDIENTE, del más antiguo al más nuevo."""
+    q = (InsumoIngresoDetalle.query.join(InsumoIngreso, InsumoIngreso.id == InsumoIngresoDetalle.ingreso_id)
+         .filter(InsumoIngreso.empresa == st.empresa, InsumoIngreso.estado == 'REGISTRADO',
+                 InsumoIngresoDetalle.insumo_id == st.insumo_id, InsumoIngresoDetalle.precio_pendiente.is_(True)))
+    if excluir_ingreso:
+        q = q.filter(InsumoIngreso.id != excluir_ingreso)
+    lista = q.order_by(InsumoIngreso.fecha, InsumoIngreso.id, InsumoIngresoDetalle.id).all()
+    return [d for d in lista if not moneda or (d.ingreso.moneda or 'PEN') == moneda]
+
+
+def _origen_txt(origenes):
+    """[(12, 3.0), (0, 1.5)] -> '12:3,0:1.5' (de qué ingresos salieron las unidades sin precio)."""
+    return ','.join(f'{d}:{round(c, 6):g}' for d, c in origenes)[:500] or None
+
+
+def _origen_de_txt(texto):
+    res = []
+    for parte in (texto or '').split(','):
+        try:
+            d, c = parte.split(':')
+            res.append((int(d), float(c)))
+        except ValueError:
+            continue
+    return res
+
+
+def _salida_por_monedas(st, cantidad, origenes=None):
     """Resta del stock: primero de las unidades MÁS ANTIGUAS (las compradas en soles o en dólares, según cuál entró antes).
-    Cada parte sale a su costo promedio y en su moneda. Devuelve (stock_antes, [(moneda, cantidad, costo_unitario)])."""
+    Cada parte sale a su costo promedio y en su moneda. Lo SIN PRECIO (precio pendiente) sale al FINAL, a costo 0 ('SC'),
+    para que no distorsione el gasto; si se pasa una lista en 'origenes', se le agrega de qué ingresos salió.
+    Devuelve (stock_antes, [(moneda, cantidad, costo_unitario)])."""
     antes = float(st.stock_actual or 0)
     primera = st.bolsa_antigua if st.bolsa_antigua in ('PEN', 'USD') else 'PEN'
     partes, falta = [], cantidad
+    bolsas = {m: _bolsa(st, m) for m in ('PEN', 'USD')}     # se leen ANTES de mover nada (la de soles se calcula con las otras)
     for m in (primera, _otra_moneda(primera)):
         if falta <= 1e-9:
             break
-        q, costo = _bolsa(st, m)
+        q, costo = bolsas[m]
         toma = min(max(q, 0), falta)
         if toma > 1e-9:
             partes.append((m, round(toma, 6), costo))
             falta -= toma
             if m == 'USD':
                 st.stock_usd = round(q - toma, 6)
+    q_sc = float(st.stock_sin_costo or 0)
+    toma = min(max(q_sc, 0), falta)
+    if toma > 1e-9:
+        partes.append(('SC', round(toma, 6), 0.0))
+        falta -= toma
+        st.stock_sin_costo = round(q_sc - toma, 6)
+        try:
+            org = _repartir_fifo(_pendientes_sin_costo(st), toma)
+        except Exception:
+            app.logger.exception("No se pudo ubicar el ingreso de las unidades sin precio")
+            org = [(0, round(toma, 6))]
+        if origenes is not None:
+            origenes.extend(org)
     if falta > 1e-9:          # no debería pasar (se valida el stock antes): sale de lo comprado en soles
         partes.append(('PEN', round(falta, 6), float(st.costo_promedio or 0)))
     st.stock_actual = round(antes - cantidad, 6)
@@ -251,9 +336,73 @@ def _salida_por_monedas(st, cantidad):
 
 
 def _datos_mov_moneda(st, moneda):
-    """Campos del Kardex que dependen de la moneda: costo prom. y unidades que quedan de esa moneda."""
+    """Campos del Kardex que dependen de la moneda: costo prom. y unidades que quedan de esa moneda ('SC' = sin precio)."""
     q, c = _bolsa(st, moneda)
     return {'moneda': moneda, 'costo_prom_despues': c, 'stock_moneda_despues': round(q, 6)}
+
+
+def _valorizar_sin_costo(st, cantidad, precio, moneda):
+    """Pasa 'cantidad' unidades de la parte SIN PRECIO a la parte de su moneda con ese precio (recalcula el costo promedio
+    ponderado como si recién entraran). El stock total no cambia. Devuelve (cantidad pasada, costo prom. antes, después)."""
+    moneda = 'USD' if moneda == 'USD' else 'PEN'
+    cant = round(min(max(float(st.stock_sin_costo or 0), 0), cantidad), 6)
+    if cant <= 1e-9:
+        q, c = _bolsa(st, moneda)
+        return 0.0, c, c
+    st.stock_sin_costo = round(float(st.stock_sin_costo or 0) - cant, 6)
+    st.stock_actual = round(float(st.stock_actual or 0) - cant, 6)
+    _, prom_antes = _entrada_a_stock(st, cant, precio, moneda)
+    return cant, prom_antes, _bolsa(st, moneda)[1]
+
+
+def _completar_precio_detalle(det, precio, ahora, ref_extra=''):
+    """Pone el precio a un ítem que entró con PRECIO PENDIENTE: lo que de ese ítem sigue en stock pasa al costo promedio
+    (queda en el Kardex como PRECIO COMPLETADO). Lo que ya salió antes de tener precio queda a costo 0 en esas salidas.
+    Devuelve las unidades valorizadas."""
+    ing = det.ingreso
+    mon = 'USD' if ing.moneda == 'USD' else 'PEN'
+    st = _stock_de(det.insumo_id, ing.empresa)
+    restante = float(det.sin_costo_restante or 0)
+    cant, prom_antes, prom_desp = _valorizar_sin_costo(st, restante, precio, mon)
+    det.precio_unitario = round(precio, 6)
+    det.precio_total = round(det.cantidad * precio, 2)
+    det.precio_pendiente = False
+    det.sin_costo_restante = 0.0
+    det.cantidad_valorizada = cant
+    det.precio_completado_por = session.get('nombre', '')[:100] or None
+    det.fecha_precio = ahora
+    det.costo_prom_despues = prom_desp
+    ing.total = round(sum(d.precio_total or 0 for d in ing.detalles), 2)
+    sim = MONEDAS_INSUMOS[mon]
+    if cant > 1e-9:
+        total = float(st.stock_actual or 0)
+        db.session.add(InsumoMovimiento(
+            empresa=ing.empresa, insumo_id=det.insumo_id, fecha=ahora, tipo='AJUSTE', concepto='VALORIZACION', cantidad=cant,
+            costo_unitario=round(precio, 6), costo_total=round(cant * precio, 2), stock_antes=total, stock_despues=total,
+            **_datos_mov_moneda(st, mon), referencia=f'Precio completado · Ingreso #{ing.id}'[:120], ingreso_id=ing.id,
+            observacion=(f'{_cant_txt(cant)} und sin precio pasan a {sim} {precio:,.4f} (costo prom. {sim} {prom_antes:,.4f} → {sim} {prom_desp:,.4f})'
+                         + (f' · {ref_extra}' if ref_extra else ''))[:255],
+            user_id=session.get('user_id'), fecha_registro=ahora))
+    return cant
+
+
+def _valorizar_huerfanos(st, precio, moneda, ahora, referencia):
+    """Unidades sin precio que no vienen de ningún ingreso (p. ej. carga desde Excel sin costo): pasan al costo promedio."""
+    pend = sum(float(d.sin_costo_restante or 0) for d in _pendientes_sin_costo(st))
+    huerfanos = round(float(st.stock_sin_costo or 0) - pend, 6)
+    if huerfanos <= 1e-9:
+        return 0.0
+    cant, prom_antes, prom_desp = _valorizar_sin_costo(st, huerfanos, precio, moneda)
+    if cant > 1e-9:
+        sim = MONEDAS_INSUMOS['USD' if moneda == 'USD' else 'PEN']
+        total = float(st.stock_actual or 0)
+        db.session.add(InsumoMovimiento(
+            empresa=st.empresa, insumo_id=st.insumo_id, fecha=ahora, tipo='AJUSTE', concepto='VALORIZACION', cantidad=cant,
+            costo_unitario=round(precio, 6), costo_total=round(cant * precio, 2), stock_antes=total, stock_despues=total,
+            **_datos_mov_moneda(st, moneda), referencia=referencia[:120],
+            observacion=f'{_cant_txt(cant)} und sin precio pasan a {sim} {precio:,.4f} (costo prom. {sim} {prom_antes:,.4f} → {sim} {prom_desp:,.4f})'[:255],
+            user_id=session.get('user_id'), fecha_registro=ahora))
+    return cant
 
 
 def _subir_doc_insumo(carpeta, archivo, info, tipo, claves, ingreso_id=None, salida_id=None):
@@ -293,6 +442,7 @@ def _datos_formulario_insumos(empresa):
                       'costo': round(float(s.costo_promedio or 0), 4) if s else 0, 'almacen': (s.almacen or '') if s else '',
                       'minimo': round(float(s.stock_minimo or 0), 3) if s else 0,
                       'stock_usd': round(float(s.stock_usd or 0), 3) if s else 0, 'costo_usd': round(float(s.costo_usd or 0), 4) if s else 0,
+                      'stock_sc': round(float(s.stock_sin_costo or 0), 3) if s else 0,
                       'primero': (s.bolsa_antigua if s and s.bolsa_antigua in ('PEN', 'USD') else 'PEN')})
     return lista
 

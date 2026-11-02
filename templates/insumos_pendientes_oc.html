@@ -3,6 +3,8 @@
 {% block subtitle %}Pendientes de Orden de Compra · {{ empresas[empresa].corto }}{% endblock %}
 {% block content %}
 {% include '_insumos_nav.html' %}
+{% from '_oc_docs_menu.html' import menu_docs_oc, estilos_docs_oc with context %}
+{{ estilos_docs_oc() }}
 <style>
     .emp-sel { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
     .emp-sel a { display: inline-flex; align-items: center; gap: 8px; border: 2px solid #e2e8f0; background: #fff; border-radius: 12px; padding: 6px 12px; text-decoration: none; color: #334155; font-weight: 800; font-size: .84rem; }
@@ -58,10 +60,11 @@
         <div class="d-flex flex-wrap gap-1 align-items-center mt-2">
             <a class="doc-b" href="{{ url_for('oc_pdf', orden_id=o.id, ver=1) }}" target="_blank" title="Ver la orden de compra"><i class="bi bi-file-earmark-pdf text-danger"></i> {{ oc_codigo(o) }} (PDF)</a>
             <a class="doc-b" href="{{ url_for('oc_pdf', orden_id=o.id) }}" title="Descargar la orden de compra"><i class="bi bi-download"></i></a>
-            {% for d in ds if d.tipo in ['GUIA', 'FACTURA', 'CERTIFICADO', 'COTIZACION', 'OTRO'] %}
+            {% for d in ds %}
             <a class="doc-b" href="{{ url_for('oc_documento_ver', doc_id=d.id) }}" target="_blank"><i class="bi {{ 'bi-file-earmark-pdf text-danger' if d.content_type == 'application/pdf' else 'bi-image text-primary' }}"></i>
                 {{ tipos_doc.get(d.tipo, d.tipo) }}{% if d.tipo == 'GUIA' and o.numero_guia %} {{ o.numero_guia }}{% elif d.tipo == 'FACTURA' and o.numero_factura %} {{ o.numero_factura }}{% endif %}</a>
             {% endfor %}
+            {{ menu_docs_oc(o, ds, texto='Ver / descargar todo', alinear='start') }}
             {% if not (ds|selectattr('tipo', 'equalto', 'FACTURA')|list) %}<span class="falta-doc"><i class="bi bi-exclamation-triangle"></i> Sin factura en la orden{% if o.numero_factura %} (N° {{ o.numero_factura }}){% endif %}: súbela al registrar</span>{% endif %}
         </div>
     </div>

@@ -4,7 +4,14 @@
 {% block content %}
 {% macro m(v) %}{{ ('US$ ' ~ '{:,.2f}'.format(v or 0)) if ing.moneda == 'USD' else v|soles }}{% endmacro %}
 {% include '_insumos_nav.html' %}
+{% from '_oc_docs_menu.html' import menu_docs_oc, estilos_docs_oc with context %}
+{{ estilos_docs_oc() }}
+<style>
+    .sp { display: inline-block; font-size: .64rem; font-weight: 800; border-radius: 5px; padding: 1px 6px; background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
+    tr.fila-pend td { background: #fffdf5; }
+</style>
 {% set emp = empresas[ing.empresa] %}
+{% set n_pend = ing.detalles|selectattr('precio_pendiente')|list|length %}
 <div class="card border-0 shadow-sm mb-3" style="border-left: 6px solid {{ emp.color }} !important;"><div class="card-body d-flex flex-wrap justify-content-between gap-3 align-items-center">
     <div class="d-flex align-items-center gap-3">
         <img src="{{ url_for('static', filename='img/' ~ emp.logo) }}" alt="" style="height:44px; object-fit:contain;">
@@ -13,12 +20,21 @@
             <h4 class="mb-0 fw-bold">#{{ ing.id }} · {{ ing.numero_factura and ('Factura ' ~ ing.numero_factura) or 'Sin N° de factura' }}
                 {% if ing.estado == 'ANULADO' %}<span class="badge bg-secondary align-middle">ANULADO</span>{% endif %}</h4>
             <div class="small text-muted">{{ ing.fecha.strftime('%d/%m/%Y') }} · registrado por {{ ing.usuario.nombre_completo if ing.usuario else '-' }}{% if ing.almacen %} · {{ ing.almacen }}{% endif %}</div>
+            {% if puede_editar and ing.estado == 'REGISTRADO' %}
+            <form method="POST" action="{{ url_for('insumos_ingreso_factura', ingreso_id=ing.id) }}" class="d-flex gap-1 mt-1 {{ 'd-none' if ing.numero_factura }}" id="formFactura" style="max-width: 340px;">
+                <input type="text" name="numero_factura" class="form-control form-control-sm text-uppercase" maxlength="50" placeholder="N° de factura (F001-12345)" value="{{ ing.numero_factura or '' }}" required>
+                <button class="btn btn-sm btn-primary text-nowrap"><i class="bi bi-receipt"></i> Guardar</button></form>
+            {% if ing.numero_factura %}<button type="button" class="btn btn-link btn-sm p-0" onclick="document.getElementById('formFactura').classList.remove('d-none'); this.remove();"><i class="bi bi-pencil"></i> Corregir N° de factura</button>{% endif %}
+            {% endif %}
         </div>
     </div>
     {% if session.get('role') == 'admin' and ing.estado == 'REGISTRADO' %}
     <button class="btn btn-outline-secondary" onclick="anular()"><i class="bi bi-x-octagon"></i> Anular ingreso</button>
     {% endif %}
 </div>
+{% if n_pend and ing.estado == 'REGISTRADO' %}<div class="alert py-2 small mx-3" style="background:#fffbeb; border:1px solid #fcd34d;"><i class="bi bi-hourglass-split text-warning"></i>
+    <b>{{ n_pend }} ítem(s) con precio pendiente.</b> Entraron al stock <b>sin precio</b>: no cambian el costo promedio ni suman al gasto por área. Cuando tengas la factura, pulsa <b>Poner precio</b>
+    (o márcalo en la próxima compra de ese insumo). Lo que salga antes de tener precio sale a costo 0.</div>{% endif %}
 {% if ing.estado == 'ANULADO' %}<div class="alert alert-secondary small py-2 mx-3"><i class="bi bi-x-octagon"></i> Anulado por <b>{{ ing.anulado_por }}</b> el {{ ing.fecha_anulacion.strftime('%d/%m/%Y %H:%M') if ing.fecha_anulacion else '' }}: {{ ing.motivo_anulacion }}</div>{% endif %}
 </div>
 <div class="row g-3">
@@ -31,6 +47,18 @@
             {% if ing.contacto_nombre or ing.contacto_telefono %}<div class="mt-1"><i class="bi bi-person"></i> {{ ing.contacto_nombre or '' }} {% if ing.contacto_telefono %}· <i class="bi bi-telephone"></i> {{ ing.contacto_telefono }}{% endif %}</div>{% endif %}
             {% if ing.observacion %}<div class="mt-2 fst-italic">{{ ing.observacion }}</div>{% endif %}
         </div></div>
+        {% if oc %}
+        <div class="card border-0 shadow-sm mb-3" style="border-left: 4px solid #2563eb !important;"><div class="card-body small">
+            <div class="text-muted fw-bold mb-1">ORDEN DE COMPRA</div>
+            <div class="d-flex flex-wrap align-items-center gap-2">
+                {% if puede_ver_oc %}<a class="fw-bold fs-6 text-decoration-none" href="{{ url_for('oc_detalle', orden_id=oc.id) }}">{{ oc_codigo(oc) }}</a>{% else %}<span class="fw-bold fs-6">{{ oc_codigo(oc) }}</span>{% endif %}
+                <a class="btn btn-sm btn-outline-danger py-0" href="{{ url_for('oc_pdf', orden_id=oc.id, ver=1) }}" target="_blank"><i class="bi bi-file-earmark-pdf"></i> Ver</a>
+                <a class="btn btn-sm btn-outline-secondary py-0" href="{{ url_for('oc_pdf', orden_id=oc.id) }}"><i class="bi bi-download"></i> Descargar</a>
+                {{ menu_docs_oc(oc, docs_oc, texto='Documentos de la orden', alinear='start') }}
+            </div>
+            <div class="text-muted mt-1">{{ oc.razon_social }}{% if oc.solicitante_nombre %} · solicitó {{ oc_solicitante_txt(oc) }}{% endif %}{% if oc.creado_por %} · creó {{ oc.creado_por.nombre_completo }}{% endif %}</div>
+        </div></div>
+        {% endif %}
         <div class="card border-0 shadow-sm"><div class="card-body small">
             <div class="text-muted fw-bold mb-1">DOCUMENTOS</div>
             {% for d in docs %}
@@ -55,19 +83,58 @@
                     <th class="text-end">P. unit. c/IGV</th><th class="text-end">Total</th><th class="text-end pe-3" title="Costo promedio antes → después de este ingreso">Costo prom.</th></tr></thead>
                 <tbody>
                 {% for d in ing.detalles %}
-                <tr><td class="ps-3 fw-bold">{{ d.insumo.codigo }}</td><td>{{ d.insumo.descripcion }}</td><td class="text-muted">{{ d.codigo_proveedor or '-' }}</td>
-                    <td class="text-center">{{ d.cantidad|cant }} {{ d.insumo.unidad }}</td><td class="text-end">{{ m(d.precio_unitario) }}</td>
+                <tr class="{{ 'fila-pend' if d.precio_pendiente }}"><td class="ps-3 fw-bold">{{ d.insumo.codigo }}</td><td>{{ d.insumo.descripcion }}
+                        {% if d.fecha_precio %}<div class="text-success" style="font-size:.7rem;"><i class="bi bi-tag-fill"></i> Precio completado {{ d.fecha_precio.strftime('%d/%m/%Y') }}{% if d.precio_completado_por %} por {{ d.precio_completado_por }}{% endif %}
+                            {% if d.cantidad_valorizada is not none and d.cantidad_valorizada + 0.000001 < d.cantidad %} · {{ (d.cantidad - d.cantidad_valorizada)|cant }} und ya habían salido sin precio (a costo 0){% endif %}</div>{% endif %}</td>
+                    <td class="text-muted">{{ d.codigo_proveedor or '-' }}</td>
+                    <td class="text-center">{{ d.cantidad|cant }} {{ d.insumo.unidad }}</td>
+                    {% if d.precio_pendiente %}
+                    <td class="text-end" colspan="2"><span class="sp">PRECIO PENDIENTE</span>
+                        <div class="text-muted" style="font-size:.7rem;">{{ d.sin_costo_restante|cant }} de {{ d.cantidad|cant }} siguen en stock sin precio</div>
+                        {% if puede_editar and ing.estado == 'REGISTRADO' %}<button type="button" class="btn btn-sm btn-warning py-0 mt-1 fw-bold" onclick="ponerPrecio({{ d.id }}, {{ (d.insumo.codigo ~ ' · ' ~ d.insumo.descripcion)|tojson|forceescape }}, {{ d.cantidad|tojson }}, {{ d.sin_costo_restante|tojson }})"><i class="bi bi-tag"></i> Poner precio</button>{% endif %}</td>
+                    <td class="text-end pe-3 text-muted small">no cambia</td>
+                    {% else %}
+                    <td class="text-end">{{ m(d.precio_unitario) }}</td>
                     <td class="text-end fw-semibold">{{ m(d.precio_total) }}</td>
-                    <td class="text-end pe-3 text-nowrap"><span class="text-muted">{{ m(d.costo_prom_antes) }}</span> → <b>{{ m(d.costo_prom_despues) }}</b></td></tr>
+                    <td class="text-end pe-3 text-nowrap"><span class="text-muted">{{ m(d.costo_prom_antes) }}</span> → <b>{{ m(d.costo_prom_despues) }}</b></td>
+                    {% endif %}</tr>
                 {% endfor %}
                 </tbody>
-                <tfoot><tr><td colspan="5" class="text-end fw-bold">Total{{ ' (en dólares, sin convertir)' if ing.moneda == 'USD' else ' con IGV' }}</td><td class="text-end fw-bold fs-6">{{ m(ing.total) }}</td><td></td></tr></tfoot>
+                <tfoot><tr><td colspan="5" class="text-end fw-bold">Total{{ ' (en dólares, sin convertir)' if ing.moneda == 'USD' else ' con IGV' }}{% if n_pend %} <span class="fw-normal text-muted">(sin los {{ n_pend }} ítem(s) con precio pendiente)</span>{% endif %}</td><td class="text-end fw-bold fs-6">{{ m(ing.total) }}</td><td></td></tr></tfoot>
             </table>
         </div></div>
     </div>
 </div>
+ <form method="POST" id="formPrecio" action="{{ url_for('insumos_ingreso_precio', ingreso_id=ing.id) }}" class="d-none">
+    <input type="hidden" name="detalle_id" id="pr_det"><input type="hidden" name="precio_unitario" id="pr_unit"><input type="hidden" name="precio_total" id="pr_total"></form>
 <form method="POST" id="formAnular" action="{{ url_for('insumos_ingreso_anular', ingreso_id=ing.id) }}" class="d-none"><input type="hidden" name="motivo" id="motivoAnular"></form>
 <script>
+function ponerPrecio(detId, nombre, cantidad, restante) {
+    const sim = {{ ('US$' if ing.moneda == 'USD' else 'S/')|tojson }};
+    const esc = t => String(t).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    Swal.fire({ title: 'Poner precio', confirmButtonText: 'Guardar precio', cancelButtonText: 'Cancelar', showCancelButton: true, focusConfirm: false,
+        html: `<div class="text-start small mb-2"><b>${esc(nombre)}</b><br>Cantidad del ingreso: <b>${cantidad}</b> · siguen sin precio en stock: <b>${restante}</b></div>
+               <div class="row g-2 text-start"><div class="col-6"><label class="small fw-bold">Precio unit. con IGV (${sim})</label><input id="sw_unit" type="number" step="any" min="0" class="form-control"></div>
+               <div class="col-6"><label class="small fw-bold">o Precio total con IGV (${sim})</label><input id="sw_total" type="number" step="any" min="0" class="form-control"></div></div>
+               <div class="small text-muted text-start mt-2">Las ${restante} und que siguen en stock pasan al costo promedio (queda en el Kardex como "Precio completado").
+               ${restante < cantidad ? 'Lo que ya salió sin precio se queda a costo 0 en esas salidas.' : ''}</div>`,
+        didOpen: () => {
+            const u = document.getElementById('sw_unit'), t = document.getElementById('sw_total');
+            u.addEventListener('input', () => { const v = parseFloat(u.value); t.value = v > 0 ? (v * cantidad).toFixed(2) : ''; });
+            t.addEventListener('input', () => { const v = parseFloat(t.value); u.value = v > 0 ? (v / cantidad).toFixed(4) : ''; });
+            u.focus();
+        },
+        preConfirm: () => {
+            const u = parseFloat(document.getElementById('sw_unit').value), t = parseFloat(document.getElementById('sw_total').value);
+            if (!(u > 0) && !(t > 0)) { Swal.showValidationMessage('Escribe el precio unitario o el total'); return false; }
+            return { u: u > 0 ? u : '', t: t > 0 ? t : '' };
+        }
+    }).then(r => {
+        if (!r.isConfirmed) return;
+        document.getElementById('pr_det').value = detId; document.getElementById('pr_unit').value = r.value.u; document.getElementById('pr_total').value = r.value.t;
+        document.getElementById('formPrecio').submit();
+    });
+}
 function anular() {
     Swal.fire({ title: '¿Anular este ingreso?', html: 'Se descuenta del stock y se revierte el costo promedio. Solo se puede si lo ingresado no se consumió.<br>Escribe el motivo:',
         input: 'text', icon: 'warning', showCancelButton: true, confirmButtonText: 'Anular', cancelButtonText: 'Cancelar', confirmButtonColor: '#dc3545',

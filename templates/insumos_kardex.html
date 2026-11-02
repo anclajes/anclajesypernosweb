@@ -3,6 +3,8 @@
 {% block subtitle %}Kardex valorizado {{ empresas[empresa].corto }}{% endblock %}
 {% block content %}
 {% include '_insumos_nav.html' %}
+{% from '_oc_docs_menu.html' import menu_docs_oc, menu_docs_compra, estilos_docs_oc with context %}
+{{ estilos_docs_oc() }}
 {% macro dinero(v, mon) %}{{ ('US$ ' ~ '{:,.2f}'.format(v or 0)) if mon == 'USD' else (v|soles) }}{% endmacro %}
 {# Mismo formato que el Kardex de los inventarios de Anclajes / Import Bolts, más la valorización (costo promedio) #}
 <style>
@@ -25,6 +27,12 @@
     .kx-ficha { border-radius: 14px; }
     .kx-ficha .k { font-size: .68rem; font-weight: 700; text-transform: uppercase; color: #6c757d; }
     .kx-ficha .v { font-size: 1.15rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+    .kx-sp { display: inline-block; font-size: .6rem; font-weight: 800; border-radius: 5px; padding: 1px 6px; background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
+    .kx-oc { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-top: 3px; }
+    .kx-oc .oc-chip { font-size: .62rem; font-weight: 800; color: #1e3a8a; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 5px; padding: 1px 6px; text-decoration: none; }
+    .oc-pend { border: 1px solid #fcd34d; background: #fffbeb; border-radius: 12px; padding: 8px 12px; margin-bottom: 12px; }
+    .oc-pend .fila { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 4px 0; border-top: 1px dashed #fde68a; font-size: .8rem; }
+    .oc-pend .fila:first-of-type { border-top: 0; }
 </style>
 
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
@@ -56,7 +64,7 @@
         <div class="col-12 col-md-6 col-lg-2"><div class="kardex-filtros-grupo">
             <label class="form-label"><i class="bi bi-arrow-left-right"></i> Movimiento</label>
             <select name="concepto" class="form-select form-select-sm" onchange="this.form.submit()">
-                {% for v, t in [('', 'Todos'), ('COMPRA', 'Compras'), ('CONSUMO', 'Consumos'), ('ANULACION', 'Anulaciones'), ('AJUSTE_COSTO', 'Ajustes de costo'), ('IMPORTACION', 'Carga desde Excel')] %}
+                {% for v, t in [('', 'Todos'), ('COMPRA', 'Compras'), ('CONSUMO', 'Consumos'), ('ANULACION', 'Anulaciones'), ('AJUSTE_COSTO', 'Ajustes de costo'), ('VALORIZACION', 'Precios completados'), ('IMPORTACION', 'Carga desde Excel')] %}
                 <option value="{{ v }}" {{ 'selected' if v == concepto }}>{{ t }}</option>{% endfor %}</select></div></div>
         <div class="col-12 col-md-6 col-lg-2"><div class="kardex-filtros-grupo">
             <label class="form-label"><i class="bi bi-calendar-range"></i> Fechas</label>
@@ -69,15 +77,33 @@
     </form>
 </div></div>
 
+{% if oc_pend %}
+<div class="oc-pend">
+    <div class="small fw-bold text-warning-emphasis mb-1"><i class="bi bi-hourglass-split"></i> {{ oc_pend|length }} compra(s) con Orden de Compra que llegaron y están conformes, <u>todavía sin sumar</u> al Kardex{% if insumo %} (con {{ insumo.codigo }}){% endif %}.
+        Su orden ya se puede ver y descargar; al registrar el ingreso queda unida al movimiento.</div>
+    {% for o in oc_pend %}
+    <div class="fila">
+        <b>{{ oc_codigo(o) }}</b><span class="text-muted">{{ o.razon_social }}</span>
+        <span class="text-muted small">conforme {{ o.fecha_conforme.strftime('%d/%m/%Y') if o.fecha_conforme else '' }}</span>
+        {% if insumo %}{% for it in o.items if it.insumo_id == insumo.id %}<span class="kx-sp" style="background:#e0f2fe; color:#075985; border-color:#7dd3fc;">+{{ it.cantidad|cant }} {{ it.um }}</span>{% endfor %}{% endif %}
+        <span class="ms-auto d-flex gap-1 align-items-center">{{ menu_docs_oc(o, docs_pend.get(o.id, []), texto='OC y documentos') }}
+            {% if puede_editar %}<a class="btn btn-sm btn-success py-0 fw-bold" href="{{ url_for('insumos_ingreso_nuevo', oc=o.id, empresa=o.empresa or 'ANCLAJES') }}"><i class="bi bi-box-arrow-in-down"></i> Registrar ingreso</a>{% endif %}</span>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
 {% if insumo %}
 <div class="card shadow-sm border-0 kx-ficha mb-3"><div class="card-body py-2 d-flex flex-wrap gap-4 align-items-center">
     <div class="me-auto"><div class="k">{{ insumo.codigo }}</div><div class="fw-bold">{{ insumo.descripcion }}</div><div class="text-muted small">{{ insumo.categoria or '' }} · {{ insumo.unidad }}</div></div>
     <div><div class="k">Stock</div><div class="v">{{ stock.stock_actual|cant if stock else '0' }}</div></div>
-    {% set q_usd = (stock.stock_usd or 0) if stock else 0 %}{% set q_pen = ((stock.stock_actual or 0) - q_usd) if stock else 0 %}
+    {% set q_usd = (stock.stock_usd or 0) if stock else 0 %}{% set q_pen = ((stock.stock_actual or 0) - q_usd - (stock.stock_sin_costo or 0)) if stock else 0 %}
     <div><div class="k">Costo prom. S/{% if q_usd %} ({{ q_pen|cant }} und){% endif %}</div><div class="v">{{ (stock.costo_promedio if stock else 0)|soles }}</div>
         {% if puede_ajustar %}<button type="button" class="btn btn-link btn-sm p-0" onclick="ajustarCosto({{ insumo.id }}, '{{ empresa }}', {{ (insumo.codigo ~ ' · ' ~ insumo.descripcion)|tojson|forceescape }}, {{ (stock.costo_promedio if stock else 0)|tojson }}, {{ q_pen|tojson }}, 'PEN')"><i class="bi bi-pencil"></i> Editar</button>{% endif %}</div>
     {% if q_usd %}<div><div class="k">Costo prom. US$ ({{ q_usd|cant }} und)</div><div class="v" style="color:#0f766e;">US$ {{ '{:,.2f}'.format(stock.costo_usd or 0) }}</div>
         {% if puede_ajustar %}<button type="button" class="btn btn-link btn-sm p-0" onclick="ajustarCosto({{ insumo.id }}, '{{ empresa }}', {{ (insumo.codigo ~ ' · ' ~ insumo.descripcion)|tojson|forceescape }}, {{ (stock.costo_usd or 0)|tojson }}, {{ q_usd|tojson }}, 'USD')"><i class="bi bi-pencil"></i> Editar</button>{% endif %}</div>{% endif %}
+    {% set q_sc = (stock.stock_sin_costo or 0) if stock else 0 %}
+    {% if q_sc %}<div title="Entraron con precio pendiente: no cuentan en el costo promedio ni en el valor"><div class="k">Sin precio</div><div class="v text-warning-emphasis">{{ q_sc|cant }} und</div></div>{% endif %}
     <div><div class="k">Valor</div><div class="v">{{ montos_txt(q_pen * ((stock.costo_promedio or 0) if stock else 0), q_usd * ((stock.costo_usd or 0) if stock else 0)) }}</div></div>
 </div></div>
 {% endif %}
@@ -119,15 +145,22 @@
                         {% if ent or sal %}
                         <div class="kx-cant {{ 'text-success' if ent else 'text-danger' }}">{{ '+' if ent else '-' }}{{ m.cantidad|cant }}</div>
                         <span class="badge {{ 'bg-success-subtle text-success border border-success' if ent else 'bg-danger-subtle text-danger border border-danger' }}" style="font-size:.6rem;">{{ m.tipo }}</span>
+                        {% elif m.concepto == 'VALORIZACION' %}<div class="kx-cant text-primary" style="font-size:.9rem;">{{ m.cantidad|cant }}</div><span class="badge bg-primary-subtle text-primary border border-primary" style="font-size:.6rem;">PRECIO</span>
                         {% else %}<span class="badge bg-warning-subtle text-warning-emphasis border border-warning" style="font-size:.6rem;">AJUSTE</span>{% endif %}
                     </td>
                     <td class="text-center text-nowrap"><span class="kx-saldo">{{ m.stock_despues|cant }}</span></td>
                     <td class="kx-motivo">
-                        <span class="badge kx-con {{ 'bg-success' if m.concepto == 'COMPRA' else 'bg-danger' if m.concepto == 'CONSUMO' else 'bg-warning text-dark' if m.concepto == 'AJUSTE_COSTO' else 'bg-info text-dark' if m.concepto == 'IMPORTACION' else 'bg-secondary' }}">{{ {'AJUSTE_COSTO': 'AJUSTE DE COSTO', 'IMPORTACION': 'CARGA EXCEL'}.get(m.concepto, m.concepto) }}</span>
+                        <span class="badge kx-con {{ 'bg-success' if m.concepto == 'COMPRA' else 'bg-danger' if m.concepto == 'CONSUMO' else 'bg-warning text-dark' if m.concepto == 'AJUSTE_COSTO' else 'bg-info text-dark' if m.concepto == 'IMPORTACION' else 'bg-primary' if m.concepto == 'VALORIZACION' else 'bg-secondary' }}">{{ {'AJUSTE_COSTO': 'AJUSTE DE COSTO', 'IMPORTACION': 'CARGA EXCEL', 'VALORIZACION': 'PRECIO COMPLETADO'}.get(m.concepto, m.concepto) }}</span>
                         {% if m.ingreso_id %}<a href="{{ url_for('insumos_ingreso_detalle', ingreso_id=m.ingreso_id) }}" class="fw-bold text-dark">/ {{ m.referencia }}</a>
                         {% elif m.salida_id %}<a href="{{ url_for('insumos_salida_detalle', salida_id=m.salida_id) }}" class="fw-bold text-dark">/ {{ m.referencia }}</a>
                         {% elif m.referencia %}<span class="fw-bold text-dark">/ {{ m.referencia }}</span>{% endif %}
                         {% if mon == 'USD' %}<span class="badge" style="background:#ccfbf1; color:#0f766e; font-size:.6rem;">EN DÓLARES</span>{% endif %}
+                        {% if mon == 'SC' %}<span class="kx-sp" title="Precio pendiente: no cambia el costo promedio ni suma al gasto">SIN PRECIO</span>{% endif %}
+                        {% if ing %}{% set oc_m = ocs.get(ing.id) %}
+                        {% if oc_m or docs_ing.get(ing.id) %}<div class="kx-oc">
+                            {% if oc_m %}<a class="oc-chip" href="{{ url_for('oc_pdf', orden_id=oc_m.id, ver=1) }}" target="_blank" title="Ver el PDF de la orden de compra"><i class="bi bi-cart-check"></i> {{ oc_codigo(oc_m) }}</a>{% endif %}
+                            {{ menu_docs_compra(ing, docs_ing.get(ing.id, []), oc_m, docs_oc.get(oc_m.id, []) if oc_m else [], texto='Documentos') }}
+                        </div>{% endif %}{% endif %}
                         {% if m.observacion %}<div class="kx-obs"><i class="bi bi-chat-left-text"></i> {% if m.concepto == 'AJUSTE_COSTO' %}Motivo: {% endif %}{{ m.observacion }}</div>{% endif %}
                     </td>
                     <td class="kx-proveedor">
@@ -139,13 +172,19 @@
                         {% if m.concepto == 'AJUSTE_COSTO' %}
                         <div title="Costo anterior"><s class="text-muted">{{ dinero(m.costo_unitario, mon) }}</s></div>
                         <div class="{{ 'text-success' if (m.costo_total or 0) >= 0 else 'text-danger' }}" style="font-size:.72rem;" title="Cambio en el valor del stock">{{ '+' if (m.costo_total or 0) >= 0 }}{{ dinero(m.costo_total, mon) }}</div>
+                        {% elif mon == 'SC' %}
+                        <span class="kx-sp">Sin precio</span><div class="text-muted" style="font-size:.68rem;">no cuenta en el costo</div>
                         {% else %}
                         <div>{{ dinero(m.costo_unitario, mon) }}</div><div class="text-muted" style="font-size:.72rem;">{{ dinero(m.costo_total, mon) }}</div>
                         {% endif %}
                     </td>
                     {% set q_mon = m.stock_moneda_despues if m.stock_moneda_despues is not none else m.stock_despues %}
+                    {% if mon == 'SC' %}
+                    <td class="text-end text-nowrap num"><div class="text-muted" style="font-size:.72rem;">Sin precio que quedan</div><div class="fw-semibold text-warning-emphasis">{{ (q_mon or 0)|cant }} und</div></td>
+                    {% else %}
                     <td class="text-end text-nowrap num {{ 'text-teal' if mon == 'USD' }}"><div class="fw-semibold" {% if mon == 'USD' %}style="color:#0f766e;"{% endif %}>{{ dinero(m.costo_prom_despues, mon) }}</div>
                         <div class="text-muted" style="font-size:.72rem;" title="{{ 'Valor de lo comprado en dólares que queda' if mon == 'USD' else 'Valor de lo comprado en soles que queda' }}">{{ dinero((q_mon or 0) * (m.costo_prom_despues or 0), mon) }}{% if m.stock_moneda_despues is not none and (m.stock_moneda_despues or 0) != (m.stock_despues or 0) %} · {{ q_mon|cant }} und{% endif %}</div></td>
+                    {% endif %}
                     <td class="pe-3 text-nowrap text-muted"><i class="bi bi-person-fill"></i> {{ m.usuario.username if m.usuario else '' }}
                         {% if m.concepto == 'AJUSTE_COSTO' and m.fecha_registro %}<div style="font-size:.68rem;">{{ m.fecha_registro.strftime('%d/%m/%Y %H:%M') }}</div>{% endif %}</td>
                 </tr>

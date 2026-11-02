@@ -38,6 +38,33 @@ def _n_oc_pendientes_insumos():
 app.add_template_global(_n_oc_pendientes_insumos, 'n_oc_pendientes_insumos')
 
 
+def _ocs_de_ingresos(ingresos):
+    """La Orden de Compra de cada ingreso (para ver y descargar su PDF y sus documentos en todo momento) y los documentos
+    de cada orden. Devuelve ({ingreso_id: OrdenCompra}, {orden_id: [OrdenCompraDocumento]})."""
+    ingresos = [i for i in ingresos if i]
+    if not ingresos:
+        return {}, {}
+    try:
+        _asegurar_oc()
+        ids = [i.id for i in ingresos]
+        por_id = {o.id: o for o in OrdenCompra.query.filter(
+            OrdenCompra.id.in_([i.orden_compra_id for i in ingresos if i.orden_compra_id] or [0])).all()}
+        por_ing = {o.insumo_ingreso_id: o for o in OrdenCompra.query.filter(OrdenCompra.insumo_ingreso_id.in_(ids)).all()}
+        ocs = {}
+        for i in ingresos:
+            o = por_id.get(i.orden_compra_id) or por_ing.get(i.id)    # los ingresos antiguos no guardaban la OC: se busca por la orden
+            if o:
+                ocs[i.id] = o
+        docs = {}
+        for d in OrdenCompraDocumento.query.filter(OrdenCompraDocumento.orden_id.in_([o.id for o in ocs.values()] or [0])).all():
+            docs.setdefault(d.orden_id, []).append(d)
+        return ocs, docs
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("No se pudieron leer las órdenes de compra de los ingresos de insumos")
+        return {}, {}
+
+
 def _prefill_ingreso_desde_oc(o):
     """Datos de la OC para llenar el ingreso de insumos (proveedor, factura, fecha de llegada, ítems y precios con IGV)."""
     guardado = InsumoProveedor.query.filter(InsumoProveedor.ruc == o.ruc).first() if o.ruc else None
@@ -131,11 +158,9 @@ def insumos_ingreso_guardar():
     if err:
         flash(f'⛔ {err}')
         return redirect(volver)
-    numero_factura = ' '.join((f.get('numero_factura') or '').split()).upper()[:50]
-    if not numero_factura:
-        flash('⛔ Escribe el número de factura (o del comprobante).')
-        return redirect(volver)
-    repetido = _factura_insumo_repetida(empresa, numero_factura, datos_prov)
+    # La factura es OPCIONAL (inventario de cosas antiguas, compras sin comprobante): se puede completar después
+    numero_factura = ' '.join((f.get('numero_factura') or '').split()).upper()[:50] or None
+    repetido = _factura_insumo_repetida(empresa, numero_factura, datos_prov) if numero_factura else None
     if repetido:
         flash(f'⛔ La factura {numero_factura} de {datos_prov["razon_social"]} ya está registrada en el ingreso #{repetido.id} '
               f'({repetido.fecha.strftime("%d/%m/%Y")}). Si era otra compra, revisa el número.')
@@ -146,6 +171,8 @@ def insumos_ingreso_guardar():
     simbolo = MONEDAS_INSUMOS[moneda]
     items, errores = [], []
     ids = f.getlist('insumo_id[]')
+    pendientes = f.getlist('precio_pendiente[]')      # '1' = la fila entra SIN PRECIO (no toca el costo promedio)
+    valorizar = f.getlist('valorizar_sc[]')           # '1' = con este precio, completar también lo que hay "sin precio" de ese insumo
     for n, (iid, cod_prov, cant, pu, pt, smin) in enumerate(zip(ids, f.getlist('codigo_proveedor[]'), f.getlist('cantidad[]'),
                                                               f.getlist('precio_unitario[]'), f.getlist('precio_total[]'),
                                                               f.getlist('stock_minimo[]')), start=1):
@@ -153,11 +180,16 @@ def insumos_ingreso_guardar():
             continue
         ins = Insumo.query.get(int(iid)) if iid.isdigit() else None
         cantidad, unit, total, minimo = _num(cant), _num(pu), _num(pt), _num(smin)
+        sin_precio = (pendientes[n - 1] if n - 1 < len(pendientes) else '') == '1'
         if not ins or not ins.activo:
             errores.append(f'Fila {n}: el insumo no existe o está inactivo.')
             continue
         if cantidad is None or cantidad <= 0:
             errores.append(f'Fila {n} ({ins.codigo}): la cantidad debe ser mayor a 0.')
+            continue
+        if sin_precio:
+            items.append({'ins': ins, 'cod_prov': ' '.join((cod_prov or '').split())[:60], 'cantidad': cantidad,
+                          'unit': 0.0, 'total': 0.0, 'minimo': minimo, 'pendiente': True, 'valorizar': False})
             continue
         if unit is None and total is not None:
             unit = total / cantidad
@@ -166,7 +198,8 @@ def insumos_ingreso_guardar():
             continue
         total = round(total if total is not None else unit * cantidad, 2)
         items.append({'ins': ins, 'cod_prov': ' '.join((cod_prov or '').split())[:60], 'cantidad': cantidad,
-                      'unit': round(unit, 6), 'total': total, 'minimo': minimo})
+                      'unit': round(unit, 6), 'total': total, 'minimo': minimo, 'pendiente': False,
+                      'valorizar': (valorizar[n - 1] if n - 1 < len(valorizar) else '') == '1' and unit > 0})
     if not items and not errores:
         errores.append('Agrega al menos un insumo.')
     archivos = []
@@ -193,27 +226,44 @@ def insumos_ingreso_guardar():
             contacto_nombre=datos_prov['contacto_nombre'] or None, contacto_telefono=datos_prov['contacto_telefono'] or None,
             almacen=(f.get('almacen') or '').strip()[:100] or None,
             observacion=' '.join((f.get('observacion') or '').split())[:300] or None,
-            total=round(sum(i['total'] for i in items), 2), estado='REGISTRADO', user_id=session.get('user_id'), fecha_registro=ahora)
+            total=round(sum(i['total'] for i in items), 2), estado='REGISTRADO', user_id=session.get('user_id'), fecha_registro=ahora,
+            orden_compra_id=orden_oc.id if orden_oc else None)
         db.session.add(ing)
         db.session.flush()
-        ref = f"Factura {ing.numero_factura}"
+        ref = f"Factura {ing.numero_factura}" if ing.numero_factura else f"Ingreso #{ing.id} (sin factura)"
+        valorizados = 0
         for it in items:
             st = _stock_de(it['ins'].id, empresa)
-            antes, prom_antes = _entrada_a_stock(st, it['cantidad'], it['unit'], moneda)
+            mon_it = 'SC' if it['pendiente'] else moneda
+            antes, prom_antes = _entrada_a_stock(st, it['cantidad'], it['unit'], mon_it)
             if ing.almacen:
                 st.almacen = ing.almacen
             if it['minimo'] is not None and it['minimo'] >= 0:
                 st.stock_minimo = it['minimo']
             st.ultimo_ingreso = fecha
-            db.session.add(InsumoIngresoDetalle(
+            if it['pendiente']:
+                prom_antes = prom_desp = _bolsa(st, moneda)[1]     # el costo promedio NO cambia
+            else:
+                prom_desp = _bolsa(st, moneda)[1]
+            det = InsumoIngresoDetalle(
                 ingreso_id=ing.id, insumo_id=it['ins'].id, codigo_proveedor=it['cod_prov'] or None, cantidad=it['cantidad'],
                 precio_unitario=it['unit'], precio_total=it['total'], stock_antes=antes, stock_despues=st.stock_actual,
-                costo_prom_antes=prom_antes, costo_prom_despues=_bolsa(st, moneda)[1]))
+                costo_prom_antes=prom_antes, costo_prom_despues=prom_desp,
+                precio_pendiente=it['pendiente'], sin_costo_restante=it['cantidad'] if it['pendiente'] else 0.0)
+            db.session.add(det)
             db.session.add(InsumoMovimiento(
                 empresa=empresa, insumo_id=it['ins'].id, fecha=fecha, tipo='ENTRADA', concepto='COMPRA', cantidad=it['cantidad'],
                 costo_unitario=it['unit'], costo_total=it['total'], stock_antes=antes, stock_despues=st.stock_actual,
-                **_datos_mov_moneda(st, moneda), referencia=ref[:120], ingreso_id=ing.id, user_id=session.get('user_id'),
+                **_datos_mov_moneda(st, mon_it), referencia=ref[:120], ingreso_id=ing.id, user_id=session.get('user_id'),
+                observacion='Precio pendiente: entra al stock sin tocar el costo promedio' if it['pendiente'] else None,
                 fecha_registro=ahora))
+            if it['valorizar'] and float(st.stock_sin_costo or 0) > 1e-9:
+                # reposición con factura: lo que había "sin precio" de este insumo toma el precio de esta compra
+                db.session.flush()
+                extra = f"con el precio del ingreso #{ing.id}" + (f" ({ref})" if ing.numero_factura else '')
+                for d in _pendientes_sin_costo(st, moneda=moneda, excluir_ingreso=ing.id):
+                    valorizados += _completar_precio_detalle(d, it['unit'], ahora, ref_extra=extra)
+                valorizados += _valorizar_huerfanos(st, it['unit'], moneda, ahora, f'Unidades sin precio valorizadas · Ingreso #{ing.id}')
         for tipo, a, info in archivos:
             _subir_doc_insumo(f"{empresa.lower()}/ingresos/{ing.id}", a, info, tipo, claves, ingreso_id=ing.id)
         if orden_oc and f.get('usar_docs_oc') == '1':
@@ -243,8 +293,12 @@ def insumos_ingreso_guardar():
         app.logger.exception("No se pudo guardar el ingreso de insumos")
         flash(f'⛔ No se pudo guardar el ingreso (no se registró nada): {e}')
         return redirect(volver)
+    n_pend = sum(1 for i in items if i['pendiente'])
     flash(f'✅ Ingreso registrado: {len(items)} insumo(s) por {simbolo} {ing.total:,.2f}'
-          + (' (en dólares: se lleva aparte, sin convertir a soles).' if moneda == 'USD' else '.'))
+          + (' (en dólares: se lleva aparte, sin convertir a soles)' if moneda == 'USD' else '')
+          + (f'. {n_pend} ítem(s) con PRECIO PENDIENTE: entraron al stock sin tocar el costo promedio; complétalo aquí cuando tengas la factura' if n_pend else '')
+          + (f'. Con esta factura se pusieron precio a {_cant_txt(valorizados)} und que estaban sin precio' if valorizados else '')
+          + '.' + (' Sin N° de factura: puedes agregarlo después en el ingreso.' if not numero_factura else ''))
     return redirect(url_for('insumos_ingreso_detalle', ingreso_id=ing.id))
 
 
@@ -257,16 +311,21 @@ def insumos_ingresos():
         q = q.filter(InsumoIngreso.empresa == empresa)
     buscar = ' '.join((request.args.get('q') or '').split())
     ingresos = q.order_by(InsumoIngreso.fecha.desc(), InsumoIngreso.id.desc()).limit(500).all()
-    if buscar:
+    ocs, docs_oc = _ocs_de_ingresos(ingresos)
+    if buscar:      # proveedor, RUC, factura o N° de la orden de compra
         b = buscar.upper()
-        ingresos = [i for i in ingresos if b in f'{i.razon_social or ""} {i.ruc or ""} {i.numero_factura or ""}'.upper()]
+        ingresos = [i for i in ingresos if b in (f'{i.razon_social or ""} {i.ruc or ""} {i.numero_factura or ""} '
+                                                 f'{_oc_codigo(ocs[i.id]) + " " + _oc_numero_txt(ocs[i.id]) if i.id in ocs else ""}').upper()]
+    pend = request.args.get('pend') == '1'
+    if pend:        # solo los que tienen algún ítem con precio pendiente
+        ingresos = [i for i in ingresos if i.estado == 'REGISTRADO' and any(d.precio_pendiente for d in i.detalles)]
     categoria = request.args.get('categoria', '')
     if categoria:
         ingresos = [i for i in ingresos if any((d.insumo.categoria or '') == categoria for d in i.detalles)]
     docs = {}
     for d in InsumoDocumento.query.filter(InsumoDocumento.ingreso_id.in_([i.id for i in ingresos] or [0])).all():
         docs.setdefault(d.ingreso_id, []).append(d)
-    return render_template('insumos_ingresos.html', ingresos=ingresos, docs=docs, empresa=empresa, empresas=EMPRESAS_INSUMOS,
+    return render_template('insumos_ingresos.html', ingresos=ingresos, docs=docs, ocs=ocs, docs_oc=docs_oc, pend=pend, empresa=empresa, empresas=EMPRESAS_INSUMOS,
                            buscar=buscar, categoria=categoria, categorias_filtro=_categorias_insumos(), seccion='ingresos')
 
 
@@ -275,7 +334,10 @@ def insumos_ingresos():
 def insumos_ingreso_detalle(ingreso_id):
     ing = InsumoIngreso.query.get_or_404(ingreso_id)
     docs = InsumoDocumento.query.filter_by(ingreso_id=ing.id).order_by(InsumoDocumento.id).all()
+    ocs, docs_oc = _ocs_de_ingresos([ing])
+    oc = ocs.get(ing.id)
     return render_template('insumos_ingreso_detalle.html', ing=ing, docs=docs, empresas=EMPRESAS_INSUMOS, seccion='ingresos',
+                           oc=oc, docs_oc=docs_oc.get(oc.id, []) if oc else [], puede_ver_oc=session.get('role') in ROLES_OC_VEN,
                            puede_editar=session.get('role') in ROLES_INSUMOS_EDITAN)
 
 
@@ -303,6 +365,69 @@ def insumos_ingreso_documento(ingreso_id):
     return redirect(url_for('insumos_ingreso_detalle', ingreso_id=ing.id))
 
 
+@app.route('/insumos/ingresos/<int:ingreso_id>/precio', methods=['POST'])
+@_ruta_insumos(editar=True)
+def insumos_ingreso_precio(ingreso_id):
+    """Completa el precio de un ítem que entró con PRECIO PENDIENTE (cuando ya se tiene la factura). Lo que de ese ítem sigue en
+    stock pasa al costo promedio; lo que ya salió antes de tener precio se queda a costo 0 en esas salidas."""
+    ing = InsumoIngreso.query.get_or_404(ingreso_id)
+    destino = url_for('insumos_ingreso_detalle', ingreso_id=ing.id)
+    if ing.estado != 'REGISTRADO':
+        flash('⛔ El ingreso está anulado.')
+        return redirect(destino)
+    det = InsumoIngresoDetalle.query.get(request.form.get('detalle_id', type=int) or 0)
+    if not det or det.ingreso_id != ing.id or not det.precio_pendiente:
+        flash('⛔ Ese ítem ya tiene precio.')
+        return redirect(destino)
+    unit, total = _num(request.form.get('precio_unitario')), _num(request.form.get('precio_total'))
+    if (unit is None or unit <= 0) and total is not None and total > 0:
+        unit = total / det.cantidad
+    if unit is None or unit <= 0:
+        flash('⛔ Escribe el precio (unitario o total) con IGV.')
+        return redirect(destino)
+    ahora = hora_peru()
+    try:
+        cant = _completar_precio_detalle(det, unit, ahora)
+        sim = MONEDAS_INSUMOS['USD' if ing.moneda == 'USD' else 'PEN']
+        registrar_log(f"Completó el precio de {det.insumo.codigo} en el ingreso de insumos #{ing.id}: {sim} {unit:,.4f} "
+                      f"({_cant_txt(cant)} und pasan al costo promedio)", 'bi-tag', 'text-success')
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        app.logger.exception("No se pudo completar el precio del ingreso de insumos")
+        flash(f'⛔ No se pudo guardar el precio: {e}')
+        return redirect(destino)
+    consumido = det.cantidad - cant
+    flash(f'✅ Precio guardado para {det.insumo.codigo}: {_cant_txt(cant)} und pasan al costo promedio.'
+          + (f' {_cant_txt(consumido)} und ya habían salido sin precio: esas salidas se quedan a costo 0.' if consumido > 1e-9 else ''))
+    return redirect(destino)
+
+
+@app.route('/insumos/ingresos/<int:ingreso_id>/factura', methods=['POST'])
+@_ruta_insumos(editar=True)
+def insumos_ingreso_factura(ingreso_id):
+    """Pone (o corrige) el N° de factura de un ingreso que se registró sin factura."""
+    ing = InsumoIngreso.query.get_or_404(ingreso_id)
+    destino = url_for('insumos_ingreso_detalle', ingreso_id=ing.id)
+    numero = ' '.join((request.form.get('numero_factura') or '').split()).upper()[:50]
+    if not numero:
+        flash('⛔ Escribe el número de factura.')
+        return redirect(destino)
+    repetido = _factura_insumo_repetida(ing.empresa, numero, {'ruc': ing.ruc or '', 'razon_social': ing.razon_social or ''})
+    if repetido and repetido.id != ing.id:
+        flash(f'⛔ La factura {numero} ya está registrada en el ingreso #{repetido.id}.')
+        return redirect(destino)
+    anterior = ing.numero_factura
+    ing.numero_factura = numero
+    for m in InsumoMovimiento.query.filter_by(ingreso_id=ing.id, concepto='COMPRA').all():
+        m.referencia = f'Factura {numero}'[:120]
+    registrar_log(f"{'Corrigió' if anterior else 'Agregó'} el N° de factura del ingreso de insumos #{ing.id}: {numero}"
+                  + (f' (antes {anterior})' if anterior else ''), 'bi-receipt', 'text-info')
+    db.session.commit()
+    flash(f'✅ Factura {numero} guardada en el ingreso #{ing.id}.')
+    return redirect(destino)
+
+
 @app.route('/insumos/ingresos/<int:ingreso_id>/anular', methods=['POST'])
 @_ruta_insumos(solo_admin=True)
 def insumos_ingreso_anular(ingreso_id):
@@ -320,6 +445,17 @@ def insumos_ingreso_anular(ingreso_id):
     mon = ing.moneda if ing.moneda in ('PEN', 'USD') else 'PEN'
     for d in ing.detalles:
         st = _stock_de(d.insumo_id, ing.empresa, crear=False)
+        if d.precio_pendiente:
+            # entró SIN PRECIO: tiene que seguir completo en la parte "sin precio"
+            if not st or float(d.sin_costo_restante or 0) + 1e-9 < d.cantidad or _bolsa(st, 'SC')[0] + 1e-9 < d.cantidad:
+                flash(f'⛔ No se puede anular: de {d.insumo.codigo} ya salió parte de lo ingresado sin precio '
+                      f'(quedan {_cant_txt(d.sin_costo_restante)} de {_cant_txt(d.cantidad)}).')
+                return redirect(destino)
+            continue
+        if d.cantidad_valorizada is not None and float(d.cantidad_valorizada) + 1e-9 < d.cantidad:
+            flash(f'⛔ No se puede anular: de {d.insumo.codigo} salió parte cuando todavía no tenía precio '
+                  f'(al completar el precio quedaban {_cant_txt(d.cantidad_valorizada)} de {_cant_txt(d.cantidad)}).')
+            return redirect(destino)
         q = _bolsa(st, mon)[0] if st else 0
         if not st or q + 1e-9 < d.cantidad:
             flash(f'⛔ No se puede anular: de {d.insumo.codigo} ya salió parte de lo ingresado '
@@ -328,6 +464,16 @@ def insumos_ingreso_anular(ingreso_id):
     for d in ing.detalles:
         st = _stock_de(d.insumo_id, ing.empresa, crear=False)
         antes = float(st.stock_actual or 0)
+        if d.precio_pendiente:
+            st.stock_sin_costo = round(float(st.stock_sin_costo or 0) - d.cantidad, 6)
+            st.stock_actual = round(antes - d.cantidad, 6)
+            d.sin_costo_restante = 0.0
+            db.session.add(InsumoMovimiento(
+                empresa=ing.empresa, insumo_id=d.insumo_id, fecha=ahora, tipo='SALIDA', concepto='ANULACION', cantidad=d.cantidad,
+                costo_unitario=0, costo_total=0, stock_antes=antes, stock_despues=st.stock_actual,
+                **_datos_mov_moneda(st, 'SC'), referencia=f'Anulación ingreso #{ing.id}', ingreso_id=ing.id,
+                observacion=motivo, user_id=session.get('user_id'), fecha_registro=ahora))
+            continue
         q, prom = _bolsa(st, mon)
         nuevo_q = round(q - d.cantidad, 6)
         recalculado = (q * prom - d.cantidad * d.precio_unitario) / nuevo_q if nuevo_q > 0 else prom
@@ -472,11 +618,14 @@ def insumos_salida_guardar():
             total, total_usd = 0, 0
             for it in items:
                 st = _stock_de(it['ins'].id, empresa, crear=False)
-                antes, partes = _salida_por_monedas(st, it['cd'])
+                origenes = []
+                antes, partes = _salida_por_monedas(st, it['cd'], origenes)
                 st.ultima_salida = fecha
-                # lo comprado en soles sale a su costo en S/; lo comprado en dólares, a su costo en US$ (no se convierte)
+                # lo comprado en soles sale a su costo en S/; lo comprado en dólares, a su costo en US$ (no se convierte);
+                # lo que está SIN PRECIO (precio pendiente) sale al final y a costo 0: no suma al gasto del área
                 pen = [(c, u) for m_, c, u in partes if m_ == 'PEN']
                 usd = [(c, u) for m_, c, u in partes if m_ == 'USD']
+                c_sc = sum(c for m_, c, _ in partes if m_ == 'SC')
                 c_pen, c_usd = sum(c for c, _ in pen), sum(c for c, _ in usd)
                 t_pen = round(sum(c * u for c, u in pen), 2)
                 t_usd = round(sum(c * u for c, u in usd), 2)
@@ -486,12 +635,14 @@ def insumos_salida_guardar():
                     salida_id=sal.id, insumo_id=it['ins'].id, cantidad_solicitada=it['cs'], cantidad_despachada=it['cd'],
                     unidad=it['ins'].unidad, ubicacion=st.almacen, costo_unitario=pen[0][1] if pen else 0, costo_total=t_pen,
                     cantidad_usd=round(c_usd, 6), costo_unitario_usd=usd[0][1] if usd else 0, costo_total_usd=t_usd,
+                    cantidad_sin_costo=round(c_sc, 6), origen_sin_costo=_origen_txt(origenes),
                     stock_antes=antes, stock_despues=st.stock_actual))
                 for m_, c, u in partes:
                     db.session.add(InsumoMovimiento(
                         empresa=empresa, insumo_id=it['ins'].id, fecha=fecha, tipo='SALIDA', concepto='CONSUMO', cantidad=c,
                         costo_unitario=u, costo_total=round(c * u, 2), stock_antes=antes, stock_despues=st.stock_actual,
                         **_datos_mov_moneda(st, m_), referencia=f'Consumo N° {sal.numero:06d} · {area.nombre}'[:120],
+                        observacion='Sin precio (precio pendiente): sale a costo 0, no suma al gasto' if m_ == 'SC' else None,
                         salida_id=sal.id, area_id=area.id, user_id=session.get('user_id'), fecha_registro=ahora))
             sal.total_costo = round(total, 2)
             sal.total_costo_usd = round(total_usd, 2)
@@ -655,9 +806,22 @@ def insumos_salida_anular(salida_id):
     ahora = hora_peru()
     for d in sal.detalles:
         st = _stock_de(d.insumo_id, sal.empresa)
-        c_usd = float(d.cantidad_usd or 0)
-        for mon, cant, unit, tot in (('PEN', round((d.cantidad_despachada or 0) - c_usd, 6), d.costo_unitario or 0, d.costo_total),
-                                     ('USD', c_usd, d.costo_unitario_usd or 0, d.costo_total_usd)):
+        c_usd, c_sc = float(d.cantidad_usd or 0), float(d.cantidad_sin_costo or 0)
+        partes = [('PEN', round((d.cantidad_despachada or 0) - c_usd - c_sc, 6), d.costo_unitario or 0, d.costo_total),
+                  ('USD', c_usd, d.costo_unitario_usd or 0, d.costo_total_usd)]
+        if c_sc > 1e-9:
+            # lo que salió SIN PRECIO vuelve a su ingreso: si sigue pendiente, otra vez "sin precio"; si ya se le puso precio, con ese precio
+            origenes = _origen_de_txt(d.origen_sin_costo) or [(0, c_sc)]
+            for det_id, cant_o in origenes:
+                det = InsumoIngresoDetalle.query.get(det_id) if det_id else None
+                if det and not det.precio_pendiente and det.ingreso and det.ingreso.estado == 'REGISTRADO' and (det.precio_unitario or 0) > 0:
+                    mon_d = 'USD' if det.ingreso.moneda == 'USD' else 'PEN'
+                    partes.append((mon_d, cant_o, det.precio_unitario, round(cant_o * det.precio_unitario, 2)))
+                else:
+                    if det and det.precio_pendiente:
+                        det.sin_costo_restante = round(float(det.sin_costo_restante or 0) + cant_o, 6)
+                    partes.append(('SC', cant_o, 0.0, 0.0))
+        for mon, cant, unit, tot in partes:
             if cant <= 1e-9:
                 continue
             antes, _ = _entrada_a_stock(st, cant, unit, mon)
@@ -756,7 +920,7 @@ def insumos_kardex():
         insumo_id = None
     q = InsumoMovimiento.query.filter(InsumoMovimiento.empresa == empresa)
     concepto = request.args.get('concepto', '')
-    if concepto in ('COMPRA', 'CONSUMO', 'ANULACION', 'AJUSTE_COSTO', 'IMPORTACION'):
+    if concepto in ('COMPRA', 'CONSUMO', 'ANULACION', 'AJUSTE_COSTO', 'IMPORTACION', 'VALORIZACION'):
         q = q.filter(InsumoMovimiento.concepto == concepto)
     else:
         concepto = ''
@@ -777,7 +941,26 @@ def insumos_kardex():
     stock = _stock_de(insumo_id, empresa, crear=False) if insumo_id else None
     ids_ing = {m.ingreso_id for m in movs if m.ingreso_id}
     ingresos = {i.id: i for i in InsumoIngreso.query.filter(InsumoIngreso.id.in_(list(ids_ing) or [0])).all()}
-    return render_template('insumos_kardex.html', ingresos=ingresos, empresa=empresa, empresas=EMPRESAS_INSUMOS, movs=movs, insumo=insumo, stock=stock,
+    # la OC de cada compra y los documentos (de la orden y del ingreso): ver y descargar desde el Kardex
+    ocs, docs_oc = _ocs_de_ingresos(list(ingresos.values()))
+    docs_ing = {}
+    for d in InsumoDocumento.query.filter(InsumoDocumento.ingreso_id.in_(list(ids_ing) or [0])).all():
+        docs_ing.setdefault(d.ingreso_id, []).append(d)
+    # compras con OC que todavía NO entran al Kardex (conformes, por registrar): ya se pueden ver con su OC
+    oc_pend, docs_pend = [], {}
+    try:
+        _asegurar_oc()
+        oc_pend = [o for o in _ordenes_pendientes_insumos(empresa)
+                   if not insumo_id or any(it.insumo_id == insumo_id for it in o.items)]
+        if oc_pend:
+            for d in OrdenCompraDocumento.query.filter(OrdenCompraDocumento.orden_id.in_([o.id for o in oc_pend])).all():
+                docs_pend.setdefault(d.orden_id, []).append(d)
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("No se pudieron leer las OC pendientes para el Kardex de insumos")
+        oc_pend, docs_pend = [], {}
+    return render_template('insumos_kardex.html', ingresos=ingresos, ocs=ocs, docs_oc=docs_oc, docs_ing=docs_ing,
+                           oc_pend=oc_pend, docs_pend=docs_pend, puede_editar=session.get('role') in ROLES_INSUMOS_EDITAN, empresa=empresa, empresas=EMPRESAS_INSUMOS, movs=movs, insumo=insumo, stock=stock,
                            insumos=lista, desde=desde, hasta=hasta, categoria=categoria, categorias_filtro=_categorias_insumos(),
                            puede_ajustar=session.get('role') == 'admin', concepto=concepto,
                            tot_entradas=entradas, tot_salidas=salidas, tot_entradas_usd=entradas_usd, tot_salidas_usd=salidas_usd, seccion='kardex')

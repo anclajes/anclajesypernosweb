@@ -1,0 +1,99 @@
+{# Menú "📎 Documentos" de una orden de compra / servicio: el PDF de la orden + TODOS sus documentos subidos
+   (guía, factura, certificado, cotización, constancia de pago, otros), cada uno con VER y DESCARGAR.
+   Uso:  {% from '_oc_docs_menu.html' import menu_docs_oc with context %}
+         {{ menu_docs_oc(o, docs_de_la_orden) }}            -> botón con el número de documentos
+         {{ menu_docs_oc(o, ds, texto='OC N° 000123') }}  -> botón con un texto propio
+   Necesita los globales oc_codigo y tipos_doc_oc (modulos/compras/base.py). #}
+{% macro menu_docs_oc(o, ds, texto=None, pdf=True, alinear='end') %}
+<div class="dropdown d-inline-block oc-docs-dd">
+    <button type="button" class="oc-docs-btn" data-bs-toggle="dropdown" data-bs-auto-close="outside" data-bs-popper-config='{"strategy":"fixed"}'
+            aria-expanded="false" title="Ver o descargar la orden y sus documentos">
+        <i class="bi bi-paperclip"></i>{% if texto %} {{ texto }}{% else %} {{ (ds|length) + (1 if pdf else 0) }}{% endif %} <i class="bi bi-caret-down-fill" style="font-size:.55rem;"></i></button>
+    <ul class="dropdown-menu dropdown-menu-{{ alinear }} shadow oc-docs-menu">
+        <li class="oc-docs-cab">{{ oc_codigo(o) }} · documentos</li>
+        {% if pdf %}
+        <li class="oc-docs-fila">
+            <i class="bi bi-file-earmark-pdf-fill text-danger"></i>
+            <span class="nom"><b>{{ 'Orden de servicio' if o.tipo == 'OS' else 'Orden de compra' }}</b><small>PDF del sistema</small></span>
+            <a href="{{ url_for('oc_pdf', orden_id=o.id, ver=1) }}" target="_blank" rel="noopener" title="Ver"><i class="bi bi-eye"></i></a>
+            <a href="{{ url_for('oc_pdf', orden_id=o.id) }}" title="Descargar"><i class="bi bi-download"></i></a>
+        </li>
+        {% endif %}
+        {% for d in ds|sort(attribute='id') %}
+        {% set num = o.numero_guia if d.tipo == 'GUIA' else (o.numero_factura if d.tipo == 'FACTURA' else '') %}
+        <li class="oc-docs-fila">
+            <i class="bi {{ 'bi-file-earmark-pdf-fill text-danger' if d.content_type == 'application/pdf' else 'bi-file-earmark-image-fill text-primary' }}"></i>
+            <span class="nom"><b>{{ tipos_doc_oc.get(d.tipo, d.tipo) }}{% if num %} {{ num }}{% endif %}</b><small title="{{ d.nombre_original }}">{{ d.nombre_original or '' }}</small></span>
+            <a href="{{ url_for('oc_documento_ver', doc_id=d.id) }}" target="_blank" rel="noopener" title="Ver"><i class="bi bi-eye"></i></a>
+            <a href="{{ url_for('oc_documento_ver', doc_id=d.id, download=1) }}" title="Descargar"><i class="bi bi-download"></i></a>
+        </li>
+        {% else %}
+        <li class="px-3 py-1 small text-muted">Todavía no tiene documentos subidos.</li>
+        {% endfor %}
+    </ul>
+</div>
+{% endmacro %}
+
+{# Menú de documentos de una COMPRA de insumos: los del ingreso (factura, guía...) + la Orden de Compra de la que vino
+   (su PDF y sus documentos). Los documentos que se copiaron de la orden al ingreso no se repiten.
+   Uso: {{ menu_docs_compra(ing, docs_del_ingreso, oc_o_None, docs_de_la_oc) }} #}
+{% macro menu_docs_compra(ing, ds_ing, oc, ds_oc, texto=None, alinear='end') %}
+{% set copiados = [] %}{% for d in ds_ing %}{% set _ = copiados.append((d.nombre_original, d.tamano_bytes)) %}{% endfor %}
+{% set ds_oc_v = ds_oc|list %}
+{% set n = (ds_ing|length) + ((1 + (ds_oc_v|length)) if oc else 0) %}
+<div class="dropdown d-inline-block oc-docs-dd">
+    <button type="button" class="oc-docs-btn" data-bs-toggle="dropdown" data-bs-auto-close="outside" data-bs-popper-config='{"strategy":"fixed"}'
+            aria-expanded="false" title="Ver o descargar los documentos de esta compra{{ ' y su orden de compra' if oc }}">
+        <i class="bi bi-paperclip"></i> {{ texto if texto else n }} <i class="bi bi-caret-down-fill" style="font-size:.55rem;"></i></button>
+    <ul class="dropdown-menu dropdown-menu-{{ alinear }} shadow oc-docs-menu">
+        {% if oc %}
+        <li class="oc-docs-cab">Orden de compra · {{ oc_codigo(oc) }}</li>
+        <li class="oc-docs-fila">
+            <i class="bi bi-file-earmark-pdf-fill text-danger"></i>
+            <span class="nom"><b>{{ oc_codigo(oc) }}</b><small>PDF de la orden</small></span>
+            <a href="{{ url_for('oc_pdf', orden_id=oc.id, ver=1) }}" target="_blank" rel="noopener" title="Ver"><i class="bi bi-eye"></i></a>
+            <a href="{{ url_for('oc_pdf', orden_id=oc.id) }}" title="Descargar"><i class="bi bi-download"></i></a>
+        </li>
+        {% for d in ds_oc_v|sort(attribute='id') if (d.nombre_original, d.tamano_bytes) not in copiados %}
+        {% set num = oc.numero_guia if d.tipo == 'GUIA' else (oc.numero_factura if d.tipo == 'FACTURA' else '') %}
+        <li class="oc-docs-fila">
+            <i class="bi {{ 'bi-file-earmark-pdf-fill text-danger' if d.content_type == 'application/pdf' else 'bi-file-earmark-image-fill text-primary' }}"></i>
+            <span class="nom"><b>{{ tipos_doc_oc.get(d.tipo, d.tipo) }}{% if num %} {{ num }}{% endif %}</b><small title="{{ d.nombre_original }}">{{ d.nombre_original or '' }} · de la orden</small></span>
+            <a href="{{ url_for('oc_documento_ver', doc_id=d.id) }}" target="_blank" rel="noopener" title="Ver"><i class="bi bi-eye"></i></a>
+            <a href="{{ url_for('oc_documento_ver', doc_id=d.id, download=1) }}" title="Descargar"><i class="bi bi-download"></i></a>
+        </li>
+        {% endfor %}
+        {% endif %}
+        {% if ing %}<li class="oc-docs-cab mt-1">Ingreso #{{ ing.id }}{% if ing.numero_factura %} · Factura {{ ing.numero_factura }}{% endif %}</li>{% endif %}
+        {% for d in ds_ing|sort(attribute='id') %}
+        <li class="oc-docs-fila">
+            <i class="bi {{ 'bi-file-earmark-pdf-fill text-danger' if d.content_type == 'application/pdf' else 'bi-file-earmark-image-fill text-primary' }}"></i>
+            <span class="nom"><b>{{ {'FACTURA': 'Factura', 'GUIA': 'Guía de remisión', 'OTRO': 'Otro documento'}.get(d.tipo, d.tipo|title) }}</b><small title="{{ d.nombre_original }}">{{ d.nombre_original or '' }}</small></span>
+            <a href="{{ url_for('insumos_documento', doc_id=d.id) }}" target="_blank" rel="noopener" title="Ver"><i class="bi bi-eye"></i></a>
+            <a href="{{ url_for('insumos_documento', doc_id=d.id, download=1) }}" title="Descargar"><i class="bi bi-download"></i></a>
+        </li>
+        {% else %}
+        {% if ing %}<li class="px-3 py-1 small text-muted">El ingreso no tiene documentos subidos.</li>{% endif %}
+        {% endfor %}
+    </ul>
+</div>
+{% endmacro %}
+
+{# Estilos del menú: incluir una vez por página ({{ estilos_docs_oc() }}) #}
+{% macro estilos_docs_oc() %}
+<style>
+    .oc-docs-btn { display: inline-flex; align-items: center; gap: 3px; font-size: .66rem; font-weight: 800; border-radius: 6px; padding: 1px 7px; height: 22px;
+                   border: 1px solid #cbd5e1; background: #fff; color: #334155; white-space: nowrap; }
+    .oc-docs-btn:hover, .oc-docs-dd.show .oc-docs-btn { border-color: #0B3D91; color: #0B3D91; background: #eff6ff; }
+    .oc-docs-menu { min-width: 280px; max-width: 360px; padding: 4px 0; font-size: .78rem; }
+    .oc-docs-cab { font-size: .64rem; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: #64748b; padding: 2px 12px 4px; }
+    .oc-docs-fila { display: flex; align-items: center; gap: 8px; padding: 4px 12px; }
+    .oc-docs-fila:hover { background: #f8fafc; }
+    .oc-docs-fila .nom { flex: 1; min-width: 0; line-height: 1.15; }
+    .oc-docs-fila .nom b { display: block; font-size: .76rem; }
+    .oc-docs-fila .nom small { display: block; color: #64748b; font-size: .66rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .oc-docs-fila a { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 26px; border-radius: 6px; border: 1px solid #e2e8f0;
+                      color: #334155; text-decoration: none; }
+    .oc-docs-fila a:hover { border-color: #0B3D91; color: #0B3D91; background: #eff6ff; }
+</style>
+{% endmacro %}
