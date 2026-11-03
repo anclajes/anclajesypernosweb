@@ -110,6 +110,7 @@
 {% endif %}
 
 {% from '_oc_contable.html' import chip_contable, estilos_contable with context %}{{ estilos_contable() }}
+{% from '_oc_directo.html' import chip_directo, estilos_directo, campos_entrega_directo, modal_entrega_directo, garantia_chip with context %}{{ estilos_directo() }}
 {% for g in grupos %}
 {% set o = g.o %}{% set items = g['items'] %}
 {% set ds = docs.get(o.id, []) %}{% set emp = o.empresa or 'ANCLAJES' %}
@@ -120,6 +121,7 @@
             {% if puede_ver_oc %}<a class="oc-num" href="{{ url_for('oc_detalle', orden_id=o.id) }}">{% else %}<span class="oc-num">{% endif %}<span class="oc-tipo {{ o.tipo }}">{{ o.tipo }}</span> N° {{ oc_numero_txt(o) }}{% if puede_ver_oc %}</a>{% else %}</span>{% endif %}
             <span class="prov">{{ o.razon_social }}</span>
             {% if o.tipo == 'OS' %}<span class="oc-dest" style="background: #7c3aed; color: #fff;"><i class="bi bi-tools"></i> Servicio · {{ empresas_oc[emp].corto }}</span>
+            {% elif g.directo %}<span class="oc-dest DIRECTO"><i class="bi bi-pc-display"></i> Uso directo · {{ (o.directo_categoria or '')|capitalize }}</span>
             {% else %}<span class="oc-dest GENERAL" style="background: {{ empresas_oc[emp].color }}; color: #fff;">Inventario {{ empresas_oc[emp].corto }}</span>{% endif %}
             {% if o.es_importacion %}<span class="tag" style="background:#e0f2fe; color:#075985;"><i class="bi bi-globe-americas"></i> Importación</span>{% endif %}
             {{ chip_contable(o) }}
@@ -144,7 +146,8 @@
             <i class="bi bi-chevron-right flecha"></i>
             <span class="t {{ 'pend' if rc.sin_conformar else 'ok' }}"><i class="bi bi-check-circle-fill"></i><span><b>Conformidad</b>por entrega{% if rc.sin_conformar %} · {{ rc.sin_conformar|length }} sin revisar{% endif %}</span></span>
             <i class="bi bi-chevron-right flecha"></i>
-            {% if g.contable %}<span class="t {{ 'ok' if o.fecha_kardex else 'pend' }}"><i class="bi bi-calculator"></i><span><b>Confirmación contable</b>{{ 'hecha' if o.fecha_kardex else 'pendiente · no suma al inventario' }}</span></span>
+            {% if g.directo %}<span class="t {{ 'ok' if o.fecha_kardex else 'pend' }}"><i class="bi bi-pc-display"></i><span><b>Entrega (uso directo)</b>{{ ('a ' ~ (o.directo_entregado_a or '-')) if o.fecha_kardex else 'pendiente · no va al inventario' }}</span></span>
+            {% elif g.contable %}<span class="t {{ 'ok' if o.fecha_kardex else 'pend' }}"><i class="bi bi-calculator"></i><span><b>Confirmación contable</b>{{ 'hecha' if o.fecha_kardex else 'pendiente · no suma al inventario' }}</span></span>
             {% else %}<span class="t {{ 'ok' if ie.completo else 'pend' }}"><i class="bi {{ 'bi-box-arrow-in-down' if ie.completo else 'bi-hourglass-split' }}"></i><span><b>Ingreso al inventario</b>{{ ie.hechos }} de {{ ie.total }} ítem(s) completos</span></span>{% endif %}
             {% endif %}
         </div>
@@ -160,7 +163,36 @@
             {% if o.tipo == 'OC' and not o.numero_factura and not (ds|selectattr('tipo', 'equalto', 'FACTURA')|list) %}<span class="small text-muted align-self-center">· la factura aún no se sube (no hace falta para ingresar)</span>{% endif %}
         </div>
     </div>
-    {% if g.contable %}
+    {% if g.directo %}
+    <div class="it" data-nuevo="0" data-buscar="{{ (items.values()|map(attribute='descripcion')|join(' '))|upper }} USO DIRECTO {{ (o.directo_ubicacion or '')|upper }} {{ (o.directo_entregado_a or '')|upper }}">
+        <div>
+            {% for i in items.values() %}
+            <div class="desc">{{ i.item }}. {{ i.descripcion }}</div>
+            <div class="meta mb-1"><span><span class="cant">{{ i.cantidad|cant }}</span> {{ i.um }}</span>
+                {% if i.serie %}<span class="tag vinc" title="N° de serie"><i class="bi bi-upc-scan"></i> {{ i.serie }}</span>{% endif %}
+                {% if i.garantia_hasta %}{{ garantia_chip(i.garantia_hasta) }}{% endif %}</div>
+            {% endfor %}
+            <div class="meta mt-1"><span><i class="bi bi-geo-alt-fill"></i> Va a <b>{{ o.directo_ubicacion or '-' }}</b></span>{% if o.directo_detalle %}<span>· {{ o.directo_detalle }}</span>{% endif %}
+                {% if o.directo_activo_fijo %}<span class="tag" style="background:#ffedd5;color:#9a3412;">Activo fijo</span>{% endif %}</div>
+        </div>
+        {% if o.fecha_kardex %}
+        <div class="hecho">
+            <div><i class="bi bi-pc-display text-success"></i> <b>Entregado a {{ o.directo_entregado_a or '-' }}</b> · {{ o.directo_ubicacion or '' }}</div>
+            <div class="text-muted">{{ o.fecha_kardex.strftime('%d/%m/%Y %H:%M') }} · registró {{ o.kardex_registrado_por.nombre_completo if o.kardex_registrado_por else '' }}{% if o.nota_seguimiento %} · {{ o.nota_seguimiento }}{% endif %}</div>
+            <button type="button" class="btn btn-sm btn-outline-warning mt-1" data-bs-toggle="modal" data-bs-target="#mDirecto{{ o.id }}"><i class="bi bi-pencil"></i> Corregir entrega / serie / garantía</button>
+            {{ modal_entrega_directo(o, directo_ubicaciones, url_for('oc_ingresos_pendientes', vista='hechos')) }}
+        </div>
+        {% else %}
+        <form method="POST" action="{{ url_for('oc_directo_entregar', orden_id=o.id) }}" class="form-ing">
+            <input type="hidden" name="volver" value="{{ url_for('oc_ingresos_pendientes') }}">
+            <div class="ayuda mb-2" style="background:#fff7ed; border-color:#fdba74; color:#7c2d12;"><i class="bi bi-pc-display"></i> <b>Uso directo:</b> es un bien para usar en la empresa.
+                <u>No lo ingreses al inventario</u>: registra a quién se entrega y dónde queda.</div>
+            {{ campos_entrega_directo(o, directo_ubicaciones, 'i') }}
+            <button class="btn btn-sm fw-bold w-100 mt-2 text-white" style="background:#c2410c;"><i class="bi bi-check2-circle"></i> Registrar entrega · no va al inventario</button>
+        </form>
+        {% endif %}
+    </div>
+    {% elif g.contable %}
     <div class="it" data-nuevo="0" data-buscar="{{ (items.values()|map(attribute='descripcion')|join(' '))|upper }} CONTABLE">
         <div>
             {% for i in items.values() %}

@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}Uso directo{% endblock %}
+{% block subtitle %}Bienes comprados para uso de la empresa (no van al inventario){% endblock %}
+{% block content %}
+{% include '_oc_nav.html' %}
+{% from '_oc_directo.html' import estilos_directo, garantia_chip with context %}{{ estilos_directo() }}
+<style>
+    .ud-info { background: #fff7ed; border: 1px solid #fed7aa; color: #7c2d12; border-radius: 12px; padding: 10px 14px; font-size: .8rem; margin-bottom: 12px; }
+    .ud-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 12px; }
+    .ud-kpi { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 10px 12px; text-decoration: none; color: inherit; display: block; }
+    a.ud-kpi:hover { border-color: #fdba74; }
+    .ud-kpi .k { font-size: .64rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: #64748b; }
+    .ud-kpi .v { font-size: 1.35rem; font-weight: 800; font-variant-numeric: tabular-nums; color: #0f172a; line-height: 1.2; }
+    .ud-kpi .s { font-size: .7rem; color: #64748b; }
+    .ud-kpi.warn .v { color: #b45309; } .ud-kpi.mal .v { color: #b91c1c; } .ud-kpi.ok .v { color: #15803d; }
+    .ud-cats { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+    .ud-cat { font-size: .74rem; font-weight: 700; border: 1px solid #fed7aa; background: #fff; color: #9a3412; border-radius: 20px; padding: 3px 10px; text-decoration: none; }
+    .ud-cat.on { background: #c2410c; color: #fff; border-color: #c2410c; }
+    .ud-cat .n { font-weight: 800; opacity: .8; }
+    .ud-filtros label { font-size: .68rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: .03em; }
+    .ud-tabla { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; overflow: hidden; }
+    .ud-tabla th { font-size: .66rem; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; background: #f8fafc; color: #475569; }
+    .ud-tabla td { font-size: .8rem; vertical-align: top; }
+    .ud-tabla .bien { font-weight: 700; color: #0f172a; min-width: 220px; }
+    .ud-tabla .sub { font-size: .7rem; color: #64748b; }
+    .ud-est { display: inline-flex; align-items: center; gap: 4px; font-size: .7rem; font-weight: 700; border-radius: 20px; padding: 1px 8px; white-space: nowrap; border: 1px solid currentColor; }
+    .serie { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .72rem; background: #f1f5f9; border-radius: 5px; padding: 0 5px; overflow-wrap: anywhere; }
+</style>
+
+<div class="ud-info"><i class="bi bi-pc-display"></i> <b>Uso directo</b>: equipos de cómputo, celulares, muebles, herramientas, maquinaria... que la empresa compra para <b>usarlos</b>.
+    No suman al inventario general ni a insumos. Al llegar y estar conformes se registra la <b>entrega</b> (a quién y dónde queda); el N° de serie y la garantía son opcionales.
+    Para comprar uno: <b>Nueva orden → Destino "Uso directo"</b>. Las categorías y ubicaciones se manejan en <b>Configuración</b>.</div>
+
+{% set qs = request.args.to_dict() %}
+<div class="ud-kpis">
+    <div class="ud-kpi"><div class="k">Bienes</div><div class="v">{{ resumen.bienes }}</div>
+        <div class="s">{% for mon, m in resumen.montos.items() %}{{ monedas[mon].simbolo }} {{ '{:,.2f}'.format(m) }}{{ ' · ' if not loop.last }}{% else %}sin compras{% endfor %} <span class="text-muted">(sin IGV)</span></div></div>
+    {% set _ = qs.update({'estado': 'ENTREGADO'}) %}
+    <a class="ud-kpi ok" href="{{ url_for('oc_registro_directo', **qs) }}"><div class="k">Entregados</div><div class="v">{{ resumen.entregados }}</div><div class="s">con responsable y ubicación</div></a>
+    {% set _ = qs.update({'estado': 'POR_ENTREGAR'}) %}
+    <a class="ud-kpi {{ 'warn' if resumen.por_entregar }}" href="{{ url_for('oc_registro_directo', **qs) }}"><div class="k">Órdenes por entregar</div><div class="v">{{ resumen.por_entregar }}</div><div class="s">llegaron y están conformes</div></a>
+    {% set _ = qs.update({'estado': 'EN_CAMINO'}) %}
+    <a class="ud-kpi" href="{{ url_for('oc_registro_directo', **qs) }}"><div class="k">Por llegar</div><div class="v">{{ resumen.en_camino }}</div><div class="s">aprobados, aún no llegan</div></a>
+    {% set _ = qs.update({'estado': f.estado, 'garantia': 'por_vencer'}) %}
+    <a class="ud-kpi {{ 'warn' if resumen.por_vencer }}" href="{{ url_for('oc_registro_directo', **qs) }}"><div class="k">Garantía por vencer</div><div class="v">{{ resumen.por_vencer }}</div><div class="s">en {{ dias_aviso }} días o menos</div></a>
+    {% set _ = qs.update({'garantia': 'vencida'}) %}
+    <a class="ud-kpi {{ 'mal' if resumen.vencidas }}" href="{{ url_for('oc_registro_directo', **qs) }}"><div class="k">Garantía vencida</div><div class="v">{{ resumen.vencidas }}</div><div class="s">ya no cubre</div></a>
+</div>
+
+{% if por_cat %}<div class="ud-cats">
+    {% set qc = request.args.to_dict() %}{% set _ = qc.update({'categoria': ''}) %}
+    <a class="ud-cat {{ 'on' if not f.categoria }}" href="{{ url_for('oc_registro_directo', **qc) }}">Todas</a>
+    {% for cat, d in por_cat %}{% set _ = qc.update({'categoria': '' if cat == f.categoria else cat}) %}
+    <a class="ud-cat {{ 'on' if cat == f.categoria }}" href="{{ url_for('oc_registro_directo', **qc) }}">{{ cat|capitalize }} <span class="n">{{ d.n }}</span></a>{% endfor %}
+</div>{% endif %}
+
+<form method="GET" class="row g-2 align-items-end mb-3 ud-filtros">
+    <div class="col-12 col-md-4"><label>Buscar</label>
+        <div class="input-group input-group-sm"><input name="q" class="form-control" value="{{ f.q }}" placeholder="Bien, N° de serie, a quién se entregó, orden, proveedor...">
+            <button class="btn btn-primary"><i class="bi bi-search"></i></button></div></div>
+    <div class="col-6 col-md-2"><label>Estado</label>
+        <select name="estado" class="form-select form-select-sm" onchange="this.form.submit()"><option value="">Todos</option>
+            {% for k, e in estados.items() %}<option value="{{ k }}" {{ 'selected' if k == f.estado }}>{{ e.txt }}</option>{% endfor %}</select></div>
+    <div class="col-6 col-md-2"><label>Ubicación</label>
+        <select name="ubicacion" class="form-select form-select-sm" onchange="this.form.submit()"><option value="">Todas</option>
+            {% for u in ubicaciones %}<option value="{{ u }}" {{ 'selected' if u == f.ubicacion }}>{{ u }}</option>{% endfor %}</select></div>
+    <div class="col-6 col-md-2"><label>Categoría</label>
+        <select name="categoria" class="form-select form-select-sm" onchange="this.form.submit()"><option value="">Todas</option>
+            {% for c in categorias %}<option value="{{ c }}" {{ 'selected' if c == f.categoria }}>{{ c|capitalize }}</option>{% endfor %}</select></div>
+    <div class="col-6 col-md-2"><label>Garantía</label>
+        <select name="garantia" class="form-select form-select-sm" onchange="this.form.submit()"><option value="">Todas</option>
+            {% for k, t in garantias.items() %}<option value="{{ k }}" {{ 'selected' if k == f.garantia }}>{{ t }}</option>{% endfor %}</select></div>
+    <div class="col-6 col-md-2"><label>Empresa</label>
+        <select name="empresa" class="form-select form-select-sm" onchange="this.form.submit()"><option value="TODAS">Las dos</option>
+            {% for k, e in empresas_oc.items() %}<option value="{{ k }}" {{ 'selected' if k == f.empresa }}>{{ e.corto }}</option>{% endfor %}</select></div>
+    <div class="col-6 col-md-2"><label>Activo fijo</label>
+        <select name="activo" class="form-select form-select-sm" onchange="this.form.submit()"><option value="">Todos</option>
+            <option value="si" {{ 'selected' if f.activo == 'si' }}>Sí</option><option value="no" {{ 'selected' if f.activo == 'no' }}>No</option></select></div>
+    <div class="col-12 col-md-auto ms-md-auto d-flex gap-2">
+        {% if f.q or f.estado or f.ubicacion or f.categoria or f.garantia or f.activo or f.empresa != 'TODAS' %}<a class="btn btn-sm btn-link text-danger" href="{{ url_for('oc_registro_directo') }}"><i class="bi bi-x-circle"></i> Limpiar</a>{% endif %}
+        {% set qx = request.args.to_dict() %}{% set _ = qx.update({'exportar': 'excel'}) %}
+        <a class="btn btn-sm btn-outline-success" href="{{ url_for('oc_registro_directo', **qx) }}"><i class="bi bi-file-earmark-excel"></i> Exportar a Excel</a></div>
+</form>
+
+<div class="ud-tabla table-responsive">
+    <table class="table table-hover mb-0">
+        <thead><tr><th class="ps-3">Bien</th><th>Categoría</th><th>Ubicación · entregado a</th><th>Estado</th><th>N° de serie · garantía</th><th>Orden · proveedor</th><th class="text-end pe-3">Monto</th></tr></thead>
+        <tbody>
+        {% for x in filas %}{% set o = x.o %}{% set it = x.it %}{% set e = estados[x.estado] %}
+        <tr>
+            <td class="ps-3 bien">{{ it.descripcion }}
+                {% if it.detalle %}<div class="sub fst-italic">{{ it.detalle }}</div>{% endif %}
+                <div class="sub">{{ it.cantidad|cant }} {{ it.um }}{% if o.directo_detalle %} · {{ o.directo_detalle }}{% endif %}</div>
+                {% if o.directo_activo_fijo %}<span class="badge text-bg-light border" style="font-size:.6rem;">ACTIVO FIJO</span>{% endif %}</td>
+            <td class="small">{{ (o.directo_categoria or '—')|capitalize }}</td>
+            <td><div class="fw-semibold"><i class="bi bi-geo-alt-fill" style="color:#c2410c;"></i> {{ o.directo_ubicacion or '—' }}</div>
+                {% if o.fecha_kardex %}<div class="sub"><i class="bi bi-person-fill"></i> {{ o.directo_entregado_a or '-' }} · {{ o.fecha_kardex.strftime('%d/%m/%Y') }}</div>{% endif %}</td>
+            <td><span class="ud-est" style="color: {{ e.color }}; background: {{ e.fondo }};"><i class="bi {{ e.icono }}"></i> {{ e.txt }}</span>
+                {% if x.estado == 'POR_ENTREGAR' %}<div class="mt-1"><a class="btn btn-sm py-0 px-2 text-white" style="background:#c2410c; font-size:.7rem;"
+                    href="{{ url_for('oc_detalle', orden_id=o.id) if puede_ver_oc else url_for('oc_ingresos_pendientes') ~ '#oc' ~ o.id }}"><i class="bi bi-check2-circle"></i> Registrar entrega</a></div>{% endif %}</td>
+            <td>{% if it.serie %}<span class="serie">{{ it.serie }}</span>{% else %}<span class="sub">sin serie</span>{% endif %}
+                <div class="mt-1">{% if it.garantia_hasta %}{{ garantia_chip(it.garantia_hasta) }}{% else %}<span class="sub">sin garantía registrada</span>{% endif %}</div></td>
+            <td class="text-nowrap">{% if puede_ver_oc %}<a class="fw-bold" href="{{ url_for('oc_detalle', orden_id=o.id) }}">{{ oc_codigo(o) }}</a>{% else %}<b>{{ oc_codigo(o) }}</b>{% endif %}
+                <span class="badge" style="background: {{ empresas_oc[x.empresa].color }}; font-size:.58rem;">{{ empresas_oc[x.empresa].corto|upper }}</span>
+                <div class="sub text-truncate" style="max-width: 200px;" title="{{ o.razon_social }}">{{ o.razon_social }}</div>
+                <div class="sub">{{ o.fecha.strftime('%d/%m/%Y') }}{% if o.numero_factura %} · Fact. {{ o.numero_factura }}{% endif %}</div></td>
+            <td class="text-end pe-3 text-nowrap fw-semibold">{{ monedas[o.moneda or 'PEN'].simbolo }} {{ '{:,.2f}'.format(it.total or 0) }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="text-center text-muted py-5"><i class="bi bi-pc-display display-6 opacity-25"></i>
+            <p class="mt-2 mb-0">{{ 'No hay bienes con esos filtros.' if (f.q or f.estado or f.ubicacion or f.categoria or f.garantia or f.activo) else 'Aún no hay compras de uso directo aprobadas.' }}</p></td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% if total_filas > filas|length %}<div class="small text-muted mt-2">Se muestran {{ filas|length }} de {{ total_filas }}. Usa los filtros o exporta a Excel para ver todo.</div>{% endif %}
+{% endblock %}

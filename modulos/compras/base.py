@@ -50,7 +50,10 @@ TEMAS_PDF_OC = {'ANCLAJES': {'azul': '#1f4e9c', 'caja': '#7f7f7f', 'cab': '#7f7f
                 'IMPORTBOLTS': {'azul': '#024aa8', 'caja': '#024aa8', 'cab': '#024aa8', 'neto': '#024aa8', 'res': '#d6e4f7', 'resaltado_fondo': '#e6f4dd'}}
 IGV_OC = 0.18
 TIPOS_OC = {'OC': 'Orden de Compra', 'OS': 'Orden de Servicio'}
-DESTINOS_OC = {'GENERAL': 'Inventario de la empresa', 'INSUMOS': 'Insumos internos'}
+DESTINOS_OC = {'GENERAL': 'Inventario de la empresa', 'INSUMOS': 'Insumos internos', 'DIRECTO': 'Uso directo (no va a inventario)'}
+# USO DIRECTO: bienes que se compran para usarse (equipos de cómputo, muebles, herramientas, celulares...). NO van al inventario
+# general ni a insumos: al estar conformes se ENTREGAN (a quién, en qué ubicación, N° de serie y garantía opcionales) y quedan en el
+# "Registro de uso directo" para saber siempre dónde está cada bien.
 DOCS_UNICOS_OC = ('GUIA', 'FACTURA', 'COTIZACION', 'PAGO')     # un solo archivo (se reemplaza)
 MAX_DOCS_OC = {'CERTIFICADO': 3, 'OTRO': 3}                     # hasta 3 archivos
 MONEDAS_OC = {'PEN': {'simbolo': 'S/', 'nombre': 'Soles', 'letras': ('SOL', 'SOLES')},
@@ -76,13 +79,19 @@ VISTAS_OC = {
 VISTAS_OC_ORDEN = ['curso', 'aprobar', 'recibir', 'atrasadas', 'conformes', 'por_pagar', 'pagadas', 'cerradas', 'todas']
 VISTAS_OC_EXTRA = {'atrasadas': 'Atrasadas', 'por_pagar': 'Por pagar', 'pagadas': 'Pagadas'}
 CATALOGOS_OC = {'OC_UM': 'Unidades de medida (U.M.)', 'OC_CONDICION_PAGO': 'Condiciones de pago', 'OC_SERVICIO': 'Tipos de servicio (OS)',
-                'OC_AREA': 'Áreas que solicitan', 'OC_SOLICITANTE': 'Otros solicitantes'}
+                'OC_AREA': 'Áreas que solicitan', 'OC_SOLICITANTE': 'Otros solicitantes',
+                'OC_DIRECTO_CATEGORIA': 'Categorías de uso directo', 'OC_DIRECTO_UBICACION': 'Ubicaciones (uso directo)'}
 _OC_INICIALES = {
     'OC_UM': ['UN', 'PZA', 'PAR', 'JGO', 'CJA-10', 'CJA-25', 'CJA-50', 'CJA-100', 'KG', 'MT', 'ROLLO', 'GLN', 'LT', 'SERV'],
     'OC_CONDICION_PAGO': ['CONTADO', 'CONTRA ENTREGA', 'ADELANTO 50% - SALDO CONTRA ENTREGA', 'CRÉDITO 15 DÍAS',
                           'CRÉDITO 30 DÍAS', 'CRÉDITO 45 DÍAS', 'CRÉDITO 60 DÍAS'],
     'OC_AREA': ['GERENCIA', 'ADMINISTRACIÓN', 'VENTAS', 'LOGÍSTICA', 'ALMACÉN', 'PRODUCCIÓN'],
     'OC_SOLICITANTE': [],
+    'OC_DIRECTO_CATEGORIA': ['EQUIPOS DE CÓMPUTO Y TECNOLOGÍA', 'COMUNICACIONES Y TELEFONÍA', 'MOBILIARIO Y ENSERES DE OFICINA',
+                             'HERRAMIENTAS Y EQUIPOS', 'MAQUINARIA', 'VEHÍCULOS Y ACCESORIOS', 'SEGURIDAD Y VIGILANCIA',
+                             'INSTALACIONES E INFRAESTRUCTURA', 'OTROS BIENES'],
+    'OC_DIRECTO_UBICACION': ['OFICINA · GERENCIA', 'OFICINA · ADMINISTRACIÓN', 'OFICINA · VENTAS', 'OFICINA · LOGÍSTICA',
+                             'ALMACÉN', 'PLANTA / TALLER', 'VEHÍCULOS / FLOTA'],
     'OC_SERVICIO': ['CORTE', 'ROSCADO', 'DOBLADO', 'GALVANIZADO', 'ZINCADO / PAVONADO', 'MAQUINADO / TORNEADO', 'SOLDADURA', 'PINTURA',
                     'TRATAMIENTO TÉRMICO', 'TRANSPORTE / FLETE', 'MANTENIMIENTO', 'OTRO SERVICIO'],
 }
@@ -257,6 +266,10 @@ def _asegurar_oc():
     _agregar_columnas_si_faltan('orden_compra_item', [('cantidad_cancelada', 'FLOAT DEFAULT 0'), ('kgs_mpcs', 'FLOAT'), ('precio_mil', 'FLOAT'),
                                                       ('detalle', 'VARCHAR(500)'), ('piezas', 'FLOAT'), ('precio_con_igv', 'FLOAT')])
     _agregar_columnas_si_faltan('orden_compra', [('es_contable', 'BOOLEAN DEFAULT FALSE'), ('contable_nota', 'VARCHAR(300)')])
+    _agregar_columnas_si_faltan('orden_compra', [('directo_categoria', 'VARCHAR(100)'), ('directo_ubicacion', 'VARCHAR(100)'),
+                                                 ('directo_detalle', 'VARCHAR(200)'), ('directo_activo_fijo', 'BOOLEAN DEFAULT FALSE'),
+                                                 ('directo_entregado_a', 'VARCHAR(120)')])
+    _agregar_columnas_si_faltan('orden_compra_item', [('serie', 'VARCHAR(300)'), ('garantia_hasta', 'DATE')])
     _agregar_columnas_si_faltan('orden_compra', [('es_importacion', 'BOOLEAN DEFAULT FALSE'), ('condiciones_comerciales', 'TEXT'),
                                                  ('pagos_importacion', 'TEXT'), ('saldo_cerrado_motivo', 'VARCHAR(300)')])
     _agregar_columnas_si_faltan('requerimiento_item', [('descartado', 'BOOLEAN DEFAULT FALSE'), ('descartado_por_id', 'INTEGER'),
@@ -360,6 +373,14 @@ def _asegurar_oc():
             db.session.commit()
         except IntegrityError:
             db.session.rollback()
+    try:      # catálogos de USO DIRECTO: se siembran solos la primera vez (están vacíos); luego se manejan en Configuración
+        for tipo in ('OC_DIRECTO_CATEGORIA', 'OC_DIRECTO_UBICACION'):
+            if not CatalogoValor.query.filter_by(tipo=tipo).first():
+                for v in _OC_INICIALES[tipo]:
+                    db.session.add(CatalogoValor(tipo=tipo, valor=v, activo=True, es_predeterminado=False))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
     try:      # el motivo "TEMA CONTABLE" siempre existe y está activo (es del sistema)
         mc = next((m for m in OCMotivoCompra.query.all() if (m.nombre or '').upper() == MOTIVO_CONTABLE), None)
         if not mc:
@@ -595,6 +616,8 @@ app.add_template_global(_oc_rechazo_txt, 'oc_rechazo_txt')
 def _oc_destino_txt(orden):
     if orden.destino == 'INSUMOS':
         return 'Insumos internos'
+    if orden.destino == 'DIRECTO':
+        return 'Uso directo' + (f" · {orden.directo_categoria.capitalize()}" if orden.directo_categoria else '')
     corto = EMPRESAS_OC.get(orden.empresa or 'ANCLAJES', EMPRESAS_OC['ANCLAJES'])['corto']
     return f"Servicio · {corto}" if orden.tipo == 'OS' else f"Inventario {corto}"
 
@@ -769,6 +792,8 @@ def _oc_bloqueo_reedicion(orden):
         return 'ya se ingresó a Insumos internos'
     if orden.tipo == 'OS' and orden.fecha_kardex:
         return 'Almacén ya marcó el seguimiento del servicio'
+    if orden.destino == 'DIRECTO' and orden.fecha_kardex:
+        return 'ya se registró la entrega del bien (uso directo): Gerencia debe deshacer la entrega primero'
     if any(i.fecha_ingreso for i in orden.items) or any(ei.fecha_ingreso for e in _oc_entregas(orden) for ei in e.items):
         return 'Almacén ya ingresó productos de esta orden al Kardex'
     return None
@@ -814,6 +839,10 @@ def _oc_permisos(orden):
         # tema contable: al estar conforme no se ingresa, solo se CONFIRMA (no suma al inventario)
         'confirmar_contable': rol in ROLES_OC_CONTABLE and bool(orden.es_contable) and e == 'CONFORME' and not orden.fecha_kardex,
         'deshacer_contable': rol == 'admin' and bool(orden.es_contable) and bool(orden.fecha_kardex),
+        # uso directo: al estar conforme se ENTREGA (a quién, dónde, serie y garantía); luego se pueden corregir esos datos
+        'entregar_directo': rol in ROLES_OC_CONTABLE and orden.destino == 'DIRECTO' and not orden.es_contable and e == 'CONFORME' and not orden.fecha_kardex,
+        'editar_directo': rol in ROLES_OC_CONTABLE and orden.destino == 'DIRECTO' and not orden.es_contable and bool(orden.fecha_kardex),
+        'deshacer_directo': rol == 'admin' and orden.destino == 'DIRECTO' and bool(orden.fecha_kardex),
         'duplicar': edita and e != 'BORRADOR',
         'pagar': rol in ROLES_OC_PAGAN and e in ('APROBADA', 'RECIBIDA', 'CONFORME') and (orden.estado_pago or 'PENDIENTE') != 'PAGADO',
         'deshacer_pago': rol == 'admin' and (orden.estado_pago or 'PENDIENTE') == 'PAGADO',
@@ -872,12 +901,26 @@ def _leer_orden_form(f, orden=None):
     datos['fecha'] = fecha
     destino = (f.get('destino') or '').upper()
     if tipo == 'OS':
-        if destino == 'INSUMOS':
-            errores.append('Las órdenes de SERVICIO no van a Insumos internos.')
+        if destino in ('INSUMOS', 'DIRECTO'):
+            errores.append('Las órdenes de SERVICIO no van a Insumos internos ni a Uso directo.')
         destino = 'GENERAL'
     if destino not in DESTINOS_OC:
-        errores.append('Elige el destino: Inventario General o Insumos internos.')
+        errores.append('Elige el destino: Inventario General, Insumos internos o Uso directo.')
     datos['destino'] = destino
+    # USO DIRECTO: categoría y ubicación de destino (catálogos de Configuración); detalle y activo fijo son opcionales
+    datos.update(directo_categoria=None, directo_ubicacion=None, directo_detalle=None, directo_activo_fijo=False)
+    if destino == 'DIRECTO':
+        cat = ' '.join((f.get('directo_categoria') or '').split()).upper()[:100]
+        ubi = ' '.join((f.get('directo_ubicacion') or '').split()).upper()[:100]
+        cats = {(v.valor or '').upper() for v in _oc_catalogo('OC_DIRECTO_CATEGORIA', incluir_inactivos=True)}
+        ubis = {(v.valor or '').upper() for v in _oc_catalogo('OC_DIRECTO_UBICACION', incluir_inactivos=True)}
+        if cat not in cats and not (orden and cat and cat == (orden.directo_categoria or '').upper()):
+            errores.append('Uso directo: elige la CATEGORÍA del bien (equipos de cómputo, mobiliario...).')
+        if ubi not in ubis and not (orden and ubi and ubi == (orden.directo_ubicacion or '').upper()):
+            errores.append('Uso directo: elige la UBICACIÓN a donde va (oficina, almacén...).')
+        datos['directo_categoria'], datos['directo_ubicacion'] = cat or None, ubi or None
+        datos['directo_detalle'] = ' '.join((f.get('directo_detalle') or '').split())[:200] or None
+        datos['directo_activo_fijo'] = f.get('directo_activo_fijo') == '1'
     ruc = re.sub(r'\D', '', f.get('ruc') or '')
     if es_imp:
         # proveedor del exterior: no tiene RUC peruano; se usa su código de registro / tax ID (solo letras y números)
@@ -995,6 +1038,8 @@ def _leer_orden_form(f, orden=None):
     datos['es_contable'] = motivo == MOTIVO_CONTABLE
     if datos['es_contable'] and tipo != 'OC':
         errores.append('"Tema contable" es solo para Órdenes de COMPRA (no para servicios).')
+    if datos['es_contable'] and destino == 'DIRECTO':
+        errores.append('"Tema contable" no se combina con Uso directo: un bien de uso directo sí se entrega y se registra.')
     datos['contable_nota'] = datos['motivo_detalle'] if datos['es_contable'] else None
     # Detracción SUNAT (sugerida en servicios: 12%; se puede cambiar o quitar)
     datos['detraccion_pct'] = None
@@ -1076,6 +1121,9 @@ def _leer_orden_form(f, orden=None):
         codigo = _limpio(codigo, 60) or None
         if origen == 'INSUMO' and not ins_id:
             origen, codigo = None, None
+        if tipo == 'OC' and datos.get('destino') == 'DIRECTO':
+            # uso directo: se escribe a mano (no es un producto del inventario ni un insumo); no se enlaza a nada
+            origen, codigo, ins_id, familia, calidad = None, None, None, '', ''
         # Compras: SOLO productos que ya existen (inventario de la empresa o maestro de insumos). Nada escrito a mano,
         # para que al llegar el ingreso quede enlazado. Se respetan los ítems antiguos que ya estaban así en la orden.
         if tipo == 'OC' and datos.get('destino') == 'GENERAL' and codigo and origen in ('ANCLAJES', 'IMPORTBOLTS') and origen != empresa:
@@ -1241,10 +1289,12 @@ def _aplicar_datos_orden(orden, datos, items, prov, contacto=None):
                   'condicion_pago', 'entrega_modo', 'lugar_recojo', 'entrega_tipo', 'entrega_dias', 'fecha_entrega', 'observaciones',
                   'subtotal', 'igv', 'total', 'solicitante_user_id', 'solicitante_nombre', 'area_solicitante', 'motivo_compra', 'motivo_detalle',
                   'cliente_ruc', 'cliente_razon', 'requiere_certificado', 'detraccion_pct',
-                  'es_importacion', 'condiciones_comerciales', 'pagos_importacion', 'precios_con_igv', 'contable_nota'):
+                  'es_importacion', 'condiciones_comerciales', 'pagos_importacion', 'precios_con_igv', 'contable_nota',
+                  'directo_categoria', 'directo_ubicacion', 'directo_detalle'):
         setattr(orden, campo, datos[campo] if datos[campo] != '' else None)
     orden.es_importacion = bool(datos.get('es_importacion'))
     orden.es_contable = bool(datos.get('es_contable'))
+    orden.directo_activo_fijo = bool(datos.get('directo_activo_fijo'))
     orden.precios_con_igv = bool(datos.get('precios_con_igv'))
     orden.razon_social = datos['razon_social']
     orden.contacto, orden.telefono = datos['contacto'], datos['telefono']
@@ -1297,7 +1347,8 @@ def _resumen_cambios_orden(antes, orden):
     for campo, etq in (('razon_social', 'Proveedor'), ('total', 'Total'), ('moneda', 'Moneda'), ('condicion_pago', 'Pago'),
                        ('destino', 'Destino'), ('entrega_modo', 'Entrega'), ('solicitante_nombre', 'Solicitó'), ('motivo_compra', 'Motivo'),
                        ('fecha_entrega', 'Fecha de entrega'), ('entrega_dias', 'Días de entrega'), ('lugar_recojo', 'Recojo'),
-                       ('es_contable', 'Tema contable')):
+                       ('es_contable', 'Tema contable'), ('directo_categoria', 'Categoría (uso directo)'),
+                       ('directo_ubicacion', 'Ubicación (uso directo)')):
         if campo not in antes:
             continue
         a, d = antes.get(campo), getattr(orden, campo)

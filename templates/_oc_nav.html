@@ -16,6 +16,7 @@
     .oc-num { font-weight: 800; font-variant-numeric: tabular-nums; color: #0f172a; text-decoration: none; }
     .oc-dest { font-size: .7rem; font-weight: 700; border-radius: 6px; padding: 1px 7px; white-space: nowrap; }
     .oc-dest.GENERAL { background: #e0f2fe; color: #075985; } .oc-dest.INSUMOS { background: #fef3c7; color: #92400e; }
+    .oc-dest.DIRECTO { background: #ffedd5; color: #9a3412; }
     .num { font-variant-numeric: tabular-nums; }
     .aprob { display: inline-flex; align-items: center; gap: 5px; font-size: .72rem; font-weight: 700; border-radius: 7px; padding: 2px 8px; white-space: nowrap; }
     .aprob.si { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
@@ -37,6 +38,10 @@
     {% if session.get('role') in ['admin', 'logistica', 'almacen'] %}
     <a href="{{ url_for('oc_ingresos_pendientes') }}" class="{{ 'activa' if seccion == 'ingresos' }}"><i class="bi bi-box-arrow-in-down"></i> Ingresos pendientes
         {% if oc_por_ingresar %}<span class="cnt">{{ oc_por_ingresar }}</span>{% endif %}</a>
+    {% endif %}
+    {% if session.get('role') in ['admin', 'logistica', 'administracion', 'almacen'] %}
+    <a href="{{ url_for('oc_registro_directo') }}" class="{{ 'activa' if seccion == 'directo' }}" title="Bienes comprados para uso de la empresa (no van al inventario): dónde están, quién los tiene, serie y garantía"><i class="bi bi-pc-display"></i> Uso directo
+        {% if oc_directo_pend %}<span class="cnt" style="background:#ea580c;" title="Llegaron y falta registrar la entrega">{{ oc_directo_pend }}</span>{% endif %}</a>
     {% endif %}
     {% if session.get('role') in ['admin', 'logistica', 'almacen', 'administracion', 'almacen_visor'] %}
     <a href="{{ url_for('oc_req_lista') }}" class="{{ 'activa' if seccion == 'req' }}"><i class="bi bi-clipboard-plus"></i> Requerimientos

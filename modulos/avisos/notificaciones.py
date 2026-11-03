@@ -133,6 +133,12 @@ def _notif_por_ingresar(orden, entrega=None):
             return _notif_crear('ING_PENDIENTE', f"Tema contable por confirmar · {_oc_codigo(orden)} · {corto}",
                                 f"{orden.razon_social} · NO suma al inventario: solo confirmar",
                                 url_for('oc_ingresos_pendientes', empresa=emp), orden=orden, excluir=session.get('user_id'))
+        if orden.destino == 'DIRECTO':      # uso directo: no se ingresa; se registra a quién y dónde se entrega
+            if orden.estado != 'CONFORME' or orden.fecha_kardex:
+                return 0
+            return _notif_crear('ING_PENDIENTE', f"Bien de uso directo por entregar · {_oc_codigo(orden)} · {corto}",
+                                f"{orden.razon_social} · {(orden.directo_categoria or '').capitalize()} → {orden.directo_ubicacion or '-'} · NO va al inventario",
+                                url_for('oc_ingresos_pendientes', empresa=emp), orden=orden, excluir=session.get('user_id'))
         if orden.destino == 'INSUMOS':
             if orden.estado != 'CONFORME' or orden.insumo_ingreso_id:
                 return 0
@@ -185,6 +191,9 @@ def _notif_por_ingresar_json(ahora, cfg):
                 if o.destino == 'GENERAL':
                     fila(o, 'SERVICIO', 'servicio terminado · registrar seguimiento', o.fecha_conforme,
                          url_for('oc_ingresos_pendientes', empresa=o.empresa or 'ANCLAJES'))
+            for o in _directos_por_entregar():
+                fila(o, 'DIRECTO', f"uso directo · {(o.directo_categoria or '').capitalize()} → {o.directo_ubicacion or '-'}: registrar entrega",
+                     o.fecha_conforme, url_for('oc_ingresos_pendientes', empresa=o.empresa or 'ANCLAJES'))
             for o in _contables_por_confirmar():
                 fila(o, 'CONTABLE', 'tema contable · NO suma al inventario: solo confirmar', o.fecha_conforme,
                      url_for('oc_ingresos_pendientes', empresa=o.empresa or 'ANCLAJES'))
@@ -236,7 +245,7 @@ def _notif_por_aprobar_json(ahora, puede_aprobar):
                        'empresa_txt': emp.get('corto', ''), 'color': emp.get('color', '#0B3D91'), 'proveedor': o.razon_social or '',
                        'monto': _notif_monto(o), 'solicitante': o.solicitante_nombre or '', 'motivo': (o.motivo_compra or '').capitalize(),
                        'revision': o.revision or 0, 'hace': _hace_txt(desde, ahora), 'horas': horas, 'atrasada': horas >= 24,
-                       'contable': bool(o.es_contable),
+                       'contable': bool(o.es_contable), 'directo': o.destino == 'DIRECTO',
                        'n_items': len(o.items), 'url': url_for('oc_detalle', orden_id=o.id), 'aprobar': puede_aprobar,
                        'resumen': url_for('notif_orden', orden_id=o.id)})
     return salida
@@ -344,7 +353,9 @@ def notif_orden(orden_id):
     return {'id': o.id, 'codigo': _oc_codigo(o), 'tipo_txt': TIPOS_OC.get(o.tipo, ''), 'empresa_txt': emp.get('nombre', ''), 'color': emp.get('color', '#0B3D91'),
             'estado': o.estado, 'estado_txt': ESTADOS_OC.get(o.estado, {}).get('txt', o.estado), 'pendiente': o.estado == 'ENVIADA',
             'proveedor': o.razon_social or '', 'ruc': o.ruc or '', 'contacto': ' · '.join(x for x in (o.contacto, o.telefono) if x),
-            'destino': DESTINOS_OC.get(o.destino, ''), 'importacion': bool(o.es_importacion),
+            'destino': (_oc_destino_txt(o) + (f" → {o.directo_ubicacion}" if o.directo_ubicacion else '') + (' · activo fijo' if o.directo_activo_fijo else '')
+                        if o.destino == 'DIRECTO' else DESTINOS_OC.get(o.destino, '')),
+            'directo': o.destino == 'DIRECTO', 'directo_detalle': o.directo_detalle or '', 'importacion': bool(o.es_importacion),
             'solicitante': o.solicitante_nombre or '', 'area': (o.area_solicitante or '').title(), 'motivo': (o.motivo_compra or '').capitalize(),
             'motivo_detalle': o.motivo_detalle or '', 'cliente': o.cliente_razon or '', 'cotizacion': o.cotizacion or '',
             'condicion': o.condicion_pago or '', 'entrega': _oc_entrega_txt(o), 'observaciones': o.observaciones or '',

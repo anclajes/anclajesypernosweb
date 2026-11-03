@@ -1,0 +1,111 @@
+{# USO DIRECTO: bienes que se compran para usarlos en la empresa (PC, celular, mueble, herramienta...). NO van al inventario ni a insumos:
+   al estar conforme se registra la ENTREGA (a quién, dónde; N° de serie y garantía opcionales).
+   Uso: {% from '_oc_directo.html' import chip_directo, estilos_directo, aviso_directo, modal_entrega_directo with context %} #}
+{% macro chip_directo(o, chico=False) %}{% if o.destino == 'DIRECTO' %}<span class="oc-directo-chip {{ 'chico' if chico }}" title="USO DIRECTO: no va al inventario{{ (' · ' ~ o.directo_categoria|capitalize) if o.directo_categoria else '' }}{{ (' → ' ~ o.directo_ubicacion) if o.directo_ubicacion else '' }}"><i class="bi bi-pc-display"></i> USO DIRECTO</span>{% endif %}{% endmacro %}
+
+{% macro estilos_directo() %}
+<style>
+    .oc-directo-chip { display: inline-flex; align-items: center; gap: 3px; font-size: .62rem; font-weight: 800; letter-spacing: .02em; border-radius: 6px; padding: 1px 6px;
+                       background: #ffedd5; color: #9a3412; border: 1px solid #fdba74; white-space: nowrap; vertical-align: middle; }
+    .oc-directo-chip.chico { font-size: .56rem; padding: 0 5px; }
+    .oc-directo-aviso { background: #fff7ed; border: 1.5px solid #fdba74; color: #7c2d12; border-radius: 12px; padding: 10px 14px; }
+    .oc-directo-aviso b { color: #431407; }
+    .oc-directo-aviso .dd { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 6px 14px; margin-top: 6px; }
+    .oc-directo-aviso .dd .l { font-size: .62rem; text-transform: uppercase; letter-spacing: .04em; color: #9a3412; font-weight: 700; }
+    .oc-directo-aviso .dd .v { font-weight: 700; color: #1c1917; font-size: .82rem; }
+    .oc-directo-aviso table { font-size: .76rem; background: #fff; border-radius: 8px; overflow: hidden; }
+    .gar { display: inline-flex; align-items: center; gap: 3px; font-size: .66rem; font-weight: 700; border-radius: 6px; padding: 0 6px; white-space: nowrap; }
+    .gar.vigente { background: #dcfce7; color: #166534; } .gar.por_vencer { background: #fef3c7; color: #92400e; }
+    .gar.vencida { background: #fee2e2; color: #991b1b; } .gar.sin { background: #f1f5f9; color: #64748b; }
+    .ent-item { border: 1px solid #fed7aa; border-radius: 10px; padding: 8px 10px; margin-bottom: 8px; background: #fffbf5; }
+    .ent-item .d { font-weight: 700; font-size: .8rem; }
+    .gar-rap { font-size: .66rem; padding: 0 6px; }
+</style>
+<script>
+if (!window.garantiaMas) {
+    window.garantiaMas = function (id, meses) {
+        const d = new Date();
+        d.setMonth(d.getMonth() + meses);
+        const p = n => String(n).padStart(2, '0');
+        document.getElementById(id).value = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+    };
+}
+</script>
+{% endmacro %}
+
+{% macro garantia_chip(fecha) %}{% set g = garantia_estado(fecha) %}{% if g[0] != 'sin' %}<span class="gar {{ g[0] }}" title="Garantía hasta {{ fecha.strftime('%d/%m/%Y') }}"><i class="bi bi-shield-check"></i>
+    {% if g[0] == 'vencida' %}vencida {{ fecha.strftime('%d/%m/%y') }}{% elif g[0] == 'por_vencer' %}vence en {{ g[1] }} d{% else %}hasta {{ fecha.strftime('%d/%m/%y') }}{% endif %}</span>{% endif %}{% endmacro %}
+
+{% macro aviso_directo(o, p=None) %}{% if o.destino == 'DIRECTO' %}
+<div class="oc-directo-aviso small mb-3"><i class="bi bi-pc-display"></i> <b>USO DIRECTO · NO VA AL INVENTARIO NI A INSUMOS.</b>
+    Es un bien para usar en la empresa. Sigue el flujo normal (aprobación, llegada, conformidad, pago) y, al estar conforme, <b>se registra la entrega</b>: a quién y dónde queda.
+    <div class="dd">
+        <div><div class="l">Categoría</div><div class="v">{{ (o.directo_categoria or '-')|capitalize }}</div></div>
+        <div><div class="l">Ubicación / a dónde va</div><div class="v"><i class="bi bi-geo-alt-fill"></i> {{ o.directo_ubicacion or '-' }}</div></div>
+        {% if o.directo_detalle %}<div><div class="l">Para qué / detalle</div><div class="v">{{ o.directo_detalle }}</div></div>{% endif %}
+        <div><div class="l">Activo fijo</div><div class="v">{{ 'Sí (contabilidad lo registra como activo)' if o.directo_activo_fijo else 'No' }}</div></div>
+        <div><div class="l">Entrega</div><div class="v">{% if o.fecha_kardex %}<i class="bi bi-check-circle-fill text-success"></i> Entregado a {{ o.directo_entregado_a or '-' }}
+            <div class="fw-normal text-muted" style="font-size:.7rem;">{{ o.fecha_kardex.strftime('%d/%m/%Y %H:%M') }} · registró {{ o.kardex_registrado_por.nombre_completo if o.kardex_registrado_por else '-' }}</div>
+            {% elif o.estado == 'CONFORME' %}<i class="bi bi-hourglass-split"></i> Llegó · <b>por entregar</b>{% else %}<i class="bi bi-truck"></i> Aún no llega{% endif %}</div></div>
+    </div>
+    {% if o.fecha_kardex and o.nota_seguimiento %}<div class="mt-1"><i class="bi bi-chat-left-text"></i> {{ o.nota_seguimiento }}</div>{% endif %}
+    {% set con_datos = o.items|selectattr('serie')|list + o.items|selectattr('garantia_hasta')|list %}
+    {% if con_datos %}
+    <div class="table-responsive mt-2"><table class="table table-sm mb-0 align-middle">
+        <thead><tr><th>Ítem</th><th>Bien</th><th>N° de serie</th><th>Garantía</th></tr></thead><tbody>
+        {% for it in o.items %}<tr><td>{{ it.item }}</td><td>{{ it.descripcion }}</td><td class="fw-semibold">{{ it.serie or '—' }}</td>
+            <td>{% if it.garantia_hasta %}{{ garantia_chip(it.garantia_hasta) }}{% else %}<span class="text-muted">—</span>{% endif %}</td></tr>{% endfor %}
+        </tbody></table></div>
+    {% endif %}
+</div>{% endif %}{% endmacro %}
+
+{# Modal para registrar (o corregir) la entrega. id del modal: mDirecto{{ o.id }} #}
+{% macro modal_entrega_directo(o, ubicaciones, volver='') %}
+<div class="modal fade" id="mDirecto{{ o.id }}" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg"><div class="modal-content border-0 shadow">
+    <div class="modal-header py-2 text-white" style="background:#c2410c;"><h6 class="modal-title fw-bold"><i class="bi bi-pc-display"></i>
+        {{ 'Corregir la entrega' if o.fecha_kardex else 'Registrar la entrega' }} · {{ oc_codigo(o) }}</h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+    <form method="POST" action="{{ url_for('oc_directo_entregar', orden_id=o.id) }}" style="display:flex; flex-direction:column; min-height:0; max-height:100%; overflow:hidden;">
+        <input type="hidden" name="volver" value="{{ volver or request.full_path }}">
+        <div class="modal-body" style="overflow-y:auto;">
+            <div class="alert alert-light border small py-2"><i class="bi bi-info-circle text-primary"></i> Es <b>uso directo</b>: no se suma a ningún inventario. Registra <b>a quién</b> se entrega y <b>dónde queda</b>.
+                El N° de serie y la garantía son <b>opcionales</b> (útiles en equipos: PC, celulares, impresoras, herramientas eléctricas...).</div>
+            {{ campos_entrega_directo(o, ubicaciones, 'm') }}
+        </div>
+        <div class="modal-footer py-2"><button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancelar</button>
+            <button class="btn text-white" style="background:#c2410c;"><i class="bi bi-check2-circle"></i> {{ 'Guardar cambios' if o.fecha_kardex else 'Registrar entrega' }}</button></div>
+    </form>
+</div></div></div>
+{% endmacro %}
+
+{# Campos del formulario de entrega (modal del detalle y tarjeta de Ingresos pendientes) #}
+{% macro campos_entrega_directo(o, ubicaciones, pref='') %}
+<div class="row g-2">
+    <div class="col-12 col-md-6"><label class="small fw-bold">Entregado a *</label>
+        <input name="entregado_a" class="form-control text-uppercase" required minlength="3" maxlength="120" value="{{ o.directo_entregado_a or '' }}"
+               placeholder="Ej: JUAN PÉREZ · CONTABILIDAD"></div>
+    <div class="col-12 col-md-6"><label class="small fw-bold">Ubicación donde queda *</label>
+        <select name="ubicacion" class="form-select" required>
+            {% set lista_ubi = ubicaciones if (o.directo_ubicacion in ubicaciones or not o.directo_ubicacion) else ubicaciones + [o.directo_ubicacion] %}
+            {% for u in lista_ubi %}<option value="{{ u }}" {{ 'selected' if u == o.directo_ubicacion }}>{{ u }}</option>{% endfor %}</select></div>
+    <div class="col-12"><label class="small fw-bold">Nota (opcional)</label>
+        <input name="nota" class="form-control" maxlength="300" value="{{ o.nota_seguimiento or '' }}" placeholder="Ej: armado e instalado en el escritorio de contabilidad"></div>
+</div>
+<div class="small fw-bold mt-3 mb-1"><i class="bi bi-upc-scan"></i> N° de serie y garantía por ítem <span class="fw-normal text-muted">(opcional)</span></div>
+{% for it in o.items %}
+<div class="ent-item">
+    <div class="d">{{ it.item }}. {{ it.descripcion }} <span class="text-muted fw-normal">· {{ it.cantidad|cant }} {{ it.um }}</span></div>
+    <div class="row g-2 mt-1">
+        <div class="col-12 col-md-7"><input name="serie_{{ it.id }}" class="form-control form-control-sm text-uppercase" maxlength="300" value="{{ it.serie or '' }}"
+               placeholder="N° de serie{{ ' (si son varios, sepáralos con coma)' if (it.cantidad or 0) > 1 }}"></div>
+        <div class="col-12 col-md-5"><div class="input-group input-group-sm">
+            <span class="input-group-text"><i class="bi bi-shield-check"></i></span>
+            <input type="date" name="garantia_{{ it.id }}" id="gar{{ pref }}{{ it.id }}" class="form-control" value="{{ it.garantia_hasta.isoformat() if it.garantia_hasta else '' }}" title="Garantía vigente hasta"></div>
+            <div class="d-flex flex-wrap gap-1 mt-1">{% for m, t in [(6, '6 meses'), (12, '1 año'), (24, '2 años'), (36, '3 años')] %}
+                <button type="button" class="btn btn-outline-secondary gar-rap" onclick="garantiaMas('gar{{ pref }}{{ it.id }}', {{ m }})">+{{ t }}</button>{% endfor %}
+                <button type="button" class="btn btn-outline-secondary gar-rap" onclick="document.getElementById('gar{{ pref }}{{ it.id }}').value=''">Sin garantía</button></div></div>
+    </div>
+</div>
+{% endfor %}
+<div class="form-text"><i class="bi bi-lightbulb"></i> Los botones "+1 año"... calculan la garantía desde hoy. Si la factura dice otra fecha, escríbela.</div>
+{% endmacro %}

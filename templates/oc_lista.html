@@ -5,7 +5,8 @@
 {% include '_oc_nav.html' %}
 {% from '_oc_docs_menu.html' import menu_docs_oc, estilos_docs_oc with context %}
 {% from '_oc_contable.html' import chip_contable, estilos_contable with context %}
-{{ estilos_docs_oc() }}{{ estilos_contable() }}
+{% from '_oc_directo.html' import estilos_directo with context %}
+{{ estilos_docs_oc() }}{{ estilos_contable() }}{{ estilos_directo() }}
 <style>
     .empresas { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
     .empresas a { display: inline-flex; align-items: center; gap: 8px; border: 2px solid #e2e8f0; background: #fff; border-radius: 12px; padding: 6px 12px; text-decoration: none; color: #334155; font-weight: 800; font-size: .84rem; }
@@ -106,6 +107,8 @@
             href="{{ url_for('oc_lista', vista='todas' if 'todas' in vistas_orden else vista, contable='' if contable_f == 'si' else 'si') }}" title="Órdenes de tema contable (no suman al inventario)">
             <i class="bi bi-calculator"></i> Contables <span class="badge {{ 'bg-light text-dark' if contable_f == 'si' else 'bg-secondary' }}">{{ n_contables }}</span>
             {% if contables_por_confirmar %}<span class="badge bg-warning text-dark" title="Conformes, por confirmar">{{ contables_por_confirmar }} por confirmar</span>{% endif %}</a>{% endif %}
+        <a class="btn btn-sm btn-outline-secondary" style="color:#9a3412;border-color:#fdba74;" href="{{ url_for('oc_registro_directo') }}" title="Bienes de uso directo (no van al inventario): dónde están, quién los tiene, serie y garantía">
+            <i class="bi bi-pc-display"></i> Uso directo{% if directos_por_entregar %} <span class="badge bg-warning text-dark" title="Conformes, falta registrar la entrega">{{ directos_por_entregar }} por entregar</span>{% endif %}</a>
         {% set args_x = request.args.to_dict() %}{% set _ = args_x.update({'vista': vista, 'exportar': 'excel'}) %}
         <a class="btn btn-sm btn-outline-success ms-auto" href="{{ url_for('oc_lista', **args_x) }}" title="Descarga a Excel lo que estás viendo (con los filtros aplicados), con una hoja de ítems"><i class="bi bi-file-earmark-excel"></i> Exportar a Excel</a>
         <a class="btn btn-sm btn-outline-primary" href="{{ url_for('oc_reportes') }}"><i class="bi bi-bar-chart-line"></i> Reportes</a>
@@ -175,6 +178,7 @@
     {% elif o.estado == 'ANULADA' %}<div class="sub mt-1 clamp2" title="{{ oc_anulacion_txt(o) }}">{{ oc_anulacion_txt(o) }}</div>
     {% elif o.estado == 'CONFORME' %}
         {% if o.es_contable %}<div class="sub mt-1 fw-bold" style="color:#5b21b6;"><i class="bi bi-calculator"></i> {{ 'Contable confirmado ✓' if o.fecha_kardex else 'Contable: por confirmar' }}</div>
+        {% elif o.destino == 'DIRECTO' %}<div class="sub mt-1 fw-bold" style="color:#9a3412;"><i class="bi bi-pc-display"></i> {{ ('Entregado ✓ · ' ~ (o.directo_entregado_a or '')) if o.fecha_kardex else 'Uso directo: por entregar' }}</div>
         {% elif o.destino == 'INSUMOS' %}<div class="sub mt-1">{{ 'En Insumos ✓' if o.insumo_ingreso_id else 'Pendiente en Insumos' }}</div>
         {% else %}{% set ie = oc_ingreso_estado(o) %}
             {% if ie.completo %}<div class="sub mt-1 text-success fw-bold"><i class="bi bi-check2-all"></i> Ingresado</div>{% if ie.ultimo %}<div class="sub">{{ ie.ultimo.ingresado_por.nombre_completo if ie.ultimo.ingresado_por else '' }} · {{ ie.ultimo.fecha_ingreso.strftime('%d/%m %H:%M') }}</div>{% endif %}
@@ -230,6 +234,8 @@
         {% else %}<span class="aprob pend"><i class="bi bi-tools"></i> Falta seguimiento</span><div class="sub">Almacén lo marca</div>{% endif %}
     {% elif o.es_contable %}{% if o.fecha_kardex %}<span class="aprob si"><i class="bi bi-calculator"></i> Contable confirmado</span><div class="sub">{{ o.kardex_registrado_por.nombre_completo if o.kardex_registrado_por else '' }} · {{ o.fecha_kardex.strftime('%d/%m %H:%M') }} · no suma</div>
         {% else %}<span class="aprob pend"><i class="bi bi-calculator"></i> Contable: por confirmar</span><div class="sub">no suma al inventario</div>{% endif %}
+    {% elif o.destino == 'DIRECTO' %}{% if o.fecha_kardex %}<span class="aprob si"><i class="bi bi-pc-display"></i> Entregado</span><div class="sub">a {{ o.directo_entregado_a or '-' }} · {{ o.fecha_kardex.strftime('%d/%m %H:%M') }}</div>
+        {% else %}<span class="aprob pend"><i class="bi bi-pc-display"></i> Por entregar</span><div class="sub">uso directo · no va al inventario</div>{% endif %}
     {% elif o.destino == 'INSUMOS' %}{% if o.insumo_ingreso_id %}<span class="aprob si"><i class="bi bi-check2"></i> En Insumos</span><div class="sub">ingreso #{{ o.insumo_ingreso_id }}</div>
         {% else %}<span class="aprob pend"><i class="bi bi-hourglass"></i> Falta ingresar a Insumos</span>{% endif %}
     {% else %}{% set ie = oc_ingreso_estado(o) %}
@@ -252,7 +258,8 @@
                         <span class="oc-tipo {{ o.tipo }}">{{ o.tipo }}</span> <a class="oc-num" href="{{ url_for('oc_detalle', orden_id=o.id) }}">{{ oc_numero_txt(o) }}</a>
                         {% if o.es_contable %}<div>{{ chip_contable(o, True) }}</div>{% endif %}
                         <div class="sub">{{ o.fecha.strftime('%d/%m/%Y') }}{% if o.fecha_registro %} <span class="hora" title="Registrada el {{ o.fecha_registro.strftime('%d/%m/%Y %H:%M') }}">· {{ o.fecha_registro.strftime('%H:%M') }}</span>{% endif %}</div>
-                        <span class="oc-dest {{ o.destino }}" style="font-size:.6rem;">{{ oc_destino_txt(o)|replace('Inventario', 'Inv.') }}</span></td>
+                        <span class="oc-dest {{ o.destino }}" style="font-size:.6rem;" title="{{ oc_destino_txt(o) }}{{ (' → ' ~ o.directo_ubicacion) if o.destino == 'DIRECTO' and o.directo_ubicacion else '' }}">{{ ('Uso directo' if o.destino == 'DIRECTO' else oc_destino_txt(o))|replace('Inventario', 'Inv.') }}</span>
+                        {% if o.destino == 'DIRECTO' and o.directo_ubicacion %}<div class="sub text-truncate" style="max-width:150px;" title="{{ (o.directo_categoria or '')|capitalize }} → {{ o.directo_ubicacion }}"><i class="bi bi-geo-alt"></i> {{ o.directo_ubicacion }}</div>{% endif %}</td>
                     <td><div class="prov-cel" title="{{ o.razon_social }}"><b>{{ o.razon_social }}</b>
                         <div class="sub">{{ o.ruc }} · {{ o.items|length }} ítem(s){% if o.cotizacion %} · Cot. {{ o.cotizacion }}{% endif %}</div></div></td>
                     <td><div class="sol">{% if o.solicitante_nombre %}<div class="clamp2"><i class="bi bi-person text-muted"></i> {{ oc_solicitante_txt(o) }}</div>

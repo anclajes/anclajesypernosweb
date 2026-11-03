@@ -268,6 +268,7 @@ def oc_conforme(orden_id):
               '(queda en la lista "Certificados por subir").', 'warning')
     if etapa == 'CONFORME':
         sig = ('TEMA CONTABLE: no suma al inventario; queda por CONFIRMAR (botón "Confirmar tema contable").' if orden.es_contable
+               else 'USO DIRECTO: no va al inventario; ahora registra a quién y dónde se ENTREGA (botón "Registrar entrega").' if orden.destino == 'DIRECTO'
                else 'Ahora regístralo en Insumos internos (aparece como pendiente).' if orden.destino == 'INSUMOS'
                else 'Servicio terminado: queda pendiente solo el pago.' if orden.tipo == 'OS'
                else 'Almacén lo verá en "Ingresos pendientes" para sumarlo al inventario.')
@@ -734,7 +735,7 @@ def oc_ingresos_pendientes():
     emp_sel = (request.args.get('empresa') or session.get('oc_empresa_ing') or 'TODAS').upper()
     emp_sel = emp_sel if emp_sel in EMPRESAS_OC or emp_sel == 'TODAS' else 'TODAS'
     session['oc_empresa_ing'] = emp_sel
-    candidatas = (OrdenCompra.query.filter(db.or_(OrdenCompra.destino == 'GENERAL', OrdenCompra.es_contable.is_(True)),
+    candidatas = (OrdenCompra.query.filter(db.or_(OrdenCompra.destino.in_(['GENERAL', 'DIRECTO']), OrdenCompra.es_contable.is_(True)),
                                            OrdenCompra.estado.in_(['APROBADA', 'RECIBIDA', 'CONFORME']))
                   .order_by(OrdenCompra.id.desc()).all())
     grupos, pend_emp, n_hechos = [], {e: 0 for e in EMPRESAS_OC}, 0
@@ -750,6 +751,17 @@ def oc_ingresos_pendientes():
             n_hechos += hecho and (emp_sel in ('TODAS', emp))
             if (emp_sel in ('TODAS', emp)) and ((vista == 'pendientes' and not hecho) or (vista == 'hechos' and hecho)):
                 grupos.append({'o': o, 'items': items, 'bloques': [], 'contable': True,
+                               'fecha': (o.fecha_kardex if hecho else o.fecha_conforme) or o.fecha_llegada})
+            continue
+        if o.destino == 'DIRECTO':
+            # USO DIRECTO: con la orden conforme se registra la ENTREGA del bien (no va a ningún inventario)
+            if o.estado != 'CONFORME':
+                continue
+            hecho = bool(o.fecha_kardex)
+            pend_emp[emp] += 0 if hecho else 1
+            n_hechos += hecho and (emp_sel in ('TODAS', emp))
+            if (emp_sel in ('TODAS', emp)) and ((vista == 'pendientes' and not hecho) or (vista == 'hechos' and hecho)):
+                grupos.append({'o': o, 'items': items, 'bloques': [], 'directo': True,
                                'fecha': (o.fecha_kardex if hecho else o.fecha_conforme) or o.fecha_llegada})
             continue
         if o.tipo == 'OS':
@@ -811,6 +823,7 @@ def oc_ingresos_pendientes():
                            datos_kardex=datos_kardex, presentaciones=presentaciones, hoy_iso=hora_peru().date().isoformat(),
                            peso_inv=peso_inv, n_pendientes=pend_emp[emp_sel], n_hechos=n_hechos, monedas=MONEDAS_OC, ahora=hora_peru(),
                            emp_sel=emp_sel, pend_emp=pend_emp, orden_lista=orden_lista,
+                           directo_ubicaciones=[v.valor for v in _oc_catalogo('OC_DIRECTO_UBICACION')],
                            empresas_oc=EMPRESAS_OC, es_admin=session.get('role') == 'admin', seccion='ingresos')
 
 

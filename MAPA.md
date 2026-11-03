@@ -34,6 +34,8 @@ modulos/
                          lo que viene en OC aprobadas (en camino / llegó / por sumar / sumado hace X días) y la línea de tiempo
     entregas.py          llegadas totales/parciales, conformidad, pago y factura, cuentas bancarias,
                          cliente, ingresos pendientes al inventario e ingreso al Kardex
+    uso_directo.py       USO DIRECTO (/ordenes/uso-directo): bienes que no van a ningún inventario (PC, muebles...):
+                         registrar / corregir la entrega (a quién, dónde, serie y garantía) y el registro con Excel
     certificados.py      CERTIFICADOS POR SUBIR (/ordenes/certificados): importaciones sin certificado de calidad
                          (el certificado es opcional: nunca frena la conformidad ni el ingreso)
     pdf_proveedores_config.py   PDF de la orden, proveedores y contactos, buscador de productos, configuración
@@ -140,6 +142,26 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
 - Se ve en todo el flujo: chip CONTABLE en la lista, detalle, aprobación rápida de Gerencia (campana), Ingresos pendientes; filtro
   "Tema contable" y botón "Contables" en la lista; columnas en el Excel. No entra en "En camino", en "Ingresos pendientes" para sumar,
   en Insumos pendientes ni en "Mejores precios" (no es precio de mercado). Sí cuenta en los reportes de gasto.
+
+## Compras: destino USO DIRECTO (bienes que no van a ningún inventario)
+
+- Tercer destino de una OC: **"Uso directo"** (`destino = 'DIRECTO'`, en `DESTINOS_OC`). Para bienes que la empresa compra para USARLOS
+  (componentes de PC, celulares, muebles, herramientas, maquinaria...). No va al inventario general ni a insumos. Solo OC (no OS) y no
+  se combina con TEMA CONTABLE. Los ítems se escriben a mano (no se enlazan a productos ni insumos); no aceptan requerimientos de Almacén.
+- Al crear la orden: **Categoría** (catálogo `OC_DIRECTO_CATEGORIA`) y **Ubicación / a dónde va** (catálogo `OC_DIRECTO_UBICACION`), obligatorias;
+  "Para qué / detalle" y **Activo fijo** opcionales. Columnas `orden_compra.directo_categoria/_ubicacion/_detalle/_activo_fijo/_entregado_a`.
+  Los dos catálogos están en Configuración (pestañas "Categorías de uso directo" y "Ubicaciones") y se siembran solos si están vacíos.
+- Flujo normal (aprobación, llegada, conformidad, pago). Al estar CONFORME se **registra la entrega** (`modulos/compras/uso_directo.py`,
+  ruta `oc_directo_entregar`, roles `ROLES_OC_CONTABLE`): a quién (obligatorio), ubicación final, nota y, por ítem, **N° de serie**
+  (`orden_compra_item.serie`) y **garantía hasta** (`garantia_hasta`), ambos opcionales. Se hace desde el detalle (modal) o desde
+  "Ingresos pendientes" (tarjeta naranja). Quién/cuándo en `fecha_kardex` / `kardex_registrado_por_id`; nota en `nota_seguimiento`.
+  Después se puede **corregir** (queda en el historial `DIRECTO_EDITADO`); Gerencia puede quitar el registro (`oc_directo_deshacer`).
+  Una vez entregada ya no se re-edita la orden (hay que deshacer la entrega).
+- **Registro de uso directo** (`/ordenes/uso-directo`, `oc_registro_directo`, plantilla `oc_uso_directo.html`): un renglón por bien con
+  categoría, ubicación, entregado a, serie, garantía (vigente / vence en ≤30 días / vencida), orden, proveedor y monto; filtros y Excel.
+- Se ve en todo el flujo: chip USO DIRECTO (`templates/_oc_directo.html`), lista (filtro Destino, botón "Uso directo"), detalle,
+  campana (aviso "Bien de uso directo por entregar"), Ingresos pendientes y contador del menú; columnas en el Excel de órdenes.
+  En "Mejores precios" es la clase "Uso directo".
 
 ## Kardex
 

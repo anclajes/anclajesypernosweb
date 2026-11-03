@@ -132,6 +132,13 @@ class OrdenCompra(db.Model):
     # (fecha_kardex / kardex_registrado_por_id / nota_seguimiento guardan quién y cuándo lo confirmó).
     es_contable = db.Column(db.Boolean, default=False)
     contable_nota = db.Column(db.String(300))
+    # USO DIRECTO (destino 'DIRECTO'): bien que se usa en la empresa (PC, mueble, herramienta...), NO va al inventario ni a insumos.
+    # Al estar conforme se ENTREGA: fecha_kardex / kardex_registrado_por_id / nota_seguimiento guardan quién y cuándo la registró.
+    directo_categoria = db.Column(db.String(100))            # catálogo OC_DIRECTO_CATEGORIA (EQUIPOS DE CÓMPUTO Y TECNOLOGÍA...)
+    directo_ubicacion = db.Column(db.String(100))            # catálogo OC_DIRECTO_UBICACION (OFICINA · ADMINISTRACIÓN...)
+    directo_detalle = db.Column(db.String(200))              # para qué / dónde exactamente (opcional): "PC de contabilidad"
+    directo_activo_fijo = db.Column(db.Boolean, default=False)   # contabilidad lo registra como activo fijo (opcional)
+    directo_entregado_a = db.Column(db.String(120))          # a quién se entregó el bien
     revision = db.Column(db.Integer, default=0)            # cuántas veces se editó DESPUÉS de aprobada (Rev. 1, Rev. 2...)
     motivo_edicion = db.Column(db.String(300))              # por qué se editó la orden ya aprobada (lo ve Gerencia al re-aprobar)
     # Recepción del material
@@ -220,6 +227,8 @@ class OrdenCompraItem(db.Model):
     kgs_mpcs = db.Column(db.Float)                             # importación: kg por cada 1000 piezas
     precio_mil = db.Column(db.Float)                           # importación: precio por cada 1000 piezas
     kardex_mov_id = db.Column(db.Integer)                      # movimiento del Kardex creado desde Ingresos pendientes
+    serie = db.Column(db.String(300))                          # uso directo: N° de serie (o varios, separados por coma) · opcional
+    garantia_hasta = db.Column(db.Date)                        # uso directo: garantía vigente hasta · opcional
     cantidad_kardex = db.Column(db.Integer)                    # cantidad que entró al Kardex (puede diferir de la OC)
 
     ingresado_por = db.relationship('User', foreign_keys=[ingresado_por_id])

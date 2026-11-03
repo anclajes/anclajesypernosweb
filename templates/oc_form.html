@@ -27,6 +27,8 @@
     .igv-box { background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 10px; padding: 6px 10px; }
     .igv-box.on { background: #fefce8; border: 1.5px solid #facc15; }
     .imp-box { background: #f0f9ff; border: 1.5px solid #bae6fd; border-radius: 12px; padding: 8px 12px; }
+    .directo-box { background: #fff7ed; border: 1.5px solid #fdba74; border-radius: 12px; padding: 10px 12px; color: #7c2d12; margin-top: 8px; }
+    .directo-box .lbl { color: #9a3412; }
     .contable-box { background: #f3e8ff; border: 1.5px solid #7c3aed; border-radius: 12px; padding: 8px 12px; color: #3b0764; box-shadow: 0 0 0 3px rgba(124,58,237,.12); }
     .sug-contable { display: none; font-size: .74rem; font-weight: 600; color: #6d28d9; background: #faf5ff; border: 1px dashed #a78bfa; border-radius: 8px; padding: 5px 9px; margin-top: 6px; }
     body.modo-imp .imp-box { background: #e0f2fe; border-color: #0284c7; }
@@ -219,6 +221,27 @@
                 <label for="dest_GENERAL" style="--c:#0369a1;"><i class="bi bi-boxes"></i><span><b id="destInvTxt">Inventario Anclajes</b><small id="destInvSub">Al terminar, Almacén lo ingresa al Kardex</small></span></label>
                 <input type="radio" name="destino" id="dest_INSUMOS" value="INSUMOS" {{ 'checked' if pv.destino == 'INSUMOS' }} onchange="pintarFichas()">
                 <label id="lblInsumos" for="dest_INSUMOS" style="--c:#b45309;"><i class="bi bi-tools"></i><span><b>Insumos internos</b><small>Inventario pequeño: quedará pendiente de ingresar</small></span></label>
+                <input type="radio" name="destino" id="dest_DIRECTO" value="DIRECTO" {{ 'checked' if pv.destino == 'DIRECTO' }} onchange="pintarFichas()">
+                <label id="lblDirecto" for="dest_DIRECTO" style="--c:#c2410c;"><i class="bi bi-pc-display"></i><span><b>Uso directo</b><small>Equipos, muebles, herramientas... no va a ningún inventario</small></span></label>
+            </div>
+            <!-- USO DIRECTO: bienes que se usan en la empresa (no van al inventario ni a insumos) -->
+            <div id="boxDirecto" class="directo-box" style="display:none;">
+                <div class="small"><i class="bi bi-pc-display"></i> <b>Uso directo:</b> el bien se compra para <b>usarlo</b> (ej. componentes de una PC de oficina, un celular, un escritorio).
+                    <b>No suma al inventario general ni a insumos.</b> Sigue el flujo normal y, al estar conforme, se registra <b>a quién se entrega y dónde queda</b>
+                    (N° de serie y garantía opcionales). Queda en el <b>Registro de uso directo</b>.</div>
+                <div class="row g-2 mt-1">
+                    <div class="col-12 col-sm-6"><div class="lbl req">Categoría</div>
+                        <select name="directo_categoria" id="directo_categoria" class="form-select form-select-sm"><option value="">— Elige —</option>
+                            {% for c in directo_categorias %}<option value="{{ c }}" {{ 'selected' if c|upper == (pv.directo_categoria or '')|upper }}>{{ c|capitalize }}</option>{% endfor %}</select></div>
+                    <div class="col-12 col-sm-6"><div class="lbl req">¿A dónde va? (ubicación)</div>
+                        <select name="directo_ubicacion" id="directo_ubicacion" class="form-select form-select-sm"><option value="">— Elige —</option>
+                            {% for u in directo_ubicaciones %}<option value="{{ u }}" {{ 'selected' if u|upper == (pv.directo_ubicacion or '')|upper }}>{{ u }}</option>{% endfor %}</select></div>
+                    <div class="col-12"><div class="lbl">Para qué / detalle <span class="fw-normal text-muted">(opcional)</span></div>
+                        <input type="text" name="directo_detalle" class="form-control form-control-sm" maxlength="200" value="{{ pv.directo_detalle or '' }}" placeholder="Ej: armado de PC para el área de contabilidad"></div>
+                    <div class="col-12"><div class="form-check m-0"><input class="form-check-input" type="checkbox" name="directo_activo_fijo" value="1" id="directo_activo_fijo" {{ 'checked' if pv.directo_activo_fijo }}>
+                        <label class="form-check-label small" for="directo_activo_fijo">Es <b>activo fijo</b> (contabilidad lo registra y deprecia) <span class="text-muted">· opcional</span></label></div></div>
+                </div>
+                {% if session.get('role') in ['admin', 'logistica'] %}<div class="small text-muted mt-1" style="font-size:.7rem;">¿Falta una categoría o ubicación? Agrégala en <a href="{{ url_for('oc_config', tab='OC_DIRECTO_CATEGORIA') }}" target="_blank">Configuración</a>.</div>{% endif %}
             </div>
             <div class="aviso-cert" id="avisoOS" style="display:none; background:#f5f3ff; border-color:#ddd6fe; color:#4c1d95;"><i class="bi bi-tools"></i> <b>Orden de Servicio</b>: corte, roscado, galvanizado...
                 En cada ítem elige el <b>tipo de servicio</b>. No va a Insumos ni pasa por "Ingresos pendientes": al terminar se da la conformidad y queda el pago.</div>
@@ -585,6 +608,7 @@ function r2(n) { return Math.round((n + Number.EPSILON) * 100) / 100; }
 function valorRadio(n) { const r = document.querySelector(`#formOC input[name=${n}]:checked`); return r ? r.value : ''; }   // solo el formulario de la orden (el modal de cuentas tiene otro 'tipo')
 function moneda() { return MONEDAS[valorRadio('moneda') || 'PEN'].simbolo; }
 function destino() { return valorRadio('destino'); }
+function esDirecto() { return tipo() === 'OC' && destino() === 'DIRECTO'; }
 function empresa() { return valorRadio('empresa') || 'ANCLAJES'; }
 function tipo() { return valorRadio('tipo') || '{{ orden.tipo if orden else 'OC' }}'; }
 function corto() { return EMPRESAS[empresa()].corto; }
@@ -633,6 +657,7 @@ function pintarTipo() {
     if (!chk.dataset.definido && !chk.dataset.tocado) chk.checked = os;     // servicios: detracción sugerida
     pintarDetraccion();
     porId('lblInsumos').style.display = os ? 'none' : '';
+    porId('lblDirecto').style.display = os ? 'none' : '';
     if (os) { porId('dest_GENERAL').checked = true; }
     porId('avisoOS').style.display = os ? 'block' : 'none';
     porId('lblDestino').textContent = os ? 'Este servicio es para' : 'Este material es para';
@@ -882,9 +907,9 @@ function pintarFicha(fila) {
         const inv = fila.querySelector('.i-pinv');
         inv.innerHTML = p.peso ? `Inventario: ${fmtKg(p.peso)} kg/u <button type="button" class="usar">usar</button>` : '';
         if (p.peso) inv.querySelector('.usar').onclick = () => { fila.querySelector('.i-pmodo').value = 'U'; fila.querySelector('.i-pval').value = p.peso; recalcular(); };
-    } else if (desc && fila._legado && tipo() === 'OC') {
+    } else if (desc && fila._legado && tipo() === 'OC' && !esDirecto()) {
         box.innerHTML = `<div class="ficha nuevo"><i class="bi bi-clock-history"></i> Ítem antiguo escrito a mano: se respeta, pero si lo cambias tendrás que elegirlo de la lista.</div>`;
-    } else if (desc && tipo() === 'OC' && destino() !== 'INSUMOS') {
+    } else if (desc && tipo() === 'OC' && destino() === 'GENERAL') {
         box.innerHTML = `<div class="ficha falta"><i class="bi bi-x-octagon-fill"></i> <b>No elegido.</b> Elige el producto de la lista (escribe para buscar o pulsa <b>Inventario</b>). No se puede escribir un producto que no esté en el inventario ${esc(corto())}.</div>`;
     } else if (desc && destino() === 'INSUMOS') {
         box.innerHTML = `<div class="ficha falta sin-insumo"><i class="bi bi-x-octagon-fill"></i> <b>No elegido del maestro de insumos.</b> Búscalo con <b>Insumos</b> o créalo ahora.` +
@@ -897,14 +922,20 @@ function pintarFicha(fila) {
     if (!p) fila.querySelector('.i-pinv').innerHTML = '';
 }
 function pintarFichas() {
+    const dir = esDirecto();
+    // uso directo: los ítems se escriben a mano (no se enlazan a productos del inventario ni a insumos)
+    if (dir) document.querySelectorAll('#items .item').forEach(f => { if (f._prod) vincular(f, null); });
     document.querySelectorAll('#items .item').forEach(pintarFicha);
+    porId('boxDirecto').style.display = dir ? 'block' : 'none';
+    document.querySelectorAll('#items .i-buscar').forEach(b => b.style.display = dir ? 'none' : '');
     pintarReqs();
     const ins = destino() === 'INSUMOS' && tipo() === 'OC';
     porId('ayudaInv').style.display = ins ? 'none' : '';
     const compra = tipo() === 'OC';
-    porId('ayudaInvTxt').innerHTML = compra ? `<b>Solo productos del inventario ${esc(corto())}:</b> escribe el código o la descripción y elige de la lista, o pulsa <b>Inventario</b> para buscar con <b>Familia y Calidad</b>.`
+    porId('ayudaInvTxt').innerHTML = dir ? '<b>Uso directo:</b> escribe cada bien tal como lo cotizó el proveedor (marca, modelo y características, ej. MAINBOARD MSI PRO B760M-E DDR4 LGA 1700). No se busca en el inventario.'
+        : compra ? `<b>Solo productos del inventario ${esc(corto())}:</b> escribe el código o la descripción y elige de la lista, o pulsa <b>Inventario</b> para buscar con <b>Familia y Calidad</b>.`
         : 'Servicio: describe el trabajo. Si es sobre un producto del inventario, puedes elegirlo con <b>Inventario</b>.';
-    porId('ayudaInvPedir').style.display = compra ? '' : 'none';
+    porId('ayudaInvPedir').style.display = compra && !dir ? '' : 'none';
     porId('ayudaIns').style.display = ins ? 'block' : 'none';
     if (porId('btnNuevoInsumo')) porId('btnNuevoInsumo').style.display = ins ? '' : 'none';
     document.querySelectorAll('#items .i-buscar').forEach(b => b.innerHTML = ins ? '<i class="bi bi-tools"></i> Insumos' : '<i class="bi bi-funnel"></i> Inventario');
@@ -979,7 +1010,7 @@ function agregarItem(datos) {
         pintarFicha(fila);
         clearTimeout(t);
         const q = desc.value.trim();
-        if (q.length < 2) { sug.style.display = 'none'; return; }
+        if (q.length < 2 || esDirecto()) { sug.style.display = 'none'; return; }
         t = setTimeout(() => fetch(urlProductos(q)).then(r => r.json()).then(d => {
             if (document.activeElement !== desc) return;
             const res = (d.results || []).slice(0, 12);
@@ -996,6 +1027,7 @@ function agregarItem(datos) {
     desc.addEventListener('blur', () => setTimeout(() => sug.style.display = 'none', 150));
     fila.querySelector('.i-buscar').addEventListener('click', () => abrirBuscador(fila));
     if (destino() === 'INSUMOS' && tipo() === 'OC') fila.querySelector('.i-buscar').innerHTML = '<i class="bi bi-tools"></i> Insumos';
+    if (esDirecto()) fila.querySelector('.i-buscar').style.display = 'none';
     fila.querySelectorAll('.i-cant, .i-pu, .i-pval, .i-pmil, .i-kgs').forEach(i => i.addEventListener('input', recalcular));
     fila.querySelector('.i-pmodo').addEventListener('change', recalcular);
     fila.querySelector('.quitar').addEventListener('click', () => {
@@ -1291,7 +1323,13 @@ porId('formOC').addEventListener('submit', function (e) {
         if ((cr.length !== 11 && cr.length !== 8) || porId('cliente_razon').value.trim().length < 3) err.push('Indica el RUC y la razón social del CLIENTE.');
     }
     const ruc = esImp() ? porId('ruc').value.trim() : porId('ruc').value.replace(/\D/g, '');
-    if (!destino()) err.push('Elige si el material es para el inventario o para Insumos.');
+    if (!destino()) err.push('Elige el destino: inventario, Insumos internos o Uso directo.');
+    if (esDirecto()) {
+        if (!porId('directo_categoria').value) err.push('Uso directo: elige la CATEGORÍA del bien.');
+        if (!porId('directo_ubicacion').value) err.push('Uso directo: elige la UBICACIÓN a donde va.');
+        const rc = radioContable();
+        if (rc && rc.checked) err.push('"Tema contable" no se combina con Uso directo: elige otro motivo o cambia el destino.');
+    }
     if (esImp() ? ruc.length < 3 : (ruc.length !== 11 && ruc.length !== 8)) err.push(esImp() ? 'Elige el proveedor del exterior o escribe sus datos (Tax ID).' : 'Elige o busca el proveedor (RUC de 11 dígitos).');
     if (porId('razon_social').value.trim().length < 3) err.push('Falta la razón social del proveedor.');
     if (porId('contacto').value.trim().length < 3) err.push('Elige o escribe el CONTACTO.');

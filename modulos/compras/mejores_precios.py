@@ -19,7 +19,8 @@ ETAPAS_PRECIOS = {'aprobadas': ('Aprobadas (precio pactado)', ('APROBADA', 'RECI
                   'conformes': ('Solo recibidas y conformes', ('CONFORME',))}
 CLASES_PRECIOS = {'GENERAL': {'txt': 'Inventario General', 'corto': 'Producto', 'color': '#0B3D91', 'icono': 'bi-box-seam'},
                   'INSUMOS': {'txt': 'Insumos internos', 'corto': 'Insumo', 'color': '#0f766e', 'icono': 'bi-tools'},
-                  'SERVICIO': {'txt': 'Servicios (OS)', 'corto': 'Servicio', 'color': '#7c3aed', 'icono': 'bi-gear'}}
+                  'SERVICIO': {'txt': 'Servicios (OS)', 'corto': 'Servicio', 'color': '#7c3aed', 'icono': 'bi-gear'},
+                  'DIRECTO': {'txt': 'Uso directo (equipos, muebles...)', 'corto': 'Uso directo', 'color': '#c2410c', 'icono': 'bi-pc-display'}}
 VISTAS_PRECIOS = {'resumen': ('Resumen y gráficos', 'bi-graph-up'), 'productos': ('Por producto', 'bi-tags'),
                   'proveedores': ('Por proveedor', 'bi-building'), 'detalle': ('Detalle de compras', 'bi-list-ul')}
 ORDENES_PRODUCTOS = {'ahorro': 'Mayor ahorro potencial', 'monto': 'Más comprado (monto)', 'compras': 'Más veces comprado',
@@ -79,7 +80,7 @@ def _mp_filtros():
 
 
 def _mp_clase(o):
-    return 'SERVICIO' if o.tipo == 'OS' else ('INSUMOS' if o.destino == 'INSUMOS' else 'GENERAL')
+    return 'SERVICIO' if o.tipo == 'OS' else ({'INSUMOS': 'INSUMOS', 'DIRECTO': 'DIRECTO'}.get(o.destino, 'GENERAL'))
 
 
 def _mp_condicion(o):
@@ -226,7 +227,7 @@ def _mp_proveedores(compras, productos):
                        'PEN': round(pv['PEN'], 2), 'USD': round(pv['USD'], 2), 'sobre_PEN': round(pv['sobre_PEN'], 2), 'sobre_USD': round(pv['sobre_USD'], 2),
                        'condicion': cond[0][0] if cond else '', 'condiciones_txt': ', '.join(f"{k} ({v})" for k, v in cond),
                        'empresas_txt': ' y '.join(EMPRESAS_OC[e]['corto'] for e in sorted(pv['empresas'])),
-                       'clases_txt': ', '.join(CLASES_PRECIOS[k]['corto'] for k in ('GENERAL', 'INSUMOS', 'SERVICIO') if k in pv['clases']),
+                       'clases_txt': ', '.join(CLASES_PRECIOS[k]['corto'] for k in ('GENERAL', 'INSUMOS', 'SERVICIO', 'DIRECTO') if k in pv['clases']),
                        'detalle': det})
     return salida
 

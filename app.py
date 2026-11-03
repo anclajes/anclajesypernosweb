@@ -15755,6 +15755,7 @@ MODULOS_EN_ARCHIVOS = [
     'modulos/compras/mejores_precios.py',
     'modulos/compras/en_camino.py',
     'modulos/compras/entregas.py',
+    'modulos/compras/uso_directo.py',
     'modulos/compras/certificados.py',
     'modulos/compras/pdf_proveedores_config.py',
     'modulos/compras/requerimientos.py',

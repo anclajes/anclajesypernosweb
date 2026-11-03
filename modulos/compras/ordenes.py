@@ -88,7 +88,7 @@ def oc_lista():
             continue
         if buscar:
             texto = (f"{o.tipo} {_oc_numero_txt(o)} {o.numero:06d} {o.razon_social} {o.ruc or ''} {o.cotizacion or ''} {o.numero_factura or ''} {o.numero_guia or ''} "
-                     f"{_oc_solicitante_txt(o)} {o.creado_por.nombre_completo if o.creado_por else ''} {'CONTABLE ' + (o.contable_nota or '') if o.es_contable else ''} {o.cliente_razon or ''} {o.cliente_ruc or ''} {' '.join(i.descripcion for i in o.items)}").upper()
+                     f"{_oc_solicitante_txt(o)} {o.creado_por.nombre_completo if o.creado_por else ''} {'CONTABLE ' + (o.contable_nota or '') if o.es_contable else ''} {('USO DIRECTO ' + ' '.join(x or '' for x in (o.directo_categoria, o.directo_ubicacion, o.directo_detalle, o.directo_entregado_a))) if o.destino == 'DIRECTO' else ''} {o.cliente_razon or ''} {o.cliente_ruc or ''} {' '.join(i.descripcion for i in o.items)}").upper()
             if not all(t in texto for t in buscar.upper().split()):
                 continue
         ordenes.append(o)
@@ -116,13 +116,14 @@ def oc_lista():
     filtros_activos = sum(1 for x in (tipo, destino, prov_id, solicitante, motivo, pago_f, docs_f, desde, hasta, creador, contable_f) if x)
     n_contables = sum(1 for o in todas if o.es_contable)
     contables_por_confirmar = sum(1 for o in todas if o.es_contable and o.estado == 'CONFORME' and not o.fecha_kardex)
+    directos_por_entregar = sum(1 for o in todas if o.destino == 'DIRECTO' and o.estado == 'CONFORME' and not o.fecha_kardex)
     return render_template('oc_lista.html', ordenes=ordenes, vista=vista, vistas_orden=VISTAS_OC_ORDEN,
                            nombres_vista={**{k: v[0] for k, v in VISTAS_OC.items()}, **VISTAS_OC_EXTRA}, conteo=conteo, docs=docs,
                            tipo=tipo, destino=destino, prov_id=prov_id, solicitante=solicitante, motivo=motivo, pago_f=pago_f, docs_f=docs_f,
                            desde=desde, hasta=hasta, buscar=buscar, hoy=hoy, pagos=pagos, atrasos=atrasos, kpi=kpi, resumen=resumen,
                            total_filtrado=total_filtrado, proveedores=proveedores, solicitantes=solicitantes, motivos=motivos,
                            creadores=creadores, creador=creador, contable_f=contable_f, n_contables=n_contables,
-                           contables_por_confirmar=contables_por_confirmar,
+                           contables_por_confirmar=contables_por_confirmar, directos_por_entregar=directos_por_entregar,
                            filtros_activos=filtros_activos, estados=ESTADOS_OC, tipos=TIPOS_OC, destinos=DESTINOS_OC, monedas=MONEDAS_OC,
                            puede_editar=rol in ROLES_OC_EDITAN, aprueba=rol in ROLES_OC_APRUEBAN, seccion='lista', emp_sel=emp_sel, conteo_emp=conteo_emp, empresas_oc=EMPRESAS_OC)
 
@@ -199,27 +200,32 @@ def _oc_excel_lista(ordenes, pagos, atrasos, emp_sel):
                       ('Completo' if ie['completo'] else f"{ie['hechos']} de {ie['total']}") if ie else ('Sí' if o.insumo_ingreso_id else ''),
                       o.numero_factura or '', guias, o.aprobado_por.nombre_completo if o.aprobado_por else '', o.fecha_aprobacion,
                       o.creado_por.nombre_completo if o.creado_por else '', ', '.join(reqs), len(docs.get(o.id, [])),
-                      (('Sí · confirmado' if o.fecha_kardex else 'Sí · por confirmar') if o.es_contable else ''), o.contable_nota or ''])
+                      (('Sí · confirmado' if o.fecha_kardex else 'Sí · por confirmar') if o.es_contable else ''), o.contable_nota or '',
+                      (o.directo_categoria or '').capitalize() if o.destino == 'DIRECTO' else '', o.directo_ubicacion or '' if o.destino == 'DIRECTO' else '',
+                      o.directo_detalle or '' if o.destino == 'DIRECTO' else '', ('Sí' if o.directo_activo_fijo else 'No') if o.destino == 'DIRECTO' else '',
+                      (('Entregado a ' + (o.directo_entregado_a or '-')) if o.fecha_kardex else 'Por entregar') if o.destino == 'DIRECTO' else '',
+                      o.fecha_kardex if o.destino == 'DIRECTO' else None])
         for i in o.items:
             ri = rec['items'].get(i.id, {})
             r = _req_de_item_oc(i)
             filas_it.append([EMPRESAS_OC.get(o.empresa or 'ANCLAJES', {}).get('corto', o.empresa), _oc_codigo(o), o.fecha, ESTADOS_OC[o.estado]['txt'], o.razon_social,
                              i.item, i.codigo or '', i.descripcion, i.familia or '', i.calidad or '', i.cantidad, i.um, i.precio_unitario, i.total, o.moneda,
                              i.kgs_mpcs, i.precio_mil, i.peso_total, ri.get('llego', 0), ri.get('cancelado', 0), ri.get('ingresado', 0),
-                             i.sku_ingreso or '', _req_codigo(r) if r else ''])
+                             i.sku_ingreso or '', _req_codigo(r) if r else '', i.serie or '', i.garantia_hasta])
     f_d, f_dt, f_m, f_n = 'dd/mm/yyyy', 'dd/mm/yyyy hh:mm', '#,##0.00', '#,##0.####'
     _xlsx_hoja(wb, 'Órdenes', ['Empresa', 'Tipo', 'N°', 'Fecha', 'Estado', 'Importación', 'Proveedor', 'RUC / Tax ID', 'Solicitó', 'Área', 'Motivo', 'Cliente',
                                'Destino', 'Moneda', 'Subtotal', 'IGV', 'Total', 'Condición de pago', 'Pago', 'Fecha de pago', 'Vence', 'Debía llegar',
                                'Atraso (días)', '1.ª llegada', 'Entregas', 'Llegada', 'Falta llegar (por producto)', 'Conforme', 'Ingreso al inventario',
                                'Factura', 'Guía(s)', 'Aprobó', 'Fecha aprobación', 'Creó', 'Requerimientos', 'Documentos',
-                               'Tema contable (no suma)', 'Nota contable'],
-               filas, formatos={3: f_d, 14: f_m, 15: f_m, 16: f_m, 19: f_d, 20: f_d, 21: f_d, 23: f_dt, 27: f_dt, 32: f_dt},
+                               'Tema contable (no suma)', 'Nota contable', 'Uso directo: categoría', 'Uso directo: ubicación', 'Uso directo: detalle',
+                               'Activo fijo', 'Entrega (uso directo)', 'Fecha de entrega'],
+               filas, formatos={3: f_d, 14: f_m, 15: f_m, 16: f_m, 19: f_d, 20: f_d, 21: f_d, 23: f_dt, 27: f_dt, 32: f_dt, 43: f_dt},
                primera=True, nota=f"Órdenes de compra y servicio · {'Las dos empresas' if emp_sel == 'TODAS' else EMPRESAS_OC[emp_sel]['nombre']} · "
                                   f"exportado el {hora_peru().strftime('%d/%m/%Y %H:%M')} por {session.get('nombre', '')} · {len(filas)} orden(es)")
     _xlsx_hoja(wb, 'Ítems', ['Empresa', 'Orden', 'Fecha', 'Estado', 'Proveedor', 'Ítem', 'Código', 'Descripción', 'Familia', 'Calidad', 'Cantidad', 'U.M.',
                              'P. Unit.', 'Total', 'Moneda', 'KGS/MPCS', 'USD/1000 PCS', 'Peso total (kg)', 'Llegó', 'No llegará', 'Ingresado',
-                             'Código en el inventario', 'Requerimiento'],
-               filas_it, formatos={2: f_d, 10: f_n, 12: '#,##0.00####', 13: f_m, 15: f_n, 16: f_m, 17: f_n, 18: f_n, 19: f_n, 20: f_n})
+                             'Código en el inventario', 'Requerimiento', 'N° de serie', 'Garantía hasta'],
+               filas_it, formatos={24: f_d, 2: f_d, 10: f_n, 12: '#,##0.00####', 13: f_m, 15: f_n, 16: f_m, 17: f_n, 18: f_n, 19: f_n, 20: f_n})
     registrar_log(f"Exportó {len(filas)} orden(es) de compra a Excel", 'bi-file-earmark-excel', 'text-success')
     return _xlsx_respuesta(wb, f"ordenes_{emp_sel.lower()}_{hora_peru().strftime('%Y%m%d_%H%M')}.xlsx")
 
@@ -398,6 +404,13 @@ def _solicitantes_oc(orden=None):
     return grupos
 
 
+def _oc_valores_con_actual(tipo, actual=None):
+    valores = [v.valor for v in _oc_catalogo(tipo)]
+    if actual and actual.upper() not in {x.upper() for x in valores}:
+        valores.append(actual)
+    return valores
+
+
 def _contexto_form_oc(orden=None, datos_previos=None):
     motivos = [m for m in OCMotivoCompra.query.all() if m.activo or (orden and (m.nombre or '').upper() == (orden.motivo_compra or '').upper())]
     motivos.sort(key=lambda m: m.id)
@@ -408,6 +421,9 @@ def _contexto_form_oc(orden=None, datos_previos=None):
                 cfgs={e: _oc_cfg(e) for e in EMPRESAS_OC}, detraccion_def=DETRACCION_DEF,
                 siguiente={f'{e}|{t}': _oc_numero_txt(None, _siguiente_numero_oc(t, e), e) for e in EMPRESAS_OC for t in TIPOS_OC},
                 servicios=[v.valor for v in _oc_catalogo('OC_SERVICIO')],
+                # uso directo: categorías y ubicaciones de Configuración (+ la que ya tenía la orden, aunque se haya desactivado)
+                directo_categorias=_oc_valores_con_actual('OC_DIRECTO_CATEGORIA', orden.directo_categoria if orden else None),
+                directo_ubicaciones=_oc_valores_con_actual('OC_DIRECTO_UBICACION', orden.directo_ubicacion if orden else None),
                 solicitantes=_solicitantes_oc(orden), areas=[v.valor for v in _oc_catalogo('OC_AREA')],
                 motivos_compra=[{'nombre': m.nombre, 'pide_cliente': bool(m.pide_cliente)} for m in motivos],
                 bancos=BANCOS_OC, tipos_cuenta=TIPOS_CUENTA_OC, puede_cuentas=session.get('role') in ROLES_OC_PAGAN,
@@ -431,7 +447,8 @@ def _orden_a_previo(o, items=None):
                                     'moneda', 'condicion_pago', 'entrega_modo', 'lugar_recojo', 'entrega_tipo', 'entrega_dias',
                                     'observaciones', 'oc_proveedor_id', 'contacto_id', 'area_solicitante', 'motivo_compra', 'motivo_detalle',
                                     'cliente_ruc', 'cliente_razon', 'detraccion_pct', 'es_importacion', 'condiciones_comerciales', 'pagos_importacion',
-                                    'precios_con_igv', 'es_contable', 'contable_nota')}
+                                    'precios_con_igv', 'es_contable', 'contable_nota', 'directo_categoria', 'directo_ubicacion',
+                                    'directo_detalle', 'directo_activo_fijo')}
     d['solicitante'] = (f"u:{o.solicitante_user_id}" if o.solicitante_user_id else (f"n:{o.solicitante_nombre}" if o.solicitante_nombre else ''))
     d['fecha'] = o.fecha.isoformat() if o.fecha else ''
     d['fecha_entrega'] = o.fecha_entrega.isoformat() if o.fecha_entrega else ''
@@ -530,7 +547,7 @@ def oc_guardar():
             if orden:
                 antes = {c: getattr(orden, c) for c in ('razon_social', 'total', 'moneda', 'condicion_pago', 'destino', 'entrega_modo',
                                                         'solicitante_nombre', 'motivo_compra', 'fecha_entrega', 'entrega_dias', 'lugar_recojo',
-                                                        'es_contable')}
+                                                        'es_contable', 'directo_categoria', 'directo_ubicacion')}
                 items_antes = [(i.descripcion, i.cantidad, i.um, i.precio_unitario) for i in orden.items]
                 aprobada_antes = (orden.aprobado_por.nombre_completo if orden.aprobado_por else 'Gerencia', orden.fecha_aprobacion)
                 # cambio de empresa: toma el número siguiente de la otra empresa (antes de cambiarla, para no contarse a sí misma)
@@ -567,7 +584,8 @@ def oc_guardar():
                 _oc_evento(orden, 'CREADA', f"{len(items)} ítem(s) · {MONEDAS_OC[orden.moneda]['simbolo']} {orden.total:,.2f}"
                                            + (f" · copia de {_oc_codigo(origen)}" if origen else '')
                                            + (f" · TEMA CONTABLE: no suma al inventario{(' (' + orden.contable_nota + ')') if orden.contable_nota else ''}"
-                                              if orden.es_contable else ''))
+                                              if orden.es_contable else '')
+                                           + (f" · USO DIRECTO: {orden.directo_categoria or ''} → {orden.directo_ubicacion or ''}" if orden.destino == 'DIRECTO' else ''))
             if enviar:
                 orden.estado, orden.enviado_por_id, orden.fecha_envio = 'ENVIADA', session.get('user_id'), ahora
                 _oc_evento(orden, 'ENVIADA', f'Editada después de aprobada: vuelve a Gerencia para re-aprobación (Rev. {orden.revision})'
@@ -612,6 +630,7 @@ def oc_detalle(orden_id):
             reqs_orden.append(ri.requerimiento)
     return render_template('oc_detalle.html', orden=orden, eventos=eventos, docs=docs, ingreso=ingreso, duplicada_de=duplicada_de, reqs_orden=reqs_orden,
                            motivos=motivos, motivos_anul=motivos_anul, observaciones=observaciones, contacto=contacto, empresas_oc=EMPRESAS_OC,
+                           directo_ubicaciones=_oc_valores_con_actual('OC_DIRECTO_UBICACION', orden.directo_ubicacion) if orden.destino == 'DIRECTO' else [],
                            p=_oc_permisos(orden), estados=ESTADOS_OC, tipos=TIPOS_OC, destinos=DESTINOS_OC, monedas=MONEDAS_OC,
                            cfg=_oc_cfg(orden.empresa or 'ANCLAJES'), igv=IGV_OC, ahora=ahora, hoy=ahora.date(), seccion='lista',
                            cuentas=_cuentas_de(orden.oc_proveedor_id), pago=_oc_pago_info(orden, ahora.date()), atraso=_oc_atraso(orden, ahora.date()),

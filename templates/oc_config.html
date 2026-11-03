@@ -36,7 +36,8 @@
     {% for t, nombre in nombres_catalogo.items() %}
     <div class="tab-pane fade {{ 'show active' if tab == t }}" id="c-{{ t }}">
         <div class="card border-0 shadow-sm" style="max-width: 680px;"><div class="card-body">
-            <div class="input-group mb-2"><input id="nuevo_{{ t }}" class="form-control text-uppercase" placeholder="{{ {'OC_UM': 'Ej: CJA-200', 'OC_CONDICION_PAGO': 'Ej: CRÉDITO 90 DÍAS', 'OC_AREA': 'Ej: MANTENIMIENTO', 'OC_SOLICITANTE': 'Ej: JUAN PÉREZ (TALLER)', 'OC_SERVICIO': 'Ej: ARENADO'}[t] }}"
+            <div class="input-group mb-2"><input id="nuevo_{{ t }}" class="form-control text-uppercase" placeholder="{{ {'OC_UM': 'Ej: CJA-200', 'OC_CONDICION_PAGO': 'Ej: CRÉDITO 90 DÍAS', 'OC_AREA': 'Ej: MANTENIMIENTO', 'OC_SOLICITANTE': 'Ej: JUAN PÉREZ (TALLER)', 'OC_SERVICIO': 'Ej: ARENADO',
+                   'OC_DIRECTO_CATEGORIA': 'Ej: EQUIPOS DE LABORATORIO', 'OC_DIRECTO_UBICACION': 'Ej: OFICINA · CONTABILIDAD'}.get(t, '') }}"
                    onkeydown="if(event.key==='Enter'){event.preventDefault(); post('catalogo', {tipo: '{{ t }}', valor: this.value}, '{{ t }}');}">
                 <button class="btn btn-primary" onclick="post('catalogo', {tipo: '{{ t }}', valor: document.getElementById('nuevo_{{ t }}').value}, '{{ t }}')"><i class="bi bi-plus-lg"></i> Agregar</button></div>
             {% if t == 'OC_SOLICITANTE' %}<div class="alert alert-light border small py-2 mb-2"><i class="bi bi-person-raised-hand text-primary"></i> En "Solicitó" ya aparecen solas las <b>cuentas del sistema</b>
@@ -44,12 +45,17 @@
             {% elif t == 'OC_SERVICIO' %}<div class="alert alert-light border small py-2 mb-2"><i class="bi bi-tools text-primary"></i> En una <b>Orden de Servicio</b> cada ítem lleva su tipo de servicio
                 (corte, roscado, galvanizado...). Sale en el PDF delante de la descripción.</div>
             {% elif t == 'OC_CONDICION_PAGO' %}<div class="alert alert-light border small py-2 mb-2"><i class="bi bi-cash-coin text-success"></i> Si el nombre tiene <b>"N DÍAS"</b> (ej: CRÉDITO 30 DÍAS) el sistema calcula el
-                <b>vencimiento</b> y avisa cuando falta poco o se vence. Contado, contra entrega o adelanto no tienen vencimiento.</div>{% endif %}
+                <b>vencimiento</b> y avisa cuando falta poco o se vence. Contado, contra entrega o adelanto no tienen vencimiento.</div>
+            {% elif t == 'OC_DIRECTO_CATEGORIA' %}<div class="alert alert-light border small py-2 mb-2"><i class="bi bi-pc-display" style="color:#c2410c;"></i> Destino <b>"Uso directo"</b>: bienes que la empresa compra
+                para <b>usarlos</b> (equipos de cómputo, celulares, muebles, herramientas...) y que <b>NO van al inventario ni a insumos</b>. Cada orden de uso directo lleva una de estas categorías
+                (sirve para filtrar el <b>Registro de uso directo</b> y para los reportes).</div>
+            {% elif t == 'OC_DIRECTO_UBICACION' %}<div class="alert alert-light border small py-2 mb-2"><i class="bi bi-geo-alt-fill" style="color:#c2410c;"></i> <b>A dónde va</b> el bien de uso directo
+                (oficina y área, almacén, planta, vehículos...). Se elige al crear la orden y se confirma (o cambia) al registrar la entrega.</div>{% endif %}
             <div class="form-text mb-2"><i class="bi bi-info-circle"></i> Las órdenes ya hechas guardan su texto: renombrar o borrar una opción no cambia órdenes anteriores.
                 Desactiva para que deje de aparecer sin borrarla.</div>
             <table class="table table-sm align-middle mb-0 small"><tbody>
             {% for v in catalogos[t] %}
-                <tr class="{{ 'opacity-50' if not v.activo }}"><td class="fw-semibold">{{ v.valor }}{% if uso[t].get(v.valor) %}<div class="uso">usada en {{ uso[t][v.valor] }} {{ 'ítem(s)' if t == 'OC_UM' else 'orden(es)' }}</div>{% endif %}</td>
+                <tr class="{{ 'opacity-50' if not v.activo }}"><td class="fw-semibold">{{ v.valor }}{% if (uso[t] or {}).get(v.valor) %}<div class="uso">usada en {{ uso[t][v.valor] }} {{ 'ítem(s)' if t == 'OC_UM' else 'orden(es)' }}</div>{% endif %}</td>
                     <td class="text-center">{% if v.activo %}<span class="badge bg-success">Activo</span>{% else %}<span class="badge bg-secondary">Inactivo</span>{% endif %}</td>
                     <td class="acciones">
                         <button class="btn btn-sm btn-outline-primary" title="Renombrar" onclick="renombrar({{ v.id }}, {{ v.valor|tojson|forceescape }}, '{{ t }}')"><i class="bi bi-pencil"></i></button>
