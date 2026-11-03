@@ -1,0 +1,21 @@
+{# TEMA CONTABLE: compra solo para contabilidad, NO suma al inventario (p. ej. entre Anclajes e Import Bolts).
+   Uso: {% from '_oc_contable.html' import chip_contable, aviso_contable with context %} #}
+{% macro chip_contable(o, chico=False) %}{% if o.es_contable %}<span class="oc-contable-chip {{ 'chico' if chico }}" title="TEMA CONTABLE: no suma al inventario{{ (' · ' ~ o.contable_nota) if o.contable_nota else '' }}"><i class="bi bi-calculator-fill"></i> CONTABLE</span>{% endif %}{% endmacro %}
+
+{% macro estilos_contable() %}
+<style>
+    .oc-contable-chip { display: inline-flex; align-items: center; gap: 3px; font-size: .62rem; font-weight: 800; letter-spacing: .02em; border-radius: 6px; padding: 1px 6px;
+                        background: #ede9fe; color: #5b21b6; border: 1px solid #c4b5fd; white-space: nowrap; vertical-align: middle; }
+    .oc-contable-chip.chico { font-size: .56rem; padding: 0 5px; }
+    .oc-contable-aviso { background: #f5f3ff; border: 1.5px solid #c4b5fd; color: #4c1d95; border-radius: 12px; padding: 10px 14px; }
+    .oc-contable-aviso b { color: #3b0764; }
+</style>
+{% endmacro %}
+
+{% macro aviso_contable(o, confirmado_txt=True) %}{% if o.es_contable %}
+<div class="oc-contable-aviso small mb-3"><i class="bi bi-calculator-fill"></i> <b>TEMA CONTABLE · NO SUMA AL INVENTARIO.</b>
+    Es una compra solo para contabilidad (el material ya está en los inventarios). Sigue el flujo normal y, al estar conforme, <b>no se ingresa</b>: solo se confirma.
+    {% if o.contable_nota %}<div class="mt-1"><i class="bi bi-chat-left-text"></i> {{ o.contable_nota }}</div>{% endif %}
+    {% if confirmado_txt %}<div class="mt-1">{% if o.fecha_kardex %}<i class="bi bi-check-circle-fill text-success"></i> <b>Confirmado</b> por {{ o.kardex_registrado_por.nombre_completo if o.kardex_registrado_por else '' }} el {{ o.fecha_kardex.strftime('%d/%m/%Y %H:%M') }}{% if o.nota_seguimiento %} · {{ o.nota_seguimiento }}{% endif %}
+        {% elif o.estado == 'CONFORME' %}<i class="bi bi-hourglass-split"></i> <b>Por confirmar</b> (no suma nada al inventario){% endif %}</div>{% endif %}
+</div>{% endif %}{% endmacro %}

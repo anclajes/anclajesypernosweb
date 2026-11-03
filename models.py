@@ -1036,3 +1036,4 @@ class MaestroProducto(db.Model):
 from modulos.insumos.modelos import *   # noqa: E402,F401,F403
 from modulos.compras.modelos import *   # noqa: E402,F401,F403
 from modulos.avisos.modelos import *    # noqa: E402,F401,F403
+from modulos.kardex.modelos import *    # noqa: E402,F401,F403

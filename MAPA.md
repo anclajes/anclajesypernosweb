@@ -40,6 +40,9 @@ modulos/
     requerimientos.py    requerimientos de compra (Inventario General o Insumos internos), seguimiento, novedades
     vaciar_menu.py       vaciar datos de órdenes (pruebas) y los números del menú
   kardex/              KARDEX (lo nuevo; el resto del Kardex sigue en app.py)
+    modelos.py           tabla MovimientoEliminado (auditoría de movimientos eliminados)
+    eliminar.py          ELIMINAR un movimiento registrado por error (Gerencia y Jefe de Almacén): revierte el stock, corrige
+                         los saldos posteriores y guarda la copia en "Movimientos eliminados" (/kardex/eliminados)
     venta_servicio.py    salida a MAESTRANZA / TRANSFORMACIÓN que sale como VENTA (cliente, OC del cliente opcional y
                          editable después) y su vínculo con las Órdenes de Servicio (desde el movimiento, el Kardex o la OS)
   avisos/              CAMPANA Y AVISOS
@@ -125,12 +128,29 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
   Kardex, Ingresos y el detalle muestran la OC (PDF) y todos sus documentos con ver/descargar. Menú reutilizable: `templates/_oc_docs_menu.html`.
 - Órdenes de compra (lista): muestra quién **creó** la orden, filtro "Creó", y el menú 📎 con todos los documentos.
 
+## Compras: OC de TEMA CONTABLE (no suma al inventario)
+
+- Se elige como **Motivo de la compra → "TEMA CONTABLE"** (motivo del sistema `MOTIVO_CONTABLE`: se crea solo, no se borra ni se
+  renombra en Configuración). Al elegirlo el formulario explica qué hace. Marca `orden_compra.es_contable` y el "detalle o referencia"
+  queda como `contable_nota`. Solo en OC (no en OS). Si el proveedor es la otra empresa (mismo RUC) el formulario sugiere elegirlo.
+  Uso: compras solo para contabilidad, p. ej. Anclajes le compra a Import Bolts material que **ya está** en los inventarios.
+- Sigue el flujo normal (aprobación, llegada, conformidad, pago). Al estar CONFORME **no se ingresa**: en "Ingresos pendientes" (y en
+  el detalle) sale "Confirmar tema contable" (`oc_contable_confirmar`, roles `ROLES_OC_CONTABLE`: admin, logística, administración,
+  almacén). Guarda quién/cuándo en `fecha_kardex` / `kardex_registrado_por_id` / `nota_seguimiento`. Gerencia puede quitar la confirmación.
+- Se ve en todo el flujo: chip CONTABLE en la lista, detalle, aprobación rápida de Gerencia (campana), Ingresos pendientes; filtro
+  "Tema contable" y botón "Contables" en la lista; columnas en el Excel. No entra en "En camino", en "Ingresos pendientes" para sumar,
+  en Insumos pendientes ni en "Mejores precios" (no es precio de mercado). Sí cuenta en los reportes de gasto.
+
 ## Kardex
 
 - Salida con motivo que "Inicia una OC" (Catálogos → Motivos, ej. REQUERIMIENTO DE MAESTRANZA): por defecto **sale como VENTA**
   (no se abre proceso por OC). Pide el cliente; la OC del cliente y la Orden de Servicio son opcionales y se completan después
   desde el Kardex (lápiz). En el Kardex sale como VENTA y cuenta en los dashboards de ventas (toneladas).
   Filtros: `?oc_cliente=`, `?os=`, `?venta_srv=1`. Desmarcada, sigue el proceso por OC de siempre (salida → reingreso → venta final).
+- **Eliminar un movimiento registrado por error** (botón "Eliminar" en la columna Usuario de los dos Kardex): Gerencia cualquiera;
+  Jefe de Almacén (rol `almacen`) solo de los últimos 7 días (`DIAS_ELIMINAR_ALMACEN`). Pide motivo; revierte el stock (salida vuelve,
+  entrada se descuenta) y corrige el saldo de los posteriores; no deja stock negativo. No se eliminan los de OC, proceso por OC, pedidos (NP-),
+  inter-empresa, saldo inicial ni auditorías. Auditoría completa en "Movimientos eliminados".
 - Borrar un código del Maestro: el "Saldo Inicial" (carga del Excel) no cuenta como movimiento; si es el único, se borra con el código.
 
 ## Avisos de Windows

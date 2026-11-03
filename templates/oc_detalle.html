@@ -4,6 +4,8 @@
 {% block content %}
 {% set vista = '' %}
 {% include '_oc_nav.html' %}
+{% from '_oc_contable.html' import chip_contable, aviso_contable, estilos_contable with context %}
+{{ estilos_contable() }}
 {% set e = estados[orden.estado] %}
 {% set mon = monedas[orden.moneda] %}
 <style>
@@ -135,6 +137,7 @@
             <span class="emp-badge" style="background: {{ emp_info.color }};">{{ emp_info.nombre|upper }}</span>
             <span class="oc-tipo {{ orden.tipo }}">{{ tipos[orden.tipo]|upper }}</span>
             <span class="oc-dest {{ orden.destino }}">{{ oc_destino_txt(orden) }}</span>
+            {{ chip_contable(orden) }}
             <div class="cod mt-1">{{ oc_codigo(orden) }}</div>
             <div class="prov-nom mt-1" title="{{ orden.razon_social }}">{{ orden.razon_social }}</div>
             <div class="small text-muted">{{ orden.fecha.strftime('%d/%m/%Y') }} · elaborada por <b>{{ orden.creado_por.nombre_completo if orden.creado_por else '-' }}</b>
@@ -233,6 +236,10 @@
         {% if p.cerrar_saldo %}<button class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#mSaldo"><i class="bi bi-scissors"></i> No llegará el resto</button>{% endif %}
         {% if p.insumos %}<a class="btn btn-warning" href="{{ url_for('insumos_ingreso_nuevo', oc=orden.id, empresa=orden.empresa or 'ANCLAJES') }}"><i class="bi bi-box-arrow-in-down"></i> Ingresar a Insumos</a>{% endif %}
         {% if p.ingresar %}<a class="btn btn-warning" href="{{ url_for('oc_ingresos_pendientes') }}#oc{{ orden.id }}"><i class="bi {{ 'bi-clipboard-check' if orden.tipo == 'OS' else 'bi-box-arrow-in-down' }}"></i> {{ 'Seguimiento (Almacén)' if orden.tipo == 'OS' else 'Ingreso al inventario (Almacén)' }}</a>{% endif %}
+        {% if p.confirmar_contable %}<form method="POST" action="{{ url_for('oc_contable_confirmar', orden_id=orden.id) }}" onsubmit="return confirmar(this, 'Confirmar {{ oc_codigo(orden) }} como TEMA CONTABLE: NO se suma nada al inventario. ¿Continuar?')">
+            <button class="btn text-white" style="background:#6d28d9;"><i class="bi bi-calculator-fill"></i> Confirmar tema contable (no suma)</button></form>{% endif %}
+        {% if p.deshacer_contable %}<form method="POST" action="{{ url_for('oc_contable_deshacer', orden_id=orden.id) }}" id="formDeshContable">
+            <input type="hidden" name="motivo" id="motDeshContable"><button type="button" class="btn btn-outline-secondary" onclick="deshacerContable()"><i class="bi bi-arrow-counterclockwise"></i> Quitar confirmación contable</button></form>{% endif %}
         {% if p.pagar %}<button class="btn btn-outline-success" data-bs-toggle="modal" data-bs-target="#mPagar"><i class="bi bi-cash-coin"></i> Marcar pagada</button>{% endif %}
         {% if docs|selectattr('tipo', 'equalto', 'FACTURA')|list %}<a class="btn btn-outline-primary" href="{{ url_for('oc_comparar', orden_id=orden.id) }}"><i class="bi bi-layout-split"></i> Factura vs OC</a>{% endif %}
         {% if p.observar %}<button class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#mObs"><i class="bi bi-chat-left-text"></i> Observación</button>{% endif %}
@@ -241,6 +248,7 @@
         {% if p.anular %}<button class="btn btn-outline-dark ms-sm-auto" data-bs-toggle="modal" data-bs-target="#mAnular"><i class="bi bi-slash-circle"></i> Anular</button>{% endif %}
     </div>
 </div>
+{{ aviso_contable(orden) }}
 
 <div class="row g-3">
     <div class="col-12 col-lg-8">
@@ -749,6 +757,11 @@
 {% include '_oc_cuentas.html' %}
 
 <script>
+function deshacerContable() {
+    Swal.fire({ title: '¿Quitar la confirmación contable?', input: 'text', inputPlaceholder: 'Motivo', showCancelButton: true, confirmButtonText: 'Quitar', cancelButtonText: 'Cancelar',
+        inputValidator: v => (!v || v.trim().length < 5) ? 'Escribe el motivo (mín. 5 letras)' : undefined })
+        .then(r => { if (r.isConfirmed) { document.getElementById('motDeshContable').value = r.value; document.getElementById('formDeshContable').submit(); } });
+}
 function confirmar(form, texto) {
     if (form.dataset.ok) return true;
     Swal.fire({ icon: 'question', title: 'Confirmar', text: texto, showCancelButton: true, confirmButtonText: 'Sí', cancelButtonText: 'Cancelar' })

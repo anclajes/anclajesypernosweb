@@ -127,6 +127,11 @@ class OrdenCompra(db.Model):
     condiciones_comerciales = db.Column(db.Text)            # importación: incoterm, embarque, etc.
     pagos_importacion = db.Column(db.Text)                  # importación: JSON [{concepto, pct, detalle}]
     saldo_cerrado_motivo = db.Column(db.String(300))        # "no llegará el resto": por qué se cerró el saldo
+    # TEMA CONTABLE: compra solo para contabilidad (p. ej. Anclajes le compra a Import Bolts material que YA está en los inventarios).
+    # Sigue el flujo normal (aprobación, llegada, conformidad, pago) pero NO suma al inventario: al final solo se CONFIRMA
+    # (fecha_kardex / kardex_registrado_por_id / nota_seguimiento guardan quién y cuándo lo confirmó).
+    es_contable = db.Column(db.Boolean, default=False)
+    contable_nota = db.Column(db.String(300))
     revision = db.Column(db.Integer, default=0)            # cuántas veces se editó DESPUÉS de aprobada (Rev. 1, Rev. 2...)
     motivo_edicion = db.Column(db.String(300))              # por qué se editó la orden ya aprobada (lo ve Gerencia al re-aprobar)
     # Recepción del material

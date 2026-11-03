@@ -43,6 +43,8 @@ def oc_lista():
     prov_id = a.get('proveedor', type=int)
     solicitante, motivo, pago_f, docs_f = a.get('solicitante', ''), a.get('motivo', ''), a.get('pago', ''), a.get('docs', '')
     creador = a.get('creador', type=int)
+    contable_f = a.get('contable', '')          # 'si' = solo tema contable · 'no' = sin tema contable
+    contable_f = contable_f if contable_f in ('si', 'no') else ''
     desde, hasta = _fecha_param('desde', None), _fecha_param('hasta', None)
     buscar = ' '.join((a.get('q') or '').split())
     docs = {}
@@ -64,6 +66,8 @@ def oc_lista():
             continue
         if creador and o.creado_por_id != creador:
             continue
+        if contable_f and bool(o.es_contable) != (contable_f == 'si'):
+            continue
         if pago_f:
             niv = pagos[o.id]['nivel']
             if pago_f == 'pendiente' and niv not in ('contado', 'al_dia', 'por_vencer', 'vencida'):
@@ -84,7 +88,7 @@ def oc_lista():
             continue
         if buscar:
             texto = (f"{o.tipo} {_oc_numero_txt(o)} {o.numero:06d} {o.razon_social} {o.ruc or ''} {o.cotizacion or ''} {o.numero_factura or ''} {o.numero_guia or ''} "
-                     f"{_oc_solicitante_txt(o)} {o.creado_por.nombre_completo if o.creado_por else ''} {o.cliente_razon or ''} {o.cliente_ruc or ''} {' '.join(i.descripcion for i in o.items)}").upper()
+                     f"{_oc_solicitante_txt(o)} {o.creado_por.nombre_completo if o.creado_por else ''} {'CONTABLE ' + (o.contable_nota or '') if o.es_contable else ''} {o.cliente_razon or ''} {o.cliente_ruc or ''} {' '.join(i.descripcion for i in o.items)}").upper()
             if not all(t in texto for t in buscar.upper().split()):
                 continue
         ordenes.append(o)
@@ -109,13 +113,16 @@ def oc_lista():
     # quién creó la orden (la cuenta que la registró)
     creadores = sorted({(o.creado_por_id, o.creado_por.nombre_completo or o.creado_por.username) for o in todas if o.creado_por},
                        key=lambda x: _clave_alfabetica(x[1] or ''))
-    filtros_activos = sum(1 for x in (tipo, destino, prov_id, solicitante, motivo, pago_f, docs_f, desde, hasta, creador) if x)
+    filtros_activos = sum(1 for x in (tipo, destino, prov_id, solicitante, motivo, pago_f, docs_f, desde, hasta, creador, contable_f) if x)
+    n_contables = sum(1 for o in todas if o.es_contable)
+    contables_por_confirmar = sum(1 for o in todas if o.es_contable and o.estado == 'CONFORME' and not o.fecha_kardex)
     return render_template('oc_lista.html', ordenes=ordenes, vista=vista, vistas_orden=VISTAS_OC_ORDEN,
                            nombres_vista={**{k: v[0] for k, v in VISTAS_OC.items()}, **VISTAS_OC_EXTRA}, conteo=conteo, docs=docs,
                            tipo=tipo, destino=destino, prov_id=prov_id, solicitante=solicitante, motivo=motivo, pago_f=pago_f, docs_f=docs_f,
                            desde=desde, hasta=hasta, buscar=buscar, hoy=hoy, pagos=pagos, atrasos=atrasos, kpi=kpi, resumen=resumen,
                            total_filtrado=total_filtrado, proveedores=proveedores, solicitantes=solicitantes, motivos=motivos,
-                           creadores=creadores, creador=creador,
+                           creadores=creadores, creador=creador, contable_f=contable_f, n_contables=n_contables,
+                           contables_por_confirmar=contables_por_confirmar,
                            filtros_activos=filtros_activos, estados=ESTADOS_OC, tipos=TIPOS_OC, destinos=DESTINOS_OC, monedas=MONEDAS_OC,
                            puede_editar=rol in ROLES_OC_EDITAN, aprueba=rol in ROLES_OC_APRUEBAN, seccion='lista', emp_sel=emp_sel, conteo_emp=conteo_emp, empresas_oc=EMPRESAS_OC)
 
@@ -191,7 +198,8 @@ def _oc_excel_lista(ordenes, pagos, atrasos, emp_sel):
                       (f"{rec['n_completos']} de {rec['n_items']} productos completos" if rec['entregas'] else ''), _oc_faltan_txt(o, rec), o.fecha_conforme,
                       ('Completo' if ie['completo'] else f"{ie['hechos']} de {ie['total']}") if ie else ('Sí' if o.insumo_ingreso_id else ''),
                       o.numero_factura or '', guias, o.aprobado_por.nombre_completo if o.aprobado_por else '', o.fecha_aprobacion,
-                      o.creado_por.nombre_completo if o.creado_por else '', ', '.join(reqs), len(docs.get(o.id, []))])
+                      o.creado_por.nombre_completo if o.creado_por else '', ', '.join(reqs), len(docs.get(o.id, [])),
+                      (('Sí · confirmado' if o.fecha_kardex else 'Sí · por confirmar') if o.es_contable else ''), o.contable_nota or ''])
         for i in o.items:
             ri = rec['items'].get(i.id, {})
             r = _req_de_item_oc(i)
@@ -203,7 +211,8 @@ def _oc_excel_lista(ordenes, pagos, atrasos, emp_sel):
     _xlsx_hoja(wb, 'Órdenes', ['Empresa', 'Tipo', 'N°', 'Fecha', 'Estado', 'Importación', 'Proveedor', 'RUC / Tax ID', 'Solicitó', 'Área', 'Motivo', 'Cliente',
                                'Destino', 'Moneda', 'Subtotal', 'IGV', 'Total', 'Condición de pago', 'Pago', 'Fecha de pago', 'Vence', 'Debía llegar',
                                'Atraso (días)', '1.ª llegada', 'Entregas', 'Llegada', 'Falta llegar (por producto)', 'Conforme', 'Ingreso al inventario',
-                               'Factura', 'Guía(s)', 'Aprobó', 'Fecha aprobación', 'Creó', 'Requerimientos', 'Documentos'],
+                               'Factura', 'Guía(s)', 'Aprobó', 'Fecha aprobación', 'Creó', 'Requerimientos', 'Documentos',
+                               'Tema contable (no suma)', 'Nota contable'],
                filas, formatos={3: f_d, 14: f_m, 15: f_m, 16: f_m, 19: f_d, 20: f_d, 21: f_d, 23: f_dt, 27: f_dt, 32: f_dt},
                primera=True, nota=f"Órdenes de compra y servicio · {'Las dos empresas' if emp_sel == 'TODAS' else EMPRESAS_OC[emp_sel]['nombre']} · "
                                   f"exportado el {hora_peru().strftime('%d/%m/%Y %H:%M')} por {session.get('nombre', '')} · {len(filas)} orden(es)")
@@ -422,7 +431,7 @@ def _orden_a_previo(o, items=None):
                                     'moneda', 'condicion_pago', 'entrega_modo', 'lugar_recojo', 'entrega_tipo', 'entrega_dias',
                                     'observaciones', 'oc_proveedor_id', 'contacto_id', 'area_solicitante', 'motivo_compra', 'motivo_detalle',
                                     'cliente_ruc', 'cliente_razon', 'detraccion_pct', 'es_importacion', 'condiciones_comerciales', 'pagos_importacion',
-                                    'precios_con_igv')}
+                                    'precios_con_igv', 'es_contable', 'contable_nota')}
     d['solicitante'] = (f"u:{o.solicitante_user_id}" if o.solicitante_user_id else (f"n:{o.solicitante_nombre}" if o.solicitante_nombre else ''))
     d['fecha'] = o.fecha.isoformat() if o.fecha else ''
     d['fecha_entrega'] = o.fecha_entrega.isoformat() if o.fecha_entrega else ''
@@ -520,7 +529,8 @@ def oc_guardar():
             contacto = _contacto_para_orden(prov, datos)
             if orden:
                 antes = {c: getattr(orden, c) for c in ('razon_social', 'total', 'moneda', 'condicion_pago', 'destino', 'entrega_modo',
-                                                        'solicitante_nombre', 'motivo_compra', 'fecha_entrega', 'entrega_dias', 'lugar_recojo')}
+                                                        'solicitante_nombre', 'motivo_compra', 'fecha_entrega', 'entrega_dias', 'lugar_recojo',
+                                                        'es_contable')}
                 items_antes = [(i.descripcion, i.cantidad, i.um, i.precio_unitario) for i in orden.items]
                 aprobada_antes = (orden.aprobado_por.nombre_completo if orden.aprobado_por else 'Gerencia', orden.fecha_aprobacion)
                 # cambio de empresa: toma el número siguiente de la otra empresa (antes de cambiarla, para no contarse a sí misma)
@@ -555,7 +565,9 @@ def oc_guardar():
                 _aplicar_datos_orden(orden, datos, items, prov, contacto)
                 origen = OrdenCompra.query.get(orden.duplicada_de_id) if orden.duplicada_de_id else None
                 _oc_evento(orden, 'CREADA', f"{len(items)} ítem(s) · {MONEDAS_OC[orden.moneda]['simbolo']} {orden.total:,.2f}"
-                                           + (f" · copia de {_oc_codigo(origen)}" if origen else ''))
+                                           + (f" · copia de {_oc_codigo(origen)}" if origen else '')
+                                           + (f" · TEMA CONTABLE: no suma al inventario{(' (' + orden.contable_nota + ')') if orden.contable_nota else ''}"
+                                              if orden.es_contable else ''))
             if enviar:
                 orden.estado, orden.enviado_por_id, orden.fecha_envio = 'ENVIADA', session.get('user_id'), ahora
                 _oc_evento(orden, 'ENVIADA', f'Editada después de aprobada: vuelve a Gerencia para re-aprobación (Rev. {orden.revision})'

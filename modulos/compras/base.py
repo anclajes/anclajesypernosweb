@@ -27,6 +27,7 @@ ROLES_REQ_CREAN = ['admin', 'logistica', 'almacen', 'almacen_visor']   # piden p
 ROLES_REQ_VEN = ['admin', 'logistica', 'almacen', 'administracion', 'almacen_visor']
 ROLES_REQ_ATIENDEN = ['admin', 'logistica']                # arman la OC con lo pedido o rechazan el requerimiento
 ROLES_OC_PAGAN = ['admin', 'logistica', 'administracion']  # marcan la orden como pagada y guardan cuentas bancarias
+ROLES_OC_CONTABLE = ['admin', 'logistica', 'administracion', 'almacen']   # confirman una OC de TEMA CONTABLE (no suma al inventario)
 ROLES_SOLICITANTES_OC = ['admin', 'administracion', 'vendedor', 'logistica', 'almacen', 'almacen_visor']   # cuentas que pueden figurar como "solicitó"
 AREA_POR_ROL_OC = {'admin': 'GERENCIA', 'administracion': 'ADMINISTRACIÓN', 'vendedor': 'VENTAS', 'logistica': 'LOGÍSTICA', 'almacen': 'ALMACÉN', 'almacen_visor': 'ALMACÉN'}
 DIAS_AVISO_PAGO = 5            # "por vencer": faltan 5 días o menos
@@ -85,6 +86,8 @@ _OC_INICIALES = {
     'OC_SERVICIO': ['CORTE', 'ROSCADO', 'DOBLADO', 'GALVANIZADO', 'ZINCADO / PAVONADO', 'MAQUINADO / TORNEADO', 'SOLDADURA', 'PINTURA',
                     'TRATAMIENTO TÉRMICO', 'TRANSPORTE / FLETE', 'MANTENIMIENTO', 'OTRO SERVICIO'],
 }
+# Motivo de compra del SISTEMA: elegirlo marca la OC como TEMA CONTABLE (no suma al inventario). No se borra ni se renombra.
+MOTIVO_CONTABLE = 'TEMA CONTABLE'
 _OC_MOTIVOS_COMPRA_INICIALES = [('REPOSICIÓN DE STOCK', False), ('PEDIDO DE CLIENTE', True), ('USO INTERNO', False),
                                 ('PROYECTO / OBRA DE CLIENTE', True), ('MUESTRA PARA CLIENTE', True), ('MANTENIMIENTO', False)]
 OC_CONFIG_DEF = {
@@ -253,6 +256,7 @@ def _asegurar_oc():
     _agregar_columnas_si_faltan('oc_proveedor', [('es_extranjero', 'BOOLEAN DEFAULT FALSE'), ('pais', 'VARCHAR(60)')])
     _agregar_columnas_si_faltan('orden_compra_item', [('cantidad_cancelada', 'FLOAT DEFAULT 0'), ('kgs_mpcs', 'FLOAT'), ('precio_mil', 'FLOAT'),
                                                       ('detalle', 'VARCHAR(500)'), ('piezas', 'FLOAT'), ('precio_con_igv', 'FLOAT')])
+    _agregar_columnas_si_faltan('orden_compra', [('es_contable', 'BOOLEAN DEFAULT FALSE'), ('contable_nota', 'VARCHAR(300)')])
     _agregar_columnas_si_faltan('orden_compra', [('es_importacion', 'BOOLEAN DEFAULT FALSE'), ('condiciones_comerciales', 'TEXT'),
                                                  ('pagos_importacion', 'TEXT'), ('saldo_cerrado_motivo', 'VARCHAR(300)')])
     _agregar_columnas_si_faltan('requerimiento_item', [('descartado', 'BOOLEAN DEFAULT FALSE'), ('descartado_por_id', 'INTEGER'),
@@ -356,6 +360,17 @@ def _asegurar_oc():
             db.session.commit()
         except IntegrityError:
             db.session.rollback()
+    try:      # el motivo "TEMA CONTABLE" siempre existe y está activo (es del sistema)
+        mc = next((m for m in OCMotivoCompra.query.all() if (m.nombre or '').upper() == MOTIVO_CONTABLE), None)
+        if not mc:
+            db.session.add(OCMotivoCompra(nombre=MOTIVO_CONTABLE, pide_cliente=False, activo=True))
+            db.session.commit()
+        elif not mc.activo or mc.pide_cliente:
+            mc.activo, mc.pide_cliente = True, False
+            db.session.commit()
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("No se pudo preparar el motivo de compra TEMA CONTABLE")
     _oc_ok = True
 
 
@@ -374,7 +389,8 @@ def _ruta_oc(nivel='ver', como_json=False):
         def envoltura(*args, **kwargs):
             permitidos = {'ver': ROLES_OC_VEN, 'editar': ROLES_OC_EDITAN, 'aprobar': ROLES_OC_APRUEBAN, 'admin': ['admin'],
                   'ingresar': ROLES_OC_INGRESAN, 'docs': list(set(ROLES_OC_VEN + ROLES_OC_INGRESAN)), 'pagar': ROLES_OC_PAGAN,
-                  'req_ver': ROLES_REQ_VEN, 'req_crear': ROLES_REQ_CREAN, 'buscar': list(set(ROLES_OC_INGRESAN + ROLES_REQ_CREAN))}[nivel]
+                  'req_ver': ROLES_REQ_VEN, 'req_crear': ROLES_REQ_CREAN, 'buscar': list(set(ROLES_OC_INGRESAN + ROLES_REQ_CREAN)),
+                  'contable': ROLES_OC_CONTABLE}[nivel]
             if session.get('role') not in permitidos:
                 if como_json:
                     return {'status': 'error', 'msg': 'No autorizado'}, 403
@@ -590,7 +606,7 @@ def _oc_ingreso_estado(orden):
     # el último ingreso puede ser de una entrega parcial (el ítem aún no se completa)
     marcas = [ei for e in _oc_entregas(orden) for ei in e.items if ei.fecha_ingreso] or hechos
     ultimo = max(marcas, key=lambda i: i.fecha_ingreso) if marcas else None
-    return {'hechos': len(hechos), 'total': len(items), 'ultimo': ultimo, 'entregas_ing': len(marcas),
+    return {'hechos': len(hechos), 'total': len(items), 'ultimo': ultimo, 'entregas_ing': len(marcas), 'contable': bool(orden.es_contable),
             'completo': bool(orden.fecha_kardex) or (bool(items) and len(hechos) == len(items))}
 
 
@@ -792,9 +808,12 @@ def _oc_permisos(orden):
         'observar': edita and e in ('APROBADA', 'RECIBIDA'),
         'documentos': edita and e not in ('ANULADA',),
         'borrar_docs': edita and e not in ('CONFORME', 'ANULADA'),
-        'ingresar': rol in ROLES_OC_INGRESAN and orden.destino == 'GENERAL' and not orden.fecha_kardex
+        'ingresar': rol in ROLES_OC_INGRESAN and orden.destino == 'GENERAL' and not orden.fecha_kardex and not orden.es_contable
                     and ((orden.tipo == 'OS' and e == 'CONFORME') or (orden.tipo == 'OC' and bool(_entregas_por_ingresar([orden])))),
-        'insumos': edita and e == 'CONFORME' and orden.destino == 'INSUMOS' and not orden.insumo_ingreso_id,
+        'insumos': edita and e == 'CONFORME' and orden.destino == 'INSUMOS' and not orden.insumo_ingreso_id and not orden.es_contable,
+        # tema contable: al estar conforme no se ingresa, solo se CONFIRMA (no suma al inventario)
+        'confirmar_contable': rol in ROLES_OC_CONTABLE and bool(orden.es_contable) and e == 'CONFORME' and not orden.fecha_kardex,
+        'deshacer_contable': rol == 'admin' and bool(orden.es_contable) and bool(orden.fecha_kardex),
         'duplicar': edita and e != 'BORRADOR',
         'pagar': rol in ROLES_OC_PAGAN and e in ('APROBADA', 'RECIBIDA', 'CONFORME') and (orden.estado_pago or 'PENDIENTE') != 'PAGADO',
         'deshacer_pago': rol == 'admin' and (orden.estado_pago or 'PENDIENTE') == 'PAGADO',
@@ -971,6 +990,12 @@ def _leer_orden_form(f, orden=None):
     # Certificado de calidad: siempre OPCIONAL (no frena la conformidad ni el ingreso). En importaciones queda marcado como
     # "pendiente" hasta que se suba (aviso en la orden y lista "Certificados por subir").
     datos['requiere_certificado'] = es_imp
+    # TEMA CONTABLE: se elige como MOTIVO de la compra. No suma al inventario (p. ej. compras entre Anclajes e Import Bolts
+    # de material que ya está en los inventarios). El "detalle o referencia" del motivo queda como nota contable.
+    datos['es_contable'] = motivo == MOTIVO_CONTABLE
+    if datos['es_contable'] and tipo != 'OC':
+        errores.append('"Tema contable" es solo para Órdenes de COMPRA (no para servicios).')
+    datos['contable_nota'] = datos['motivo_detalle'] if datos['es_contable'] else None
     # Detracción SUNAT (sugerida en servicios: 12%; se puede cambiar o quitar)
     datos['detraccion_pct'] = None
     if f.get('aplica_detraccion') == '1' and not es_imp:
@@ -1216,9 +1241,10 @@ def _aplicar_datos_orden(orden, datos, items, prov, contacto=None):
                   'condicion_pago', 'entrega_modo', 'lugar_recojo', 'entrega_tipo', 'entrega_dias', 'fecha_entrega', 'observaciones',
                   'subtotal', 'igv', 'total', 'solicitante_user_id', 'solicitante_nombre', 'area_solicitante', 'motivo_compra', 'motivo_detalle',
                   'cliente_ruc', 'cliente_razon', 'requiere_certificado', 'detraccion_pct',
-                  'es_importacion', 'condiciones_comerciales', 'pagos_importacion', 'precios_con_igv'):
+                  'es_importacion', 'condiciones_comerciales', 'pagos_importacion', 'precios_con_igv', 'contable_nota'):
         setattr(orden, campo, datos[campo] if datos[campo] != '' else None)
     orden.es_importacion = bool(datos.get('es_importacion'))
+    orden.es_contable = bool(datos.get('es_contable'))
     orden.precios_con_igv = bool(datos.get('precios_con_igv'))
     orden.razon_social = datos['razon_social']
     orden.contacto, orden.telefono = datos['contacto'], datos['telefono']
@@ -1270,10 +1296,15 @@ def _resumen_cambios_orden(antes, orden):
     cambios = []
     for campo, etq in (('razon_social', 'Proveedor'), ('total', 'Total'), ('moneda', 'Moneda'), ('condicion_pago', 'Pago'),
                        ('destino', 'Destino'), ('entrega_modo', 'Entrega'), ('solicitante_nombre', 'Solicitó'), ('motivo_compra', 'Motivo'),
-                       ('fecha_entrega', 'Fecha de entrega'), ('entrega_dias', 'Días de entrega'), ('lugar_recojo', 'Recojo')):
+                       ('fecha_entrega', 'Fecha de entrega'), ('entrega_dias', 'Días de entrega'), ('lugar_recojo', 'Recojo'),
+                       ('es_contable', 'Tema contable')):
         if campo not in antes:
             continue
         a, d = antes.get(campo), getattr(orden, campo)
+        if campo == 'es_contable':
+            if bool(a) != bool(d):
+                cambios.append(f"Tema contable: {'Sí' if a else 'No'} → {'Sí (no suma al inventario)' if d else 'No'}")
+            continue
         if a != d and not (a in (None, '') and d in (None, '')):
             a_txt = f'{a:,.2f}' if isinstance(a, float) else (a.strftime('%d/%m/%Y') if hasattr(a, 'strftime') else a)
             d_txt = f'{d:,.2f}' if isinstance(d, float) else (d.strftime('%d/%m/%Y') if hasattr(d, 'strftime') else d)

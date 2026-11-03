@@ -72,6 +72,12 @@
             </div>
             <table class="table table-sm align-middle mb-0 small"><tbody>
             {% for m in motivos_compra %}
+                {% if m.nombre|upper == 'TEMA CONTABLE' %}
+                <tr><td class="fw-semibold" style="color:#5b21b6;"><i class="bi bi-calculator-fill"></i> {{ m.nombre }} <span class="badge" style="background:#ede9fe; color:#5b21b6;">del sistema</span>
+                    <div class="uso">La OC queda como tema contable: sigue el flujo normal pero NO suma al inventario (solo se confirma).{% if uso_mc.get(m.nombre) %} · usado en {{ uso_mc[m.nombre] }} orden(es){% endif %}</div></td>
+                    <td class="text-center text-muted" style="width:120px;">Sin cliente</td><td class="text-center" style="width:80px;"><span class="badge bg-success">Activo</span></td>
+                    <td class="acciones text-muted small" style="width:120px;"><i class="bi bi-lock"></i> fijo</td></tr>
+                {% else %}
                 <tr class="{{ 'opacity-50' if not m.activo }}"><td class="fw-semibold">{{ m.nombre }}{% if uso_mc.get(m.nombre) %}<div class="uso">usado en {{ uso_mc[m.nombre] }} orden(es)</div>{% endif %}</td>
                     <td class="text-center" style="width:120px;"><button class="btn btn-sm {{ 'btn-info text-white' if m.pide_cliente else 'btn-outline-secondary' }} py-0" title="Pedir o no el cliente" onclick="post('motivo_compra', {accion: 'cliente', id: {{ m.id }}}, 'motivos_compra')">
                         <i class="bi {{ 'bi-person-check' if m.pide_cliente else 'bi-person-dash' }}"></i> {{ 'Pide cliente' if m.pide_cliente else 'Sin cliente' }}</button></td>
@@ -80,6 +86,7 @@
                         <button class="btn btn-sm btn-outline-primary" title="Renombrar" onclick="renombrarMotivoCompra({{ m.id }}, {{ m.nombre|tojson|forceescape }})"><i class="bi bi-pencil"></i></button>
                         <button class="btn btn-sm btn-outline-secondary" title="Activar/desactivar" onclick="post('motivo_compra', {accion: 'toggle', id: {{ m.id }}}, 'motivos_compra')"><i class="bi {{ 'bi-toggle-on' if m.activo else 'bi-toggle-off' }}"></i></button>
                         <button class="btn btn-sm btn-outline-danger" title="Borrar" onclick="borrar('motivo_compra', {{ m.id }}, {{ m.nombre|tojson|forceescape }}, 'motivos_compra')"><i class="bi bi-trash"></i></button></td></tr>
+                {% endif %}
             {% else %}<tr><td class="text-muted">Sin motivos.</td></tr>{% endfor %}
             </tbody></table>
             <div class="form-text">Las órdenes ya hechas guardan el texto del motivo: renombrarlo o borrarlo no cambia órdenes anteriores.</div>

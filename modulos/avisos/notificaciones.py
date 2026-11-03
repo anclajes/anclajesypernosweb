@@ -127,6 +127,12 @@ def _notif_por_ingresar(orden, entrega=None):
     try:
         corto = EMPRESAS_OC.get(orden.empresa or 'ANCLAJES', {}).get('corto', '')
         emp = orden.empresa or 'ANCLAJES'
+        if orden.es_contable:      # tema contable: no se ingresa, solo se confirma (una vez, con la orden completa)
+            if orden.estado != 'CONFORME' or orden.fecha_kardex:
+                return 0
+            return _notif_crear('ING_PENDIENTE', f"Tema contable por confirmar · {_oc_codigo(orden)} · {corto}",
+                                f"{orden.razon_social} · NO suma al inventario: solo confirmar",
+                                url_for('oc_ingresos_pendientes', empresa=emp), orden=orden, excluir=session.get('user_id'))
         if orden.destino == 'INSUMOS':
             if orden.estado != 'CONFORME' or orden.insumo_ingreso_id:
                 return 0
@@ -179,6 +185,9 @@ def _notif_por_ingresar_json(ahora, cfg):
                 if o.destino == 'GENERAL':
                     fila(o, 'SERVICIO', 'servicio terminado · registrar seguimiento', o.fecha_conforme,
                          url_for('oc_ingresos_pendientes', empresa=o.empresa or 'ANCLAJES'))
+            for o in _contables_por_confirmar():
+                fila(o, 'CONTABLE', 'tema contable · NO suma al inventario: solo confirmar', o.fecha_conforme,
+                     url_for('oc_ingresos_pendientes', empresa=o.empresa or 'ANCLAJES'))
         if cfg['tipos'].get('INSUMO_PENDIENTE'):
             for o in _ordenes_pendientes_insumos():
                 fila(o, 'INSUMOS', f"insumos internos · {len(o.items)} ítem(s) por registrar", o.fecha_conforme,
@@ -227,6 +236,7 @@ def _notif_por_aprobar_json(ahora, puede_aprobar):
                        'empresa_txt': emp.get('corto', ''), 'color': emp.get('color', '#0B3D91'), 'proveedor': o.razon_social or '',
                        'monto': _notif_monto(o), 'solicitante': o.solicitante_nombre or '', 'motivo': (o.motivo_compra or '').capitalize(),
                        'revision': o.revision or 0, 'hace': _hace_txt(desde, ahora), 'horas': horas, 'atrasada': horas >= 24,
+                       'contable': bool(o.es_contable),
                        'n_items': len(o.items), 'url': url_for('oc_detalle', orden_id=o.id), 'aprobar': puede_aprobar,
                        'resumen': url_for('notif_orden', orden_id=o.id)})
     return salida
@@ -339,6 +349,7 @@ def notif_orden(orden_id):
             'motivo_detalle': o.motivo_detalle or '', 'cliente': o.cliente_razon or '', 'cotizacion': o.cotizacion or '',
             'condicion': o.condicion_pago or '', 'entrega': _oc_entrega_txt(o), 'observaciones': o.observaciones or '',
             'revision': o.revision or 0, 'motivo_edicion': o.motivo_edicion or '',
+            'contable': bool(o.es_contable), 'contable_nota': o.contable_nota or '',
             'enviado': ((o.enviado_por.nombre_completo if o.enviado_por else '') + (' · ' + _hace_txt(o.fecha_envio, ahora) if o.fecha_envio else '')),
             'items': [{'descripcion': i.descripcion, 'codigo': i.codigo or '', 'detalle': i.detalle or '', 'cantidad': _cant_txt(i.cantidad), 'um': i.um or '',
                        'pu': f"{s} {(i.precio_unitario or 0):,.4f}".rstrip('0').rstrip('.') if round((i.precio_unitario or 0) * 100) != (i.precio_unitario or 0) * 100 else f"{s} {(i.precio_unitario or 0):,.2f}",

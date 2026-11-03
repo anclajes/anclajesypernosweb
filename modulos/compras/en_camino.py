@@ -96,7 +96,8 @@ def _en_camino_calcular(destino, empresa):
     hoy = ahora.date()
     limite = ahora - timedelta(days=DIAS_INGRESO_RECIENTE)
     ordenes = [o for o in OrdenCompra.query.filter(OrdenCompra.estado.in_(['APROBADA', 'RECIBIDA', 'CONFORME']), OrdenCompra.tipo == 'OC',
-                                                   OrdenCompra.destino == destino).all() if (o.empresa or 'ANCLAJES') == empresa]
+                                                   OrdenCompra.destino == destino).all()
+               if (o.empresa or 'ANCLAJES') == empresa and not o.es_contable]     # tema contable: no viene nada al inventario
     por_clave, lista_ordenes = {}, []
     ingresos_ins = {}
     if destino == 'INSUMOS':
@@ -184,7 +185,8 @@ def _en_camino_calcular(destino, empresa):
     en_camino = [r for r in lista_ordenes if r['etapa'] == 'EN_CAMINO']
     fechas = sorted(datetime.strptime(r['esperada'], '%d/%m/%Y').date() for r in en_camino if r['esperada'] and not r['atrasada'])
     por_aprobar = sum(1 for o in OrdenCompra.query.filter(OrdenCompra.estado == 'ENVIADA', OrdenCompra.tipo == 'OC',
-                                                          OrdenCompra.destino == destino).all() if (o.empresa or 'ANCLAJES') == empresa)
+                                                          OrdenCompra.destino == destino).all()
+                      if (o.empresa or 'ANCLAJES') == empresa and not o.es_contable)
     resumen = {'en_camino': len(en_camino), 'importacion': sum(1 for r in en_camino if r['importacion']),
                'atrasadas': sum(1 for r in en_camino if r['atrasada']), 'sin_fecha': sum(1 for r in en_camino if r['sin_fecha']),
                'por_conformidad': sum(1 for r in lista_ordenes if r['etapa'] == 'POR_CONFORMIDAD'),

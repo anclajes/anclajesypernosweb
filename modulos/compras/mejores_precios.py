@@ -101,6 +101,8 @@ def _mp_compras(f):
     for o in ordenes:
         if not o.fecha or (f['empresa'] != 'TODAS' and (o.empresa or 'ANCLAJES') != f['empresa']) or (f['tipo'] and o.tipo != f['tipo']):
             continue
+        if o.es_contable:       # tema contable (entre Anclajes e Import Bolts): no es un precio de mercado, no entra en las estadísticas
+            continue
         if (f['desde'] and o.fecha < f['desde']) or (f['hasta'] and o.fecha > f['hasta']) or (f['moneda'] and o.moneda != f['moneda']):
             continue
         clase = _mp_clase(o)

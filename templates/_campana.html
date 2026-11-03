@@ -228,7 +228,7 @@
     }
     function tarjetaOC(o) {
         return `<div class="cp-oc" style="--c:${esc(o.color)};">
-            <div class="l1"><span class="cod">${esc(o.codigo)}</span><span class="emp">${esc(o.empresa_txt)}</span>${o.revision ? `<span class="sub">Rev. ${o.revision}</span>` : ''}
+            <div class="l1"><span class="cod">${esc(o.codigo)}</span><span class="emp">${esc(o.empresa_txt)}</span>${o.revision ? `<span class="sub">Rev. ${o.revision}</span>` : ''}${o.contable ? `<span class="sub" style="background:#ede9fe;color:#5b21b6;border-radius:5px;padding:0 5px;font-weight:800;" title="Tema contable: no suma al inventario"><i class="bi bi-calculator"></i> CONTABLE</span>` : ''}
                 <span class="hace ${o.atrasada ? 'mal' : ''}">${o.atrasada ? '<i class="bi bi-exclamation-triangle-fill"></i> ' : ''}${esc(o.hace)}</span></div>
             <div class="prov">${esc(o.proveedor)}</div>
             <div class="d-flex align-items-center gap-2 mt-1"><span class="monto">${esc(o.monto)}</span>
@@ -236,14 +236,14 @@
             <div class="d-flex gap-2 mt-2">${o.aprobar ? `<button type="button" class="btn btn-warning" data-revisar="${o.id}"><i class="bi bi-patch-check"></i> Revisar y aprobar</button>` : ''}
                 <a class="btn btn-outline-secondary" href="${esc(o.url)}">Abrir orden</a></div></div>`;
     }
-    const ICONO_ING = { MATERIAL: 'bi-box-arrow-in-down', SERVICIO: 'bi-tools', INSUMOS: 'bi-basket2-fill' };
+    const ICONO_ING = { MATERIAL: 'bi-box-arrow-in-down', SERVICIO: 'bi-tools', INSUMOS: 'bi-basket2-fill', CONTABLE: 'bi-calculator' };
     function tarjetaIng(x) {
         return `<div class="cp-oc" style="--c:${esc(x.color)};">
             <div class="l1"><span class="cod"><i class="bi ${ICONO_ING[x.tipo] || 'bi-box'}"></i> ${esc(x.codigo)}</span><span class="emp">${esc(x.empresa_txt)}</span>
                 <span class="hace ${x.atrasada ? 'mal' : ''}">${x.atrasada ? '<i class="bi bi-exclamation-triangle-fill"></i> ' : ''}${esc(x.hace)}</span></div>
             <div class="prov">${esc(x.proveedor)}</div>
             <div class="sub mt-1">${esc(x.detalle)}</div>
-            <div class="d-flex gap-2 mt-2"><a class="btn btn-info text-white" href="${esc(x.url)}"><i class="bi bi-box-arrow-in-down"></i> ${x.tipo === 'INSUMOS' ? 'Registrar' : 'Ir a ingresar'}</a></div></div>`;
+            <div class="d-flex gap-2 mt-2"><a class="btn btn-info text-white" href="${esc(x.url)}"><i class="bi bi-box-arrow-in-down"></i> ${x.tipo === 'INSUMOS' ? 'Registrar' : (x.tipo === 'CONTABLE' ? 'Ir a confirmar' : 'Ir a ingresar')}</a></div></div>`;
     }
     function pintarPanel() {
         if (!datos) { panel.innerHTML = '<div class="cp-vacio">Cargando…</div>'; return; }
@@ -350,6 +350,7 @@
                     <div class="na-cue">
                     ${!o.pendiente ? `<div class="na-aviso" style="background:#f1f5f9;">Esta orden ya no está por aprobar: está <b>${esc(o.estado_txt)}</b>.</div>` : ''}
                     ${o.revision ? `<div class="na-aviso" style="background:#fffbeb;border:1px solid #fde68a;"><b>Re-aprobación (Rev. ${o.revision}):</b> ${esc(o.motivo_edicion)}</div>` : ''}
+                    ${o.contable ? `<div class="na-aviso" style="background:#f5f3ff;border:1px solid #c4b5fd;color:#4c1d95;"><i class="bi bi-calculator-fill"></i> <b>TEMA CONTABLE:</b> esta compra es solo para contabilidad y <b>NO suma al inventario</b>${o.contable_nota ? ' · ' + esc(o.contable_nota) : ''}</div>` : ''}
                     <div class="na-grid">${dato('Proveedor', o.proveedor + (o.ruc ? ' · ' + o.ruc : ''))}${dato('Contacto', o.contacto)}
                         ${dato('Lo pide', o.solicitante + (o.area ? ' (' + o.area + ')' : ''))}${dato('Motivo', o.motivo + (o.motivo_detalle ? ' · ' + o.motivo_detalle : ''))}
                         ${dato('Cliente', o.cliente)}${dato('Destino', o.destino)}${dato('Condición de pago', o.condicion)}${dato('Entrega', o.entrega)}

@@ -27,6 +27,8 @@
     .igv-box { background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 10px; padding: 6px 10px; }
     .igv-box.on { background: #fefce8; border: 1.5px solid #facc15; }
     .imp-box { background: #f0f9ff; border: 1.5px solid #bae6fd; border-radius: 12px; padding: 8px 12px; }
+    .contable-box { background: #f3e8ff; border: 1.5px solid #7c3aed; border-radius: 12px; padding: 8px 12px; color: #3b0764; box-shadow: 0 0 0 3px rgba(124,58,237,.12); }
+    .sug-contable { display: none; font-size: .74rem; font-weight: 600; color: #6d28d9; background: #faf5ff; border: 1px dashed #a78bfa; border-radius: 8px; padding: 5px 9px; margin-top: 6px; }
     body.modo-imp .imp-box { background: #e0f2fe; border-color: #0284c7; }
     .pago-l { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; flex-wrap: wrap; }
     .pago-l .p-txt { flex: 1 1 220px; }
@@ -147,10 +149,21 @@
             <div class="lbl req mt-2">Motivo de la compra</div>
             <div class="seg chico motivos">
                 {% for m in motivos_compra %}
-                <input type="radio" name="motivo_compra" id="mc_{{ loop.index }}" value="{{ m.nombre }}" data-cliente="{{ '1' if m.pide_cliente else '0' }}" {{ 'checked' if m.nombre == (pv.motivo_compra or '')|upper }} onchange="pintarMotivo()">
-                <label for="mc_{{ loop.index }}" style="--c:#7c3aed;"><span><b>{{ m.nombre|capitalize }}</b>{% if m.pide_cliente %}<small>Se indica el cliente</small>{% endif %}</span></label>
+                {% set es_mc = m.nombre|upper == 'TEMA CONTABLE' %}
+                <input type="radio" name="motivo_compra" id="mc_{{ loop.index }}" value="{{ m.nombre }}" data-cliente="{{ '1' if m.pide_cliente else '0' }}" data-contable="{{ '1' if es_mc else '0' }}" {{ 'checked' if m.nombre == (pv.motivo_compra or '')|upper }} onchange="pintarMotivo()">
+                <label for="mc_{{ loop.index }}" class="{{ 'mc-contable' if es_mc }}" style="--c:{{ '#5b21b6' if es_mc else '#7c3aed' }};"><span><b>{% if es_mc %}<i class="bi bi-calculator-fill"></i> {% endif %}{{ m.nombre|capitalize }}</b>{% if m.pide_cliente %}<small>Se indica el cliente</small>{% elif es_mc %}<small>No suma al inventario</small>{% endif %}</span></label>
                 {% endfor %}
             </div>
+            <!-- TEMA CONTABLE (motivo del sistema): qué hace -->
+            <div id="boxContable" class="contable-box mt-2" style="display:none;">
+                <div class="fw-bold" style="color:#5b21b6;"><i class="bi bi-calculator-fill"></i> Tema contable · esta compra NO suma al inventario</div>
+                <div class="small mt-1">Es solo para contabilidad: p. ej. <b>Anclajes le compra a Import Bolts</b> (o al revés) material que <b>ya está</b> en los inventarios.
+                    Sigue el flujo normal (aprobación de Gerencia, llegada, conformidad y pago), pero al final <b>no se ingresa</b> al Kardex: en "Ingresos pendientes" solo se
+                    <b>confirma</b>. Así no se duplican las cantidades. En toda la orden se verá la marca <span class="badge" style="background:#ede9fe;color:#5b21b6;">CONTABLE</span>.</div>
+                <div class="small text-muted mt-1">Usa el <b>detalle o referencia</b> de abajo como nota contable (ej. regularización de la venta NP-00123).</div>
+            </div>
+            <div class="sug-contable" id="contableSug"><i class="bi bi-lightbulb-fill"></i> El proveedor es la otra empresa del grupo: si el material ya está en los inventarios, elige el motivo
+                <a href="#" onclick="elegirContable(); return false;"><b>Tema contable</b></a> para que no se sume dos veces.</div>
             <div id="boxCliente" class="cliente-box mt-2" style="display:none;">
                 <div class="lbl req">Cliente</div>
                 <div class="position-relative" id="cliBuscar">
@@ -513,6 +526,28 @@ const MONEDAS = {{ monedas|tojson }};
 const EMPRESAS = {{ empresas_oc|tojson }};
 const LUGAR = {{ cfgs|dictsort|map('last')|map(attribute='lugar_entrega')|list|tojson }};
 const EMP_ORDEN = {{ cfgs|dictsort|map('first')|list|tojson }};
+{% set ruc_emp = {} %}{% for k, c in cfgs.items() %}{% set _ = ruc_emp.update({k: (c.ruc or '')}) %}{% endfor %}
+const RUC_EMP = {{ ruc_emp|tojson }};
+// TEMA CONTABLE (un MOTIVO de compra del sistema): no suma al inventario. Solo en Órdenes de Compra.
+// Si el proveedor es la otra empresa del grupo, se sugiere elegirlo.
+function radioContable() { return document.querySelector('input[name=motivo_compra][data-contable="1"]'); }
+function pintarContable() {
+    const r = radioContable(); if (!r) return;
+    const oc = tipo() === 'OC';
+    const lbl = document.querySelector(`label[for="${r.id}"]`);
+    r.style.display = lbl.style.display = oc ? '' : 'none';
+    if (!oc && r.checked) { r.checked = false; }
+    const on = oc && r.checked;
+    porId('boxContable').style.display = on ? 'block' : 'none';
+    const ruc = ((porId('ruc') || {}).value || '').replace(/\D/g, '');
+    const otra = Object.entries(RUC_EMP).find(([k, v]) => k !== empresa() && v && v.replace(/\D/g, '') === ruc);
+    porId('contableSug').style.display = oc && !on && otra ? 'block' : 'none';
+}
+function elegirContable() { const r = radioContable(); if (r) { r.checked = true; pintarMotivo(); r.scrollIntoView({ block: 'center', behavior: 'smooth' }); } }
+document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('input[name=empresa], input[name=tipo]').forEach(r => r.addEventListener('change', () => setTimeout(pintarContable, 0)));
+    pintarContable();
+});
 const SERVICIOS = {{ servicios|tojson }};
 const ES_ADMIN = {{ 'true' if session.get('role') == 'admin' else 'false' }};
 const PUEDE_INSUMOS = {{ 'true' if puede_insumos else 'false' }};
@@ -1054,6 +1089,7 @@ function mostrarProveedor(p, msg) {
     provActual = p;
     porId('oc_proveedor_id').value = p.id; porId('ruc').value = p.ruc; porId('razon_social').value = p.razon_social; porId('direccion').value = p.direccion || '';
     if (typeof cargarKardexOS === 'function') setTimeout(() => cargarKardexOS(), 0);   // OS: salidas del mismo taller primero
+    setTimeout(() => { if (typeof pintarContable === 'function') pintarContable(); }, 0);
     porId('pc_nombre').textContent = p.razon_social; porId('pc_ruc').textContent = (p.extranjero ? 'Tax ID ' : 'RUC ') + p.ruc; porId('pc_dir').textContent = p.direccion || '';
     const est = [p.sunat_estado, p.sunat_condicion].filter(Boolean);
     porId('btnActSunat').style.display = p.extranjero ? 'none' : '';
@@ -1150,6 +1186,7 @@ function pintarArea() {
 function pintarMotivo() {
     const m = document.querySelector('input[name=motivo_compra]:checked');
     porId('boxCliente').style.display = m && m.dataset.cliente === '1' ? 'block' : 'none';
+    if (typeof pintarContable === 'function') pintarContable();
 }
 let tCli = null;
 function sugerirCli(sunat) {

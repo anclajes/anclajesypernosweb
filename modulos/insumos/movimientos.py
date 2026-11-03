@@ -15,7 +15,7 @@ def _oc_pendiente_insumos(oc_id):
         o = OrdenCompra.query.get(int(oc_id)) if oc_id else None
     except (TypeError, ValueError):
         return None
-    if o and o.estado == 'CONFORME' and o.destino == 'INSUMOS' and not o.insumo_ingreso_id:
+    if o and o.estado == 'CONFORME' and o.destino == 'INSUMOS' and not o.insumo_ingreso_id and not o.es_contable:
         return o
     return None
 
@@ -28,7 +28,8 @@ def _ordenes_pendientes_insumos(empresa=None):
     except Exception:
         db.session.rollback()
         return []
-    return [o for o in lista if not empresa or (o.empresa or 'ANCLAJES') == empresa]
+    # las de TEMA CONTABLE no se registran en Insumos (no suman): se confirman en "Ingresos pendientes" de Compras
+    return [o for o in lista if not o.es_contable and (not empresa or (o.empresa or 'ANCLAJES') == empresa)]
 
 
 def _n_oc_pendientes_insumos():

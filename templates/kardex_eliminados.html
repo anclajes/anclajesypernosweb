@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Kardex{% endblock %}
+{% block subtitle %}Movimientos eliminados{% endblock %}
+{% block content %}
+<style>
+    .tabla-elim th { font-size: .68rem; text-transform: uppercase; letter-spacing: .03em; white-space: nowrap; }
+    .tabla-elim td { font-size: .8rem; vertical-align: middle; }
+    .tabla-elim .mot { max-width: 320px; white-space: normal; }
+    .cant-e { font-weight: 800; font-variant-numeric: tabular-nums; }
+</style>
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <h4 class="mb-0"><i class="bi bi-trash3 text-danger"></i> Movimientos del Kardex eliminados <span class="fs-6 text-muted fw-normal">(auditoría)</span></h4>
+    <div class="d-flex gap-2">
+        <a href="{{ url_for('ver_kardex') }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Kardex Anclajes</a>
+        <a href="{{ url_for('ver_kardex_importbolts') }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Kardex Import Bolts</a>
+    </div>
+</div>
+<div class="alert alert-light border small py-2"><i class="bi bi-info-circle text-primary"></i> Cuando un movimiento se registró por error, Gerencia o el Jefe de Almacén lo eliminan con un motivo:
+    el stock se revierte (una salida vuelve, una entrada se descuenta), se corrige el saldo de los movimientos posteriores y deja de contar en el Kardex y en las estadísticas.
+    Aquí queda la copia completa de lo que se eliminó.</div>
+<form method="GET" class="row g-2 align-items-end mb-3">
+    <div class="col-6 col-md-2"><label class="small fw-bold text-muted">Kardex</label>
+        <select name="origen" class="form-select form-select-sm" onchange="this.form.submit()">
+            {% for k, t in [('TODOS', 'Los dos'), ('ANCLAJES', 'Anclajes'), ('IMPORTBOLTS', 'Import Bolts')] %}<option value="{{ k }}" {{ 'selected' if k == origen }}>{{ t }}</option>{% endfor %}</select></div>
+    <div class="col-12 col-md-5"><label class="small fw-bold text-muted">Buscar</label>
+        <div class="input-group input-group-sm"><input type="text" name="q" class="form-control" value="{{ buscar }}" placeholder="Código, producto, motivo, quién lo eliminó, cliente / proveedor">
+            <button class="btn btn-primary"><i class="bi bi-search"></i></button></div></div>
+</form>
+<div class="card border-0 shadow-sm"><div class="card-body p-0 table-responsive">
+    <table class="table table-hover mb-0 tabla-elim">
+        <thead class="table-dark"><tr><th class="ps-3">Eliminado</th><th>Kardex</th><th>Producto</th><th class="text-center">Movimiento</th><th>Motivo / referencia</th>
+            <th>Cliente / proveedor</th><th class="text-center">Stock</th><th>Por qué se eliminó</th></tr></thead>
+        <tbody>
+        {% for f in filas %}
+        <tr>
+            <td class="ps-3 text-nowrap"><div class="fw-semibold">{{ f.fecha_eliminacion.strftime('%d/%m/%Y %H:%M') }}</div><div class="text-muted small"><i class="bi bi-person-fill"></i> {{ f.eliminado_por }}{% if f.rol %} · {{ f.rol }}{% endif %}</div></td>
+            <td><span class="badge" style="background: {{ empresas_oc.get(f.origen, {}).get('color', '#334155') }};">{{ empresas_oc.get(f.origen, {}).get('corto', f.origen) }}</span></td>
+            <td><b>{{ f.sku }}</b><div class="text-muted small">{{ f.producto }}</div></td>
+            <td class="text-center text-nowrap"><div class="cant-e {{ 'text-success' if f.tipo == 'ENTRADA' else 'text-danger' }}">{{ '+' if f.tipo == 'ENTRADA' else '-' }}{{ "{:,}".format(f.cantidad or 0) }}</div>
+                <span class="badge text-bg-light border" style="font-size:.6rem;">{{ f.tipo }}</span>
+                <div class="text-muted" style="font-size:.68rem;">{{ f.fecha_movimiento.strftime('%d/%m/%y %H:%M') if f.fecha_movimiento else '' }}</div>
+                <div class="text-muted" style="font-size:.66rem;">registró {{ f.registrado_por or '-' }}</div></td>
+            <td class="mot">{{ f.motivo or '-' }}{% if f.referencia %} / <b>{{ f.referencia }}</b>{% endif %}</td>
+            <td class="small">{{ f.proveedor or '-' }}</td>
+            <td class="text-center text-nowrap"><b>{{ f.stock_antes }}</b> → <b>{{ f.stock_despues }}</b>
+                {% if f.movimientos_ajustados %}<div class="text-muted" style="font-size:.66rem;">{{ f.movimientos_ajustados }} saldo(s) corregido(s)</div>{% endif %}</td>
+            <td class="mot"><i class="bi bi-chat-left-text text-danger"></i> {{ f.motivo_eliminacion }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8" class="text-center text-muted py-5">No hay movimientos eliminados{{ ' con esa búsqueda' if buscar }}.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div></div>
+{% endblock %}

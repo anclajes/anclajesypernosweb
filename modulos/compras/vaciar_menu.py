@@ -106,7 +106,7 @@ def _contador_ordenes():
         return {'oc_por_aprobar': OrdenCompra.query.filter_by(estado='ENVIADA').count() if rol == 'admin' else 0,
                 'oc_por_recibir': OrdenCompra.query.filter(OrdenCompra.estado.in_(['APROBADA', 'RECIBIDA'])).count()
                 if rol in ROLES_OC_EDITAN else 0,
-                'oc_por_ingresar': (len(_items_por_ingresar()) + len(_os_por_seguir())) if rol in ROLES_OC_INGRESAN else 0,
+                'oc_por_ingresar': (len(_items_por_ingresar()) + len(_os_por_seguir()) + len(_contables_por_confirmar())) if rol in ROLES_OC_INGRESAN else 0,
                 'oc_req_pendientes': len(_req_pendientes_de_oc()) if rol in ROLES_REQ_ATIENDEN else 0,
                 'oc_req_novedades': len(_req_novedades(session.get('user_id'), limite=0)) if rol in ROLES_REQ_CREAN else 0,
                 'oc_alertas': alertas,

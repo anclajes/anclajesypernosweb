@@ -49,6 +49,10 @@
         <a href="{{ url_for('ver_kardex') }}" class="btn btn-outline-primary btn-sm ms-2">
             <i class="bi bi-building"></i> Ver Kardex Anclajes
         </a>
+        {% if session.get('role') in ['admin', 'almacen', 'logistica', 'administracion'] %}
+        <a href="{{ url_for('kardex_eliminados', origen='IMPORTBOLTS') }}" class="btn btn-outline-danger btn-sm ms-2" title="Auditoría de movimientos eliminados por error">
+            <i class="bi bi-trash3"></i> Movimientos eliminados
+        </a>{% endif %}
     </div>
 </div>
 
@@ -418,6 +422,9 @@
 
                     <td class="pe-3 text-nowrap text-muted">
                         <i class="bi bi-person-fill"></i> {{ m.user.username }}
+                        {% if session.get('role') in roles_eliminan_kardex and puede_eliminar_mov(origen_kardex, m) %}
+                        <div><button type="button" class="btn btn-link btn-sm p-0 text-danger" style="font-size:.7rem;" title="Eliminar este movimiento (registrado por error): revierte el stock y queda en la auditoría"
+                                onclick="eliminarMovKardex({{ m.id }})"><i class="bi bi-trash3"></i> Eliminar</button></div>{% endif %}
                     </td>
                 </tr>
                 {% else %}
@@ -517,6 +524,33 @@ function validarAdjuntarDoc() {
     const btn = document.getElementById('btnAdjuntarDoc');
     btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Subiendo...';
     return true;
+}
+</script>
+{% endif %}
+{% if session.get('role') in roles_eliminan_kardex %}
+<form method="POST" id="formElimMov" class="d-none"><input type="hidden" name="motivo" id="elimMovMotivo"><input type="hidden" name="volver" value="{{ request.full_path }}"></form>
+<script>
+// Eliminar un movimiento registrado por error: muestra qué pasará con el stock y pide el motivo (queda en la auditoría)
+function eliminarMovKardex(id) {
+    const base = {{ url_for('kardex_eliminar_movimiento', origen=origen_kardex, mov_id=0)|tojson }}.replace(/\/0\/eliminar$/, '/' + id + '/eliminar');
+    const e = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    fetch(base + '/previa', { credentials: 'same-origin' }).then(r => r.json()).then(d => {
+        if (d.status !== 'success') return Swal.fire('No se puede eliminar', d.msg || 'Error', 'warning');
+        const vuelve = d.delta > 0 ? `<b class="text-success">vuelven ${d.delta}</b> al inventario` : `<b class="text-danger">se descuentan ${-d.delta}</b> del inventario`;
+        Swal.fire({ title: '¿Eliminar este movimiento?', icon: 'warning', width: 520, showCancelButton: true, confirmButtonText: 'Eliminar', cancelButtonText: 'Cancelar',
+            confirmButtonColor: '#dc3545', input: 'textarea', inputPlaceholder: 'Motivo (obligatorio): ej. se registró dos veces la salida de la venta 0301026',
+            html: `<div class="text-start small"><div class="border rounded p-2 mb-2 bg-light"><b>${e(d.sku)}</b> · ${e(d.producto)}<br>
+                    <b>${e(d.tipo)} ${d.cantidad}</b> · ${e(d.fecha)} · ${e(d.motivo)}${d.referencia ? ' / ' + e(d.referencia) : ''}</div>
+                    Al eliminarlo ${vuelve}: stock <b>${d.stock_actual}</b> → <b>${d.stock_nuevo}</b>.
+                    ${d.posteriores ? `<br>Se corrige el saldo de <b>${d.posteriores}</b> movimiento(s) posterior(es).` : ''}
+                    <br>Deja de contar en el Kardex y en las estadísticas. Queda una copia en <b>Movimientos eliminados</b> (quién, cuándo y por qué).</div>`,
+            inputValidator: v => (!v || v.trim().length < 10) ? 'Escribe el motivo (mínimo 10 letras)' : undefined
+        }).then(r => {
+            if (!r.isConfirmed) return;
+            const f = document.getElementById('formElimMov'); f.action = base;
+            document.getElementById('elimMovMotivo').value = r.value; f.submit();
+        });
+    }).catch(() => Swal.fire('Error de conexión', '', 'error'));
 }
 </script>
 {% endif %}

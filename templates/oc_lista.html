@@ -4,7 +4,8 @@
 {% block content %}
 {% include '_oc_nav.html' %}
 {% from '_oc_docs_menu.html' import menu_docs_oc, estilos_docs_oc with context %}
-{{ estilos_docs_oc() }}
+{% from '_oc_contable.html' import chip_contable, estilos_contable with context %}
+{{ estilos_docs_oc() }}{{ estilos_contable() }}
 <style>
     .empresas { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
     .empresas a { display: inline-flex; align-items: center; gap: 8px; border: 2px solid #e2e8f0; background: #fff; border-radius: 12px; padding: 6px 12px; text-decoration: none; color: #334155; font-weight: 800; font-size: .84rem; }
@@ -61,7 +62,7 @@
     .card-oc .det { font-size: .74rem; color: #64748b; }
 </style>
 
-{% macro url_vista(v) %}{{ url_for('oc_lista', vista=v, tipo=tipo, destino=destino, proveedor=prov_id or '', solicitante=solicitante, motivo=motivo, creador=creador or '', pago=pago_f, docs=docs_f, q=buscar,
+{% macro url_vista(v) %}{{ url_for('oc_lista', vista=v, tipo=tipo, destino=destino, proveedor=prov_id or '', solicitante=solicitante, motivo=motivo, creador=creador or '', contable=contable_f, pago=pago_f, docs=docs_f, q=buscar,
                                     desde=desde.isoformat() if desde else '', hasta=hasta.isoformat() if hasta else '') }}{% endmacro %}
 
 <div class="empresas">
@@ -101,6 +102,10 @@
         <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#masFiltros" aria-expanded="{{ 'true' if filtros_activos else 'false' }}">
             <i class="bi bi-funnel"></i> Filtros{% if filtros_activos %} <span class="badge bg-primary">{{ filtros_activos }}</span>{% endif %}</button>
         {% if filtros_activos or buscar %}<a class="btn btn-sm btn-link text-danger" href="{{ url_for('oc_lista', vista=vista) }}"><i class="bi bi-x-circle"></i> Limpiar</a>{% endif %}
+        {% if n_contables %}<a class="btn btn-sm {{ 'btn-primary' if contable_f == 'si' else 'btn-outline-secondary' }}" style="{{ '' if contable_f == 'si' else 'color:#5b21b6;border-color:#c4b5fd;' }}"
+            href="{{ url_for('oc_lista', vista='todas' if 'todas' in vistas_orden else vista, contable='' if contable_f == 'si' else 'si') }}" title="Órdenes de tema contable (no suman al inventario)">
+            <i class="bi bi-calculator"></i> Contables <span class="badge {{ 'bg-light text-dark' if contable_f == 'si' else 'bg-secondary' }}">{{ n_contables }}</span>
+            {% if contables_por_confirmar %}<span class="badge bg-warning text-dark" title="Conformes, por confirmar">{{ contables_por_confirmar }} por confirmar</span>{% endif %}</a>{% endif %}
         {% set args_x = request.args.to_dict() %}{% set _ = args_x.update({'vista': vista, 'exportar': 'excel'}) %}
         <a class="btn btn-sm btn-outline-success ms-auto" href="{{ url_for('oc_lista', **args_x) }}" title="Descarga a Excel lo que estás viendo (con los filtros aplicados), con una hoja de ítems"><i class="bi bi-file-earmark-excel"></i> Exportar a Excel</a>
         <a class="btn btn-sm btn-outline-primary" href="{{ url_for('oc_reportes') }}"><i class="bi bi-bar-chart-line"></i> Reportes</a>
@@ -119,6 +124,10 @@
             <div class="col-6 col-md-3 col-xl-2"><label>Solicitó</label>
                 <select name="solicitante" class="form-select form-select-sm auto"><option value="">Todos</option>
                     {% for n in solicitantes %}<option value="{{ n }}" {{ 'selected' if n == solicitante }}>{{ n }}</option>{% endfor %}</select></div>
+            <div class="col-6 col-md-3 col-xl-2"><label>Tema contable</label>
+                <select name="contable" class="form-select form-select-sm auto"><option value="">Todas</option>
+                    <option value="si" {{ 'selected' if contable_f == 'si' }}>Solo tema contable (no suma)</option>
+                    <option value="no" {{ 'selected' if contable_f == 'no' }}>Sin tema contable</option></select></div>
             <div class="col-6 col-md-3 col-xl-2"><label>Creó</label>
                 <select name="creador" class="form-select form-select-sm auto"><option value="">Todos</option>
                     {% for uid, nom in creadores %}<option value="{{ uid }}" {{ 'selected' if uid == creador }}>{{ nom }}</option>{% endfor %}</select></div>
@@ -165,7 +174,8 @@
     {% elif o.estado == 'RECHAZADA' %}<div class="sub mt-1 text-danger clamp2" title="{{ oc_rechazo_txt(o) }}">{{ oc_rechazo_txt(o) }}</div>
     {% elif o.estado == 'ANULADA' %}<div class="sub mt-1 clamp2" title="{{ oc_anulacion_txt(o) }}">{{ oc_anulacion_txt(o) }}</div>
     {% elif o.estado == 'CONFORME' %}
-        {% if o.destino == 'INSUMOS' %}<div class="sub mt-1">{{ 'En Insumos ✓' if o.insumo_ingreso_id else 'Pendiente en Insumos' }}</div>
+        {% if o.es_contable %}<div class="sub mt-1 fw-bold" style="color:#5b21b6;"><i class="bi bi-calculator"></i> {{ 'Contable confirmado ✓' if o.fecha_kardex else 'Contable: por confirmar' }}</div>
+        {% elif o.destino == 'INSUMOS' %}<div class="sub mt-1">{{ 'En Insumos ✓' if o.insumo_ingreso_id else 'Pendiente en Insumos' }}</div>
         {% else %}{% set ie = oc_ingreso_estado(o) %}
             {% if ie.completo %}<div class="sub mt-1 text-success fw-bold"><i class="bi bi-check2-all"></i> Ingresado</div>{% if ie.ultimo %}<div class="sub">{{ ie.ultimo.ingresado_por.nombre_completo if ie.ultimo.ingresado_por else '' }} · {{ ie.ultimo.fecha_ingreso.strftime('%d/%m %H:%M') }}</div>{% endif %}
             {% else %}<div class="sub mt-1 text-warning-emphasis fw-bold">Por ingresar {{ ie.hechos }}/{{ ie.total }}</div>{% endif %}
@@ -218,6 +228,8 @@
 {% macro destino_final(o) %}
     {% if o.tipo == 'OS' %}{% if o.fecha_kardex %}<span class="aprob si"><i class="bi bi-clipboard-check"></i> Seguimiento hecho</span><div class="sub">{{ o.kardex_registrado_por.nombre_completo if o.kardex_registrado_por else '' }} · {{ o.fecha_kardex.strftime('%d/%m %H:%M') }}</div>
         {% else %}<span class="aprob pend"><i class="bi bi-tools"></i> Falta seguimiento</span><div class="sub">Almacén lo marca</div>{% endif %}
+    {% elif o.es_contable %}{% if o.fecha_kardex %}<span class="aprob si"><i class="bi bi-calculator"></i> Contable confirmado</span><div class="sub">{{ o.kardex_registrado_por.nombre_completo if o.kardex_registrado_por else '' }} · {{ o.fecha_kardex.strftime('%d/%m %H:%M') }} · no suma</div>
+        {% else %}<span class="aprob pend"><i class="bi bi-calculator"></i> Contable: por confirmar</span><div class="sub">no suma al inventario</div>{% endif %}
     {% elif o.destino == 'INSUMOS' %}{% if o.insumo_ingreso_id %}<span class="aprob si"><i class="bi bi-check2"></i> En Insumos</span><div class="sub">ingreso #{{ o.insumo_ingreso_id }}</div>
         {% else %}<span class="aprob pend"><i class="bi bi-hourglass"></i> Falta ingresar a Insumos</span>{% endif %}
     {% else %}{% set ie = oc_ingreso_estado(o) %}
@@ -238,6 +250,7 @@
                 <tr>
                     <td class="ps-3 text-nowrap">{% if emp_sel == 'TODAS' %}<span class="emp-chip" style="background: {{ empresas_oc[o.empresa or 'ANCLAJES'].color }};">{{ empresas_oc[o.empresa or 'ANCLAJES'].corto|upper }}</span><br>{% endif %}
                         <span class="oc-tipo {{ o.tipo }}">{{ o.tipo }}</span> <a class="oc-num" href="{{ url_for('oc_detalle', orden_id=o.id) }}">{{ oc_numero_txt(o) }}</a>
+                        {% if o.es_contable %}<div>{{ chip_contable(o, True) }}</div>{% endif %}
                         <div class="sub">{{ o.fecha.strftime('%d/%m/%Y') }}{% if o.fecha_registro %} <span class="hora" title="Registrada el {{ o.fecha_registro.strftime('%d/%m/%Y %H:%M') }}">· {{ o.fecha_registro.strftime('%H:%M') }}</span>{% endif %}</div>
                         <span class="oc-dest {{ o.destino }}" style="font-size:.6rem;">{{ oc_destino_txt(o)|replace('Inventario', 'Inv.') }}</span></td>
                     <td><div class="prov-cel" title="{{ o.razon_social }}"><b>{{ o.razon_social }}</b>
@@ -273,7 +286,7 @@
     {% for o in ordenes %}
     <div class="card-oc" style="--c: {{ '#dc2626' if atrasos[o.id] or pagos[o.id].nivel == 'vencida' else estados[o.estado].color }};">
         <div class="fila">
-            <div>{% if emp_sel == 'TODAS' %}<span class="emp-chip" style="background: {{ empresas_oc[o.empresa or 'ANCLAJES'].color }};">{{ empresas_oc[o.empresa or 'ANCLAJES'].corto|upper }}</span> {% endif %}<span class="oc-tipo {{ o.tipo }}">{{ o.tipo }}</span> <a class="oc-num" href="{{ url_for('oc_detalle', orden_id=o.id) }}">N° {{ oc_numero_txt(o) }}</a>
+            <div>{% if emp_sel == 'TODAS' %}<span class="emp-chip" style="background: {{ empresas_oc[o.empresa or 'ANCLAJES'].color }};">{{ empresas_oc[o.empresa or 'ANCLAJES'].corto|upper }}</span> {% endif %}<span class="oc-tipo {{ o.tipo }}">{{ o.tipo }}</span> <a class="oc-num" href="{{ url_for('oc_detalle', orden_id=o.id) }}">N° {{ oc_numero_txt(o) }}</a> {{ chip_contable(o, True) }}
                 <span class="text-muted small">· {{ o.fecha.strftime('%d/%m/%Y') }}{% if o.fecha_registro %} {{ o.fecha_registro.strftime('%H:%M') }}{% endif %}</span></div>
             <div class="num fw-bold text-nowrap">{{ monedas[o.moneda].simbolo }} {{ '{:,.2f}'.format(o.total or 0) }}</div>
         </div>

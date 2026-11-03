@@ -267,12 +267,13 @@ def oc_conforme(orden_id):
         flash('⚠️ Falta subir el CERTIFICADO DE CALIDAD de esta importación. No frena nada: súbelo apenas llegue '
               '(queda en la lista "Certificados por subir").', 'warning')
     if etapa == 'CONFORME':
-        sig = ('Ahora regístralo en Insumos internos (aparece como pendiente).' if orden.destino == 'INSUMOS'
+        sig = ('TEMA CONTABLE: no suma al inventario; queda por CONFIRMAR (botón "Confirmar tema contable").' if orden.es_contable
+               else 'Ahora regístralo en Insumos internos (aparece como pendiente).' if orden.destino == 'INSUMOS'
                else 'Servicio terminado: queda pendiente solo el pago.' if orden.tipo == 'OS'
                else 'Almacén lo verá en "Ingresos pendientes" para sumarlo al inventario.')
         flash(f'✅ {_oc_codigo(orden)} CONFORME (llegó todo). {sig}')
     else:
-        flash(f'✅ Entrega {e.numero} conforme.' + (' Lo recibido ya está en "Ingresos pendientes" para Almacén.' if orden.tipo == 'OC' and orden.destino == 'GENERAL' else '')
+        flash(f'✅ Entrega {e.numero} conforme.' + (' Lo recibido ya está en "Ingresos pendientes" para Almacén.' if orden.tipo == 'OC' and orden.destino == 'GENERAL' and not orden.es_contable else '')
               + (' La orden sigue esperando el resto.' if etapa == 'APROBADA' else ''))
     return redirect(destino)
 
@@ -693,7 +694,7 @@ def _entregas_por_ingresar(ordenes=None):
                                            OrdenCompra.estado.in_(['APROBADA', 'RECIBIDA', 'CONFORME'])).all()
     res = []
     for o in ordenes:
-        if o.tipo != 'OC' or o.destino != 'GENERAL':
+        if o.tipo != 'OC' or o.destino != 'GENERAL' or o.es_contable:     # tema contable: no se ingresa (se confirma)
             continue
         for e in _oc_entregas(o):
             if e.fecha_conforme:
@@ -706,6 +707,17 @@ def _entregas_por_ingresar(ordenes=None):
 def _items_por_ingresar():
     """Para el contador del menú: cada producto de cada entrega conforme que falta ingresar al inventario."""
     return [ei for _, _, eis in _entregas_por_ingresar() for ei in eis]
+
+
+def _contables_por_confirmar(empresa=None):
+    """Órdenes de TEMA CONTABLE conformes que todavía no se confirman (no suman al inventario: solo se confirma)."""
+    try:
+        lista = OrdenCompra.query.filter(OrdenCompra.estado == 'CONFORME', OrdenCompra.es_contable.is_(True),
+                                         OrdenCompra.fecha_kardex.is_(None)).order_by(OrdenCompra.fecha_conforme).all()
+    except Exception:
+        db.session.rollback()
+        return []
+    return [o for o in lista if not empresa or (o.empresa or 'ANCLAJES') == empresa]
 
 
 def _os_por_seguir():
@@ -722,12 +734,24 @@ def oc_ingresos_pendientes():
     emp_sel = (request.args.get('empresa') or session.get('oc_empresa_ing') or 'TODAS').upper()
     emp_sel = emp_sel if emp_sel in EMPRESAS_OC or emp_sel == 'TODAS' else 'TODAS'
     session['oc_empresa_ing'] = emp_sel
-    candidatas = (OrdenCompra.query.filter(OrdenCompra.destino == 'GENERAL', OrdenCompra.estado.in_(['APROBADA', 'RECIBIDA', 'CONFORME']))
+    candidatas = (OrdenCompra.query.filter(db.or_(OrdenCompra.destino == 'GENERAL', OrdenCompra.es_contable.is_(True)),
+                                           OrdenCompra.estado.in_(['APROBADA', 'RECIBIDA', 'CONFORME']))
                   .order_by(OrdenCompra.id.desc()).all())
     grupos, pend_emp, n_hechos = [], {e: 0 for e in EMPRESAS_OC}, 0
     for o in candidatas:
         emp = o.empresa or 'ANCLAJES'
         items = {i.id: i for i in o.items}
+        if o.es_contable:
+            # TEMA CONTABLE: con la orden conforme se CONFIRMA (no se ingresa, no suma al inventario)
+            if o.estado != 'CONFORME':
+                continue
+            hecho = bool(o.fecha_kardex)
+            pend_emp[emp] += 0 if hecho else 1
+            n_hechos += hecho and (emp_sel in ('TODAS', emp))
+            if (emp_sel in ('TODAS', emp)) and ((vista == 'pendientes' and not hecho) or (vista == 'hechos' and hecho)):
+                grupos.append({'o': o, 'items': items, 'bloques': [], 'contable': True,
+                               'fecha': (o.fecha_kardex if hecho else o.fecha_conforme) or o.fecha_llegada})
+            continue
         if o.tipo == 'OS':
             if o.estado != 'CONFORME':
                 continue
@@ -1030,6 +1054,42 @@ def oc_kardex_ingresar(entrega_id):
         return redirect(volver)
     flash(f"✅ {codigo} · entrega {e.numero}: {len(hechos)} producto(s) ingresado(s) al Kardex ({', '.join(hechos)}). Los documentos de la orden quedan enlazados al movimiento.")
     return redirect(volver)
+
+
+@app.route('/ordenes/<int:orden_id>/contable/confirmar', methods=['POST'])
+@_ruta_oc('contable')
+def oc_contable_confirmar(orden_id):
+    """Orden de TEMA CONTABLE conforme: se confirma que es solo contable (NO se ingresa al inventario: el material ya está)."""
+    orden = OrdenCompra.query.get_or_404(orden_id)
+    volver = request.form.get('volver') or url_for('oc_detalle', orden_id=orden.id)
+    volver = volver if volver.startswith('/') else url_for('oc_detalle', orden_id=orden.id)
+    if not _oc_permisos(orden)['confirmar_contable']:
+        flash('⛔ Solo se confirma una orden de TEMA CONTABLE que ya está conforme (y que no se confirmó antes).')
+        return redirect(volver)
+    orden.kardex_registrado_por_id, orden.fecha_kardex = session.get('user_id'), hora_peru()
+    orden.nota_seguimiento = (' '.join((request.form.get('nota') or '').split())[:300] or None)
+    _oc_evento(orden, 'CONTABLE', f"Tema contable CONFIRMADO por {session.get('nombre', '')}: no suma al inventario"
+                                 + (f" · {orden.nota_seguimiento}" if orden.nota_seguimiento else ''))
+    registrar_log(f"Confirmó la {_oc_codigo(orden)} como TEMA CONTABLE (no suma al inventario)", 'bi-calculator', 'text-primary')
+    db.session.commit()
+    flash(f'✅ {_oc_codigo(orden)}: tema contable confirmado. No se sumó nada al inventario.')
+    return redirect(volver)
+
+
+@app.route('/ordenes/<int:orden_id>/contable/deshacer', methods=['POST'])
+@_ruta_oc('admin')
+def oc_contable_deshacer(orden_id):
+    """Gerencia quita la confirmación de una orden de tema contable (vuelve a 'por confirmar')."""
+    orden = OrdenCompra.query.get_or_404(orden_id)
+    motivo = ' '.join((request.form.get('motivo') or '').split())[:200]
+    if not orden.es_contable or not orden.fecha_kardex or len(motivo) < 5:
+        flash('⛔ Escribe por qué se quita la confirmación.')
+        return redirect(url_for('oc_detalle', orden_id=orden.id))
+    _oc_evento(orden, 'INGRESO_DESHECHO', f"Se quitó la confirmación de tema contable ({motivo})")
+    orden.kardex_registrado_por_id, orden.fecha_kardex, orden.nota_seguimiento = None, None, None
+    db.session.commit()
+    flash('Confirmación quitada: la orden vuelve a "tema contable por confirmar".')
+    return redirect(url_for('oc_detalle', orden_id=orden.id))
 
 
 @app.route('/ordenes/<int:orden_id>/seguimiento', methods=['POST'])

@@ -109,6 +109,7 @@
 </div>
 {% endif %}
 
+{% from '_oc_contable.html' import chip_contable, estilos_contable with context %}{{ estilos_contable() }}
 {% for g in grupos %}
 {% set o = g.o %}{% set items = g['items'] %}
 {% set ds = docs.get(o.id, []) %}{% set emp = o.empresa or 'ANCLAJES' %}
@@ -121,6 +122,7 @@
             {% if o.tipo == 'OS' %}<span class="oc-dest" style="background: #7c3aed; color: #fff;"><i class="bi bi-tools"></i> Servicio · {{ empresas_oc[emp].corto }}</span>
             {% else %}<span class="oc-dest GENERAL" style="background: {{ empresas_oc[emp].color }}; color: #fff;">Inventario {{ empresas_oc[emp].corto }}</span>{% endif %}
             {% if o.es_importacion %}<span class="tag" style="background:#e0f2fe; color:#075985;"><i class="bi bi-globe-americas"></i> Importación</span>{% endif %}
+            {{ chip_contable(o) }}
             {% if o.tipo == 'OS' and vista == 'pendientes' and not o.fecha_kardex %}{% set espera = ((ahora - o.fecha_conforme).days) if o.fecha_conforme else 0 %}
             <span class="espera {{ 'larga' if espera >= 3 }} ms-auto"><i class="bi bi-hourglass-split"></i> {{ 'Conforme hoy' if espera == 0 else 'Esperando seguimiento hace ' ~ espera ~ ' día' ~ ('s' if espera != 1 else '') }}</span>{% endif %}
         </div>
@@ -142,7 +144,8 @@
             <i class="bi bi-chevron-right flecha"></i>
             <span class="t {{ 'pend' if rc.sin_conformar else 'ok' }}"><i class="bi bi-check-circle-fill"></i><span><b>Conformidad</b>por entrega{% if rc.sin_conformar %} · {{ rc.sin_conformar|length }} sin revisar{% endif %}</span></span>
             <i class="bi bi-chevron-right flecha"></i>
-            <span class="t {{ 'ok' if ie.completo else 'pend' }}"><i class="bi {{ 'bi-box-arrow-in-down' if ie.completo else 'bi-hourglass-split' }}"></i><span><b>Ingreso al inventario</b>{{ ie.hechos }} de {{ ie.total }} ítem(s) completos</span></span>
+            {% if g.contable %}<span class="t {{ 'ok' if o.fecha_kardex else 'pend' }}"><i class="bi bi-calculator"></i><span><b>Confirmación contable</b>{{ 'hecha' if o.fecha_kardex else 'pendiente · no suma al inventario' }}</span></span>
+            {% else %}<span class="t {{ 'ok' if ie.completo else 'pend' }}"><i class="bi {{ 'bi-box-arrow-in-down' if ie.completo else 'bi-hourglass-split' }}"></i><span><b>Ingreso al inventario</b>{{ ie.hechos }} de {{ ie.total }} ítem(s) completos</span></span>{% endif %}
             {% endif %}
         </div>
         <div class="d-flex flex-wrap gap-1 mt-2">
@@ -157,7 +160,32 @@
             {% if o.tipo == 'OC' and not o.numero_factura and not (ds|selectattr('tipo', 'equalto', 'FACTURA')|list) %}<span class="small text-muted align-self-center">· la factura aún no se sube (no hace falta para ingresar)</span>{% endif %}
         </div>
     </div>
-    {% if o.tipo == 'OS' %}
+    {% if g.contable %}
+    <div class="it" data-nuevo="0" data-buscar="{{ (items.values()|map(attribute='descripcion')|join(' '))|upper }} CONTABLE">
+        <div>
+            {% for i in items.values() %}
+            <div class="desc">{{ i.item }}. {{ i.descripcion }}</div>
+            <div class="meta mb-1"><span><span class="cant">{{ i.cantidad|cant }}</span> {{ i.um }}</span>{% if i.codigo %}<span class="tag vinc">{{ i.codigo }}</span>{% endif %}
+                {% if i.familia or i.calidad %}<span>{{ [i.familia, i.calidad]|select|join(' · ') }}</span>{% endif %}</div>
+            {% endfor %}
+        </div>
+        {% if o.fecha_kardex %}
+        <div class="hecho">
+            <div><i class="bi bi-calculator text-success"></i> <b>Tema contable confirmado {{ o.fecha_kardex.strftime('%d/%m/%Y %H:%M') }}</b> por <b>{{ o.kardex_registrado_por.nombre_completo if o.kardex_registrado_por else '' }}</b> · no se sumó al inventario</div>
+            {% if o.nota_seguimiento %}<div class="text-muted">Nota: {{ o.nota_seguimiento }}</div>{% endif %}
+        </div>
+        {% else %}
+        <form method="POST" action="{{ url_for('oc_contable_confirmar', orden_id=o.id) }}" class="form-ing" onsubmit="return confirm('¿Confirmar {{ o.tipo }} {{ oc_numero_txt(o) }} como TEMA CONTABLE? No se suma nada al inventario.')">
+            <input type="hidden" name="volver" value="{{ url_for('oc_ingresos_pendientes') }}">
+            <div class="ayuda mb-2" style="background:#f5f3ff; border-color:#c4b5fd; color:#4c1d95;"><i class="bi bi-calculator-fill"></i> <b>Tema contable:</b> esta compra es solo para contabilidad.
+                El material <b>ya está en el inventario</b>: <u>no lo ingreses</u>, solo confirma.{% if o.contable_nota %}<div class="mt-1">{{ o.contable_nota }}</div>{% endif %}</div>
+            <label>Nota <span class="text-lowercase fw-normal">(opcional)</span></label>
+            <input type="text" name="nota" class="form-control form-control-sm" maxlength="300" placeholder="Ej: revisado con contabilidad, el material ya estaba en stock">
+            <button class="btn btn-sm fw-bold w-100 mt-2 text-white" style="background:#6d28d9;"><i class="bi bi-calculator"></i> Confirmar tema contable · no suma</button>
+        </form>
+        {% endif %}
+    </div>
+    {% elif o.tipo == 'OS' %}
     <div class="it" data-nuevo="0" data-buscar="{{ (items.values()|map(attribute='descripcion')|join(' '))|upper }}">
         <div>
             {% for i in items.values() %}

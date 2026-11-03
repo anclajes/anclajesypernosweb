@@ -12,6 +12,7 @@ from models import OCProveedor, OrdenCompra, OrdenCompraItem, OrdenCompraEvento,
 from models import RequerimientoCompra, RequerimientoItem, RequerimientoDocumento, RequerimientoEvento, RequerimientoVisto
 from models import Notificacion, NotificacionConfig, PushSuscripcion, AvisoAgente
 from models import OrdenCompraEntrega, OrdenCompraEntregaItem
+from models import MovimientoEliminado
 from flask import g
 from models import ProductMovement
 from models import Payment
@@ -14423,6 +14424,7 @@ TABLAS_RESET_ORDEN = [
     ('actividad_hora', ActividadHora),
     ('alerta_seguridad', AlertaSeguridad),
     ('movimiento_documento', MovimientoDocumento),   # hija de los dos kardex y de proceso_oc
+    ('movimiento_eliminado', MovimientoEliminado),   # auditoría de movimientos eliminados del Kardex
     ('correccion_auditoria_foto', CorreccionAuditoriaFoto),   # hijas de correccion_auditoria
     ('correccion_auditoria', CorreccionAuditoria),             # hija de registro_auditoria
     ('registro_auditoria_foto', RegistroAuditoriaFoto),
@@ -14480,6 +14482,7 @@ TABLAS_TODAS_ORDEN = [
     ('product_movement', ProductMovement),
     ('product_movement_importbolts', ProductMovementImportBolts),
     ('movimiento_documento', MovimientoDocumento),
+    ('movimiento_eliminado', MovimientoEliminado),
     ('product_image', ProductImage),
     ('meta_vendedor', MetaVendedor),
     ('audit_log', AuditLog),
@@ -15757,6 +15760,7 @@ MODULOS_EN_ARCHIVOS = [
     'modulos/compras/requerimientos.py',
     'modulos/compras/vaciar_menu.py',
     'modulos/kardex/venta_servicio.py',
+    'modulos/kardex/eliminar.py',
     'modulos/avisos/notificaciones.py',
     'modulos/avisos/push.py',
     'modulos/avisos/agente.py',

@@ -537,6 +537,8 @@ def oc_config_motivo_compra():
     f = request.form
     accion = f.get('accion', 'guardar')
     m = OCMotivoCompra.query.get(f.get('id', type=int)) if f.get('id', type=int) else None
+    if m and (m.nombre or '').upper() == MOTIVO_CONTABLE and (accion in ('toggle', 'cliente', 'borrar') or f.get('nombre')):
+        return {'status': 'error', 'msg': '"TEMA CONTABLE" es un motivo del sistema (marca la OC como "no suma al inventario"): no se cambia ni se borra.'}
     if accion in ('toggle', 'cliente', 'borrar'):
         if not m:
             return {'status': 'error', 'msg': 'No existe.'}
