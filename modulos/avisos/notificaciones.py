@@ -101,7 +101,7 @@ def _notif_orden_enviada(orden, reaprobacion=False):
               else f"{_oc_codigo(orden)} por aprobar · {corto}")
     texto = f"{orden.razon_social} · {_notif_monto(orden)}" + (f" · pide {orden.solicitante_nombre}" if orden.solicitante_nombre else '')
     if orden.correccion_pendiente and not reaprobacion:
-        texto = f"{orden.razon_social} · {_notif_monto(orden)} · Se corrigió: {orden.correccion_nota or '-'}
+        texto = f"{orden.razon_social} · {_notif_monto(orden)} · Se corrigió: {orden.correccion_nota or '-'}"
     _notif_crear('OC_POR_APROBAR', titulo, texto, url_for('oc_detalle', orden_id=orden.id), orden=orden, excluir=session.get('user_id'))
 
 
