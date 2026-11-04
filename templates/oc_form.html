@@ -114,7 +114,7 @@
 {% if errores %}<div class="alert alert-danger py-2" id="erroresOC"><b><i class="bi bi-exclamation-triangle-fill"></i> No se guardó. Revisa:</b>
     <ul class="mb-0 small">{% for e in errores %}<li>{{ e }}</li>{% endfor %}</ul></div>{% endif %}
 {% if pv.duplicada_txt %}<div class="alert alert-info py-2 small"><i class="bi bi-files"></i> Copia de la <b>{{ pv.duplicada_txt }}</b>: revisa y guarda. Tendrá un número nuevo.
-    {% if pv.quitados_txt %}<div class="mt-1 text-danger-emphasis"><i class="bi bi-scissors"></i> {{ pv.quitados_txt }}.</div>{% endif %}</div>{% endif %}
+    {% if pv.quitados_txt and not (orden and orden.estado == 'RECHAZADA') %}<div class="mt-1 text-danger-emphasis"><i class="bi bi-scissors"></i> {{ pv.quitados_txt }}.</div>{% endif %}</div>{% endif %}
 
 <form method="POST" action="{{ url_for('oc_guardar') }}" id="formOC" novalidate>
 <input type="hidden" name="id" value="{{ orden.id if orden else '' }}">
@@ -129,6 +129,19 @@
     <label class="small fw-bold">Motivo de la edición * <span class="fw-normal text-muted">(lo verá el Gerente al re-aprobar)</span></label>
     <textarea name="motivo_edicion" id="motivo_edicion" class="form-control" rows="2" maxlength="300" required minlength="10"
               placeholder="Ej: el proveedor cambió el precio de los pernos 1/2 (nueva cotización C-152); se agregan 20 arandelas">{{ pv.motivo_edicion or '' }}</textarea>
+</div>
+{% endif %}
+{% set correc = orden and orden.estado == 'RECHAZADA' %}
+{% if correc %}
+<div class="reedit" style="border-color:#fca5a5; background:#fef2f2;">
+    <div class="tit" style="color:#991b1b;"><i class="bi bi-wrench-adjustable-circle-fill"></i> Estás CORRIGIENDO una orden RECHAZADA · mantiene su número {{ oc_codigo(orden) }}</div>
+    <div class="small mb-2"><b>Gerencia la rechazó</b>{% if orden.rechazado_por %} ({{ orden.rechazado_por.nombre_completo }}{% if orden.fecha_rechazo %}, {{ orden.fecha_rechazo.strftime('%d/%m/%Y %H:%M') }}{% endif %}){% endif %}:
+        <b>{{ oc_rechazo_txt(orden) }}</b>
+        {% if pv.quitados_txt %}<div class="mt-1 text-danger"><i class="bi bi-scissors"></i> {{ pv.quitados_txt }}.</div>{% endif %}
+        <div class="mt-1">Corrige lo necesario y envíala otra vez: Gerencia verá que es una <b>corrección</b>, por qué la rechazó y lo que escribas aquí.</div></div>
+    <label class="small fw-bold">¿Qué corregiste? * <span class="fw-normal text-muted">(lo verá el Gerente al aprobar)</span></label>
+    <textarea name="motivo_edicion" id="motivo_edicion" class="form-control" rows="2" maxlength="300" required minlength="10"
+              placeholder="Ej: se quitaron los pernos que llegaron oxidados y se cambió al proveedor con mejor precio (cotización C-160)">{{ pv.motivo_edicion if pv.motivo_edicion and pv.motivo_edicion != orden.motivo_edicion else '' }}</textarea>
 </div>
 {% endif %}
 <input type="hidden" name="duplicada_de" value="{{ pv.duplicada_de or '' }}">
@@ -477,6 +490,10 @@
                 {% if reaprob %}
                 <a href="{{ url_for('oc_detalle', orden_id=orden.id) }}" class="btn btn-outline-secondary btn-lg fw-bold">Cancelar</a>
                 <button type="submit" class="btn btn-warning btn-lg flex-fill fw-bold" data-accion="enviar"><i class="bi bi-send-exclamation"></i> Guardar cambios y re-enviar a Gerencia</button>
+                {% elif correc %}
+                <a href="{{ url_for('oc_detalle', orden_id=orden.id) }}" class="btn btn-outline-secondary btn-lg fw-bold">Cancelar</a>
+                <button type="submit" class="btn btn-outline-primary btn-lg flex-fill fw-bold" data-accion="guardar"><i class="bi bi-save"></i> Guardar corrección (borrador)</button>
+                <button type="submit" class="btn btn-success btn-lg flex-fill fw-bold" data-accion="enviar"><i class="bi bi-send-check"></i> Guardar corrección y enviar a Gerencia</button>
                 {% else %}
                 <button type="submit" class="btn btn-outline-primary btn-lg flex-fill fw-bold" data-accion="guardar"><i class="bi bi-save"></i> Guardar borrador</button>
                 <button type="submit" class="btn btn-success btn-lg flex-fill fw-bold" data-accion="enviar"><i class="bi bi-send-check"></i> Guardar y enviar a Gerencia</button>
@@ -585,6 +602,7 @@ const TAX_TEMPORAL = {{ tax_temporal|tojson }};
 const EMPRESA_ORIGINAL = {{ ((orden.empresa or 'ANCLAJES') if orden else '')|tojson }};
 const CODIGO_ORIGINAL = {{ (oc_codigo(orden) if orden else '')|tojson }};
 const ES_REAPROBACION = {{ 'true' if reaprob else 'false' }};
+const ES_CORRECCION = {{ 'true' if correc else 'false' }};
 const REQS = {{ reqs_pendientes|tojson }};
 const PAGOS_PREVIOS = {{ pagos_imp|tojson }};
 const IMP_DEF = {{ imp_defaults|tojson }};
@@ -1390,6 +1408,7 @@ porId('formOC').addEventListener('submit', function (e) {
     if (et === 'DIAS' && !(parseInt(porId('entrega_dias').value) >= 1)) err.push('Escribe en cuántos días se entrega.');
     if (et === 'FECHA' && !porId('fecha_entrega').value) err.push('Escribe la fecha de entrega.');
     if (ES_REAPROBACION && porId('motivo_edicion').value.trim().length < 10) err.push('Escribe el MOTIVO DE LA EDICIÓN (mínimo 10 letras).');
+    if (ES_CORRECCION && porId('motivo_edicion').value.trim().length < 10) err.push('Escribe QUÉ CORREGISTE (mínimo 10 letras): Gerencia lo verá al aprobar.');
     const filas = [...document.querySelectorAll('#items .item')].filter(f => f.querySelector('.i-desc').value.trim() || f.querySelector('.i-cant').value || f.querySelector('.i-pu').value || f.querySelector('.i-pmil').value);
     if (!filas.length) err.push('Agrega al menos un ítem.');
     filas.forEach((f, i) => {
@@ -1402,7 +1421,9 @@ porId('formOC').addEventListener('submit', function (e) {
     if (accionPulsada === 'enviar' && !this.dataset.confirmado) {
         e.preventDefault();
         Swal.fire({ icon: 'question', title: '¿Enviar a Gerencia?', html: `Total: <b>${porId('tTot').textContent}</b>.` +
-                    (ES_REAPROBACION ? '<br>La orden vuelve a <b>Por aprobar</b> con tu motivo de edición.' : '<br>Ya no se podrá editar salvo que la retires.'),
+                    (ES_REAPROBACION ? '<br>La orden vuelve a <b>Por aprobar</b> con tu motivo de edición.'
+                     : ES_CORRECCION ? '<br>Vuelve a <b>Por aprobar</b> marcada como <b>CORRECCIÓN</b>, con el motivo del rechazo y lo que corregiste.'
+                     : '<br>Ya no se podrá editar salvo que la retires.'),
                     showCancelButton: true, confirmButtonText: 'Sí, enviar', cancelButtonText: 'Revisar' })
             .then(r => { if (r.isConfirmed) { this.dataset.confirmado = '1'; porId('accion').value = 'enviar'; this.requestSubmit ? this.requestSubmit() : this.submit(); } });
         return;

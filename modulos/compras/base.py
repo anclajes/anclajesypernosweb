@@ -266,6 +266,8 @@ def _asegurar_oc():
     _agregar_columnas_si_faltan('orden_compra_item', [('cantidad_cancelada', 'FLOAT DEFAULT 0'), ('kgs_mpcs', 'FLOAT'), ('precio_mil', 'FLOAT'),
                                                       ('detalle', 'VARCHAR(500)'), ('piezas', 'FLOAT'), ('precio_con_igv', 'FLOAT')])
     _agregar_columnas_si_faltan('orden_compra', [('es_contable', 'BOOLEAN DEFAULT FALSE'), ('contable_nota', 'VARCHAR(300)')])
+    _agregar_columnas_si_faltan('orden_compra', [('correcciones', 'INTEGER DEFAULT 0'), ('rechazo_previo', 'VARCHAR(500)'),
+                                                 ('correccion_nota', 'VARCHAR(300)'), ('correccion_pendiente', 'BOOLEAN DEFAULT FALSE')])
     _agregar_columnas_si_faltan('orden_compra', [('directo_categoria', 'VARCHAR(100)'), ('directo_ubicacion', 'VARCHAR(100)'),
                                                  ('directo_detalle', 'VARCHAR(200)'), ('directo_activo_fijo', 'BOOLEAN DEFAULT FALSE'),
                                                  ('directo_entregado_a', 'VARCHAR(120)')])
@@ -624,6 +626,16 @@ def _oc_quitar_resumen(orden):
 app.add_template_global(_oc_quitar_resumen, 'oc_quitar_resumen')
 
 
+def _oc_rechazo_snapshot(orden):
+    """Texto del rechazo que se guarda al corregir (para que Gerencia vea por qué la había rechazado)."""
+    quien = orden.rechazado_por.nombre_completo if orden.rechazado_por else 'Gerencia'
+    txt = f"{_oc_rechazo_txt(orden)} · rechazó {quien}" + (f" el {orden.fecha_rechazo.strftime('%d/%m/%Y %H:%M')}" if orden.fecha_rechazo else '')
+    rq = _oc_quitar_resumen(orden)
+    if rq:
+        txt += f" · pidió quitar {rq['n']} ítem(s): " + '; '.join(f"#{i.item} {i.descripcion[:35]} ({i.rechazo_item_motivo})" for i in rq['items'])
+    return txt[:500]
+
+
 def _oc_rechazo_txt(orden):
     partes = [x for x in (orden.rechazo_categoria, orden.rechazo_opcion) if x]
     txt = ' · '.join(partes)
@@ -842,6 +854,9 @@ def _oc_permisos(orden):
     reeditar = edita and e in ESTADOS_REEDITABLES_OC and _oc_bloqueo_reedicion(orden) is None
     return {
         'editar': edita and e == 'BORRADOR',
+        # RECHAZADA: Logística la corrige (misma orden, mismo número) y la vuelve a enviar. ANULADA ya no se corrige.
+        'corregir': edita and e == 'RECHAZADA' and _oc_bloqueo_reedicion(orden) is None,
+        'corregir_bloqueo': (_oc_bloqueo_reedicion(orden) if edita and e == 'RECHAZADA' else None),
         'reeditar': reeditar,
         'reeditar_bloqueo': (_oc_bloqueo_reedicion(orden) if edita and e in ESTADOS_REEDITABLES_OC and not reeditar else None),
         'enviar': edita and e == 'BORRADOR',

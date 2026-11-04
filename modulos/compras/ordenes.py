@@ -502,6 +502,18 @@ def oc_editar(orden_id):
         if bloqueo:
             flash(f'⛔ Esta orden ya no se puede editar: {bloqueo}. Si hay que cambiarla, anúlala (si corresponde) y crea una nueva con "Duplicar".')
             return redirect(url_for('oc_detalle', orden_id=orden.id))
+    elif orden.estado == 'RECHAZADA':
+        # CORRECCIÓN de un rechazo: la misma orden (mismo número). Los ítems que Gerencia marcó para quitar ya vienen quitados.
+        p = _oc_permisos(orden)
+        if not p['corregir']:
+            flash(f"⛔ Esta orden rechazada no se puede corregir: {p['corregir_bloqueo'] or 'no tienes permiso'}. Usa \"Duplicar\" para hacer una nueva.")
+            return redirect(url_for('oc_detalle', orden_id=orden.id))
+        rq = _oc_quitar_resumen(orden)
+        previo = _orden_a_previo(orden, [i for i in orden.items if not i.rechazo_quitar] if rq else None)
+        if rq:
+            previo['quitados_txt'] = (f"Ya se quitaron los {rq['n']} ítem(s) que Gerencia pidió quitar: "
+                                      + '; '.join(f"#{i.item} {i.descripcion} ({i.rechazo_item_motivo})" for i in rq['items']))
+        return render_template('oc_form.html', **_contexto_form_oc(orden, previo))
     elif orden.estado != 'BORRADOR':
         flash('Esta orden no se puede editar en su estado actual. Si está enviada a Gerencia, primero "Retírala para corregir".')
         return redirect(url_for('oc_detalle', orden_id=orden.id))
@@ -515,10 +527,15 @@ def oc_guardar():
     orden = OrdenCompra.query.get(f.get('id', type=int)) if f.get('id', type=int) else None
     volver = url_for('oc_editar', orden_id=orden.id) if orden else url_for('oc_nueva', tipo=f.get('tipo'))
     reaprobacion = bool(orden) and orden.estado in ESTADOS_REEDITABLES_OC
+    correccion = bool(orden) and orden.estado == 'RECHAZADA'
     if reaprobacion:
         bloqueo = _oc_bloqueo_reedicion(orden)
         if bloqueo:
             flash(f'⛔ Esta orden ya no se puede editar: {bloqueo}.')
+            return redirect(url_for('oc_detalle', orden_id=orden.id))
+    elif correccion:
+        if not _oc_permisos(orden)['corregir']:
+            flash('⛔ Esta orden rechazada ya no se puede corregir.')
             return redirect(url_for('oc_detalle', orden_id=orden.id))
     elif orden and orden.estado != 'BORRADOR':
         flash('⛔ Esta orden ya no está en borrador: no se puede editar.')
@@ -527,9 +544,11 @@ def oc_guardar():
     motivo_edicion = ' '.join((f.get('motivo_edicion') or '').split())[:300]
     if reaprobacion and len(motivo_edicion) < 10:
         errores.append('Escribe el MOTIVO DE LA EDICIÓN (mínimo 10 letras): Gerencia lo verá al volver a aprobarla.')
+    if correccion and len(motivo_edicion) < 10:
+        errores.append('Escribe QUÉ CORREGISTE (mínimo 10 letras): Gerencia lo verá junto al motivo por el que la rechazó.')
     if errores:
         return render_template('oc_form.html', errores=errores, **_contexto_form_oc(orden, _previo_desde_form(f, datos, motivo_edicion)))
-    return _oc_guardar_datos(f, orden, datos, items, reaprobacion, motivo_edicion, volver)
+    return _oc_guardar_datos(f, orden, datos, items, reaprobacion, motivo_edicion, volver, correccion)
 
 
 def _previo_desde_form(f, datos, motivo_edicion=''):
@@ -569,7 +588,7 @@ def _oc_error_unico(e):
     return 'otro', txt
 
 
-def _oc_guardar_datos(f, orden, datos, items, reaprobacion, motivo_edicion, volver):
+def _oc_guardar_datos(f, orden, datos, items, reaprobacion, motivo_edicion, volver, correccion=False):
     enviar = f.get('accion') == 'enviar' or reaprobacion
     ahora = hora_peru()
     reqs_antes = {i.req_item_id for i in orden.items if getattr(i, 'req_item_id', None)} if orden else set()
@@ -581,6 +600,7 @@ def _oc_guardar_datos(f, orden, datos, items, reaprobacion, motivo_edicion, volv
             prov = _guardar_proveedor_oc(datos)
             contacto = _contacto_para_orden(prov, datos)
             if orden:
+                rechazo_snap = _oc_rechazo_snapshot(orden) if correccion else None     # antes de que cambien los ítems
                 antes = {c: getattr(orden, c) for c in ('razon_social', 'total', 'moneda', 'condicion_pago', 'destino', 'entrega_modo',
                                                         'solicitante_nombre', 'motivo_compra', 'fecha_entrega', 'entrega_dias', 'lugar_recojo',
                                                         'es_contable', 'directo_categoria', 'directo_ubicacion')}
@@ -601,12 +621,22 @@ def _oc_guardar_datos(f, orden, datos, items, reaprobacion, motivo_edicion, volv
                 orden.editado_por_id, orden.fecha_edicion = session.get('user_id'), ahora
                 cambios = '; '.join(x for x in (_resumen_cambios_orden(antes, orden), _resumen_cambios_items(items_antes, items)) if x)
                 if reaprobacion:
+                    orden.correccion_pendiente = False
                     orden.revision = (orden.revision or 0) + 1
                     orden.motivo_edicion = motivo_edicion
                     orden.aprobado_por_id, orden.fecha_aprobacion = None, None
                     _oc_evento(orden, 'EDITADA_APROBADA', f"Rev. {orden.revision} · Motivo: {motivo_edicion} · Cambios: {cambios or 'sin cambios en montos ni ítems'}"
                                                           f" · (estaba aprobada por {aprobada_antes[0]}"
                                                           + (f" el {aprobada_antes[1].strftime('%d/%m/%Y %H:%M')})" if aprobada_antes[1] else ')'))
+                elif correccion:
+                    # vuelve a la vida la MISMA orden: queda en borrador o se envía otra vez a Gerencia, marcada como corrección
+                    orden.rechazo_previo = rechazo_snap
+                    orden.correcciones = (orden.correcciones or 0) + 1
+                    orden.correccion_nota = motivo_edicion
+                    orden.correccion_pendiente = True
+                    orden.estado = 'BORRADOR'
+                    _oc_evento(orden, 'CORREGIDA', f"Corrección {orden.correcciones} del rechazo · Qué se corrigió: {motivo_edicion}"
+                                                   f" · Cambios: {cambios or 'sin cambios en montos ni ítems'} · (Rechazo: {orden.rechazo_previo})")
                 else:
                     _oc_evento(orden, 'EDITADA', cambios or 'Ítems o datos actualizados')
             else:
@@ -627,7 +657,8 @@ def _oc_guardar_datos(f, orden, datos, items, reaprobacion, motivo_edicion, volv
             if enviar:
                 orden.estado, orden.enviado_por_id, orden.fecha_envio = 'ENVIADA', session.get('user_id'), ahora
                 _oc_evento(orden, 'ENVIADA', f'Editada después de aprobada: vuelve a Gerencia para re-aprobación (Rev. {orden.revision})'
-                           if reaprobacion else 'Enviada a Gerencia para aprobación')
+                           if reaprobacion else (f'CORREGIDA (corrección {orden.correcciones}) y enviada otra vez a Gerencia' if correccion
+                                                 else 'Enviada a Gerencia para aprobación'))
                 _notif_orden_enviada(orden, reaprobacion)
             _req_avisar_orden(orden, reqs_antes)
             vinculados_kardex = _vs_vincular_desde_form(orden, f)     # OS: movimientos del Kardex ya registrados (venta tras servicio)
@@ -663,6 +694,8 @@ def _oc_guardar_datos(f, orden, datos, items, reaprobacion, motivo_edicion, volv
             aviso_num = (f" Ojo: el N° {visto} que veías lo registró {quien} ({_oc_codigo(otra)} · {otra.razon_social}) mientras llenabas la tuya, "
                          f"así que a la tuya le tocó el {_oc_numero_txt(orden)}.")
     flash(f"✅ {_oc_codigo(orden)} " + (f"editada (Rev. {orden.revision}) y enviada otra vez a Gerencia: queda POR APROBAR con tu motivo." if reaprobacion
+                                        else ('corregida y enviada otra vez a Gerencia: verá que es una CORRECCIÓN, por qué la rechazó y lo que corregiste.' if enviar
+                                              else 'corregida y guardada como borrador: cuando esté lista, envíala a Gerencia.') if correccion
                                         else ('enviada a Gerencia para aprobación' if enviar else 'guardada como borrador') + '.')
           + (f" Vinculada a {len(vinculados_kardex)} movimiento(s) del Kardex." if vinculados_kardex else '') + aviso_num)
     return redirect(url_for('oc_detalle', orden_id=orden.id))
@@ -764,9 +797,12 @@ def oc_aprobar(orden_id):
     etapa = _oc_etapa_por_entregas(orden)
     if etapa == 'CONFORME' and not orden.fecha_conforme:
         orden.conforme_por_id, orden.fecha_conforme = session.get('user_id'), hora_peru()
+    era_correccion = bool(orden.correccion_pendiente)
     orden.estado, orden.aprobado_por_id, orden.fecha_aprobacion = etapa, session.get('user_id'), hora_peru()
+    orden.correccion_pendiente = False
     _oc_evento(orden, 'APROBADA', ' '.join((request.form.get('comentario') or '').split())[:300]
-               or (f'Re-aprobada (Rev. {orden.revision}) con firma y sello de Gerencia' if orden.revision else 'Aprobada con firma y sello de Gerencia'))
+               or (f'Re-aprobada (Rev. {orden.revision}) con firma y sello de Gerencia' if orden.revision else 'Aprobada con firma y sello de Gerencia')
+               + (f' · tras la corrección {orden.correcciones} del rechazo' if era_correccion else ''))
     _req_notificar_orden(orden, 'OC_APROBADA', f"Gerencia aprobó la {_oc_codigo(orden)} ({orden.razon_social})")
     _notif_orden_resuelta(orden, 'OC_APROBADA', ' '.join((request.form.get('comentario') or '').split())[:120])
     registrar_log(f"APROBÓ la {_oc_codigo(orden)} ({orden.razon_social}, {MONEDAS_OC[orden.moneda]['simbolo']} {orden.total:,.2f})",
@@ -802,6 +838,9 @@ def oc_rechazar(orden_id):
         mot = mot if mot in MOTIVOS_QUITAR_ITEM else 'Otro'
         nota = ' '.join((request.form.get(f'quitar_nota_{i.id}') or '').split())[:140]
         i.rechazo_quitar, i.rechazo_item_motivo = True, (f"{mot} — {nota}" if nota else mot)[:200]
+    if orden.correccion_pendiente:
+        detalle = (detalle[:240] + ' · ' if detalle else '') + f'(se rechaza otra vez, tras la corrección {orden.correcciones})'
+    orden.correccion_pendiente = False
     orden.estado, orden.rechazado_por_id, orden.fecha_rechazo = 'RECHAZADA', session.get('user_id'), hora_peru()
     orden.rechazo_categoria, orden.rechazo_opcion, orden.motivo_rechazo = opcion.categoria, opcion.motivo, detalle or None
     texto = f"{opcion.categoria} · {opcion.motivo}" + (f" — {detalle}" if detalle else '')
@@ -815,8 +854,8 @@ def oc_rechazar(orden_id):
     _notif_orden_resuelta(orden, 'OC_RECHAZADA', texto)
     registrar_log(f"RECHAZÓ la {_oc_codigo(orden)}: {texto}"[:255], 'bi-x-octagon-fill', 'text-danger')   # la columna admite 255
     db.session.commit()
-    flash(f'{_oc_codigo(orden)} rechazada: Logística debe quitar {rq["n"]} ítem(s) marcados y volver a enviarla ("Corregir sin los ítems marcados").'
-          if rq else f'{_oc_codigo(orden)} rechazada. Logística puede "Duplicarla" para corregirla con un número nuevo.')
+    flash(f'{_oc_codigo(orden)} rechazada: Logística la corrige sin los {rq["n"]} ítem(s) marcados y la vuelve a enviar ("Corregir y volver a enviar", mismo número).'
+          if rq else f'{_oc_codigo(orden)} rechazada. Logística puede corregirla (mismo número) y volver a enviarla.')
     return redirect(url_for('oc_detalle', orden_id=orden.id))
 
 

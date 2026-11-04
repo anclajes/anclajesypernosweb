@@ -96,8 +96,12 @@ def _notif_monto(orden):
 
 def _notif_orden_enviada(orden, reaprobacion=False):
     corto = EMPRESAS_OC.get(orden.empresa or 'ANCLAJES', {}).get('corto', '')
-    titulo = (f"Re-aprobar {_oc_codigo(orden)} · {corto}" if reaprobacion else f"{_oc_codigo(orden)} por aprobar · {corto}")
+    titulo = (f"Re-aprobar {_oc_codigo(orden)} · {corto}" if reaprobacion
+              else f"CORREGIDA · {_oc_codigo(orden)} por aprobar · {corto}" if orden.correccion_pendiente
+              else f"{_oc_codigo(orden)} por aprobar · {corto}")
     texto = f"{orden.razon_social} · {_notif_monto(orden)}" + (f" · pide {orden.solicitante_nombre}" if orden.solicitante_nombre else '')
+    if orden.correccion_pendiente and not reaprobacion:
+        texto = f"{orden.razon_social} · {_notif_monto(orden)} · Se corrigió: {orden.correccion_nota or '-'}
     _notif_crear('OC_POR_APROBAR', titulo, texto, url_for('oc_detalle', orden_id=orden.id), orden=orden, excluir=session.get('user_id'))
 
 
@@ -245,7 +249,7 @@ def _notif_por_aprobar_json(ahora, puede_aprobar):
                        'empresa_txt': emp.get('corto', ''), 'color': emp.get('color', '#0B3D91'), 'proveedor': o.razon_social or '',
                        'monto': _notif_monto(o), 'solicitante': o.solicitante_nombre or '', 'motivo': (o.motivo_compra or '').capitalize(),
                        'revision': o.revision or 0, 'hace': _hace_txt(desde, ahora), 'horas': horas, 'atrasada': horas >= 24,
-                       'contable': bool(o.es_contable), 'directo': o.destino == 'DIRECTO',
+                       'contable': bool(o.es_contable), 'directo': o.destino == 'DIRECTO', 'correccion': bool(o.correccion_pendiente),
                        'n_items': len(o.items), 'url': url_for('oc_detalle', orden_id=o.id), 'aprobar': puede_aprobar,
                        'resumen': url_for('notif_orden', orden_id=o.id)})
     return salida
@@ -360,6 +364,8 @@ def notif_orden(orden_id):
             'motivo_detalle': o.motivo_detalle or '', 'cliente': o.cliente_razon or '', 'cotizacion': o.cotizacion or '',
             'condicion': o.condicion_pago or '', 'entrega': _oc_entrega_txt(o), 'observaciones': o.observaciones or '',
             'revision': o.revision or 0, 'motivo_edicion': o.motivo_edicion or '',
+            'correccion': bool(o.correccion_pendiente), 'correcciones': o.correcciones or 0,
+            'rechazo_previo': o.rechazo_previo or '', 'correccion_nota': o.correccion_nota or '',
             'contable': bool(o.es_contable), 'contable_nota': o.contable_nota or '',
             'enviado': ((o.enviado_por.nombre_completo if o.enviado_por else '') + (' · ' + _hace_txt(o.fecha_envio, ahora) if o.fecha_envio else '')),
             'items': [{'descripcion': i.descripcion, 'codigo': i.codigo or '', 'detalle': i.detalle or '', 'cantidad': _cant_txt(i.cantidad), 'um': i.um or '',

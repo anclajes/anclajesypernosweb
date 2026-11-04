@@ -182,10 +182,21 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
   El modal muestra en vivo el total actual, cuánto se quita y el **total sin esos ítems**. No se pueden marcar todos (sería rechazo total).
 - Se guarda en `orden_compra_item.rechazo_quitar` / `rechazo_item_motivo`; `_oc_quitar_resumen(orden)` calcula ítems y montos
   (en proporción al subtotal: mismo % de IGV). Va en el evento RECHAZADA y en el aviso a Logística.
-- En la orden rechazada: recuadro con los ítems a quitar y montos, filas tachadas con "QUITAR" y el botón
-  **"Corregir: nueva orden sin los ítems marcados"** (`oc_duplicar` con `sin_rechazados=1` → `oc_nueva?duplicar=..&sin_rechazados=1`):
-  copia la orden sin esos ítems y conserva los requerimientos de los demás. La rechazada muestra "Corregida en: OC ...".
-  En la lista sale "Quitar N ítem(s) y reenviar".
+- En la orden rechazada: recuadro con los ítems a quitar y montos y filas tachadas con "QUITAR". Al "Corregir y volver a enviar"
+  esos ítems ya salen quitados. En la lista sale "Quitar N ítem(s) y reenviar". (Queda la ruta `oc_duplicar` con `sin_rechazados=1`
+  para hacer una copia con número nuevo sin esos ítems; ya no tiene botón.)
+
+## Compras: corregir una orden RECHAZADA (misma orden, mismo número)
+
+- Una OC/OS RECHAZADA la corrige Logística (`_oc_permisos` → `corregir`; bloqueada si `_oc_bloqueo_reedicion`): botón
+  "Corregir y volver a enviar" → `oc_editar` (abre el formulario con el aviso rojo, el motivo del rechazo y los ítems marcados ya quitados).
+  Una ANULADA ya no se corrige. "Duplicar (número nuevo)" sigue disponible.
+- Es obligatorio escribir "¿Qué corregiste?" (campo `motivo_edicion`, mín. 10 letras). Al guardar (`_oc_guardar_datos(..., correccion=True)`):
+  `rechazo_previo` = foto del rechazo (motivo, quién, cuándo, ítems a quitar), `correcciones` + 1, `correccion_nota`,
+  `correccion_pendiente = True`, evento CORREGIDA, y queda en BORRADOR o se ENVÍA a Gerencia.
+- Gerencia lo ve como CORRECCIÓN mientras `correccion_pendiente`: recuadro en el detalle (por qué se rechazó, qué se corrigió, cambios),
+  chip "Corrección" en la lista y en la campana, aviso en la aprobación rápida y título "CORREGIDA · ..." en la notificación.
+  Al aprobar o volver a rechazar, `correccion_pendiente` vuelve a False (la aprobada muestra "Aprobada después de N corrección(es)").
 
 ## Kardex
 

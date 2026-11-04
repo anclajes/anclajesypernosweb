@@ -132,6 +132,12 @@ class OrdenCompra(db.Model):
     # (fecha_kardex / kardex_registrado_por_id / nota_seguimiento guardan quién y cuándo lo confirmó).
     es_contable = db.Column(db.Boolean, default=False)
     contable_nota = db.Column(db.String(300))
+    # CORRECCIÓN DE UN RECHAZO: Logística corrige la MISMA orden (mismo número) y la vuelve a enviar; Gerencia ve que es una corrección,
+    # por qué la había rechazado y qué se corrigió
+    correcciones = db.Column(db.Integer, default=0)          # cuántas veces se corrigió después de un rechazo
+    rechazo_previo = db.Column(db.String(500))               # el último rechazo: motivo, quién, cuándo e ítems que pidió quitar
+    correccion_nota = db.Column(db.String(300))              # qué se corrigió (lo escribe Logística)
+    correccion_pendiente = db.Column(db.Boolean, default=False)   # corregida y aún sin decisión de Gerencia (se ve el aviso "CORRECCIÓN")
     # USO DIRECTO (destino 'DIRECTO'): bien que se usa en la empresa (PC, mueble, herramienta...), NO va al inventario ni a insumos.
     # Al estar conforme se ENTREGA: fecha_kardex / kardex_registrado_por_id / nota_seguimiento guardan quién y cuándo la registró.
     directo_categoria = db.Column(db.String(100))            # catálogo OC_DIRECTO_CATEGORIA (EQUIPOS DE CÓMPUTO Y TECNOLOGÍA...)
@@ -230,7 +236,7 @@ class OrdenCompraItem(db.Model):
     serie = db.Column(db.String(300))                          # uso directo: N° de serie (o varios, separados por coma) · opcional
     garantia_hasta = db.Column(db.Date)                        # uso directo: garantía vigente hasta · opcional
     # RECHAZO PARCIAL: Gerencia, al rechazar, marca los ítems que hay que QUITAR (llegó mal, se devuelve...) para que Logística
-    # rehaga la orden sin ellos ("Corregir: nueva orden sin los ítems marcados")
+    # corrija la orden sin ellos ("Corregir y volver a enviar": misma orden, mismo número)
     rechazo_quitar = db.Column(db.Boolean, default=False)
     rechazo_item_motivo = db.Column(db.String(200))
     cantidad_kardex = db.Column(db.Integer)                    # cantidad que entró al Kardex (puede diferir de la OC)

@@ -2,6 +2,13 @@
 {% block title %}{{ oc_codigo(orden) }}{% endblock %}
 {% block subtitle %}{{ tipos[orden.tipo] }} · {{ orden.razon_social[:60] }}{% endblock %}
 {% block content %}
+{% macro sello_correccion() %}{% if orden.correccion_pendiente %}{% set ev_c = eventos|selectattr('accion', 'equalto', 'CORREGIDA')|first %}
+<div class="sello correc mb-2"><i class="bi bi-wrench-adjustable-circle-fill"></i><div><b>CORRECCIÓN {{ orden.correcciones if orden.correcciones and orden.correcciones > 1 }} · esta orden fue RECHAZADA y Logística la corrigió</b>
+    <div class="small mt-1"><b>Por qué se rechazó:</b> {{ orden.rechazo_previo or '—' }}</div>
+    <div class="small"><b>Qué se corrigió:</b> {{ orden.correccion_nota or '—' }}</div>
+    {% if ev_c %}<div class="small">Corrigió <b>{{ ev_c.usuario.nombre_completo if ev_c.usuario else '-' }}</b> el {{ ev_c.fecha.strftime('%d/%m/%Y %H:%M') }}
+        {% set cmb = (ev_c.detalle or '').split(' · Cambios: ') %}{% if cmb|length > 1 %}<div class="mt-1"><b>Cambios:</b> {{ cmb[1].split(' · (Rechazo:')[0] }}</div>{% endif %}</div>{% endif %}
+</div></div>{% endif %}{% endmacro %}
 {% set vista = '' %}
 {% include '_oc_nav.html' %}
 {% from '_oc_contable.html' import chip_contable, aviso_contable, estilos_contable with context %}
@@ -78,6 +85,8 @@
     .tabla-items tr.quitar td { background: #fef2f2; }
     .tabla-items tr.quitar .desc-q { text-decoration: line-through; text-decoration-color: #dc2626; color: #7f1d1d; }
     .tag-quitar { display: inline-flex; gap: 3px; align-items: center; font-size: .62rem; font-weight: 800; background: #dc2626; color: #fff; border-radius: 5px; padding: 1px 6px; }
+    .sello.correc { background: #fff1f2; border: 1.5px solid #fda4af; color: #881337; }
+    .sello.correc b { color: #4c0519; }
     .quitar-box { background: #fff; border: 1.5px solid #fca5a5; border-radius: 10px; padding: 8px 10px; margin-top: 6px; color: #450a0a; }
     .motivo-op.anul:hover { border-color: #94a3b8; }
     .motivo-op.anul:has(input:checked) { border-color: #334155; background: #f1f5f9; }
@@ -213,12 +222,14 @@
         <div class="sello ok"><i class="bi bi-patch-check-fill"></i><div><b>{{ 'RE-APROBADA (Rev. ' ~ orden.revision ~ ')' if orden.revision else 'APROBADA' }} por {{ orden.aprobado_por.nombre_completo if orden.aprobado_por else 'Gerencia' }}</b>
             <div class="small">{% if orden.fecha_aprobacion %}el {{ orden.fecha_aprobacion.strftime('%d/%m/%Y a las %H:%M') }} · {% endif %}el PDF lleva la firma y sello de Gerencia</div>
             {% if orden.revision and orden.motivo_edicion %}<div class="small">Última edición: {{ orden.motivo_edicion }}</div>{% endif %}
+            {% if orden.correcciones %}<div class="small"><i class="bi bi-wrench-adjustable"></i> Aprobada después de {{ orden.correcciones }} corrección(es) por rechazo · última: {{ orden.correccion_nota or '-' }}</div>{% endif %}
             {% if p.reeditar_bloqueo %}<div class="small text-muted"><i class="bi bi-lock"></i> Ya no se puede editar: {{ p.reeditar_bloqueo }}.</div>{% endif %}</div></div>
     {% elif orden.estado == 'RECHAZADA' %}
         <div class="sello no"><i class="bi bi-x-octagon-fill"></i><div><b>RECHAZADA por {{ orden.rechazado_por.nombre_completo if orden.rechazado_por else 'Gerencia' }}</b> · {{ orden.fecha_rechazo.strftime('%d/%m/%Y %H:%M') }}
             <div class="small">Motivo: {{ oc_rechazo_txt(orden) }}</div>
             {% set rq = oc_quitar_resumen(orden) %}{% if rq %}
-            <div class="quitar-box small"><b><i class="bi bi-list-check"></i> Gerencia pidió QUITAR {{ rq.n }} ítem(s)</b> y volver a enviar la orden con los otros {{ rq.quedan }}:
+            <div class="quitar-box small"><b><i class="bi bi-list-check"></i> Gerencia pidió QUITAR {{ rq.n }} ítem(s)</b> y volver a enviar la orden con los otros {{ rq.quedan }}
+                <span class="text-muted">(al pulsar "Corregir y volver a enviar" ya salen quitados)</span>:
                 <ul class="mb-1 ps-3">{% for i in rq['items'] %}<li><b>#{{ i.item }}</b> {{ i.descripcion }} — <span class="text-danger fw-semibold">{{ i.rechazo_item_motivo }}</span>
                     <span class="text-muted">({{ mon.simbolo }} {{ '{:,.2f}'.format(i.total or 0) }} sin IGV)</span></li>{% endfor %}</ul>
                 <div class="d-flex flex-wrap gap-3"><span>Total de esta orden: <b>{{ mon.simbolo }} {{ '{:,.2f}'.format(rq.total_original) }}</b></span>
@@ -231,6 +242,7 @@
         <div class="sello anul"><i class="bi bi-slash-circle"></i><div><b>ANULADA por {{ orden.anulado_por.nombre_completo if orden.anulado_por else '-' }}</b> · {{ orden.fecha_anulacion.strftime('%d/%m/%Y %H:%M') }}
             <div class="small">Motivo: {{ oc_anulacion_txt(orden) }}</div></div></div>
     {% elif orden.estado == 'ENVIADA' %}
+        {{ sello_correccion() }}
         {% if orden.revision %}{% set ev_ed = eventos|selectattr('accion', 'equalto', 'EDITADA_APROBADA')|first %}
         <div class="sello reaprob mb-2"><i class="bi bi-arrow-repeat"></i><div><b>RE-APROBACIÓN · Rev. {{ orden.revision }}</b> — esta orden ya estaba aprobada y se editó
             <div class="small mt-1"><b>Motivo de la edición:</b> {{ orden.motivo_edicion or '—' }}</div>
@@ -243,6 +255,7 @@
         <div class="sello pend"><i class="bi bi-hourglass-split"></i><div><b>Esperando {{ 're-' if orden.revision }}aprobación de Gerencia</b>
             <div class="small">Enviada por {{ orden.enviado_por.nombre_completo if orden.enviado_por else '-' }} el {{ orden.fecha_envio.strftime('%d/%m/%Y %H:%M') }}. El PDF dice "PENDIENTE DE APROBACIÓN".</div></div></div>
     {% else %}
+        {{ sello_correccion() }}
         <div class="sello pend"><i class="bi bi-pencil-square"></i><div><b>Borrador: aún no enviada a Gerencia</b>
             <div class="small">Revisa y pulsa "Enviar a Gerencia". El PDF dice "PENDIENTE DE APROBACIÓN".</div></div></div>
     {% endif %}
@@ -273,10 +286,10 @@
         {% if docs|selectattr('tipo', 'equalto', 'FACTURA')|list %}<a class="btn btn-outline-primary" href="{{ url_for('oc_comparar', orden_id=orden.id) }}"><i class="bi bi-layout-split"></i> Factura vs OC</a>{% endif %}
         {% if p.observar %}<button class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#mObs"><i class="bi bi-chat-left-text"></i> Observación</button>{% endif %}
         {% if p.retirar %}<form method="POST" action="{{ url_for('oc_retirar', orden_id=orden.id) }}" onsubmit="return confirmar(this, '¿Retirarla de aprobación para corregirla?')"><button class="btn btn-outline-warning"><i class="bi bi-arrow-counterclockwise"></i> Retirar para corregir</button></form>{% endif %}
-        {% if p.duplicar and orden.estado == 'RECHAZADA' and oc_quitar_resumen(orden) %}<form method="POST" action="{{ url_for('oc_duplicar', orden_id=orden.id) }}">
-            <input type="hidden" name="sin_rechazados" value="1"><button class="btn {{ 'btn-outline-danger' if copias else 'btn-danger' }}" title="Crea una orden nueva con los mismos datos, SIN los ítems que Gerencia marcó, para revisarla y enviarla otra vez">
-            <i class="bi bi-scissors"></i> Corregir: nueva orden sin los {{ oc_quitar_resumen(orden).n }} ítem(s) marcados</button></form>{% endif %}
-        {% if p.duplicar %}<form method="POST" action="{{ url_for('oc_duplicar', orden_id=orden.id) }}"><button class="btn btn-outline-secondary"><i class="bi bi-files"></i> Duplicar{{ ' (con todos los ítems)' if orden.estado == 'RECHAZADA' and oc_quitar_resumen(orden) }}</button></form>{% endif %}
+        {% if p.corregir %}<a class="btn btn-danger fw-bold" href="{{ url_for('oc_editar', orden_id=orden.id) }}" title="Corrige esta misma orden (mantiene su número) y vuelve a enviarla a Gerencia">
+            <i class="bi bi-wrench-adjustable"></i> Corregir y volver a enviar{% if oc_quitar_resumen(orden) %} <span class="fw-normal">(sin los {{ oc_quitar_resumen(orden).n }} ítem(s) marcados)</span>{% endif %}</a>
+        {% elif p.corregir_bloqueo %}<span class="btn btn-outline-secondary disabled" title="{{ p.corregir_bloqueo }}"><i class="bi bi-lock"></i> No se puede corregir: {{ p.corregir_bloqueo }}</span>{% endif %}
+        {% if p.duplicar %}<form method="POST" action="{{ url_for('oc_duplicar', orden_id=orden.id) }}"><button class="btn btn-outline-secondary" {% if orden.estado == 'RECHAZADA' %}title="Crea OTRA orden con número nuevo (si prefieres no corregir esta)"{% endif %}><i class="bi bi-files"></i> Duplicar{{ ' (número nuevo)' if orden.estado == 'RECHAZADA' }}</button></form>{% endif %}
         {% if p.anular %}<button class="btn btn-outline-dark ms-sm-auto" data-bs-toggle="modal" data-bs-target="#mAnular"><i class="bi bi-slash-circle"></i> Anular</button>{% endif %}
     </div>
 </div>
@@ -605,7 +618,7 @@
                                    'OBSERVACION': 'Observación', 'DOCUMENTO': 'Documento adjuntado', 'DOC_BORRADO': 'Documento borrado',
                                    'KARDEX': 'Todo ingresado al inventario', 'INGRESO_ITEM': 'Ítem ingresado al inventario', 'INGRESO_DESHECHO': 'Se quitó una marca de ingreso',
                                    'INSUMOS': 'Insumos internos', 'PAGO': 'Marcada como PAGADA', 'PAGO_DESHECHO': 'Se quitó la marca de pagada', 'SEGUIMIENTO': 'Seguimiento de la OS (Almacén)',
-                                   'EDITADA_APROBADA': 'EDITADA DESPUÉS DE APROBADA (vuelve a Gerencia)',
+                                   'EDITADA_APROBADA': 'EDITADA DESPUÉS DE APROBADA (vuelve a Gerencia)', 'CORREGIDA': 'CORREGIDA TRAS UN RECHAZO',
                                    'EMPRESA': 'Cambio de empresa', 'KARDEX_OS': 'Kardex vinculado (venta tras servicio)',
                                    'SALDO_CERRADO': 'No llegará el resto (saldo cerrado)', 'CONTABLE': 'Tema contable confirmado',
                                    'ENTREGA_DIRECTO': 'Bien entregado (uso directo)', 'DIRECTO_EDITADO': 'Entrega corregida (uso directo)'}.get(ev.accion, ev.accion) }}</div>

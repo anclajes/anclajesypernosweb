@@ -169,7 +169,7 @@
     {% endfor %}
 </div>
 
-{% macro estado_badge(o) %}{% set e = estados[o.estado] %}<span class="oc-estado" style="color: {{ e.color }}; background: {{ e.fondo }};"><i class="bi {{ e.icono }}"></i> {{ e.txt }}</span>{% if o.revision %} <span class="oc-estado" style="color:#9a3412; background:#ffedd5;" title="{{ 'Editada después de aprobada: ' ~ (o.motivo_edicion or '') }}"><i class="bi bi-arrow-repeat"></i> {{ 'Re-aprobación' if o.estado == 'ENVIADA' else 'Rev. ' ~ o.revision }}</span>{% endif %}{% endmacro %}
+{% macro estado_badge(o) %}{% set e = estados[o.estado] %}<span class="oc-estado" style="color: {{ e.color }}; background: {{ e.fondo }};"><i class="bi {{ e.icono }}"></i> {{ e.txt }}</span>{% if o.revision %} <span class="oc-estado" style="color:#9a3412; background:#ffedd5;" title="{{ 'Editada después de aprobada: ' ~ (o.motivo_edicion or '') }}"><i class="bi bi-arrow-repeat"></i> {{ 'Re-aprobación' if o.estado == 'ENVIADA' else 'Rev. ' ~ o.revision }}</span>{% endif %}{% if o.correccion_pendiente %} <span class="oc-estado" style="color:#9f1239; background:#ffe4e6;" title="Rechazada y corregida · Rechazo: {{ o.rechazo_previo or '' }} · Se corrigió: {{ o.correccion_nota or '' }}"><i class="bi bi-wrench-adjustable"></i> Corrección{{ (' ' ~ o.correcciones) if o.correcciones and o.correcciones > 1 }}</span>{% endif %}{% endmacro %}
 {% macro seguimiento(o) %}
     {% if o.estado in ['APROBADA', 'RECIBIDA'] and o.aprobado_por %}<div class="sub mt-1"><i class="bi bi-patch-check-fill text-success"></i> Aprobó {{ o.aprobado_por.nombre_completo }}</div>
         {% if o.fecha_aprobacion %}<div class="sub hora-ap" title="Fecha y hora de la aprobación"><i class="bi bi-clock"></i> {{ o.fecha_aprobacion.strftime('%d/%m/%Y %H:%M') }}</div>{% endif %}
