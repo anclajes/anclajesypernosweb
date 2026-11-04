@@ -229,6 +229,10 @@ class OrdenCompraItem(db.Model):
     kardex_mov_id = db.Column(db.Integer)                      # movimiento del Kardex creado desde Ingresos pendientes
     serie = db.Column(db.String(300))                          # uso directo: N° de serie (o varios, separados por coma) · opcional
     garantia_hasta = db.Column(db.Date)                        # uso directo: garantía vigente hasta · opcional
+    # RECHAZO PARCIAL: Gerencia, al rechazar, marca los ítems que hay que QUITAR (llegó mal, se devuelve...) para que Logística
+    # rehaga la orden sin ellos ("Corregir: nueva orden sin los ítems marcados")
+    rechazo_quitar = db.Column(db.Boolean, default=False)
+    rechazo_item_motivo = db.Column(db.String(200))
     cantidad_kardex = db.Column(db.Integer)                    # cantidad que entró al Kardex (puede diferir de la OC)
 
     ingresado_por = db.relationship('User', foreign_keys=[ingresado_por_id])

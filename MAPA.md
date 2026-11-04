@@ -163,6 +163,18 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
   campana (aviso "Bien de uso directo por entregar"), Ingresos pendientes y contador del menú; columnas en el Excel de órdenes.
   En "Mejores precios" es la clase "Uso directo".
 
+## Compras: rechazo parcial (Gerencia marca ítems a QUITAR)
+
+- Al **Rechazar** una orden (detalle, modal `mRechazar`) Gerencia puede marcar, además del motivo general, los ítems que hay que
+  **quitar** (llegó mal, se devuelve, no es lo pedido, precio incorrecto, ya no se necesita, otro; `MOTIVOS_QUITAR_ITEM`) con un detalle.
+  El modal muestra en vivo el total actual, cuánto se quita y el **total sin esos ítems**. No se pueden marcar todos (sería rechazo total).
+- Se guarda en `orden_compra_item.rechazo_quitar` / `rechazo_item_motivo`; `_oc_quitar_resumen(orden)` calcula ítems y montos
+  (en proporción al subtotal: mismo % de IGV). Va en el evento RECHAZADA y en el aviso a Logística.
+- En la orden rechazada: recuadro con los ítems a quitar y montos, filas tachadas con "QUITAR" y el botón
+  **"Corregir: nueva orden sin los ítems marcados"** (`oc_duplicar` con `sin_rechazados=1` → `oc_nueva?duplicar=..&sin_rechazados=1`):
+  copia la orden sin esos ítems y conserva los requerimientos de los demás. La rechazada muestra "Corregida en: OC ...".
+  En la lista sale "Quitar N ítem(s) y reenviar".
+
 ## Kardex
 
 - Salida con motivo que "Inicia una OC" (Catálogos → Motivos, ej. REQUERIMIENTO DE MAESTRANZA): por defecto **sale como VENTA**

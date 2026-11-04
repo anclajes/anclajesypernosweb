@@ -66,6 +66,19 @@
     .motivo-op { display: flex; gap: 10px; align-items: flex-start; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 8px 10px; margin-bottom: 5px; cursor: pointer; font-size: .86rem; }
     .motivo-op:hover { border-color: #fca5a5; }
     .motivo-op:has(input:checked) { border-color: #dc2626; background: #fef2f2; font-weight: 600; }
+    /* rechazo parcial: ítems que Gerencia marca para quitar */
+    .qt-item { border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 7px 10px; margin-bottom: 5px; font-size: .82rem; }
+    .qt-item:has(.qt-chk:checked) { border-color: #dc2626; background: #fef2f2; }
+    .qt-item .qt-extra { display: none; }
+    .qt-item:has(.qt-chk:checked) .qt-extra { display: flex; }
+    .qt-item:has(.qt-chk:checked) .qt-desc { text-decoration: line-through; text-decoration-color: #dc2626; }
+    .qt-res { border-radius: 10px; background: #0f172a; color: #fff; padding: 8px 12px; font-size: .8rem; }
+    .qt-res .r { display: flex; justify-content: space-between; gap: 10px; }
+    .qt-res .nuevo { font-size: 1rem; font-weight: 800; color: #86efac; border-top: 1px solid #334155; margin-top: 4px; padding-top: 4px; }
+    .tabla-items tr.quitar td { background: #fef2f2; }
+    .tabla-items tr.quitar .desc-q { text-decoration: line-through; text-decoration-color: #dc2626; color: #7f1d1d; }
+    .tag-quitar { display: inline-flex; gap: 3px; align-items: center; font-size: .62rem; font-weight: 800; background: #dc2626; color: #fff; border-radius: 5px; padding: 1px 6px; }
+    .quitar-box { background: #fff; border: 1.5px solid #fca5a5; border-radius: 10px; padding: 8px 10px; margin-top: 6px; color: #450a0a; }
     .motivo-op.anul:hover { border-color: #94a3b8; }
     .motivo-op.anul:has(input:checked) { border-color: #334155; background: #f1f5f9; }
     .docs-grid { display: grid; grid-template-columns: 1fr; gap: 8px; }
@@ -203,7 +216,17 @@
             {% if p.reeditar_bloqueo %}<div class="small text-muted"><i class="bi bi-lock"></i> Ya no se puede editar: {{ p.reeditar_bloqueo }}.</div>{% endif %}</div></div>
     {% elif orden.estado == 'RECHAZADA' %}
         <div class="sello no"><i class="bi bi-x-octagon-fill"></i><div><b>RECHAZADA por {{ orden.rechazado_por.nombre_completo if orden.rechazado_por else 'Gerencia' }}</b> · {{ orden.fecha_rechazo.strftime('%d/%m/%Y %H:%M') }}
-            <div class="small">Motivo: {{ oc_rechazo_txt(orden) }}</div></div></div>
+            <div class="small">Motivo: {{ oc_rechazo_txt(orden) }}</div>
+            {% set rq = oc_quitar_resumen(orden) %}{% if rq %}
+            <div class="quitar-box small"><b><i class="bi bi-list-check"></i> Gerencia pidió QUITAR {{ rq.n }} ítem(s)</b> y volver a enviar la orden con los otros {{ rq.quedan }}:
+                <ul class="mb-1 ps-3">{% for i in rq['items'] %}<li><b>#{{ i.item }}</b> {{ i.descripcion }} — <span class="text-danger fw-semibold">{{ i.rechazo_item_motivo }}</span>
+                    <span class="text-muted">({{ mon.simbolo }} {{ '{:,.2f}'.format(i.total or 0) }} sin IGV)</span></li>{% endfor %}</ul>
+                <div class="d-flex flex-wrap gap-3"><span>Total de esta orden: <b>{{ mon.simbolo }} {{ '{:,.2f}'.format(rq.total_original) }}</b></span>
+                    <span class="text-danger">Se quita: <b>− {{ mon.simbolo }} {{ '{:,.2f}'.format(rq.total_quitado) }}</b></span>
+                    <span class="text-success">Total sin esos ítems: <b>{{ mon.simbolo }} {{ '{:,.2f}'.format(rq.total_nuevo) }}</b></span></div></div>
+            {% endif %}
+            {% if copias %}<div class="small mt-1"><i class="bi bi-arrow-return-right"></i> Corregida en:
+                {% for c in copias %}<a href="{{ url_for('oc_detalle', orden_id=c.id) }}" class="fw-bold">{{ oc_codigo(c) }}</a> <span class="text-muted">({{ estados[c.estado].txt }})</span>{{ ', ' if not loop.last }}{% endfor %}</div>{% endif %}</div></div>
     {% elif orden.estado == 'ANULADA' %}
         <div class="sello anul"><i class="bi bi-slash-circle"></i><div><b>ANULADA por {{ orden.anulado_por.nombre_completo if orden.anulado_por else '-' }}</b> · {{ orden.fecha_anulacion.strftime('%d/%m/%Y %H:%M') }}
             <div class="small">Motivo: {{ oc_anulacion_txt(orden) }}</div></div></div>
@@ -250,7 +273,10 @@
         {% if docs|selectattr('tipo', 'equalto', 'FACTURA')|list %}<a class="btn btn-outline-primary" href="{{ url_for('oc_comparar', orden_id=orden.id) }}"><i class="bi bi-layout-split"></i> Factura vs OC</a>{% endif %}
         {% if p.observar %}<button class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#mObs"><i class="bi bi-chat-left-text"></i> Observación</button>{% endif %}
         {% if p.retirar %}<form method="POST" action="{{ url_for('oc_retirar', orden_id=orden.id) }}" onsubmit="return confirmar(this, '¿Retirarla de aprobación para corregirla?')"><button class="btn btn-outline-warning"><i class="bi bi-arrow-counterclockwise"></i> Retirar para corregir</button></form>{% endif %}
-        {% if p.duplicar %}<form method="POST" action="{{ url_for('oc_duplicar', orden_id=orden.id) }}"><button class="btn btn-outline-secondary"><i class="bi bi-files"></i> Duplicar</button></form>{% endif %}
+        {% if p.duplicar and orden.estado == 'RECHAZADA' and oc_quitar_resumen(orden) %}<form method="POST" action="{{ url_for('oc_duplicar', orden_id=orden.id) }}">
+            <input type="hidden" name="sin_rechazados" value="1"><button class="btn {{ 'btn-outline-danger' if copias else 'btn-danger' }}" title="Crea una orden nueva con los mismos datos, SIN los ítems que Gerencia marcó, para revisarla y enviarla otra vez">
+            <i class="bi bi-scissors"></i> Corregir: nueva orden sin los {{ oc_quitar_resumen(orden).n }} ítem(s) marcados</button></form>{% endif %}
+        {% if p.duplicar %}<form method="POST" action="{{ url_for('oc_duplicar', orden_id=orden.id) }}"><button class="btn btn-outline-secondary"><i class="bi bi-files"></i> Duplicar{{ ' (con todos los ítems)' if orden.estado == 'RECHAZADA' and oc_quitar_resumen(orden) }}</button></form>{% endif %}
         {% if p.anular %}<button class="btn btn-outline-dark ms-sm-auto" data-bs-toggle="modal" data-bs-target="#mAnular"><i class="bi bi-slash-circle"></i> Anular</button>{% endif %}
     </div>
 </div>
@@ -326,8 +352,11 @@
                     {% if rec.entregas %}<th class="pe-3">Recepción</th>{% endif %}</tr></thead>
                 <tbody>
                 {% for i in orden.items %}
-                    <tr><td class="ps-3 text-muted">{{ i.item }}</td>
-                        <td>{{ i.descripcion }}
+                    {% set q_it = i.rechazo_quitar and orden.estado == 'RECHAZADA' %}
+                    <tr class="{{ 'quitar' if q_it }}"><td class="ps-3 text-muted">{{ i.item }}</td>
+                        <td><span class="{{ 'desc-q' if q_it }}">{{ i.descripcion }}</span>
+                            {% if q_it %}<div><span class="tag-quitar" title="Gerencia pidió quitar este ítem"><i class="bi bi-scissors"></i> QUITAR</span>
+                                <span class="small text-danger fw-semibold">{{ i.rechazo_item_motivo }}</span></div>{% endif %}
                             {% if i.detalle or i.piezas %}<div class="small text-muted fst-italic">{{ i.detalle or '' }}{% if i.detalle and i.piezas %} · {% endif %}{% if i.piezas %}{{ i.piezas|cant }} pieza(s){% endif %}</div>{% endif %}
                             <div style="font-size:.7rem;">{% if i.tipo_servicio %}<span class="tag" style="background:#ede9fe; color:#5b21b6;"><i class="bi bi-tools"></i> {{ i.tipo_servicio }}</span>{% endif %}{% if i.codigo %}<span class="tag vinc">{{ i.codigo }}</span>{% endif %}
                                 {% if i.estado_producto %}<span class="tag estado">{{ i.estado_producto }}</span>{% endif %}
@@ -607,23 +636,49 @@
 </div>
 {% endmacro %}
 
-{% macro modal(id, titulo, color='#0F172A') %}
-<div class="modal fade" id="{{ id }}" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable"><div class="modal-content border-0 shadow">
+{% macro modal(id, titulo, color='#0F172A', tam='') %}
+<div class="modal fade" id="{{ id }}" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable {{ tam }}"><div class="modal-content border-0 shadow">
     <div class="modal-header py-2 text-white" style="background: {{ color }};"><h6 class="modal-title fw-bold">{{ titulo }}</h6>
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
     {{ caller() }}
 </div></div></div>
 {% endmacro %}
 
-{% if p.rechazar %}{% call modal('mRechazar', 'Rechazar ' ~ oc_codigo(orden), '#b91c1c') %}
-<form method="POST" action="{{ url_for('oc_rechazar', orden_id=orden.id) }}"><div class="modal-body">
+{% if p.rechazar %}{% call modal('mRechazar', 'Rechazar ' ~ oc_codigo(orden), '#b91c1c', 'modal-lg') %}
+<form method="POST" action="{{ url_for('oc_rechazar', orden_id=orden.id) }}" onsubmit="return validarQuitar()" style="display:flex; flex-direction:column; min-height:0; overflow:hidden;"><div class="modal-body" style="overflow-y:auto;">
     <div class="small fw-bold">Motivo del rechazo *</div>
     {% for cat, lista in motivos.items() %}
     <div class="motivo-cat">{{ cat }}</div>
     {% for m in lista %}<label class="motivo-op"><input class="form-check-input mt-1" type="radio" name="motivo_id" value="{{ m.id }}" required><span>{{ m.motivo }}</span></label>{% endfor %}
     {% else %}<div class="text-muted small">No hay motivos configurados (Órdenes → Configuración).</div>{% endfor %}
     <label class="small fw-bold mt-2">Explicación adicional (opcional)</label>
-    <textarea name="motivo" class="form-control" rows="3" maxlength="300" placeholder="Ej: la cotización de otro proveedor sale S/ 50 menos"></textarea>
+    <textarea name="motivo" class="form-control" rows="2" maxlength="300" placeholder="Ej: la cotización de otro proveedor sale S/ 50 menos"></textarea>
+    {% if orden.items|length > 1 %}
+    {% set sub_it = orden.items|sum(attribute='total') %}
+    <div class="small fw-bold mt-3"><i class="bi bi-list-check text-danger"></i> ¿Solo algunos ítems están mal? <span class="fw-normal text-muted">(opcional)</span></div>
+    <div class="form-text mt-0 mb-1">Marca los que hay que <b>QUITAR</b> (llegaron mal, se devuelven, no corresponden...). Logística verá cuáles son y rehará la orden sin ellos con un clic.</div>
+    <div id="qtLista" data-factor="{{ ((orden.total or 0) / sub_it) if sub_it else 1 }}" data-total="{{ orden.total or 0 }}" data-simb="{{ mon.simbolo }}">
+    {% for i in orden.items %}
+    <div class="qt-item">
+        <label class="d-flex gap-2 align-items-start m-0" style="cursor:pointer;">
+            <input class="form-check-input mt-1 qt-chk" type="checkbox" name="quitar_{{ i.id }}" value="1" data-total="{{ i.total or 0 }}" onchange="pintarQuitar()">
+            <span class="flex-grow-1"><span class="qt-desc"><b>{{ i.item }}.</b> {{ i.descripcion }}</span>
+                <span class="text-muted d-block" style="font-size:.72rem;">{{ i.cantidad|cant }} {{ i.um }} · {{ mon.simbolo }} {{ '{:,.2f}'.format(i.total or 0) }} sin IGV</span></span></label>
+        <div class="qt-extra gap-2 mt-1 flex-wrap ps-4">
+            <select name="quitar_motivo_{{ i.id }}" class="form-select form-select-sm" style="max-width: 220px;">
+                {% for m in motivos_quitar %}<option>{{ m }}</option>{% endfor %}</select>
+            <input name="quitar_nota_{{ i.id }}" class="form-control form-control-sm flex-grow-1" style="min-width: 180px; width: auto;" maxlength="140" placeholder="Detalle (opcional): ej. 20 pernos llegaron oxidados">
+        </div>
+    </div>
+    {% endfor %}
+    </div>
+    <div id="qtRes" class="qt-res mt-2" style="display:none;">
+        <div class="r"><span>Total actual de la orden</span><span id="qtTotal"></span></div>
+        <div class="r text-danger-emphasis" style="color:#fca5a5 !important;"><span id="qtQuitaTxt"></span><span id="qtQuita"></span></div>
+        <div class="r nuevo"><span>Total sin esos ítems</span><span id="qtNuevo"></span></div>
+        <div style="font-size:.68rem; color:#cbd5e1;" id="qtNota">Estimado con el mismo IGV de la orden; la orden corregida recalcula todo al guardarse.</div>
+    </div>
+    {% endif %}
     <div class="form-text">El PDF quedará marcado como RECHAZADA con este motivo. Los motivos se configuran en Órdenes → Configuración.</div>
 </div><div class="modal-footer p-2"><button class="btn btn-danger w-100 fw-bold">Rechazar</button></div></form>
 {% endcall %}{% endif %}
@@ -769,6 +824,33 @@
 {% if p.entregar_directo or p.editar_directo %}{{ modal_entrega_directo(orden, directo_ubicaciones, url_for('oc_detalle', orden_id=orden.id)) }}{% endif %}
 
 <script>
+function fmtQt(v) { return Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function pintarQuitar() {
+    const lista = document.getElementById('qtLista');
+    if (!lista) return;
+    const chks = [...lista.querySelectorAll('.qt-chk')], marc = chks.filter(c => c.checked);
+    const res = document.getElementById('qtRes');
+    res.style.display = marc.length ? '' : 'none';
+    if (!marc.length) return;
+    const simb = lista.dataset.simb, factor = parseFloat(lista.dataset.factor) || 1, total = parseFloat(lista.dataset.total) || 0;
+    const quita = marc.reduce((s, c) => s + (parseFloat(c.dataset.total) || 0), 0) * factor;
+    document.getElementById('qtTotal').textContent = `${simb} ${fmtQt(total)}`;
+    document.getElementById('qtQuitaTxt').textContent = `Se quitan ${marc.length} ítem(s)`;
+    document.getElementById('qtQuita').textContent = `− ${simb} ${fmtQt(quita)}`;
+    document.getElementById('qtNuevo').textContent = marc.length === chks.length ? 'todos marcados' : `${simb} ${fmtQt(total - quita)}`;
+    document.getElementById('qtNota').textContent = marc.length === chks.length
+        ? 'Marcaste todos los ítems: eso es un rechazo total, desmárcalos.' : 'Estimado con el mismo IGV de la orden; la orden corregida recalcula todo al guardarse.';
+}
+function validarQuitar() {
+    const lista = document.getElementById('qtLista');
+    if (!lista) return true;
+    const chks = [...lista.querySelectorAll('.qt-chk')];
+    if (chks.length && chks.every(c => c.checked)) {
+        Swal.fire({ icon: 'warning', title: 'Marcaste todos los ítems', text: 'Eso es un rechazo total: desmarca los ítems y rechaza la orden completa.' });
+        return false;
+    }
+    return true;
+}
 function deshacerDirecto() {
     Swal.fire({ title: '¿Quitar el registro de la entrega?', text: 'La orden vuelve a "uso directo · por entregar" (los N° de serie y garantías se conservan).', input: 'text', inputPlaceholder: 'Motivo',
         showCancelButton: true, confirmButtonText: 'Quitar', cancelButtonText: 'Cancelar',

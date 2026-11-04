@@ -269,7 +269,8 @@ def _asegurar_oc():
     _agregar_columnas_si_faltan('orden_compra', [('directo_categoria', 'VARCHAR(100)'), ('directo_ubicacion', 'VARCHAR(100)'),
                                                  ('directo_detalle', 'VARCHAR(200)'), ('directo_activo_fijo', 'BOOLEAN DEFAULT FALSE'),
                                                  ('directo_entregado_a', 'VARCHAR(120)')])
-    _agregar_columnas_si_faltan('orden_compra_item', [('serie', 'VARCHAR(300)'), ('garantia_hasta', 'DATE')])
+    _agregar_columnas_si_faltan('orden_compra_item', [('serie', 'VARCHAR(300)'), ('garantia_hasta', 'DATE'),
+                                                      ('rechazo_quitar', 'BOOLEAN DEFAULT FALSE'), ('rechazo_item_motivo', 'VARCHAR(200)')])
     _agregar_columnas_si_faltan('orden_compra', [('es_importacion', 'BOOLEAN DEFAULT FALSE'), ('condiciones_comerciales', 'TEXT'),
                                                  ('pagos_importacion', 'TEXT'), ('saldo_cerrado_motivo', 'VARCHAR(300)')])
     _agregar_columnas_si_faltan('requerimiento_item', [('descartado', 'BOOLEAN DEFAULT FALSE'), ('descartado_por_id', 'INTEGER'),
@@ -600,6 +601,27 @@ def _oc_anulacion_txt(orden):
 
 
 app.add_template_global(_oc_anulacion_txt, 'oc_anulacion_txt')
+
+
+# Rechazo parcial: por qué Gerencia pide quitar un ítem de la orden
+MOTIVOS_QUITAR_ITEM = ['Llegó mal / dañado', 'Se devuelve al proveedor', 'No es lo que se pidió', 'Precio incorrecto', 'Ya no se necesita', 'Otro']
+
+
+def _oc_quitar_resumen(orden):
+    """Ítems que Gerencia marcó para QUITAR al rechazar y cómo queda el monto sin ellos (None si no marcó ninguno).
+    El total nuevo se calcula en proporción al subtotal (el IGV es el mismo %), así cuadra también con importaciones y precios con IGV."""
+    quitar = [i for i in orden.items if i.rechazo_quitar]
+    if not quitar:
+        return None
+    sub = sum(i.total or 0 for i in orden.items)
+    sub_q = sum(i.total or 0 for i in quitar)
+    factor = (orden.total or 0) / sub if sub else 1
+    return {'items': quitar, 'n': len(quitar), 'quedan': len(orden.items) - len(quitar), 'subtotal_quitado': round(sub_q, 2),
+            'total_quitado': round(sub_q * factor, 2), 'total_nuevo': round((sub - sub_q) * factor, 2),
+            'subtotal_nuevo': round(sub - sub_q, 2), 'total_original': round(orden.total or 0, 2)}
+
+
+app.add_template_global(_oc_quitar_resumen, 'oc_quitar_resumen')
 
 
 def _oc_rechazo_txt(orden):

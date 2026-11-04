@@ -111,7 +111,8 @@
 
 {% if errores %}<div class="alert alert-danger py-2" id="erroresOC"><b><i class="bi bi-exclamation-triangle-fill"></i> No se guardó. Revisa:</b>
     <ul class="mb-0 small">{% for e in errores %}<li>{{ e }}</li>{% endfor %}</ul></div>{% endif %}
-{% if pv.duplicada_txt %}<div class="alert alert-info py-2 small"><i class="bi bi-files"></i> Copia de la <b>{{ pv.duplicada_txt }}</b>: revisa y guarda. Tendrá un número nuevo.</div>{% endif %}
+{% if pv.duplicada_txt %}<div class="alert alert-info py-2 small"><i class="bi bi-files"></i> Copia de la <b>{{ pv.duplicada_txt }}</b>: revisa y guarda. Tendrá un número nuevo.
+    {% if pv.quitados_txt %}<div class="mt-1 text-danger-emphasis"><i class="bi bi-scissors"></i> {{ pv.quitados_txt }}.</div>{% endif %}</div>{% endif %}
 
 <form method="POST" action="{{ url_for('oc_guardar') }}" id="formOC" novalidate>
 <input type="hidden" name="id" value="{{ orden.id if orden else '' }}">

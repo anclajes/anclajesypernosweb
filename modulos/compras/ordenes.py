@@ -470,12 +470,21 @@ def oc_nueva():
     previo = None
     base = OrdenCompra.query.get(request.args.get('duplicar', type=int)) if request.args.get('duplicar', type=int) else None
     if base:
-        previo = _orden_a_previo(base)
+        rq = _oc_quitar_resumen(base) if base.estado == 'RECHAZADA' and request.args.get('sin_rechazados') == '1' else None
+        # corrección de un rechazo parcial: la copia lleva solo los ítems que Gerencia NO marcó para quitar
+        previo = _orden_a_previo(base, [i for i in base.items if not i.rechazo_quitar] if rq else None)
         previo['fecha'] = hora_peru().date().isoformat()
         previo['duplicada_de'] = base.id
         previo['duplicada_txt'] = _oc_codigo(base)
-        for it in previo['items']:          # la copia no vuelve a atender los requerimientos de la original
-            it['req_item'], it['req_txt'] = '', ''
+        if rq:
+            simb = MONEDAS_OC[base.moneda]['simbolo']
+            previo['quitados_txt'] = (f"Se quitaron {rq['n']} ítem(s) que Gerencia rechazó: "
+                                      + '; '.join(f"#{i.item} {i.descripcion} ({i.rechazo_item_motivo})" for i in rq['items'])
+                                      + f". Total estimado sin ellos: {simb} {rq['total_nuevo']:,.2f}")
+        else:
+            for it in previo['items']:      # la copia no vuelve a atender los requerimientos de la original
+                it['req_item'], it['req_txt'] = '', ''
+        # (al corregir un RECHAZO, la original ya no atiende sus requerimientos: la copia los conserva)
     else:
         previo = {'tipo': request.args.get('tipo', 'OC') if request.args.get('tipo') in TIPOS_OC else 'OC',
                   'empresa': request.args.get('empresa') if request.args.get('empresa') in EMPRESAS_OC else session.get('oc_empresa', 'ANCLAJES')}
@@ -619,6 +628,8 @@ def oc_detalle(orden_id):
     docs = OrdenCompraDocumento.query.filter_by(orden_id=orden.id).order_by(OrdenCompraDocumento.id).all()
     ingreso = InsumoIngreso.query.get(orden.insumo_ingreso_id) if orden.insumo_ingreso_id else None
     duplicada_de = OrdenCompra.query.get(orden.duplicada_de_id) if orden.duplicada_de_id else None
+    copias = (OrdenCompra.query.filter(OrdenCompra.duplicada_de_id == orden.id, OrdenCompra.estado != 'ANULADA').order_by(OrdenCompra.id).all()
+              if orden.estado == 'RECHAZADA' else [])
     motivos = _oc_motivos('RECHAZO', orden.tipo)
     motivos_anul = _oc_motivos('ANULACION', orden.tipo)
     observaciones = [e for e in eventos if e.accion == 'OBSERVACION']
@@ -629,6 +640,7 @@ def oc_detalle(orden_id):
         if ri.requerimiento not in reqs_orden:
             reqs_orden.append(ri.requerimiento)
     return render_template('oc_detalle.html', orden=orden, eventos=eventos, docs=docs, ingreso=ingreso, duplicada_de=duplicada_de, reqs_orden=reqs_orden,
+                           copias=copias, motivos_quitar=MOTIVOS_QUITAR_ITEM,
                            motivos=motivos, motivos_anul=motivos_anul, observaciones=observaciones, contacto=contacto, empresas_oc=EMPRESAS_OC,
                            directo_ubicaciones=_oc_valores_con_actual('OC_DIRECTO_UBICACION', orden.directo_ubicacion) if orden.destino == 'DIRECTO' else [],
                            p=_oc_permisos(orden), estados=ESTADOS_OC, tipos=TIPOS_OC, destinos=DESTINOS_OC, monedas=MONEDAS_OC,
@@ -711,15 +723,33 @@ def oc_rechazar(orden_id):
     if not opcion or (opcion.uso or 'RECHAZO') != 'RECHAZO' or (opcion.aplica or 'AMBAS') == 'RQ':
         flash('⛔ Elige el motivo del rechazo.')
         return redirect(url_for('oc_detalle', orden_id=orden.id))
+    # RECHAZO PARCIAL (opcional): ítems que hay que QUITAR para rehacer la orden, cada uno con su motivo
+    marcados = [i for i in orden.items if request.form.get(f'quitar_{i.id}') == '1']
+    if marcados and len(marcados) == len(orden.items):
+        flash('⛔ Marcaste TODOS los ítems: eso es un rechazo total. Desmarca los ítems y rechaza la orden completa.')
+        return redirect(url_for('oc_detalle', orden_id=orden.id))
+    for i in orden.items:
+        i.rechazo_quitar, i.rechazo_item_motivo = False, None
+    for i in marcados:
+        mot = request.form.get(f'quitar_motivo_{i.id}') or ''
+        mot = mot if mot in MOTIVOS_QUITAR_ITEM else 'Otro'
+        nota = ' '.join((request.form.get(f'quitar_nota_{i.id}') or '').split())[:140]
+        i.rechazo_quitar, i.rechazo_item_motivo = True, (f"{mot} — {nota}" if nota else mot)[:200]
     orden.estado, orden.rechazado_por_id, orden.fecha_rechazo = 'RECHAZADA', session.get('user_id'), hora_peru()
     orden.rechazo_categoria, orden.rechazo_opcion, orden.motivo_rechazo = opcion.categoria, opcion.motivo, detalle or None
     texto = f"{opcion.categoria} · {opcion.motivo}" + (f" — {detalle}" if detalle else '')
+    rq = _oc_quitar_resumen(orden)
+    if rq:
+        simb = MONEDAS_OC[orden.moneda]['simbolo']
+        texto += (f" · QUITAR {rq['n']} ítem(s), sin ellos el total queda en {simb} {rq['total_nuevo']:,.2f} (antes {simb} {rq['total_original']:,.2f}): "
+                  + '; '.join(f"#{i.item} {i.descripcion[:40]} ({i.rechazo_item_motivo})" for i in rq['items']))
     _oc_evento(orden, 'RECHAZADA', texto)
     _req_notificar_orden(orden, 'OC_RECHAZADA', f"Gerencia rechazó la {_oc_codigo(orden)}: los productos vuelven a esperar OC")
     _notif_orden_resuelta(orden, 'OC_RECHAZADA', texto)
-    registrar_log(f"RECHAZÓ la {_oc_codigo(orden)}: {texto}", 'bi-x-octagon-fill', 'text-danger')
+    registrar_log(f"RECHAZÓ la {_oc_codigo(orden)}: {texto}"[:255], 'bi-x-octagon-fill', 'text-danger')   # la columna admite 255
     db.session.commit()
-    flash(f'{_oc_codigo(orden)} rechazada. Logística puede "Duplicarla" para corregirla con un número nuevo.')
+    flash(f'{_oc_codigo(orden)} rechazada: Logística debe quitar {rq["n"]} ítem(s) marcados y volver a enviarla ("Corregir sin los ítems marcados").'
+          if rq else f'{_oc_codigo(orden)} rechazada. Logística puede "Duplicarla" para corregirla con un número nuevo.')
     return redirect(url_for('oc_detalle', orden_id=orden.id))
 
 
@@ -740,7 +770,7 @@ def oc_anular(orden_id):
     motivo = _oc_anulacion_txt(orden)
     _oc_evento(orden, 'ANULADA', f"{motivo} (estaba: {ESTADOS_OC[estado_antes]['txt']})")
     _req_notificar_orden(orden, 'OC_ANULADA', f"Se anuló la {_oc_codigo(orden)}: los productos vuelven a esperar OC")
-    registrar_log(f"ANULÓ la {_oc_codigo(orden)}: {motivo}", 'bi-slash-circle', 'text-danger')
+    registrar_log(f"ANULÓ la {_oc_codigo(orden)}: {motivo}"[:255], 'bi-slash-circle', 'text-danger')
     db.session.commit()
     flash(f'{_oc_codigo(orden)} anulada. Su número no se vuelve a usar.')
     return redirect(url_for('oc_detalle', orden_id=orden.id))
@@ -752,6 +782,8 @@ def oc_duplicar(orden_id):
     orden, no = _accion_oc(orden_id, 'duplicar')
     if no:
         return no
+    if request.form.get('sin_rechazados') == '1' and orden.estado == 'RECHAZADA' and _oc_quitar_resumen(orden):
+        return redirect(url_for('oc_nueva', duplicar=orden.id, sin_rechazados=1))
     return redirect(url_for('oc_nueva', duplicar=orden.id))
 
 
