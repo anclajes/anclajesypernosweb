@@ -163,6 +163,18 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
   campana (aviso "Bien de uso directo por entregar"), Ingresos pendientes y contador del menú; columnas en el Excel de órdenes.
   En "Mejores precios" es la clase "Uso directo".
 
+## Compras: numeración al guardar (varios usuarios a la vez)
+
+- El número de una OC/OS se asigna AL GUARDAR (`_siguiente_numero_oc` = mayor número de esa empresa y tipo + 1, índice único
+  `uq_orden_compra_emp_tipo_num`). Si dos usuarios guardan en el mismo instante, `_oc_guardar_datos` reintenta solo (3 veces) con el
+  siguiente libre. Si aun así falla, vuelve a mostrar el formulario CON lo escrito y un mensaje claro (`_oc_error_unico` distingue
+  "número ocupado" de otro dato repetido, con el detalle técnico).
+- El formulario consulta cada 20 s (y con el botón ↻ junto al número) `/ordenes/siguiente-numero` (`oc_siguiente_numero`): si otro
+  usuario registró una orden de la misma empresa y tipo, actualiza solo el número mostrado y avisa quién fue. No recarga ni borra nada.
+  Al guardar, si el número que se veía (`numero_visto`) lo tomó otro, el mensaje final dice cuál le tocó y quién tomó el otro.
+- Cambiar de empresa al editar: la orden toma el siguiente número libre de la otra empresa (empresa y número se cambian juntos antes
+  de guardar; antes se guardaba la empresa nueva con el número viejo y chocaba → salía "Otro usuario registró una orden al mismo tiempo").
+
 ## Compras: rechazo parcial (Gerencia marca ítems a QUITAR)
 
 - Al **Rechazar** una orden (detalle, modal `mRechazar`) Gerencia puede marcar, además del motivo general, los ítems que hay que

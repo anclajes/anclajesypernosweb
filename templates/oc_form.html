@@ -27,6 +27,8 @@
     .igv-box { background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 10px; padding: 6px 10px; }
     .igv-box.on { background: #fefce8; border: 1.5px solid #facc15; }
     .imp-box { background: #f0f9ff; border: 1.5px solid #bae6fd; border-radius: 12px; padding: 8px 12px; }
+    .spin-num { display: inline-block; animation: spinNum .8s linear infinite; }
+    @keyframes spinNum { to { transform: rotate(360deg); } }
     .directo-box { background: #fff7ed; border: 1.5px solid #fdba74; border-radius: 12px; padding: 10px 12px; color: #7c2d12; margin-top: 8px; }
     .directo-box .lbl { color: #9a3412; }
     .contable-box { background: #f3e8ff; border: 1.5px solid #7c3aed; border-radius: 12px; padding: 8px 12px; color: #3b0764; box-shadow: 0 0 0 3px rgba(124,58,237,.12); }
@@ -130,6 +132,7 @@
 </div>
 {% endif %}
 <input type="hidden" name="duplicada_de" value="{{ pv.duplicada_de or '' }}">
+<input type="hidden" name="numero_visto" id="numero_visto" value="">
 <input type="hidden" name="accion" id="accion" value="guardar">
 <div class="row g-3">
     <div class="col-12 col-xl-5">
@@ -192,7 +195,9 @@
         <div class="card border-0 shadow-sm mb-3"><div class="card-body">
             <div class="card-t"><i class="bi bi-file-earmark-text"></i> Datos de la orden
                 <span class="ms-auto text-muted fw-normal" style="text-transform:none; letter-spacing:0;">
-                    {% if orden %}<span class="num-prev">{{ oc_codigo(orden) }}</span>{% else %}<span class="num-prev" id="numPrev"></span> <span style="font-size:.68rem;">(se confirma al guardar)</span>{% endif %}</span></div>
+                    {% if orden %}<span class="num-prev">{{ oc_codigo(orden) }}</span>{% else %}<span class="num-prev" id="numPrev"></span> <span style="font-size:.68rem;">(se confirma al guardar)</span>{% endif %}
+                    <button type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline" onclick="revisarNumero(true)" title="Revisar si otro usuario ya tomó este número (no borra lo que escribiste)"><i class="bi bi-arrow-clockwise" id="icoNum"></i></button></span></div>
+            <div id="avisoNumero" class="alert alert-warning py-1 px-2 small mb-2" style="display:none;"></div>
             <div class="lbl">Empresa que compra</div>
             {% set fija_emp = orden and bloqueo_empresa %}
             <div class="seg chico mb-2">
@@ -614,17 +619,59 @@ function empresa() { return valorRadio('empresa') || 'ANCLAJES'; }
 function tipo() { return valorRadio('tipo') || '{{ orden.tipo if orden else 'OC' }}'; }
 function corto() { return EMPRESAS[empresa()].corto; }
 function post(url, datos) { const fd = new FormData(); Object.entries(datos).forEach(([k, v]) => fd.append(k, v == null ? '' : v)); return fetch(url, { method: 'POST', body: fd }).then(r => r.json()); }
-function pintarNumero() { const t = tipo(); if (porId('numPrev')) porId('numPrev').textContent = `${t} N° ${SIGUIENTE[empresa() + '|' + t]}`; }
+function pintarNumero() {
+    const t = tipo();
+    if (porId('numPrev')) {
+        porId('numPrev').textContent = `${t} N° ${SIGUIENTE[empresa() + '|' + t]}`;
+        porId('numero_visto').value = SIGUIENTE[empresa() + '|' + t] || '';
+    }
+}
+// ---- el número se asigna AL GUARDAR. Cada 20 s (y con el botón ↻) se revisa si otro usuario registró una orden de la misma
+//      empresa y tipo: se actualiza solo el número que se muestra y se avisa quién la registró. Lo escrito NO se borra. ----
+const URL_SIG_NUM = {{ url_for('oc_siguiente_numero')|tojson }};
+let revisandoNum = false;
+function revisarNumero(manual) {
+    if (revisandoNum || (!manual && document.hidden)) return;
+    const nuevaONueva = porId('numPrev') || (ES_EDICION && empresa() !== EMPRESA_ORIGINAL);
+    if (!nuevaONueva && !manual) return;
+    revisandoNum = true;
+    if (manual) porId('icoNum').className = 'bi bi-arrow-clockwise spin-num';
+    fetch(URL_SIG_NUM).then(r => r.json()).then(d => {
+        if (!d || !d.siguiente) return;
+        const clave = empresa() + '|' + tipo(), antes = SIGUIENTE[clave], ahora = d.siguiente[clave];
+        Object.assign(SIGUIENTE, d.siguiente);
+        const av = porId('avisoNumero'), u = (d.ultimas || {})[clave];
+        if (antes && ahora && antes !== ahora && u && !u.propia) {
+            av.innerHTML = `<i class="bi bi-person-exclamation"></i> <b>${esc(u.por)}</b> acaba de registrar la <b>${esc(u.codigo)}</b>${u.razon ? ' (' + esc(u.razon) + ')' : ''}${u.hora ? ' a las ' + esc(u.hora) : ''}.
+                La tuya será la <b>${esc(tipo())} N° ${esc(ahora)}</b>. <span class="text-muted">Lo que escribiste no se borra; el número se confirma al guardar.</span>`;
+            av.style.display = '';
+        } else if (manual && antes === ahora) {
+            av.innerHTML = `<i class="bi bi-check-circle text-success"></i> El número <b>${esc(tipo())} N° ${esc(ahora)}</b> sigue libre.`;
+            av.style.display = '';
+            setTimeout(() => { if (av.textContent.includes('sigue libre')) av.style.display = 'none'; }, 4000);
+        }
+        pintarNumero();
+        pintarAvisoEmpresa();
+    }).catch(() => { if (manual) Swal.fire({ icon: 'info', title: 'Sin conexión', text: 'No se pudo revisar el número ahora. Tus datos siguen aquí.' }); })
+      .finally(() => { revisandoNum = false; if (porId('icoNum')) porId('icoNum').className = 'bi bi-arrow-clockwise'; });
+}
+setInterval(() => revisarNumero(false), 20000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) revisarNumero(false); });
 // ---- cambio de empresa (al editar): toma el número siguiente de la otra empresa y se re-enlazan los productos ----
 function cambioEmpresa() {
-    const av = porId('avisoEmpresa');
-    if (av) {
-        const cambia = ES_EDICION && empresa() !== EMPRESA_ORIGINAL;
-        av.style.display = cambia ? '' : 'none';
-        if (cambia) av.innerHTML = `<i class="bi bi-arrow-left-right"></i> Al guardar, la orden pasa a <b>${esc(corto())}</b> con el número <b>${esc(tipo())} N° ${esc(SIGUIENTE[empresa() + '|' + tipo()] || '')}</b>.
-            El número actual (${esc(CODIGO_ORIGINAL)}) queda sin uso y el cambio queda en el historial. Los productos se buscan en el inventario de ${esc(corto())}.`;
-    }
+    pintarAvisoEmpresa();
+    if (ES_EDICION && empresa() !== EMPRESA_ORIGINAL) revisarNumero(false);
     revincularEmpresa();
+}
+function pintarAvisoEmpresa() {
+    const av = porId('avisoEmpresa');
+    if (!av) return;
+    const cambia = ES_EDICION && empresa() !== EMPRESA_ORIGINAL;
+    av.style.display = cambia ? '' : 'none';
+    if (!porId('numPrev')) porId('numero_visto').value = cambia ? (SIGUIENTE[empresa() + '|' + tipo()] || '') : '';
+    if (cambia) av.innerHTML = `<i class="bi bi-arrow-left-right"></i> Al guardar, la orden pasa a <b>${esc(corto())}</b> y toma el siguiente número libre de ${esc(corto())}:
+        hoy sería la <b>${esc(tipo())} N° ${esc(SIGUIENTE[empresa() + '|' + tipo()] || '')}</b> (se confirma al guardar; si otro usuario lo toma antes, te toca el siguiente).
+        El número actual (${esc(CODIGO_ORIGINAL)}) queda sin uso y el cambio queda en el historial. Los productos se buscan en el inventario de ${esc(corto())}.`;
 }
 function revincularEmpresa() {
     if (tipo() !== 'OC' || destino() !== 'GENERAL') return;

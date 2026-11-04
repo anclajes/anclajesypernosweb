@@ -528,27 +528,54 @@ def oc_guardar():
     if reaprobacion and len(motivo_edicion) < 10:
         errores.append('Escribe el MOTIVO DE LA EDICIÓN (mínimo 10 letras): Gerencia lo verá al volver a aprobarla.')
     if errores:
-        # se vuelve a mostrar el formulario con lo escrito (no se pierde nada) y la lista de lo que falta
-        previo = {k: (v.isoformat() if hasattr(v, 'isoformat') else v) for k, v in datos.items()}
-        previo.update(items=[{'descripcion': ' '.join((d or '').split()).upper(), 'cantidad': c, 'um': u, 'precio_unitario': pu, 'origen': o_,
-                              'codigo': cod, 'insumo_id': ii, 'familia': fa, 'calidad': ca, 'estado': es, 'peso_modo': pm, 'peso_valor': pval, 'servicio': sv,
-                              'req_item': rq, 'req_txt': rt, 'kgs_mpcs': kg, 'precio_mil': pmil, 'detalle': dt, 'piezas': pz}
-                             for d, c, u, pu, o_, cod, ii, fa, ca, es, pm, pval, sv, rq, rt, kg, pmil, dt, pz in zip(
-                                 f.getlist('descripcion[]'), f.getlist('cantidad[]'), f.getlist('um[]'), f.getlist('precio_unitario[]'),
-                                 f.getlist('origen[]'), f.getlist('codigo[]'), f.getlist('insumo_id[]'), f.getlist('familia[]') + [''] * 99,
-                                 f.getlist('calidad[]') + [''] * 99, f.getlist('estado_producto[]') + [''] * 99,
-                                 f.getlist('peso_modo[]') + [''] * 99, f.getlist('peso_valor[]') + [''] * 99, f.getlist('servicio[]') + [''] * 99,
-                                 f.getlist('req_item[]') + [''] * 99, f.getlist('req_txt[]') + [''] * 99,
-                                 f.getlist('kgs_mpcs[]') + [''] * 99, f.getlist('precio_mil[]') + [''] * 99,
-                                 f.getlist('detalle[]') + [''] * 99, f.getlist('piezas[]') + [''] * 99) if (d or c or pu)],
-                      duplicada_de=f.get('duplicada_de'), entrega_dias=f.get('entrega_dias'), fecha_entrega=f.get('fecha_entrega'),
-                      solicitante=f.get('solicitante', ''), cliente_ruc=f.get('cliente_ruc', ''), cliente_razon=f.get('cliente_razon', ''),
-                      motivo_edicion=motivo_edicion)
-        return render_template('oc_form.html', errores=errores, **_contexto_form_oc(orden, previo))
+        return render_template('oc_form.html', errores=errores, **_contexto_form_oc(orden, _previo_desde_form(f, datos, motivo_edicion)))
+    return _oc_guardar_datos(f, orden, datos, items, reaprobacion, motivo_edicion, volver)
+
+
+def _previo_desde_form(f, datos, motivo_edicion=''):
+    """Lo que el usuario escribió, para volver a mostrar el formulario sin perder nada (errores o choque al guardar)."""
+    previo = {k: (v.isoformat() if hasattr(v, 'isoformat') else v) for k, v in datos.items()}
+    previo.update(items=[{'descripcion': ' '.join((d or '').split()).upper(), 'cantidad': c, 'um': u, 'precio_unitario': pu, 'origen': o_,
+                          'codigo': cod, 'insumo_id': ii, 'familia': fa, 'calidad': ca, 'estado': es, 'peso_modo': pm, 'peso_valor': pval, 'servicio': sv,
+                          'req_item': rq, 'req_txt': rt, 'kgs_mpcs': kg, 'precio_mil': pmil, 'detalle': dt, 'piezas': pz}
+                         for d, c, u, pu, o_, cod, ii, fa, ca, es, pm, pval, sv, rq, rt, kg, pmil, dt, pz in zip(
+                             f.getlist('descripcion[]'), f.getlist('cantidad[]'), f.getlist('um[]'), f.getlist('precio_unitario[]'),
+                             f.getlist('origen[]'), f.getlist('codigo[]'), f.getlist('insumo_id[]'), f.getlist('familia[]') + [''] * 99,
+                             f.getlist('calidad[]') + [''] * 99, f.getlist('estado_producto[]') + [''] * 99,
+                             f.getlist('peso_modo[]') + [''] * 99, f.getlist('peso_valor[]') + [''] * 99, f.getlist('servicio[]') + [''] * 99,
+                             f.getlist('req_item[]') + [''] * 99, f.getlist('req_txt[]') + [''] * 99,
+                             f.getlist('kgs_mpcs[]') + [''] * 99, f.getlist('precio_mil[]') + [''] * 99,
+                             f.getlist('detalle[]') + [''] * 99, f.getlist('piezas[]') + [''] * 99) if (d or c or pu)],
+                  duplicada_de=f.get('duplicada_de'), entrega_dias=f.get('entrega_dias'), fecha_entrega=f.get('fecha_entrega'),
+                  solicitante=f.get('solicitante', ''), cliente_ruc=f.get('cliente_ruc', ''), cliente_razon=f.get('cliente_razon', ''),
+                  motivo_edicion=motivo_edicion)
+    return previo
+
+
+def _oc_quien_tomo_numero(tipo, empresa, numero_txt):
+    """Si el número que el usuario veía en pantalla (ej. '2026-00014') ya lo registró otra orden: esa orden."""
+    try:
+        n = int((numero_txt or '').split('-')[-1])
+    except ValueError:
+        return None
+    return OrdenCompra.query.filter_by(tipo=tipo, empresa=empresa, numero=n).first()
+
+
+def _oc_error_unico(e):
+    """Qué dato repetido hizo fallar el guardado (para dar un mensaje claro en vez de uno genérico)."""
+    txt = str(getattr(e, 'orig', e))
+    if 'uq_orden_compra_emp_tipo_num' in txt or 'orden_compra_empresa_tipo_numero' in txt or ('orden_compra' in txt and 'numero' in txt):
+        return 'numero', txt
+    return 'otro', txt
+
+
+def _oc_guardar_datos(f, orden, datos, items, reaprobacion, motivo_edicion, volver):
     enviar = f.get('accion') == 'enviar' or reaprobacion
     ahora = hora_peru()
     reqs_antes = {i.req_item_id for i in orden.items if getattr(i, 'req_item_id', None)} if orden else set()
     es_nueva = orden is None
+    orden_id_edit = orden.id if orden else None
+    cambio_emp = None
     for intento in range(3):
         try:
             prov = _guardar_proveedor_oc(datos)
@@ -564,9 +591,11 @@ def oc_guardar():
                 if (orden.empresa or 'ANCLAJES') != datos['empresa']:
                     cambio_emp = (EMPRESAS_OC[orden.empresa or 'ANCLAJES']['corto'], _oc_codigo(orden),
                                   _siguiente_numero_oc(orden.tipo, datos['empresa']))
+                    # empresa y número cambian JUNTOS: si se guardara la empresa nueva con el número viejo, chocaría con la orden
+                    # que esa empresa ya tiene con ese número (antes eso daba "Otro usuario registró una orden al mismo tiempo")
+                    orden.empresa, orden.numero = datos['empresa'], cambio_emp[2]
                 _aplicar_datos_orden(orden, datos, items, prov, contacto)
                 if cambio_emp:
-                    orden.numero = cambio_emp[2]
                     _oc_evento(orden, 'EMPRESA', f"Empresa cambiada: {cambio_emp[0]} → {EMPRESAS_OC[orden.empresa]['corto']} · antes {cambio_emp[1]}, "
                                                  f"ahora {_oc_codigo(orden)} (el número anterior queda sin uso)")
                 orden.editado_por_id, orden.fecha_edicion = session.get('user_id'), ahora
@@ -606,17 +635,55 @@ def oc_guardar():
                           f"({orden.razon_social}, {MONEDAS_OC[orden.moneda]['simbolo']} {orden.total:,.2f})", 'bi-cart-check', 'text-primary')
             db.session.commit()
             break
-        except IntegrityError:
+        except IntegrityError as e:
             db.session.rollback()
+            causa, detalle_err = _oc_error_unico(e)
+            app.logger.warning(f"OC guardar: IntegrityError intento {intento + 1} ({causa}): {detalle_err[:300]}")
             if es_nueva:
                 orden = None
-            if intento == 2:
-                flash('⛔ Otro usuario registró una orden al mismo tiempo. Vuelve a intentarlo.')
-                return redirect(volver)
+            elif orden is not None:
+                orden = OrdenCompra.query.get(orden_id_edit)
+            if intento == 2 or causa != 'numero':
+                emp_txt = EMPRESAS_OC.get(datos['empresa'], {}).get('corto', datos['empresa'])
+                if causa == 'numero':
+                    msg = (f"No se pudo asignar el número de la {TIPOS_OC[datos['tipo']]} de {emp_txt}: en este mismo instante otros usuarios "
+                           f"guardaron órdenes de {emp_txt} y el número siguiente se ocupó {intento + 1} veces seguidas. "
+                           "Tus datos siguen aquí: vuelve a presionar Guardar y se tomará el número libre siguiente.")
+                else:
+                    msg = ("No se pudo guardar porque un dato ya existe en el sistema y no se puede repetir "
+                           f"(detalle técnico: {detalle_err.splitlines()[0][:160]}). Tus datos siguen aquí: revísalos o avisa a soporte con este mensaje.")
+                return render_template('oc_form.html', errores=[msg], **_contexto_form_oc(orden, _previo_desde_form(f, datos, motivo_edicion)))
+    # ¿el número que veía en pantalla lo tomó otro usuario mientras llenaba la orden? -> se avisa cuál le tocó y quién tomó el otro
+    aviso_num = ''
+    visto = (f.get('numero_visto') or '').strip()
+    if visto and (es_nueva or cambio_emp) and visto != _oc_numero_txt(orden):
+        otra = _oc_quien_tomo_numero(orden.tipo, orden.empresa, visto)
+        if otra and otra.id != orden.id:
+            quien = (otra.creado_por.nombre_completo or otra.creado_por.username) if otra.creado_por else 'otro usuario'
+            aviso_num = (f" Ojo: el N° {visto} que veías lo registró {quien} ({_oc_codigo(otra)} · {otra.razon_social}) mientras llenabas la tuya, "
+                         f"así que a la tuya le tocó el {_oc_numero_txt(orden)}.")
     flash(f"✅ {_oc_codigo(orden)} " + (f"editada (Rev. {orden.revision}) y enviada otra vez a Gerencia: queda POR APROBAR con tu motivo." if reaprobacion
                                         else ('enviada a Gerencia para aprobación' if enviar else 'guardada como borrador') + '.')
-          + (f" Vinculada a {len(vinculados_kardex)} movimiento(s) del Kardex." if vinculados_kardex else ''))
+          + (f" Vinculada a {len(vinculados_kardex)} movimiento(s) del Kardex." if vinculados_kardex else '') + aviso_num)
     return redirect(url_for('oc_detalle', orden_id=orden.id))
+
+
+@app.route('/ordenes/siguiente-numero')
+@_ruta_oc('editar', como_json=True)
+def oc_siguiente_numero():
+    """Para el formulario (se consulta cada 20 s): número siguiente de cada empresa/tipo y quién registró la última orden,
+    así el usuario sabe si otro le ganó el número mientras llenaba, sin recargar la página ni perder lo escrito."""
+    siguiente, ultimas = {}, {}
+    for e in EMPRESAS_OC:
+        for t in TIPOS_OC:
+            clave = f'{e}|{t}'
+            siguiente[clave] = _oc_numero_txt(None, _siguiente_numero_oc(t, e), e)
+            o = OrdenCompra.query.filter_by(tipo=t, empresa=e).order_by(OrdenCompra.numero.desc()).first()
+            if o:
+                ultimas[clave] = {'codigo': _oc_codigo(o), 'numero': _oc_numero_txt(o), 'razon': o.razon_social or '', 'propia': o.creado_por_id == session.get('user_id'),
+                                  'por': (o.creado_por.nombre_completo or o.creado_por.username) if o.creado_por else 'otro usuario',
+                                  'hora': o.fecha_registro.strftime('%H:%M') if o.fecha_registro else ''}
+    return {'siguiente': siguiente, 'ultimas': ultimas}
 
 
 # ---------------------------- DETALLE Y FLUJO ----------------------------
