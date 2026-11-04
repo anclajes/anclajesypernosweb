@@ -228,13 +228,13 @@
         <div class="sello no"><i class="bi bi-x-octagon-fill"></i><div><b>RECHAZADA por {{ orden.rechazado_por.nombre_completo if orden.rechazado_por else 'Gerencia' }}</b> · {{ orden.fecha_rechazo.strftime('%d/%m/%Y %H:%M') }}
             <div class="small">Motivo: {{ oc_rechazo_txt(orden) }}</div>
             {% set rq = oc_quitar_resumen(orden) %}{% if rq %}
-            <div class="quitar-box small"><b><i class="bi bi-list-check"></i> Gerencia pidió QUITAR {{ rq.n }} ítem(s)</b> y volver a enviar la orden con los otros {{ rq.quedan }}
-                <span class="text-muted">(al pulsar "Corregir y volver a enviar" ya salen quitados)</span>:
+            <div class="quitar-box small"><b><i class="bi bi-list-check"></i> Gerencia RECOMIENDA QUITAR {{ rq.n }} ítem(s)</b>
+                <span class="text-muted">(es una recomendación: al "Corregir y volver a enviar" salen en rojo y Logística decide si los quita)</span>:
                 <ul class="mb-1 ps-3">{% for i in rq['items'] %}<li><b>#{{ i.item }}</b> {{ i.descripcion }} — <span class="text-danger fw-semibold">{{ i.rechazo_item_motivo }}</span>
                     <span class="text-muted">({{ mon.simbolo }} {{ '{:,.2f}'.format(i.total or 0) }} sin IGV)</span></li>{% endfor %}</ul>
                 <div class="d-flex flex-wrap gap-3"><span>Total de esta orden: <b>{{ mon.simbolo }} {{ '{:,.2f}'.format(rq.total_original) }}</b></span>
                     <span class="text-danger">Se quita: <b>− {{ mon.simbolo }} {{ '{:,.2f}'.format(rq.total_quitado) }}</b></span>
-                    <span class="text-success">Total sin esos ítems: <b>{{ mon.simbolo }} {{ '{:,.2f}'.format(rq.total_nuevo) }}</b></span></div></div>
+                    <span class="text-success">Total si se quitan: <b>{{ mon.simbolo }} {{ '{:,.2f}'.format(rq.total_nuevo) }}</b></span></div></div>
             {% endif %}
             {% if copias %}<div class="small mt-1"><i class="bi bi-arrow-return-right"></i> Corregida en:
                 {% for c in copias %}<a href="{{ url_for('oc_detalle', orden_id=c.id) }}" class="fw-bold">{{ oc_codigo(c) }}</a> <span class="text-muted">({{ estados[c.estado].txt }})</span>{{ ', ' if not loop.last }}{% endfor %}</div>{% endif %}</div></div>
@@ -287,7 +287,7 @@
         {% if p.observar %}<button class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#mObs"><i class="bi bi-chat-left-text"></i> Observación</button>{% endif %}
         {% if p.retirar %}<form method="POST" action="{{ url_for('oc_retirar', orden_id=orden.id) }}" onsubmit="return confirmar(this, '¿Retirarla de aprobación para corregirla?')"><button class="btn btn-outline-warning"><i class="bi bi-arrow-counterclockwise"></i> Retirar para corregir</button></form>{% endif %}
         {% if p.corregir %}<a class="btn btn-danger fw-bold" href="{{ url_for('oc_editar', orden_id=orden.id) }}" title="Corrige esta misma orden (mantiene su número) y vuelve a enviarla a Gerencia">
-            <i class="bi bi-wrench-adjustable"></i> Corregir y volver a enviar{% if oc_quitar_resumen(orden) %} <span class="fw-normal">(sin los {{ oc_quitar_resumen(orden).n }} ítem(s) marcados)</span>{% endif %}</a>
+            <i class="bi bi-wrench-adjustable"></i> Corregir y volver a enviar</a>
         {% elif p.corregir_bloqueo %}<span class="btn btn-outline-secondary disabled" title="{{ p.corregir_bloqueo }}"><i class="bi bi-lock"></i> No se puede corregir: {{ p.corregir_bloqueo }}</span>{% endif %}
         {% if p.duplicar %}<form method="POST" action="{{ url_for('oc_duplicar', orden_id=orden.id) }}"><button class="btn btn-outline-secondary" {% if orden.estado == 'RECHAZADA' %}title="Crea OTRA orden con número nuevo (si prefieres no corregir esta)"{% endif %}><i class="bi bi-files"></i> Duplicar{{ ' (número nuevo)' if orden.estado == 'RECHAZADA' }}</button></form>{% endif %}
         {% if p.anular %}<button class="btn btn-outline-dark ms-sm-auto" data-bs-toggle="modal" data-bs-target="#mAnular"><i class="bi bi-slash-circle"></i> Anular</button>{% endif %}
@@ -368,7 +368,7 @@
                     {% set q_it = i.rechazo_quitar and orden.estado == 'RECHAZADA' %}
                     <tr class="{{ 'quitar' if q_it }}"><td class="ps-3 text-muted">{{ i.item }}</td>
                         <td><span class="{{ 'desc-q' if q_it }}">{{ i.descripcion }}</span>
-                            {% if q_it %}<div><span class="tag-quitar" title="Gerencia pidió quitar este ítem"><i class="bi bi-scissors"></i> QUITAR</span>
+                            {% if q_it %}<div><span class="tag-quitar" title="Gerencia recomienda quitar este ítem"><i class="bi bi-scissors"></i> QUITAR (recomendado)</span>
                                 <span class="small text-danger fw-semibold">{{ i.rechazo_item_motivo }}</span></div>{% endif %}
                             {% if i.detalle or i.piezas %}<div class="small text-muted fst-italic">{{ i.detalle or '' }}{% if i.detalle and i.piezas %} · {% endif %}{% if i.piezas %}{{ i.piezas|cant }} pieza(s){% endif %}</div>{% endif %}
                             <div style="font-size:.7rem;">{% if i.tipo_servicio %}<span class="tag" style="background:#ede9fe; color:#5b21b6;"><i class="bi bi-tools"></i> {{ i.tipo_servicio }}</span>{% endif %}{% if i.codigo %}<span class="tag vinc">{{ i.codigo }}</span>{% endif %}
@@ -669,7 +669,7 @@
     {% if orden.items|length > 1 %}
     {% set sub_it = orden.items|sum(attribute='total') %}
     <div class="small fw-bold mt-3"><i class="bi bi-list-check text-danger"></i> ¿Solo algunos ítems están mal? <span class="fw-normal text-muted">(opcional)</span></div>
-    <div class="form-text mt-0 mb-1">Marca los que hay que <b>QUITAR</b> (llegaron mal, se devuelven, no corresponden...). Logística verá cuáles son y rehará la orden sin ellos con un clic.</div>
+    <div class="form-text mt-0 mb-1">Marca los que <b>recomiendas QUITAR</b> (llegaron mal, se devuelven, no corresponden...). Al corregir la orden, Logística los verá en rojo con tu motivo y decidirá.</div>
     <div id="qtLista" data-factor="{{ ((orden.total or 0) / sub_it) if sub_it else 1 }}" data-total="{{ orden.total or 0 }}" data-simb="{{ mon.simbolo }}">
     {% for i in orden.items %}
     <div class="qt-item">

@@ -459,7 +459,9 @@ def _orden_a_previo(o, items=None):
                    'peso_valor': (i.peso_total if i.peso_modo == 'T' else i.peso_unitario) or '', 'servicio': i.tipo_servicio or '',
                    'req_item': getattr(i, 'req_item_id', None) or '', 'req_txt': _req_txt_item(i),
                    'kgs_mpcs': i.kgs_mpcs if i.kgs_mpcs is not None else '', 'precio_mil': i.precio_mil if i.precio_mil is not None else '',
-                   'detalle': i.detalle or '', 'piezas': i.piezas if i.piezas is not None else ''}
+                   'detalle': i.detalle or '', 'piezas': i.piezas if i.piezas is not None else '',
+                   # corrección de un rechazo: Gerencia recomendó quitar este ítem (solo se muestra en rojo; no se quita solo)
+                   'quitar_rec': (i.rechazo_item_motivo or 'Gerencia recomienda quitarlo') if (o.estado == 'RECHAZADA' and i.rechazo_quitar) else ''}
                   for i in (items or o.items)]
     return d
 
@@ -503,16 +505,19 @@ def oc_editar(orden_id):
             flash(f'⛔ Esta orden ya no se puede editar: {bloqueo}. Si hay que cambiarla, anúlala (si corresponde) y crea una nueva con "Duplicar".')
             return redirect(url_for('oc_detalle', orden_id=orden.id))
     elif orden.estado == 'RECHAZADA':
-        # CORRECCIÓN de un rechazo: la misma orden (mismo número). Los ítems que Gerencia marcó para quitar ya vienen quitados.
+        # CORRECCIÓN de un rechazo: la misma orden (mismo número). Los ítems que Gerencia recomendó quitar NO se quitan solos:
+        # salen marcados en rojo con su motivo y Logística decide (los quita con la X o los deja y lo explica).
         p = _oc_permisos(orden)
         if not p['corregir']:
             flash(f"⛔ Esta orden rechazada no se puede corregir: {p['corregir_bloqueo'] or 'no tienes permiso'}. Usa \"Duplicar\" para hacer una nueva.")
             return redirect(url_for('oc_detalle', orden_id=orden.id))
         rq = _oc_quitar_resumen(orden)
-        previo = _orden_a_previo(orden, [i for i in orden.items if not i.rechazo_quitar] if rq else None)
+        previo = _orden_a_previo(orden)
         if rq:
-            previo['quitados_txt'] = (f"Ya se quitaron los {rq['n']} ítem(s) que Gerencia pidió quitar: "
-                                      + '; '.join(f"#{i.item} {i.descripcion} ({i.rechazo_item_motivo})" for i in rq['items']))
+            simb = MONEDAS_OC[orden.moneda]['simbolo']
+            previo['quitados_txt'] = (f"Gerencia RECOMIENDA QUITAR {rq['n']} ítem(s) (marcados en rojo abajo): "
+                                      + '; '.join(f"#{i.item} {i.descripcion} ({i.rechazo_item_motivo})" for i in rq['items'])
+                                      + f". Sin ellos el total sería {simb} {rq['total_nuevo']:,.2f}. Quítalos con la X o déjalos y explica por qué")
         return render_template('oc_form.html', **_contexto_form_oc(orden, previo))
     elif orden.estado != 'BORRADOR':
         flash('Esta orden no se puede editar en su estado actual. Si está enviada a Gerencia, primero "Retírala para corregir".')
@@ -601,6 +606,7 @@ def _oc_guardar_datos(f, orden, datos, items, reaprobacion, motivo_edicion, volv
             contacto = _contacto_para_orden(prov, datos)
             if orden:
                 rechazo_snap = _oc_rechazo_snapshot(orden) if correccion else None     # antes de que cambien los ítems
+                rec_quitar = ([(i.item, (i.descripcion or '').strip().upper()) for i in orden.items if i.rechazo_quitar] if correccion else [])
                 antes = {c: getattr(orden, c) for c in ('razon_social', 'total', 'moneda', 'condicion_pago', 'destino', 'entrega_modo',
                                                         'solicitante_nombre', 'motivo_compra', 'fecha_entrega', 'entrega_dias', 'lugar_recojo',
                                                         'es_contable', 'directo_categoria', 'directo_ubicacion')}
@@ -635,7 +641,14 @@ def _oc_guardar_datos(f, orden, datos, items, reaprobacion, motivo_edicion, volv
                     orden.correccion_nota = motivo_edicion
                     orden.correccion_pendiente = True
                     orden.estado = 'BORRADOR'
-                    _oc_evento(orden, 'CORREGIDA', f"Corrección {orden.correcciones} del rechazo · Qué se corrigió: {motivo_edicion}"
+                    if rec_quitar:
+                        nuevas = {(i.descripcion or '').strip().upper() for i in orden.items}
+                        quedaron = [r for r in rec_quitar if r[1] in nuevas]
+                        motivo_edicion_ev = (f"{motivo_edicion} · De los {len(rec_quitar)} ítem(s) que Gerencia recomendó quitar: "
+                                             + (f"se quitaron {len(rec_quitar) - len(quedaron)}" if len(quedaron) < len(rec_quitar) else 'no se quitó ninguno')
+                                             + (f"; se MANTUVIERON: {', '.join('#' + str(r[0]) + ' ' + r[1][:35] for r in quedaron)}" if quedaron else ''))
+                        orden.correccion_nota = motivo_edicion_ev[:300]
+                    _oc_evento(orden, 'CORREGIDA', f"Corrección {orden.correcciones} del rechazo · Qué se corrigió: {orden.correccion_nota}"
                                                    f" · Cambios: {cambios or 'sin cambios en montos ni ítems'} · (Rechazo: {orden.rechazo_previo})")
                 else:
                     _oc_evento(orden, 'EDITADA', cambios or 'Ítems o datos actualizados')
@@ -847,14 +860,14 @@ def oc_rechazar(orden_id):
     rq = _oc_quitar_resumen(orden)
     if rq:
         simb = MONEDAS_OC[orden.moneda]['simbolo']
-        texto += (f" · QUITAR {rq['n']} ítem(s), sin ellos el total queda en {simb} {rq['total_nuevo']:,.2f} (antes {simb} {rq['total_original']:,.2f}): "
+        texto += (f" · RECOMIENDA QUITAR {rq['n']} ítem(s), sin ellos el total quedaría en {simb} {rq['total_nuevo']:,.2f} (antes {simb} {rq['total_original']:,.2f}): "
                   + '; '.join(f"#{i.item} {i.descripcion[:40]} ({i.rechazo_item_motivo})" for i in rq['items']))
     _oc_evento(orden, 'RECHAZADA', texto)
     _req_notificar_orden(orden, 'OC_RECHAZADA', f"Gerencia rechazó la {_oc_codigo(orden)}: los productos vuelven a esperar OC")
     _notif_orden_resuelta(orden, 'OC_RECHAZADA', texto)
     registrar_log(f"RECHAZÓ la {_oc_codigo(orden)}: {texto}"[:255], 'bi-x-octagon-fill', 'text-danger')   # la columna admite 255
     db.session.commit()
-    flash(f'{_oc_codigo(orden)} rechazada: Logística la corrige sin los {rq["n"]} ítem(s) marcados y la vuelve a enviar ("Corregir y volver a enviar", mismo número).'
+    flash(f'{_oc_codigo(orden)} rechazada: al corregirla, Logística verá en rojo los {rq["n"]} ítem(s) que recomiendas quitar y la volverá a enviar (mismo número).'
           if rq else f'{_oc_codigo(orden)} rechazada. Logística puede corregirla (mismo número) y volver a enviarla.')
     return redirect(url_for('oc_detalle', orden_id=orden.id))
 

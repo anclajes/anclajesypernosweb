@@ -175,7 +175,7 @@
         {% if o.fecha_aprobacion %}<div class="sub hora-ap" title="Fecha y hora de la aprobación"><i class="bi bi-clock"></i> {{ o.fecha_aprobacion.strftime('%d/%m/%Y %H:%M') }}</div>{% endif %}
     {% elif o.estado == 'ENVIADA' and o.fecha_envio %}<div class="sub mt-1" title="Enviada a Gerencia"><i class="bi bi-send"></i> Enviada {{ o.fecha_envio.strftime('%d/%m %H:%M') }}</div>
     {% elif o.estado == 'RECHAZADA' %}<div class="sub mt-1 text-danger clamp2" title="{{ oc_rechazo_txt(o) }}">{{ oc_rechazo_txt(o) }}</div>
-        {% set rq = oc_quitar_resumen(o) %}{% if rq %}<div class="sub fw-bold text-danger" title="{% for i in rq['items'] %}#{{ i.item }} {{ i.descripcion }} ({{ i.rechazo_item_motivo }}){{ ' · ' if not loop.last }}{% endfor %}"><i class="bi bi-scissors"></i> Quitar {{ rq.n }} ítem(s) y reenviar</div>{% endif %}
+        {% set rq = oc_quitar_resumen(o) %}{% if rq %}<div class="sub fw-bold text-danger" title="{% for i in rq['items'] %}#{{ i.item }} {{ i.descripcion }} ({{ i.rechazo_item_motivo }}){{ ' · ' if not loop.last }}{% endfor %}"><i class="bi bi-scissors"></i> Recomienda quitar {{ rq.n }} ítem(s)</div>{% endif %}
     {% elif o.estado == 'ANULADA' %}<div class="sub mt-1 clamp2" title="{{ oc_anulacion_txt(o) }}">{{ oc_anulacion_txt(o) }}</div>
     {% elif o.estado == 'CONFORME' %}
         {% if o.es_contable %}<div class="sub mt-1 fw-bold" style="color:#5b21b6;"><i class="bi bi-calculator"></i> {{ 'Contable confirmado ✓' if o.fecha_kardex else 'Contable: por confirmar' }}</div>

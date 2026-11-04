@@ -57,6 +57,8 @@
                     background: #fff; color: #94a3b8; font-size: 1.05rem; display: flex; align-items: center; justify-content: center; padding: 0; cursor: pointer; }
     .item .quitar:hover { color: #dc2626; border-color: #fca5a5; background: #fef2f2; }
     .item { margin-top: 14px; }
+    .item.rec-quitar { border: 2px solid #f87171; background: #fef2f2; }
+    .item .rec-q { background: #dc2626; color: #fff; border-radius: 8px; font-size: .72rem; font-weight: 700; padding: 3px 8px; margin: 4px 0 6px; }
     .item .i-detalle { font-size: .78rem; resize: vertical; }
     .item label { font-size: .66rem; font-weight: 800; color: #64748b; text-transform: uppercase; margin-bottom: 1px; }
     .item .tot { font-weight: 800; font-variant-numeric: tabular-nums; padding-top: 4px; }
@@ -137,7 +139,7 @@
     <div class="tit" style="color:#991b1b;"><i class="bi bi-wrench-adjustable-circle-fill"></i> Estás CORRIGIENDO una orden RECHAZADA · mantiene su número {{ oc_codigo(orden) }}</div>
     <div class="small mb-2"><b>Gerencia la rechazó</b>{% if orden.rechazado_por %} ({{ orden.rechazado_por.nombre_completo }}{% if orden.fecha_rechazo %}, {{ orden.fecha_rechazo.strftime('%d/%m/%Y %H:%M') }}{% endif %}){% endif %}:
         <b>{{ oc_rechazo_txt(orden) }}</b>
-        {% if pv.quitados_txt %}<div class="mt-1 text-danger"><i class="bi bi-scissors"></i> {{ pv.quitados_txt }}.</div>{% endif %}
+        {% if pv.quitados_txt %}<div class="mt-1 text-danger fw-semibold"><i class="bi bi-exclamation-octagon-fill"></i> {{ pv.quitados_txt }}.</div>{% endif %}
         <div class="mt-1">Corrige lo necesario y envíala otra vez: Gerencia verá que es una <b>corrección</b>, por qué la rechazó y lo que escribas aquí.</div></div>
     <label class="small fw-bold">¿Qué corregiste? * <span class="fw-normal text-muted">(lo verá el Gerente al aprobar)</span></label>
     <textarea name="motivo_edicion" id="motivo_edicion" class="form-control" rows="2" maxlength="300" required minlength="10"
@@ -1069,6 +1071,13 @@ function agregarItem(datos) {
     if (datos.codigo) vincular(fila, { origen: datos.origen, sku: datos.codigo, insumo_id: datos.insumo_id, familia: datos.familia, calidad: datos.calidad, estado: datos.estado });
     else if (ES_EDICION && datos.descripcion) fila._legado = datos.descripcion;
     if (datos.req_item) { fila.querySelector('.i-req').value = datos.req_item; fila.querySelector('.i-reqtxt').value = datos.req_txt || ''; }
+    if (datos.quitar_rec) {     // corrección de un rechazo: Gerencia recomendó quitar este ítem (Logística decide)
+        fila.classList.add('rec-quitar');
+        const av = document.createElement('div');
+        av.className = 'rec-q';
+        av.innerHTML = `<i class="bi bi-exclamation-octagon-fill"></i> Gerencia RECOMIENDA QUITAR este ítem: ${esc(datos.quitar_rec)} · quítalo con la X o déjalo y explícalo en "¿Qué corregiste?"`;
+        fila.querySelector('.quitar').after(av);
+    }
     let t = null;
     desc.addEventListener('input', () => {
         if (fila._legado && desc.value.trim().toUpperCase() !== fila._legado.toUpperCase()) fila._legado = null;

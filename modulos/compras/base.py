@@ -632,7 +632,7 @@ def _oc_rechazo_snapshot(orden):
     txt = f"{_oc_rechazo_txt(orden)} · rechazó {quien}" + (f" el {orden.fecha_rechazo.strftime('%d/%m/%Y %H:%M')}" if orden.fecha_rechazo else '')
     rq = _oc_quitar_resumen(orden)
     if rq:
-        txt += f" · pidió quitar {rq['n']} ítem(s): " + '; '.join(f"#{i.item} {i.descripcion[:35]} ({i.rechazo_item_motivo})" for i in rq['items'])
+        txt += f" · recomendó quitar {rq['n']} ítem(s): " + '; '.join(f"#{i.item} {i.descripcion[:35]} ({i.rechazo_item_motivo})" for i in rq['items'])
     return txt[:500]
 
 
@@ -820,6 +820,19 @@ def _oc_bloqueo_reedicion(orden):
     Devuelve None si se puede, o el motivo por el que ya no."""
     if orden.estado not in ESTADOS_REEDITABLES_OC:
         return 'solo se edita una orden en borrador, aprobada, con material llegado o conforme'
+    return _oc_bloqueo_por_avance(orden)
+
+
+def _oc_bloqueo_correccion(orden):
+    """¿Se puede CORREGIR una orden RECHAZADA (misma orden, mismo número)? Sí, salvo que ya tenga pagos o ingresos
+    (puede pasar si se rechazó una re-aprobación de una orden que ya había avanzado). None = sí se puede."""
+    if orden.estado != 'RECHAZADA':
+        return 'solo se corrige una orden rechazada'
+    return _oc_bloqueo_por_avance(orden)
+
+
+def _oc_bloqueo_por_avance(orden):
+    """Lo que impide volver a editar una orden: pagada, ingresada a Insumos / Kardex, servicio con seguimiento o bien entregado."""
     if (orden.estado_pago or 'PENDIENTE') == 'PAGADO':
         return 'ya está pagada'
     if orden.insumo_ingreso_id:
@@ -836,9 +849,10 @@ def _oc_bloqueo_reedicion(orden):
 def _oc_bloqueo_cambio_empresa(orden):
     """¿Se puede pasar la orden a la otra empresa (Anclajes <-> Import Bolts) al editarla? Solo antes de que haya llegado
     material (la guía y la factura ya salen a nombre de una empresa), de pagarla o de ingresar algo. None = sí se puede."""
-    if orden.estado not in ('BORRADOR',) + ESTADOS_REEDITABLES_OC:
-        return 'solo al editar una orden en borrador o ya aprobada'
-    bloqueo = _oc_bloqueo_reedicion(orden) if orden.estado != 'BORRADOR' else None
+    if orden.estado not in ('BORRADOR', 'RECHAZADA') + ESTADOS_REEDITABLES_OC:
+        return 'solo al editar una orden en borrador, rechazada (al corregirla) o ya aprobada'
+    bloqueo = (None if orden.estado == 'BORRADOR' else
+               _oc_bloqueo_correccion(orden) if orden.estado == 'RECHAZADA' else _oc_bloqueo_reedicion(orden))
     if bloqueo:
         return bloqueo
     if orden.fecha_llegada or _oc_entregas(orden):
@@ -855,8 +869,8 @@ def _oc_permisos(orden):
     return {
         'editar': edita and e == 'BORRADOR',
         # RECHAZADA: Logística la corrige (misma orden, mismo número) y la vuelve a enviar. ANULADA ya no se corrige.
-        'corregir': edita and e == 'RECHAZADA' and _oc_bloqueo_reedicion(orden) is None,
-        'corregir_bloqueo': (_oc_bloqueo_reedicion(orden) if edita and e == 'RECHAZADA' else None),
+        'corregir': edita and e == 'RECHAZADA' and _oc_bloqueo_correccion(orden) is None,
+        'corregir_bloqueo': (_oc_bloqueo_correccion(orden) if edita and e == 'RECHAZADA' else None),
         'reeditar': reeditar,
         'reeditar_bloqueo': (_oc_bloqueo_reedicion(orden) if edita and e in ESTADOS_REEDITABLES_OC and not reeditar else None),
         'enviar': edita and e == 'BORRADOR',

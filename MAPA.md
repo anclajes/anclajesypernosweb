@@ -182,14 +182,16 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
   El modal muestra en vivo el total actual, cuánto se quita y el **total sin esos ítems**. No se pueden marcar todos (sería rechazo total).
 - Se guarda en `orden_compra_item.rechazo_quitar` / `rechazo_item_motivo`; `_oc_quitar_resumen(orden)` calcula ítems y montos
   (en proporción al subtotal: mismo % de IGV). Va en el evento RECHAZADA y en el aviso a Logística.
-- En la orden rechazada: recuadro con los ítems a quitar y montos y filas tachadas con "QUITAR". Al "Corregir y volver a enviar"
-  esos ítems ya salen quitados. En la lista sale "Quitar N ítem(s) y reenviar". (Queda la ruta `oc_duplicar` con `sin_rechazados=1`
+- Es una RECOMENDACIÓN: en la orden rechazada sale el recuadro con los ítems y montos y las filas tachadas con "QUITAR (recomendado)".
+  Al "Corregir y volver a enviar" esos ítems NO se quitan solos: salen en rojo en el formulario (`quitar_rec` en `_orden_a_previo`) y
+  Logística decide. Al guardar, el evento CORREGIDA dice cuántos se quitaron y cuáles se mantuvieron. En la lista: "Recomienda quitar N ítem(s)". (Queda la ruta `oc_duplicar` con `sin_rechazados=1`
   para hacer una copia con número nuevo sin esos ítems; ya no tiene botón.)
 
 ## Compras: corregir una orden RECHAZADA (misma orden, mismo número)
 
 - Una OC/OS RECHAZADA la corrige Logística (`_oc_permisos` → `corregir`; bloqueada si `_oc_bloqueo_reedicion`): botón
-  "Corregir y volver a enviar" → `oc_editar` (abre el formulario con el aviso rojo, el motivo del rechazo y los ítems marcados ya quitados).
+  "Corregir y volver a enviar" → `oc_editar` (abre el formulario con el aviso rojo, el motivo del rechazo y los ítems recomendados en rojo).
+  El bloqueo se revisa con `_oc_bloqueo_correccion` (pagada, ingresada, etc.; NO con `_oc_bloqueo_reedicion`, que es para aprobadas).
   Una ANULADA ya no se corrige. "Duplicar (número nuevo)" sigue disponible.
 - Es obligatorio escribir "¿Qué corregiste?" (campo `motivo_edicion`, mín. 10 letras). Al guardar (`_oc_guardar_datos(..., correccion=True)`):
   `rechazo_previo` = foto del rechazo (motivo, quién, cuándo, ítems a quitar), `correcciones` + 1, `correccion_nota`,
