@@ -88,7 +88,7 @@ def oc_lista():
             continue
         if buscar:
             texto = (f"{o.tipo} {_oc_numero_txt(o)} {o.numero:06d} {o.razon_social} {o.ruc or ''} {o.cotizacion or ''} {o.numero_factura or ''} {o.numero_guia or ''} "
-                     f"{_oc_solicitante_txt(o)} {o.creado_por.nombre_completo if o.creado_por else ''} {'CONTABLE ' + (o.contable_nota or '') if o.es_contable else ''} {('USO DIRECTO ' + ' '.join(x or '' for x in (o.directo_categoria, o.directo_ubicacion, o.directo_detalle, o.directo_entregado_a))) if o.destino == 'DIRECTO' else ''} {o.cliente_razon or ''} {o.cliente_ruc or ''} {' '.join(i.descripcion for i in o.items)}").upper()
+                     f"{_oc_solicitante_txt(o)} {o.creado_por.nombre_completo if o.creado_por else ''} {'CONTABLE ' + (o.contable_nota or '') if o.es_contable else ''} {'IMPORTACION IMPORTACIÓN' if o.es_importacion else ''} {('USO DIRECTO ' + ' '.join(x or '' for x in (o.directo_categoria, o.directo_ubicacion, o.directo_detalle, o.directo_entregado_a))) if o.destino == 'DIRECTO' else ''} {o.cliente_razon or ''} {o.cliente_ruc or ''} {' '.join(i.descripcion for i in o.items)}").upper()
             if not all(t in texto for t in buscar.upper().split()):
                 continue
         ordenes.append(o)

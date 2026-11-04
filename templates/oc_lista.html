@@ -8,6 +8,11 @@
 {% from '_oc_directo.html' import estilos_directo with context %}
 {{ estilos_docs_oc() }}{{ estilos_contable() }}{{ estilos_directo() }}
 <style>
+    .oc-imp-chip { display: inline-flex; align-items: center; gap: 3px; font-size: .58rem; font-weight: 800; letter-spacing: .02em; border-radius: 6px; padding: 0 6px;
+                   background: #e0f2fe; color: #075985; border: 1px solid #7dd3fc; white-space: nowrap; vertical-align: middle; }
+</style>
+{% macro chip_imp(o) %}{% if o.es_importacion %}<span class="oc-imp-chip" title="Importación · sin IGV · {{ monedas[o.moneda].simbolo }} ({{ o.moneda }})"><i class="bi bi-globe-americas"></i> IMPORTACIÓN</span>{% endif %}{% endmacro %}
+<style>
     .empresas { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
     .empresas a { display: inline-flex; align-items: center; gap: 8px; border: 2px solid #e2e8f0; background: #fff; border-radius: 12px; padding: 6px 12px; text-decoration: none; color: #334155; font-weight: 800; font-size: .84rem; }
     .empresas a img { height: 22px; width: 64px; object-fit: contain; }
@@ -258,6 +263,7 @@
                     <td class="ps-3 text-nowrap">{% if emp_sel == 'TODAS' %}<span class="emp-chip" style="background: {{ empresas_oc[o.empresa or 'ANCLAJES'].color }};">{{ empresas_oc[o.empresa or 'ANCLAJES'].corto|upper }}</span><br>{% endif %}
                         <span class="oc-tipo {{ o.tipo }}">{{ o.tipo }}</span> <a class="oc-num" href="{{ url_for('oc_detalle', orden_id=o.id) }}">{{ oc_numero_txt(o) }}</a>
                         {% if o.es_contable %}<div>{{ chip_contable(o, True) }}</div>{% endif %}
+                        {% if o.es_importacion %}<div>{{ chip_imp(o) }}</div>{% endif %}
                         <div class="sub">{{ o.fecha.strftime('%d/%m/%Y') }}{% if o.fecha_registro %} <span class="hora" title="Registrada el {{ o.fecha_registro.strftime('%d/%m/%Y %H:%M') }}">· {{ o.fecha_registro.strftime('%H:%M') }}</span>{% endif %}</div>
                         <span class="oc-dest {{ o.destino }}" style="font-size:.6rem;" title="{{ oc_destino_txt(o) }}{{ (' → ' ~ o.directo_ubicacion) if o.destino == 'DIRECTO' and o.directo_ubicacion else '' }}">{{ ('Uso directo' if o.destino == 'DIRECTO' else oc_destino_txt(o))|replace('Inventario', 'Inv.') }}</span>
                         {% if o.destino == 'DIRECTO' and o.directo_ubicacion %}<div class="sub text-truncate" style="max-width:150px;" title="{{ (o.directo_categoria or '')|capitalize }} → {{ o.directo_ubicacion }}"><i class="bi bi-geo-alt"></i> {{ o.directo_ubicacion }}</div>{% endif %}</td>
@@ -294,7 +300,7 @@
     {% for o in ordenes %}
     <div class="card-oc" style="--c: {{ '#dc2626' if atrasos[o.id] or pagos[o.id].nivel == 'vencida' else estados[o.estado].color }};">
         <div class="fila">
-            <div>{% if emp_sel == 'TODAS' %}<span class="emp-chip" style="background: {{ empresas_oc[o.empresa or 'ANCLAJES'].color }};">{{ empresas_oc[o.empresa or 'ANCLAJES'].corto|upper }}</span> {% endif %}<span class="oc-tipo {{ o.tipo }}">{{ o.tipo }}</span> <a class="oc-num" href="{{ url_for('oc_detalle', orden_id=o.id) }}">N° {{ oc_numero_txt(o) }}</a> {{ chip_contable(o, True) }}
+            <div>{% if emp_sel == 'TODAS' %}<span class="emp-chip" style="background: {{ empresas_oc[o.empresa or 'ANCLAJES'].color }};">{{ empresas_oc[o.empresa or 'ANCLAJES'].corto|upper }}</span> {% endif %}<span class="oc-tipo {{ o.tipo }}">{{ o.tipo }}</span> <a class="oc-num" href="{{ url_for('oc_detalle', orden_id=o.id) }}">N° {{ oc_numero_txt(o) }}</a> {{ chip_contable(o, True) }} {{ chip_imp(o) }}
                 <span class="text-muted small">· {{ o.fecha.strftime('%d/%m/%Y') }}{% if o.fecha_registro %} {{ o.fecha_registro.strftime('%H:%M') }}{% endif %}</span></div>
             <div class="num fw-bold text-nowrap">{{ monedas[o.moneda].simbolo }} {{ '{:,.2f}'.format(o.total or 0) }}</div>
         </div>
