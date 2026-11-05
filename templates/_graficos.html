@@ -1,0 +1,203 @@
+{#- ======================================================================================
+    BASE COMÚN DE GRÁFICOS (Chart.js 4): mismos colores, formatos y estilo en todo el sistema.
+    Uso:   {% import '_graficos.html' as gr %}
+           {{ gr.estilos() }}  … en el HTML …  {{ gr.librerias() }}  y luego tu <script> con GR.barras / GR.barrasH / GR.historial
+    No usa plugins externos: las etiquetas de valor y la línea de promedio se dibujan aquí mismo.
+    ====================================================================================== -#}
+
+{% macro estilos() %}
+<style>
+    .gr-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 12px 14px; height: 100%; display: flex; flex-direction: column; }
+    .gr-cab { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 6px; }
+    .gr-cab h6 { font-weight: 800; font-size: .86rem; color: #0f172a; margin: 0 0 2px; }
+    .gr-cab .ay { font-size: .7rem; color: #64748b; }
+    .gr-area { position: relative; height: 260px; }
+    .gr-area.alto { height: 320px; }
+    .gr-vacio { display: flex; align-items: center; justify-content: center; gap: 6px; height: 100%; min-height: 120px; font-size: .8rem; color: #94a3b8; }
+    .gr-mon { display: inline-flex; align-items: center; gap: 6px; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 5px 8px 5px 12px;
+              font-size: .74rem; font-weight: 700; color: #475569; }
+    .gr-mon button { border: 1px solid #cbd5e1; background: #f8fafc; color: #334155; font-weight: 800; font-size: .76rem; border-radius: 8px; padding: 3px 12px; }
+    .gr-mon button.on { background: #0B3D91; border-color: #0B3D91; color: #fff; }
+    .gr-mon button[data-mon="USD"].on { background: #0f766e; border-color: #0f766e; }
+    @media (max-width: 768px) { .gr-area { height: 220px; } .gr-area.alto { height: 260px; } }
+    @media print { .gr-mon { display: none !important; } .gr-card { break-inside: avoid; } }
+</style>
+{% endmacro %}
+
+{% macro librerias() %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+window.GR = (function () {
+    const ok = !!window.Chart;
+    // Colores CON SIGNIFICADO (siempre lo mismo en todo el sistema)
+    const C = { PEN: '#0B3D91', USD: '#0f766e', ok: '#16a34a', alerta: '#f59e0b', mal: '#dc2626', gris: '#94a3b8', texto: '#0f172a', rejilla: '#eef2f7' };
+    // Categorías sin significado (proveedores, áreas...): sin rojo ni verde, que se reservan para "bien" / "mal"
+    const CAT = ['#0B3D91', '#0891b2', '#7c3aed', '#c2410c', '#0f766e', '#a16207', '#be185d', '#475569', '#4f46e5', '#0369a1'];
+    const nf2 = new Intl.NumberFormat('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const nfC = new Intl.NumberFormat('es-PE', { notation: 'compact', maximumFractionDigits: 1 });
+    const sim = m => m === 'USD' ? 'US$' : 'S/';
+    const fmt = (v, m) => `${sim(m)} ${nf2.format(v || 0)}`;                 // S/ 12,345.60
+    const fmtCorto = (v, m) => `${sim(m)} ${nfC.format(v || 0)}`;            // S/ 12.3 mil
+    const recorta = (t, n = 26) => { t = String(t || ''); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
+    const fecha = ts => { const d = new Date(ts); return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`; };
+    const fechaCorta = ts => { const d = new Date(ts); return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getFullYear()).slice(2)}`; };
+
+    if (ok) {
+        Chart.defaults.font.family = 'Inter, system-ui, -apple-system, "Segoe UI", sans-serif';
+        Chart.defaults.font.size = 11;
+        Chart.defaults.color = '#475569';
+        Chart.defaults.maintainAspectRatio = false;
+        Chart.defaults.animation.duration = 450;
+        Chart.defaults.plugins.legend.labels.boxWidth = 10;
+        Chart.defaults.plugins.legend.labels.boxHeight = 10;
+        Chart.defaults.plugins.tooltip.backgroundColor = '#0f172a';
+        Chart.defaults.plugins.tooltip.padding = 10;
+        Chart.defaults.plugins.tooltip.cornerRadius = 8;
+        Chart.defaults.plugins.tooltip.titleFont = { weight: '700' };
+        Chart.defaults.scale.grid.color = C.rejilla;
+        Chart.defaults.scale.border = { display: false };
+        // Etiqueta de valor encima (o al final) de cada barra. Cada dataset pone su formato en "grFormato".
+        Chart.register({ id: 'grEtiquetas', afterDatasetsDraw(chart) {
+            const ctx = chart.ctx, horiz = chart.options.indexAxis === 'y';
+            ctx.save();
+            ctx.font = '700 11px ' + Chart.defaults.font.family;
+            chart.data.datasets.forEach((ds, i) => {
+                const meta = chart.getDatasetMeta(i);
+                if (!ds.grFormato || meta.hidden || meta.type !== 'bar') return;
+                meta.data.forEach((el, j) => {
+                    const v = ds.data[j];
+                    if (v === null || v === undefined || v === 0) return;
+                    const txt = ds.grFormato(v, j);
+                    if (!txt) return;
+                    ctx.fillStyle = ds.grColorEtiqueta || C.texto;
+                    if (horiz) { ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(txt, el.x + 5, el.y); }
+                    else { ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.fillText(txt, el.x, el.y - 4); }
+                });
+            });
+            ctx.restore();
+        } });
+    }
+
+    const cursor = (e, els) => { if (e.native && e.native.target) e.native.target.style.cursor = els.length ? 'pointer' : 'default'; };
+    const graficos = new Map();                       // un gráfico por canvas: se destruye antes de volver a dibujar
+    function nuevo(canvas, cfg) {
+        if (!ok || !canvas) return null;
+        const area = canvas.parentElement;
+        if (area) { const v = area.querySelector('.gr-vacio'); if (v) v.remove(); canvas.style.display = ''; }
+        if (graficos.has(canvas)) graficos.get(canvas).destroy();
+        const g = new Chart(canvas, cfg);
+        graficos.set(canvas, g);
+        return g;
+    }
+    function vacio(canvas, msg) {
+        if (!canvas) return;
+        if (graficos.has(canvas)) { graficos.get(canvas).destroy(); graficos.delete(canvas); }
+        const area = canvas.parentElement;
+        canvas.style.display = 'none';
+        if (area && !area.querySelector('.gr-vacio')) {
+            const d = document.createElement('div');
+            d.className = 'gr-vacio';
+            d.innerHTML = '<i class="bi bi-inbox"></i> <span></span>';
+            area.appendChild(d);
+        }
+        if (area) area.querySelector('.gr-vacio span').textContent = msg || 'Sin datos en el periodo';
+    }
+
+    /* Columnas verticales con valor encima y línea punteada de promedio.
+       o = { etiquetas: [...], valores: [...], moneda: 'PEN'|'USD', promedio: true, color, alClic(i) } */
+    function barras(canvas, o) {
+        const vals = o.valores || [];
+        if (!vals.some(v => v)) { vacio(canvas, o.vacio || `Sin compras en ${o.moneda === 'USD' ? 'dólares' : 'soles'} en el periodo`); return null; }
+        const color = o.color || C[o.moneda] || C.PEN;
+        const conDatos = vals.filter(v => v);
+        const prom = conDatos.reduce((s, v) => s + v, 0) / conDatos.length;
+        const ds = [{ type: 'bar', label: o.titulo || sim(o.moneda), data: vals, backgroundColor: color, hoverBackgroundColor: color + 'cc',
+                      borderRadius: 5, maxBarThickness: 46, order: 2, grFormato: v => fmtCorto(v, o.moneda) }];
+        if (o.promedio !== false && conDatos.length > 1)
+            ds.push({ type: 'line', label: 'Promedio mensual', data: vals.map(() => prom), borderColor: C.alerta, borderWidth: 1.5,
+                      borderDash: [6, 4], pointRadius: 0, pointHoverRadius: 0, fill: false, order: 1 });
+        return nuevo(canvas, { data: { labels: o.etiquetas, datasets: ds },
+            options: { layout: { padding: { top: 18 } }, interaction: { mode: 'index', intersect: false },
+                plugins: { legend: { display: ds.length > 1, position: 'bottom', align: 'end' },
+                    tooltip: { callbacks: { label: c => `${c.dataset.label}: ${fmt(c.raw, o.moneda)}` } } },
+                scales: { x: { grid: { display: false } },
+                          y: { beginAtZero: true, grace: '8%', ticks: { callback: v => fmtCorto(v, o.moneda), maxTicksLimit: 6 } } },
+                onClick: (e, els) => { if (els.length && o.alClic) o.alClic(els[0].index); },
+                onHover: o.alClic ? cursor : undefined } });
+    }
+
+    /* Barras horizontales ordenadas: top N + "Otros", valor y % al final de cada barra, nombre completo en el tooltip.
+       filas = [{ txt, valor, color?, info? }]
+       o = { moneda, top: 10, colorFijo, pct: true, alClic(fila), tooltipExtra(fila) -> texto, vacio } */
+    function barrasH(canvas, filas, o) {
+        o = o || {};
+        const top = o.top || 10;
+        const orden = (filas || []).filter(f => f.valor > 0).sort((a, b) => b.valor - a.valor);
+        if (!orden.length) { vacio(canvas, o.vacio || `Sin compras en ${o.moneda === 'USD' ? 'dólares' : 'soles'} en el periodo`); return null; }
+        const vis = orden.slice(0, top);
+        const resto = orden.slice(top);
+        if (resto.length) vis.push({ txt: `Otros (${resto.length})`, valor: resto.reduce((s, x) => s + x.valor, 0), otros: true });
+        const total = orden.reduce((s, x) => s + x.valor, 0);
+        const pct = v => total ? (100 * v / total) : 0;
+        const area = canvas.parentElement;
+        if (area && o.altoAuto !== false) area.style.height = Math.max(150, vis.length * 30 + 24) + 'px';
+        const base = o.colorFijo || C[o.moneda] || C.PEN;
+        return nuevo(canvas, { type: 'bar',
+            data: { labels: vis.map(x => recorta(x.txt, o.largo || 28)),
+                    datasets: [{ data: vis.map(x => x.valor), borderRadius: 4, barThickness: 18,
+                                 backgroundColor: vis.map(x => x.otros ? C.gris : (x.color || base)),
+                                 grFormato: (v, j) => fmtCorto(v, o.moneda) + (o.pct !== false ? `  ·  ${pct(v).toFixed(pct(v) < 10 ? 1 : 0)}%` : '') }] },
+            options: { indexAxis: 'y', layout: { padding: { right: o.pct !== false ? 112 : 70 } },
+                plugins: { legend: { display: false },
+                    tooltip: { callbacks: { title: c => vis[c[0].dataIndex].txt,
+                        label: c => { const f = vis[c.dataIndex]; const extra = o.tooltipExtra && !f.otros ? o.tooltipExtra(f) : '';
+                                      return [`${fmt(c.raw, o.moneda)}  (${pct(c.raw).toFixed(1)}% del total)`].concat(extra ? [extra] : []); },
+                        footer: c => (o.alClic && !vis[c[0].dataIndex].otros) ? (o.textoClic || 'Clic para ver el detalle') : '' } } },
+                scales: { x: { display: false, beginAtZero: true }, y: { grid: { display: false }, ticks: { color: '#334155', font: { weight: '600' } } } },
+                onClick: (e, els) => { if (els.length && o.alClic && !vis[els[0].index].otros) o.alClic(vis[els[0].index]); },
+                onHover: o.alClic ? cursor : undefined } });
+    }
+
+    /* Historial de precios: fechas a su distancia REAL, un color por proveedor y línea punteada verde del mejor precio.
+       hist = [{ f: 'YYYY-MM-DD', p: precio, prov, oc }] */
+    function historial(canvas, hist, simbolo) {
+        hist = (hist || []).map(x => ({ ...x, t: new Date(x.f + 'T12:00:00').getTime() })).sort((a, b) => a.t - b.t);
+        if (!hist.length) { vacio(canvas, 'Sin compras'); return null; }
+        const provs = [...new Set(hist.map(x => x.prov))];
+        const mejor = Math.min(...hist.map(x => x.p));
+        const t0 = hist[0].t, t1 = hist[hist.length - 1].t, margen = Math.max((t1 - t0) * 0.04, 3 * 86400000);
+        const precio = v => `${simbolo} ${Number(v).toLocaleString('es-PE', { maximumFractionDigits: 7 })}`;
+        const ds = provs.map((pv, i) => ({ label: recorta(pv, 24), data: hist.filter(x => x.prov === pv).map(x => ({ x: x.t, y: x.p, oc: x.oc, prov: x.prov })),
+            borderColor: CAT[i % CAT.length], backgroundColor: CAT[i % CAT.length], pointRadius: 4, pointHoverRadius: 6, borderWidth: 2, tension: 0 }));
+        ds.push({ label: 'Mejor precio', data: [{ x: t0 - margen, y: mejor }, { x: t1 + margen, y: mejor }], borderColor: C.ok, borderWidth: 1.5,
+                  borderDash: [6, 4], pointRadius: 0, pointHoverRadius: 0, fill: false, esMejor: true });
+        return nuevo(canvas, { type: 'line', data: { datasets: ds },
+            options: { parsing: false, interaction: { mode: 'nearest', intersect: true },
+                scales: { x: { type: 'linear', min: t0 - margen, max: t1 + margen, grid: { display: false },
+                               ticks: { callback: v => fechaCorta(v), maxTicksLimit: 6, maxRotation: 0 } },
+                          y: { grace: '10%', ticks: { callback: v => precio(v), maxTicksLimit: 5 } } },
+                plugins: { legend: { position: 'bottom', labels: { filter: it => true } },
+                    tooltip: { filter: c => !c.dataset.esMejor,
+                        callbacks: { title: c => fecha(c[0].raw.x), label: c => `${c.raw.prov}: ${precio(c.raw.y)} (${c.raw.oc})`,
+                                     afterLabel: c => c.raw.y > mejor ? `+${(100 * (c.raw.y - mejor) / mejor).toFixed(1)}% sobre el mejor` : 'Es el mejor precio' } } } } });
+    }
+
+    /* Botones "S/ | US$" que vuelven a dibujar los gráficos de la página en la moneda elegida. */
+    function monedaGlobal(caja, inicial, dibujar) {
+        let actual = inicial;
+        const pintar = m => { actual = m; if (caja) caja.querySelectorAll('[data-mon]').forEach(b => b.classList.toggle('on', b.dataset.mon === m)); dibujar(m); };
+        if (caja) caja.querySelectorAll('[data-mon]').forEach(b => b.addEventListener('click', () => { if (b.dataset.mon !== actual) pintar(b.dataset.mon); }));
+        pintar(inicial);
+    }
+
+    return { ok, C, CAT, sim, fmt, fmtCorto, recorta, fecha, nuevo, vacio, barras, barrasH, historial, monedaGlobal };
+})();
+</script>
+{% endmacro %}
+
+{#- Botones de moneda para poner arriba de los gráficos (solo si hay compras en las dos monedas) -#}
+{% macro botones_moneda(id='grMoneda', inicial='PEN') %}
+<div class="gr-mon" id="{{ id }}"><i class="bi bi-currency-exchange"></i> Ver montos en
+    <button type="button" data-mon="PEN" class="{{ 'on' if inicial == 'PEN' }}">S/ Soles</button>
+    <button type="button" data-mon="USD" class="{{ 'on' if inicial == 'USD' }}">US$ Dólares</button></div>
+{% endmacro %}

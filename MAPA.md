@@ -58,6 +58,7 @@ modulos/
 templates/             plantillas (todas en una carpeta; prefijos: oc_*, insumos_*, notificaciones, _campana...)
                        _en_camino.html: panel, botones por producto y ventana de "En camino" (inventarios de Anclajes,
                        Import Bolts, Insumos y el Inventario General con los dos: `script_varios([ec1, ec2])`)
+                       _graficos.html: BASE COMÚN DE GRÁFICOS (ver "Gráficos" más abajo)
                        _mov_venta_servicio.html: bloque "Sale como VENTA" del Movimiento de Kardex (los 2 inventarios)
                        _kardex_venta.html: cómo se ve la venta tras servicio en los 2 Kardex y su ventana de edición
 ```
@@ -256,6 +257,23 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
 - Navegador cerrado del todo / PC recién prendida: Programa de avisos (`agente.py`). Se instala en
   `%LOCALAPPDATA%\AvisosImportBolts` y arranca con Windows (acceso directo en la carpeta Inicio del usuario).
   No necesita administrador. Usa la misma configuración del usuario (tipos, recordar cada X min).
+
+## Gráficos: base común (`templates/_graficos.html`) y plan de mejora
+
+- Uso: `{% import '_graficos.html' as gr %}`, `{{ gr.estilos() }}`, `{{ gr.botones_moneda('grMoneda', 'PEN') }}` y al final
+  `{{ gr.librerias() }}` (carga Chart.js 4.4.0 UNA vez y crea `window.GR`). Sin plugins externos: las etiquetas de valor
+  (plugin propio `grEtiquetas`, formato en `dataset.grFormato`) y la línea de promedio / mejor precio se dibujan ahí mismo.
+- Colores fijos: soles azul `#0B3D91`, dólares verde azulado `#0f766e`; verde = mejor / a tiempo, ámbar = alerta / ahorro,
+  rojo = solo lo malo. Categorías sin significado con `GR.CAT` (sin rojo ni verde). Montos cortos "S/ 125 mil" (`GR.fmtCorto`).
+- Funciones: `GR.barras` (columnas + promedio), `GR.barrasH` (top N + "Otros", valor y %, nombre completo en el tooltip, clic),
+  `GR.historial` (fechas a su distancia real + línea del mejor precio), `GR.monedaGlobal` (botones S/ | US$ que redibujan todo),
+  `GR.vacio` (mensaje "sin datos"). Cada canvas guarda su gráfico y se destruye antes de redibujar.
+- Mejores precios (v16): resumen sin donas ni doble eje; moneda global; condición de pago por MONTO sin IGV (antes con IGV)
+  y n° de órdenes en el tooltip; clic en un proveedor → vista "Por producto" filtrada por él (`res.prov_graf`).
+- Plan: Fase 2 (v17) Reportes de compras como tablero (pestañas Ejecutiva / Operativa, KPIs con ▲▼ y mini tendencia,
+  Pareto, filtro cruzado, modo presentación, línea del proceso con metas, órdenes detenidas, OTIF, semáforo y matriz de
+  atrasos, montos sin IGV con opción con IGV). Fase 3 (v18) precios finos (pesas, Pareto del ahorro, cascada precio/volumen,
+  ahorro vs. compra anterior). Fase 4: dashboards de ventas / admin / insumos con esta base; PPV cuando exista precio estándar.
 
 ## Pruebas (en el entorno de Claude)
 

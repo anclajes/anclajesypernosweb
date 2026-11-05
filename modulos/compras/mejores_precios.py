@@ -250,31 +250,26 @@ def _mp_resumen(compras, productos, proveedores):
     por_mes = [{'mes': m, 'txt': f"{nombres_mes[int(m[5:]) - 1]} {m[2:4]}", 'PEN': round(v.get('PEN', 0), 2), 'USD': round(v.get('USD', 0), 2)}
                for m, v in sorted(meses.items())]
 
-    def suma_por(campo, unico_por_orden=False):
-        d, vistas = {}, set()
+    def suma_por(campo, contar_ordenes=False):
+        """Monto SIN IGV (suma de los ítems, respeta los filtros) por moneda; n = ítems, u órdenes si contar_ordenes."""
+        d = {}
         for c in compras:
-            if unico_por_orden:
-                if c['orden'].id in vistas:
-                    continue
-                vistas.add(c['orden'].id)
-                monto_pen = c['orden'].total if c['moneda'] == 'PEN' else 0
-                monto_usd = c['orden'].total if c['moneda'] == 'USD' else 0
-                x = d.setdefault(c[campo], {'clave': c[campo], 'PEN': 0.0, 'USD': 0.0, 'n': 0})
-                x['PEN'] += monto_pen or 0
-                x['USD'] += monto_usd or 0
-                x['n'] += 1
-            else:
-                x = d.setdefault(c[campo], {'clave': c[campo], 'PEN': 0.0, 'USD': 0.0, 'n': 0})
-                x[c['moneda']] += c['total']
-                x['n'] += 1
+            x = d.setdefault(c[campo], {'clave': c[campo], 'PEN': 0.0, 'USD': 0.0, 'n': 0, '_ord': set()})
+            x[c['moneda']] += c['total']
+            x['_ord'].add(c['orden'].id)
+            x['n'] += 1
         for x in d.values():
             x['PEN'], x['USD'] = round(x['PEN'], 2), round(x['USD'], 2)
+            if contar_ordenes:
+                x['n'] = len(x['_ord'])
+            del x['_ord']
         return sorted(d.values(), key=lambda x: (-x['PEN'], -x['USD']))
-    condiciones = suma_por('condicion', unico_por_orden=True)
+    condiciones = suma_por('condicion', contar_ordenes=True)
     empresas = suma_por('empresa')
     for e in empresas:
         e['txt'] = EMPRESAS_OC.get(e['clave'], {}).get('corto', e['clave'])
-        e['color'] = EMPRESAS_OC.get(e['clave'], {}).get('color', '#64748b')
+        info = EMPRESAS_OC.get(e['clave'], {})
+        e['color'] = info.get('acento') or info.get('color', '#64748b')      # Import Bolts en verde: no se confunde con el azul de Anclajes
     clases = suma_por('clase')
     for e in clases:
         e['txt'] = CLASES_PRECIOS[e['clave']]['txt']
@@ -284,8 +279,11 @@ def _mp_resumen(compras, productos, proveedores):
     top_ahorro = sorted([p for p in productos if p['ahorro'] > 0], key=lambda p: -p['ahorro'])[:10]
     subidas = sorted([p for p in productos if p['variacion'] > 0 and p['n_prov'] >= 1 and p['n'] > 1], key=lambda p: -p['variacion'])[:8]
     pagadas = sum(1 for o in ordenes.values() if (o.estado_pago or '') == 'PAGADO')
+    # todos los proveedores (para el gráfico: top 10 + "Otros", y clic para ver solo ese proveedor)
+    prov_graf = [{'txt': p['proveedor'], 'clave': p['prov_clave'], 'PEN': round(p['PEN'], 2), 'USD': round(p['USD'], 2), 'n': p['n_ordenes']}
+                 for p in proveedores]
     return {'k': k, 'por_mes': por_mes, 'condiciones': condiciones, 'empresas': empresas, 'clases': clases, 'top_pen': top_pen,
-            'top_usd': top_usd, 'top_ahorro': top_ahorro, 'subidas': subidas, 'pagadas': pagadas, 'por_pagar': len(ordenes) - pagadas}
+            'top_usd': top_usd, 'prov_graf': prov_graf, 'top_ahorro': top_ahorro, 'subidas': subidas, 'pagadas': pagadas, 'por_pagar': len(ordenes) - pagadas}
 
 
 def _mp_orden_productos(productos, orden):
@@ -418,7 +416,7 @@ def _mp_excel(f, compras, productos, proveedores):
         ws.add_chart(g, f'I{fila}')
     fila = max(p1 + 3, fila + 18)
     # condición de pago
-    q0, q1 = tabla(fila, 4, 'Condición de pago (órdenes)', ['Condición', 'Órdenes', 'Soles (S/)', 'Dólares (US$)'],
+    q0, q1 = tabla(fila, 4, 'Condición de pago (sin IGV)', ['Condición', 'Órdenes', 'Soles (S/)', 'Dólares (US$)'],
                    [[x['clave'], x['n'], x['PEN'], x['USD']] for x in res['condiciones']], {2: m2, 3: m2})
     if res['condiciones']:
         g = PieChart()

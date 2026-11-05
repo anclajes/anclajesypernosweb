@@ -3,6 +3,8 @@
 {% block subtitle %}A qué precio y a quién compramos: productos, insumos y servicios (órdenes aprobadas){% endblock %}
 {% block content %}
 {% include '_oc_nav.html' %}
+{% import '_graficos.html' as gr %}
+{{ gr.estilos() }}
 {% macro px(v) %}{% if v is none %}—{% elif (v * 100)|round(6) == ((v * 100)|round(0)) %}{{ '{:,.2f}'.format(v) }}{% else %}{{ '{:,.4f}'.format(v).rstrip('0') }}{% endif %}{% endmacro %}
 {% macro dinero(v) %}{{ '{:,.2f}'.format(v or 0) }}{% endmacro %}
 {% set base_args = {'periodo': f.periodo, 'desde': f.desde.isoformat() if f.desde and f.periodo == 'rango' else '', 'hasta': f.hasta.isoformat() if f.hasta else '',
@@ -25,8 +27,6 @@
     .card-g { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 12px 14px; height: 100%; }
     .card-g h6 { font-weight: 800; font-size: .86rem; color: #0f172a; margin-bottom: 2px; }
     .card-g .ay { font-size: .7rem; color: #64748b; margin-bottom: 8px; }
-    .graf { position: relative; height: 260px; }
-    .graf.alto { height: 320px; }
     .vacio { font-size: .8rem; color: #64748b; padding: 30px 0; text-align: center; }
     .tabla-mp { font-size: .78rem; margin-bottom: 0; }
     .tabla-mp th { font-size: .62rem; text-transform: uppercase; color: #64748b; font-weight: 800; white-space: nowrap; background: #f8fafc; }
@@ -49,7 +49,6 @@
     .oc-l { font-size: .68rem; font-weight: 700; text-decoration: none; }
     .pag { display: flex; gap: 6px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin: 10px 0; font-size: .78rem; }
     .ayuda-mp { font-size: .74rem; background: #eff6ff; border: 1px solid #bfdbfe; color: #1e3a8a; border-radius: 10px; padding: 7px 10px; margin-bottom: 12px; }
-    @media (max-width: 768px) { .graf { height: 220px; } }
 </style>
 
 <form method="GET" class="mp-filtros" id="formMP">
@@ -114,18 +113,25 @@
 {% elif vista == 'resumen' %}
 <div class="ayuda-mp"><i class="bi bi-info-circle"></i> {% if f.etapa == 'conformes' %}Se usan solo las órdenes que ya <b>llegaron y quedaron conformes</b>.{% else %}Se usan los ítems de las órdenes <b>aprobadas</b> por Gerencia (aprobada, llegó o conforme): desde ahí el precio ya está pactado.{% endif %} Los precios van <b>sin IGV</b> y solo se comparan
     dentro de la <b>misma moneda y U.M.</b> <b>Ahorro potencial</b> = lo que se habría ahorrado comprando cada vez al mejor precio del periodo.</div>
+{% set mon_ini = 'PEN' if k.PEN else 'USD' %}
+{% if k.PEN and k.USD %}<div class="d-flex flex-wrap gap-2 align-items-center justify-content-end mb-2">
+    <span class="sub">Soles y dólares no se suman: elige en qué moneda ver los gráficos.</span>{{ gr.botones_moneda('grMoneda', mon_ini) }}</div>{% endif %}
 <div class="row g-3 mb-3">
-    <div class="col-12 col-xl-8"><div class="card-g"><h6><i class="bi bi-calendar3"></i> Compras por mes</h6><div class="ay">Monto sin IGV por mes de la orden. Soles (barras) y dólares (línea) en ejes separados.</div>
-        <div class="graf alto"><canvas id="gMes"></canvas></div></div></div>
-    <div class="col-12 col-md-6 col-xl-4"><div class="card-g"><h6><i class="bi bi-credit-card"></i> Condición de pago</h6><div class="ay">N° de órdenes por condición (contado, crédito, importación...).</div>
-        <div class="graf"><canvas id="gCond"></canvas></div></div></div>
-    <div class="col-12 col-md-6 col-xl-6"><div class="card-g"><h6><i class="bi bi-building"></i> Top 10 proveedores</h6>
-        <div class="ay">Por monto comprado (sin IGV). {% if res.top_usd and res.top_pen %}<a href="#" id="verUsd">Ver en dólares</a>{% endif %}</div>
-        <div class="graf alto"><canvas id="gProv"></canvas></div></div></div>
-    <div class="col-12 col-md-6 col-xl-3"><div class="card-g"><h6><i class="bi bi-buildings"></i> Por empresa</h6><div class="ay">Monto sin IGV ({{ 'soles' if k.PEN else 'dólares' }}).</div>
-        <div class="graf"><canvas id="gEmp"></canvas></div></div></div>
-    <div class="col-12 col-md-6 col-xl-3"><div class="card-g"><h6><i class="bi bi-diagram-3"></i> Qué se compró</h6><div class="ay">Inventario General, Insumos internos o Servicios.</div>
-        <div class="graf"><canvas id="gClase"></canvas></div></div></div>
+    <div class="col-12 col-xl-8"><div class="card-g"><h6><i class="bi bi-calendar3"></i> Compras por mes</h6>
+        <div class="ay">Monto sin IGV por mes de la orden. La línea punteada es el promedio mensual.</div>
+        <div class="gr-area alto"><canvas id="gMes"></canvas></div></div></div>
+    <div class="col-12 col-xl-4"><div class="card-g"><h6><i class="bi bi-credit-card"></i> Condición de pago</h6>
+        <div class="ay">Monto sin IGV por condición (contado, crédito, importación...). Pasa el mouse para ver cuántas órdenes.</div>
+        <div class="gr-area"><canvas id="gCond"></canvas></div></div></div>
+    <div class="col-12 col-xl-6"><div class="card-g"><h6><i class="bi bi-building"></i> Proveedores a los que más se compra</h6>
+        <div class="ay">Top 10 por monto sin IGV; el resto va junto en "Otros". <b>Clic en un proveedor</b> para ver sus productos y precios.</div>
+        <div class="gr-area"><canvas id="gProv"></canvas></div></div></div>
+    <div class="col-12 col-xl-6 d-flex flex-column gap-3">
+        <div class="card-g" style="height:auto;"><h6><i class="bi bi-buildings"></i> Por empresa</h6><div class="ay">Cuánto compró cada empresa (sin IGV).</div>
+            <div class="gr-area"><canvas id="gEmp"></canvas></div></div>
+        <div class="card-g" style="height:auto;"><h6><i class="bi bi-diagram-3"></i> Qué se compró</h6><div class="ay">Inventario General, Insumos internos, Servicios o Uso directo.</div>
+            <div class="gr-area"><canvas id="gClase"></canvas></div></div>
+    </div>
 </div>
 <div class="row g-3">
     <div class="col-12 col-xl-6"><div class="card-g"><h6><i class="bi bi-piggy-bank"></i> Dónde está el mayor ahorro potencial</h6>
@@ -146,39 +152,23 @@
         </tbody></table></div>{% else %}<div class="vacio">Ningún producto subió de precio en el periodo.</div>{% endif %}
     </div></div>
 </div>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+{{ gr.librerias() }}
 <script>
 (function () {
-    if (!window.Chart) return;
-    const R = {{ {'mes': res.por_mes, 'cond': res.condiciones, 'emp': res.empresas, 'clase': res.clases,
-                 'pen': res.top_pen|map(attribute='proveedor')|list, 'pen_v': res.top_pen|map(attribute='PEN')|list,
-                 'usd': res.top_usd|map(attribute='proveedor')|list, 'usd_v': res.top_usd|map(attribute='USD')|list, 'hay_pen': k.PEN > 0}|tojson }};
-    const fmt = v => Number(v || 0).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const corta = t => t.length > 28 ? t.slice(0, 27) + '…' : t;
-    const PAL = ['#0B3D91', '#f59e0b', '#16a34a', '#7c3aed', '#dc2626', '#0891b2', '#64748b', '#db2777', '#65a30d', '#ea580c'];
-    Chart.defaults.font.family = 'Inter, system-ui, sans-serif'; Chart.defaults.font.size = 11;
-    new Chart(document.getElementById('gMes'), { data: { labels: R.mes.map(x => x.txt), datasets: [
-        { type: 'bar', label: 'Soles (S/)', data: R.mes.map(x => x.PEN), backgroundColor: '#0B3D91', borderRadius: 4, yAxisID: 'y' },
-        { type: 'line', label: 'Dólares (US$)', data: R.mes.map(x => x.USD), borderColor: '#0f766e', backgroundColor: '#0f766e', tension: .3, yAxisID: 'y2', pointRadius: 3 }] },
-        options: { maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
-            plugins: { tooltip: { callbacks: { label: c => `${c.dataset.label}: ${fmt(c.raw)}` } } },
-            scales: { y: { beginAtZero: true, title: { display: true, text: 'S/' } }, y2: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'US$' } } } } });
-    new Chart(document.getElementById('gCond'), { type: 'doughnut', data: { labels: R.cond.map(x => x.clave), datasets: [{ data: R.cond.map(x => x.n), backgroundColor: PAL }] },
-        options: { maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 10 } },
-            tooltip: { callbacks: { label: c => { const x = R.cond[c.dataIndex]; return `${x.clave}: ${x.n} orden(es)` + (x.PEN ? ` · S/ ${fmt(x.PEN)}` : '') + (x.USD ? ` · US$ ${fmt(x.USD)}` : ''); } } } } } });
-    const gp = new Chart(document.getElementById('gProv'), { type: 'bar', data: { labels: (R.hay_pen ? R.pen : R.usd).map(corta),
-        datasets: [{ label: R.hay_pen ? 'S/' : 'US$', data: R.hay_pen ? R.pen_v : R.usd_v, backgroundColor: R.hay_pen ? '#0B3D91' : '#0f766e', borderRadius: 4 }] },
-        options: { indexAxis: 'y', maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${c.dataset.label} ${fmt(c.raw)}` } } },
-            scales: { x: { beginAtZero: true } } } });
-    const bu = document.getElementById('verUsd');
-    if (bu) bu.onclick = e => { e.preventDefault(); const usd = bu.dataset.m !== 'usd'; bu.dataset.m = usd ? 'usd' : 'pen'; bu.textContent = usd ? 'Ver en soles' : 'Ver en dólares';
-        gp.data.labels = (usd ? R.usd : R.pen).map(corta); gp.data.datasets[0].data = usd ? R.usd_v : R.pen_v; gp.data.datasets[0].label = usd ? 'US$' : 'S/';
-        gp.data.datasets[0].backgroundColor = usd ? '#0f766e' : '#0B3D91'; gp.update(); };
-    const campo = R.hay_pen ? 'PEN' : 'USD';
-    new Chart(document.getElementById('gEmp'), { type: 'doughnut', data: { labels: R.emp.map(x => x.txt), datasets: [{ data: R.emp.map(x => x[campo]), backgroundColor: R.emp.map(x => x.color === '#024aa8' ? '#5fb236' : x.color) }] },
-        options: { maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 10 } }, tooltip: { callbacks: { label: c => `${c.label}: ${R.hay_pen ? 'S/' : 'US$'} ${fmt(c.raw)}` } } } } });
-    new Chart(document.getElementById('gClase'), { type: 'doughnut', data: { labels: R.clase.map(x => x.txt), datasets: [{ data: R.clase.map(x => x[campo]), backgroundColor: R.clase.map(x => x.color) }] },
-        options: { maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 10 } }, tooltip: { callbacks: { label: c => `${c.label}: ${R.hay_pen ? 'S/' : 'US$'} ${fmt(c.raw)}` } } } } });
+    if (!GR.ok) return;
+    const R = {{ {'mes': res.por_mes, 'cond': res.condiciones, 'emp': res.empresas, 'clase': res.clases, 'prov': res.prov_graf}|tojson }};
+    const URL_PROV = {{ url_for('oc_precios', **dict(base_args, vista='productos', orden=orden, prov='__PROV__'))|tojson }};
+    const $ = id => document.getElementById(id);
+    GR.monedaGlobal($('grMoneda'), '{{ mon_ini }}', m => {
+        GR.barras($('gMes'), { etiquetas: R.mes.map(x => x.txt), valores: R.mes.map(x => x[m]), moneda: m, titulo: m === 'USD' ? 'Dólares (US$)' : 'Soles (S/)' });
+        GR.barrasH($('gCond'), R.cond.map(x => ({ txt: x.clave || '(sin condición)', valor: x[m], n: x.n })),
+                   { moneda: m, top: 6, tooltipExtra: f => `${f.n} orden(es)` });
+        GR.barrasH($('gProv'), R.prov.map(x => ({ txt: x.txt, valor: x[m], clave: x.clave, n: x.n })),
+                   { moneda: m, top: 10, tooltipExtra: f => `${f.n} orden(es)`, textoClic: 'Clic para ver sus productos y precios',
+                     alClic: f => { location.href = URL_PROV.replace('__PROV__', encodeURIComponent(f.clave)); } });
+        GR.barrasH($('gEmp'), R.emp.map(x => ({ txt: x.txt, valor: x[m], color: x.color })), { moneda: m, largo: 16 });
+        GR.barrasH($('gClase'), R.clase.map(x => ({ txt: x.txt, valor: x[m], color: x.color })), { moneda: m, largo: 20 });
+    });
 })();
 </script>
 
@@ -218,8 +208,8 @@
                     <td class="n">{{ px(r.promedio|round(4)) }}</td><td class="n">{{ r.veces }}</td>
                     <td class="n">{% if loop.first %}<span class="var ok">Mejor precio</span>{% else %}<span class="var up">+{{ r.dif_pct }}%</span>{% endif %}</td></tr>{% endfor %}
                 </tbody></table></div>
-            <div class="col-12 col-lg-5"><div class="sub fw-bold mb-1">Historial de precios ({{ p.simbolo }} por {{ p.um or 'unidad' }})</div>
-                <div style="position:relative; height:200px;" class="bg-white border rounded-2 p-1"><canvas data-hist='{{ p.historial|tojson }}' data-sim="{{ p.simbolo }}"></canvas></div></div>
+            <div class="col-12 col-lg-5"><div class="sub fw-bold mb-1">Historial de precios ({{ p.simbolo }} por {{ p.um or 'unidad' }}) · <span style="color:#16a34a;">- - - mejor precio</span></div>
+                <div style="position:relative; height:230px;" class="bg-white border rounded-2 p-1"><canvas data-hist='{{ p.historial|tojson }}' data-sim="{{ p.simbolo }}"></canvas></div></div>
         </div></td></tr>
     {% endfor %}</tbody></table></div>
 
@@ -280,19 +270,11 @@ document.querySelectorAll('[data-det]').forEach(b => b.addEventListener('click',
     fila.style.display = abrir ? '' : 'none';
     b.querySelector('i').className = abrir ? 'bi bi-chevron-up' : 'bi bi-chevron-down';
     const cv = fila.querySelector('canvas[data-hist]');
-    if (abrir && cv && !cv._hecho && window.Chart) {
+    if (abrir && cv && !cv._hecho && window.GR && GR.ok) {
         cv._hecho = true;
-        const h = JSON.parse(cv.dataset.hist), provs = [...new Set(h.map(x => x.prov))];
-        const PAL = ['#16a34a', '#0B3D91', '#f59e0b', '#7c3aed', '#dc2626', '#0891b2', '#64748b'];
-        new Chart(cv, { type: 'line', data: { datasets: provs.map((pv, i) => ({ label: pv.length > 24 ? pv.slice(0, 23) + '…' : pv,
-            data: h.filter(x => x.prov === pv).map(x => ({ x: x.f, y: x.p, oc: x.oc })), borderColor: PAL[i % PAL.length], backgroundColor: PAL[i % PAL.length],
-            showLine: true, tension: 0, pointRadius: 4 })) },
-            options: { maintainAspectRatio: false, parsing: false, scales: { x: { type: 'category', labels: [...new Set(h.map(x => x.f))].sort(),
-                ticks: { callback: function (v) { const t = this.getLabelForValue(v); return t.slice(8, 10) + '/' + t.slice(5, 7) + '/' + t.slice(2, 4); } } },
-                y: { beginAtZero: false } },
-                plugins: { legend: { labels: { boxWidth: 10 } }, tooltip: { callbacks: { label: c => `${c.dataset.label}: ${cv.dataset.sim} ${c.raw.y} (${c.raw.oc})` } } } } });
+        if (window.GR) GR.historial(cv, JSON.parse(cv.dataset.hist), cv.dataset.sim);
     }
 }));
 </script>
-{% if vista == 'productos' %}<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>{% endif %}
+{% if vista == 'productos' %}{{ gr.librerias() }}{% endif %}
 {% endblock %}
