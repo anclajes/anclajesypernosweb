@@ -121,7 +121,12 @@
                 <label for="de_GENERAL" style="--c:#0B3D91;"><i class="bi bi-box-seam fs-5"></i><span><b>Inventario General</b><small>Productos que se venden (Anclajes / Import Bolts)</small></span></label>
                 <input type="radio" name="destino" id="de_INSUMOS" value="INSUMOS" {{ 'checked' if dest == 'INSUMOS' }}>
                 <label for="de_INSUMOS" style="--c:#0f766e;"><i class="bi bi-tools fs-5"></i><span><b>Insumos internos</b><small>Material de uso de la empresa (no se vende)</small></span></label>
+                <input type="radio" name="destino" id="de_DIRECTO" value="DIRECTO" {{ 'checked' if dest == 'DIRECTO' }}>
+                <label for="de_DIRECTO" style="--c:#c2410c;"><i class="bi bi-pc-display fs-5"></i><span><b>Uso directo</b><small>Útiles, equipos, muebles... no van a ningún inventario</small></span></label>
             </div>
+            <div class="ayuda mb-2" id="ayudaDirecto" style="display:none; background:#fff7ed; border-color:#fdba74; color:#7c2d12;"><i class="bi bi-pc-display"></i> <b>Uso directo:</b> cosas que se compran para
+                <b>usarlas</b> (correctores, sacagrapas, útiles de oficina, componentes de PC, muebles, herramientas...). <b>No suman a ningún inventario y no necesitan código:</b>
+                escribe cada bien con su detalle (marca, modelo, medida). Logística arma la OC con destino "Uso directo" y, al llegar, registra a quién se entregó.</div>
             <div class="ayuda mb-2" id="ayudaGeneral"><i class="bi bi-info-circle"></i> Solo productos que ya existen en el inventario: escribe el código o la descripción, o usa <b>Familia / Calidad</b>, y elígelo de la lista.
                 Para qué empresa se compra (Anclajes o Import Bolts) lo decide Logística al armar la orden.
                 Si un producto no existe, pide al encargado que lo cree en el Maestro.</div>
@@ -144,7 +149,7 @@
         <input type="hidden" name="codigo[]" class="i-cod">
         <div class="position-relative mt-2">
             <div class="input-group input-group-sm">
-                <input type="text" class="form-control text-uppercase i-busca" autocomplete="off" placeholder="Escribe código o descripción, o usa Familia / Calidad →">
+                <input type="text" name="descripcion[]" maxlength="400" class="form-control text-uppercase i-busca" autocomplete="off" placeholder="Escribe código o descripción, o usa Familia / Calidad →">
                 <button type="button" class="btn btn-outline-primary i-filtro" title="Buscar con Familia y Calidad"><i class="bi bi-funnel"></i> <span class="i-filtro-t">Familia / Calidad</span></button>
             </div>
             <div class="list-group position-absolute w-100 shadow sug i-sug"></div>
@@ -185,8 +190,9 @@ const porId = id => document.getElementById(id);
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function nf(n) { return Number(n || 0).toLocaleString('es-PE', { maximumFractionDigits: 3 }); }
 function empresa() { return 'ANCLAJES'; }      // solo para la búsqueda: muestra los productos de los dos inventarios
-function destino() { return porId('de_INSUMOS').checked ? 'INSUMOS' : 'GENERAL'; }
+function destino() { return porId('de_INSUMOS').checked ? 'INSUMOS' : (porId('de_DIRECTO').checked ? 'DIRECTO' : 'GENERAL'); }
 function esIns() { return destino() === 'INSUMOS'; }
+function esDir() { return destino() === 'DIRECTO'; }
 function stockTxt(p) {
     if (p.origen === 'INSUMO') {
         const s = p.stocks_ins || {};
@@ -199,7 +205,7 @@ function pintarMotivo() {
     const r = document.querySelector('#formReq input[name=motivo]:checked');
     porId('boxCliente').style.display = r && r.dataset.cliente === '1' ? 'block' : 'none';
 }
-function numerar() { document.querySelectorAll('#items .rq-item').forEach((f, i) => f.querySelector('.n').textContent = (esIns() ? 'INSUMO ' : 'PRODUCTO ') + (i + 1)); }
+function numerar() { document.querySelectorAll('#items .rq-item').forEach((f, i) => f.querySelector('.n').textContent = (esIns() ? 'INSUMO ' : (esDir() ? 'BIEN ' : 'PRODUCTO ')) + (i + 1)); }
 function opcionesUM(sel, v) { const l = UMS.slice(); if (v && !l.includes(v)) l.push(v); sel.innerHTML = '<option value="">—</option>' + l.map(u => `<option>${esc(u)}</option>`).join(''); sel.value = v || ''; }
 // Estado del producto (NACIONAL, OXIDADO, ROTO...) bien visible: así se distinguen dos códigos de descripción parecida
 function estadoTag(p) {
@@ -217,7 +223,10 @@ function fichaProd(fila, p) {
         box.querySelector('.cambiar').onclick = () => { fichaProd(fila, null); busca.value = ''; busca.focus(); };
     } else {
         busca.readOnly = false;
-        box.innerHTML = busca.value.trim() ? `<div class="prod falta"><i class="bi bi-x-octagon-fill"></i> <b>No elegido.</b> Elige ${esIns() ? 'el insumo' : 'el producto'} de la lista.</div>` : '';
+        if (esDir()) { box.innerHTML = ''; return; }      // uso directo: se escribe a mano, sin código
+        box.innerHTML = fila._codBorrado ? `<div class="prod falta"><i class="bi bi-trash3"></i> <b>El código ${esc(fila._codBorrado)} ya no existe en el inventario</b> (se eliminó).
+                Elige otro producto o cambia arriba a <b>"Uso directo"</b>.</div>`
+            : busca.value.trim() ? `<div class="prod falta"><i class="bi bi-x-octagon-fill"></i> <b>No elegido.</b> Elige ${esIns() ? 'el insumo' : 'el producto'} de la lista.</div>` : '';
     }
 }
 function agregarItem(d) {
@@ -228,10 +237,15 @@ function agregarItem(d) {
     fila.querySelector('.i-cant').value = d.cantidad || '';
     fila.querySelector('.i-nota').value = d.nota || '';
     const busca = fila.querySelector('.i-busca'), sug = fila.querySelector('.i-sug');
-    if (d.codigo) { fila.querySelector('.i-cod').value = d.codigo; busca.value = d.codigo; buscarCodigo(fila, d.codigo); }
+    fila._desc = d.descripcion || '';
+    if (esDir()) { busca.value = d.descripcion || ''; }
+    else if (d.codigo) { fila.querySelector('.i-cod').value = d.codigo; busca.value = d.descripcion || d.codigo; buscarCodigo(fila, d.codigo); }
+    if (esDir()) fila.querySelector('.i-filtro').style.display = 'none';
     let t = null;
     busca.addEventListener('input', () => {
+        if (esDir()) { sug.style.display = 'none'; return; }
         if (fila._p) fichaProd(fila, null);
+        fila._codBorrado = '';
         clearTimeout(t); const q = busca.value.trim();
         if (q.length < 2) { sug.style.display = 'none'; fichaProd(fila, null); return; }
         t = setTimeout(() => fetch(urlProd(q)).then(r => r.json()).then(res => {
@@ -249,7 +263,7 @@ function agregarItem(d) {
             sug.style.display = 'block';
         }).catch(() => {}), 280);
     });
-    busca.addEventListener('blur', () => setTimeout(() => { sug.style.display = 'none'; if (!fila._p) fichaProd(fila, null); }, 180));
+    busca.addEventListener('blur', () => setTimeout(() => { sug.style.display = 'none'; if (!fila._p && !esDir()) fichaProd(fila, null); }, 180));
     fila.querySelector('.i-filtro').onclick = () => abrirBuscador(fila);
     fila.querySelector('.quitar').onclick = () => { if (document.querySelectorAll('#items .rq-item').length > 1) { fila.remove(); numerar(); } else { busca.value = ''; fichaProd(fila, null); fila.querySelector('.i-cant').value = ''; } };
     numerar();
@@ -257,7 +271,11 @@ function agregarItem(d) {
 }
 function urlProd(q) { return `{{ url_for('oc_api_productos') }}?q=${encodeURIComponent(q)}&empresa=${empresa()}&destino=${destino()}&por_pagina=30`; }
 function buscarCodigo(fila, cod) {
-    fetch(urlProd(cod)).then(r => r.json()).then(res => { const p = (res.results || []).find(x => (x.sku || '').toUpperCase() === cod.toUpperCase()); fichaProd(fila, p || null); });
+    fetch(urlProd(cod)).then(r => r.json()).then(res => {
+        const p = (res.results || []).find(x => (x.sku || '').toUpperCase() === cod.toUpperCase());
+        if (!p) { fila._codBorrado = cod; fila.querySelector('.i-cod').value = ''; }
+        fichaProd(fila, p || null);
+    });
 }
 function pintarDocs() {
     const archivos = [...porId('inDocs').files, ...porId('inFoto').files];
@@ -343,10 +361,11 @@ porId('formReq').addEventListener('submit', function (e) {
     if (!document.querySelector('#formReq input[name=motivo]:checked')) err.push('Elige el motivo.');
     if (!this.area.value) err.push('Elige el área.');
     const filas = [...document.querySelectorAll('#items .rq-item')].filter(f => f.querySelector('.i-busca').value.trim() || f.querySelector('.i-cant').value);
-    if (!filas.length) err.push(esIns() ? 'Agrega al menos un insumo.' : 'Agrega al menos un producto.');
+    if (!filas.length) err.push(esIns() ? 'Agrega al menos un insumo.' : (esDir() ? 'Agrega al menos un bien.' : 'Agrega al menos un producto.'));
     filas.forEach((f, i) => {
-        const nom = esIns() ? 'Insumo' : 'Producto';
-        if (!f.querySelector('.i-cod').value || !f._p) err.push(`${nom} ${i + 1}: elígelo de la lista ${esIns() ? 'de Insumos internos' : 'del inventario'}.`);
+        const nom = esIns() ? 'Insumo' : (esDir() ? 'Bien' : 'Producto');
+        if (esDir()) { if (f.querySelector('.i-busca').value.trim().length < 3) err.push(`Bien ${i + 1}: escribe qué se necesita.`); }
+        else if (!f.querySelector('.i-cod').value || !f._p) err.push(`${nom} ${i + 1}: elígelo de la lista ${esIns() ? 'de Insumos internos' : 'del inventario'}.`);
         if (!(parseFloat(f.querySelector('.i-cant').value) > 0) || !f.querySelector('.i-um').value) err.push(`${nom} ${i + 1}: escribe la cantidad y la U.M.`);
     });
     const yaDocs = {{ docs_req|length }} - document.querySelectorAll('.quitar-doc:checked').length;
@@ -357,21 +376,37 @@ porId('formReq').addEventListener('submit', function (e) {
 // ---- de qué inventario: Inventario General o Insumos internos (todo el requerimiento es de uno solo) ----
 let destinoAntes = destino();
 function pintarDestinoReq() {
-    const ins = esIns();
-    porId('tituloItems').textContent = ins ? 'Insumos internos que faltan' : 'Productos que faltan';
-    porId('ayudaGeneral').style.display = ins ? 'none' : '';
+    const ins = esIns(), dir = esDir();
+    porId('tituloItems').textContent = ins ? 'Insumos internos que faltan' : (dir ? 'Bienes de uso directo que faltan' : 'Productos que faltan');
+    porId('ayudaGeneral').style.display = ins || dir ? 'none' : '';
     porId('ayudaInsumos').style.display = ins ? '' : 'none';
-    porId('btnAgregar').innerHTML = ins ? '<i class="bi bi-plus-circle"></i> Agregar insumo' : '<i class="bi bi-plus-circle"></i> Agregar producto';
+    porId('ayudaDirecto').style.display = dir ? '' : 'none';
+    porId('btnAgregar').innerHTML = ins ? '<i class="bi bi-plus-circle"></i> Agregar insumo' : (dir ? '<i class="bi bi-plus-circle"></i> Agregar bien' : '<i class="bi bi-plus-circle"></i> Agregar producto');
+    document.querySelectorAll('#items .i-filtro').forEach(x => x.style.display = dir ? 'none' : '');
     porId('mp_titulo').textContent = ins ? 'Buscar en Insumos internos' : 'Buscar en el inventario';
     porId('mp_lbl_fam').textContent = ins ? 'Categoría' : 'Familia';
     porId('mp_box_cal').style.display = ins ? 'none' : '';
     porId('mp_pie').textContent = ins ? '¿No está? Pide que lo creen en el maestro de Insumos internos.' : '¿No está? Pide al encargado que lo cree en el Maestro.';
     document.querySelectorAll('#items .i-filtro-t').forEach(x => x.textContent = ins ? 'Categoría' : 'Familia / Calidad');
-    document.querySelectorAll('#items .i-busca').forEach(x => { if (!x.readOnly) x.placeholder = ins ? 'Escribe código o descripción del insumo, o usa Categoría →' : 'Escribe código o descripción, o usa Familia / Calidad →'; });
+    document.querySelectorAll('#items .i-busca').forEach(x => { if (!x.readOnly) x.placeholder = dir ? 'Escribe el bien con su detalle (ej. CORRECTOR LÍQUIDO 20 ML)'
+        : (ins ? 'Escribe código o descripción del insumo, o usa Categoría →' : 'Escribe código o descripción, o usa Familia / Calidad →'); });
     numerar();
 }
 function cambiarDestino() {
     const elegidos = [...document.querySelectorAll('#items .rq-item')].filter(f => f._p || f.querySelector('.i-busca').value.trim());
+    if (esDir()) {
+        // a USO DIRECTO se pasan los mismos productos como texto (descripción, cantidad y U.M.): ya no necesitan código
+        destinoAntes = destino();
+        document.querySelectorAll('#items .rq-item').forEach(f => {
+            const desc = f._p ? f._p.descripcion : (f._desc || f.querySelector('.i-busca').value);
+            f._p = null; f._codBorrado = ''; f.querySelector('.i-cod').value = '';
+            const b = f.querySelector('.i-busca'); b.readOnly = false; b.value = desc || '';
+            f.querySelector('.i-prod').innerHTML = '';
+        });
+        if (!document.querySelector('#items .rq-item')) agregarItem();
+        pintarDestinoReq();
+        return;
+    }
     const aplicar = () => {
         destinoAntes = destino();
         porId('items').innerHTML = '';
@@ -380,12 +415,13 @@ function cambiarDestino() {
     };
     if (!elegidos.length) { aplicar(); return; }
     Swal.fire({ icon: 'question', title: esIns() ? '¿Cambiar a Insumos internos?' : '¿Cambiar a Inventario General?',
-                html: `Se quitarán los ${elegidos.length} ${destinoAntes === 'INSUMOS' ? 'insumo(s)' : 'producto(s)'} que ya pusiste: un requerimiento es de un solo inventario.`,
+                html: `Se quitarán los ${elegidos.length} ${destinoAntes === 'INSUMOS' ? 'insumo(s)' : (destinoAntes === 'DIRECTO' ? 'bien(es)' : 'producto(s)')} que ya pusiste: un requerimiento es de un solo inventario.`,
                 showCancelButton: true, confirmButtonText: 'Sí, cambiar', cancelButtonText: 'No' })
         .then(r => { if (r.isConfirmed) aplicar(); else { porId('de_' + destinoAntes).checked = true; } });
 }
 porId('de_GENERAL').addEventListener('change', cambiarDestino);
 porId('de_INSUMOS').addEventListener('change', cambiarDestino);
+porId('de_DIRECTO').addEventListener('change', cambiarDestino);
 pintarMotivo(); pintarArea();
 if (PREVIOS.length) PREVIOS.forEach(agregarItem); else agregarItem();
 pintarDestinoReq();

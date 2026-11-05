@@ -11,6 +11,7 @@
     .rq-av .p.act { color: #b45309; } .rq-av .p.act .b { background: #f59e0b; box-shadow: 0 0 0 3px #fde68a; }
     .rq-estado { display: inline-flex; align-items: center; gap: 5px; font-size: .74rem; font-weight: 800; border-radius: 20px; padding: 2px 10px; border: 1px solid currentColor; white-space: nowrap; }
     .rq-ins { font-size: .64rem; font-weight: 800; background: #ccfbf1; color: #115e59; border: 1px solid #99f6e4; border-radius: 6px; padding: 1px 7px; white-space: nowrap; }
+    .rq-dir { font-size: .64rem; font-weight: 800; background: #ffedd5; color: #9a3412; border: 1px solid #fdba74; border-radius: 6px; padding: 1px 7px; white-space: nowrap; }
     .rq-urg { font-size: .64rem; font-weight: 800; background: #dc2626; color: #fff; border-radius: 6px; padding: 1px 7px; }
     .rq-oc { display: inline-flex; align-items: center; gap: 4px; font-size: .7rem; font-weight: 700; border-radius: 7px; padding: 1px 7px; background: #eff6ff; color: #0B3D91;
              border: 1px solid #bfdbfe; text-decoration: none; white-space: nowrap; }
@@ -18,8 +19,8 @@
 </style>
 {% endmacro %}
 
-{% macro avance(sg) %}
-{% set pasos = [('Pedido', true), ('OC creada', sg.paso >= 1), ('Aprobada', sg.paso >= 3), ('Llegó', sg.paso >= 4), ('Conforme', sg.paso >= 5), ('Ingresado', sg.paso >= 6)] %}
+{% macro avance(sg, final='Ingresado') %}
+{% set pasos = [('Pedido', true), ('OC creada', sg.paso >= 1), ('Aprobada', sg.paso >= 3), ('Llegó', sg.paso >= 4), ('Conforme', sg.paso >= 5), (final, sg.paso >= 6)] %}
 {% set ns = namespace(actual=false) %}
 <div class="rq-av">
     {% for txt, hecho in pasos %}
@@ -29,9 +30,11 @@
 </div>
 {% endmacro %}
 
+{% macro chip_destino(r) %}{% if r.destino == 'INSUMOS' %}<span class="rq-ins"><i class="bi bi-tools"></i> Insumos internos</span>{% elif r.destino == 'DIRECTO' %}<span class="rq-dir" title="No va a ningún inventario: se compra para usarlo"><i class="bi bi-pc-display"></i> Uso directo</span>{% endif %}{% endmacro %}
+
 {% macro ordenes_de(sg, puede_ver_oc) %}
 {% for oi in sg.activos %}{% set o = oi.orden %}
-{% if puede_ver_oc %}<a class="rq-oc" href="{{ url_for('oc_detalle', orden_id=o.id) }}">{% else %}<span class="rq-oc">{% endif %}<i class="bi bi-cart-check"></i> {{ oc_codigo(o) }} · {{ estados[o.estado].txt }}{% if oi.fecha_ingreso %} · ingresado{% endif %}
+{% if puede_ver_oc %}<a class="rq-oc" href="{{ url_for('oc_detalle', orden_id=o.id) }}">{% else %}<span class="rq-oc">{% endif %}<i class="bi bi-cart-check"></i> {{ oc_codigo(o) }} · {{ estados[o.estado].txt }}{% if oi.fecha_ingreso %} · ingresado{% elif o.destino == 'DIRECTO' and o.fecha_kardex %} · entregado{% endif %}
     · {{ oi.cantidad|cant }} {{ oi.um }}{% if puede_ver_oc %}</a>{% else %}</span>{% endif %}
 {% endfor %}
 {% for oi in sg.caidos %}<span class="rq-oc caida" title="Esa orden fue {{ oi.orden.estado|lower }}: el producto volvió a esperar OC">{{ oc_codigo(oi.orden) }} {{ oi.orden.estado|lower }}</span>{% endfor %}

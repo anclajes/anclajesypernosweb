@@ -72,7 +72,7 @@
         <div class="d-flex flex-wrap gap-2 align-items-center">
             <a class="cod" href="{{ url_for('oc_req_detalle', req_id=r.id) }}">{{ req_codigo(r) }}</a>
             {% if emp_r %}<span class="small fw-bold" style="color: {{ emp_r.color }};">Inventario {{ emp_r.corto }}</span>{% endif %}
-            {% if r.destino == 'INSUMOS' %}<span class="rq-ins"><i class="bi bi-tools"></i> Insumos internos</span>{% endif %}
+            {{ rq.chip_destino(r) }}
             {% if r.prioridad == 'URGENTE' %}<span class="rq-urg">URGENTE</span>{% endif %}
             {% if r.id in con_novedad %}<span class="nov-chip"><i class="bi bi-bell-fill"></i> Novedad</span>{% endif %}
             <span class="rq-estado ms-auto" style="color: {{ res.color }};"><i class="bi {{ res.icono }}"></i> {{ res.txt }}</span>
@@ -85,12 +85,12 @@
     </div>
     {% for i in r.items %}{% set s = sg[i.id] %}
     <div class="it">
-        <div class="d-flex flex-wrap gap-2 align-items-center"><span class="ds" {% if s.descartado %}style="text-decoration: line-through; color: #64748b;"{% endif %}>{{ i.descripcion }}</span> <span class="tag-sku">{{ i.codigo }}</span>
+        <div class="d-flex flex-wrap gap-2 align-items-center"><span class="ds" {% if s.descartado %}style="text-decoration: line-through; color: #64748b;"{% endif %}>{{ i.descripcion }}</span> {% if i.codigo %}<span class="tag-sku">{{ i.codigo }}</span>{% endif %}
             {% if s.descartado %}<span class="desc-b" title="{{ req_motivo_txt(i.descarte_categoria, i.descarte_opcion, i.descarte_motivo) }}">No se comprará: {{ i.descarte_opcion or '' }}</span>{% endif %}
             <span class="ms-auto fw-bold">{{ i.cantidad|cant }} {{ i.um }}</span></div>
         {% if not s.descartado %}
         <div class="d-flex flex-wrap gap-1 mt-1">{{ rq.ordenes_de(s, puede_ver_oc) }}{% if s.recibido and s.recibido < s.ordenado - 0.0001 %}<span class="small" style="color:#1e3a8a;">· llegó {{ s.recibido|cant }} de {{ s.ordenado|cant }}</span>{% endif %}</div>
-        {% if r.estado == 'PENDIENTE' %}{{ rq.avance(s) }}{% endif %}
+        {% if r.estado == 'PENDIENTE' %}{{ rq.avance(s, 'Entregado' if r.destino == 'DIRECTO' else 'Ingresado') }}{% endif %}
         {% endif %}
     </div>
     {% endfor %}

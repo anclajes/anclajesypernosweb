@@ -21,6 +21,9 @@ PASOS_REQ = [('PENDIENTE', 'Esperando OC', 'bi-hourglass-split', '#b45309'),
              ('CONFORME', 'Conforme · por ingresar', 'bi-check-circle-fill', '#16a34a'),
              ('INGRESADO', 'Ingresado al inventario', 'bi-box-arrow-in-down', '#15803d')]
 _PASO_DE_ESTADO_OC = {'BORRADOR': 1, 'ENVIADA': 2, 'APROBADA': 3, 'RECIBIDA': 4, 'CONFORME': 5}
+# De qué es el requerimiento: productos del inventario, insumos internos o bienes de USO DIRECTO (no van a ningún inventario)
+DESTINOS_REQ = {'GENERAL': 'Inventario General', 'INSUMOS': 'Insumos internos', 'DIRECTO': 'Uso directo'}
+app.add_template_global(DESTINOS_REQ, 'destinos_req')
 
 
 def _req_codigo(r):
@@ -50,7 +53,8 @@ def _req_seguimiento(items):
         lista = sorted(por.get(i.id, []), key=lambda x: x.orden_id)
         activos = [oi for oi in lista if oi.orden and oi.orden.estado not in ('ANULADA', 'RECHAZADA')]
         caidos = [oi for oi in lista if oi.orden and oi.orden.estado in ('ANULADA', 'RECHAZADA')]
-        pasos = [6 if (oi.orden.estado == 'CONFORME' and (oi.fecha_ingreso or (oi.orden.destino == 'INSUMOS' and oi.orden.insumo_ingreso_id)))
+        pasos = [6 if (oi.orden.estado == 'CONFORME' and (oi.fecha_ingreso or (oi.orden.destino == 'INSUMOS' and oi.orden.insumo_ingreso_id)
+                                                          or (oi.orden.destino == 'DIRECTO' and oi.orden.fecha_kardex)))
                  else _PASO_DE_ESTADO_OC.get(oi.orden.estado, 1) for oi in activos]
         recibido = 0.0
         for oi in activos:
@@ -81,13 +85,15 @@ def _req_resumen(r, seg=None):
     minimo = min(pasos)
     extra = f' · {n_desc} descartado(s)' if n_desc else ''
     if minimo == 6:
-        txt, color, icono = 'Completado: todo ingresado' + extra, '#15803d', 'bi-check2-all'
+        txt, color, icono = ('Completado: todo entregado' if r.destino == 'DIRECTO' else 'Completado: todo ingresado') + extra, '#15803d', 'bi-check2-all'
     elif con_oc == 0:
         txt, color, icono = 'Esperando que Logística arme la OC' + extra, '#b45309', 'bi-hourglass-split'
     elif con_oc < len(vivos):
         txt, color, icono = f'En proceso: {con_oc} de {len(vivos)} producto(s) con OC' + extra, '#0B3D91', 'bi-arrow-repeat'
     else:
         txt, color, icono = PASOS_REQ[minimo][1] + extra, PASOS_REQ[minimo][3], PASOS_REQ[minimo][2]
+        if r.destino == 'DIRECTO' and minimo == 5:
+            txt = 'Conforme · falta registrar la entrega' + extra
     return {'clave': 'COMPLETADO' if minimo == 6 else ('PENDIENTE' if con_oc == 0 else 'EN_PROCESO'), 'txt': txt, 'color': color, 'icono': icono,
             'con_oc': con_oc, 'total': len(r.items), 'paso': minimo, 'descartados': n_desc}
 
@@ -260,7 +266,8 @@ def _req_a_previo(r):
             'motivo': r.motivo, 'cliente_ruc': r.cliente_ruc, 'cliente_razon': r.cliente_razon, 'oc_cliente': r.oc_cliente,
             'prioridad': r.prioridad, 'necesita_para': r.necesita_para.isoformat() if r.necesita_para else '', 'nota': r.nota,
             'destino': r.destino or 'GENERAL',
-            'items': [{'codigo': i.codigo, 'cantidad': i.cantidad, 'um': i.um, 'nota': i.nota or ''} for i in r.items if not i.descartado]}
+            'items': [{'codigo': i.codigo, 'descripcion': i.descripcion, 'cantidad': i.cantidad, 'um': i.um, 'nota': i.nota or ''}
+                      for i in r.items if not i.descartado]}
 
 
 @app.route('/ordenes/requerimientos/<int:req_id>/editar', methods=['GET', 'POST'])
@@ -317,15 +324,40 @@ def _req_guardar(r_edit):
     elif d['necesita_para'] and d['necesita_para'] < hora_peru().date():
         errores.append('La fecha "para cuándo" no puede ser pasada.')
     d['nota'] = ' '.join((f.get('nota') or '').split())[:500] or None
-    # De qué inventario: productos del Inventario General (para vender) o Insumos internos (uso de la empresa)
-    d['destino'] = 'INSUMOS' if (f.get('destino') or '').upper() == 'INSUMOS' else 'GENERAL'
+    # De qué inventario: productos del Inventario General (para vender), Insumos internos (uso de la empresa) o USO DIRECTO
+    # (bienes que se compran para usarlos y no van a ningún inventario: útiles, equipos, muebles... se escriben a mano)
+    d['destino'] = (f.get('destino') or '').upper() if (f.get('destino') or '').upper() in DESTINOS_REQ else 'GENERAL'
     es_ins = d['destino'] == 'INSUMOS'
+    es_dir = d['destino'] == 'DIRECTO'
     # productos: los que existen en los inventarios (Anclajes o Import Bolts; el maestro los reparte a los dos) o en el maestro de insumos
     ums = {v.valor for v in _oc_catalogo('OC_UM')}
     items, vistos = [], set()
-    filas = list(zip(f.getlist('codigo[]'), f.getlist('cantidad[]'), f.getlist('um[]') + [''] * 99, f.getlist('nota_item[]') + [''] * 99))
-    for n, (cod, cant, um, nota) in enumerate(filas, start=1):
+    filas = list(zip(f.getlist('codigo[]'), f.getlist('cantidad[]'), f.getlist('um[]') + [''] * 99, f.getlist('nota_item[]') + [''] * 99,
+                     f.getlist('descripcion[]') + [''] * 99))
+    for n, (cod, cant, um, nota, desc) in enumerate(filas, start=1):
         cod = (cod or '').strip().upper()
+        desc = ' '.join((desc or '').split()).upper()[:400]
+        if es_dir:
+            # USO DIRECTO: sin código (no es un producto del inventario); se escribe lo que se necesita
+            if not desc and not (cant or '').strip():
+                continue
+            if len(desc) < 3:
+                errores.append(f'Bien {n}: escribe qué se necesita (ej. CORRECTOR LÍQUIDO, SACAGRAPAS METÁLICO).')
+                continue
+            if desc in vistos:
+                errores.append(f'Bien {n} ({desc[:40]}): está repetido; súmalo en una sola línea.')
+                continue
+            cantidad = _num(cant)
+            if cantidad is None or cantidad <= 0:
+                errores.append(f'Bien {n} ({desc[:40]}): la cantidad debe ser mayor a 0.')
+                continue
+            if um not in ums:
+                errores.append(f'Bien {n} ({desc[:40]}): elige la unidad de medida.')
+                continue
+            vistos.add(desc)
+            items.append({'codigo': '', 'insumo_id': None, 'descripcion': desc, 'familia': None, 'calidad': None, 'um': um,
+                          'cantidad': round(cantidad, 4), 'nota': ' '.join((nota or '').split())[:200] or None, 'stock_al_pedir': None})
+            continue
         if not cod and not (cant or '').strip():
             continue
         prod_a = prod_b = ins = None
@@ -362,7 +394,7 @@ def _req_guardar(r_edit):
                       'um': um, 'cantidad': round(cantidad, 4), 'nota': nota_it,
                       'stock_al_pedir': int((prod_a.stock_actual or 0) if prod_a else 0) + int((prod_b.stock_actual or 0) if prod_b else 0)})
     if not items:
-        errores.append('Agrega al menos un insumo.' if es_ins else 'Agrega al menos un producto.')
+        errores.append('Agrega al menos un insumo.' if es_ins else ('Agrega al menos un bien de uso directo.' if es_dir else 'Agrega al menos un producto.'))
     if len(items) > 60:
         errores.append('Máximo 60 productos por requerimiento.')
     archivos = [a for a in request.files.getlist('docs') + request.files.getlist('foto') if a and a.filename]
@@ -379,7 +411,7 @@ def _req_guardar(r_edit):
             validos.append((a, info))
     if errores:
         previo = {**{k: (v.isoformat() if hasattr(v, 'isoformat') else v) for k, v in d.items()}, 'solicitante': sol,
-                  'items': [{'codigo': c, 'cantidad': ca, 'um': u, 'nota': no} for c, ca, u, no in filas if c or ca]}
+                  'items': [{'codigo': c, 'cantidad': ca, 'um': u, 'nota': no, 'descripcion': de} for c, ca, u, no, de in filas if c or ca or de]}
         return render_template('oc_req_form.html', **_contexto_form_req(previo, errores, req=r_edit))
     claves, borrar = [], []
     if r_edit:
@@ -399,7 +431,7 @@ def _req_guardar(r_edit):
         for n, it in enumerate(items, start=1):
             db.session.add(RequerimientoItem(req_id=r.id, item=n, **it))
         _req_subir_docs(r, validos, claves)
-        _req_evento(r, 'CREADO', f"{len(items)} {'insumo(s) interno(s)' if es_ins else 'producto(s)'}"
+        _req_evento(r, 'CREADO', f"{len(items)} {'insumo(s) interno(s)' if es_ins else ('bien(es) de USO DIRECTO (no van a ningún inventario)' if es_dir else 'producto(s)')}"
                                  + (f" · {len(validos)} archivo(s)" if validos else '') + (' · URGENTE' if d['prioridad'] == 'URGENTE' else ''))
         registrar_log(f"Pidió a Logística {_req_codigo(r)}: {len(items)} producto(s)", 'bi-clipboard-plus', 'text-primary')
         _notif_req_nuevo(r, len(items))
@@ -416,12 +448,12 @@ def _req_guardar(r_edit):
 
 def _req_guardar_edicion(r, d, items, validos, quitar_docs):
     """Guarda la edición: datos, productos (se reemplazan) y archivos (se agregan / se quitan). Queda en el historial qué cambió."""
-    antes = {i.codigo: (i.cantidad, i.um) for i in r.items if not i.descartado}
+    antes = {(i.codigo or i.descripcion): (i.cantidad, i.um) for i in r.items if not i.descartado}
     claves, borrar = [], []
     try:
         cambios = []
         if (r.destino or 'GENERAL') != d['destino']:
-            cambios.append('Ahora es de ' + ('Insumos internos' if d['destino'] == 'INSUMOS' else 'Inventario General'))
+            cambios.append('Ahora es de ' + DESTINOS_REQ[d['destino']])
             r.destino = d['destino']
         for campo, etq in (('solicitante_nombre', 'Lo pide'), ('area', 'Área'), ('motivo', 'Motivo'), ('cliente_razon', 'Cliente'),
                            ('oc_cliente', 'OC cliente'), ('prioridad', 'Prioridad'), ('necesita_para', 'Para cuándo'), ('nota', 'Nota')):
@@ -430,7 +462,7 @@ def _req_guardar_edicion(r, d, items, validos, quitar_docs):
             setattr(r, campo, d.get(campo))
         r.solicitante_user_id = d.get('solicitante_user_id')
         r.cliente_ruc = d.get('cliente_ruc')
-        despues = {it['codigo']: (it['cantidad'], it['um']) for it in items}
+        despues = {(it['codigo'] or it['descripcion']): (it['cantidad'], it['um']) for it in items}
         for cod in despues:
             if cod not in antes:
                 cambios.append(f"+ {cod} {_cant_txt(despues[cod][0])} {despues[cod][1]}")
@@ -542,13 +574,20 @@ def oc_req_detalle(req_id):
         for oi in seg[i.id]['activos'] + seg[i.id]['caidos']:
             ordenes[oi.orden.id] = oi.orden
     nuevos_ids = {ev.id for _, ev in _req_novedades(session.get('user_id'), limite=0) if ev.req_id == r.id}
+    # productos pedidos cuyo código YA NO EXISTE en el inventario (p. ej. se borró para pasarlo a Uso directo)
+    borrados = []
+    if (r.destino or 'GENERAL') == 'GENERAL' and r.estado == 'PENDIENTE':
+        for i in r.items:
+            if i.codigo and not i.descartado and not seg[i.id]['activos'] and not Product.query.filter(func.upper(Product.sku) == i.codigo.upper()).first() \
+                    and not ProductImportBolts.query.filter(func.upper(ProductImportBolts.sku) == i.codigo.upper()).first():
+                borrados.append(i)
     _req_marcar_visto(r, session.get('user_id'))
     db.session.commit()
     return render_template('oc_req_detalle.html', r=r, seg=seg, res=_req_resumen(r, seg), docs=docs, eventos=eventos, p=_req_permisos(r, seg),
                            motivos_rech=_oc_motivos('RECHAZO', 'RQ'), motivos_anul=_oc_motivos('ANULACION', 'RQ'),
                            motivos_desc=_oc_motivos('DESCARTE', 'RQ'), nuevos_ids=nuevos_ids,
                            ordenes=sorted(ordenes.values(), key=lambda o: o.id), estados=ESTADOS_OC, empresas_oc=EMPRESAS_OC,
-                           prioridades=PRIORIDADES_REQ, seccion='req', hoy=hora_peru().date())
+                           prioridades=PRIORIDADES_REQ, seccion='req', hoy=hora_peru().date(), codigos_borrados=borrados)
 
 
 def _req_opcion_motivo(uso):

@@ -1,6 +1,9 @@
 {# "En camino": lo comprado con órdenes aprobadas que todavía no está (o recién se sumó) en este inventario. Solo Gerencia.
    Uso:  {% import '_en_camino.html' as camino with context %}  {% set ec = en_camino('GENERAL', 'ANCLAJES') %}
-         {{ camino.panel(ec, 'Anclajes') }} · en cada producto {{ camino.badge(ec, p.sku|upper) }} · al final {{ camino.script(ec) }} #}
+         {{ camino.panel(ec, 'Anclajes') }} · en cada producto {{ camino.badge(ec, p.sku|upper) }} · al final {{ camino.script(ec) }}
+         Varios inventarios en la misma página (Inventario General): {{ camino.script_varios([ec1, ec2]) }}
+   Cada tarjeta: quién creó la OC, en qué va (frase clara), línea de tiempo con los encargados, PDF y documentos, y la lista completa
+   en un modal. Clic en el estado de un producto: modal con sus órdenes y la lista completa de cada una con ese producto en verde. #}
 
 {% macro estilos() %}
 <style>
@@ -11,16 +14,42 @@
     .ec-panel > summary .ver { margin-left: auto; font-weight: 700; color: #0B3D91; font-size: .76rem; }
     .ec-panel[open] > summary .ver .bi { transform: rotate(180deg); }
     .ec-res { font-size: .72rem; font-weight: 700; border-radius: 20px; padding: 2px 9px; border: 1px solid var(--b, #e2e8f0); color: var(--c, #334155); background: var(--f, #f8fafc); white-space: nowrap; text-decoration: none; }
-    .ec-ords { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 10px; padding: 4px 14px 14px; }
+    .ec-ords { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr)); gap: 10px; padding: 4px 14px 14px; }
     .ec-ord { border: 1px solid #e2e8f0; border-radius: 12px; padding: 9px 11px; border-top: 3px solid var(--c, #b45309); background: #fff; }
     .ec-ord .cab { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
     .ec-ord .cod { font-weight: 800; color: #0f172a; text-decoration: none; font-size: .86rem; }
     .ec-ord .prov { font-size: .74rem; color: #475569; overflow-wrap: anywhere; }
     .ec-imp { font-size: .6rem; font-weight: 800; color: #fff; background: #0f766e; border-radius: 5px; padding: 0 6px; }
     .ec-et { font-size: .64rem; font-weight: 800; border-radius: 6px; padding: 1px 7px; color: var(--c); background: var(--f); border: 1px solid var(--b); white-space: nowrap; }
-    .ec-lin { font-size: .74rem; border-top: 1px dashed #e2e8f0; padding-top: 5px; margin-top: 6px; }
-    .ec-lin div { display: flex; gap: 6px; justify-content: space-between; }
-    .ec-lin .ds { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+    .ec-lin { font-size: .72rem; border-top: 1px dashed #e2e8f0; padding-top: 5px; margin-top: 6px; }
+    .ec-lin > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; align-items: start; padding: 2px 0; }
+    .ec-lin > div + div { border-top: 1px dotted #f1f5f9; }
+    .ec-lin .ds { white-space: normal; overflow-wrap: anywhere; line-height: 1.25; color: #1e293b; }
+    .ec-lin .cn { text-align: right; line-height: 1.25; }
+    .ec-lin .cn > span { display: block; white-space: nowrap; }
+    .ec-mas { border: 0; background: none; color: #0B3D91; font-weight: 700; font-size: .72rem; padding: 2px 0; text-decoration: underline; cursor: pointer; }
+    .ec-meta { font-size: .7rem; color: #64748b; overflow-wrap: anywhere; }
+    .ec-meta b { color: #334155; }
+    .ec-frase { font-size: .74rem; font-weight: 700; border-radius: 8px; padding: 4px 8px; margin-top: 6px; color: var(--c); background: var(--f); border: 1px solid var(--b); }
+    .ec-ord.terminada { border-top-color: #16a34a; background: #f7fef9; }
+    .ec-ord.terminada .ec-frase { background: #16a34a; color: #fff; border-color: #15803d; }
+    .ec-acc { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 7px; }
+    .ec-acc a, .ec-acc button { font-size: .68rem; font-weight: 700; border: 1px solid #cbd5e1; background: #fff; color: #0f172a; border-radius: 7px; padding: 2px 8px; text-decoration: none; white-space: nowrap; cursor: pointer; }
+    .ec-acc a:hover, .ec-acc button:hover { background: #f1f5f9; }
+    .ec-tl .p .q { display: block; font-weight: 700; color: #0f172a; font-size: .58rem; overflow-wrap: anywhere; }
+    .ec-docs { display: grid; gap: 4px; margin-top: 8px; }
+    .ec-docs .d { display: flex; align-items: center; gap: 6px; font-size: .74rem; border: 1px solid #e2e8f0; border-radius: 8px; padding: 4px 8px; }
+    .ec-docs .d .n { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+    .ec-docs .d .n small { display: block; color: #64748b; }
+    .ec-docs .d a { font-size: .8rem; padding: 0 4px; }
+    .ec-tabla { width: 100%; font-size: .74rem; border-collapse: collapse; margin-top: 8px; }
+    .ec-tabla th { font-size: .6rem; text-transform: uppercase; letter-spacing: .04em; color: #64748b; padding: 3px 6px; border-bottom: 1px solid #e2e8f0; text-align: left; }
+    .ec-tabla td { padding: 4px 6px; border-bottom: 1px solid #f1f5f9; vertical-align: top; overflow-wrap: anywhere; }
+    .ec-tabla tr.marca td { background: #dcfce7; font-weight: 700; }
+    .ec-tabla tr.marca td:first-child { box-shadow: inset 4px 0 0 #16a34a; }
+    .ec-lista { max-height: 300px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 10px; margin-top: 8px; }
+    .ec-lista .ec-tabla { margin-top: 0; }
+    .ec-sec { font-size: .66rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: #64748b; margin-top: 10px; }
     .ec-tl { display: flex; margin: 8px 0 2px; }
     .ec-tl .p { flex: 1 1 0; text-align: center; position: relative; font-size: .6rem; color: #94a3b8; font-weight: 700; line-height: 1.15; }
     .ec-tl .p::before { content: ''; position: absolute; top: 6px; left: -50%; width: 100%; height: 3px; background: #e2e8f0; }
@@ -35,7 +64,7 @@
     .ec-chip:hover { filter: brightness(.96); }
     .ec-fondo { position: fixed; inset: 0; background: rgba(15,23,42,.5); z-index: 1095; display: none; align-items: flex-start; justify-content: center; padding: 5vh 12px; overflow-y: auto; }
     .ec-fondo.abierto { display: flex; }
-    .ec-caja { background: #fff; border-radius: 16px; width: 640px; max-width: 100%; box-shadow: 0 24px 60px rgba(0,0,0,.3); overflow: hidden; }
+    .ec-caja { background: #fff; border-radius: 16px; width: 820px; max-width: 100%; box-shadow: 0 24px 60px rgba(0,0,0,.3); overflow: hidden; }
     .ec-caja .cab-m { padding: 11px 16px; background: #0f172a; color: #fff; display: flex; gap: 10px; align-items: center; }
     .ec-caja .cab-m h6 { margin: 0; font-weight: 800; color: #fff !important; }
     .ec-caja .cab-m button { margin-left: auto; border: 0; background: rgba(255,255,255,.15); color: #fff; width: 30px; height: 30px; border-radius: 50%; }
@@ -44,80 +73,125 @@
 </style>
 {% endmacro %}
 
-{% macro panel(ec, nombre) %}{% if ec and (ec.ordenes or ec.resumen.por_aprobar) %}{% set r = ec.resumen %}{% set E = ec.etapas %}
+{% macro panel(ec, nombre) %}{% if ec and (ec.ordenes or ec.resumen.por_aprobar) %}{% set r = ec.resumen %}{% set E = ec.etapas %}{% set k_ec = ec.destino ~ '|' ~ ec.empresa %}
 {{ estilos() }}
-<details class="ec-panel" id="ecPanel">
+<details class="ec-panel" id="ecPanel{{ ec.empresa }}">
     <summary><i class="bi bi-truck text-warning fs-5"></i> <span class="tit">Compras en camino a {{ nombre }}</span>
         {% if r.en_camino %}<span class="ec-res" style="--c:{{ E.EN_CAMINO.color }};--f:{{ E.EN_CAMINO.fondo }};--b:{{ E.EN_CAMINO.borde }};"><i class="bi bi-truck"></i> {{ r.en_camino }} orden(es) en camino{% if r.importacion %} · {{ r.importacion }} importación{% endif %}</span>{% endif %}
         {% if r.proxima %}<span class="ec-res">Próxima llegada {{ r.proxima }} ({{ r.proxima_hace }})</span>{% endif %}
         {% if r.atrasadas %}<span class="ec-res" style="--c:#b91c1c;--f:#fef2f2;--b:#fecaca;"><i class="bi bi-alarm"></i> {{ r.atrasadas }} atrasada(s)</span>{% endif %}
         {% if r.sin_fecha %}<span class="ec-res">{{ r.sin_fecha }} sin fecha confirmada</span>{% endif %}
-        {% if r.por_conformidad %}<span class="ec-res" style="--c:{{ E.POR_CONFORMIDAD.color }};--f:{{ E.POR_CONFORMIDAD.fondo }};--b:{{ E.POR_CONFORMIDAD.borde }};">{{ r.por_conformidad }} llegó · por revisar</span>{% endif %}
-        {% if r.por_ingresar %}<span class="ec-res" style="--c:{{ E.POR_INGRESAR.color }};--f:{{ E.POR_INGRESAR.fondo }};--b:{{ E.POR_INGRESAR.borde }};">{{ r.por_ingresar }} por sumar al stock</span>{% endif %}
-        {% if r.ingresadas %}<span class="ec-res" style="--c:{{ E.INGRESADO.color }};--f:{{ E.INGRESADO.fondo }};--b:{{ E.INGRESADO.borde }};"><i class="bi bi-check2"></i> {{ r.ingresadas }} sumada(s) en los últimos {{ r.dias_reciente }} días</span>{% endif %}
+        {% if r.por_conformidad %}<span class="ec-res" style="--c:{{ E.POR_CONFORMIDAD.color }};--f:{{ E.POR_CONFORMIDAD.fondo }};--b:{{ E.POR_CONFORMIDAD.borde }};">{{ r.por_conformidad }} llegó a planta · por revisar</span>{% endif %}
+        {% if r.por_ingresar %}<span class="ec-res" style="--c:{{ E.POR_INGRESAR.color }};--f:{{ E.POR_INGRESAR.fondo }};--b:{{ E.POR_INGRESAR.borde }};">{{ r.por_ingresar }} revisada(s) y conforme(s) · falta sumar</span>{% endif %}
+        {% if r.ingresadas %}<span class="ec-res" style="--c:{{ E.INGRESADO.color }};--f:{{ E.INGRESADO.fondo }};--b:{{ E.INGRESADO.borde }};"><i class="bi bi-check2-all"></i> {{ r.ingresadas }} terminada(s): sumadas en los últimos {{ r.dias_reciente }} días</span>{% endif %}
         {% if r.por_aprobar %}<a class="ec-res" href="{{ url_for('oc_lista', vista='aprobar') }}" onclick="event.stopPropagation();" title="Todavía no son seguras: falta la aprobación de Gerencia">{{ r.por_aprobar }} OC por aprobar</a>{% endif %}
         {% if ec.ordenes %}<span class="ver">Ver detalle <i class="bi bi-chevron-down"></i></span>{% endif %}
     </summary>
     {% if ec.ordenes %}
     <div class="ec-ords">
         {% for o in ec.ordenes %}{% set e = E[o.etapa] %}
-        <div class="ec-ord" style="--c: {{ 'var(--danger,#dc2626)' if o.atrasada and o.etapa == 'EN_CAMINO' else e.color }};">
+        <div class="ec-ord {{ 'terminada' if o.terminada }}" style="--c: {{ 'var(--danger,#dc2626)' if o.atrasada and o.etapa == 'EN_CAMINO' else e.color }};">
             <div class="cab"><a class="cod" href="{{ o.url }}">{{ o.codigo }}</a>{% if o.importacion %}<span class="ec-imp">IMPORTACIÓN</span>{% endif %}
-                <span class="ec-et ms-auto" style="--c:{{ e.color }};--f:{{ e.fondo }};--b:{{ e.borde }};"><i class="bi {{ e.icono }}"></i> {{ e.txt }}</span></div>
-            <div class="prov">{{ o.proveedor }} · {{ o.monto }} · aprobada {{ o.aprobada }}</div>
-            <div class="ec-tl">{% for p in o.pasos %}<div class="p {{ p.estado }}"><span class="b"></span><br>{{ p.txt }}{% if p.fecha %}<small>{{ p.fecha }}</small>{% endif %}</div>{% endfor %}</div>
+                <span class="ec-et ms-auto" style="--c:{{ e.color }};--f:{{ e.fondo }};--b:{{ e.borde }};"><i class="bi {{ 'bi-check2-all' if o.terminada else e.icono }}"></i> {{ 'Terminada · sumada al inventario' if o.terminada else e.txt }}</span></div>
+            <div class="prov">{{ o.proveedor }} · <b>{{ o.monto }}</b> · aprobada {{ o.aprobada }}</div>
+            <div class="ec-meta"><i class="bi bi-person-fill"></i> Creó <b>{{ o.creo or '-' }}</b>{% if o.creo_fecha %} el {{ o.creo_fecha }}{% endif %}{% if o.solicito %} · pidió {{ o.solicito }}{% endif %}</div>
+            <div class="ec-frase" style="--c:{{ '#b91c1c' if o.atrasada and o.etapa == 'EN_CAMINO' else e.color }};--f:{{ '#fef2f2' if o.atrasada and o.etapa == 'EN_CAMINO' else e.fondo }};--b:{{ '#fecaca' if o.atrasada and o.etapa == 'EN_CAMINO' else e.borde }};">
+                <i class="bi {{ 'bi-check-circle-fill' if o.terminada else ('bi-alarm' if o.atrasada and o.etapa == 'EN_CAMINO' else e.icono) }}"></i> {{ o.frase }}</div>
+            <div class="ec-tl">{% for p in o.pasos %}<div class="p {{ p.estado }}"><span class="b"></span><br>{{ p.txt }}{% if p.fecha %}<small>{{ p.fecha }}</small>{% endif %}{% if p.quien %}<span class="q" title="Encargado">{{ p.quien }}</span>{% endif %}</div>{% endfor %}</div>
             <div class="ec-lin">{% for ln in o.lineas[:6] %}
-                <div><span class="ds" title="{{ ln.descripcion }}">{% if ln.codigo %}<b>{{ ln.codigo }}</b> {% endif %}{{ ln.descripcion }}</span>
-                    <span class="text-nowrap">{% for pt in ln.partes %}{% set ee = E[pt.etapa] %}<span style="color:{{ ee.color }}; font-weight:700;">{{ '+' if pt.etapa == 'EN_CAMINO' }}{{ pt.cant|cant }} {{ ln.um }} {{ ee.corto }}</span>{% if not loop.last %} · {% endif %}{% endfor %}</span></div>
-                {% endfor %}{% if o.lineas|length > 6 %}<div class="text-muted">y {{ o.lineas|length - 6 }} producto(s) más…</div>{% endif %}</div>
+                <div><span class="ds">{% if ln.codigo %}<b>{{ ln.codigo }}</b> {% endif %}{{ ln.descripcion }}</span>
+                    <span class="cn">{% for pt in ln.partes %}{% set ee = E[pt.etapa] %}<span style="color:{{ ee.color }}; font-weight:700;">{{ '+' if pt.etapa in ('EN_CAMINO', 'INGRESADO') }}{{ pt.cant|cant }} {{ ln.um }} {{ ee.corto }}</span>{% endfor %}</span></div>
+                {% endfor %}</div>
+            <div class="ec-acc">
+                <button type="button" onclick="ecVerOrden('{{ k_ec }}', {{ o.id }})"><i class="bi bi-arrows-fullscreen"></i> {{ ('Ver los ' ~ o.todos|length ~ ' ítems') if o.lineas|length > 6 else 'Ver completa' }}</button>
+                <a href="{{ o.pdf_ver }}" target="_blank" rel="noopener" title="Ver el PDF de la orden"><i class="bi bi-file-earmark-pdf text-danger"></i> PDF</a>
+                <a href="{{ o.pdf }}" title="Descargar el PDF de la orden"><i class="bi bi-download"></i></a>
+                {% if o.docs %}<button type="button" onclick="ecVerOrden('{{ k_ec }}', {{ o.id }}, null, true)" title="Guía, factura, certificado..."><i class="bi bi-paperclip"></i> {{ o.docs|length }} documento(s)</button>{% endif %}
+                {% if o.lineas|length > 6 %}<span class="ec-meta align-self-center">y {{ o.lineas|length - 6 }} producto(s) más</span>{% endif %}
+            </div>
         </div>
         {% endfor %}
     </div>
-    <div class="px-3 pb-2" style="font-size:.7rem; color:#64748b;"><i class="bi bi-info-circle"></i> Solo órdenes <b>aprobadas</b> por Gerencia. Lo ya sumado al inventario se muestra {{ r.dias_reciente }} días y luego desaparece. Solo lo ve Gerencia.</div>
+    <div class="px-3 pb-2" style="font-size:.7rem; color:#64748b;"><i class="bi bi-info-circle"></i> Solo órdenes <b>aprobadas</b> por Gerencia. Lo ya sumado al inventario se muestra {{ r.dias_reciente }} días (en verde, "Terminada") y luego desaparece. Solo lo ve Gerencia.</div>
     {% endif %}
 </details>
 {% endif %}{% endmacro %}
 
-{% macro badge(ec, clave) %}{% if ec %}{% set ls = ec['items'].get(clave) %}{% if ls %}
+{% macro badge(ec, clave, titulo='') %}{% if ec %}{% set ls = ec['items'].get(clave) %}{% if ls %}
 <div class="ec-chips">{% for k, t in en_camino_totales(ls) %}{% set e = ec.etapas[k] %}
-    <button type="button" class="ec-chip" data-ec="{{ clave }}" style="--c:{{ e.color }};--f:{{ e.fondo }};--b:{{ e.borde }};" title="{{ e.txt }} · clic para ver la orden">
+    <button type="button" class="ec-chip" data-ec="{{ clave }}" data-ece="{{ ec.destino }}|{{ ec.empresa }}"{% if titulo %} data-ect="{{ titulo }}"{% endif %} style="--c:{{ e.color }};--f:{{ e.fondo }};--b:{{ e.borde }};" title="{{ e.txt }} · clic para ver la orden completa">
         <i class="bi {{ e.icono }}"></i> {{ '+' if k in ('EN_CAMINO', 'INGRESADO') }}{{ t.cant|cant }} {{ e.corto }}{% if k == 'INGRESADO' and t.hace %} {{ t.hace }}{% endif %}</button>
 {% endfor %}</div>
 {% endif %}{% endif %}{% endmacro %}
 
-{% macro script(ec) %}{% if ec and ec['items'] %}
+{% macro script(ec) %}{{ script_varios([ec]) }}{% endmacro %}
+
+{% macro script_varios(ecs) %}{% set con = ecs|select|list %}{% if con %}
+{{ estilos() }}
 <div class="ec-fondo" id="ecModal"><div class="ec-caja"><div class="cab-m"><i class="bi bi-truck"></i><h6 id="ecTitulo">Compras de este producto</h6>
     <button type="button" onclick="document.getElementById('ecModal').classList.remove('abierto')" aria-label="Cerrar"><i class="bi bi-x-lg"></i></button></div>
     <div class="cue" id="ecCuerpo"></div>
-    <div class="nota">Solo órdenes <b>aprobadas</b> por Gerencia. Lo sumado al inventario se muestra {{ ec.resumen.dias_reciente }} días.</div></div></div>
+    <div class="nota">Solo órdenes <b>aprobadas</b> por Gerencia. Lo sumado al inventario se muestra {{ con[0].resumen.dias_reciente }} días y luego desaparece.</div></div></div>
 <script>
 (function () {
-    const EC = {{ ec['items']|tojson }}, ET = {{ ec.etapas|tojson }};
+    const DATA = window.EC_DATA = window.EC_DATA || {};
+    {% for ec in con %}DATA[{{ (ec.destino ~ '|' ~ ec.empresa)|tojson }}] = { items: {{ ec['items']|tojson }}, ord: {{ ec.ord_map|tojson }}, et: {{ ec.etapas|tojson }} };
+    {% endfor %}
     const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const num = n => Number(n || 0).toLocaleString('es-PE', { maximumFractionDigits: 3 });
     const modal = document.getElementById('ecModal');
     modal.addEventListener('click', e => { if (e.target === modal) modal.classList.remove('abierto'); });
     document.addEventListener('keydown', e => { if (e.key === 'Escape') modal.classList.remove('abierto'); });
-    function ver(clave, titulo) {
-        const ls = EC[clave] || [];
-        document.getElementById('ecTitulo').textContent = titulo || 'Compras de este producto';
-        document.getElementById('ecCuerpo').innerHTML = ls.map(l => {
-            const e = ET[l.etapa];
-            const partes = Object.entries(l.partes).map(([k, v]) => `<span style="color:${ET[k].color}; font-weight:800;">${k === 'EN_CAMINO' || k === 'INGRESADO' ? '+' : ''}${num(v)} ${esc(l.um)} ${esc(ET[k].corto)}${k === 'INGRESADO' && l.ingreso_hace ? ' ' + esc(l.ingreso_hace) + ' (' + esc(l.ingreso) + ')' : ''}</span>`).join(' · ');
-            return `<div class="ec-ord" style="--c:${l.atrasada && l.etapa === 'EN_CAMINO' ? '#dc2626' : e.color};">
-                <div class="cab"><a class="cod" href="${esc(l.url)}">${esc(l.codigo)}</a>${l.importacion ? '<span class="ec-imp">IMPORTACIÓN</span>' : ''}
-                    <span class="ec-et ms-auto" style="--c:${e.color};--f:${e.fondo};--b:${e.borde};"><i class="bi ${e.icono}"></i> ${esc(e.txt)}</span></div>
-                <div class="prov">${esc(l.proveedor)} · aprobada ${esc(l.aprobada)}${l.etapa !== 'EN_CAMINO' ? '' : ' · ' + (l.esperada ? (l.atrasada ? '<b class="text-danger">debía llegar el ' + esc(l.esperada) + '</b>' : 'llega el <b>' + esc(l.esperada) + '</b>') : '<b>sin fecha de llegada confirmada</b>')}</div>
-                <div class="ec-lin"><div><span>Pedido <b>${num(l.pedido)} ${esc(l.um)}</b>${l.llego ? ' · llegó ' + num(l.llego) : ''}</span><span>${partes}</span></div></div>
-                <div class="ec-tl">${l.pasos.map(p => `<div class="p ${p.estado}"><span class="b"></span><br>${esc(p.txt)}${p.fecha ? '<small>' + esc(p.fecha) + '</small>' : ''}</div>`).join('')}</div></div>`;
-        }).join('') || '<div class="text-muted small">Nada en camino.</div>';
-        modal.classList.add('abierto');
+    const partesTxt = (ET, partes, um, l) => partes.map(p => `<span style="color:${ET[p.etapa].color}; font-weight:800; white-space:nowrap;">${p.etapa === 'EN_CAMINO' || p.etapa === 'INGRESADO' ? '+' : ''}${num(p.cant)} ${esc(um)} ${esc(ET[p.etapa].corto)}${p.etapa === 'INGRESADO' && l && l.ingreso_hace ? ' ' + esc(l.ingreso_hace) : ''}</span>`).join('<br>');
+    // tarjeta completa de una orden: estado claro, encargados, documentos y la lista completa (con el producto marcado en verde)
+    function tarjeta(D, o, clave, l) {
+        const ET = D.et, e = ET[o.etapa], atr = o.atrasada && o.etapa === 'EN_CAMINO';
+        const col = o.terminada ? '#16a34a' : (atr ? '#dc2626' : e.color);
+        const docs = [`<div class="d"><i class="bi bi-file-earmark-pdf-fill text-danger"></i><span class="n"><b>${o.codigo.startsWith('OS') ? 'Orden de servicio' : 'Orden de compra'}</b><small>PDF del sistema</small></span>
+                <a href="${esc(o.pdf_ver)}" target="_blank" rel="noopener" title="Ver"><i class="bi bi-eye"></i></a><a href="${esc(o.pdf)}" title="Descargar"><i class="bi bi-download"></i></a></div>`]
+            .concat((o.docs || []).map(d => `<div class="d"><i class="bi ${d.pdf ? 'bi-file-earmark-pdf-fill text-danger' : 'bi-file-earmark-image-fill text-primary'}"></i>
+                <span class="n"><b>${esc(d.tipo)}${d.num ? ' ' + esc(d.num) : ''}</b><small>${esc(d.nombre)}</small></span>
+                <a href="${esc(d.ver)}" target="_blank" rel="noopener" title="Ver"><i class="bi bi-eye"></i></a><a href="${esc(d.bajar)}" title="Descargar"><i class="bi bi-download"></i></a></div>`)).join('');
+        const filas = (o.todos || []).map(t => {
+            const marca = clave != null && String(t.clave) === String(clave);
+            return `<tr class="${marca ? 'marca' : ''}"><td class="text-muted">${t.item}</td><td>${t.codigo ? '<b>' + esc(t.codigo) + '</b> ' : ''}${esc(t.descripcion)}${marca ? ' <span class="badge text-bg-success" style="font-size:.58rem;">ESTE PRODUCTO</span>' : ''}</td>
+                <td class="text-end" style="white-space:nowrap;">${num(t.cant)} ${esc(t.um)}</td><td style="text-align:right;">${t.partes.length ? partesTxt(ET, t.partes, t.um) : '<span class="text-muted" style="font-size:.68rem;">' + esc(t.nota) + '</span>'}</td></tr>`;
+        }).join('');
+        return `<div class="ec-ord ${o.terminada ? 'terminada' : ''}" style="--c:${col};">
+            <div class="cab"><a class="cod" href="${esc(o.url)}">${esc(o.codigo)}</a>${o.importacion ? '<span class="ec-imp">IMPORTACIÓN</span>' : ''}
+                <span class="ec-et ms-auto" style="--c:${e.color};--f:${e.fondo};--b:${e.borde};"><i class="bi ${o.terminada ? 'bi-check2-all' : e.icono}"></i> ${o.terminada ? 'Terminada · sumada al inventario' : esc(e.txt)}</span></div>
+            <div class="prov">${esc(o.proveedor)} · <b>${esc(o.monto)}</b> · aprobada ${esc(o.aprobada)}</div>
+            <div class="ec-meta"><i class="bi bi-person-fill"></i> Creó <b>${esc(o.creo || '-')}</b>${o.creo_fecha ? ' el ' + esc(o.creo_fecha) : ''}${o.solicito ? ' · pidió ' + esc(o.solicito) : ''}</div>
+            <div class="ec-frase" style="--c:${atr ? '#b91c1c' : e.color};--f:${atr ? '#fef2f2' : e.fondo};--b:${atr ? '#fecaca' : e.borde};"><i class="bi ${o.terminada ? 'bi-check-circle-fill' : (atr ? 'bi-alarm' : e.icono)}"></i> ${esc(o.frase)}</div>
+            ${l ? `<div class="ec-lin"><div><span class="ds">De este producto: pedido <b>${num(l.pedido)} ${esc(l.um)}</b>${l.llego ? ' · llegó ' + num(l.llego) : ''}</span><span class="cn">${partesTxt(ET, Object.entries(l.partes).map(([k, v]) => ({ etapa: k, cant: v })), l.um, l)}</span></div></div>` : ''}
+            <div class="ec-tl">${o.pasos.map(p => `<div class="p ${p.estado}"><span class="b"></span><br>${esc(p.txt)}${p.fecha ? '<small>' + esc(p.fecha) + '</small>' : ''}${p.quien ? '<span class="q">' + esc(p.quien) + '</span>' : ''}</div>`).join('')}</div>
+            <div class="ec-sec">Lista completa de la orden (${(o.todos || []).length} ítem(s))${clave != null ? ' · en verde, este producto' : ''}</div>
+            <div class="ec-lista"><table class="ec-tabla"><thead><tr><th>#</th><th>Producto</th><th class="text-end">Pedido</th><th style="text-align:right;">Estado</th></tr></thead><tbody>${filas}</tbody></table></div>
+            <details class="mt-2" open><summary class="ec-sec" style="cursor:pointer;"><i class="bi bi-paperclip"></i> PDF de la orden y documentos (${1 + (o.docs || []).length})</summary><div class="ec-docs">${docs}</div></details>
+            <div class="ec-acc"><a href="${esc(o.url)}"><i class="bi bi-box-arrow-up-right"></i> Abrir la orden</a></div></div>`;
     }
+    function abrir(titulo, html) {
+        document.getElementById('ecTitulo').textContent = titulo;
+        document.getElementById('ecCuerpo').innerHTML = html;
+        modal.classList.add('abierto');
+        const m = modal.querySelector('tr.marca');
+        if (m) m.scrollIntoView({ block: 'nearest' });
+    }
+    function ver(clave, titulo, k) {
+        const D = DATA[k] || DATA[Object.keys(DATA)[0]];
+        const ls = (D.items || {})[clave] || [];
+        abrir(titulo || 'Compras de este producto', ls.map(l => { const o = D.ord[l.orden_id]; return o ? tarjeta(D, o, clave, l) : ''; }).join('') || '<div class="text-muted small">Nada en camino.</div>');
+    }
+    window.ecVerOrden = function (k, id, clave, docs) {
+        const D = DATA[k]; const o = D && D.ord[id];
+        if (o) abrir(o.codigo + ' · ' + o.proveedor, tarjeta(D, o, clave == null ? null : clave, null));
+        if (docs) { const d = modal.querySelector('.ec-docs'); if (d) d.scrollIntoView({ block: 'center' }); }
+    };
     document.addEventListener('click', e => {
         const b = e.target.closest('[data-ec]'); if (!b) return;
-        const fila = b.closest('tr');
-        const t = fila ? [...fila.querySelectorAll('td')].slice(0, 2).map(td => td.innerText.split('\n')[0].trim()).filter(Boolean).join(' · ') : '';
-        ver(b.dataset.ec, t);
+        let t = b.dataset.ect || '';
+        if (!t) { const fila = b.closest('tr'); t = fila ? [...fila.querySelectorAll('td')].slice(0, 2).map(td => td.innerText.split('\n')[0].trim()).filter(Boolean).join(' · ') : ''; }
+        ver(b.dataset.ec, t, b.dataset.ece);
     });
     window.ecVer = ver;
 })();

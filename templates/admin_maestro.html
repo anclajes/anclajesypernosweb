@@ -165,8 +165,8 @@
                                     onclick="abrirEditarMaestro({{ m.sku|tojson|forceescape }}, {{ m.nombre|tojson|forceescape }}, {{ m.familia|tojson|forceescape }}, {{ (m.calidad or '')|tojson|forceescape }}, {{ m.peso_nominal_kg|default(0, true)|tojson|forceescape }})">
                                 <i class="bi bi-pencil"></i>
                             </button>
-                            {% if session.get('role') in ['admin', 'almacen'] %}
-                            <button class="btn btn-sm btn-outline-danger" title="Eliminar (solo si no tiene movimientos —aparte del Saldo Inicial— ni ventas en ningún inventario)"
+                            {% if session.get('role') in ['admin', 'almacen', 'logistica'] %}
+                            <button class="btn btn-sm btn-outline-danger" title="{{ 'Eliminar (Logística: solo con stock 0, sin ingresos ni salidas y sin estar en una OC activa)' if session.get('role') == 'logistica' else 'Eliminar (solo si no tiene movimientos —aparte del Saldo Inicial— ni ventas en ningún inventario)' }}"
                                     onclick="eliminarProductoMaestro('{{ m.sku }}')">
                                 <i class="bi bi-trash"></i>
                             </button>
@@ -328,7 +328,7 @@
                     <li>Si el código ya existe, actualiza el <strong>Peso Nominal (Kg)</strong> donde sea distinto (Maestro y cada inventario que lo tenga). Si no existe en ningún lado, lo <strong>crea</strong> — igual que el botón manual.</li>
                     <li>Si un código existe en el Maestro (o en un inventario) pero <strong>no en el otro</strong>, solo se avisa en "Diferencias informativas" — no se crea automáticamente ahí, para no repartir por accidente algo que quizás esté descontinuado a propósito. Si de verdad ya no se usa, lo más simple es sacarlo del Excel Maestro; si sí debería existir en el inventario que le falta, avísale al administrador para completarlo ahí.</li>
                     <li>Cada cambio y cada creación queda en el historial (código, familia/calidad, inventario, antes/después, fecha, usuario) para auditar qué se tocó — incluye tanto las creaciones manuales ("Nuevo Producto") como las creadas al confirmar un Excel Maestro.</li>
-                    <li>Si te equivocaste al tipear un código nuevo (no se parece a nada de su familia, por ejemplo), el <strong>admin</strong> puede eliminarlo desde la tabla (ícono <i class="bi bi-trash text-danger"></i>) — pero solo mientras ese código no tenga <strong>ningún</strong> movimiento de Kardex, venta, kit, traslado ni conteo de auditoría en Anclajes o ImportBolts. Si ya tiene algo de eso, usa "Desactivar" en el inventario en vez de borrarlo, para no perder ese historial.</li>
+                    <li>Si te equivocaste al tipear un código nuevo (no se parece a nada de su familia, por ejemplo), Gerencia o el Jefe de Almacén pueden eliminarlo desde la tabla (ícono <i class="bi bi-trash text-danger"></i>) — pero solo mientras ese código no tenga <strong>ningún</strong> movimiento de Kardex, venta, kit, traslado ni conteo de auditoría en Anclajes o ImportBolts, y no esté en una orden de compra activa. <strong>Logística</strong> también puede, solo si el código tiene stock 0 y ningún ingreso ni salida (por ejemplo, útiles de oficina que se crearon como producto y deben pedirse como <strong>Uso directo</strong>); si está en un requerimiento, se borra igual y el requerimiento queda escrito para pasarlo a Uso directo. Si ya tiene algo de eso, usa "Desactivar" en el inventario en vez de borrarlo, para no perder ese historial.</li>
                     <li>Para corregir Descripción, Familia, Calidad o Peso de un producto ya existente, usa el ícono <i class="bi bi-pencil text-warning"></i> "Editar" de la tabla (admin y jefe de almacén) — el cambio se guarda en el Maestro y se refleja al instante en Anclajes e ImportBolts, y queda auditado abajo.</li>
                     <li>Un peso vacío o en 0 en el Maestro <strong>no borra</strong> el peso que ya tenías guardado.</li>
                     <li>Descripción, calidad y familia de un código YA existente solo se avisan si difieren del Excel — no se sobreescriben solas, para no pisar una corrección manual que ya hiciste.</li>
@@ -588,7 +588,7 @@ function guardarEdicionMaestro(event) {
 </script>
 {% endif %}
 
-{% if session.get('role') in ['admin', 'almacen'] %}
+{% if session.get('role') in ['admin', 'almacen', 'logistica'] %}
 <script>
 function eliminarProductoMaestro(sku) {
     Swal.fire({
@@ -599,6 +599,9 @@ function eliminarProductoMaestro(sku) {
               'corregir un error de digitación o un código repetido.<br>' +
               '<span class="text-muted small">El <b>Saldo Inicial</b> (carga del Excel) no cuenta: si es su único movimiento, se borra junto con el código. ' +
               'Si solo tiene un <b>conteo de auditoría</b>, Gerencia puede borrarlo junto con su auditoría.</span>' +
+              {% if session.get('role') == 'logistica' %}'<div class="alert alert-warning small text-start mt-2 mb-0 py-2"><b>Logística</b> solo puede borrar códigos con <b>stock 0</b> en los dos inventarios, ' +
+              '<b>sin ingresos ni salidas</b>, sin conteos y sin estar en una orden de compra activa. Si está en un <b>requerimiento</b>, sí se borra: ' +
+              'queda escrito ahí y conviene pasarlo a <b>"Uso directo"</b> (útiles, equipos... que no van al inventario).</div>' +{% endif %}
               '<br><br><strong>Esta acción no se puede deshacer.</strong>',
         icon: 'warning', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Sí, eliminar'
     }).then(result => {

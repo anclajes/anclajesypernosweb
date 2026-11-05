@@ -6838,7 +6838,10 @@ def admin_maestro_nuevo():
         return redirect(url_for('admin_maestro_nuevo'))
 
 
-ROLES_ELIMINAN_MAESTRO = ['admin', 'almacen']   # Gerencia y Jefe de Almacén
+ROLES_ELIMINAN_MAESTRO = ['admin', 'almacen', 'logistica']   # Gerencia, Jefe de Almacén y Logística (esta con reglas más estrictas)
+# Logística solo borra un código "limpio": stock 0 en los dos inventarios, sin ingresos ni salidas (solo el Saldo Inicial en 0) y sin
+# conteos de auditoría. Pensado para códigos creados por error, p. ej. útiles de oficina que deben pedirse como USO DIRECTO.
+ROLES_ELIMINAN_MAESTRO_ESTRICTO = ['logistica']
 ROLES_FUERZAN_BORRADO_AUDITORIA = ['admin']     # borrar también los conteos de auditoría: solo Gerencia
 
 
@@ -6890,6 +6893,25 @@ def admin_maestro_eliminar(sku):
         if n: bloqueos.append(f'{n} línea(s) de cotización/pedido en ImportBolts')
         n = IntercompanyTransfer.query.filter_by(product_importbolts_id=prod_importbolts.id).count()
         if n: bloqueos.append(f'{n} traslado(s) inter-empresa')
+
+    # En ninguna orden de compra activa (si no, su ingreso al inventario fallaría): primero se quita de esa orden
+    try:
+        ocs_activas = [oi.orden for oi in OrdenCompraItem.query.filter(func.upper(OrdenCompraItem.codigo) == sku).all()
+                       if oi.orden and oi.orden.estado not in ('ANULADA', 'RECHAZADA') and not (oi.orden.estado == 'CONFORME' and oi.fecha_ingreso)]
+    except Exception:
+        ocs_activas = []
+    if ocs_activas:
+        bloqueos.append('orden(es) de compra activa(s) con ese código: ' + ', '.join(sorted({_oc_codigo(o) for o in ocs_activas}))
+                        + ' (quítalo de la orden o anúlala primero)')
+    estricto = session.get('role') in ROLES_ELIMINAN_MAESTRO_ESTRICTO
+    stock_total = sum(int(p.stock_actual or 0) for p in (prod_anclajes, prod_importbolts) if p)
+    if estricto:
+        if stock_total:
+            bloqueos.append(f'stock {stock_total} (Logística solo borra códigos con stock 0 en los dos inventarios)')
+        if any((m.cantidad or 0) for m in iniciales):
+            bloqueos.append('Saldo Inicial con cantidad')
+        if registros_aud:
+            bloqueos.append(f'{len(registros_aud)} conteo(s) de auditoría (solo Gerencia puede borrarlo junto con su auditoría)')
 
     if bloqueos:
         return {'status': 'error', 'msg': f'No se puede eliminar "{sku}": tiene ' + '; '.join(bloqueos)
@@ -6973,6 +6995,15 @@ def admin_maestro_eliminar(sku):
             familia=familia_log, calidad=calidad_log,
         ))
 
+        # Requerimientos pendientes que lo pedían: quedan escritos (descripción y cantidad) y se avisa que pasen a "Uso directo"
+        reqs_avisados = []
+        for ri in RequerimientoItem.query.filter(func.upper(RequerimientoItem.codigo) == sku).all():
+            rq_ = ri.requerimiento
+            if rq_ and rq_.estado == 'PENDIENTE' and not ri.descartado and rq_.id not in reqs_avisados:
+                reqs_avisados.append(rq_.id)
+                db.session.add(RequerimientoEvento(req_id=rq_.id, user_id=session.get('user_id'), fecha=hora_peru(), accion='EDITADO',
+                                                   detalle=f'El código {sku} se ELIMINÓ del sistema: queda escrito ({(ri.descripcion or "")[:80]}). '
+                                                           'Edita el requerimiento y cámbialo a "Uso directo" para armar la OC sin código.'))
         registrar_log(f"Eliminó el producto {sku} del Maestro (sin movimientos reales ni ventas) y de ambos inventarios"
                       + (f" · se borró su Saldo Inicial (stock {stock_borrado})" if iniciales else '')
                       + (f" · también {len(registros_aud)} conteo(s) de auditoría (#{', #'.join(str(r.id) for _, r in registros_aud)})"
@@ -6986,6 +7017,8 @@ def admin_maestro_eliminar(sku):
                 print(f"Aviso: no se pudo borrar foto de auditoría de S3 ({k}): {e}")
         return {'status': 'success', 'msg': f'Producto "{sku}" eliminado del Maestro y de ambos inventarios'
                                            + (f' (junto con su Saldo Inicial: stock {stock_borrado})' if iniciales else '')
+                                           + (f'. Estaba en {len(reqs_avisados)} requerimiento(s) pendiente(s): quedó escrito ahí; '
+                                              'cámbialos a "Uso directo" para armar la OC sin código' if reqs_avisados else '')
                                            + (f', con {len(registros_aud)} conteo(s) de auditoría' if forzar_aud and registros_aud else '') + '.'}
     except Exception as e:
         db.session.rollback()

@@ -15,10 +15,10 @@
 DIAS_INGRESO_RECIENTE = 7
 ROLES_EN_CAMINO = ['admin']
 ETAPAS_CAMINO = {
-    'EN_CAMINO': {'txt': 'En camino', 'corto': 'en camino', 'color': '#b45309', 'fondo': '#fffbeb', 'borde': '#fcd34d', 'icono': 'bi-truck'},
-    'POR_CONFORMIDAD': {'txt': 'Llegó · falta la conformidad', 'corto': 'llegó (por revisar)', 'color': '#0e7490', 'fondo': '#ecfeff', 'borde': '#a5f3fc', 'icono': 'bi-clipboard-check'},
-    'POR_INGRESAR': {'txt': 'Conforme · falta sumar al inventario', 'corto': 'por sumar al stock', 'color': '#6d28d9', 'fondo': '#f5f3ff', 'borde': '#ddd6fe', 'icono': 'bi-box-arrow-in-down'},
-    'INGRESADO': {'txt': 'Sumado al inventario', 'corto': 'sumados', 'color': '#15803d', 'fondo': '#f0fdf4', 'borde': '#bbf7d0', 'icono': 'bi-check2-circle'},
+    'EN_CAMINO': {'txt': 'En camino · todavía no llega a planta', 'corto': 'en camino', 'color': '#b45309', 'fondo': '#fffbeb', 'borde': '#fcd34d', 'icono': 'bi-truck'},
+    'POR_CONFORMIDAD': {'txt': 'Llegó a planta · falta revisar la mercadería (conformidad)', 'corto': 'llegó · por revisar', 'color': '#0e7490', 'fondo': '#ecfeff', 'borde': '#a5f3fc', 'icono': 'bi-clipboard-check'},
+    'POR_INGRESAR': {'txt': 'Mercadería revisada y conforme en planta · falta sumarla al inventario', 'corto': 'revisado · falta sumar', 'color': '#6d28d9', 'fondo': '#f5f3ff', 'borde': '#ddd6fe', 'icono': 'bi-box-arrow-in-down'},
+    'INGRESADO': {'txt': 'Ya sumado al inventario', 'corto': 'sumados', 'color': '#15803d', 'fondo': '#f0fdf4', 'borde': '#bbf7d0', 'icono': 'bi-check2-circle'},
 }
 ORDEN_ETAPAS = ['EN_CAMINO', 'POR_CONFORMIDAD', 'POR_INGRESAR', 'INGRESADO']
 
@@ -48,14 +48,29 @@ def _solo_fecha(v):
     return v.date() if isinstance(v, datetime) else v
 
 
-def _camino_linea_tiempo(o, rec, hoy, ingreso_fecha, ingreso_completo):
-    """Pasos de la orden para la mini línea de tiempo: aprobada -> llegada -> conformidad -> en inventario."""
+def _nom_usuario(u):
+    return (u.nombre_completo or u.username) if u else ''
+
+
+def _nombres(lista):
+    """Nombres sin repetir, en orden: 'Ana Pérez, Luis Rojas'."""
+    vistos = []
+    for n in lista:
+        if n and n not in vistos:
+            vistos.append(n)
+    return ', '.join(vistos)
+
+
+def _camino_linea_tiempo(o, rec, hoy, ingreso_fecha, ingreso_completo, quien_ingreso=''):
+    """Pasos de la orden para la mini línea de tiempo: aprobada -> llegada -> conformidad -> en inventario.
+    Cada paso hecho lleva QUIÉN lo hizo ('quien')."""
     esperada = _oc_fecha_esperada(o)
     atrasada = bool(esperada and esperada < hoy and rec['pendiente'] > 0)
     llego = bool(rec['entregas']) or bool(o.fecha_llegada)
-    pasos = [{'txt': 'Aprobada', 'fecha': _fecha_txt(o.fecha_aprobacion), 'estado': 'hecho'}]
+    pasos = [{'txt': 'Aprobada', 'fecha': _fecha_txt(o.fecha_aprobacion), 'estado': 'hecho', 'quien': _nom_usuario(o.aprobado_por)}]
     if llego:
-        pasos.append({'txt': 'Llegó' + (' (parcial)' if rec['pendiente'] > 0 else ''), 'fecha': _fecha_txt(o.fecha_llegada), 'estado': 'hecho'})
+        pasos.append({'txt': 'Llegó' + (' (parcial)' if rec['pendiente'] > 0 else ''), 'fecha': _fecha_txt(o.fecha_llegada), 'estado': 'hecho',
+                      'quien': _nombres([_nom_usuario(e.recibido_por) for e in rec['entregas']]) or _nom_usuario(o.recibido_por)})
     else:
         pasos.append({'txt': ('Llega ' + _fecha_txt(esperada)) if esperada else 'Sin fecha confirmada', 'fecha': ('atrasada' if atrasada else _dias_txt(esperada, hoy)) if esperada else '',
                       'estado': 'atrasado' if atrasada else 'actual'})
@@ -63,10 +78,13 @@ def _camino_linea_tiempo(o, rec, hoy, ingreso_fecha, ingreso_completo):
     conf_parcial = not conforme and bool(rec['entregas']) and not rec['sin_conformar']     # lo que llegó ya tiene conformidad; falta el resto
     f_conf = o.fecha_conforme or max([e.fecha_conforme for e in rec['entregas'] if e.fecha_conforme] or [None])
     pasos.append({'txt': 'Conforme (parcial)' if conf_parcial else 'Conformidad', 'fecha': _fecha_txt(f_conf) if (conforme or conf_parcial) else '',
-                  'estado': 'hecho' if (conforme or conf_parcial) else ('actual' if llego else 'pendiente')})
+                  'estado': 'hecho' if (conforme or conf_parcial) else ('actual' if llego else 'pendiente'),
+                  'quien': (_nombres([_nom_usuario(e.conforme_por) for e in rec['entregas'] if e.fecha_conforme]) or _nom_usuario(o.conforme_por))
+                  if (conforme or conf_parcial) else ''})
     ing_parcial = not ingreso_completo and bool(ingreso_fecha)
     pasos.append({'txt': 'En inventario (parcial)' if ing_parcial else 'En inventario', 'fecha': _fecha_txt(ingreso_fecha) if (ingreso_completo or ing_parcial) else '',
-                  'estado': 'hecho' if (ingreso_completo or ing_parcial) else ('actual' if (conforme or conf_parcial) else 'pendiente')})
+                  'estado': 'hecho' if (ingreso_completo or ing_parcial) else ('actual' if (conforme or conf_parcial) else 'pendiente'),
+                  'quien': quien_ingreso if (ingreso_completo or ing_parcial) else ''})
     return pasos, esperada, atrasada
 
 
@@ -103,6 +121,9 @@ def _en_camino_calcular(destino, empresa):
     if destino == 'INSUMOS':
         ids = [o.insumo_ingreso_id for o in ordenes if o.insumo_ingreso_id]
         ingresos_ins = {i.id: i for i in InsumoIngreso.query.filter(InsumoIngreso.id.in_(ids or [0])).all()}
+    docs_por_orden = {}
+    for d in OrdenCompraDocumento.query.filter(OrdenCompraDocumento.orden_id.in_([o.id for o in ordenes] or [0])).order_by(OrdenCompraDocumento.id).all():
+        docs_por_orden.setdefault(d.orden_id, []).append(d)
     for o in ordenes:
         # una orden ya sumada al inventario hace más de N días no se mira
         if destino == 'GENERAL' and o.estado == 'CONFORME' and o.fecha_kardex and o.fecha_kardex < limite:
@@ -118,21 +139,29 @@ def _en_camino_calcular(destino, empresa):
         for e in rec['entregas']:
             for ei in e.items:
                 if ei.fecha_ingreso:
-                    x = ingreso_por_item.setdefault(ei.item_id, {'fecha': None, 'kardex': 0.0})
+                    x = ingreso_por_item.setdefault(ei.item_id, {'fecha': None, 'kardex': 0.0, 'quien': []})
                     x['fecha'] = max(filter(None, [x['fecha'], ei.fecha_ingreso]))
                     x['kardex'] += ei.cantidad_kardex if ei.cantidad_kardex is not None else (ei.cantidad or 0)
+                    x['quien'].append(_nom_usuario(ei.ingresado_por))
+        quien_ing = []
         for it in o.items:
             d = rec['items'].get(it.id, {})
             pedido = round((it.cantidad or 0) - (it.cantidad_cancelada or 0), 4)
             llego, conf, ing = d.get('llego', 0), d.get('conforme', 0), d.get('ingresado', 0)
             info_ing = ingreso_por_item.get(it.id)
             f_ing, cant_kardex = (info_ing['fecha'], info_ing['kardex']) if info_ing else (it.fecha_ingreso, it.cantidad_kardex)
+            if info_ing:
+                quien_ing += info_ing['quien']
+            elif it.fecha_ingreso:
+                quien_ing.append(_nom_usuario(it.ingresado_por))
             if destino == 'INSUMOS':
                 clave = it.insumo_id
                 if not clave:
                     continue
                 if o.insumo_ingreso_id:
                     ing_obj = ingresos_ins.get(o.insumo_ingreso_id)
+                    if ing_obj and ing_obj.user_id:
+                        quien_ing.append(_nom_usuario(User.query.get(ing_obj.user_id)))
                     partes = {'INGRESADO': pedido}
                     f_ing, cant_kardex = ((ing_obj.fecha_registro or ing_obj.fecha) if ing_obj else None), pedido
                 else:
@@ -159,20 +188,43 @@ def _en_camino_calcular(destino, empresa):
         if not lineas:
             continue
         completo = (bool(o.insumo_ingreso_id) if destino == 'INSUMOS' else _oc_ingreso_estado(o)['completo'])
-        pasos, esperada, atrasada = _camino_linea_tiempo(o, rec, hoy, ultimo_ingreso, completo)
+        quien_txt = _nombres(quien_ing) or (_nom_usuario(o.kardex_registrado_por) if completo else '')
+        pasos, esperada, atrasada = _camino_linea_tiempo(o, rec, hoy, ultimo_ingreso, completo, quien_txt)
         etapa_orden = min((ln['etapa'] for ln in lineas), key=ORDEN_ETAPAS.index)
+        terminada = etapa_orden == 'INGRESADO' and completo
+        se_oculta = (ultimo_ingreso + timedelta(days=DIAS_INGRESO_RECIENTE)) if terminada and ultimo_ingreso else None   # desde ahí ya no se muestra
+        dias_quedan = _solo_fecha(se_oculta) if se_oculta else None
+        # la LISTA COMPLETA de la orden (también lo que no se muestra arriba), con el estado de cada ítem
+        por_item_linea = {ln['item'].id: ln for ln in lineas}
+        todos = []
+        for it in o.items:
+            ln = por_item_linea.get(it.id)
+            clave_it = (it.insumo_id if destino == 'INSUMOS' else (it.codigo or '').upper().strip()) or ''
+            todos.append({'item': it.item, 'clave': clave_it, 'codigo': (it.codigo or '') if destino == 'GENERAL' else '', 'descripcion': it.descripcion,
+                          'cant': round((it.cantidad or 0) - (it.cantidad_cancelada or 0), 4), 'um': it.um or '',
+                          'partes': [{'etapa': k, 'cant': v} for k, v in ln['partes'].items()] if ln else [],
+                          'nota': '' if ln else ('sin código del inventario' if not clave_it else 'ya sumado antes / sin pendientes')})
+        estado_frase = _camino_frase(etapa_orden, o, esperada, atrasada, hoy, ultimo_ingreso, quien_txt, terminada, dias_quedan, lineas)
         resumen_o = {'id': o.id, 'codigo': _oc_codigo(o), 'url': url_for('oc_detalle', orden_id=o.id), 'proveedor': o.razon_social or '',
+                     'creo': _nom_usuario(o.creado_por), 'creo_fecha': _fecha_txt(o.fecha_registro), 'solicito': _oc_solicitante_txt(o) or '',
+                     'terminada': terminada, 'se_oculta': _fecha_txt(dias_quedan) if dias_quedan else '', 'frase': estado_frase, 'todos': todos,
+                     'pdf_ver': url_for('oc_pdf', orden_id=o.id, ver=1), 'pdf': url_for('oc_pdf', orden_id=o.id),
+                     'docs': [{'tipo': TIPOS_DOC_OC.get(d.tipo, d.tipo), 'nombre': d.nombre_original or '',
+                               'num': (o.numero_guia if d.tipo == 'GUIA' else (o.numero_factura if d.tipo == 'FACTURA' else '')) or '',
+                               'pdf': d.content_type == 'application/pdf', 'ver': url_for('oc_documento_ver', doc_id=d.id),
+                               'bajar': url_for('oc_documento_ver', doc_id=d.id, download=1)} for d in docs_por_orden.get(o.id, [])],
                      'importacion': bool(o.es_importacion), 'monto': f"{MONEDAS_OC[o.moneda]['simbolo']} {(o.total or 0):,.2f}",
                      'aprobada': _fecha_txt(o.fecha_aprobacion), 'esperada': _fecha_txt(esperada), 'atrasada': atrasada,
                      'sin_fecha': not esperada and not (rec['entregas'] or o.fecha_llegada), 'etapa': etapa_orden, 'pasos': pasos,
                      'ingreso': _fecha_txt(ultimo_ingreso), 'ingreso_hace': _dias_txt(ultimo_ingreso, hoy, True) if ultimo_ingreso else '',
                      'estado_txt': ESTADOS_OC[o.estado]['txt'], 'esperada_d': esperada,
-                     'lineas': [{'codigo': (ln['item'].codigo or '') if destino == 'GENERAL' else '', 'descripcion': ln['descripcion'], 'um': ln['um'],
+                     'lineas': [{'codigo': (ln['item'].codigo or '') if destino == 'GENERAL' else '', 'descripcion': ln['descripcion'], 'um': ln['um'], 'clave': ln['clave'],
                                  'partes': [{'etapa': k, 'cant': v} for k, v in ln['partes'].items()]} for ln in lineas]}
         lista_ordenes.append(resumen_o)
         for ln in lineas:
             por_clave.setdefault(ln['clave'], []).append({
-                'orden_id': o.id, 'codigo': resumen_o['codigo'], 'url': resumen_o['url'], 'proveedor': resumen_o['proveedor'],
+                'orden_id': o.id, 'codigo': resumen_o['codigo'], 'url': resumen_o['url'], 'proveedor': resumen_o['proveedor'], 'creo': resumen_o['creo'],
+                'frase': estado_frase, 'terminada': terminada,
                 'importacion': resumen_o['importacion'], 'aprobada': resumen_o['aprobada'], 'esperada': resumen_o['esperada'],
                 'atrasada': atrasada, 'sin_fecha': resumen_o['sin_fecha'], 'etapa': ln['etapa'], 'um': ln['um'],
                 'pedido': ln['pedido'], 'llego': ln['llego'], 'partes': ln['partes'], 'pasos': pasos,
@@ -194,7 +246,27 @@ def _en_camino_calcular(destino, empresa):
                'ingresadas': sum(1 for r in lista_ordenes if r['etapa'] == 'INGRESADO'),
                'proxima': _fecha_txt(fechas[0]) if fechas else '', 'proxima_hace': _dias_txt(fechas[0], hoy) if fechas else '',
                'por_aprobar': por_aprobar, 'productos': len(por_clave), 'dias_reciente': DIAS_INGRESO_RECIENTE}
-    return {'items': por_clave, 'ordenes': lista_ordenes, 'resumen': resumen, 'etapas': ETAPAS_CAMINO, 'destino': destino, 'empresa': empresa}
+    return {'items': por_clave, 'ordenes': lista_ordenes, 'resumen': resumen, 'etapas': ETAPAS_CAMINO, 'destino': destino, 'empresa': empresa,
+            'ord_map': {r['id']: r for r in lista_ordenes}}
+
+
+def _camino_frase(etapa, o, esperada, atrasada, hoy, ultimo_ingreso, quien_ing, terminada, dias_quedan, lineas):
+    """Una frase clara de en qué va la orden: cuándo llega, qué falta, qué ya se sumó y quién."""
+    sumado_parte = any('INGRESADO' in ln['partes'] for ln in lineas) and not terminada
+    extra = ' · ya se sumó una parte al inventario' if sumado_parte else ''
+    if terminada:
+        return (f"TERMINADA: todo sumado al inventario el {_fecha_txt(ultimo_ingreso)} ({_dias_txt(ultimo_ingreso, hoy, True)})"
+                + (f" por {quien_ing}" if quien_ing else '')
+                + (f" · se deja de mostrar el {_fecha_txt(dias_quedan)} ({_dias_txt(dias_quedan, hoy)})" if dias_quedan else ''))
+    if etapa == 'EN_CAMINO':
+        if esperada:
+            return (f"Atrasada: debía llegar el {_fecha_txt(esperada)}" if atrasada else f"En camino: llega el {_fecha_txt(esperada)} ({_dias_txt(esperada, hoy)})") + extra
+        return 'En camino: el proveedor aún no confirma la fecha de llegada' + extra
+    if etapa == 'POR_CONFORMIDAD':
+        return f"Llegó a planta el {_fecha_txt(o.fecha_llegada)}: falta revisar la mercadería (conformidad)" + extra
+    if etapa == 'POR_INGRESAR':
+        return 'Mercadería revisada y conforme en planta: falta sumarla al inventario' + extra
+    return 'Ya sumado al inventario' + (f" por {quien_ing}" if quien_ing else '')
 
 
 def _en_camino_totales(lineas):

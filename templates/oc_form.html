@@ -783,16 +783,17 @@ function pintarReqs() {
     const ver = tipo() === 'OC' && (lista.length > 0 || otros.length > 0);
     panel.style.display = ver ? '' : 'none';
     if (!ver) return;
-    const ins = destino() === 'INSUMOS';
-    porId('reqAyuda').textContent = ins ? 'Insumos internos que pidieron y aún no están en una orden. Agrégalos a esta OC (si son de este proveedor); lo demás puede ir en otra orden.'
-        : 'Productos que pidieron y aún no están en una orden. Agrégalos a esta OC (si son de este proveedor); lo demás puede ir en otra orden.';
+    const ins = destino() === 'INSUMOS', dir = destino() === 'DIRECTO';
+    const NOM_DEST = { GENERAL: 'Inventario General', INSUMOS: 'Insumos internos', DIRECTO: 'Uso directo' };
+    porId('reqAyuda').textContent = (ins ? 'Insumos internos' : (dir ? 'Bienes de uso directo' : 'Productos')) + ' que pidieron y aún no están en una orden. Agrégalos a esta OC (si son de este proveedor); lo demás puede ir en otra orden.';
     porId('reqAyuda').style.display = lista.length ? '' : 'none';
     const oEl = porId('reqOtros');
     oEl.style.display = otros.length ? '' : 'none';
-    oEl.innerHTML = otros.length ? `<i class="bi bi-info-circle"></i> Hay <b>${otros.length}</b> requerimiento(s) de <b>${ins ? 'Inventario General' : 'Insumos internos'}</b> (${otros.map(r => esc(r.codigo)).join(', ')}): ` +
-        `para jalarlos, elige arriba el destino <b>"${ins ? 'Inventario' : 'Insumos internos'}"</b> (van en otra orden).` : '';
+    oEl.innerHTML = otros.length ? `<i class="bi bi-info-circle"></i> Hay requerimiento(s) de otro destino: ` +
+        Object.keys(NOM_DEST).filter(k => k !== destino()).map(k => { const l = otros.filter(r => (r.destino || 'GENERAL') === k); return l.length ? `<b>${NOM_DEST[k]}</b> (${l.map(r => esc(r.codigo)).join(', ')})` : ''; }).filter(Boolean).join(' · ') +
+        `. Para jalarlos, elige arriba ese destino (van en otra orden).` : '';
     const usados = reqEnForm();
-    porId('reqCnt').textContent = `(${lista.length}${otros.length ? ' + ' + otros.length + (ins ? ' de inventario' : ' de insumos') : ''})`;
+    porId('reqCnt').textContent = `(${lista.length}${otros.length ? ' + ' + otros.length + ' de otro destino' : ''})`;
     porId('reqLista').innerHTML = lista.map(r => {
         const libres = r.items.filter(i => !usados.has(String(i.id)));
         return `<div class="req-b"><div class="cab"><a class="cod" href="${r.url}" target="_blank">${esc(r.codigo)}</a>${r.prioridad === 'URGENTE' ? '<span class="urg">URGENTE</span>' : ''}
@@ -800,7 +801,7 @@ function pintarReqs() {
             ${libres.length ? `<button type="button" class="btn btn-sm btn-success py-0 ms-auto" data-todo="${r.id}"><i class="bi bi-plus-lg"></i> Agregar todo (${libres.length})</button>` : '<span class="ms-auto small text-success fw-bold">Todo en esta orden</span>'}</div>
             <div class="meta">${esc(r.motivo)}${r.cliente_razon ? ' · cliente <b>' + esc(r.cliente_razon) + '</b>' : ''}${r.oc_cliente ? ' · OC cliente <b>' + esc(r.oc_cliente) + '</b>' : ''}${r.necesita ? ' · para el <b>' + esc(r.necesita) + '</b>' : ''}
                 ${r.docs.map(d => ` · <a href="${d.url}" target="_blank"><i class="bi bi-paperclip"></i>${esc(d.nombre)}</a>`).join('')}${r.nota ? '<div><i class="bi bi-chat-left-text"></i> ' + esc(r.nota) + '</div>' : ''}</div>
-            ${r.items.map(i => `<div class="ri"><span class="d"><b>${esc(i.codigo)}</b> ${esc(i.descripcion)} — <b>${fmtCant(i.cantidad)} ${esc(i.um)}</b>${i.nota ? ' <span class="text-muted">· ' + esc(i.nota) + '</span>' : ''}${i.caida ? '<div class="text-muted">antes en ' + esc(i.caida) + '</div>' : ''}</span>
+            ${r.items.map(i => `<div class="ri"><span class="d">${i.codigo ? '<b>' + esc(i.codigo) + '</b> ' : ''}${esc(i.descripcion)} — <b>${fmtCant(i.cantidad)} ${esc(i.um)}</b>${i.nota ? ' <span class="text-muted">· ' + esc(i.nota) + '</span>' : ''}${i.caida ? '<div class="text-muted">antes en ' + esc(i.caida) + '</div>' : ''}</span>
                 ${usados.has(String(i.id)) ? '<span class="small text-success fw-bold">En esta orden</span>' : `<button type="button" class="btn btn-sm btn-outline-success py-0" data-item="${r.id}:${i.id}"><i class="bi bi-plus-lg"></i></button>`}</div>`).join('')}</div>`;
     }).join('');
     porId('reqLista').querySelectorAll('[data-todo]').forEach(b => b.onclick = () => { const r = REQS.find(x => x.id == b.dataset.todo); r.items.forEach(i => jalarReq(r, i)); pintarReqs(); });
@@ -811,8 +812,8 @@ function jalarReq(r, i) {
     // si la única fila está vacía, se usa esa
     const filas = [...document.querySelectorAll('#items .item')];
     if (filas.length === 1 && !filas[0].querySelector('.i-desc').value.trim() && !filas[0].querySelector('.i-cant').value) filas[0].remove();
-    const esIns = (r.destino || 'GENERAL') === 'INSUMOS';
-    agregarItem({ descripcion: i.descripcion, cantidad: i.cantidad, um: UMS.includes(i.um) ? i.um : '', origen: esIns ? 'INSUMO' : empresa(), codigo: i.codigo,
+    const esIns = (r.destino || 'GENERAL') === 'INSUMOS', esDirR = r.destino === 'DIRECTO';
+    agregarItem({ descripcion: i.descripcion, cantidad: i.cantidad, um: UMS.includes(i.um) ? i.um : '', origen: esIns ? 'INSUMO' : (esDirR ? '' : empresa()), codigo: esDirR ? '' : i.codigo,
                   insumo_id: esIns ? i.insumo_id : '', familia: i.familia, calidad: i.calidad, req_item: i.id, req_txt: `${r.codigo} · ${r.solicitante}` });
     // ¿quién lo pide y para qué? se llena con los datos del requerimiento si está vacío
     const sol = porId('solicitante');

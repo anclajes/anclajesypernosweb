@@ -3,6 +3,10 @@
 {% block subtitle %}Vista combinada: Anclajes + Import Bolts (solo consulta){% endblock %}
 
 {% block content %}
+{# Compras en camino de los DOS inventarios (solo Gerencia): paneles arriba, estado por producto y modal con la OC completa #}
+{% import '_en_camino.html' as camino with context %}
+{% set ec_anc = en_camino('GENERAL', 'ANCLAJES') if origen_filtro in ['todos', 'ANCLAJES'] else None %}
+{% set ec_ib = en_camino('GENERAL', 'IMPORTBOLTS') if origen_filtro in ['todos', 'IMPORTBOLTS'] else None %}
 <style>
     /* --- GALERÍA DE FOTOS: diseño responsive --- */
     #modalGaleria .modal-dialog { max-width: 800px; }
@@ -245,6 +249,8 @@
     </div>
 </div>
 
+{{ camino.panel(ec_anc, 'Anclajes') }}
+{{ camino.panel(ec_ib, 'Import Bolts') }}
 <div class="card shadow-sm border-0">
     <div class="card-body p-0 table-responsive">
         <table class="table table-hover align-middle mb-0 small text-nowrap">
@@ -301,6 +307,7 @@
                     <td class="text-center">
                         <span class="stock-num {{ 'bajo' if p.stock <= p.stock_min else '' }}"
                               title="{{ 'Stock bajo' if p.stock <= p.stock_min else 'Stock OK' }} (mínimo {{ p.stock_min }})">{{ "{:,}".format(p.stock or 0) }}</span>
+                        {{ camino.badge(ec_ib if p.origen == 'IMPORTBOLTS' else ec_anc, (p.sku or '')|upper, (p.sku or '') ~ ' · ' ~ (p.nombre or '') ~ (' · Import Bolts' if p.origen == 'IMPORTBOLTS' else ' · Anclajes')) }}
                     </td>
                     {% if ver_precio_usd %}<td class="text-end text-nowrap fw-semibold">{% if p.precio_unidad and p.precio_unidad > 0 %}$ {{ "%.2f"|format(p.precio_unidad) }}{% else %}<span class="text-muted">-</span>{% endif %}</td>{% endif %}
                     <td class="text-center">
@@ -500,4 +507,5 @@ document.addEventListener('keydown', function(e) {
     }
 </script>
 <script src="{{ url_for('static', filename='js/filtros.js') }}?v=1"></script>
+{{ camino.script_varios([ec_anc, ec_ib]) }}
 {% endblock %}

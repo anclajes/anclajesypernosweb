@@ -29,7 +29,7 @@
     <div class="d-flex flex-wrap gap-2 align-items-center">
         <span class="fs-4 fw-bold">{{ req_codigo(r) }}</span>
         {% if emp_r %}<span class="small fw-bold" style="color: {{ emp_r.color }};">Inventario {{ emp_r.corto }}</span>{% endif %}
-        {% if r.destino == 'INSUMOS' %}<span class="rq-ins"><i class="bi bi-tools"></i> Insumos internos</span>{% endif %}
+        {{ rq.chip_destino(r) }}
         {% if r.prioridad == 'URGENTE' %}<span class="rq-urg">URGENTE</span>{% endif %}
         <span class="rq-estado ms-auto" style="color: {{ res.color }};"><i class="bi {{ res.icono }}"></i> {{ res.txt }}</span>
     </div>
@@ -48,10 +48,13 @@
     {% if r.nota %}<div class="dato mt-1 p-2 rounded" style="background:#f8fafc;"><i class="bi bi-chat-left-text"></i> {{ r.nota }}</div>{% endif %}
     {% if r.estado == 'RECHAZADO' %}<div class="alert alert-danger py-2 small mt-2 mb-0"><b>Rechazado</b> por {{ r.rechazado_por.nombre_completo if r.rechazado_por else '-' }} el {{ r.fecha_rechazo.strftime('%d/%m/%Y %H:%M') }}: {{ req_motivo_txt(r.rechazo_categoria, r.rechazo_opcion, r.motivo_rechazo) }}</div>{% endif %}
     {% if r.estado == 'ANULADO' %}<div class="alert alert-secondary py-2 small mt-2 mb-0"><b>Anulado</b> por {{ r.anulado_por.nombre_completo if r.anulado_por else '-' }} el {{ r.fecha_anulacion.strftime('%d/%m/%Y %H:%M') }}{% if r.anulacion_opcion or r.motivo_anulacion %}: {{ req_motivo_txt(r.anulacion_categoria, r.anulacion_opcion, r.motivo_anulacion) }}{% endif %}</div>{% endif %}
+    {% if codigos_borrados %}<div class="alert alert-warning py-2 small mt-2 mb-0"><i class="bi bi-trash3"></i> <b>{{ codigos_borrados|length }} código(s) ya no existen en el inventario</b>
+        (se eliminaron del sistema): {% for i in codigos_borrados %}<b>{{ i.codigo }}</b> {{ i.descripcion }}{{ ', ' if not loop.last }}{% endfor %}.
+        {% if p.editar %}Pulsa <b>Editar</b> y cambia el requerimiento a <b>"Uso directo"</b>: se conservan las descripciones y cantidades, y Logística podrá armar la OC sin código.{% else %}Pide a Logística que lo pase a "Uso directo".{% endif %}</div>{% endif %}
     {% if docs %}<div class="mt-2">{% for d in docs %}
         <a class="doc-b" href="{{ url_for('oc_req_documento', doc_id=d.id) }}" target="_blank"><i class="bi {{ 'bi-file-earmark-pdf' if d.content_type == 'application/pdf' else 'bi-image' }}"></i> {{ d.nombre_original }}</a>{% endfor %}</div>{% endif %}
     <div class="d-flex flex-wrap gap-2 mt-2">
-        {% if p.armar %}<a class="btn btn-success fw-bold" href="{{ url_for('oc_nueva', tipo='OC', empresa=r.empresa, req=r.id) if emp_r else url_for('oc_nueva', tipo='OC', req=r.id) }}"><i class="bi bi-cart-plus"></i> Armar OC con estos {{ 'insumos' if r.destino == 'INSUMOS' else 'productos' }}</a>{% endif %}
+        {% if p.armar %}<a class="btn btn-success fw-bold" href="{{ url_for('oc_nueva', tipo='OC', empresa=r.empresa, req=r.id) if emp_r else url_for('oc_nueva', tipo='OC', req=r.id) }}"><i class="bi bi-cart-plus"></i> Armar OC con estos {{ 'insumos' if r.destino == 'INSUMOS' else ('bienes (Uso directo)' if r.destino == 'DIRECTO' else 'productos') }}</a>{% endif %}
         {% if p.editar %}<a class="btn btn-outline-primary" href="{{ url_for('oc_req_editar', req_id=r.id) }}"><i class="bi bi-pencil"></i> Editar</a>{% endif %}
         {% if p.rechazar %}<button class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#mRechazar"><i class="bi bi-x-octagon"></i> Rechazar todo</button>{% endif %}
         {% if p.anular %}<button class="btn btn-outline-dark" data-bs-toggle="modal" data-bs-target="#mAnular"><i class="bi bi-slash-circle"></i> Anular</button>{% endif %}
@@ -62,10 +65,10 @@
 <div class="row g-3">
     <div class="col-12 col-lg-8">
         <div class="panel">
-            <div class="panel-t"><i class="bi {{ 'bi-tools' if r.destino == 'INSUMOS' else 'bi-boxes' }}"></i> {{ 'Insumos internos' if r.destino == 'INSUMOS' else 'Productos' }} y avance</div>
+            <div class="panel-t"><i class="bi {{ 'bi-tools' if r.destino == 'INSUMOS' else ('bi-pc-display' if r.destino == 'DIRECTO' else 'bi-boxes') }}"></i> {{ 'Insumos internos' if r.destino == 'INSUMOS' else ('Bienes de uso directo (no van a ningún inventario)' if r.destino == 'DIRECTO' else 'Productos') }} y avance</div>
             {% for i in r.items %}{% set s = seg[i.id] %}
             <div class="it {{ 'desc' if s.descartado }}" id="ri{{ i.id }}">
-                <div class="d-flex flex-wrap gap-2 align-items-center"><span class="ds">{{ i.item }}. {{ i.descripcion }}</span> <span class="tag-sku">{{ i.codigo }}</span>
+                <div class="d-flex flex-wrap gap-2 align-items-center"><span class="ds">{{ i.item }}. {{ i.descripcion }}</span> {% if i.codigo %}<span class="tag-sku">{{ i.codigo }}</span>{% endif %}
                     {% if s.descartado %}<span class="desc-b"><i class="bi bi-x-circle"></i> No se comprará</span>{% endif %}
                     <span class="ms-auto fw-bold">{{ i.cantidad|cant }} {{ i.um }}</span></div>
                 <div class="small text-muted">{{ [i.familia, i.calidad]|select|join(' · ') }}{% if i.stock_al_pedir is not none %} · stock al pedir (las dos empresas): {{ i.stock_al_pedir }}{% endif %}{% if i.nota %} · {{ i.nota }}{% endif %}</div>
@@ -78,7 +81,7 @@
                     {% if s.activos and (s.ordenado - i.cantidad)|abs > 0.0001 %}<span class="small text-muted">· en orden: {{ s.ordenado|cant }} (se pidió {{ i.cantidad|cant }})</span>{% endif %}
                     {% if s.recibido and s.recibido < s.ordenado - 0.0001 %}<span class="rec-b"><i class="bi bi-boxes"></i> Llegó {{ s.recibido|cant }} de {{ s.ordenado|cant }} (parcial)</span>{% endif %}
                     {% if p.descartar and not s.activos %}<button type="button" class="btn btn-sm btn-outline-secondary py-0 ms-auto" onclick="descartar({{ i.id }}, {{ (i.codigo ~ ' · ' ~ i.descripcion)|tojson|forceescape }})"><i class="bi bi-x-circle"></i> No se comprará</button>{% endif %}</div>
-                {% if r.estado == 'PENDIENTE' %}{{ rq.avance(s) }}{% endif %}
+                {% if r.estado == 'PENDIENTE' %}{{ rq.avance(s, 'Entregado' if r.destino == 'DIRECTO' else 'Ingresado') }}{% endif %}
                 {% endif %}
             </div>
             {% endfor %}

@@ -1232,6 +1232,7 @@ def _leer_orden_form(f, orden=None):
             if req_dest != datos.get('destino') or (req_dest == 'INSUMOS' and ri.insumo_id and ri.insumo_id != ins_id):
                 errores.append(f'Ítem {n}: el {_req_codigo(ri.requerimiento)} es de '
                                + ('INSUMOS INTERNOS: la orden debe tener destino "Insumos internos".' if req_dest == 'INSUMOS'
+                                  else 'USO DIRECTO: la orden debe tener destino "Uso directo".' if req_dest == 'DIRECTO'
                                   else 'productos del INVENTARIO GENERAL: la orden debe tener destino "Inventario General".'))
                 continue
             if otro:

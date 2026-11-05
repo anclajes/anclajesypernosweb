@@ -56,7 +56,8 @@ modulos/
                          con su clave (tabla aviso_agente, solo la huella). "Quitar" → el programa se desinstala solo.
                          Mientras funciona, el Web Push y la campana no repiten el aviso de Windows de ese usuario.
 templates/             plantillas (todas en una carpeta; prefijos: oc_*, insumos_*, notificaciones, _campana...)
-                       _en_camino.html: panel, botones por producto y ventana de "En camino" (se usa en los 3 inventarios)
+                       _en_camino.html: panel, botones por producto y ventana de "En camino" (inventarios de Anclajes,
+                       Import Bolts, Insumos y el Inventario General con los dos: `script_varios([ec1, ec2])`)
                        _mov_venta_servicio.html: bloque "Sale como VENTA" del Movimiento de Kardex (los 2 inventarios)
                        _kardex_venta.html: cómo se ve la venta tras servicio en los 2 Kardex y su ventana de edición
 ```
@@ -147,7 +148,8 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
 
 - Tercer destino de una OC: **"Uso directo"** (`destino = 'DIRECTO'`, en `DESTINOS_OC`). Para bienes que la empresa compra para USARLOS
   (componentes de PC, celulares, muebles, herramientas, maquinaria...). No va al inventario general ni a insumos. Solo OC (no OS) y no
-  se combina con TEMA CONTABLE. Los ítems se escriben a mano (no se enlazan a productos ni insumos); no aceptan requerimientos de Almacén.
+  se combina con TEMA CONTABLE. Los ítems se escriben a mano (no se enlazan a productos ni insumos). Se pueden jalar de un
+  REQUERIMIENTO de "Uso directo" (ver abajo).
 - Al crear la orden: **Categoría** (catálogo `OC_DIRECTO_CATEGORIA`) y **Ubicación / a dónde va** (catálogo `OC_DIRECTO_UBICACION`), obligatorias;
   "Para qué / detalle" y **Activo fijo** opcionales. Columnas `orden_compra.directo_categoria/_ubicacion/_detalle/_activo_fijo/_entregado_a`.
   Los dos catálogos están en Configuración (pestañas "Categorías de uso directo" y "Ubicaciones") y se siembran solos si están vacíos.
@@ -162,6 +164,28 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
 - Se ve en todo el flujo: chip USO DIRECTO (`templates/_oc_directo.html`), lista (filtro Destino, botón "Uso directo"), detalle,
   campana (aviso "Bien de uso directo por entregar"), Ingresos pendientes y contador del menú; columnas en el Excel de órdenes.
   En "Mejores precios" es la clase "Uso directo".
+
+## Compras: EN CAMINO en los inventarios (solo Gerencia)
+
+- `_en_camino_calcular` (modulos/compras/en_camino.py) arma por orden: quién la creó (`creo`), una frase clara de en qué va (`frase`:
+  cuándo llega / atrasada / llegó y falta revisar / revisada y conforme en planta, falta sumar / TERMINADA con fecha, quién la sumó y
+  cuándo se deja de mostrar), la línea de tiempo con el ENCARGADO de cada paso (`pasos[].quien`: aprobó, recibió, dio conformidad,
+  sumó al inventario), el PDF y los documentos (`docs`) y la lista COMPLETA de ítems (`todos`). `ord_map` = órdenes por id.
+- `_en_camino.html`: tarjetas con descripciones completas (ya no se cortan), "Ver los N ítems" / "Ver completa" abre el modal de la orden;
+  clic en el estado de un producto abre sus órdenes con la lista completa y ESE producto en verde, más PDF y documentos para ver/descargar.
+  Las terminadas (todo sumado) salen en verde y se ocultan a los `DIAS_INGRESO_RECIENTE` días.
+- Inventario General: dos paneles (Anclajes e Import Bolts) y el estado en cada producto según su origen.
+
+## Requerimientos de USO DIRECTO y borrar códigos creados por error
+
+- Requerimientos (`modulos/compras/requerimientos.py`, `DESTINOS_REQ`): tercer destino **"Uso directo"** (`destino='DIRECTO'`) para útiles,
+  equipos, muebles... que no van a ningún inventario. Los bienes se escriben a mano (campo `descripcion[]`, `codigo=''`), con cantidad y U.M.
+  Al cambiar un requerimiento a Uso directo se conservan descripciones y cantidades. Logística arma la OC con destino "Uso directo" y el
+  avance termina en "Entregado" (cuando se registra la entrega de la OC).
+- Si un requerimiento del Inventario General pide un código que ya no existe, el detalle avisa y pide pasarlo a Uso directo.
+- Maestro (`admin_maestro_eliminar` en app.py): Logística también puede borrar un código (`ROLES_ELIMINAN_MAESTRO_ESTRICTO`), solo si tiene
+  stock 0 en los dos inventarios, ningún ingreso ni salida (solo el Saldo Inicial en 0) y ningún conteo. Para TODOS los roles se bloquea si
+  el código está en una OC activa. Si está en requerimientos pendientes se borra igual: quedan escritos y reciben un aviso en su historial.
 
 ## Compras: numeración al guardar (varios usuarios a la vez)
 
