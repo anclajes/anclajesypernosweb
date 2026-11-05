@@ -19,7 +19,10 @@
     .ec-ord .cab { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
     .ec-ord .cod { font-weight: 800; color: #0f172a; text-decoration: none; font-size: .86rem; }
     .ec-ord .prov { font-size: .74rem; color: #475569; overflow-wrap: anywhere; }
-    .ec-imp { font-size: .6rem; font-weight: 800; color: #fff; background: #0f766e; border-radius: 5px; padding: 0 6px; }
+    .ec-imp { display: inline-flex; align-items: center; gap: 4px; font-size: .74rem; font-weight: 900; letter-spacing: .04em; color: #fff; background: #0369a1;
+              border: 2px solid #075985; border-radius: 7px; padding: 2px 9px; box-shadow: 0 1px 3px rgba(3,105,161,.35); white-space: nowrap; }
+    .ec-res.imp { --c: #fff; --f: #0369a1; --b: #075985; font-weight: 900; font-size: .78rem; padding: 3px 11px; box-shadow: 0 1px 3px rgba(3,105,161,.35); }
+    .ec-res.imp small { font-weight: 700; opacity: .9; font-size: .7rem; }
     .ec-et { font-size: .64rem; font-weight: 800; border-radius: 6px; padding: 1px 7px; color: var(--c); background: var(--f); border: 1px solid var(--b); white-space: nowrap; }
     .ec-lin { font-size: .72rem; border-top: 1px dashed #e2e8f0; padding-top: 5px; margin-top: 6px; }
     .ec-lin > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; align-items: start; padding: 2px 0; }
@@ -77,7 +80,9 @@
 {{ estilos() }}
 <details class="ec-panel" id="ecPanel{{ ec.empresa }}">
     <summary><i class="bi bi-truck text-warning fs-5"></i> <span class="tit">Compras en camino a {{ nombre }}</span>
-        {% if r.en_camino %}<span class="ec-res" style="--c:{{ E.EN_CAMINO.color }};--f:{{ E.EN_CAMINO.fondo }};--b:{{ E.EN_CAMINO.borde }};"><i class="bi bi-truck"></i> {{ r.en_camino }} orden(es) en camino{% if r.importacion %} · {{ r.importacion }} importación{% endif %}</span>{% endif %}
+        {% if r.en_camino %}<span class="ec-res" style="--c:{{ E.EN_CAMINO.color }};--f:{{ E.EN_CAMINO.fondo }};--b:{{ E.EN_CAMINO.borde }};"><i class="bi bi-truck"></i> {{ r.en_camino }} orden(es) en camino</span>{% endif %}
+        {% if r.imp_total %}<span class="ec-res imp" title="Órdenes de importación en este panel"><i class="bi bi-globe-americas"></i> {{ r.imp_total }} IMPORTACIÓN{{ 'ES' if r.imp_total > 1 }}
+            <small>({{ [(r.imp_camino ~ ' en camino') if r.imp_camino, (r.imp_planta ~ ' en planta') if r.imp_planta, (r.imp_terminadas ~ ' terminada' ~ ('s' if r.imp_terminadas > 1 else '')) if r.imp_terminadas]|select|join(' · ') }})</small></span>{% endif %}
         {% if r.proxima %}<span class="ec-res">Próxima llegada {{ r.proxima }} ({{ r.proxima_hace }})</span>{% endif %}
         {% if r.atrasadas %}<span class="ec-res" style="--c:#b91c1c;--f:#fef2f2;--b:#fecaca;"><i class="bi bi-alarm"></i> {{ r.atrasadas }} atrasada(s)</span>{% endif %}
         {% if r.sin_fecha %}<span class="ec-res">{{ r.sin_fecha }} sin fecha confirmada</span>{% endif %}
@@ -91,7 +96,7 @@
     <div class="ec-ords">
         {% for o in ec.ordenes %}{% set e = E[o.etapa] %}
         <div class="ec-ord {{ 'terminada' if o.terminada }}" style="--c: {{ 'var(--danger,#dc2626)' if o.atrasada and o.etapa == 'EN_CAMINO' else e.color }};">
-            <div class="cab"><a class="cod" href="{{ o.url }}">{{ o.codigo }}</a>{% if o.importacion %}<span class="ec-imp">IMPORTACIÓN</span>{% endif %}
+            <div class="cab"><a class="cod" href="{{ o.url }}">{{ o.codigo }}</a>{% if o.importacion %}<span class="ec-imp"><i class="bi bi-globe-americas"></i> IMPORTACIÓN</span>{% endif %}
                 <span class="ec-et ms-auto" style="--c:{{ e.color }};--f:{{ e.fondo }};--b:{{ e.borde }};"><i class="bi {{ 'bi-check2-all' if o.terminada else e.icono }}"></i> {{ 'Terminada · sumada al inventario' if o.terminada else e.txt }}</span></div>
             <div class="prov">{{ o.proveedor }} · <b>{{ o.monto }}</b> · aprobada {{ o.aprobada }}</div>
             <div class="ec-meta"><i class="bi bi-person-fill"></i> Creó <b>{{ o.creo or '-' }}</b>{% if o.creo_fecha %} el {{ o.creo_fecha }}{% endif %}{% if o.solicito %} · pidió {{ o.solicito }}{% endif %}</div>
@@ -158,7 +163,7 @@
                 <td class="text-end" style="white-space:nowrap;">${num(t.cant)} ${esc(t.um)}</td><td style="text-align:right;">${t.partes.length ? partesTxt(ET, t.partes, t.um) : '<span class="text-muted" style="font-size:.68rem;">' + esc(t.nota) + '</span>'}</td></tr>`;
         }).join('');
         return `<div class="ec-ord ${o.terminada ? 'terminada' : ''}" style="--c:${col};">
-            <div class="cab"><a class="cod" href="${esc(o.url)}">${esc(o.codigo)}</a>${o.importacion ? '<span class="ec-imp">IMPORTACIÓN</span>' : ''}
+            <div class="cab"><a class="cod" href="${esc(o.url)}">${esc(o.codigo)}</a>${o.importacion ? '<span class="ec-imp"><i class="bi bi-globe-americas"></i> IMPORTACIÓN</span>' : ''}
                 <span class="ec-et ms-auto" style="--c:${e.color};--f:${e.fondo};--b:${e.borde};"><i class="bi ${o.terminada ? 'bi-check2-all' : e.icono}"></i> ${o.terminada ? 'Terminada · sumada al inventario' : esc(e.txt)}</span></div>
             <div class="prov">${esc(o.proveedor)} · <b>${esc(o.monto)}</b> · aprobada ${esc(o.aprobada)}</div>
             <div class="ec-meta"><i class="bi bi-person-fill"></i> Creó <b>${esc(o.creo || '-')}</b>${o.creo_fecha ? ' el ' + esc(o.creo_fecha) : ''}${o.solicito ? ' · pidió ' + esc(o.solicito) : ''}</div>

@@ -245,7 +245,12 @@ def _en_camino_calcular(destino, empresa):
                'por_ingresar': sum(1 for r in lista_ordenes if r['etapa'] == 'POR_INGRESAR'),
                'ingresadas': sum(1 for r in lista_ordenes if r['etapa'] == 'INGRESADO'),
                'proxima': _fecha_txt(fechas[0]) if fechas else '', 'proxima_hace': _dias_txt(fechas[0], hoy) if fechas else '',
-               'por_aprobar': por_aprobar, 'productos': len(por_clave), 'dias_reciente': DIAS_INGRESO_RECIENTE}
+               'por_aprobar': por_aprobar, 'productos': len(por_clave), 'dias_reciente': DIAS_INGRESO_RECIENTE,
+               # IMPORTACIONES (todas las del panel) y en qué van: se ven antes de abrir el detalle
+               'imp_total': sum(1 for r in lista_ordenes if r['importacion']),
+               'imp_camino': sum(1 for r in lista_ordenes if r['importacion'] and r['etapa'] == 'EN_CAMINO'),
+               'imp_planta': sum(1 for r in lista_ordenes if r['importacion'] and r['etapa'] in ('POR_CONFORMIDAD', 'POR_INGRESAR')),
+               'imp_terminadas': sum(1 for r in lista_ordenes if r['importacion'] and r['etapa'] == 'INGRESADO')}
     return {'items': por_clave, 'ordenes': lista_ordenes, 'resumen': resumen, 'etapas': ETAPAS_CAMINO, 'destino': destino, 'empresa': empresa,
             'ord_map': {r['id']: r for r in lista_ordenes}}
 

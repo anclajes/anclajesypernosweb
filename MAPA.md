@@ -179,6 +179,8 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
   clic en el estado de un producto abre sus órdenes con la lista completa y ESE producto en verde, más PDF y documentos para ver/descargar.
   Las terminadas (todo sumado) salen en verde y se ocultan a los `DIAS_INGRESO_RECIENTE` días.
 - Inventario General: dos paneles (Anclajes e Import Bolts) y el estado en cada producto según su origen.
+- Importaciones: el resumen del panel (antes de "Ver detalle") muestra un chip azul "N IMPORTACIONES (x en camino · y en planta ·
+  z terminadas)" (`resumen.imp_total/imp_camino/imp_planta/imp_terminadas`); en tarjetas y modal la etiqueta `.ec-imp` es azul, grande y con 🌐.
 
 ## Requerimientos de USO DIRECTO y borrar códigos creados por error
 
