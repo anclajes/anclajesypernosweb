@@ -159,6 +159,10 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
   "Ingresos pendientes" (tarjeta naranja). Quién/cuándo en `fecha_kardex` / `kardex_registrado_por_id`; nota en `nota_seguimiento`.
   Después se puede **corregir** (queda en el historial `DIRECTO_EDITADO`); Gerencia puede quitar el registro (`oc_directo_deshacer`).
   Una vez entregada ya no se re-edita la orden (hay que deshacer la entrega).
+- **Por ítem**: la categoría y la ubicación de la orden son el valor por defecto; cada ítem puede tener las suyas
+  (`orden_compra_item.directo_categoria/_ubicacion`, selects `directo_cat_item[]` / `directo_ubi_item[]` en el formulario; '' = la de la
+  orden). En la entrega también se elige a dónde queda cada ítem (`ubicacion_<id>`). Categoría "ÚTILES Y SUMINISTROS DE OFICINA" agregada
+  una vez (SystemConfig `oc_directo_utiles_v1`).
 - **Registro de uso directo** (`/ordenes/uso-directo`, `oc_registro_directo`, plantilla `oc_uso_directo.html`): un renglón por bien con
   categoría, ubicación, entregado a, serie, garantía (vigente / vence en ≤30 días / vencida), orden, proveedor y monto; filtros y Excel.
 - Se ve en todo el flujo: chip USO DIRECTO (`templates/_oc_directo.html`), lista (filtro Destino, botón "Uso directo"), detalle,
@@ -180,7 +184,8 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
 
 - Requerimientos (`modulos/compras/requerimientos.py`, `DESTINOS_REQ`): tercer destino **"Uso directo"** (`destino='DIRECTO'`) para útiles,
   equipos, muebles... que no van a ningún inventario. Los bienes se escriben a mano (campo `descripcion[]`, `codigo=''`), con cantidad y U.M.
-  Al cambiar un requerimiento a Uso directo se conservan descripciones y cantidades. Logística arma la OC con destino "Uso directo" y el
+  Al cambiar un requerimiento a Uso directo se conservan descripciones y cantidades. Pide CATEGORÍA y A DÓNDE VA (obligatorios) y
+  "para qué" (opcional): columnas `requerimiento_compra.directo_categoria/_ubicacion/_detalle`; al jalarlo a la OC se copian. Logística arma la OC con destino "Uso directo" y el
   avance termina en "Entregado" (cuando se registra la entrega de la OC).
 - Si un requerimiento del Inventario General pide un código que ya no existe, el detalle avisa y pide pasarlo a Uso directo.
 - Maestro (`admin_maestro_eliminar` en app.py): Logística también puede borrar un código (`ROLES_ELIMINAN_MAESTRO_ESTRICTO`), solo si tiene

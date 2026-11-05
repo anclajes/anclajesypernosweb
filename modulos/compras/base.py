@@ -87,7 +87,7 @@ _OC_INICIALES = {
                           'CRÉDITO 30 DÍAS', 'CRÉDITO 45 DÍAS', 'CRÉDITO 60 DÍAS'],
     'OC_AREA': ['GERENCIA', 'ADMINISTRACIÓN', 'VENTAS', 'LOGÍSTICA', 'ALMACÉN', 'PRODUCCIÓN'],
     'OC_SOLICITANTE': [],
-    'OC_DIRECTO_CATEGORIA': ['EQUIPOS DE CÓMPUTO Y TECNOLOGÍA', 'COMUNICACIONES Y TELEFONÍA', 'MOBILIARIO Y ENSERES DE OFICINA',
+    'OC_DIRECTO_CATEGORIA': ['ÚTILES Y SUMINISTROS DE OFICINA', 'EQUIPOS DE CÓMPUTO Y TECNOLOGÍA', 'COMUNICACIONES Y TELEFONÍA', 'MOBILIARIO Y ENSERES DE OFICINA',
                              'HERRAMIENTAS Y EQUIPOS', 'MAQUINARIA', 'VEHÍCULOS Y ACCESORIOS', 'SEGURIDAD Y VIGILANCIA',
                              'INSTALACIONES E INFRAESTRUCTURA', 'OTROS BIENES'],
     'OC_DIRECTO_UBICACION': ['OFICINA · GERENCIA', 'OFICINA · ADMINISTRACIÓN', 'OFICINA · VENTAS', 'OFICINA · LOGÍSTICA',
@@ -283,6 +283,9 @@ def _asegurar_oc():
                                                          ('anulacion_categoria', 'VARCHAR(60)'), ('anulacion_opcion', 'VARCHAR(150)')])
     _agregar_columnas_si_faltan('requerimiento_compra', [('destino', "VARCHAR(10) DEFAULT 'GENERAL'")])
     _agregar_columnas_si_faltan('requerimiento_item', [('insumo_id', 'INTEGER')])
+    _agregar_columnas_si_faltan('requerimiento_compra', [('directo_categoria', 'VARCHAR(100)'), ('directo_ubicacion', 'VARCHAR(100)'),
+                                                         ('directo_detalle', 'VARCHAR(200)')])
+    _agregar_columnas_si_faltan('orden_compra_item', [('directo_categoria', 'VARCHAR(100)'), ('directo_ubicacion', 'VARCHAR(100)')])
     if not SystemConfig.query.get('oc_numeracion_empresa'):
         # Numeración propia por empresa: la restricción única pasa de (tipo, número) a (empresa, tipo, número)
         try:
@@ -381,6 +384,12 @@ def _asegurar_oc():
             if not CatalogoValor.query.filter_by(tipo=tipo).first():
                 for v in _OC_INICIALES[tipo]:
                     db.session.add(CatalogoValor(tipo=tipo, valor=v, activo=True, es_predeterminado=False))
+        # una sola vez: la categoría de útiles de oficina (correctores, perforadores, tijeras, marcadores...) en bases ya sembradas
+        if not SystemConfig.query.get('oc_directo_utiles_v1'):
+            if not CatalogoValor.query.filter(CatalogoValor.tipo == 'OC_DIRECTO_CATEGORIA',
+                                              func.upper(CatalogoValor.valor) == 'ÚTILES Y SUMINISTROS DE OFICINA').first():
+                db.session.add(CatalogoValor(tipo='OC_DIRECTO_CATEGORIA', valor='ÚTILES Y SUMINISTROS DE OFICINA', activo=True, es_predeterminado=False))
+            db.session.add(SystemConfig(key='oc_directo_utiles_v1', value='1'))
         db.session.commit()
     except Exception:
         db.session.rollback()
@@ -1116,6 +1125,17 @@ def _leer_orden_form(f, orden=None):
     detalle_l = f.getlist('detalle[]') + [''] * n_filas
     piezas_l = f.getlist('piezas[]') + [''] * n_filas
     pmil_l = f.getlist('precio_mil[]') + [''] * n_filas
+    dcat_l = f.getlist('directo_cat_item[]') + [''] * n_filas      # uso directo: categoría / ubicación de cada ítem ('' = la de la orden)
+    dubi_l = f.getlist('directo_ubi_item[]') + [''] * n_filas
+    es_dir_oc = tipo == 'OC' and datos.get('destino') == 'DIRECTO'
+    if es_dir_oc:
+        cats_ok = {(v.valor or '').upper(): v.valor for v in _oc_catalogo('OC_DIRECTO_CATEGORIA', incluir_inactivos=True)}
+        ubis_ok = {(v.valor or '').upper(): v.valor for v in _oc_catalogo('OC_DIRECTO_UBICACION', incluir_inactivos=True)}
+        for it_prev in (orden.items if orden else []):
+            if it_prev.directo_categoria:
+                cats_ok.setdefault(it_prev.directo_categoria.upper(), it_prev.directo_categoria)
+            if it_prev.directo_ubicacion:
+                ubis_ok.setdefault(it_prev.directo_ubicacion.upper(), it_prev.directo_ubicacion)
     por_pcs = (f.get('imp_precio_por') or '').upper() == 'PCS'     # formulario nuevo: precio de importación por pieza
     servicios_ok = {(v.valor or '').upper() for v in _oc_catalogo('OC_SERVICIO', incluir_inactivos=True)}
     servicios_ok |= {(i.tipo_servicio or '').upper() for i in orden.items} if orden else set()
@@ -1246,7 +1266,14 @@ def _leer_orden_form(f, orden=None):
         total_con = round(cantidad * precio_con, 2) if con_igv else None
         if con_igv:
             totales_con_igv.append(total_con)
+        d_cat = d_ubi = None
+        if es_dir_oc:
+            c_it = ' '.join((dcat_l[n - 1] or '').split()).upper()
+            u_it = ' '.join((dubi_l[n - 1] or '').split()).upper()
+            d_cat = cats_ok.get(c_it) or datos.get('directo_categoria')
+            d_ubi = ubis_ok.get(u_it) or datos.get('directo_ubicacion')
         items.append({'descripcion': desc, 'cantidad': round(cantidad, 4), 'um': um, 'precio_unitario': round(precio, 7 if es_imp else (6 if con_igv else 4)), 'req_item_id': req_item_id,
+                      'directo_categoria': d_cat, 'directo_ubicacion': d_ubi,
                       'precio_con_igv': round(precio_con, 4) if con_igv else None,
                       'total': round(total_con / (1 + IGV_OC), 2) if con_igv else round(cantidad * precio, 2), 'origen': origen, 'codigo': codigo, 'insumo_id': ins_id,
                       'kgs_mpcs': round(kgs_mpcs, 4) if kgs_mpcs is not None else None, 'precio_mil': round(precio_mil, 4) if es_imp else None,

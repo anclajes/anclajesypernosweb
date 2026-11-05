@@ -80,7 +80,17 @@ def oc_directo_entregar(orden_id):
         return redirect(volver)
     nota = ' '.join((f.get('nota') or '').split())[:300] or None
     cambios, errores = [], []
+    ubi_final = ubis.get(ubi, orden.directo_ubicacion)
+    ubi_previa = orden.directo_ubicacion
     for it in orden.items:
+        # a dónde va cada ítem: el elegido en ese ítem o, si no, la ubicación de la orden
+        u_it = ' '.join((f.get(f'ubicacion_{it.id}') or '').split()).upper()
+        nueva_u = ubis.get(u_it) or (it.directo_ubicacion if u_it and u_it == (it.directo_ubicacion or '').upper() else None) or ubi_final
+        if corrige and (it.directo_ubicacion or ubi_previa) != nueva_u:
+            cambios.append(f"ítem {it.item} va a: {it.directo_ubicacion or ubi_previa or '—'} → {nueva_u}")
+        it.directo_ubicacion = nueva_u
+        if not it.directo_categoria:
+            it.directo_categoria = orden.directo_categoria
         serie = ' '.join((f.get(f'serie_{it.id}') or '').split()).upper()[:300] or None
         gar_txt = (f.get(f'garantia_{it.id}') or '').strip()
         gar = None
@@ -101,7 +111,6 @@ def oc_directo_entregar(orden_id):
         db.session.rollback()
         flash('⛔ ' + ' · '.join(errores))
         return redirect(volver)
-    ubi_final = ubis.get(ubi, orden.directo_ubicacion)
     if corrige:
         if entregado_a != (orden.directo_entregado_a or ''):
             cambios.insert(0, f"entregado a: {orden.directo_entregado_a or '—'} → {entregado_a}")
@@ -161,23 +170,25 @@ def _registro_directo_filas(f):
             continue
         if f['estado'] and est != f['estado']:
             continue
-        if f['categoria'] and (o.directo_categoria or '') != f['categoria']:
-            continue
-        if f['ubicacion'] and (o.directo_ubicacion or '') != f['ubicacion']:
-            continue
         if f['activo'] and bool(o.directo_activo_fijo) != (f['activo'] == 'si'):
             continue
         for it in o.items:
+            cat = it.directo_categoria or o.directo_categoria or ''      # cada ítem puede tener su categoría y su lugar
+            ubi = it.directo_ubicacion or o.directo_ubicacion or ''
+            if f['categoria'] and cat != f['categoria']:
+                continue
+            if f['ubicacion'] and ubi != f['ubicacion']:
+                continue
             g, dias = _garantia_estado(it.garantia_hasta, hoy)
             if f['garantia'] and g != f['garantia']:
                 continue
             if f['q']:
-                texto = ' '.join(x or '' for x in (_oc_codigo(o), it.descripcion, it.detalle, it.serie, o.razon_social, o.ruc, o.directo_categoria,
-                                                   o.directo_ubicacion, o.directo_detalle, o.directo_entregado_a, o.numero_factura,
+                texto = ' '.join(x or '' for x in (_oc_codigo(o), it.descripcion, it.detalle, it.serie, o.razon_social, o.ruc, cat,
+                                                   ubi, o.directo_detalle, o.directo_entregado_a, o.numero_factura,
                                                    _oc_solicitante_txt(o), o.area_solicitante)).upper()
                 if not all(t in texto for t in f['q'].upper().split()):
                     continue
-            filas.append({'o': o, 'it': it, 'estado': est, 'garantia': g, 'dias': dias, 'empresa': emp})
+            filas.append({'o': o, 'it': it, 'estado': est, 'garantia': g, 'dias': dias, 'empresa': emp, 'cat': cat, 'ubi': ubi})
     return filas
 
 
@@ -209,12 +220,14 @@ def oc_registro_directo():
     for x in filas:
         mon = x['o'].moneda or 'PEN'
         resumen['montos'][mon] = resumen['montos'].get(mon, 0) + (x['it'].total or 0)
-        c = por_cat.setdefault(x['o'].directo_categoria or 'SIN CATEGORÍA', {'n': 0, 'montos': {}})
+        c = por_cat.setdefault(x['cat'] or 'SIN CATEGORÍA', {'n': 0, 'montos': {}})
         c['n'] += 1
         c['montos'][mon] = c['montos'].get(mon, 0) + (x['it'].total or 0)
     todas = OrdenCompra.query.filter(OrdenCompra.destino == 'DIRECTO').all()
-    categorias = sorted({o.directo_categoria for o in todas if o.directo_categoria} | {v.valor for v in _oc_catalogo('OC_DIRECTO_CATEGORIA')})
-    ubicaciones = sorted({o.directo_ubicacion for o in todas if o.directo_ubicacion} | {v.valor for v in _oc_catalogo('OC_DIRECTO_UBICACION')})
+    categorias = sorted({o.directo_categoria for o in todas if o.directo_categoria} | {i.directo_categoria for o in todas for i in o.items if i.directo_categoria}
+                        | {v.valor for v in _oc_catalogo('OC_DIRECTO_CATEGORIA')})
+    ubicaciones = sorted({o.directo_ubicacion for o in todas if o.directo_ubicacion} | {i.directo_ubicacion for o in todas for i in o.items if i.directo_ubicacion}
+                         | {v.valor for v in _oc_catalogo('OC_DIRECTO_UBICACION')})
     return render_template('oc_uso_directo.html', filas=filas[:600], total_filas=len(filas), f=f, resumen=resumen,
                            por_cat=sorted(por_cat.items(), key=lambda kv: -kv[1]['n']), categorias=categorias, ubicaciones=ubicaciones,
                            estados=ESTADOS_DIRECTO, garantias=GARANTIAS_DIRECTO, empresas_oc=EMPRESAS_OC, monedas=MONEDAS_OC,
@@ -229,7 +242,7 @@ def _registro_directo_excel(filas, f):
     for x in filas:
         o, it = x['o'], x['it']
         datos.append([EMPRESAS_OC.get(x['empresa'], {}).get('corto', x['empresa']), _oc_codigo(o), o.fecha, ESTADOS_DIRECTO[x['estado']]['txt'],
-                      (o.directo_categoria or '').capitalize(), o.directo_ubicacion or '', o.directo_detalle or '',
+                      (x['cat'] or '').capitalize(), x['ubi'], o.directo_detalle or '',
                       'Sí' if o.directo_activo_fijo else 'No', it.descripcion, it.detalle or '', it.cantidad, it.um, it.precio_unitario, it.total,
                       o.moneda, it.serie or '', it.garantia_hasta, GARANTIAS_DIRECTO[x['garantia']], o.directo_entregado_a or '',
                       o.fecha_kardex, o.kardex_registrado_por.nombre_completo if o.kardex_registrado_por else '', o.nota_seguimiento or '',

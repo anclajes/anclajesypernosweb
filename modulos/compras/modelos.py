@@ -233,6 +233,9 @@ class OrdenCompraItem(db.Model):
     kgs_mpcs = db.Column(db.Float)                             # importación: kg por cada 1000 piezas
     precio_mil = db.Column(db.Float)                           # importación: precio por cada 1000 piezas
     kardex_mov_id = db.Column(db.Integer)                      # movimiento del Kardex creado desde Ingresos pendientes
+    # USO DIRECTO por ítem: categoría y a dónde va (por defecto, los de la orden; cada ítem puede tener los suyos)
+    directo_categoria = db.Column(db.String(100))
+    directo_ubicacion = db.Column(db.String(100))
     serie = db.Column(db.String(300))                          # uso directo: N° de serie (o varios, separados por coma) · opcional
     garantia_hasta = db.Column(db.Date)                        # uso directo: garantía vigente hasta · opcional
     # RECHAZO PARCIAL: Gerencia, al rechazar, marca los ítems que hay que QUITAR (llegó mal, se devuelve...) para que Logística
@@ -347,7 +350,11 @@ class RequerimientoCompra(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     numero = db.Column(db.Integer, nullable=False, unique=True)
     empresa = db.Column(db.String(15), nullable=False, default='ANCLAJES')     # inventario al que hacen falta
-    destino = db.Column(db.String(10), default='GENERAL')      # GENERAL (productos del inventario) / INSUMOS (insumos internos)
+    destino = db.Column(db.String(10), default='GENERAL')      # GENERAL (productos del inventario) / INSUMOS (insumos internos) / DIRECTO (uso directo)
+    # USO DIRECTO: para qué categoría, a dónde va y para qué (Logística los usa al armar la OC)
+    directo_categoria = db.Column(db.String(100))
+    directo_ubicacion = db.Column(db.String(100))
+    directo_detalle = db.Column(db.String(200))
     estado = db.Column(db.String(12), nullable=False, default='PENDIENTE', index=True)   # PENDIENTE / RECHAZADO / ANULADO (el resto se calcula)
     prioridad = db.Column(db.String(10), default='NORMAL')                      # NORMAL / URGENTE
     fecha_registro = db.Column(db.DateTime, default=hora_peru)

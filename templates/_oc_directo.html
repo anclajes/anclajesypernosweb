@@ -50,10 +50,13 @@ if (!window.garantiaMas) {
     </div>
     {% if o.fecha_kardex and o.nota_seguimiento %}<div class="mt-1"><i class="bi bi-chat-left-text"></i> {{ o.nota_seguimiento }}</div>{% endif %}
     {% set con_datos = o.items|selectattr('serie')|list + o.items|selectattr('garantia_hasta')|list %}
-    {% if con_datos %}
+    {% set ns_d = namespace(distinto=false) %}{% for it in o.items %}{% if (it.directo_ubicacion and it.directo_ubicacion != o.directo_ubicacion) or (it.directo_categoria and it.directo_categoria != o.directo_categoria) %}{% set ns_d.distinto = true %}{% endif %}{% endfor %}
+    {% if con_datos or ns_d.distinto %}
     <div class="table-responsive mt-2"><table class="table table-sm mb-0 align-middle">
-        <thead><tr><th>Ítem</th><th>Bien</th><th>N° de serie</th><th>Garantía</th></tr></thead><tbody>
-        {% for it in o.items %}<tr><td>{{ it.item }}</td><td>{{ it.descripcion }}</td><td class="fw-semibold">{{ it.serie or '—' }}</td>
+        <thead><tr><th>Ítem</th><th>Bien</th>{% if ns_d.distinto %}<th>Categoría · va a</th>{% endif %}<th>N° de serie</th><th>Garantía</th></tr></thead><tbody>
+        {% for it in o.items %}<tr><td>{{ it.item }}</td><td>{{ it.descripcion }}</td>
+            {% if ns_d.distinto %}<td class="small">{{ (it.directo_categoria or o.directo_categoria or '—')|capitalize }} · <b>{{ it.directo_ubicacion or o.directo_ubicacion or '—' }}</b></td>{% endif %}
+            <td class="fw-semibold">{{ it.serie or '—' }}</td>
             <td>{% if it.garantia_hasta %}{{ garantia_chip(it.garantia_hasta) }}{% else %}<span class="text-muted">—</span>{% endif %}</td></tr>{% endfor %}
         </tbody></table></div>
     {% endif %}
@@ -84,18 +87,21 @@ if (!window.garantiaMas) {
     <div class="col-12 col-md-6"><label class="small fw-bold">Entregado a *</label>
         <input name="entregado_a" class="form-control text-uppercase" required minlength="3" maxlength="120" value="{{ o.directo_entregado_a or '' }}"
                placeholder="Ej: JUAN PÉREZ · CONTABILIDAD"></div>
-    <div class="col-12 col-md-6"><label class="small fw-bold">Ubicación donde queda *</label>
+    <div class="col-12 col-md-6"><label class="small fw-bold">Ubicación donde queda * <span class="fw-normal text-muted">(de la orden)</span></label>
         <select name="ubicacion" class="form-select" required>
             {% set lista_ubi = ubicaciones if (o.directo_ubicacion in ubicaciones or not o.directo_ubicacion) else ubicaciones + [o.directo_ubicacion] %}
             {% for u in lista_ubi %}<option value="{{ u }}" {{ 'selected' if u == o.directo_ubicacion }}>{{ u }}</option>{% endfor %}</select></div>
     <div class="col-12"><label class="small fw-bold">Nota (opcional)</label>
         <input name="nota" class="form-control" maxlength="300" value="{{ o.nota_seguimiento or '' }}" placeholder="Ej: armado e instalado en el escritorio de contabilidad"></div>
 </div>
-<div class="small fw-bold mt-3 mb-1"><i class="bi bi-upc-scan"></i> N° de serie y garantía por ítem <span class="fw-normal text-muted">(opcional)</span></div>
-{% for it in o.items %}
+<div class="small fw-bold mt-3 mb-1"><i class="bi bi-upc-scan"></i> Por ítem: a dónde va, N° de serie y garantía <span class="fw-normal text-muted">(opcional)</span></div>
+{% for it in o.items %}{% set ubi_it = it.directo_ubicacion if (it.directo_ubicacion and it.directo_ubicacion != o.directo_ubicacion) else '' %}
 <div class="ent-item">
-    <div class="d">{{ it.item }}. {{ it.descripcion }} <span class="text-muted fw-normal">· {{ it.cantidad|cant }} {{ it.um }}</span></div>
+    <div class="d">{{ it.item }}. {{ it.descripcion }} <span class="text-muted fw-normal">· {{ it.cantidad|cant }} {{ it.um }}{% if it.directo_categoria and it.directo_categoria != o.directo_categoria %} · {{ it.directo_categoria|capitalize }}{% endif %}</span></div>
     <div class="row g-2 mt-1">
+        <div class="col-12"><select name="ubicacion_{{ it.id }}" class="form-select form-select-sm {{ 'border-warning' if ubi_it }}" title="Si este ítem queda en otro lugar que el resto">
+            <option value="">Queda en: igual que la orden</option>
+            {% for u in (ubicaciones if (not ubi_it or ubi_it in ubicaciones) else ubicaciones + [ubi_it]) %}<option value="{{ u }}" {{ 'selected' if u == ubi_it }}>Queda en: {{ u }}</option>{% endfor %}</select></div>
         <div class="col-12 col-md-7"><input name="serie_{{ it.id }}" class="form-control form-control-sm text-uppercase" maxlength="300" value="{{ it.serie or '' }}"
                placeholder="N° de serie{{ ' (si son varios, sepáralos con coma)' if (it.cantidad or 0) > 1 }}"></div>
         <div class="col-12 col-md-5"><div class="input-group input-group-sm">

@@ -211,7 +211,9 @@ def _oc_excel_lista(ordenes, pagos, atrasos, emp_sel):
             filas_it.append([EMPRESAS_OC.get(o.empresa or 'ANCLAJES', {}).get('corto', o.empresa), _oc_codigo(o), o.fecha, ESTADOS_OC[o.estado]['txt'], o.razon_social,
                              i.item, i.codigo or '', i.descripcion, i.familia or '', i.calidad or '', i.cantidad, i.um, i.precio_unitario, i.total, o.moneda,
                              i.kgs_mpcs, i.precio_mil, i.peso_total, ri.get('llego', 0), ri.get('cancelado', 0), ri.get('ingresado', 0),
-                             i.sku_ingreso or '', _req_codigo(r) if r else '', i.serie or '', i.garantia_hasta])
+                             i.sku_ingreso or '', _req_codigo(r) if r else '', i.serie or '', i.garantia_hasta,
+                             ((i.directo_categoria or o.directo_categoria or '').capitalize() if o.destino == 'DIRECTO' else ''),
+                             ((i.directo_ubicacion or o.directo_ubicacion or '') if o.destino == 'DIRECTO' else '')])
     f_d, f_dt, f_m, f_n = 'dd/mm/yyyy', 'dd/mm/yyyy hh:mm', '#,##0.00', '#,##0.####'
     _xlsx_hoja(wb, 'Órdenes', ['Empresa', 'Tipo', 'N°', 'Fecha', 'Estado', 'Importación', 'Proveedor', 'RUC / Tax ID', 'Solicitó', 'Área', 'Motivo', 'Cliente',
                                'Destino', 'Moneda', 'Subtotal', 'IGV', 'Total', 'Condición de pago', 'Pago', 'Fecha de pago', 'Vence', 'Debía llegar',
@@ -224,7 +226,7 @@ def _oc_excel_lista(ordenes, pagos, atrasos, emp_sel):
                                   f"exportado el {hora_peru().strftime('%d/%m/%Y %H:%M')} por {session.get('nombre', '')} · {len(filas)} orden(es)")
     _xlsx_hoja(wb, 'Ítems', ['Empresa', 'Orden', 'Fecha', 'Estado', 'Proveedor', 'Ítem', 'Código', 'Descripción', 'Familia', 'Calidad', 'Cantidad', 'U.M.',
                              'P. Unit.', 'Total', 'Moneda', 'KGS/MPCS', 'USD/1000 PCS', 'Peso total (kg)', 'Llegó', 'No llegará', 'Ingresado',
-                             'Código en el inventario', 'Requerimiento', 'N° de serie', 'Garantía hasta'],
+                             'Código en el inventario', 'Requerimiento', 'N° de serie', 'Garantía hasta', 'Uso directo: categoría', 'Uso directo: ubicación'],
                filas_it, formatos={24: f_d, 2: f_d, 10: f_n, 12: '#,##0.00####', 13: f_m, 15: f_n, 16: f_m, 17: f_n, 18: f_n, 19: f_n, 20: f_n})
     registrar_log(f"Exportó {len(filas)} orden(es) de compra a Excel", 'bi-file-earmark-excel', 'text-success')
     return _xlsx_respuesta(wb, f"ordenes_{emp_sel.lower()}_{hora_peru().strftime('%Y%m%d_%H%M')}.xlsx")
@@ -461,7 +463,10 @@ def _orden_a_previo(o, items=None):
                    'kgs_mpcs': i.kgs_mpcs if i.kgs_mpcs is not None else '', 'precio_mil': i.precio_mil if i.precio_mil is not None else '',
                    'detalle': i.detalle or '', 'piezas': i.piezas if i.piezas is not None else '',
                    # corrección de un rechazo: Gerencia recomendó quitar este ítem (solo se muestra en rojo; no se quita solo)
-                   'quitar_rec': (i.rechazo_item_motivo or 'Gerencia recomienda quitarlo') if (o.estado == 'RECHAZADA' and i.rechazo_quitar) else ''}
+                   'quitar_rec': (i.rechazo_item_motivo or 'Gerencia recomienda quitarlo') if (o.estado == 'RECHAZADA' and i.rechazo_quitar) else '',
+                   # uso directo: solo si el ítem tiene una categoría / ubicación distinta de la orden ('' = la de la orden)
+                   'directo_cat': i.directo_categoria if (i.directo_categoria and i.directo_categoria != o.directo_categoria) else '',
+                   'directo_ubi': i.directo_ubicacion if (i.directo_ubicacion and i.directo_ubicacion != o.directo_ubicacion) else ''}
                   for i in (items or o.items)]
     return d
 
@@ -561,15 +566,16 @@ def _previo_desde_form(f, datos, motivo_edicion=''):
     previo = {k: (v.isoformat() if hasattr(v, 'isoformat') else v) for k, v in datos.items()}
     previo.update(items=[{'descripcion': ' '.join((d or '').split()).upper(), 'cantidad': c, 'um': u, 'precio_unitario': pu, 'origen': o_,
                           'codigo': cod, 'insumo_id': ii, 'familia': fa, 'calidad': ca, 'estado': es, 'peso_modo': pm, 'peso_valor': pval, 'servicio': sv,
-                          'req_item': rq, 'req_txt': rt, 'kgs_mpcs': kg, 'precio_mil': pmil, 'detalle': dt, 'piezas': pz}
-                         for d, c, u, pu, o_, cod, ii, fa, ca, es, pm, pval, sv, rq, rt, kg, pmil, dt, pz in zip(
+                          'req_item': rq, 'req_txt': rt, 'kgs_mpcs': kg, 'precio_mil': pmil, 'detalle': dt, 'piezas': pz, 'directo_cat': dc, 'directo_ubi': du}
+                         for d, c, u, pu, o_, cod, ii, fa, ca, es, pm, pval, sv, rq, rt, kg, pmil, dt, pz, dc, du in zip(
                              f.getlist('descripcion[]'), f.getlist('cantidad[]'), f.getlist('um[]'), f.getlist('precio_unitario[]'),
                              f.getlist('origen[]'), f.getlist('codigo[]'), f.getlist('insumo_id[]'), f.getlist('familia[]') + [''] * 99,
                              f.getlist('calidad[]') + [''] * 99, f.getlist('estado_producto[]') + [''] * 99,
                              f.getlist('peso_modo[]') + [''] * 99, f.getlist('peso_valor[]') + [''] * 99, f.getlist('servicio[]') + [''] * 99,
                              f.getlist('req_item[]') + [''] * 99, f.getlist('req_txt[]') + [''] * 99,
                              f.getlist('kgs_mpcs[]') + [''] * 99, f.getlist('precio_mil[]') + [''] * 99,
-                             f.getlist('detalle[]') + [''] * 99, f.getlist('piezas[]') + [''] * 99) if (d or c or pu)],
+                             f.getlist('detalle[]') + [''] * 99, f.getlist('piezas[]') + [''] * 99,
+                             f.getlist('directo_cat_item[]') + [''] * 99, f.getlist('directo_ubi_item[]') + [''] * 99) if (d or c or pu)],
                   duplicada_de=f.get('duplicada_de'), entrega_dias=f.get('entrega_dias'), fecha_entrega=f.get('fecha_entrega'),
                   solicitante=f.get('solicitante', ''), cliente_ruc=f.get('cliente_ruc', ''), cliente_razon=f.get('cliente_razon', ''),
                   motivo_edicion=motivo_edicion)

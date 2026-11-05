@@ -92,8 +92,8 @@
                 {% if it.detalle %}<div class="sub fst-italic">{{ it.detalle }}</div>{% endif %}
                 <div class="sub">{{ it.cantidad|cant }} {{ it.um }}{% if o.directo_detalle %} · {{ o.directo_detalle }}{% endif %}</div>
                 {% if o.directo_activo_fijo %}<span class="badge text-bg-light border" style="font-size:.6rem;">ACTIVO FIJO</span>{% endif %}</td>
-            <td class="small">{{ (o.directo_categoria or '—')|capitalize }}</td>
-            <td><div class="fw-semibold"><i class="bi bi-geo-alt-fill" style="color:#c2410c;"></i> {{ o.directo_ubicacion or '—' }}</div>
+            <td class="small">{{ (x.cat or '—')|capitalize }}</td>
+            <td><div class="fw-semibold"><i class="bi bi-geo-alt-fill" style="color:#c2410c;"></i> {{ x.ubi or '—' }}</div>
                 {% if o.fecha_kardex %}<div class="sub"><i class="bi bi-person-fill"></i> {{ o.directo_entregado_a or '-' }} · {{ o.fecha_kardex.strftime('%d/%m/%Y') }}</div>{% endif %}</td>
             <td><span class="ud-est" style="color: {{ e.color }}; background: {{ e.fondo }};"><i class="bi {{ e.icono }}"></i> {{ e.txt }}</span>
                 {% if x.estado == 'POR_ENTREGAR' %}<div class="mt-1"><a class="btn btn-sm py-0 px-2 text-white" style="background:#c2410c; font-size:.7rem;"

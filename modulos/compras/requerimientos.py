@@ -168,6 +168,7 @@ def _req_json_para_oc(empresa):
     datos = []
     for r, libres, seg in _req_pendientes_de_oc(empresa):
         datos.append({'id': r.id, 'codigo': _req_codigo(r), 'empresa': r.empresa, 'destino': r.destino or 'GENERAL', 'solicitante': r.solicitante_nombre or '',
+                      'directo_categoria': r.directo_categoria or '', 'directo_ubicacion': r.directo_ubicacion or '', 'directo_detalle': r.directo_detalle or '',
                       'sol_valor': f'u:{r.solicitante_user_id}' if r.solicitante_user_id else (f'n:{r.solicitante_nombre}' if r.solicitante_nombre else ''),
                       'registro': (r.creado_por.nombre_completo or r.creado_por.username) if r.creado_por else '', 'area': r.area or '', 'motivo': r.motivo or '', 'cliente_ruc': r.cliente_ruc or '',
                       'cliente_razon': r.cliente_razon or '', 'oc_cliente': r.oc_cliente or '', 'prioridad': r.prioridad or 'NORMAL',
@@ -248,7 +249,9 @@ def _contexto_form_req(previo=None, errores=None, req=None):
     return dict(previo=previo or {}, errores=errores or [], empresas_oc=EMPRESAS_OC, ums=[v.valor for v in _oc_catalogo('OC_UM')],
                 solicitantes=_solicitantes_oc(), yo_valor=f"u:{session.get('user_id')}", req=req,
                 docs_req=RequerimientoDocumento.query.filter_by(req_id=req.id).order_by(RequerimientoDocumento.id).all() if req else [],
-                areas=[v.valor for v in _oc_catalogo('OC_AREA')], motivos_compra=[{'nombre': m.nombre, 'pide_cliente': bool(m.pide_cliente)} for m in motivos],
+                areas=[v.valor for v in _oc_catalogo('OC_AREA')],
+                directo_categorias=[v.valor for v in _oc_catalogo('OC_DIRECTO_CATEGORIA')], directo_ubicaciones=[v.valor for v in _oc_catalogo('OC_DIRECTO_UBICACION')],
+                motivos_compra=[{'nombre': m.nombre, 'pide_cliente': bool(m.pide_cliente)} for m in motivos],
                 prioridades=PRIORIDADES_REQ, max_docs=MAX_DOCS_REQ, seccion='req_nuevo', hoy=hora_peru().date(),
                 mi_nombre=(yo.nombre_completo or yo.username) if yo else session.get('nombre', ''))
 
@@ -265,7 +268,8 @@ def _req_a_previo(r):
     return {'solicitante': f'u:{r.solicitante_user_id}' if r.solicitante_user_id else f'n:{r.solicitante_nombre or ""}', 'area': r.area,
             'motivo': r.motivo, 'cliente_ruc': r.cliente_ruc, 'cliente_razon': r.cliente_razon, 'oc_cliente': r.oc_cliente,
             'prioridad': r.prioridad, 'necesita_para': r.necesita_para.isoformat() if r.necesita_para else '', 'nota': r.nota,
-            'destino': r.destino or 'GENERAL',
+            'destino': r.destino or 'GENERAL', 'directo_categoria': r.directo_categoria, 'directo_ubicacion': r.directo_ubicacion,
+            'directo_detalle': r.directo_detalle,
             'items': [{'codigo': i.codigo, 'descripcion': i.descripcion, 'cantidad': i.cantidad, 'um': i.um, 'nota': i.nota or ''}
                       for i in r.items if not i.descartado]}
 
@@ -329,6 +333,18 @@ def _req_guardar(r_edit):
     d['destino'] = (f.get('destino') or '').upper() if (f.get('destino') or '').upper() in DESTINOS_REQ else 'GENERAL'
     es_ins = d['destino'] == 'INSUMOS'
     es_dir = d['destino'] == 'DIRECTO'
+    # USO DIRECTO: categoría y a dónde va (los catálogos de Configuración) y para qué; Logística los usa al armar la OC
+    d['directo_categoria'] = d['directo_ubicacion'] = d['directo_detalle'] = None
+    if es_dir:
+        cats = {(v.valor or '').upper(): v.valor for v in _oc_catalogo('OC_DIRECTO_CATEGORIA', incluir_inactivos=True)}
+        ubis = {(v.valor or '').upper(): v.valor for v in _oc_catalogo('OC_DIRECTO_UBICACION', incluir_inactivos=True)}
+        d['directo_categoria'] = cats.get(' '.join((f.get('directo_categoria') or '').split()).upper())
+        d['directo_ubicacion'] = ubis.get(' '.join((f.get('directo_ubicacion') or '').split()).upper())
+        d['directo_detalle'] = ' '.join((f.get('directo_detalle') or '').split())[:200] or None
+        if not d['directo_categoria']:
+            errores.append('Uso directo: elige la CATEGORÍA (útiles de oficina, equipos de cómputo, mobiliario...).')
+        if not d['directo_ubicacion']:
+            errores.append('Uso directo: elige A DÓNDE VA (oficina y área, almacén, planta...).')
     # productos: los que existen en los inventarios (Anclajes o Import Bolts; el maestro los reparte a los dos) o en el maestro de insumos
     ums = {v.valor for v in _oc_catalogo('OC_UM')}
     items, vistos = [], set()
@@ -456,7 +472,8 @@ def _req_guardar_edicion(r, d, items, validos, quitar_docs):
             cambios.append('Ahora es de ' + DESTINOS_REQ[d['destino']])
             r.destino = d['destino']
         for campo, etq in (('solicitante_nombre', 'Lo pide'), ('area', 'Área'), ('motivo', 'Motivo'), ('cliente_razon', 'Cliente'),
-                           ('oc_cliente', 'OC cliente'), ('prioridad', 'Prioridad'), ('necesita_para', 'Para cuándo'), ('nota', 'Nota')):
+                           ('oc_cliente', 'OC cliente'), ('prioridad', 'Prioridad'), ('necesita_para', 'Para cuándo'), ('nota', 'Nota'),
+                           ('directo_categoria', 'Categoría'), ('directo_ubicacion', 'A dónde va'), ('directo_detalle', 'Para qué')):
             if (getattr(r, campo) or None) != (d.get(campo) or None):
                 cambios.append(etq)
             setattr(r, campo, d.get(campo))

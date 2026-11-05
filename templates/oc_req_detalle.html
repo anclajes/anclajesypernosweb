@@ -38,6 +38,8 @@
             <div class="dato"><i class="bi bi-person"></i> Lo pide: <b>{{ r.solicitante_nombre }}</b>{% if r.solicitante and r.solicitante.role %} <span class="text-muted">({{ {'vendedor': 'Vendedor', 'almacen': 'Almacén', 'almacen_visor': 'Visor de inventario', 'logistica': 'Logística', 'admin': 'Gerencia', 'administracion': 'Administración'}.get(r.solicitante.role, r.solicitante.role) }})</span>{% endif %}{% if r.area %} · {{ r.area|title }}{% endif %}</div>
             <div class="dato"><i class="bi bi-clock"></i> Registrado el {{ r.fecha_registro.strftime('%d/%m/%Y %H:%M') }} por {{ r.creado_por.nombre_completo if r.creado_por else '-' }}</div>
             <div class="dato"><i class="bi bi-bullseye"></i> Motivo: <b>{{ (r.motivo or '—')|capitalize }}</b></div>
+            {% if r.destino == 'DIRECTO' %}<div class="dato"><i class="bi bi-pc-display" style="color:#c2410c;"></i> Categoría: <b>{{ (r.directo_categoria or '—')|capitalize }}</b></div>
+            <div class="dato"><i class="bi bi-geo-alt-fill" style="color:#c2410c;"></i> Va a: <b>{{ r.directo_ubicacion or '—' }}</b>{% if r.directo_detalle %} · {{ r.directo_detalle }}{% endif %}</div>{% endif %}
         </div>
         <div class="col-12 col-md-6">
             {% if r.cliente_razon %}<div class="dato"><i class="bi bi-person-badge"></i> Cliente: <b>{{ r.cliente_razon }}</b>{% if r.cliente_ruc %} · {{ r.cliente_ruc }}{% endif %}</div>{% endif %}

@@ -126,7 +126,18 @@
             </div>
             <div class="ayuda mb-2" id="ayudaDirecto" style="display:none; background:#fff7ed; border-color:#fdba74; color:#7c2d12;"><i class="bi bi-pc-display"></i> <b>Uso directo:</b> cosas que se compran para
                 <b>usarlas</b> (correctores, sacagrapas, útiles de oficina, componentes de PC, muebles, herramientas...). <b>No suman a ningún inventario y no necesitan código:</b>
-                escribe cada bien con su detalle (marca, modelo, medida). Logística arma la OC con destino "Uso directo" y, al llegar, registra a quién se entregó.</div>
+                escribe cada bien con su detalle (marca, modelo, medida). Logística arma la OC con destino "Uso directo" y, al llegar, registra a quién se entregó.
+                <div class="row g-2 mt-1">
+                    <div class="col-12 col-sm-6"><div class="lbl req">Categoría</div>
+                        <select name="directo_categoria" id="rq_dcat" class="form-select form-select-sm"><option value="">— Elige —</option>
+                            {% for c in directo_categorias %}<option value="{{ c }}" {{ 'selected' if c|upper == (pv.directo_categoria or '')|upper }}>{{ c|capitalize }}</option>{% endfor %}</select></div>
+                    <div class="col-12 col-sm-6"><div class="lbl req">¿A dónde va?</div>
+                        <select name="directo_ubicacion" id="rq_dubi" class="form-select form-select-sm"><option value="">— Elige —</option>
+                            {% for u in directo_ubicaciones %}<option value="{{ u }}" {{ 'selected' if u|upper == (pv.directo_ubicacion or '')|upper }}>{{ u }}</option>{% endfor %}</select></div>
+                    <div class="col-12"><div class="lbl">Para qué / detalle <span class="fw-normal" style="opacity:.75;">(opcional)</span></div>
+                        <input type="text" name="directo_detalle" class="form-control form-control-sm" maxlength="200" value="{{ pv.directo_detalle or '' }}" placeholder="Ej: útiles para el área de administración (reposición de noviembre)"></div>
+                </div>
+                <div class="mt-1" style="font-size:.7rem;">Si un bien va a otro lugar, indícalo en su <b>nota</b>: Logística lo ajusta por ítem en la OC.</div></div>
             <div class="ayuda mb-2" id="ayudaGeneral"><i class="bi bi-info-circle"></i> Solo productos que ya existen en el inventario: escribe el código o la descripción, o usa <b>Familia / Calidad</b>, y elígelo de la lista.
                 Para qué empresa se compra (Anclajes o Import Bolts) lo decide Logística al armar la orden.
                 Si un producto no existe, pide al encargado que lo cree en el Maestro.</div>
@@ -362,6 +373,10 @@ porId('formReq').addEventListener('submit', function (e) {
     if (!this.area.value) err.push('Elige el área.');
     const filas = [...document.querySelectorAll('#items .rq-item')].filter(f => f.querySelector('.i-busca').value.trim() || f.querySelector('.i-cant').value);
     if (!filas.length) err.push(esIns() ? 'Agrega al menos un insumo.' : (esDir() ? 'Agrega al menos un bien.' : 'Agrega al menos un producto.'));
+    if (esDir()) {
+        if (!porId('rq_dcat').value) err.push('Uso directo: elige la categoría.');
+        if (!porId('rq_dubi').value) err.push('Uso directo: elige a dónde va.');
+    }
     filas.forEach((f, i) => {
         const nom = esIns() ? 'Insumo' : (esDir() ? 'Bien' : 'Producto');
         if (esDir()) { if (f.querySelector('.i-busca').value.trim().length < 3) err.push(`Bien ${i + 1}: escribe qué se necesita.`); }

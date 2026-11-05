@@ -30,7 +30,7 @@
 </div>
 {% endmacro %}
 
-{% macro chip_destino(r) %}{% if r.destino == 'INSUMOS' %}<span class="rq-ins"><i class="bi bi-tools"></i> Insumos internos</span>{% elif r.destino == 'DIRECTO' %}<span class="rq-dir" title="No va a ningún inventario: se compra para usarlo"><i class="bi bi-pc-display"></i> Uso directo</span>{% endif %}{% endmacro %}
+{% macro chip_destino(r) %}{% if r.destino == 'INSUMOS' %}<span class="rq-ins"><i class="bi bi-tools"></i> Insumos internos</span>{% elif r.destino == 'DIRECTO' %}<span class="rq-dir" title="No va a ningún inventario: se compra para usarlo{{ (' · ' ~ r.directo_categoria|capitalize) if r.directo_categoria }}{{ (' → ' ~ r.directo_ubicacion) if r.directo_ubicacion }}"><i class="bi bi-pc-display"></i> Uso directo</span>{% endif %}{% endmacro %}
 
 {% macro ordenes_de(sg, puede_ver_oc) %}
 {% for oi in sg.activos %}{% set o = oi.orden %}

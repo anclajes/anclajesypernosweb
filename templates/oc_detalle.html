@@ -368,6 +368,8 @@
                     {% set q_it = i.rechazo_quitar and orden.estado == 'RECHAZADA' %}
                     <tr class="{{ 'quitar' if q_it }}"><td class="ps-3 text-muted">{{ i.item }}</td>
                         <td><span class="{{ 'desc-q' if q_it }}">{{ i.descripcion }}</span>
+                            {% if orden.destino == 'DIRECTO' and ((i.directo_ubicacion and i.directo_ubicacion != orden.directo_ubicacion) or (i.directo_categoria and i.directo_categoria != orden.directo_categoria)) %}
+                            <div><span class="oc-directo-chip chico" title="Este ítem tiene su propia categoría / lugar"><i class="bi bi-geo-alt-fill"></i> {{ (i.directo_categoria or orden.directo_categoria or '')|capitalize }} → {{ i.directo_ubicacion or orden.directo_ubicacion }}</span></div>{% endif %}
                             {% if q_it %}<div><span class="tag-quitar" title="Gerencia recomienda quitar este ítem"><i class="bi bi-scissors"></i> QUITAR (recomendado)</span>
                                 <span class="small text-danger fw-semibold">{{ i.rechazo_item_motivo }}</span></div>{% endif %}
                             {% if i.detalle or i.piezas %}<div class="small text-muted fst-italic">{{ i.detalle or '' }}{% if i.detalle and i.piezas %} · {% endif %}{% if i.piezas %}{{ i.piezas|cant }} pieza(s){% endif %}</div>{% endif %}

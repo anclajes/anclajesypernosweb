@@ -251,11 +251,13 @@
                     <b>No suma al inventario general ni a insumos.</b> Sigue el flujo normal y, al estar conforme, se registra <b>a quién se entrega y dónde queda</b>
                     (N° de serie y garantía opcionales). Queda en el <b>Registro de uso directo</b>.</div>
                 <div class="row g-2 mt-1">
-                    <div class="col-12 col-sm-6"><div class="lbl req">Categoría</div>
-                        <select name="directo_categoria" id="directo_categoria" class="form-select form-select-sm"><option value="">— Elige —</option>
+                    <div class="col-12 small" style="font-size:.72rem;"><i class="bi bi-info-circle"></i> Estos datos valen para <b>todos los ítems</b>. Si algún ítem es de otra categoría
+                        o va a otro lugar, cámbialo <b>en ese ítem</b> (debajo de su descripción).</div>
+                    <div class="col-12 col-sm-6"><div class="lbl req">Categoría <span class="fw-normal text-muted">(de la orden)</span></div>
+                        <select name="directo_categoria" id="directo_categoria" class="form-select form-select-sm" onchange="pintarDirItems()"><option value="">— Elige —</option>
                             {% for c in directo_categorias %}<option value="{{ c }}" {{ 'selected' if c|upper == (pv.directo_categoria or '')|upper }}>{{ c|capitalize }}</option>{% endfor %}</select></div>
-                    <div class="col-12 col-sm-6"><div class="lbl req">¿A dónde va? (ubicación)</div>
-                        <select name="directo_ubicacion" id="directo_ubicacion" class="form-select form-select-sm"><option value="">— Elige —</option>
+                    <div class="col-12 col-sm-6"><div class="lbl req">¿A dónde va? (ubicación de la orden)</div>
+                        <select name="directo_ubicacion" id="directo_ubicacion" class="form-select form-select-sm" onchange="pintarDirItems()"><option value="">— Elige —</option>
                             {% for u in directo_ubicaciones %}<option value="{{ u }}" {{ 'selected' if u|upper == (pv.directo_ubicacion or '')|upper }}>{{ u }}</option>{% endfor %}</select></div>
                     <div class="col-12"><div class="lbl">Para qué / detalle <span class="fw-normal text-muted">(opcional)</span></div>
                         <input type="text" name="directo_detalle" class="form-control form-control-sm" maxlength="200" value="{{ pv.directo_detalle or '' }}" placeholder="Ej: armado de PC para el área de contabilidad"></div>
@@ -524,7 +526,11 @@
                 </div>
                 <div class="list-group position-absolute w-100 shadow sug prod-sug" style="left:0;"></div>
                 <div class="i-ficha"></div>
-                <textarea name="detalle[]" class="form-control form-control-sm i-detalle mt-1" rows="1" maxlength="500" placeholder="Detalle del ítem (opcional): medidas, acabado, norma, color... sale debajo del producto en la orden y el PDF"></textarea></div>
+                <textarea name="detalle[]" class="form-control form-control-sm i-detalle mt-1" rows="1" maxlength="500" placeholder="Detalle del ítem (opcional): medidas, acabado, norma, color... sale debajo del producto en la orden y el PDF"></textarea>
+                <div class="row g-1 mt-1 i-dir-box" style="display:none;" title="Uso directo: si este ítem es de otra categoría o va a otro lugar que el resto de la orden">
+                    <div class="col-12 col-sm-6"><select name="directo_cat_item[]" class="form-select form-select-sm i-dcat"></select></div>
+                    <div class="col-12 col-sm-6"><select name="directo_ubi_item[]" class="form-select form-select-sm i-dubi"></select></div>
+                </div></div>
             <div class="col-6 col-md-4 i-os-box" style="display:none;"><label>N° de piezas <span class="text-muted text-lowercase fw-normal">(opcional)</span></label>
                 <input type="number" name="piezas[]" min="0" step="any" class="form-control form-control-sm i-piezas" inputmode="decimal" placeholder="Ej: 150"></div>
             <div class="col-6 col-md-8 i-os-box align-self-end" style="display:none; font-size:.7rem; color:#64748b;"><i class="bi bi-info-circle"></i> Solo informativo: si el servicio se cobra por <b>kilo</b>, escribe cuántas piezas van (sale en la OS y el PDF).</div>
@@ -635,6 +641,24 @@ function valorRadio(n) { const r = document.querySelector(`#formOC input[name=${
 function moneda() { return MONEDAS[valorRadio('moneda') || 'PEN'].simbolo; }
 function destino() { return valorRadio('destino'); }
 function esDirecto() { return tipo() === 'OC' && destino() === 'DIRECTO'; }
+// ---- USO DIRECTO por ítem: categoría y a dónde va ('' = la misma de la orden, arriba) ----
+const DIR_CATS = {{ directo_categorias|tojson }}, DIR_UBIS = {{ directo_ubicaciones|tojson }};
+const capi = t => (t || '').charAt(0) + (t || '').slice(1).toLowerCase();
+function opcionesDir(sel, lista, actual, defecto, nombre, fmt) {
+    const l = lista.slice(); if (actual && !l.includes(actual)) l.push(actual);
+    sel.innerHTML = `<option value="">${nombre}: igual que la orden${defecto ? ' (' + esc(fmt(defecto)) + ')' : ''}</option>` + l.map(v => `<option value="${esc(v)}">${esc(fmt(v))}</option>`).join('');
+    sel.value = actual || '';
+    sel.classList.toggle('border-warning', !!actual);
+}
+function pintarDirFila(f) {
+    const dc = porId('directo_categoria') ? porId('directo_categoria').value : '', du = porId('directo_ubicacion') ? porId('directo_ubicacion').value : '';
+    const c = f.querySelector('.i-dcat'), u = f.querySelector('.i-dubi');
+    opcionesDir(c, DIR_CATS, c.value || c.dataset.ini || '', dc, 'Categoría', capi);
+    opcionesDir(u, DIR_UBIS, u.value || u.dataset.ini || '', du, 'Va a', x => x);
+    c.dataset.ini = ''; u.dataset.ini = '';
+    f.querySelector('.i-dir-box').style.display = esDirecto() ? '' : 'none';
+}
+function pintarDirItems() { document.querySelectorAll('#items .item').forEach(pintarDirFila); }
 function empresa() { return valorRadio('empresa') || 'ANCLAJES'; }
 function tipo() { return valorRadio('tipo') || '{{ orden.tipo if orden else 'OC' }}'; }
 function corto() { return EMPRESAS[empresa()].corto; }
@@ -813,7 +837,17 @@ function jalarReq(r, i) {
     const filas = [...document.querySelectorAll('#items .item')];
     if (filas.length === 1 && !filas[0].querySelector('.i-desc').value.trim() && !filas[0].querySelector('.i-cant').value) filas[0].remove();
     const esIns = (r.destino || 'GENERAL') === 'INSUMOS', esDirR = r.destino === 'DIRECTO';
-    agregarItem({ descripcion: i.descripcion, cantidad: i.cantidad, um: UMS.includes(i.um) ? i.um : '', origen: esIns ? 'INSUMO' : (esDirR ? '' : empresa()), codigo: esDirR ? '' : i.codigo,
+    let dCat = '', dUbi = '';
+    if (esDirR) {      // categoría y lugar del requerimiento: arriba si la orden aún no los tiene; si no, solo en este ítem (cuando son distintos)
+        const hc = porId('directo_categoria'), hu = porId('directo_ubicacion');
+        if (hc && !hc.value && r.directo_categoria && [...hc.options].some(o => o.value === r.directo_categoria)) hc.value = r.directo_categoria;
+        if (hu && !hu.value && r.directo_ubicacion && [...hu.options].some(o => o.value === r.directo_ubicacion)) hu.value = r.directo_ubicacion;
+        const dd = document.querySelector('input[name=directo_detalle]');
+        if (dd && !dd.value && r.directo_detalle) dd.value = r.directo_detalle;
+        dCat = r.directo_categoria && hc && r.directo_categoria !== hc.value ? r.directo_categoria : '';
+        dUbi = r.directo_ubicacion && hu && r.directo_ubicacion !== hu.value ? r.directo_ubicacion : '';
+    }
+    agregarItem({ directo_cat: dCat, directo_ubi: dUbi, descripcion: i.descripcion, cantidad: i.cantidad, um: UMS.includes(i.um) ? i.um : '', origen: esIns ? 'INSUMO' : (esDirR ? '' : empresa()), codigo: esDirR ? '' : i.codigo,
                   insumo_id: esIns ? i.insumo_id : '', familia: i.familia, calidad: i.calidad, req_item: i.id, req_txt: `${r.codigo} · ${r.solicitante}` });
     // ¿quién lo pide y para qué? se llena con los datos del requerimiento si está vacío
     const sol = porId('solicitante');
@@ -996,6 +1030,7 @@ function pintarFichas() {
     if (dir) document.querySelectorAll('#items .item').forEach(f => { if (f._prod) vincular(f, null); });
     document.querySelectorAll('#items .item').forEach(pintarFicha);
     porId('boxDirecto').style.display = dir ? 'block' : 'none';
+    pintarDirItems();
     document.querySelectorAll('#items .i-buscar').forEach(b => b.style.display = dir ? 'none' : '');
     pintarReqs();
     const ins = destino() === 'INSUMOS' && tipo() === 'OC';
@@ -1055,6 +1090,10 @@ function agregarItem(datos) {
     fila.querySelector('.i-pmil').value = (datos.precio_mil === 0 || datos.precio_mil) ? datos.precio_mil : '';
     fila.querySelector('.i-kgs').value = (datos.kgs_mpcs === 0 || datos.kgs_mpcs) ? datos.kgs_mpcs : '';
     fila.querySelector('.i-detalle').value = datos.detalle || '';
+    fila.querySelector('.i-dcat').dataset.ini = datos.directo_cat || '';
+    fila.querySelector('.i-dubi').dataset.ini = datos.directo_ubi || '';
+    fila.querySelector('.i-dcat').onchange = e => e.target.classList.toggle('border-warning', !!e.target.value);
+    fila.querySelector('.i-dubi').onchange = e => e.target.classList.toggle('border-warning', !!e.target.value);
     fila.querySelector('.i-piezas').value = (datos.piezas === 0 || datos.piezas) ? datos.piezas : '';
     fila.querySelectorAll('.i-os-box').forEach(x => x.style.display = tipo() === 'OS' ? '' : 'none');
     fila.querySelector('.i-um').addEventListener('change', () => { pintarPesoFila(fila); recalcular(); });
@@ -1110,7 +1149,7 @@ function agregarItem(datos) {
         if (document.querySelectorAll('#items .item').length === 1) { fila.querySelectorAll('input').forEach(i => i.value = ''); vincular(fila, null); recalcular(); return; }
         fila.remove(); numerar(); recalcular(); pintarReqs();
     });
-    numerar(); recalcular(); pintarFicha(fila);
+    numerar(); recalcular(); pintarFicha(fila); pintarDirFila(fila);
     return fila;
 }
 
