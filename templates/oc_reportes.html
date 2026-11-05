@@ -1,21 +1,59 @@
 {% extends "base.html" %}
 {% block title %}Reportes de compras{% endblock %}
-{% block subtitle %}Gasto, atrasos de proveedores y tiempos de cada paso{% endblock %}
+{% block subtitle %}Tablero de compras: gasto, proveedores, atrasos y tiempos de cada paso{% endblock %}
 {% block content %}
 {% include '_oc_nav.html' %}
+{% import '_graficos.html' as gr %}
+{{ gr.estilos() }}
+{% set T = rep.totales %}{% set CP = rep.comparacion %}{% set A = rep.anterior %}
+{% set sufijo = 'con IGV' if con_igv else 'sin IGV' %}
+{% set mon_ini = 'USD' if (T.USD and not T.PEN) else 'PEN' %}
+{% set n_det = rep.n_detenidas %}{% set n_det_fuera = rep.n_detenidas_fuera %}
+{% macro dias(d) %}{% if d is none %}—{% elif d >= 10 %}{{ d|round|int }}{% else %}{{ '%g'|format(d|round(1)) }}{% endif %}{% endmacro %}
 <style>
-    .rp-filtros { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 10px 12px; margin-bottom: 12px; }
-    .rp-filtros label { font-size: .68rem; font-weight: 800; color: #64748b; text-transform: uppercase; margin-bottom: 1px; }
-    .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-bottom: 12px; }
-    .kpis div { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 9px 12px; }
-    .kpis b { display: block; font-size: 1.25rem; color: #0f172a; font-variant-numeric: tabular-nums; line-height: 1.15; }
-    .kpis span { font-size: .72rem; color: #475569; font-weight: 600; }
-    .rp { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 12px 14px; margin-bottom: 14px; }
-    .rp h6 { font-weight: 800; font-size: .86rem; color: #0f172a; margin-bottom: 2px; }
-    .rp .ay { font-size: .72rem; color: #64748b; margin-bottom: 8px; }
+    .rp-filtros { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; }
+    .rp-filtros label { font-size: .66rem; font-weight: 800; color: #64748b; text-transform: uppercase; margin-bottom: 1px; display: block; }
+    .cruz { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 12px; padding: 7px 10px;
+            margin-bottom: 10px; font-size: .78rem; color: #1e3a8a; }
+    .cruz .chip { display: inline-flex; align-items: center; gap: 6px; background: #0B3D91; color: #fff; border-radius: 20px; padding: 2px 4px 2px 11px; font-weight: 700; }
+    .cruz .chip a { color: #fff; background: rgba(255,255,255,.2); border-radius: 50%; width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
+    .tb-barra { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+    .tb-tabs { display: inline-flex; background: #e2e8f0; border-radius: 12px; padding: 3px; gap: 3px; }
+    .tb-tabs button { border: 0; background: transparent; font-weight: 800; font-size: .84rem; color: #475569; border-radius: 9px; padding: 7px 16px; display: inline-flex; gap: 6px; align-items: center; }
+    .tb-tabs button.on { background: #fff; color: #0f172a; box-shadow: 0 1px 3px rgba(15,23,42,.15); }
+    .tb-tabs .cnt { background: #dc2626; color: #fff; border-radius: 10px; font-size: .66rem; padding: 0 6px; }
+    .tb-pres { border: 1px solid #cbd5e1; background: #fff; border-radius: 10px; font-size: .78rem; font-weight: 700; color: #334155; padding: 6px 11px; }
+    .resumen { background: #fff; border: 1px solid #e2e8f0; border-left: 4px solid #0B3D91; border-radius: 14px; padding: 10px 14px; margin-bottom: 12px; }
+    .resumen h6 { font-weight: 800; font-size: .86rem; margin: 0 0 6px; color: #0f172a; }
+    .resumen ul { list-style: none; margin: 0; padding: 0; }
+    .resumen li { display: flex; gap: 9px; align-items: flex-start; padding: 5px 0; border-top: 1px dashed #e2e8f0; font-size: .82rem; color: #334155; }
+    .resumen li:first-child { border-top: 0; }
+    .resumen li > i { font-size: 1rem; line-height: 1.2; }
+    .resumen li .acc { margin-left: auto; white-space: nowrap; }
+    .resumen .nv-info > i { color: #0B3D91; } .resumen .nv-ok > i { color: #16a34a; } .resumen .nv-alerta > i { color: #d97706; } .resumen .nv-mal > i { color: #dc2626; }
+    .kps { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; margin-bottom: 12px; }
+    .kp { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 10px 12px 6px; position: relative; overflow: hidden; }
+    .kp .t { font-size: .7rem; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: .02em; }
+    .kp .v { font-size: 1.45rem; font-weight: 800; color: #0f172a; font-variant-numeric: tabular-nums; line-height: 1.2; }
+    .kp .s { font-size: .7rem; color: #64748b; min-height: 1.1em; }
+    .kp .sp { height: 34px; margin-top: 2px; position: relative; }
+    .var { display: inline-flex; align-items: center; gap: 2px; font-size: .72rem; font-weight: 800; border-radius: 6px; padding: 0 6px; margin-left: 4px; vertical-align: middle; }
+    .var.neu { background: #e2e8f0; color: #334155; } .var.bien { background: #dcfce7; color: #166534; } .var.malo { background: #fee2e2; color: #b91c1c; }
+    .kp.rojo { border-color: #fecaca; background: #fff7f7; } .kp.rojo .v { color: #b91c1c; }
+    .pills { display: inline-flex; gap: 3px; flex-wrap: wrap; }
+    .pills button { border: 1px solid #e2e8f0; background: #f8fafc; color: #475569; font-size: .72rem; font-weight: 700; border-radius: 8px; padding: 2px 9px; }
+    .pills button.on { background: #0f172a; border-color: #0f172a; color: #fff; }
+    .det-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; }
+    .det { text-align: left; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 9px 11px; width: 100%; }
+    .det:hover:not([disabled]) { border-color: #94a3b8; background: #fff; }
+    .det .n { font-size: 1.5rem; font-weight: 800; color: #0f172a; line-height: 1.1; }
+    .det .q { font-size: .66rem; font-weight: 800; text-transform: uppercase; color: #64748b; }
+    .det .x { font-size: .74rem; color: #334155; font-weight: 600; }
+    .det .f { font-size: .7rem; color: #64748b; margin-top: 2px; }
+    .det.fuera { border-color: #fca5a5; background: #fff5f5; } .det.fuera .n, .det.fuera .f b { color: #b91c1c; }
+    .det[disabled] { opacity: .55; }
     .rp table { font-size: .78rem; margin-bottom: 0; }
     .rp th { font-size: .66rem; text-transform: uppercase; color: #64748b; font-weight: 800; white-space: nowrap; }
-    .rp td { vertical-align: middle; }
     .barra { position: relative; min-width: 120px; }
     .barra .b { height: 8px; border-radius: 0 4px 4px 0; background: var(--c); min-width: 2px; }
     .barra .v { font-variant-numeric: tabular-nums; font-weight: 700; font-size: .76rem; color: #0f172a; }
@@ -23,89 +61,335 @@
     .nombre { max-width: 260px; overflow-wrap: anywhere; }
     .mal { color: #b91c1c; font-weight: 700; }
     .vacio { font-size: .78rem; color: #64748b; padding: 8px 0; }
+    details.tablas { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 10px 14px; margin-top: 4px; }
+    details.tablas > summary { font-weight: 800; font-size: .84rem; color: #0B3D91; cursor: pointer; }
+    details.tablas .rp { border: 0; padding: 8px 0 0; margin: 0 0 10px; }
+    .rp h6 { font-weight: 800; font-size: .84rem; color: #0f172a; margin-bottom: 2px; }
+    .rp .ay { font-size: .72rem; color: #64748b; margin-bottom: 6px; }
+    body.tb-presentacion #sidebar, body.tb-presentacion .topbar, body.tb-presentacion .oc-nav, body.tb-presentacion .rp-filtros,
+    body.tb-presentacion details.tablas { display: none !important; }
+    body.tb-presentacion .main-content { margin-left: 0 !important; width: 100% !important; max-width: 100% !important; padding: 14px 20px !important; }
+    @media print { .tb-barra .tb-pres, .rp-filtros, .tb-tabs { display: none !important; } .tb-tab[hidden] { display: block !important; } }
 </style>
 
 <form method="GET" class="rp-filtros d-flex flex-wrap gap-2 align-items-end">
-    <div><label class="d-block">Empresa</label>
+    <div><label>Empresa</label>
         <select name="empresa" class="form-select form-select-sm">
             <option value="TODAS" {{ 'selected' if emp_sel == 'TODAS' }}>Las dos</option>
             {% for e, info in empresas_oc.items() %}<option value="{{ e }}" {{ 'selected' if emp_sel == e }}>{{ info.corto }}</option>{% endfor %}</select></div>
-    <div><label class="d-block">Desde</label><input type="date" name="desde" class="form-control form-control-sm" value="{{ desde.isoformat() }}"></div>
-    <div><label class="d-block">Hasta</label><input type="date" name="hasta" class="form-control form-control-sm" value="{{ hasta.isoformat() }}"></div>
-    <div><label class="d-block">Tipo</label>
+    <div><label>Desde</label><input type="date" name="desde" class="form-control form-control-sm" value="{{ desde.isoformat() }}"></div>
+    <div><label>Hasta</label><input type="date" name="hasta" class="form-control form-control-sm" value="{{ hasta.isoformat() }}"></div>
+    <div><label>Tipo</label>
         <select name="tipo" class="form-select form-select-sm"><option value="">OC y OS</option>
             {% for t, tn in tipos.items() %}<option value="{{ t }}" {{ 'selected' if tipo == t }}>{{ tn }}</option>{% endfor %}</select></div>
+    <div><label>Montos</label>
+        <select name="igv" class="form-select form-select-sm"><option value="">Sin IGV (para analizar)</option>
+            <option value="1" {{ 'selected' if con_igv }}>Con IGV (lo que se paga)</option></select></div>
+    {% for k, v in cruz.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
     <button class="btn btn-sm btn-primary"><i class="bi bi-funnel"></i> Ver</button>
-    <a class="btn btn-sm btn-outline-success ms-auto" href="{{ url_for('oc_reportes', empresa=emp_sel, desde=desde.isoformat(), hasta=hasta.isoformat(), tipo=tipo, exportar='excel') }}">
-        <i class="bi bi-file-earmark-excel"></i> Descargar en Excel</a>
+    <a class="btn btn-sm btn-outline-success ms-auto" href="{{ url_rep(exportar='excel') }}"><i class="bi bi-file-earmark-excel"></i> Descargar en Excel</a>
 </form>
 
-{% set T = rep.totales %}
-<div class="kpis">
-    <div><b>{{ T.n }}</b><span>Órdenes aprobadas en el periodo</span></div>
-    <div><b>S/ {{ '{:,.2f}'.format(T.PEN) }}</b><span>En soles ({{ T.n_pen }} órdenes)</span></div>
-    <div><b>US$ {{ '{:,.2f}'.format(T.USD) }}</b><span>En dólares ({{ T.n_usd }} órdenes{% if T.importacion %}, {{ T.importacion }} de importación{% endif %})</span></div>
+{% if cruz %}
+<div class="cruz"><i class="bi bi-funnel-fill"></i> Todo el tablero está filtrado por:
+    {% for k, v in cruz.items() %}<span class="chip">{{ filtros_cruzados[k] }}: {{ v }} <a href="{{ url_rep(**{k: none}) }}" title="Quitar este filtro">✕</a></span>{% endfor %}
+    {% if cruz|length > 1 %}<a href="{{ url_rep(**dict.fromkeys(cruz.keys())) }}" class="ms-1 fw-bold">Quitar todos</a>{% endif %}
+</div>
+{% endif %}
+
+<div class="tb-barra">
+    <div class="tb-tabs" role="tablist">
+        <button type="button" data-tab="ejecutiva" class="on"><i class="bi bi-briefcase"></i> Visión ejecutiva</button>
+        <button type="button" data-tab="operativa"><i class="bi bi-gear-wide-connected"></i> Visión operativa{% if n_det_fuera %} <span class="cnt" title="Órdenes detenidas que ya pasaron su meta">{{ n_det_fuera }}</span>{% endif %}</button>
+    </div>
+    <span class="small text-muted"><i class="bi bi-info-circle"></i> Órdenes <b>aprobadas</b> del {{ desde.strftime('%d/%m/%Y') }} al {{ hasta.strftime('%d/%m/%Y') }} · montos <b>{{ sufijo }}</b></span>
+    <div class="ms-auto d-flex gap-2 align-items-center flex-wrap">
+        {% if T.PEN and T.USD %}{{ gr.botones_moneda('grMoneda', mon_ini) }}{% endif %}
+        <button type="button" class="tb-pres" id="btnPres" title="Pantalla completa para reuniones"><i class="bi bi-easel"></i> <span>Modo presentación</span></button>
+    </div>
+</div>
+
+{# =============================== VISIÓN EJECUTIVA =============================== #}
+<section class="tb-tab" id="tab-ejecutiva">
+    {% if rep.insights %}
+    <div class="resumen"><h6><i class="bi bi-lightbulb"></i> Resumen del periodo</h6>
+        <ul>{% for i in rep.insights %}
+            <li class="nv-{{ i.nivel }}"><i class="bi {{ i.icono }}"></i><span>{{ i.txt }}</span>
+                {% if i.url %}<a class="acc btn btn-sm {{ 'btn-danger' if i.nivel == 'mal' else 'btn-outline-danger' if i.nivel == 'alerta' else 'btn-outline-primary' }} py-0" href="{{ i.url }}">{{ i.accion }} <i class="bi bi-arrow-right"></i></a>
+                {% elif i.filtro %}<a class="acc btn btn-sm btn-outline-primary py-0" href="{{ url_rep(**{i.filtro[0]: i.filtro[1]}) }}#operativa"><i class="bi bi-funnel"></i> {{ i.accion }}</a>
+                {% elif i.tab %}<button type="button" class="acc btn btn-sm btn-outline-secondary py-0" data-ir="{{ i.tab }}">Ver detalle</button>{% endif %}</li>
+        {% endfor %}</ul>
+    </div>
+    {% endif %}
+
+    {% macro variacion(v, sube_es_bueno=None, unidad='%') %}{% if v is defined and v is not none %}{% set cls = 'neu' if sube_es_bueno is none else (('bien' if v > 0 else 'malo') if sube_es_bueno else ('malo' if v > 0 else 'bien')) %}<span class="var {{ cls if v != 0 else 'neu' }}" title="vs. {{ rep.comp_txt }}">{{ '▲' if v > 0 else ('▼' if v < 0 else '=') }} {{ '%g'|format(v|abs) }}{{ unidad }}</span>{% endif %}{% endmacro %}
+    {% set rango_ant = (rep.a_desde.strftime('%d/%m/%y') ~ '–' ~ rep.a_hasta.strftime('%d/%m/%y')) if rep.a_desde else '' %}
+    <div class="kps">
+        <div class="kp"><div class="t">Gasto en soles</div>
+            <div class="v">S/ {{ '{:,.2f}'.format(T.PEN) }}{{ variacion(CP.PEN) }}</div>
+            <div class="s">{{ T.n_pen }} orden(es){% if A %} · <span title="{{ rep.comp_txt }}">{{ rango_ant }}: S/ {{ '{:,.0f}'.format(A.PEN) }}</span>{% endif %}</div>
+            <div class="sp"><canvas id="spPEN"></canvas></div></div>
+        <div class="kp"><div class="t">Gasto en dólares</div>
+            <div class="v">US$ {{ '{:,.2f}'.format(T.USD) }}{{ variacion(CP.USD) }}</div>
+            <div class="s">{{ T.n_usd }} orden(es){% if T.importacion %} · {{ T.importacion }} importación(es){% endif %}{% if A %} · {{ rango_ant }}: US$ {{ '{:,.0f}'.format(A.USD) }}{% endif %}</div>
+            <div class="sp"><canvas id="spUSD"></canvas></div></div>
+        <div class="kp"><div class="t">Órdenes aprobadas</div>
+            <div class="v">{{ T.n }}{{ variacion(CP.n) }}</div>
+            <div class="s">{% if A %}{{ rango_ant }}: {{ A.n }} orden(es){% else %}en el periodo{% endif %}</div>
+            <div class="sp"><canvas id="spN"></canvas></div></div>
+        {% set o = rep.otif %}
+        <div class="kp {{ 'rojo' if o.pct is not none and o.pct < 70 }}" title="On Time In Full: llegó TODO a más tardar en la fecha prometida"><div class="t">OTIF · a tiempo y completas</div>
+            <div class="v">{{ (o.pct ~ '%') if o.pct is not none else '—' }}{{ variacion(CP.otif, true, ' pts') }}</div>
+            <div class="s">{% if o.n %}{{ o.ok }} de {{ o.n }} órdenes con fecha de entrega cumplida o vencida{% else %}Sin órdenes con fecha de entrega para juzgar{% endif %}</div>
+            {% if o.n %}<div class="progress mt-1" style="height:8px;" title="A tiempo y completas / tarde / incompletas / no llegó">
+                <div class="progress-bar" style="width: {{ 100 * o.ok / o.n }}%; background:#16a34a;"></div>
+                <div class="progress-bar" style="width: {{ 100 * o.tarde / o.n }}%; background:#f59e0b;"></div>
+                <div class="progress-bar" style="width: {{ 100 * o.incompleto / o.n }}%; background:#fb923c;"></div>
+                <div class="progress-bar" style="width: {{ 100 * o.no_llego / o.n }}%; background:#dc2626;"></div></div>{% endif %}</div>
+    </div>
+
+    <div class="row g-3 mb-3">
+        <div class="col-12 col-xl-8"><div class="gr-card"><div class="gr-cab"><div><h6><i class="bi bi-calendar3"></i> Gasto por mes</h6>
+            <div class="ay">Por la fecha de la orden, {{ sufijo }}. La línea punteada es el promedio. <b>Clic en un mes</b> para ver solo ese mes.</div></div></div>
+            <div class="gr-area alto"><canvas id="gMes"></canvas></div></div></div>
+        <div class="col-12 col-xl-4"><div class="gr-card"><div class="gr-cab"><div><h6><i class="bi bi-buildings"></i> Por empresa</h6>
+            <div class="ay">Qué empresa compró ({{ sufijo }}). Clic para filtrar.</div></div></div>
+            <div class="gr-area"><canvas id="gEmp"></canvas></div></div></div>
+    </div>
+    <div class="row g-3 mb-3">
+        <div class="col-12 col-xl-7"><div class="gr-card"><div class="gr-cab"><div><h6><i class="bi bi-bar-chart-steps"></i> ¿A quién le compramos? (Pareto)</h6>
+            <div class="ay">De mayor a menor. Los de color fuerte suman el <b>80% del gasto</b>: ahí conviene negociar. <b>Clic en un proveedor</b> para filtrar todo el tablero.</div></div></div>
+            <div class="gr-area alto"><canvas id="gPareto"></canvas></div></div></div>
+        <div class="col-12 col-xl-5"><div class="gr-card"><div class="gr-cab"><div><h6><i class="bi bi-diagram-3"></i> ¿Para qué y quién?</h6>
+            <div class="ay">Clic en una barra para filtrar todo el tablero.</div></div>
+            <div class="pills" id="pillsDim"><button type="button" data-dim="area" class="on">Área</button><button type="button" data-dim="motivo">Motivo</button>
+                <button type="button" data-dim="cliente">Cliente</button><button type="button" data-dim="solic">Solicitó</button></div></div>
+            <div class="gr-area"><canvas id="gDim"></canvas></div></div></div>
+    </div>
+
+    {% macro tabla_gasto(lista, cab, maximo=12) %}
+    {% set mx_pen = (lista|map(attribute='PEN')|max) if lista else 0 %}{% set mx_usd = (lista|map(attribute='USD')|max) if lista else 0 %}
+    {% if lista %}
+    <div class="table-responsive"><table class="table table-sm">
+        <thead><tr><th>{{ cab }}</th><th>Soles (S/)</th><th>Dólares (US$)</th><th class="text-end">Órdenes</th></tr></thead>
+        <tbody>{% for r in lista[:maximo] %}
+        <tr><td class="nombre">{{ r.txt or r.clave }}</td>
+            <td class="barra pen">{% if r.PEN %}<div class="v">{{ '{:,.2f}'.format(r.PEN) }}</div><div class="b" style="width: {{ (100 * r.PEN / mx_pen)|round(1) if mx_pen else 0 }}%;"></div>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+            <td class="barra usd">{% if r.USD %}<div class="v">{{ '{:,.2f}'.format(r.USD) }}</div><div class="b" style="width: {{ (100 * r.USD / mx_usd)|round(1) if mx_usd else 0 }}%;"></div>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+            <td class="text-end num">{{ r.n }}</td></tr>
+        {% endfor %}</tbody></table></div>
+    {% if lista|length > maximo %}<div class="ay mt-1">Se muestran {{ maximo }} de {{ lista|length }}: el Excel trae todos.</div>{% endif %}
+    {% else %}<div class="vacio">Sin datos en el periodo.</div>{% endif %}
+    {% endmacro %}
+    <details class="tablas"><summary><i class="bi bi-table"></i> Ver las tablas con los montos exactos</summary>
+        <div class="row g-3 mt-1">
+            <div class="col-12 col-xl-6">
+                <div class="rp"><h6>Gasto por mes</h6>{{ tabla_gasto(rep.por_mes, 'Mes', 36) }}</div>
+                <div class="rp"><h6>Gasto por proveedor</h6>{{ tabla_gasto(rep.por_prov, 'Proveedor', 25) }}</div>
+                <div class="rp"><h6>Gasto por cliente</h6><div class="ay">Compras hechas para el pedido de un cliente.</div>{{ tabla_gasto(rep.por_cliente, 'Cliente') }}</div>
+            </div>
+            <div class="col-12 col-xl-6">
+                <div class="rp"><h6>Gasto por empresa</h6>{{ tabla_gasto(rep.por_empresa, 'Empresa') }}</div>
+                <div class="rp"><h6>Gasto por área</h6>{{ tabla_gasto(rep.por_area, 'Área') }}</div>
+                <div class="rp"><h6>Gasto por motivo</h6>{{ tabla_gasto(rep.por_motivo, 'Motivo') }}</div>
+                <div class="rp"><h6>Gasto por solicitante</h6>{{ tabla_gasto(rep.por_solic, 'Solicitó') }}</div>
+            </div>
+        </div>
+    </details>
+</section>
+
+{# =============================== VISIÓN OPERATIVA =============================== #}
+<section class="tb-tab" id="tab-operativa" hidden>
     {% set tl = rep.tiempos|selectattr('clave', 'equalto', 'aprobada_llegada')|first %}
-    <div><b>{{ tl.prom if tl.prom is not none else '—' }}{% if tl.prom is not none %} d{% endif %}</b><span>Promedio: aprobada → llega el material</span></div>
-</div>
-<div class="small text-muted mb-2"><i class="bi bi-info-circle"></i> Cuenta las órdenes <b>aprobadas</b> (aprobada, llegó o conforme) con fecha en el periodo. El total es lo que se paga al proveedor
-    (las compras locales incluyen IGV; las importaciones no). <b>Soles y dólares van por separado</b>: no se suman.</div>
-
-{% macro tabla_gasto(lista, cab, maximo=12) %}
-{% set mx_pen = (lista|map(attribute='PEN')|max) if lista else 0 %}{% set mx_usd = (lista|map(attribute='USD')|max) if lista else 0 %}
-{% if lista %}
-<div class="table-responsive"><table class="table table-sm">
-    <thead><tr><th>{{ cab }}</th><th>Soles (S/)</th><th>Dólares (US$)</th><th class="text-end">Órdenes</th></tr></thead>
-    <tbody>{% for r in lista[:maximo] %}
-    <tr><td class="nombre">{{ r.txt or r.clave }}</td>
-        <td class="barra pen" title="{{ r.txt or r.clave }}: S/ {{ '{:,.2f}'.format(r.PEN) }}">{% if r.PEN %}<div class="v">{{ '{:,.2f}'.format(r.PEN) }}</div><div class="b" style="width: {{ (100 * r.PEN / mx_pen)|round(1) if mx_pen else 0 }}%;"></div>{% else %}<span class="text-muted">—</span>{% endif %}</td>
-        <td class="barra usd" title="{{ r.txt or r.clave }}: US$ {{ '{:,.2f}'.format(r.USD) }}">{% if r.USD %}<div class="v">{{ '{:,.2f}'.format(r.USD) }}</div><div class="b" style="width: {{ (100 * r.USD / mx_usd)|round(1) if mx_usd else 0 }}%;"></div>{% else %}<span class="text-muted">—</span>{% endif %}</td>
-        <td class="text-end num">{{ r.n }}</td></tr>
-    {% endfor %}</tbody></table></div>
-{% if lista|length > maximo %}<div class="ay mt-1">Se muestran {{ maximo }} de {{ lista|length }}: el Excel trae todos.</div>{% endif %}
-{% else %}<div class="vacio">Sin datos en el periodo.</div>{% endif %}
-{% endmacro %}
-
-<div class="row g-3">
-    <div class="col-12 col-xl-6">
-        <div class="rp"><h6><i class="bi bi-calendar3"></i> Gasto por mes</h6><div class="ay">Por la fecha de la orden.</div>{{ tabla_gasto(rep.por_mes, 'Mes', 24) }}</div>
-        <div class="rp"><h6><i class="bi bi-building"></i> Gasto por proveedor</h6><div class="ay">Ordenado por monto.</div>{{ tabla_gasto(rep.por_prov, 'Proveedor') }}</div>
-        <div class="rp"><h6><i class="bi bi-person-badge"></i> Gasto por cliente</h6><div class="ay">Compras hechas para el pedido de un cliente.</div>{{ tabla_gasto(rep.por_cliente, 'Cliente') }}</div>
+    {% set tc = rep.tiempos|selectattr('clave', 'equalto', 'ciclo')|first %}
+    {% set gprov = rep.detenidas|selectattr('clave', 'equalto', 'proveedor')|first %}
+    <div class="kps">
+        <div class="kp {{ 'rojo' if n_det_fuera }}"><div class="t">Órdenes detenidas ahora</div>
+            <div class="v">{{ n_det }}</div><div class="s">{% if n_det_fuera %}<b class="text-danger">{{ n_det_fuera }} fuera de meta</b>{% else %}todas dentro de su meta{% endif %} · sin importar el periodo</div></div>
+        <div class="kp {{ 'rojo' if gprov.n_fuera }}"><div class="t">Material atrasado (no llega)</div>
+            <div class="v">{{ gprov.n_fuera }}</div><div class="s">de {{ gprov.n }} orden(es) esperando al proveedor</div></div>
+        <div class="kp {{ 'rojo' if tl.fuera_meta }}"><div class="t">Proveedor: aprobada → llega</div>
+            <div class="v">{{ (tl.mediana ~ ' d') if tl.mediana is not none else '—' }}</div><div class="s">caso típico · meta {{ dias(tl.meta) }} d · {{ tl.n }} caso(s)</div></div>
+        <div class="kp {{ 'rojo' if tc.fuera_meta }}"><div class="t">Ciclo completo de compra</div>
+            <div class="v">{{ (tc.mediana ~ ' d') if tc.mediana is not none else '—' }}</div><div class="s">de crear la OC a tener todo en el inventario · meta {{ dias(tc.meta) }} d</div></div>
     </div>
-    <div class="col-12 col-xl-6">
-        <div class="rp"><h6><i class="bi bi-diagram-3"></i> Gasto por área</h6><div class="ay">Área que solicitó la compra.</div>{{ tabla_gasto(rep.por_area, 'Área') }}</div>
-        <div class="rp"><h6><i class="bi bi-bullseye"></i> Gasto por motivo</h6><div class="ay">Para qué se compró.</div>{{ tabla_gasto(rep.por_motivo, 'Motivo') }}</div>
-        <div class="rp"><h6><i class="bi bi-person-raised-hand"></i> Gasto por solicitante</h6><div class="ay">Quién pidió la compra.</div>{{ tabla_gasto(rep.por_solic, 'Solicitó') }}</div>
+
+    <div class="gr-card mb-3" style="height:auto;"><div class="gr-cab"><div><h6><i class="bi bi-hourglass-split"></i> ¿Dónde están detenidas las órdenes ahora?</h6>
+        <div class="ay">Situación de hoy (no depende del periodo). En rojo, las que ya pasaron su meta. <b>Clic</b> para ver cuáles son y abrirlas.</div></div></div>
+        <div class="det-grid">{% for g in rep.detenidas %}
+            <button type="button" class="det {{ 'fuera' if g.n_fuera }}" data-det="{{ g.clave }}" {{ 'disabled' if not g.n }}>
+                <div class="q">{{ g.quien }}</div><div class="n">{{ g.n }}</div><div class="x">{{ g.txt }}</div>
+                <div class="f">{% if g.n %}{% if g.n_fuera %}<b>{{ g.n_fuera }} fuera de meta</b> · {% endif %}la más antigua: {{ dias(g.max_dias) }} d{% else %}ninguna{% endif %}
+                    {% if g.meta is not none %} · meta {{ dias(g.meta) }} d{% endif %}</div></button>
+        {% endfor %}</div>
     </div>
-</div>
 
-<div class="rp">
-    <h6><i class="bi bi-alarm"></i> Proveedores que más se atrasan</h6>
-    <div class="ay">Solo órdenes con fecha de entrega (en días o fecha exacta). Se compara la fecha prometida con la <b>primera llegada</b>; las que aún no llegan y ya pasaron la fecha cuentan como atrasadas.</div>
-    {% if rep.atrasos %}
-    <div class="table-responsive"><table class="table table-sm">
-        <thead><tr><th>Proveedor</th><th class="text-end">Con fecha</th><th class="text-end">A tiempo</th><th class="text-end">Tarde</th><th class="text-end">Atrasadas sin llegar</th>
-            <th class="text-end">% con atraso</th><th class="text-end">Atraso prom.</th><th>Peor caso</th></tr></thead>
-        <tbody>{% for p in rep.atrasos[:20] %}
-        <tr><td class="nombre">{{ p.clave }}</td><td class="text-end num">{{ p.con_fecha }}</td><td class="text-end num">{{ p.a_tiempo }}</td>
-            <td class="text-end num {{ 'mal' if p.tarde }}">{{ p.tarde }}</td><td class="text-end num {{ 'mal' if p.pend_atrasadas }}">{{ p.pend_atrasadas }}</td>
-            <td class="text-end num {{ 'mal' if p.pct_tarde >= 50 }}">{{ p.pct_tarde }}%</td><td class="text-end num">{{ p.prom }} d</td>
-            <td class="small">{% if p.peor %}{{ p.peor[0] }} · <b>{{ p.peor[1] }} d</b>{% else %}—{% endif %}</td></tr>
-        {% endfor %}</tbody></table></div>
-    {% else %}<div class="vacio">No hay órdenes con fecha de entrega en el periodo.</div>{% endif %}
-</div>
+    <div class="gr-card mb-3" style="height:auto;"><div class="gr-cab"><div><h6><i class="bi bi-signpost-split"></i> ¿Dónde se pierde el tiempo? Línea del proceso</h6>
+        <div class="ay">Cada tramo es un paso con su <b>caso típico</b> (mediana: no la mueven los casos extremos). Abajo, la meta de cada paso. El paso que pasa su meta sale <b style="color:#dc2626;">en rojo</b>.</div></div></div>
+        <div class="gr-area" style="height:190px;"><canvas id="gProceso"></canvas></div>
+    </div>
 
-<div class="rp">
-    <h6><i class="bi bi-stopwatch"></i> ¿Cuánto demora cada paso?</h6>
-    <div class="ay">En días (con decimales: 0.5 = medio día). La <b>mediana</b> es el caso típico (no la mueven los casos extremos). Con entregas parciales, la conformidad y el ingreso se miden por cada entrega.</div>
-    {% set mx_t = rep.tiempos|map(attribute='prom')|select|max if rep.tiempos|map(attribute='prom')|select|list else 0 %}
-    <div class="table-responsive"><table class="table table-sm">
-        <thead><tr><th>Paso</th><th>Promedio</th><th class="text-end">Mediana</th><th class="text-end">Mín.</th><th class="text-end">Máx.</th><th class="text-end">Casos</th></tr></thead>
-        <tbody>{% for x in rep.tiempos %}
-        <tr><td><b>{{ x.txt }}</b><div class="text-muted" style="font-size:.7rem;">{{ x.ayuda }}</div></td>
-            <td class="barra pen" title="{{ x.txt }}: {{ x.prom }} días en promedio">{% if x.prom is not none %}<div class="v">{{ x.prom }} d</div><div class="b" style="width: {{ (100 * x.prom / mx_t)|round(1) if mx_t else 0 }}%;"></div>{% else %}<span class="text-muted">sin casos</span>{% endif %}</td>
-            <td class="text-end num">{{ x.mediana if x.mediana is not none else '—' }}</td><td class="text-end num">{{ x.min if x.min is not none else '—' }}</td>
-            <td class="text-end num">{{ x.max if x.max is not none else '—' }}</td><td class="text-end num">{{ x.n }}</td></tr>
-        {% endfor %}</tbody></table></div>
-</div>
+    <div class="row g-3 mb-3">
+        <div class="col-12 col-xl-6"><div class="gr-card"><div class="gr-cab"><div><h6><i class="bi bi-traffic-light"></i> Semáforo de atrasos por proveedor</h6>
+            <div class="ay">Proveedores con {{ rep.min_ranking }}+ órdenes con fecha de entrega ya cumplida o vencida (entre paréntesis, cuántas). Compara la fecha prometida con la <b>primera llegada</b>. Clic para filtrar.</div></div></div>
+            <div class="gr-area"><canvas id="gSemaforo"></canvas></div></div></div>
+        <div class="col-12 col-xl-6"><div class="gr-card"><div class="gr-cab"><div><h6><i class="bi bi-grid-3x3-gap"></i> Matriz de riesgo de proveedores</h6>
+            <div class="ay">Cada burbuja es un proveedor (más grande = más órdenes). <b>Arriba a la derecha</b>: le compramos mucho y se atrasa mucho. En gris, los que tienen pocos datos.</div></div></div>
+            <div class="gr-area alto"><canvas id="gMatriz"></canvas></div></div></div>
+    </div>
+
+    <div class="row g-3 mb-3">
+        <div class="col-12 col-xl-4"><div class="gr-card"><div class="gr-cab"><div><h6><i class="bi bi-bullseye"></i> OTIF: ¿llegó a tiempo y completo?</h6>
+            <div class="ay">Órdenes con fecha de entrega ya cumplida o vencida. "Incompleta" = falta algo o se cerró el saldo.</div></div></div>
+            <div class="gr-area"><canvas id="gOtif"></canvas></div></div></div>
+        <div class="col-12 col-xl-8"><div class="gr-card"><div class="gr-cab"><div><h6><i class="bi bi-stopwatch"></i> ¿Cuánto demora cada paso?</h6>
+            <div class="ay">En días (0.5 = medio día). Con entregas parciales, la conformidad y el ingreso se miden por cada entrega.</div></div></div>
+            <div class="table-responsive"><table class="table table-sm mb-0" style="font-size:.78rem;">
+                <thead><tr style="font-size:.66rem; text-transform:uppercase; color:#64748b;"><th>Paso</th><th class="text-end">Caso típico</th><th class="text-end">Meta</th><th class="text-end">Promedio</th><th class="text-end">Mín. / Máx.</th><th class="text-end">Casos</th></tr></thead>
+                <tbody>{% for x in rep.tiempos %}
+                <tr><td><b>{{ x.txt }}</b><div class="text-muted" style="font-size:.68rem;">{{ x.ayuda }}</div></td>
+                    <td class="text-end num {{ 'mal' if x.fuera_meta }}">{{ (x.mediana ~ ' d') if x.mediana is not none else '—' }}{% if x.fuera_meta %} <i class="bi bi-exclamation-triangle-fill"></i>{% endif %}</td>
+                    <td class="text-end num text-muted">{{ dias(x.meta) }}{{ ' d' if x.meta is not none }}</td>
+                    <td class="text-end num">{{ (x.prom ~ ' d') if x.prom is not none else '—' }}</td>
+                    <td class="text-end num text-muted">{{ x.min if x.min is not none else '—' }} / {{ x.max if x.max is not none else '—' }}</td>
+                    <td class="text-end num">{{ x.n }}</td></tr>
+                {% endfor %}</tbody></table></div></div></div>
+    </div>
+
+    <details class="tablas"><summary><i class="bi bi-table"></i> Ver la tabla completa de atrasos (todos los proveedores)</summary>
+        <div class="rp">{% if rep.atrasos %}
+        <div class="table-responsive"><table class="table table-sm">
+            <thead><tr><th>Proveedor</th><th class="text-end">Con fecha</th><th class="text-end">A tiempo</th><th class="text-end">Tarde</th><th class="text-end">Sin llegar (vencidas)</th>
+                <th class="text-end">En plazo</th><th class="text-end">% con atraso</th><th class="text-end">Atraso prom.</th><th>Peor caso</th></tr></thead>
+            <tbody>{% for p in rep.atrasos %}
+            <tr><td class="nombre">{{ p.clave }}{% if not p.ranking %} <span class="badge text-bg-light border" title="Menos de {{ rep.min_ranking }} órdenes juzgadas">pocos datos</span>{% endif %}</td>
+                <td class="text-end num">{{ p.con_fecha }}</td><td class="text-end num">{{ p.a_tiempo }}</td>
+                <td class="text-end num {{ 'mal' if p.tarde }}">{{ p.tarde }}</td><td class="text-end num {{ 'mal' if p.pend_atrasadas }}">{{ p.pend_atrasadas }}</td>
+                <td class="text-end num text-muted">{{ p.en_plazo }}</td>
+                <td class="text-end num {{ 'mal' if p.pct_tarde >= 50 }}">{{ p.pct_tarde }}%</td><td class="text-end num">{{ p.prom }} d</td>
+                <td class="small">{% if p.peor %}{{ p.peor[0] }} · <b>{{ p.peor[1] }} d</b>{% else %}—{% endif %}</td></tr>
+            {% endfor %}</tbody></table></div>
+        {% else %}<div class="vacio">No hay órdenes con fecha de entrega en el periodo.</div>{% endif %}</div>
+    </details>
+</section>
+
+{# Ventana: órdenes detenidas de un paso #}
+<div class="modal fade" id="modalDet" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content">
+    <div class="modal-header py-2"><h6 class="modal-title fw-bold" id="mdTit"></h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body p-0"><table class="table table-sm table-hover mb-0" style="font-size:.8rem;">
+        <thead class="table-light"><tr><th class="ps-3">Orden</th><th>Proveedor</th><th class="text-end">Total</th><th class="text-end pe-3">Esperando</th></tr></thead>
+        <tbody id="mdCuerpo"></tbody></table></div>
+    <div class="modal-footer py-2"><span class="small text-muted me-auto" id="mdNota"></span><a class="btn btn-sm btn-primary" id="mdLista" href="#">Ir a la lista <i class="bi bi-arrow-right"></i></a></div>
+</div></div></div>
+
+{{ gr.librerias() }}
+<script>
+(function () {
+    const R = {{ {'mes': rep.por_mes, 'prov': rep.por_prov, 'emp': rep.por_empresa, 'area': rep.por_area, 'motivo': rep.por_motivo, 'cliente': rep.por_cliente,
+                 'solic': rep.por_solic, 'tiempos': rep.tiempos|selectattr('clave', 'in', pasos_proceso)|list, 'atrasos': rep.atrasos, 'otif': rep.otif,
+                 'det': rep.detenidas, 'alerta': rep.alerta_pct, 'igv': con_igv}|tojson }};
+    const URL_OC = {{ url_for('oc_detalle', orden_id=987654321)|tojson }};
+    const URL_LISTA = {{ {'borrador': url_for('oc_lista', vista='curso', empresa=emp_sel), 'aprobar': url_for('oc_lista', vista='aprobar', empresa=emp_sel),
+                         'proveedor': url_for('oc_lista', vista='recibir', empresa=emp_sel), 'conformidad': url_for('oc_lista', vista='recibir', empresa=emp_sel),
+                         'ingreso': url_for('oc_ingresos_pendientes')}|tojson }};
+    const $ = id => document.getElementById(id);
+    const esc = t => String(t == null ? '' : t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+    // ---- filtro cruzado: clic en una barra -> se recarga con ese filtro (y se queda en la pestaña) ----
+    function filtrar(dim, valor, tab) {
+        const u = new URL(location.href);
+        u.searchParams.set(dim, valor);
+        u.searchParams.delete('exportar');
+        u.hash = tab || actual;
+        location.href = u.toString();
+    }
+    function verMes(clave) {
+        const [y, m] = clave.split('-').map(Number), fin = new Date(y, m, 0).getDate();
+        const u = new URL(location.href);
+        u.searchParams.set('desde', `${clave}-01`); u.searchParams.set('hasta', `${clave}-${String(fin).padStart(2, '0')}`);
+        u.hash = actual; location.href = u.toString();
+    }
+
+    // ---- pestañas (cada una se dibuja al mostrarse; al cambiar de moneda se vuelve a dibujar) ----
+    let actual = (location.hash || '').replace('#', '') === 'operativa' ? 'operativa' : 'ejecutiva', moneda = '{{ mon_ini }}', hecho = {}, dim = 'area';
+    const DIBUJAR = {
+        ejecutiva(m) {
+            if (!GR.ok) return;
+            GR.mini($('spPEN'), R.mes.map(x => x.PEN), GR.C.PEN);
+            GR.mini($('spUSD'), R.mes.map(x => x.USD), GR.C.USD);
+            GR.mini($('spN'), R.mes.map(x => x.n), '#475569');
+            GR.barras($('gMes'), { etiquetas: R.mes.map(x => x.txt), valores: R.mes.map(x => x[m]), moneda: m, titulo: m === 'USD' ? 'Dólares (US$)' : 'Soles (S/)',
+                                   textoClic: R.mes.length > 1 ? 'Clic para ver solo este mes' : '', alClic: R.mes.length > 1 ? (i => verMes(R.mes[i].clave)) : null });
+            GR.barrasH($('gEmp'), R.emp.map(x => ({ txt: x.clave, valor: x[m], color: x.color, n: x.n })), { moneda: m, largo: 16, tooltipExtra: f => `${f.n} orden(es)`,
+                       alClic: R.emp.length > 1 ? (f => filtrar('empresa_c', f.txt)) : null, textoClic: 'Clic para filtrar todo el tablero' });
+            GR.pareto($('gPareto'), R.prov.map(x => ({ txt: x.clave, valor: x[m] })), { moneda: m, top: 12, alClic: f => filtrar('prov', f.txt) });
+            dibujarDim(m);
+        },
+        operativa(m) {
+            if (!GR.ok) return;
+            GR.proceso($('gProceso'), R.tiempos.map(x => ({ corto: x.corto, txt: x.txt, mediana: x.mediana, meta: x.meta })));
+            GR.semaforo($('gSemaforo'), R.atrasos.filter(p => p.ranking).slice(0, 12).map(p => ({ txt: p.clave, a_tiempo: p.a_tiempo, tarde: p.tarde,
+                        pend_atrasadas: p.pend_atrasadas, juzgadas: p.juzgadas, prom: p.prom })), { alClic: p => filtrar('prov', p.txt, 'operativa'),
+                        vacio: 'Ningún proveedor con {{ rep.min_ranking }}+ órdenes con fecha de entrega cumplida o vencida' });
+            GR.burbujas($('gMatriz'), R.atrasos.filter(p => p.juzgadas > 0).map(p => ({ txt: p.clave, x: p[m], y: p.pct_tarde, n: p.juzgadas,
+                        atrasadas: p.tarde + p.pend_atrasadas, ranking: p.ranking })), { moneda: m, alerta: R.alerta, igv: R.igv, alClic: p => filtrar('prov', p.txt, 'operativa') });
+            const o = R.otif;
+            GR.barrasH($('gOtif'), [{ txt: 'A tiempo y completas', valor: o.ok, color: GR.C.ok }, { txt: 'Completas pero tarde', valor: o.tarde, color: GR.C.alerta },
+                        { txt: 'Incompletas', valor: o.incompleto, color: '#fb923c' }, { txt: 'No llegó nada', valor: o.no_llego, color: GR.C.mal }],
+                        { formato: v => String(v), formatoLargo: v => `${v} orden(es)`, largo: 22, ordenar: false, vacio: 'Sin órdenes con fecha de entrega para juzgar' });
+        }
+    };
+    function dibujarDim(m) {
+        const filas = (R[dim] || []).map(x => ({ txt: x.clave, valor: x[m], n: x.n }));
+        GR.barrasH($('gDim'), filas, { moneda: m, top: 8, largo: 24, tooltipExtra: f => `${f.n} orden(es)`, textoClic: 'Clic para filtrar todo el tablero',
+                   alClic: f => filtrar(dim, f.txt) });
+    }
+    function mostrar(t) {
+        actual = t;
+        document.querySelectorAll('.tb-tab').forEach(s => { s.hidden = s.id !== 'tab-' + t; });
+        document.querySelectorAll('.tb-tabs [data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
+        if (hecho[t] !== moneda) { hecho[t] = moneda; DIBUJAR[t](moneda); }
+        try { history.replaceState(null, '', '#' + t); } catch (e) {}
+    }
+    document.querySelectorAll('.tb-tabs [data-tab]').forEach(b => b.addEventListener('click', () => mostrar(b.dataset.tab)));
+    document.querySelectorAll('[data-ir]').forEach(b => b.addEventListener('click', () => { mostrar(b.dataset.ir); window.scrollTo({ top: 0, behavior: 'smooth' }); }));
+    document.querySelectorAll('#pillsDim [data-dim]').forEach(b => b.addEventListener('click', () => {
+        dim = b.dataset.dim;
+        document.querySelectorAll('#pillsDim [data-dim]').forEach(x => x.classList.toggle('on', x === b));
+        if (GR.ok) dibujarDim(moneda);
+    }));
+    GR.monedaGlobal($('grMoneda'), moneda, m => { moneda = m; hecho = {}; mostrar(actual); });
+
+    // ---- órdenes detenidas: ventana con la lista ----
+    const modal = $('modalDet');
+    document.querySelectorAll('[data-det]').forEach(b => b.addEventListener('click', () => {
+        const g = R.det.find(x => x.clave === b.dataset.det);
+        if (!g || !g.n) return;
+        $('mdTit').textContent = `${g.txt} · ${g.quien} (${g.n})`;
+        $('mdCuerpo').innerHTML = g.ordenes.map(x => `<tr class="${x.fuera ? 'table-danger' : ''}"><td class="ps-3"><a class="fw-bold" href="${URL_OC.replace('987654321', x.id)}">${esc(x.codigo)}</a></td>
+            <td>${esc(x.proveedor)}</td><td class="text-end text-nowrap">${GR.fmt(x.monto, x.moneda)}</td>
+            <td class="text-end pe-3 text-nowrap ${x.fuera ? 'fw-bold text-danger' : ''}">${x.dias == null ? '—' : x.dias + ' d'}${x.fuera ? ' · fuera de meta' : ''}</td></tr>`).join('');
+        $('mdNota').textContent = g.meta != null ? `Meta de este paso: ${g.meta} d. Total con IGV.` : 'Total con IGV.';
+        $('mdLista').href = URL_LISTA[g.clave];
+        $('mdLista').innerHTML = (g.clave === 'aprobar' ? 'Aprobar en la lista' : 'Ir a la lista') + ' <i class="bi bi-arrow-right"></i>';
+        if (window.bootstrap) bootstrap.Modal.getOrCreateInstance(modal).show();
+    }));
+
+    // ---- modo presentación (pantalla completa, sin menú ni filtros) ----
+    const bp = $('btnPres');
+    function presentar(si) {
+        document.body.classList.toggle('tb-presentacion', si);
+        bp.querySelector('span').textContent = si ? 'Salir de la presentación' : 'Modo presentación';
+    }
+    bp.addEventListener('click', () => {
+        const si = !document.body.classList.contains('tb-presentacion');
+        presentar(si);
+        try {
+            if (si && document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(() => {});
+            else if (!si && document.fullscreenElement) document.exitFullscreen().catch(() => {});
+        } catch (e) {}
+    });
+    document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) presentar(false); });
+})();
+</script>
 {% endblock %}

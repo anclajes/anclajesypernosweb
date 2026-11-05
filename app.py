@@ -15785,6 +15785,7 @@ MODULOS_EN_ARCHIVOS = [
     'modulos/insumos/estadisticas.py',
     'modulos/compras/base.py',
     'modulos/compras/ordenes.py',
+    'modulos/compras/reportes.py',
     'modulos/compras/mejores_precios.py',
     'modulos/compras/en_camino.py',
     'modulos/compras/entregas.py',

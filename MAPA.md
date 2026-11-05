@@ -26,8 +26,9 @@ modulos/
                          cuentas, motivos, requerimientos, OCConfig
     base.py              roles (ROLES_OC_*), empresas, catálogos, tablas, permisos (_ruta_oc), numeración,
                          _leer_orden_form (validación e IGV), recepción (_oc_recepcion) y pagos
-    ordenes.py           lista (con aprobación rápida), Excel y reportes, crear/editar (incluye cambiar de empresa),
+    ordenes.py           lista (con aprobación rápida), Excel, crear/editar (incluye cambiar de empresa),
                          detalle y flujo (enviar, aprobar, rechazar, anular, observación)
+    reportes.py          REPORTES DE COMPRAS (/ordenes/reportes): tablero con Visión ejecutiva y Visión operativa, Excel
     mejores_precios.py   MEJORES PRECIOS (/ordenes/precios, también el menú "Mejores Precios"): por producto, por proveedor,
                          detalle, gráficos, ahorro potencial y Excel con gráficos (productos, insumos y servicios)
     en_camino.py         EN CAMINO (solo Gerencia): en los inventarios de Anclajes, Import Bolts e Insumos, por producto,
@@ -270,10 +271,31 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
   `GR.vacio` (mensaje "sin datos"). Cada canvas guarda su gráfico y se destruye antes de redibujar.
 - Mejores precios (v16): resumen sin donas ni doble eje; moneda global; condición de pago por MONTO sin IGV (antes con IGV)
   y n° de órdenes en el tooltip; clic en un proveedor → vista "Por producto" filtrada por él (`res.prov_graf`).
-- Plan: Fase 2 (v17) Reportes de compras como tablero (pestañas Ejecutiva / Operativa, KPIs con ▲▼ y mini tendencia,
-  Pareto, filtro cruzado, modo presentación, línea del proceso con metas, órdenes detenidas, OTIF, semáforo y matriz de
-  atrasos, montos sin IGV con opción con IGV). Fase 3 (v18) precios finos (pesas, Pareto del ahorro, cascada precio/volumen,
+- Más funciones (v17): `GR.mini` (mini tendencia de los KPIs), `GR.pareto`, `GR.proceso` (línea del proceso: mediana vs meta,
+  rojo si pasa la meta), `GR.semaforo` (barra 100% por proveedor), `GR.burbujas` (matriz de riesgo con cuadrantes: `data.grCuadrantes`).
+  En barras apiladas el valor va dentro del tramo (`dataset.grDentro`). Montos cortos propios: "850 · 12.5 mil · 1.2 M".
+- Plan: Fase 3 (v18) precios finos (pesas, Pareto del ahorro, cascada precio/volumen,
   ahorro vs. compra anterior). Fase 4: dashboards de ventas / admin / insumos con esta base; PPV cuando exista precio estándar.
+
+## Reportes de compras: tablero (`modulos/compras/reportes.py`, `templates/oc_reportes.html`)
+
+- Cuentan las órdenes APROBADAS (aprobada, llegó, conforme) por FECHA DE LA ORDEN. Montos SIN IGV (`_oc_monto` = subtotal) igual que
+  Mejores precios; `?igv=1` = con IGV. Soles y dólares nunca se suman: botones S/ | US$ redibujan los gráficos.
+- Comparación ▲▼: periodos de 6 a 12 meses contra las mismas fechas del año anterior; periodos cortos contra el periodo anterior del mismo largo.
+- FILTRO CRUZADO (`FILTROS_CRUZADOS_OC`): clic en una barra (proveedor, empresa, área, motivo, cliente, solicitante) recarga con
+  `?prov=...` (etc.) y TODO el tablero queda filtrado (chips con ✕ para quitar). Clic en un mes = solo ese mes.
+- Pestañas (se recuerdan con `#operativa`), cada una se dibuja al abrirse. Modo presentación: pantalla completa sin menú ni filtros.
+- Ejecutiva: resumen accionable (`_oc_insights`: gasto vs anterior, Pareto 80%, OTIF, proveedor más atrasado con botón de filtro,
+  paso fuera de meta, órdenes detenidas con botón "Aprobarlas / Verlas"), KPIs (gasto S/ y US$, órdenes, OTIF), gasto por mes,
+  por empresa, Pareto de proveedores, área / motivo / cliente / solicitó, y tablas exactas plegables.
+- Operativa: órdenes DETENIDAS AHORA (`_oc_detenidas`, no dependen del periodo): por enviar, por aprobar, esperando al proveedor
+  (fuera de meta si pasó la fecha prometida), falta conformidad, falta ingresar al inventario; clic = ventana con las órdenes.
+  Línea del proceso (mediana vs meta), semáforo (desde `MIN_ORDENES_RANKING_OC` = 3 órdenes juzgadas), matriz de riesgo
+  (alerta desde `ATRASO_ALERTA_PCT_OC` = 25%), OTIF por motivo y tabla de tiempos.
+- OTIF (`_oc_otif_orden`): llegó TODO (sin saldo cerrado) a más tardar en la fecha prometida; las que aún están en plazo no se juzgan.
+  Motivos: ok / tarde / incompleto / no_llego.
+- Metas por paso: `METAS_PASOS_OC` (días); se pueden cambiar con SystemConfig `oc_metas_pasos` = JSON (p. ej. {"enviada_aprobada": 2}).
+- Entregas de muchas órdenes en 2 consultas (`_oc_entregas_de`). Excel: gasto, atrasos, OTIF, tiempos con meta, detenidas y órdenes.
 
 ## Pruebas (en el entorno de Claude)
 

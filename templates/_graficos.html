@@ -34,10 +34,12 @@ window.GR = (function () {
     // Categorías sin significado (proveedores, áreas...): sin rojo ni verde, que se reservan para "bien" / "mal"
     const CAT = ['#0B3D91', '#0891b2', '#7c3aed', '#c2410c', '#0f766e', '#a16207', '#be185d', '#475569', '#4f46e5', '#0369a1'];
     const nf2 = new Intl.NumberFormat('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const nfC = new Intl.NumberFormat('es-PE', { notation: 'compact', maximumFractionDigits: 1 });
+    const nf1 = new Intl.NumberFormat('es-PE', { maximumFractionDigits: 1 });
+    // Montos cortos en español y siempre iguales: 850 · 12.5 mil · 1.2 M (Intl 'compact' mezcla "k" y "K" según el número)
+    const corto = v => { const a = Math.abs(v); return a >= 1e6 ? nf1.format(v / 1e6) + ' M' : a >= 1e3 ? nf1.format(v / 1e3) + ' mil' : nf1.format(v); };
     const sim = m => m === 'USD' ? 'US$' : 'S/';
     const fmt = (v, m) => `${sim(m)} ${nf2.format(v || 0)}`;                 // S/ 12,345.60
-    const fmtCorto = (v, m) => `${sim(m)} ${nfC.format(v || 0)}`;            // S/ 12.3 mil
+    const fmtCorto = (v, m) => `${sim(m)} ${corto(v || 0)}`;                 // S/ 12.3 mil
     const recorta = (t, n = 26) => { t = String(t || ''); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
     const fecha = ts => { const d = new Date(ts); return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`; };
     const fechaCorta = ts => { const d = new Date(ts); return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getFullYear()).slice(2)}`; };
@@ -69,10 +71,27 @@ window.GR = (function () {
                     if (v === null || v === undefined || v === 0) return;
                     const txt = ds.grFormato(v, j);
                     if (!txt) return;
+                    if (ds.grDentro) {           // barras apiladas: el texto va DENTRO del tramo, solo si entra
+                        const ancho = horiz ? Math.abs(el.x - el.base) : Math.abs(el.base - el.y), tw = ctx.measureText(txt).width;
+                        if ((horiz ? ancho : (el.height || ancho)) < (horiz ? tw + 8 : 16)) return;
+                        ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                        if (horiz) ctx.fillText(txt, (el.x + el.base) / 2, el.y); else ctx.fillText(txt, el.x, (el.y + el.base) / 2);
+                        return;
+                    }
                     ctx.fillStyle = ds.grColorEtiqueta || C.texto;
                     if (horiz) { ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(txt, el.x + 5, el.y); }
                     else { ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.fillText(txt, el.x, el.y - 4); }
                 });
+            });
+            // textos de los cuadrantes (matriz de riesgo): chart.data.grCuadrantes = [{txt, lado: 'ar-der'|'ar-izq'|'ab-der'|'ab-izq', color}]
+            const a = chart.chartArea;
+            (chart.data.grCuadrantes || []).forEach(q => {
+                if (!a) return;
+                ctx.font = '800 10px ' + Chart.defaults.font.family;
+                ctx.fillStyle = q.color || '#94a3b8';
+                ctx.textAlign = q.lado.endsWith('der') ? 'right' : 'left';
+                ctx.textBaseline = q.lado.startsWith('ar') ? 'top' : 'bottom';
+                ctx.fillText(q.txt, q.lado.endsWith('der') ? a.right - 6 : a.left + 6, q.lado.startsWith('ar') ? a.top + 4 : a.bottom - 4);
             });
             ctx.restore();
         } });
@@ -119,7 +138,7 @@ window.GR = (function () {
         return nuevo(canvas, { data: { labels: o.etiquetas, datasets: ds },
             options: { layout: { padding: { top: 18 } }, interaction: { mode: 'index', intersect: false },
                 plugins: { legend: { display: ds.length > 1, position: 'bottom', align: 'end' },
-                    tooltip: { callbacks: { label: c => `${c.dataset.label}: ${fmt(c.raw, o.moneda)}` } } },
+                    tooltip: { callbacks: { label: c => `${c.dataset.label}: ${fmt(c.raw, o.moneda)}`, footer: () => o.textoClic || '' } } },
                 scales: { x: { grid: { display: false } },
                           y: { beginAtZero: true, grace: '8%', ticks: { callback: v => fmtCorto(v, o.moneda), maxTicksLimit: 6 } } },
                 onClick: (e, els) => { if (els.length && o.alClic) o.alClic(els[0].index); },
@@ -128,11 +147,12 @@ window.GR = (function () {
 
     /* Barras horizontales ordenadas: top N + "Otros", valor y % al final de cada barra, nombre completo en el tooltip.
        filas = [{ txt, valor, color?, info? }]
-       o = { moneda, top: 10, colorFijo, pct: true, alClic(fila), tooltipExtra(fila) -> texto, vacio } */
+       o = { moneda, top: 10, colorFijo, pct: true, ordenar: true, formato(v), formatoLargo(v), alClic(fila), tooltipExtra(fila) -> texto, textoClic, vacio } */
     function barrasH(canvas, filas, o) {
         o = o || {};
         const top = o.top || 10;
-        const orden = (filas || []).filter(f => f.valor > 0).sort((a, b) => b.valor - a.valor);
+        const orden = (filas || []).filter(f => f.valor > 0);
+        if (o.ordenar !== false) orden.sort((a, b) => b.valor - a.valor);
         if (!orden.length) { vacio(canvas, o.vacio || `Sin compras en ${o.moneda === 'USD' ? 'dólares' : 'soles'} en el periodo`); return null; }
         const vis = orden.slice(0, top);
         const resto = orden.slice(top);
@@ -146,12 +166,12 @@ window.GR = (function () {
             data: { labels: vis.map(x => recorta(x.txt, o.largo || 28)),
                     datasets: [{ data: vis.map(x => x.valor), borderRadius: 4, barThickness: 18,
                                  backgroundColor: vis.map(x => x.otros ? C.gris : (x.color || base)),
-                                 grFormato: (v, j) => fmtCorto(v, o.moneda) + (o.pct !== false ? `  ·  ${pct(v).toFixed(pct(v) < 10 ? 1 : 0)}%` : '') }] },
+                                 grFormato: (v, j) => (o.formato ? o.formato(v) : fmtCorto(v, o.moneda)) + (o.pct !== false ? `  ·  ${pct(v).toFixed(pct(v) < 10 ? 1 : 0)}%` : '') }] },
             options: { indexAxis: 'y', layout: { padding: { right: o.pct !== false ? 112 : 70 } },
                 plugins: { legend: { display: false },
                     tooltip: { callbacks: { title: c => vis[c[0].dataIndex].txt,
                         label: c => { const f = vis[c.dataIndex]; const extra = o.tooltipExtra && !f.otros ? o.tooltipExtra(f) : '';
-                                      return [`${fmt(c.raw, o.moneda)}  (${pct(c.raw).toFixed(1)}% del total)`].concat(extra ? [extra] : []); },
+                                      return [`${o.formatoLargo ? o.formatoLargo(c.raw) : fmt(c.raw, o.moneda)}  (${pct(c.raw).toFixed(1)}% del total)`].concat(extra ? [extra] : []); },
                         footer: c => (o.alClic && !vis[c[0].dataIndex].otros) ? (o.textoClic || 'Clic para ver el detalle') : '' } } },
                 scales: { x: { display: false, beginAtZero: true }, y: { grid: { display: false }, ticks: { color: '#334155', font: { weight: '600' } } } },
                 onClick: (e, els) => { if (els.length && o.alClic && !vis[els[0].index].otros) o.alClic(vis[els[0].index]); },
@@ -182,6 +202,122 @@ window.GR = (function () {
                                      afterLabel: c => c.raw.y > mejor ? `+${(100 * (c.raw.y - mejor) / mejor).toFixed(1)}% sobre el mejor` : 'Es el mejor precio' } } } } });
     }
 
+    /* Mini tendencia (sparkline) para los indicadores: sin ejes ni leyenda. */
+    function mini(canvas, valores, color) {
+        if (!(valores || []).some(v => v)) { if (canvas) canvas.style.display = 'none'; return null; }
+        color = color || C.PEN;
+        return nuevo(canvas, { type: 'line', data: { labels: valores.map((_, i) => i), datasets: [{ data: valores, borderColor: color, borderWidth: 2,
+                backgroundColor: color + '1f', fill: true, pointRadius: valores.map((_, i) => i === valores.length - 1 ? 3 : 0), pointBackgroundColor: color, tension: .35 }] },
+            options: { animation: false, events: [], layout: { padding: 3 }, plugins: { legend: { display: false }, tooltip: { enabled: false } },
+                scales: { x: { display: false }, y: { display: false, beginAtZero: true } } } });
+    }
+
+    /* Pareto: barras de mayor a menor + línea del % acumulado y referencia punteada en 80%.
+       Las barras que forman el 80% van en color fuerte; el resto, más claro. */
+    function pareto(canvas, filas, o) {
+        o = o || {};
+        const orden = (filas || []).filter(f => f.valor > 0).sort((a, b) => b.valor - a.valor);
+        if (!orden.length) { vacio(canvas, `Sin compras en ${o.moneda === 'USD' ? 'dólares' : 'soles'} en el periodo`); return null; }
+        const top = o.top || 12, vis = orden.slice(0, top), resto = orden.slice(top);
+        if (resto.length) vis.push({ txt: `Otros (${resto.length})`, valor: resto.reduce((s, x) => s + x.valor, 0), otros: true });
+        const total = orden.reduce((s, x) => s + x.valor, 0);
+        let acum = 0;
+        const pct = vis.map(x => +(100 * (acum += x.valor) / total).toFixed(1));
+        const base = C[o.moneda] || C.PEN;
+        const color = vis.map((x, i) => x.otros ? C.gris : ((i === 0 || pct[i - 1] < 80) ? base : base + '66'));
+        return nuevo(canvas, { data: { labels: vis.map(x => recorta(x.txt, 16)), datasets: [
+                { type: 'bar', label: 'Gasto', data: vis.map(x => x.valor), backgroundColor: color, borderRadius: 4, maxBarThickness: 42, yAxisID: 'y', order: 2,
+                  grFormato: vis.length <= 10 ? (v => fmtCorto(v, o.moneda)) : null },
+                { type: 'line', label: '% acumulado', data: pct, borderColor: C.alerta, backgroundColor: C.alerta, pointRadius: 3, borderWidth: 2, yAxisID: 'p', order: 1, tension: .2 },
+                { type: 'line', label: '80%', data: vis.map(() => 80), borderColor: C.gris, borderDash: [5, 4], borderWidth: 1, pointRadius: 0, pointHoverRadius: 0, yAxisID: 'p', order: 3 }] },
+            options: { layout: { padding: { top: 18 } }, interaction: { mode: 'index', intersect: false },
+                plugins: { legend: { position: 'bottom', align: 'end', labels: { filter: it => it.text !== '80%' } },
+                    tooltip: { filter: c => c.dataset.label !== '80%', callbacks: { title: c => vis[c[0].dataIndex].txt,
+                        label: c => c.dataset.type === 'bar' ? `${fmt(c.raw, o.moneda)} (${(100 * c.raw / total).toFixed(1)}%)` : `Acumulado: ${c.raw}%`,
+                        footer: c => (o.alClic && !vis[c[0].dataIndex].otros) ? 'Clic para filtrar todo el tablero' : '' } } },
+                scales: { x: { grid: { display: false }, ticks: { maxRotation: 50, minRotation: 0, autoSkip: false, font: { size: 10 } } },
+                          y: { beginAtZero: true, grace: '8%', ticks: { callback: v => fmtCorto(v, o.moneda), maxTicksLimit: 6 } },
+                          p: { position: 'right', min: 0, max: 100, grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%', stepSize: 20 } } },
+                onClick: (e, els) => { if (els.length && o.alClic && !vis[els[0].index].otros) o.alClic(vis[els[0].index]); },
+                onHover: o.alClic ? cursor : undefined } });
+    }
+
+    /* Línea del proceso: una barra partida por pasos (caso típico = mediana) y debajo la meta. El paso que pasa su meta va en ROJO.
+       pasos = [{ corto, txt, mediana, meta }] */
+    function proceso(canvas, pasos) {
+        pasos = (pasos || []).filter(p => p.mediana !== null && p.mediana !== undefined || p.meta);
+        if (!pasos.some(p => p.mediana)) { vacio(canvas, 'Todavía no hay casos para medir'); return null; }
+        const COL = ['#0B3D91', '#0891b2', '#7c3aed', '#c2410c', '#0f766e', '#a16207'];
+        const d = v => (v === null || v === undefined) ? '—' : `${Number(v).toLocaleString('es-PE', { maximumFractionDigits: 1 })} d`;
+        const real = pasos.reduce((s, p) => s + (p.mediana || 0), 0), meta = pasos.reduce((s, p) => s + (p.meta || 0), 0);
+        return nuevo(canvas, { type: 'bar',
+            data: { labels: [`Caso típico · ${d(real)}`, `Meta · ${d(meta)}`], datasets: pasos.map((p, i) => {
+                const fuera = p.meta && p.mediana > p.meta, col = COL[i % COL.length];
+                return { label: p.corto, data: [p.mediana || 0, p.meta || 0], backgroundColor: [fuera ? C.mal : col, col + '4d'],
+                         borderColor: '#fff', borderWidth: 1, barThickness: 34, grDentro: true, grFormato: (v, j) => `${p.corto} ${d(v)}` }; }) },
+            options: { indexAxis: 'y',
+                scales: { x: { stacked: true, beginAtZero: true, title: { display: true, text: 'días' } }, y: { stacked: true, grid: { display: false }, ticks: { font: { weight: '700' } } } },
+                plugins: { legend: { position: 'bottom' },
+                    tooltip: { callbacks: { title: c => pasos[c[0].datasetIndex].txt,
+                        label: c => { const p = pasos[c.datasetIndex];
+                            return c.dataIndex === 0 ? `Caso típico: ${d(p.mediana)}` + (p.meta ? (p.mediana > p.meta ? ` · ${d(p.mediana - p.meta)} más que la meta` : ' · dentro de la meta') : '')
+                                                     : `Meta: ${d(p.meta)}`; } } } } } });
+    }
+
+    /* Semáforo de atrasos: una barra 100% por proveedor (verde a tiempo · ámbar llegó tarde · rojo atrasada sin llegar).
+       provs = [{ txt, a_tiempo, tarde, pend_atrasadas, juzgadas, clave }] */
+    function semaforo(canvas, provs, o) {
+        o = o || {};
+        provs = (provs || []).filter(p => p.juzgadas > 0);
+        if (!provs.length) { vacio(canvas, o.vacio || 'Ningún proveedor con suficientes órdenes con fecha de entrega'); return null; }
+        const area = canvas.parentElement;
+        if (area) area.style.height = Math.max(150, provs.length * 30 + 56) + 'px';
+        const capa = (k, label, color) => ({ label, backgroundColor: color, data: provs.map(p => +(100 * p[k] / p.juzgadas).toFixed(1)), _k: k,
+                                              barThickness: 18, grDentro: true, grFormato: v => Math.round(v) + '%' });
+        return nuevo(canvas, { type: 'bar',
+            data: { labels: provs.map(p => `${recorta(p.txt, 24)} (${p.juzgadas})`),
+                    datasets: [capa('a_tiempo', 'A tiempo', C.ok), capa('tarde', 'Llegó tarde', C.alerta), capa('pend_atrasadas', 'Atrasada sin llegar', C.mal)] },
+            options: { indexAxis: 'y',
+                scales: { x: { stacked: true, min: 0, max: 100, ticks: { callback: v => v + '%', stepSize: 25 } }, y: { stacked: true, grid: { display: false } } },
+                plugins: { legend: { position: 'bottom' },
+                    tooltip: { callbacks: { title: c => provs[c[0].dataIndex].txt, label: c => `${c.dataset.label}: ${provs[c.dataIndex][c.dataset._k]} orden(es) (${c.raw}%)`,
+                        footer: c => { const p = provs[c[0].dataIndex]; return (p.prom ? `Atraso promedio ${p.prom} d` : '') + (o.alClic ? '\nClic para filtrar todo el tablero' : ''); } } } },
+                onClick: (e, els) => { if (els.length && o.alClic) o.alClic(provs[els[0].index]); },
+                onHover: o.alClic ? cursor : undefined } });
+    }
+
+    /* Matriz de riesgo: cada burbuja es un proveedor. X = cuánto le compramos, Y = % de atraso, tamaño = n° de órdenes.
+       Arriba a la derecha (compramos mucho y se atrasa mucho) = RIESGO. provs = [{ txt, x, y, n, ranking, clave }] */
+    function burbujas(canvas, provs, o) {
+        o = o || {};
+        provs = (provs || []).filter(p => p.x > 0);
+        if (!provs.length) { vacio(canvas, o.vacio || 'Sin proveedores con fecha de entrega en esta moneda'); return null; }
+        const xs = provs.map(p => p.x).sort((a, b) => a - b), xmed = xs[Math.floor(xs.length / 2)];
+        const alerta = o.alerta || 25, maxN = Math.max(...provs.map(p => p.n));
+        const log = xs[xs.length - 1] / Math.max(xs[0], 1) > 30;
+        const color = p => !p.ranking ? C.gris + '88' : (p.y >= alerta ? (p.x >= xmed ? C.mal : C.alerta) : C.ok) + 'bb';
+        const xmin = log ? xs[0] / 1.6 : 0, xmax = xs[xs.length - 1] * (log ? 1.6 : 1.12);
+        return nuevo(canvas, { type: 'bubble',
+            data: { grCuadrantes: [{ txt: '⚠ RIESGO: compramos mucho y se atrasa', lado: 'ar-der', color: C.mal }, { txt: 'Se atrasa (compramos poco)', lado: 'ar-izq', color: '#b45309' },
+                                   { txt: 'CLAVE Y CUMPLE', lado: 'ab-der', color: C.ok }, { txt: 'Cumple (compramos poco)', lado: 'ab-izq', color: '#64748b' }],
+                datasets: [
+                    { label: 'Proveedores', data: provs.map(p => ({ x: p.x, y: p.y, r: 5 + 13 * Math.sqrt(p.n / maxN), p })),
+                      backgroundColor: provs.map(color), borderColor: provs.map(p => color(p).slice(0, 7)), borderWidth: 1 },
+                    { type: 'line', label: 'lim_x', data: [{ x: xmed, y: 0 }, { x: xmed, y: 100 }], borderColor: '#cbd5e1', borderDash: [4, 4], borderWidth: 1, pointRadius: 0, pointHoverRadius: 0 },
+                    { type: 'line', label: 'lim_y', data: [{ x: xmin, y: alerta }, { x: xmax, y: alerta }], borderColor: '#cbd5e1', borderDash: [4, 4], borderWidth: 1, pointRadius: 0, pointHoverRadius: 0 }] },
+            options: { layout: { padding: { top: 4, right: 8 } },
+                scales: { x: { type: log ? 'logarithmic' : 'linear', min: xmin, max: xmax, title: { display: true, text: `Cuánto le compramos (${sim(o.moneda)}${o.igv ? '' : ' sin IGV'})` },
+                               ticks: { callback: v => fmtCorto(v, o.moneda), maxTicksLimit: 6, autoSkip: true } },
+                          y: { min: 0, max: 100, title: { display: true, text: '% de órdenes con atraso' }, ticks: { callback: v => v + '%', stepSize: 25 } } },
+                plugins: { legend: { display: false },
+                    tooltip: { filter: c => c.datasetIndex === 0, callbacks: { title: c => c[0].raw.p.txt,
+                        label: c => { const p = c.raw.p; return [`Le compramos ${fmt(p.x, o.moneda)}`, `${p.y}% con atraso (${p.atrasadas} de ${p.n} órdenes)`]
+                                      .concat(p.ranking ? [] : ['Pocos datos: todavía no se puede juzgar']); },
+                        footer: () => o.alClic ? 'Clic para filtrar todo el tablero' : '' } } },
+                onClick: (e, els) => { const el = els.find(x => x.datasetIndex === 0); if (el && o.alClic) o.alClic(provs[el.index]); },
+                onHover: o.alClic ? (e, els) => cursor(e, els.filter(x => x.datasetIndex === 0)) : undefined } });
+    }
+
     /* Botones "S/ | US$" que vuelven a dibujar los gráficos de la página en la moneda elegida. */
     function monedaGlobal(caja, inicial, dibujar) {
         let actual = inicial;
@@ -190,7 +326,7 @@ window.GR = (function () {
         pintar(inicial);
     }
 
-    return { ok, C, CAT, sim, fmt, fmtCorto, recorta, fecha, nuevo, vacio, barras, barrasH, historial, monedaGlobal };
+    return { ok, C, CAT, sim, fmt, fmtCorto, recorta, fecha, nuevo, vacio, barras, barrasH, historial, mini, pareto, proceso, semaforo, burbujas, monedaGlobal };
 })();
 </script>
 {% endmacro %}
