@@ -242,6 +242,8 @@
 </div>
 {% endif %}
 {% import '_kardex_venta.html' as kv with context %}
+{% import '_oc_docs_menu.html' as dm with context %}
+{{ dm.estilos_docs_oc() }}
 {{ kv.estilos() }}
 {{ kv.banner(vs_filtro) }}
 {% if proceso_filtro %}
@@ -304,6 +306,10 @@
     .kardex-tabla .kx-doc a + a { margin-left:4px; color:#64748b; }
     .kardex-tabla .kx-doc-x { font-size:.72rem; line-height:1; margin-left:2px; vertical-align:baseline; }
     .kardex-tabla .kx-doc-add { font-size:.72rem; text-decoration:none; color:#64748b; }
+    .kardex-tabla button.kx-doc { font-size:.72rem; font-weight:600; color:#0f172a; line-height:1.4; }
+    .kardex-tabla button.kx-doc:hover, .kardex-tabla .show > button.kx-doc { filter: brightness(.96); box-shadow: 0 0 0 2px color-mix(in srgb, var(--c) 25%, transparent); }
+    .kardex-tabla button.kx-doc .arch-ico, .kardex-tabla button.kx-doc .arch-fmt { color:var(--c); }
+    .kardex-tabla .kx-oc-btn { height:auto; font-size:.68rem; padding:1px 8px; border-radius:10px; background:#eef2ff; border-color:#c7d2fe; color:#3730a3; }
 </style>
 <div class="card shadow-sm border-0">
     <div class="card-body p-0 table-responsive" style="min-height: 400px;">
@@ -366,9 +372,8 @@
                         {% if ocm %}
                         <div class="mt-1 kx-docs">
                             {% if puede_ver_docs and session.get('role') in ['admin', 'logistica', 'administracion', 'almacen'] %}
-                            <a href="{{ url_for('oc_pdf', orden_id=ocm.orden.id) }}" target="_blank" class="kx-oc" title="Ingreso registrado desde esta orden: ver su PDF"><i class="bi bi-cart-check-fill"></i> {{ ocm.codigo }}</a>
-                            {% for d in ocm.docs %}<span class="kx-doc"><a href="{{ url_for('oc_documento_ver', doc_id=d.id) }}" target="_blank" title="{{ d.nombre_original }}"><i class="bi bi-paperclip kx-doc-ico"></i> {{ {'GUIA': 'Guía', 'FACTURA': 'Factura', 'CERTIFICADO': 'Certificado', 'COTIZACION': 'Cotización', 'PAGO': 'Pago'}.get(d.tipo, 'Otro') }}</a>
-                                <a href="{{ url_for('oc_documento_ver', doc_id=d.id, download=1) }}" title="Descargar"><i class="bi bi-download"></i></a></span>{% endfor %}
+                            {# la orden y TODOS sus documentos en un menú: cada uno con Ver (pestaña nueva) y Descargar #}
+                            {{ dm.menu_docs_oc(ocm.orden, ocm.docs, texto=ocm.codigo ~ ((' · ' ~ (ocm.docs|length) ~ ' doc.') if ocm.docs else ''), icono='bi-cart-check-fill', clase='kx-oc-btn', alinear='start') }}
                             {% else %}<span class="kx-oc"><i class="bi bi-cart-check-fill"></i> {{ ocm.codigo }}</span>{% endif %}
                         </div>
                         {% endif %}
@@ -377,18 +382,19 @@
                         {% if (docs_m and puede_ver_docs) or puede_adjuntar %}
                         <div class="kx-docs mt-1">
                             {% if puede_ver_docs %}{% for d in docs_m %}
-                            <span class="kx-doc kx-doc-{{ d.tipo_documento|lower }}">
-                                <a href="{{ url_for('ver_documento_kardex', doc_id=d.id) }}" target="_blank" title="Ver {{ tipos_doc.get(d.tipo_documento) }} ({{ d.nombre_original }})">
-                                    <i class="bi {{ iconos_doc.get(d.tipo_documento, 'bi-file-earmark') }} kx-doc-ico"></i> {{ tipos_doc.get(d.tipo_documento) }}
-                                    <span class="kx-doc-fmt">{{ 'PDF' if d.content_type == 'application/pdf' else 'FOTO' }}</span></a>
-                                <a href="{{ url_for('ver_documento_kardex', doc_id=d.id, download=1) }}" title="Descargar"><i class="bi bi-download"></i></a>
-                                {% if session.get('role') == 'admin' %}
-                                <form method="POST" action="{{ url_for('eliminar_documento_kardex', doc_id=d.id) }}" class="d-inline"
-                                      onsubmit="return confirm('¿Quitar este documento del movimiento?');">
-                                    <button type="submit" class="btn btn-link p-0 text-danger kx-doc-x" title="Quitar documento (solo Gerencia)"><i class="bi bi-x-circle"></i></button>
-                                </form>
-                                {% endif %}
-                            </span>
+                            {% set d_args = (tipos_doc.get(d.tipo_documento) or 'Documento', url_for('ver_documento_kardex', doc_id=d.id), url_for('ver_documento_kardex', doc_id=d.id, download=1)) %}
+                            {% set d_cab = (tipos_doc.get(d.tipo_documento) or 'Documento') ~ (' · ' ~ d.nombre_original if d.nombre_original else '') %}
+                            {% set d_fmt = 'PDF' if d.content_type == 'application/pdf' else 'FOTO' %}
+                            {% if session.get('role') == 'admin' %}
+                            {% call dm.menu_archivo(d_args[0], d_args[1], d_args[2], icono=iconos_doc.get(d.tipo_documento, 'bi-file-earmark'), formato=d_fmt,
+                                                    clase='kx-doc kx-doc-' ~ (d.tipo_documento|lower), cab=d_cab) %}
+                                <li><form method="POST" action="{{ url_for('eliminar_documento_kardex', doc_id=d.id) }}" onsubmit="return confirm('¿Quitar este documento del movimiento?');">
+                                    <button type="submit" class="dropdown-item text-danger"><i class="bi bi-x-circle"></i> Quitar documento (solo Gerencia)</button></form></li>
+                            {% endcall %}
+                            {% else %}
+                            {{ dm.menu_archivo(d_args[0], d_args[1], d_args[2], icono=iconos_doc.get(d.tipo_documento, 'bi-file-earmark'), formato=d_fmt,
+                                               clase='kx-doc kx-doc-' ~ (d.tipo_documento|lower), cab=d_cab) }}
+                            {% endif %}
                             {% endfor %}{% endif %}
                             {% if puede_adjuntar %}
                             <button type="button" class="btn btn-link p-0 kx-doc-add" title="Adjuntar documento a este movimiento"

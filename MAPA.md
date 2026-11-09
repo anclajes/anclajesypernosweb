@@ -129,8 +129,15 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
 - **Anulaciones:** anular un ingreso exige su lote completo (lote ANULADO). Anular una salida devuelve lo despachado a los mismos lotes.
   En el Kardex, lo anulado y su anulación se marcan y **no cuentan en los totales** (botón para ocultarlos).
 - Carga desde Excel: lo que se agrega entra como lote "Carga Excel" con el costo del archivo (vacío = sin precio); lo que sobra se descuenta por PEPS.
+- Ingresos pendientes de OC (`/insumos/pendientes-oc`, `_ordenes_pendientes_insumos`, contador global `n_oc_pendientes_insumos()`):
+  se ven en el MENÚ LATERAL (badge rojo en "Insumos Internos" aunque esté cerrado + opción "Ingresos pendientes (OC)"), en la pestaña
+  del módulo y con un aviso amarillo "N compras de insumos llegaron… Ingresarlas" arriba de todas las pantallas de Insumos.
 - La OC de cada ingreso se guarda en `insumo_ingreso.orden_compra_id` (los antiguos se encuentran por `orden_compra.insumo_ingreso_id`).
   Kardex, Ingresos y el detalle muestran la OC (PDF) y todos sus documentos con ver/descargar. Menú reutilizable: `templates/_oc_docs_menu.html`.
+- `_oc_docs_menu.html`: `menu_docs_oc(o, docs, texto, icono, clase)` = la orden + sus documentos, cada uno con **Abrir** (pestaña nueva)
+  y **Descargar**; `menu_archivo(etiqueta, url_ver, url_bajar, icono, formato, clase, cab)` = menú de UN archivo ("Abrir en una pestaña
+  nueva" / "Descargar"; con `{% call %}` se agregan acciones, p. ej. "Quitar documento"). Kardex Anclajes e Import Bolts (columna
+  Motivo / Referencia) usan los dos: el chip de la OC ya no descarga el PDF de golpe.
 - Órdenes de compra (lista): muestra quién **creó** la orden, filtro "Creó", y el menú 📎 con todos los documentos.
 
 ## Compras: OC de TEMA CONTABLE (no suma al inventario)

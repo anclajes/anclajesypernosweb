@@ -173,13 +173,20 @@
 
                 {% if session.get('role') in ['admin', 'almacen', 'logistica', 'administracion'] %}
                 {% set en_insumos = (request.endpoint or '').startswith('insumos') %}
+                {# compras de insumos (OC destino Insumos) que ya llegaron conformes y falta ingresar: se ve aquí sin entrar al módulo #}
+                {% set n_ins_pend = (n_oc_pendientes_insumos() if n_oc_pendientes_insumos is defined else 0) or 0 %}
                 <a class="nav-link" data-bs-toggle="collapse" href="#collapseInsumos" role="button" aria-expanded="{{ 'true' if en_insumos else 'false' }}" aria-controls="collapseInsumos">
                     <i class="bi bi-tools me-2"></i> <span>Insumos Internos</span>
+                    {% if n_ins_pend %}<span class="badge rounded-pill bg-danger ms-1" title="{{ n_ins_pend }} compra(s) de insumos llegaron y falta ingresarlas al inventario">{{ n_ins_pend }}</span>{% endif %}
                     <i class="bi bi-chevron-down ms-auto" style="font-size: 0.8rem;"></i>
                 </a>
                 <div class="collapse {{ 'show' if en_insumos else '' }}" id="collapseInsumos">
                     <ul class="nav flex-column ms-2 mb-2" style="border-left: 1px solid rgba(255,255,255,0.1);">
                         <li><a href="{{ url_for('insumos_inventario') }}" class="nav-link py-2 ps-3 {{ 'active' if request.endpoint == 'insumos_inventario' }}"><i class="bi bi-boxes fs-6 me-2"></i> <span>Inventario</span></a></li>
+                        <li><a href="{{ url_for('insumos_pendientes_oc') }}" class="nav-link py-2 ps-3 {{ 'active' if request.endpoint == 'insumos_pendientes_oc' }}"
+                               title="Compras con orden de compra que ya llegaron y están conformes: falta ingresarlas al inventario de insumos">
+                            <i class="bi bi-cart-check fs-6 me-2"></i> <span>Ingresos pendientes (OC)</span>
+                            {% if n_ins_pend %}<span class="badge rounded-pill bg-danger ms-1">{{ n_ins_pend }}</span>{% endif %}</a></li>
                         {% if session.get('role') in ['admin', 'almacen', 'logistica'] %}
                         <li><a href="{{ url_for('insumos_salida_nueva') }}" class="nav-link py-2 ps-3 {{ 'active' if request.endpoint == 'insumos_salida_nueva' }}"><i class="bi bi-box-arrow-up fs-6 me-2"></i> <span>Nueva salida</span></a></li>
                         <li><a href="{{ url_for('insumos_ingreso_nuevo') }}" class="nav-link py-2 ps-3 {{ 'active' if request.endpoint == 'insumos_ingreso_nuevo' }}"><i class="bi bi-box-arrow-in-down fs-6 me-2"></i> <span>Nuevo ingreso</span></a></li>

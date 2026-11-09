@@ -12,6 +12,11 @@
     .ins-nav a.accion.salida.activa { background: #b91c1c; border-color: #b91c1c; }
     .ins-nav a.pend-oc { background: #fffbeb; border-color: #fcd34d; color: #92400e; }
     .ins-nav .cnt-oc { background: #dc2626; color: #fff; border-radius: 10px; font-size: .66rem; padding: 0 6px; font-weight: 800; }
+    .ins-aviso-pend { display: flex; align-items: center; gap: 10px; background: #fffbeb; border: 1px solid #fcd34d; border-left: 4px solid #f59e0b; border-radius: 10px;
+                      padding: 8px 12px; margin: -6px 0 14px; color: #78350f; font-size: .84rem; text-decoration: none; }
+    .ins-aviso-pend:hover { background: #fef3c7; color: #78350f; }
+    .ins-aviso-pend > i { color: #d97706; font-size: 1.05rem; }
+    .ins-aviso-pend .ir { margin-left: auto; white-space: nowrap; font-weight: 800; background: #f59e0b; color: #fff; border-radius: 8px; padding: 3px 10px; font-size: .78rem; }
     .ins-empresa { display: inline-flex; align-items: center; gap: 8px; }
     .ins-empresa img { height: 34px; object-fit: contain; }
     .ins-kpi { font-size: 1.3rem; font-weight: 800; font-variant-numeric: tabular-nums; color: #0f172a; line-height: 1.15; }
@@ -34,7 +39,7 @@
     <a href="{{ url_for('insumos_ingreso_nuevo') }}" class="accion {{ 'activa' if seccion == 'ingreso' }}"><i class="bi bi-box-arrow-in-down"></i> Nuevo ingreso</a>
     {% endif %}
     {% set n_pend_oc = n_oc_pendientes_insumos() %}
-    <a href="{{ url_for('insumos_pendientes_oc') }}" class="{{ 'activa' if seccion == 'oc_pend' }} {{ 'pend-oc' if n_pend_oc and seccion != 'oc_pend' }}"><i class="bi bi-cart-check"></i> Pendientes de OC{% if n_pend_oc %} <span class="cnt-oc">{{ n_pend_oc }}</span>{% endif %}</a>
+    <a href="{{ url_for('insumos_pendientes_oc') }}" class="{{ 'activa' if seccion == 'oc_pend' }} {{ 'pend-oc' if n_pend_oc and seccion != 'oc_pend' }}"><i class="bi bi-cart-check"></i> Ingresos pendientes (OC){% if n_pend_oc %} <span class="cnt-oc">{{ n_pend_oc }}</span>{% endif %}</a>
     <a href="{{ url_for('insumos_salidas') }}" class="{{ 'activa' if seccion == 'salidas' }}"><i class="bi bi-journal-arrow-up"></i> Salidas</a>
     <a href="{{ url_for('insumos_ingresos') }}" class="{{ 'activa' if seccion == 'ingresos' }}"><i class="bi bi-journal-arrow-down"></i> Ingresos</a>
     <a href="{{ url_for('insumos_kardex') }}" class="{{ 'activa' if seccion == 'kardex' }}"><i class="bi bi-clock-history"></i> Kardex</a>
@@ -45,6 +50,14 @@
     <a href="{{ url_for('insumos_config') }}" class="{{ 'activa' if seccion == 'config' }}"><i class="bi bi-gear"></i> Configuración</a>
     {% endif %}
 </nav>
+{% if n_pend_oc and seccion != 'oc_pend' %}
+<a href="{{ url_for('insumos_pendientes_oc') }}" class="ins-aviso-pend">
+    <i class="bi bi-exclamation-triangle-fill"></i>
+    <span><b>{{ n_pend_oc }} compra{{ 's' if n_pend_oc > 1 }} de insumos {{ 'llegaron' if n_pend_oc > 1 else 'llegó' }} y {{ 'están conformes' if n_pend_oc > 1 else 'está conforme' }}:</b>
+        falta ingresar{{ 'las' if n_pend_oc > 1 else 'la' }} al inventario. Se ingresa{{ 'n' if n_pend_oc > 1 }} con los datos de la orden ya llenos.</span>
+    <span class="ir">{{ 'Ingresarlas' if n_pend_oc > 1 else 'Ingresarla' }} <i class="bi bi-arrow-right"></i></span>
+</a>
+{% endif %}
 <script>
 /* Filtro de categoría (select con buscador; al elegir, se aplica). Se usa en todas las pantallas del módulo. */
 document.addEventListener('DOMContentLoaded', () => {
