@@ -810,6 +810,7 @@ CONDICIONES_PAGO_IMP = ['PAGO A 90 DÍAS DE RECIBIDA LA COPIA DEL B/L (PAID IN 9
                         'PAGO CONTRA DOCUMENTOS (CAD - CASH AGAINST DOCUMENTS)']
 app.add_template_global(TAX_TEMPORAL, 'tax_temporal')
 app.add_template_global(TIPOS_DOC_OC, 'tipos_doc_oc')     # menú de documentos (_oc_docs_menu.html)
+app.add_template_global(EMPRESAS_OC, 'oc_empresas')        # logo, nombre y color de cada empresa en cualquier plantilla
 
 
 def _usd_pcs_txt(v):

@@ -177,6 +177,12 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
 - Se ve en todo el flujo: chip USO DIRECTO (`templates/_oc_directo.html`), lista (filtro Destino, botón "Uso directo"), detalle,
   campana (aviso "Bien de uso directo por entregar"), Ingresos pendientes y contador del menú; columnas en el Excel de órdenes.
   En "Mejores precios" es la clase "Uso directo".
+- Ingresos pendientes (`oc_ingresos.html`): cada tarjeta (de cualquier tipo) empieza con la FRANJA DE LA EMPRESA (logo + nombre completo +
+  "entra al inventario de…" / "uso directo…") y quién CREÓ la orden. Uso directo: fichas iguales (categoría, va a, para qué, solicitó,
+  ítems, activo fijo) y el formulario a todo el ancho: `campos_entrega_directo` = a quién / dónde / nota en una fila + TABLA de ítems
+  (queda en, N° de serie, garantía con menú +6m/+1/+2/+3 años); con más de 6 ítems la tabla tiene scroll y cabecera fija; en celular
+  cada ítem es una tarjeta. "Entregado a" viene lleno con quien lo solicitó (+ área). Lo entregado: `tabla_entrega_directo`.
+  Logo de la empresa: `empresa_pill(o)` (global `oc_empresas` = EMPRESAS_OC) en la ventana de entrega y en el Movimiento de Kardex.
 
 ## Compras: EN CAMINO en los inventarios (solo Gerencia)
 

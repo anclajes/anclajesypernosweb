@@ -63,6 +63,33 @@
     .entrega-cab { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; padding: 7px 14px; background: #f1f5f9; border-bottom: 1px solid #e2e8f0; font-size: .74rem; color: #334155; }
     .entrega-cab .ent-n { font-weight: 800; color: #0f172a; font-size: .8rem; }
     @media (max-width: 767.98px) { #modalKardex .modal-dialog { margin: .5rem; } }
+    /* empresa de la orden: logo + nombre bien visibles en cada tarjeta */
+    .emp-fila { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px 14px; background: color-mix(in srgb, var(--e) 7%, #fff);
+                border-bottom: 1px solid color-mix(in srgb, var(--e) 18%, #fff); }
+    .emp-logo { display: inline-flex; align-items: center; justify-content: center; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; height: 46px; padding: 3px 8px; }
+    .emp-logo img { height: 38px; width: auto; max-width: 130px; object-fit: contain; }
+    .emp-txt { min-width: 0; }
+    .emp-txt > b { display: block; font-size: .98rem; font-weight: 800; color: var(--e); line-height: 1.15; }
+    .emp-txt small { display: block; font-size: .72rem; color: #475569; margin-top: 1px; }
+    .emp-creo { margin-left: auto; font-size: .74rem; color: #334155; background: #fff; border: 1px solid #e2e8f0; border-radius: 9px; padding: 4px 10px; text-align: right; }
+    .emp-creo span { display: block; font-size: .66rem; color: #64748b; }
+    @media (max-width: 575.98px) { .emp-creo { margin-left: 0; text-align: left; } }
+    /* uso directo: datos en fichas del mismo tamaño y el formulario a todo el ancho */
+    .it.dir-it { display: block; }
+    .dir-fichas { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; margin-bottom: 12px; }
+    .dir-fichas > div { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 10px; padding: 7px 10px; min-height: 58px; overflow-wrap: anywhere; }
+    .dir-fichas > div.ancho { grid-column: span 2; }
+    .dir-fichas small { display: block; font-size: .62rem; font-weight: 800; color: #9a3412; text-transform: uppercase; letter-spacing: .03em; }
+    .dir-fichas b { display: block; font-size: .86rem; color: #1c1917; line-height: 1.25; }
+    .dir-fichas span { display: block; font-size: .7rem; color: #78716c; }
+    @media (max-width: 575.98px) { .dir-fichas > div.ancho { grid-column: auto; } }
+    .dir-caja, .dir-hecho { border: 1px solid #e2e8f0; border-radius: 12px; padding: 10px 12px; background: #f8fafc; }
+    .dir-hecho { background: #f0fdf4; border-color: #bbf7d0; }
+    .dir-aviso { display: flex; gap: 8px; align-items: flex-start; background: #fff7ed; border: 1px solid #fdba74; color: #7c2d12; border-radius: 10px; padding: 7px 10px; font-size: .76rem; margin-bottom: 10px; }
+    .dir-aviso > i { font-size: 1rem; color: #c2410c; }
+    /* Movimiento de Kardex: logo de la empresa */
+    .kx-logo { display: inline-flex; align-items: center; background: #fff; border-radius: 9px; padding: 3px 8px; height: 36px; margin-right: 8px; }
+    .kx-logo img { height: 28px; width: auto; max-width: 110px; object-fit: contain; }
 </style>
 
 <div class="d-flex flex-wrap gap-2 align-items-center mb-2 vistas">
@@ -110,12 +137,21 @@
 {% endif %}
 
 {% from '_oc_contable.html' import chip_contable, estilos_contable with context %}{{ estilos_contable() }}
-{% from '_oc_directo.html' import chip_directo, estilos_directo, campos_entrega_directo, modal_entrega_directo, garantia_chip with context %}{{ estilos_directo() }}
+{% from '_oc_directo.html' import chip_directo, estilos_directo, campos_entrega_directo, modal_entrega_directo, garantia_chip, tabla_entrega_directo, empresa_pill with context %}{{ estilos_directo() }}
 {% for g in grupos %}
 {% set o = g.o %}{% set items = g['items'] %}
 {% set ds = docs.get(o.id, []) %}{% set emp = o.empresa or 'ANCLAJES' %}
 {% set guias = ds|selectattr('tipo', 'equalto', 'GUIA')|list %}
-<div style="border-top: 4px solid {{ empresas_oc[emp].color }};" class="oc-card shadow-sm" id="oc{{ o.id }}" data-buscar="{{ (o.tipo ~ ' ' ~ oc_numero_txt(o) ~ ' ' ~ o.razon_social ~ ' ' ~ (items.values()|map(attribute='descripcion')|join(' ')) ~ ' ' ~ (items.values()|map(attribute='codigo')|select|join(' ')))|upper }}">
+{% set einf = empresas_oc[emp] %}
+<div style="border-top: 4px solid {{ einf.acento or einf.color }}; --e: {{ einf.color }};" class="oc-card shadow-sm" id="oc{{ o.id }}" data-buscar="{{ (o.tipo ~ ' ' ~ oc_numero_txt(o) ~ ' ' ~ o.razon_social ~ ' ' ~ einf.corto ~ ' ' ~ (items.values()|map(attribute='descripcion')|join(' ')) ~ ' ' ~ (items.values()|map(attribute='codigo')|select|join(' ')))|upper }}">
+    <div class="emp-fila">
+        <span class="emp-logo"><img src="{{ url_for('static', filename='img/' ~ einf.logo) }}" alt="{{ einf.corto }}"></span>
+        <div class="emp-txt"><b>{{ einf.nombre }}</b>
+            <small>{{ 'Orden de servicio' if o.tipo == 'OS' else 'Orden de compra' }} de <b>{{ einf.corto }}</b> ·
+                {% if g.directo %}uso directo: no entra a ningún inventario{% elif g.contable %}tema contable: no suma al inventario{% elif o.tipo == 'OS' %}servicio{% else %}entra al inventario de <b>{{ einf.corto }}</b>{% endif %}</small></div>
+        <div class="emp-creo"><i class="bi bi-pencil-square"></i> Creó <b>{{ (o.creado_por.nombre_completo or o.creado_por.username) if o.creado_por else '—' }}</b>
+            {% if o.fecha_registro %}<span>{{ o.fecha_registro.strftime('%d/%m/%Y %H:%M') }}</span>{% endif %}</div>
+    </div>
     <div class="cab">
         <div class="d-flex flex-wrap gap-2 align-items-center">
             {% if puede_ver_oc %}<a class="oc-num" href="{{ url_for('oc_detalle', orden_id=o.id) }}">{% else %}<span class="oc-num">{% endif %}<span class="oc-tipo {{ o.tipo }}">{{ o.tipo }}</span> N° {{ oc_numero_txt(o) }}{% if puede_ver_oc %}</a>{% else %}</span>{% endif %}
@@ -164,31 +200,36 @@
         </div>
     </div>
     {% if g.directo %}
-    <div class="it" data-nuevo="0" data-buscar="{{ (items.values()|map(attribute='descripcion')|join(' '))|upper }} USO DIRECTO {{ (o.directo_ubicacion or '')|upper }} {{ (o.directo_entregado_a or '')|upper }}">
-        <div>
-            {% for i in items.values() %}
-            <div class="desc">{{ i.item }}. {{ i.descripcion }}</div>
-            <div class="meta mb-1"><span><span class="cant">{{ i.cantidad|cant }}</span> {{ i.um }}</span>
-                {% if i.serie %}<span class="tag vinc" title="N° de serie"><i class="bi bi-upc-scan"></i> {{ i.serie }}</span>{% endif %}
-                {% if i.garantia_hasta %}{{ garantia_chip(i.garantia_hasta) }}{% endif %}</div>
-            {% endfor %}
-            <div class="meta mt-1"><span><i class="bi bi-geo-alt-fill"></i> Va a <b>{{ o.directo_ubicacion or '-' }}</b></span>{% if o.directo_detalle %}<span>· {{ o.directo_detalle }}</span>{% endif %}
-                {% if o.directo_activo_fijo %}<span class="tag" style="background:#ffedd5;color:#9a3412;">Activo fijo</span>{% endif %}</div>
+    {% set sol = oc_solicitante_txt(o) %}
+    <div class="it dir-it" data-nuevo="0" data-buscar="{{ (items.values()|map(attribute='descripcion')|join(' '))|upper }} USO DIRECTO {{ (o.directo_ubicacion or '')|upper }} {{ (o.directo_entregado_a or '')|upper }}">
+        {# datos de la orden: cuadrados, del mismo tamaño #}
+        <div class="dir-fichas">
+            <div><small>Categoría</small><b>{{ (o.directo_categoria or '—')|capitalize }}</b></div>
+            <div><small>Va a (de la orden)</small><b><i class="bi bi-geo-alt-fill text-warning"></i> {{ o.directo_ubicacion or '—' }}</b></div>
+            <div class="ancho"><small>Para qué / detalle</small><b class="fw-semibold">{{ o.directo_detalle or '—' }}</b></div>
+            <div><small>Solicitó</small><b>{{ sol or '—' }}</b>{% if o.area_solicitante %}<span>{{ o.area_solicitante|title }}</span>{% endif %}</div>
+            <div><small>Ítems</small><b>{{ items|length }} bien(es)</b><span>{{ items.values()|sum(attribute='cantidad')|cant }} unidad(es) en total</span></div>
+            <div><small>Activo fijo</small><b>{{ 'Sí · contabilidad lo registra' if o.directo_activo_fijo else 'No' }}</b></div>
         </div>
         {% if o.fecha_kardex %}
-        <div class="hecho">
-            <div><i class="bi bi-pc-display text-success"></i> <b>Entregado a {{ o.directo_entregado_a or '-' }}</b> · {{ o.directo_ubicacion or '' }}</div>
-            <div class="text-muted">{{ o.fecha_kardex.strftime('%d/%m/%Y %H:%M') }} · registró {{ o.kardex_registrado_por.nombre_completo if o.kardex_registrado_por else '' }}{% if o.nota_seguimiento %} · {{ o.nota_seguimiento }}{% endif %}</div>
-            <button type="button" class="btn btn-sm btn-outline-warning mt-1" data-bs-toggle="modal" data-bs-target="#mDirecto{{ o.id }}"><i class="bi bi-pencil"></i> Corregir entrega / serie / garantía</button>
+        <div class="dir-hecho">
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+                <span><i class="bi bi-check-circle-fill text-success"></i> <b>Entregado a {{ o.directo_entregado_a or '-' }}</b> · <i class="bi bi-geo-alt-fill text-warning"></i> {{ o.directo_ubicacion or '' }}</span>
+                <span class="text-muted small">{{ o.fecha_kardex.strftime('%d/%m/%Y %H:%M') }} · registró {{ o.kardex_registrado_por.nombre_completo if o.kardex_registrado_por else '' }}</span>
+                <button type="button" class="btn btn-sm btn-outline-warning ms-auto" data-bs-toggle="modal" data-bs-target="#mDirecto{{ o.id }}"><i class="bi bi-pencil"></i> Corregir entrega / serie / garantía</button>
+            </div>
+            {% if o.nota_seguimiento %}<div class="small text-muted mt-1"><i class="bi bi-chat-left-text"></i> {{ o.nota_seguimiento }}</div>{% endif %}
+            <div class="mt-2">{{ tabla_entrega_directo(o) }}</div>
             {{ modal_entrega_directo(o, directo_ubicaciones, url_for('oc_ingresos_pendientes', vista='hechos')) }}
         </div>
         {% else %}
-        <form method="POST" action="{{ url_for('oc_directo_entregar', orden_id=o.id) }}" class="form-ing">
+        <form method="POST" action="{{ url_for('oc_directo_entregar', orden_id=o.id) }}" class="dir-caja">
             <input type="hidden" name="volver" value="{{ url_for('oc_ingresos_pendientes') }}">
-            <div class="ayuda mb-2" style="background:#fff7ed; border-color:#fdba74; color:#7c2d12;"><i class="bi bi-pc-display"></i> <b>Uso directo:</b> es un bien para usar en la empresa.
-                <u>No lo ingreses al inventario</u>: registra a quién se entrega y dónde queda.</div>
+            <div class="dir-aviso"><i class="bi bi-pc-display"></i> <span><b>Uso directo:</b> es un bien para usar en la empresa. <u>No lo ingreses al inventario</u>:
+                registra <b>a quién se entrega</b> y <b>dónde queda</b>. Los datos ya vienen de la orden: revisa y confirma.</span></div>
             {{ campos_entrega_directo(o, directo_ubicaciones, 'i') }}
-            <button class="btn btn-sm fw-bold w-100 mt-2 text-white" style="background:#c2410c;"><i class="bi bi-check2-circle"></i> Registrar entrega · no va al inventario</button>
+            <div class="d-flex justify-content-end mt-2">
+                <button class="btn btn-sm fw-bold text-white px-4" style="background:#c2410c;"><i class="bi bi-check2-circle"></i> Registrar entrega · no va al inventario</button></div>
         </form>
         {% endif %}
     </div>
@@ -335,13 +376,14 @@
 <!-- Movimiento de Kardex precargado desde la orden -->
 <div class="modal fade" id="modalKardex" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg"><div class="modal-content border-0 shadow">
     <form method="POST" id="formKardex" onsubmit="return enviarKardex(event)">
-        <div class="modal-header py-2 text-white" id="kxCab"><h6 class="modal-title fw-bold"><i class="bi bi-arrow-left-right"></i> Movimiento de Kardex · <span id="kxTitulo"></span></h6>
+        <div class="modal-header py-2 text-white" id="kxCab"><span class="kx-logo"><img id="kxLogo" src="" alt=""></span>
+            <h6 class="modal-title fw-bold"><i class="bi bi-arrow-left-right"></i> Movimiento de Kardex · <span id="kxTitulo"></span></h6>
             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
         <div class="modal-body">
             <div class="kx-fijo">
                 <div><small>Tipo de movimiento</small><b class="text-success">➕ Ingreso</b></div>
                 <div><small>Motivo</small><b>COMPRA</b></div>
-                <div><small>Inventario</small><b id="kxEmp"></b></div>
+                <div><small>Inventario (empresa)</small><b id="kxEmp"></b><span class="d-block text-muted small" id="kxEmpNom"></span></div>
                 <div><small>Proveedor</small><b id="kxProv"></b><span class="d-block text-muted small" id="kxRuc"></span></div>
                 <div><small>Referencia (guía de la entrega o factura)</small><b id="kxRef"></b></div>
             </div>
@@ -398,6 +440,7 @@ function quitarMarca(form) {
 const DATOS_KARDEX = {{ datos_kardex|tojson }};
 const EMP_COLOR = {{ empresas_oc|dictsort|map('last')|map(attribute='color')|list|tojson }};
 const EMP_ORDEN = {{ empresas_oc|dictsort|map('first')|list|tojson }};
+const EMP_INFO = { {% for e, info in empresas_oc.items() %}{{ e|tojson }}: { logo: {{ url_for('static', filename='img/' ~ info.logo)|tojson }}, nombre: {{ info.nombre|tojson }}, acento: {{ (info.acento or info.color)|tojson }} }{{ ',' if not loop.last }}{% endfor %} };
 function nf(n) { return Number(n || 0).toLocaleString('es-PE', { maximumFractionDigits: 4 }); }
 let kxActual = null;
 function filaKardex(d, it, unico) {
@@ -458,6 +501,9 @@ function abrirKardex(entregaId, itemId) {
     porId('kxCab').style.background = EMP_COLOR[EMP_ORDEN.indexOf(d.empresa)] || '#0f172a';
     porId('kxTitulo').textContent = `${d.codigo} · entrega ${d.entrega}${d.parcial ? ' (parcial)' : ''}` + (itemId ? ` · ítem ${items[0].item}` : ` · ${items.length} ítem(s)`);
     porId('kxEmp').textContent = d.empresa_txt;
+    const ei = EMP_INFO[d.empresa] || {};
+    porId('kxLogo').src = ei.logo || ''; porId('kxEmpNom').textContent = ei.nombre || '';
+    porId('kxCab').style.borderBottom = `4px solid ${ei.acento || 'transparent'}`;
     porId('kxProv').textContent = d.razon_social; porId('kxRuc').textContent = d.ruc ? 'RUC ' + d.ruc : '';
     porId('kxRef').textContent = d.referencia;
     porId('kxFecha').value = d.fecha;
