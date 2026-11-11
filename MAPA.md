@@ -181,7 +181,11 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
   "entra al inventario de…" / "uso directo…") y quién CREÓ la orden. Uso directo: fichas iguales (categoría, va a, para qué, solicitó,
   ítems, activo fijo) y el formulario a todo el ancho: `campos_entrega_directo` = a quién / dónde / nota en una fila + TABLA de ítems
   (queda en, N° de serie, garantía con menú +6m/+1/+2/+3 años); con más de 6 ítems la tabla tiene scroll y cabecera fija; en celular
-  cada ítem es una tarjeta. "Entregado a" viene lleno con quien lo solicitó (+ área). Lo entregado: `tabla_entrega_directo`.
+  cada ítem es una tarjeta. Lo entregado: `tabla_entrega_directo`.
+  "Entregado a" es una LISTA como "Solicitó" (`_directo_responsables(o)`, uso_directo.py): viene elegido quien lo solicitó (+ área),
+  luego las cuentas del sistema y los "Encargados (uso directo)" de Configuración (catálogo `OC_DIRECTO_RESPONSABLE`), y "Otra persona"
+  para escribirlo. El botón ⚙ "Agregar encargado" lo guarda en ese catálogo sin salir (POST `/ordenes/uso-directo/encargado`,
+  roles que entregan). El formulario manda `entregado_a_sel` (+ `entregado_a_otro`); se acepta aún `entregado_a`.
   Logo de la empresa: `empresa_pill(o)` (global `oc_empresas` = EMPRESAS_OC) en la ventana de entrega y en el Movimiento de Kardex.
 
 ## Compras: EN CAMINO en los inventarios (solo Gerencia)

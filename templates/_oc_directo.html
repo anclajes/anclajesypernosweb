@@ -24,8 +24,12 @@
     /* formulario de entrega: datos arriba en 3 columnas y los ítems en una TABLA (se lee igual con 1 o 30 ítems) */
     .dir-form label, .dir-tabla th { font-size: .66rem; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: .03em; }
     .dir-form label { margin-bottom: 2px; display: block; }
+    .dir-grid label { min-height: 22px; display: flex; align-items: flex-end; }
     .dir-grid { display: grid; grid-template-columns: minmax(200px, 1.2fr) minmax(180px, 1fr) minmax(200px, 1.4fr); gap: 8px 12px; }
     .dir-ay { font-size: .68rem; color: #9a3412; margin-top: 2px; }
+    .dir-cfg { border: 1px solid #fdba74; background: #fff7ed; color: #9a3412; border-radius: 7px; font-size: .64rem; font-weight: 800; padding: 1px 7px; text-transform: none; letter-spacing: 0; }
+    .dir-cfg:hover { background: #ffedd5; }
+    @media (max-width: 400px) { .dir-cfg span { display: none; } }
     .dir-tit { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; margin: 12px 0 4px; font-size: .78rem; font-weight: 800; color: #0f172a; }
     .dir-tit span { font-weight: 400; color: #64748b; font-size: .72rem; }
     .dir-tabla-wrap { border: 1px solid #fed7aa; border-radius: 10px; overflow: auto; background: #fff; }
@@ -61,6 +65,39 @@ if (!window.garantiaMas) {
         d.setMonth(d.getMonth() + meses);
         const p = n => String(n).padStart(2, '0');
         document.getElementById(id).value = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+    };
+    // "Entregado a": con "Otra persona" aparece la casilla para escribir el nombre
+    document.addEventListener('change', ev => {
+        const sel = ev.target;
+        if (!sel.classList || !sel.classList.contains('dir-ent-sel')) return;
+        const otro = sel.parentElement.querySelector('.dir-ent-otro');
+        const es = sel.value === '__otro__';
+        otro.classList.toggle('d-none', !es); otro.required = es;
+        const ay = sel.parentElement.querySelector('.dir-ay'); if (ay) ay.classList.toggle('d-none', sel.selectedIndex !== 0);
+        if (es) otro.focus();
+    });
+    // ⚙ Agregar encargado: se guarda en Configuración → Encargados (uso directo) y queda elegido aquí
+    window.directoNuevoEncargado = function (btn) {
+        const sel = btn.closest('div').querySelector('.dir-ent-sel');
+        const pedir = window.Swal
+            ? Swal.fire({ title: 'Agregar encargado', input: 'text', inputLabel: 'Nombre y área (queda en la lista para las próximas entregas)',
+                          inputPlaceholder: 'Ej: JUAN PÉREZ · TALLER', showCancelButton: true, confirmButtonText: 'Agregar', cancelButtonText: 'Cancelar',
+                          inputValidator: v => (v || '').trim().length < 3 ? 'Escribe el nombre' : null }).then(r => r.isConfirmed ? r.value : null)
+            : Promise.resolve(window.prompt('Nombre y área del encargado (Ej: JUAN PÉREZ · TALLER)'));
+        pedir.then(valor => {
+            if (!valor) return;
+            const fd = new FormData(); fd.append('valor', valor);
+            fetch(btn.dataset.url, { method: 'POST', body: fd }).then(r => r.json()).then(d => {
+                if (d.status !== 'success') { (window.Swal ? Swal.fire('No se pudo', d.msg || '', 'warning') : alert(d.msg)); return; }
+                document.querySelectorAll('.dir-ent-sel').forEach(s => {
+                    let g = [...s.querySelectorAll('optgroup')].find(x => x.label === 'Otros encargados (Configuración)');
+                    if (!g) { g = document.createElement('optgroup'); g.label = 'Otros encargados (Configuración)'; s.insertBefore(g, s.querySelector('optgroup[label="Otro"]')); }
+                    if (![...s.options].some(op => op.value === d.valor)) { const op = document.createElement('option'); op.value = op.textContent = d.valor; g.appendChild(op); }
+                });
+                sel.value = d.valor; sel.dispatchEvent(new Event('change', { bubbles: true }));
+                if (window.Swal) Swal.fire({ icon: 'success', title: d.ya_estaba ? 'Ya estaba en la lista' : 'Encargado agregado', text: d.valor, timer: 1600, showConfirmButton: false });
+            }).catch(() => (window.Swal ? Swal.fire('No se pudo guardar', 'Revisa tu conexión', 'error') : alert('No se pudo guardar')));
+        });
     };
     // "Igual que la orden (X)": al cambiar la ubicación de la orden, se actualiza el texto en cada ítem
     document.addEventListener('change', ev => {
@@ -127,13 +164,21 @@ if (!window.garantiaMas) {
    Arriba: a quién, dónde queda y nota (en una fila). Abajo: TABLA con un ítem por fila (dónde queda, N° de serie, garantía).
    "Entregado a" viene lleno con quien lo solicitó (se puede cambiar). La ubicación y la de cada ítem vienen de la orden / requerimiento. #}
 {% macro campos_entrega_directo(o, ubicaciones, pref='') %}
-{% set sol = oc_solicitante_txt(o) %}
-{% set sugerido = o.directo_entregado_a or (((sol ~ ((' · ' ~ o.area_solicitante) if o.area_solicitante else ''))|upper) if sol else '') %}
+{% set opciones = directo_responsables(o) %}
+{% set elegido = (opciones[0][1][0] if opciones and opciones[0][1] else '') %}
 <div class="dir-form">
 <div class="dir-grid">
-    <div><label>Entregado a *</label>
-        <input name="entregado_a" class="form-control form-control-sm text-uppercase" required minlength="3" maxlength="120" value="{{ sugerido }}" placeholder="Ej: JUAN PÉREZ · CONTABILIDAD">
-        {% if not o.directo_entregado_a and sol %}<div class="dir-ay"><i class="bi bi-magic"></i> Viene de quien lo solicitó: cámbialo si lo recibe otra persona.</div>{% endif %}</div>
+    <div><label class="d-flex align-items-center gap-1">Entregado a *
+            {% if session.get('role') in ['admin', 'logistica', 'administracion', 'almacen'] %}
+            <button type="button" class="dir-cfg ms-auto" onclick="directoNuevoEncargado(this)" data-url="{{ url_for('oc_directo_encargado_nuevo') }}"
+                    title="Agregar otro encargado a la lista"><i class="bi bi-gear-fill"></i> <span>Agregar encargado</span></button>{% endif %}</label>
+        <select name="entregado_a_sel" class="form-select form-select-sm dir-ent-sel" required>
+            {% for grupo, lista in opciones %}<optgroup label="{{ grupo }}">{% for t in lista %}<option value="{{ t }}" {{ 'selected' if t == elegido }}>{{ t }}</option>{% endfor %}</optgroup>{% endfor %}
+            <optgroup label="Otro"><option value="__otro__" {{ 'selected' if not elegido }}>✏️ Otra persona: escribir el nombre…</option></optgroup>
+        </select>
+        <input name="entregado_a_otro" class="form-control form-control-sm text-uppercase mt-1 dir-ent-otro {{ '' if not elegido else 'd-none' }}" maxlength="120" minlength="3"
+               placeholder="Nombre y área · Ej: JUAN PÉREZ · CONTABILIDAD" {{ 'required' if not elegido }}>
+        {% if not o.directo_entregado_a and opciones and opciones[0][0] == 'Solicitó esta orden' %}<div class="dir-ay"><i class="bi bi-magic"></i> Viene elegido quien lo solicitó: cámbialo si lo recibe otra persona.</div>{% endif %}</div>
     <div><label>Ubicación donde queda * <span class="text-lowercase fw-normal">(de la orden)</span></label>
         <select name="ubicacion" class="form-select form-select-sm" required>
             {% set lista_ubi = ubicaciones if (o.directo_ubicacion in ubicaciones or not o.directo_ubicacion) else ubicaciones + [o.directo_ubicacion] %}

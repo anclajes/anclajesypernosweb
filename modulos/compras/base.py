@@ -80,13 +80,15 @@ VISTAS_OC_ORDEN = ['curso', 'aprobar', 'recibir', 'atrasadas', 'conformes', 'por
 VISTAS_OC_EXTRA = {'atrasadas': 'Atrasadas', 'por_pagar': 'Por pagar', 'pagadas': 'Pagadas'}
 CATALOGOS_OC = {'OC_UM': 'Unidades de medida (U.M.)', 'OC_CONDICION_PAGO': 'Condiciones de pago', 'OC_SERVICIO': 'Tipos de servicio (OS)',
                 'OC_AREA': 'Áreas que solicitan', 'OC_SOLICITANTE': 'Otros solicitantes',
-                'OC_DIRECTO_CATEGORIA': 'Categorías de uso directo', 'OC_DIRECTO_UBICACION': 'Ubicaciones (uso directo)'}
+                'OC_DIRECTO_CATEGORIA': 'Categorías de uso directo', 'OC_DIRECTO_UBICACION': 'Ubicaciones (uso directo)',
+                'OC_DIRECTO_RESPONSABLE': 'Encargados (uso directo)'}
 _OC_INICIALES = {
     'OC_UM': ['UN', 'PZA', 'PAR', 'JGO', 'CJA-10', 'CJA-25', 'CJA-50', 'CJA-100', 'KG', 'MT', 'ROLLO', 'GLN', 'LT', 'SERV'],
     'OC_CONDICION_PAGO': ['CONTADO', 'CONTRA ENTREGA', 'ADELANTO 50% - SALDO CONTRA ENTREGA', 'CRÉDITO 15 DÍAS',
                           'CRÉDITO 30 DÍAS', 'CRÉDITO 45 DÍAS', 'CRÉDITO 60 DÍAS'],
     'OC_AREA': ['GERENCIA', 'ADMINISTRACIÓN', 'VENTAS', 'LOGÍSTICA', 'ALMACÉN', 'PRODUCCIÓN'],
     'OC_SOLICITANTE': [],
+    'OC_DIRECTO_RESPONSABLE': [],      # a quién se entrega un bien de uso directo (además de las cuentas del sistema)
     'OC_DIRECTO_CATEGORIA': ['ÚTILES Y SUMINISTROS DE OFICINA', 'EQUIPOS DE CÓMPUTO Y TECNOLOGÍA', 'COMUNICACIONES Y TELEFONÍA', 'MOBILIARIO Y ENSERES DE OFICINA',
                              'HERRAMIENTAS Y EQUIPOS', 'MAQUINARIA', 'VEHÍCULOS Y ACCESORIOS', 'SEGURIDAD Y VIGILANCIA',
                              'INSTALACIONES E INFRAESTRUCTURA', 'OTROS BIENES'],

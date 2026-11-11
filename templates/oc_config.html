@@ -37,7 +37,7 @@
     <div class="tab-pane fade {{ 'show active' if tab == t }}" id="c-{{ t }}">
         <div class="card border-0 shadow-sm" style="max-width: 680px;"><div class="card-body">
             <div class="input-group mb-2"><input id="nuevo_{{ t }}" class="form-control text-uppercase" placeholder="{{ {'OC_UM': 'Ej: CJA-200', 'OC_CONDICION_PAGO': 'Ej: CRÉDITO 90 DÍAS', 'OC_AREA': 'Ej: MANTENIMIENTO', 'OC_SOLICITANTE': 'Ej: JUAN PÉREZ (TALLER)', 'OC_SERVICIO': 'Ej: ARENADO',
-                   'OC_DIRECTO_CATEGORIA': 'Ej: EQUIPOS DE LABORATORIO', 'OC_DIRECTO_UBICACION': 'Ej: OFICINA · CONTABILIDAD'}.get(t, '') }}"
+                   'OC_DIRECTO_CATEGORIA': 'Ej: EQUIPOS DE LABORATORIO', 'OC_DIRECTO_UBICACION': 'Ej: OFICINA · CONTABILIDAD', 'OC_DIRECTO_RESPONSABLE': 'Ej: JUAN PÉREZ · TALLER'}.get(t, '') }}"
                    onkeydown="if(event.key==='Enter'){event.preventDefault(); post('catalogo', {tipo: '{{ t }}', valor: this.value}, '{{ t }}');}">
                 <button class="btn btn-primary" onclick="post('catalogo', {tipo: '{{ t }}', valor: document.getElementById('nuevo_{{ t }}').value}, '{{ t }}')"><i class="bi bi-plus-lg"></i> Agregar</button></div>
             {% if t == 'OC_SOLICITANTE' %}<div class="alert alert-light border small py-2 mb-2"><i class="bi bi-person-raised-hand text-primary"></i> En "Solicitó" ya aparecen solas las <b>cuentas del sistema</b>
@@ -50,7 +50,10 @@
                 para <b>usarlos</b> (equipos de cómputo, celulares, muebles, herramientas...) y que <b>NO van al inventario ni a insumos</b>. Cada orden de uso directo lleva una de estas categorías
                 (sirve para filtrar el <b>Registro de uso directo</b> y para los reportes).</div>
             {% elif t == 'OC_DIRECTO_UBICACION' %}<div class="alert alert-light border small py-2 mb-2"><i class="bi bi-geo-alt-fill" style="color:#c2410c;"></i> <b>A dónde va</b> el bien de uso directo
-                (oficina y área, almacén, planta, vehículos...). Se elige al crear la orden y se confirma (o cambia) al registrar la entrega.</div>{% endif %}
+                (oficina y área, almacén, planta, vehículos...). Se elige al crear la orden y se confirma (o cambia) al registrar la entrega.</div>
+            {% elif t == 'OC_DIRECTO_RESPONSABLE' %}<div class="alert alert-light border small py-2 mb-2"><i class="bi bi-person-check-fill" style="color:#c2410c;"></i> <b>A quién se entrega</b> un bien de uso directo.
+                En "Entregado a" ya aparecen solos <b>quien lo solicitó</b> y las <b>cuentas del sistema</b>; aquí agrega <b>otras personas</b> (operarios, choferes, técnicos...) con su área.
+                También se agregan desde el botón <i class="bi bi-gear-fill"></i> "Agregar encargado" al registrar la entrega.</div>{% endif %}
             <div class="form-text mb-2"><i class="bi bi-info-circle"></i> Las órdenes ya hechas guardan su texto: renombrar o borrar una opción no cambia órdenes anteriores.
                 Desactiva para que deje de aparecer sin borrarla.</div>
             <table class="table table-sm align-middle mb-0 small"><tbody>

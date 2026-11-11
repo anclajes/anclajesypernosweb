@@ -53,6 +53,61 @@ app.add_template_global(_garantia_estado, 'garantia_estado')
 app.add_template_global(ESTADOS_DIRECTO, 'estados_directo')
 
 
+def _directo_responsables(orden=None):
+    """Opciones de "Entregado a" (igual que "Solicitó"): quien lo solicitó, las cuentas del sistema y los encargados de Configuración.
+    Devuelve [(grupo, [texto])]; el texto es lo que se guarda (NOMBRE · ÁREA)."""
+    vistos, grupos = set(), []
+
+    def poner(grupo, textos):
+        lista = []
+        for t in textos:
+            t = ' '.join((t or '').split()).upper()[:120]
+            if len(t) >= 3 and t not in vistos:
+                vistos.add(t)
+                lista.append(t)
+        if lista:
+            grupos.append((grupo, lista))
+    if orden is not None:
+        if orden.directo_entregado_a:
+            poner('Entregado actualmente', [orden.directo_entregado_a])
+        sol = _oc_solicitante_txt(orden)
+        if sol:
+            poner('Solicitó esta orden', [sol + (f' · {orden.area_solicitante}' if orden.area_solicitante else '')])
+    try:
+        usuarios = [u for u in User.query.all() if u.role in ROLES_SOLICITANTES_OC and not getattr(u, 'desactivado', False)]
+    except Exception:
+        db.session.rollback()
+        usuarios = []
+    for rol in ROLES_SOLICITANTES_OC:
+        lista = sorted([u for u in usuarios if u.role == rol], key=lambda u: _clave_alfabetica(u.nombre_completo or u.username or ''))
+        poner(ROLE_LABELS.get(rol, rol) + ('es' if rol == 'vendedor' else ''),
+              [f"{u.nombre_completo or u.username} · {AREA_POR_ROL_OC.get(u.role, '')}".rstrip(' ·') for u in lista])
+    poner('Otros encargados (Configuración)', [v.valor for v in _oc_catalogo('OC_DIRECTO_RESPONSABLE')])
+    return grupos
+
+
+app.add_template_global(_directo_responsables, 'directo_responsables')
+
+
+@app.route('/ordenes/uso-directo/encargado', methods=['POST'])
+@_ruta_oc('contable', como_json=True)
+def oc_directo_encargado_nuevo():
+    """Agrega un encargado a la lista de "Entregado a" (Configuración → Encargados (uso directo)) sin salir de la pantalla."""
+    valor = ' '.join((request.form.get('valor') or '').split()).upper()[:100]
+    if len(valor) < 3:
+        return {'status': 'error', 'msg': 'Escribe el nombre (y si quieres el área), mínimo 3 letras.'}
+    existe = next((v for v in CatalogoValor.query.filter_by(tipo='OC_DIRECTO_RESPONSABLE').all() if (v.valor or '').upper() == valor), None)
+    if existe:
+        if not existe.activo:
+            existe.activo = True
+            db.session.commit()
+        return {'status': 'success', 'valor': existe.valor, 'ya_estaba': True}
+    db.session.add(CatalogoValor(tipo='OC_DIRECTO_RESPONSABLE', valor=valor, activo=True, es_predeterminado=False, creado_por_id=session.get('user_id')))
+    db.session.commit()
+    registrar_log(f"Agregó el encargado de uso directo: {valor}", 'bi-person-plus', 'text-success')
+    return {'status': 'success', 'valor': valor}
+
+
 def _volver_seguro(valor, defecto):
     return valor if valor and valor.startswith('/') and not valor.startswith('//') else defecto
 
@@ -69,7 +124,10 @@ def oc_directo_entregar(orden_id):
     if not (p['entregar_directo'] or p['editar_directo']):
         flash('⛔ Solo se registra la entrega de una orden de USO DIRECTO que ya está conforme.')
         return redirect(volver)
-    entregado_a = ' '.join((f.get('entregado_a') or '').split()).upper()[:120]
+    # "Entregado a": se elige de la lista (como "Solicitó") o se escribe con "Otro"
+    sel = f.get('entregado_a_sel')
+    crudo = f.get('entregado_a_otro') if sel == '__otro__' else (sel if sel is not None else f.get('entregado_a'))
+    entregado_a = ' '.join((crudo or '').split()).upper()[:120]
     if len(entregado_a) < 3:
         flash('⛔ Escribe A QUIÉN se entregó el bien (persona o área responsable).')
         return redirect(volver)

@@ -399,7 +399,7 @@ def oc_config():
     contactos_prov = {}
     for c in OCContacto.query.all():
         contactos_prov.setdefault(c.oc_proveedor_id, []).append(c)
-    uso_area, uso_sol, uso_mc, uso_dcat, uso_dubi = {}, {}, {}, {}, {}
+    uso_area, uso_sol, uso_mc, uso_dcat, uso_dubi, uso_dresp = {}, {}, {}, {}, {}, {}
     for o in OrdenCompra.query.all():
         if o.area_solicitante:
             uso_area[o.area_solicitante] = uso_area.get(o.area_solicitante, 0) + 1
@@ -412,6 +412,8 @@ def oc_config():
                 uso_dcat[o.directo_categoria] = uso_dcat.get(o.directo_categoria, 0) + 1
             if o.directo_ubicacion:
                 uso_dubi[o.directo_ubicacion] = uso_dubi.get(o.directo_ubicacion, 0) + 1
+            if o.directo_entregado_a:
+                uso_dresp[o.directo_entregado_a] = uso_dresp.get(o.directo_entregado_a, 0) + 1
     uso_serv = {}
     for (sv, n) in db.session.query(OrdenCompraItem.tipo_servicio, func.count(OrdenCompraItem.id)).group_by(OrdenCompraItem.tipo_servicio).all():
         if sv:
@@ -424,7 +426,7 @@ def oc_config():
                            cuentas_prov=cuentas_prov, bancos=BANCOS_OC, usos_motivo=USOS_MOTIVO_OC, aplica_motivo=APLICA_MOTIVO_OC, tipos_cuenta=TIPOS_CUENTA_OC, monedas=MONEDAS_OC,
                            motivos_compra=sorted(OCMotivoCompra.query.all(), key=lambda m: m.id), uso_mc=uso_mc,
                            nombres_catalogo=CATALOGOS_OC, uso={'OC_UM': uso_um, 'OC_CONDICION_PAGO': uso_cond, 'OC_AREA': uso_area, 'OC_SOLICITANTE': uso_sol, 'OC_SERVICIO': uso_serv,
-                                                   'OC_DIRECTO_CATEGORIA': uso_dcat, 'OC_DIRECTO_UBICACION': uso_dubi},
+                                                   'OC_DIRECTO_CATEGORIA': uso_dcat, 'OC_DIRECTO_UBICACION': uso_dubi, 'OC_DIRECTO_RESPONSABLE': uso_dresp},
                            cfgs={e: _oc_cfg(e) for e in EMPRESAS_OC}, cfg_defs=OC_CONFIG_DEFS, etiquetas=OC_CONFIG_ETIQUETAS, es_admin=es_admin,
                            conteo=conteo, empresas_oc=EMPRESAS_OC, empresa_cfg=request.args.get('empresa') if request.args.get('empresa') in EMPRESAS_OC else 'ANCLAJES',
                            siguientes={e: {t: _oc_numero_txt(None, _siguiente_numero_oc(t, e), e) for t in TIPOS_OC} for e in EMPRESAS_OC}, tipos=TIPOS_OC,
