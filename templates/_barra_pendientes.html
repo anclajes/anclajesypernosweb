@@ -1,0 +1,116 @@
+{#- BARRA "POR HACER EN ALMACÉN": arriba de todas las páginas para el jefe de almacén (rol almacen).
+    Ingresos pendientes (OC) e Insumos internos · Pendientes de OC, con el detalle por empresa.
+    Se actualiza sola cada minuto y, cuando llega algo NUEVO (que todavía no viste), late en rojo con "¡NUEVO!".
+    Se marca como visto al hacer clic o al entrar a esa pantalla. Datos: pend_alm (context processor, vaciar_menu.py). -#}
+{% set pa = pend_alm %}
+{% set det = pa.oc_det or {} %}
+{% macro txt_oc(det) %}{{ [((det.material ~ ' ítem(s) de material') if det.material), ((det.servicio ~ ' servicio(s)') if det.servicio),
+    ((det.directo ~ ' uso directo') if det.directo), ((det.contable ~ ' contable(s)') if det.contable)]|select|join(' · ') or 'nada por ingresar' }}{% endmacro %}
+<style>
+    .pend-bar { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; margin: 10px 0 12px; }
+    .pend-bar .pb-tit { display: flex; align-items: center; gap: 6px; font-size: .72rem; font-weight: 800; color: #475569; text-transform: uppercase; letter-spacing: .04em; }
+    .pb-item { position: relative; display: flex; align-items: center; gap: 10px; flex: 1 1 300px; min-width: 0; background: #fff; border: 1px solid #e2e8f0;
+               border-left: 5px solid #94a3b8; border-radius: 12px; padding: 7px 12px; box-shadow: 0 1px 2px rgba(15,23,42,.06); }
+    .pb-item.hay { border-color: #fcd34d; border-left-color: #f59e0b; background: #fffbeb; }
+    .pb-item.nuevo { border-color: #fca5a5; border-left-color: #dc2626; background: #fef2f2; animation: pbLate 1.8s ease-out infinite; }
+    .pb-item > a.pb-main { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1 1 auto; color: inherit; text-decoration: none; }
+    .pb-ico { width: 38px; height: 38px; flex: 0 0 38px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.15rem;
+              background: #f1f5f9; color: #64748b; }
+    .pb-item.hay .pb-ico { background: #fde68a; color: #92400e; }
+    .pb-item.nuevo .pb-ico { background: #dc2626; color: #fff; }
+    .pb-item.nuevo .pb-ico i { animation: pbSacude 1.2s ease-in-out infinite; display: inline-block; }
+    .pb-txt { min-width: 0; line-height: 1.2; }
+    .pb-txt b { display: block; font-size: .86rem; color: #0f172a; }
+    .pb-txt small { display: block; font-size: .7rem; color: #64748b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pb-n { margin-left: auto; min-width: 34px; height: 34px; padding: 0 9px; border-radius: 17px; display: inline-flex; align-items: center; justify-content: center;
+            font-size: 1.05rem; font-weight: 800; background: #e2e8f0; color: #475569; font-variant-numeric: tabular-nums; }
+    .pb-item.hay .pb-n { background: #f59e0b; color: #fff; }
+    .pb-item.nuevo .pb-n { background: #dc2626; color: #fff; }
+    .pb-nuevo { display: none; position: absolute; top: -9px; right: 10px; background: #dc2626; color: #fff; font-size: .62rem; font-weight: 800; letter-spacing: .05em;
+                border-radius: 8px; padding: 1px 8px; box-shadow: 0 0 0 2px #fff; }
+    .pb-item.nuevo .pb-nuevo { display: inline-block; }
+    .pb-emps { display: flex; flex-direction: column; gap: 3px; flex: 0 0 auto; }
+    .pb-emps a { font-size: .68rem; font-weight: 700; color: #334155; background: #fff; border: 1px solid #e2e8f0; border-radius: 7px; padding: 1px 7px; text-decoration: none; white-space: nowrap; }
+    .pb-emps a:hover { border-color: #0B3D91; color: #0B3D91; }
+    .pb-emps a b { color: #b45309; }
+    .pb-emps a.cero { opacity: .55; }
+    @keyframes pbLate { 0% { box-shadow: 0 0 0 0 rgba(220,38,38,.45); } 70% { box-shadow: 0 0 0 10px rgba(220,38,38,0); } 100% { box-shadow: 0 0 0 0 rgba(220,38,38,0); } }
+    @keyframes pbSacude { 0%, 60%, 100% { transform: rotate(0); } 70% { transform: rotate(16deg); } 80% { transform: rotate(-14deg); } 90% { transform: rotate(8deg); } }
+    @media (prefers-reduced-motion: reduce) { .pb-item.nuevo, .pb-item.nuevo .pb-ico i { animation: none !important; } }
+    @media (max-width: 575.98px) { .pend-bar .pb-tit { width: 100%; } .pb-txt small { white-space: normal; } .pb-emps { flex-direction: row; flex-wrap: wrap; width: 100%; } .pb-item { flex-wrap: wrap; } }
+    @media print { .pend-bar { display: none !important; } }
+</style>
+<div class="pend-bar" id="pendBar" data-api="{{ url_for('almacen_pendientes_api') }}" data-user="{{ session.get('user_id') or '' }}" data-pagina="{{ request.endpoint or '' }}">
+    <span class="pb-tit"><i class="bi bi-clipboard-check"></i> Por hacer en almacén</span>
+    <div class="pb-item {{ 'hay' if pa.oc }}" id="pbOC" data-tipo="oc">
+        <a class="pb-main" href="{{ url_for('oc_ingresos_pendientes') }}">
+            <span class="pb-ico"><i class="bi bi-box-arrow-in-down"></i></span>
+            <span class="pb-txt"><b>Ingresos pendientes (OC)</b><small class="pb-det">{{ txt_oc(det) }}</small></span>
+            <span class="pb-n">{{ pa.oc }}</span></a>
+        <span class="pb-emps">{% for e, info in oc_empresas.items() %}{% set n = (pa.oc_emp or {}).get(e, 0) %}
+            <a href="{{ url_for('oc_ingresos_pendientes', empresa=e) }}" class="{{ 'cero' if not n }}" data-emp="{{ e }}">{{ info.corto }} <b>{{ n }}</b></a>{% endfor %}</span>
+        <span class="pb-nuevo">¡NUEVO!</span>
+    </div>
+    {% if pa.ins_emp %}
+    {% set e_mas = (pa.ins_emp|dictsort(by='value', reverse=true))[0][0] %}
+    <div class="pb-item {{ 'hay' if pa.ins }}" id="pbINS" data-tipo="ins">
+        <a class="pb-main" href="{{ url_for('insumos_pendientes_oc', empresa=e_mas) }}">
+            <span class="pb-ico"><i class="bi bi-tools"></i></span>
+            <span class="pb-txt"><b>Insumos internos · Pendientes de OC</b><small class="pb-det">{{ (pa.ins ~ ' compra(s) de insumos por ingresar') if pa.ins else 'nada por ingresar' }}</small></span>
+            <span class="pb-n">{{ pa.ins }}</span></a>
+        <span class="pb-emps">{% for e, n in pa.ins_emp.items() %}
+            <a href="{{ url_for('insumos_pendientes_oc', empresa=e) }}" class="{{ 'cero' if not n }}" data-emp="{{ e }}">{{ oc_empresas.get(e, {}).get('corto', e) }} <b>{{ n }}</b></a>{% endfor %}</span>
+        <span class="pb-nuevo">¡NUEVO!</span>
+    </div>
+    {% endif %}
+</div>
+<script>
+(function () {
+    const bar = document.getElementById('pendBar');
+    if (!bar) return;
+    const K = 'pendAlmVisto_' + (bar.dataset.user || 'x');
+    const leer = () => { try { return JSON.parse(localStorage.getItem(K) || 'null'); } catch (e) { return null; } };
+    const guardar = v => { try { localStorage.setItem(K, JSON.stringify(v)); } catch (e) {} };
+    const PAGINA_DE = { oc: 'oc_ingresos_pendientes', ins: 'insumos_pendientes_oc' };
+    let datos = {{ pend_alm|tojson }};
+    let visto = leer();
+    if (!visto) { visto = { oc: datos.oc_ids, ins: datos.ins_ids }; guardar(visto); }     // la primera vez no se avisa de lo que ya había
+    const unir = (a, b) => [...new Set([...(a || []), ...(b || [])])].slice(-500);
+    function marcarVisto(tipo) { visto[tipo] = unir(visto[tipo], datos[tipo + '_ids']); guardar(visto); pintar(); }
+    function txtOC(d) {
+        const p = [];
+        if (d.material) p.push(`${d.material} ítem(s) de material`);
+        if (d.servicio) p.push(`${d.servicio} servicio(s)`);
+        if (d.directo) p.push(`${d.directo} uso directo`);
+        if (d.contable) p.push(`${d.contable} contable(s)`);
+        return p.join(' · ') || 'nada por ingresar';
+    }
+    function pintar() {
+        ['oc', 'ins'].forEach(tipo => {
+            const el = document.getElementById(tipo === 'oc' ? 'pbOC' : 'pbINS');
+            if (!el) return;
+            const ids = datos[tipo + '_ids'] || [], ya = new Set(visto[tipo] || []);
+            const nuevos = ids.filter(x => !ya.has(x)).length, n = datos[tipo] || 0;
+            el.classList.toggle('hay', n > 0);
+            el.classList.toggle('nuevo', nuevos > 0);
+            el.querySelector('.pb-n').textContent = n;
+            el.querySelector('.pb-nuevo').textContent = nuevos > 1 ? `¡${nuevos} NUEVOS!` : '¡NUEVO!';
+            el.querySelector('.pb-det').textContent = tipo === 'oc' ? txtOC(datos.oc_det || {}) : (n ? `${n} compra(s) de insumos por ingresar` : 'nada por ingresar');
+            const emp = tipo === 'oc' ? (datos.oc_emp || {}) : (datos.ins_emp || {});
+            el.querySelectorAll('.pb-emps a').forEach(a => { const v = emp[a.dataset.emp] || 0; a.querySelector('b').textContent = v; a.classList.toggle('cero', !v); });
+        });
+    }
+    // estar en la pantalla de ese pendiente = ya lo viste
+    Object.entries(PAGINA_DE).forEach(([tipo, ep]) => { if (bar.dataset.pagina === ep) { visto[tipo] = unir(visto[tipo], datos[tipo + '_ids']); guardar(visto); } });
+    bar.querySelectorAll('.pb-item').forEach(el => el.addEventListener('click', e => { if (e.target.closest('a')) marcarVisto(el.dataset.tipo); }));
+    pintar();
+    // se actualiza sola cada minuto (solo con la pestaña a la vista)
+    function consultar() {
+        if (document.visibilityState !== 'visible') return;
+        fetch(bar.dataset.api, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+            .then(r => r.ok ? r.json() : null).then(d => { if (d && d.status === 'success') { datos = d; pintar(); } }).catch(() => {});
+    }
+    setInterval(consultar, 60000);
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') consultar(); });
+})();
+</script>

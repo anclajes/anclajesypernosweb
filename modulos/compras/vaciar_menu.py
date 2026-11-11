@@ -91,12 +91,56 @@ def oc_vaciar():
     return redirect(destino)
 
 
+# ---------------- BARRA "POR HACER EN ALMACÉN" (arriba de todas las páginas) ----------------
+ROLES_BARRA_PENDIENTES = ['almacen']      # jefe de almacén: lo que tiene que ingresar, siempre a la vista
+
+
+def _pendientes_almacen():
+    """Lo que espera al jefe de almacén: ingresos de compras (material, servicios, contables, uso directo) y compras de
+    insumos por ingresar, con el detalle por empresa. 'oc_ids' / 'ins_ids' identifican cada pendiente: la barra compara
+    con lo que el usuario ya vio para avisar cuando llega uno NUEVO (aunque el total no cambie)."""
+    r = {'oc': 0, 'oc_det': {}, 'oc_emp': {e: 0 for e in EMPRESAS_OC}, 'oc_ids': [], 'ins': 0, 'ins_emp': {}, 'ins_ids': []}
+    if not _oc_ok:
+        return r
+    try:
+        mat = 0
+        for o, e, eis in _entregas_por_ingresar():
+            mat += len(eis)
+            r['oc_emp'][o.empresa or 'ANCLAJES'] = r['oc_emp'].get(o.empresa or 'ANCLAJES', 0) + len(eis)
+            r['oc_ids'] += [f'ei{ei.id}' for ei in eis]
+        otros = {'servicio': _os_por_seguir(), 'contable': _contables_por_confirmar(), 'directo': _directos_por_entregar()}
+        for clave, lista in otros.items():
+            for o in lista:
+                r['oc_emp'][o.empresa or 'ANCLAJES'] = r['oc_emp'].get(o.empresa or 'ANCLAJES', 0) + 1
+                r['oc_ids'].append(f'o{o.id}')
+        r['oc_det'] = {'material': mat, **{k: len(v) for k, v in otros.items()}}
+        r['oc'] = mat + sum(len(v) for v in otros.values())
+        if '_ordenes_pendientes_insumos' in globals():
+            for e in EMPRESAS_INSUMOS:
+                lista = _ordenes_pendientes_insumos(e)
+                r['ins_emp'][e] = len(lista)
+                r['ins_ids'] += [f'i{o.id}' for o in lista]
+            r['ins'] = sum(r['ins_emp'].values())
+    except Exception:
+        db.session.rollback()
+    return r
+
+
+@app.route('/almacen/pendientes/api')
+def almacen_pendientes_api():
+    """Para que la barra se actualice sola (cada minuto) y avise cuando llega algo nuevo."""
+    if session.get('role') not in ROLES_BARRA_PENDIENTES:
+        return {'status': 'error', 'msg': 'No autorizado'}, 403
+    return {'status': 'success', **_pendientes_almacen()}
+
+
 @app.context_processor
 def _contador_ordenes():
     """Números para el menú: órdenes por aprobar (Gerencia) y aprobadas por recibir (Logística)."""
     rol = session.get('role')
     if (rol not in ROLES_OC_VEN and rol not in ROLES_OC_INGRESAN and rol not in ROLES_REQ_CREAN) or not _oc_ok:
         return {}
+    pend_alm = _pendientes_almacen() if rol in ROLES_BARRA_PENDIENTES else None
     try:
         alertas = 0
         if rol in ROLES_OC_VEN:
@@ -106,7 +150,10 @@ def _contador_ordenes():
         return {'oc_por_aprobar': OrdenCompra.query.filter_by(estado='ENVIADA').count() if rol == 'admin' else 0,
                 'oc_por_recibir': OrdenCompra.query.filter(OrdenCompra.estado.in_(['APROBADA', 'RECIBIDA'])).count()
                 if rol in ROLES_OC_EDITAN else 0,
-                'oc_por_ingresar': (len(_items_por_ingresar()) + len(_os_por_seguir()) + len(_contables_por_confirmar()) + len(_directos_por_entregar())) if rol in ROLES_OC_INGRESAN else 0,
+                'oc_por_ingresar': (pend_alm['oc'] if pend_alm is not None else
+                                    (len(_items_por_ingresar()) + len(_os_por_seguir()) + len(_contables_por_confirmar()) + len(_directos_por_entregar())))
+                                   if rol in ROLES_OC_INGRESAN else 0,
+                'pend_alm': pend_alm,
                 'oc_directo_pend': len(_directos_por_entregar()) if rol in ROLES_OC_CONTABLE else 0,
                 'oc_req_pendientes': len(_req_pendientes_de_oc()) if rol in ROLES_REQ_ATIENDEN else 0,
                 'oc_req_novedades': len(_req_novedades(session.get('user_id'), limite=0)) if rol in ROLES_REQ_CREAN else 0,

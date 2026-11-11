@@ -460,6 +460,9 @@
             </div>
         </header>
 
+        {# jefe de almacén: lo que tiene que ingresar, siempre arriba (con aviso cuando llega algo nuevo) #}
+        {% if pend_alm %}{% include '_barra_pendientes.html' %}{% endif %}
+
         <div class="container-fluid px-0">
             <div id="flash-messages" data-messages='{{ get_flashed_messages() | tojson }}'></div>
             {% block content %}{% endblock %}

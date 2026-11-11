@@ -132,6 +132,12 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
 - Ingresos pendientes de OC (`/insumos/pendientes-oc`, `_ordenes_pendientes_insumos`, contador global `n_oc_pendientes_insumos()`):
   se ven en el MENÚ LATERAL (badge rojo en "Insumos Internos" aunque esté cerrado + opción "Ingresos pendientes (OC)"), en la pestaña
   del módulo y con un aviso amarillo "N compras de insumos llegaron… Ingresarlas" arriba de todas las pantallas de Insumos.
+- BARRA "POR HACER EN ALMACÉN" (solo rol `almacen`, `ROLES_BARRA_PENDIENTES` en vaciar_menu.py): arriba de TODAS las páginas
+  (`templates/_barra_pendientes.html`, incluida en base.html debajo de la cabecera) con "Ingresos pendientes (OC)" (material, servicios,
+  uso directo, contables) e "Insumos internos · Pendientes de OC", con el número por empresa (cada uno lleva a su pantalla).
+  Datos: `_pendientes_almacen()` (context processor `pend_alm`; también da `oc_por_ingresar`) y `/almacen/pendientes/api` (cada minuto).
+  Aviso de NUEVO: compara los ids pendientes (`oc_ids` / `ins_ids`) con los ya vistos (localStorage por usuario): late en rojo con
+  "¡NUEVO!" hasta que hace clic o entra a esa pantalla. La primera vez no avisa de lo que ya había.
 - La OC de cada ingreso se guarda en `insumo_ingreso.orden_compra_id` (los antiguos se encuentran por `orden_compra.insumo_ingreso_id`).
   Kardex, Ingresos y el detalle muestran la OC (PDF) y todos sus documentos con ver/descargar. Menú reutilizable: `templates/_oc_docs_menu.html`.
 - `_oc_docs_menu.html`: `menu_docs_oc(o, docs, texto, icono, clase)` = la orden + sus documentos, cada uno con **Abrir** (pestaña nueva)
