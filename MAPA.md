@@ -292,6 +292,11 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
 - Funciones: `GR.barras` (columnas + promedio), `GR.barrasH` (top N + "Otros", valor y %, nombre completo en el tooltip, clic),
   `GR.historial` (fechas a su distancia real + línea del mejor precio), `GR.monedaGlobal` (botones S/ | US$ que redibujan todo),
   `GR.vacio` (mensaje "sin datos"). Cada canvas guarda su gráfico y se destruye antes de redibujar.
+- Mejores precios · CONSULTA RÁPIDA POR ÍTEM (`vista=rapido`): para trabajadores y Gerencia. Buscador grande; por defecto solo lo
+  comprado MÁS DE UNA VEZ (`todos=1` = todo). Una tarjeta por producto (moneda + U.M.): MEJOR PRECIO (verde, proveedor, fecha, empresa
+  que compró, OC), ÚLTIMA COMPRA (▲ % más caro o ✔ al mejor precio) y "PARA LA PRÓXIMA COMPRA" (a quién pedir precio, cuánto más se pagó,
+  ahorro posible). "Ver todas las compras" = ranking + tabla. Cada OC abre `menu_docs_oc(..., detalle_url=...)`: abrir la orden en el
+  sistema, PDF (abrir / descargar) y sus documentos. Sin indicadores arriba. Producto: `compras` (más nueva primero) y `empresas`.
 - Mejores precios (v16): resumen sin donas ni doble eje; moneda global; condición de pago por MONTO sin IGV (antes con IGV)
   y n° de órdenes en el tooltip; clic en un proveedor → vista "Por producto" filtrada por él (`res.prov_graf`).
 - Más funciones (v17): `GR.mini` (mini tendencia de los KPIs), `GR.pareto`, `GR.proceso` (línea del proceso: mediana vs meta,

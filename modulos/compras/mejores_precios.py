@@ -21,11 +21,13 @@ CLASES_PRECIOS = {'GENERAL': {'txt': 'Inventario General', 'corto': 'Producto', 
                   'INSUMOS': {'txt': 'Insumos internos', 'corto': 'Insumo', 'color': '#0f766e', 'icono': 'bi-tools'},
                   'SERVICIO': {'txt': 'Servicios (OS)', 'corto': 'Servicio', 'color': '#7c3aed', 'icono': 'bi-gear'},
                   'DIRECTO': {'txt': 'Uso directo (equipos, muebles...)', 'corto': 'Uso directo', 'color': '#c2410c', 'icono': 'bi-pc-display'}}
-VISTAS_PRECIOS = {'resumen': ('Resumen y gráficos', 'bi-graph-up'), 'productos': ('Por producto', 'bi-tags'),
+VISTAS_PRECIOS = {'resumen': ('Resumen y gráficos', 'bi-graph-up'), 'rapido': ('Consulta rápida por ítem', 'bi-lightning-charge-fill'),
+                  'productos': ('Por producto', 'bi-tags'),
                   'proveedores': ('Por proveedor', 'bi-building'), 'detalle': ('Detalle de compras', 'bi-list-ul')}
-ORDENES_PRODUCTOS = {'ahorro': 'Mayor ahorro potencial', 'monto': 'Más comprado (monto)', 'compras': 'Más veces comprado',
+ORDENES_PRODUCTOS = {'ahorro': 'Mayor ahorro potencial', 'reciente': 'Comprado más recientemente', 'monto': 'Más comprado (monto)', 'compras': 'Más veces comprado',
                      'variacion': 'Último precio más caro que el mejor', 'proveedores': 'Más proveedores', 'nombre': 'Nombre (A-Z)'}
 POR_PAGINA_PRECIOS = 50
+POR_PAGINA_RAPIDO = 25
 
 
 def _oc_precios(emp_sel='TODAS', q='', desde=None, hasta=None, tipo='OC'):
@@ -167,6 +169,8 @@ def _mp_productos(compras):
             'cantidad': round(cant, 4), 'monto': monto, 'ahorro': ahorro,
             'variacion': round(100 * (ultimo['precio'] - mejor['precio']) / mejor['precio'], 1) if mejor['precio'] else 0,
             'ranking': ranking,
+            'compras': sorted(cs, key=lambda c: (c['fecha'], c['orden'].id, c['item'].id), reverse=True),     # de la más nueva a la más antigua
+            'empresas': sorted({c['empresa'] for c in cs}),                                                      # qué empresa(s) nuestra(s) lo compraron
             'historial': [{'f': c['fecha'].isoformat(), 'p': round(c['precio'], 6), 'prov': c['proveedor'], 'oc': _oc_codigo(c['orden'])}
                           for c in sorted(cs, key=lambda c: (c['fecha'], c['orden'].id))]})
     return productos
@@ -289,7 +293,8 @@ def _mp_resumen(compras, productos, proveedores):
 def _mp_orden_productos(productos, orden):
     claves = {'ahorro': lambda p: (-p['ahorro'], -p['monto']), 'monto': lambda p: (p['moneda'] != 'PEN', -p['monto']),
               'compras': lambda p: (-p['n'], -p['monto']), 'variacion': lambda p: (-p['variacion'], -p['ahorro']),
-              'proveedores': lambda p: (-p['n_prov'], -p['ahorro']), 'nombre': lambda p: _clave_alfabetica(p['descripcion'] or '')}
+              'proveedores': lambda p: (-p['n_prov'], -p['ahorro']), 'nombre': lambda p: _clave_alfabetica(p['descripcion'] or ''),
+              'reciente': lambda p: (-p['ultimo']['fecha'].toordinal(), -p['ultimo']['orden'].id)}
     return sorted(productos, key=claves.get(orden, claves['ahorro']))
 
 
@@ -310,7 +315,20 @@ def oc_precios():
     res = _mp_resumen(compras, productos, proveedores)
     pagina = max(request.args.get('pagina', 1, type=int), 1)
     lista, total_lista = [], 0
-    if vista == 'productos':
+    docs_oc, solo_multi, n_multi = {}, request.args.get('todos') != '1', 0
+    if vista == 'rapido':
+        # Consulta rápida: por defecto solo lo que se compró MÁS DE UNA VEZ (ahí sí hay precios para comparar)
+        todos = _mp_orden_productos(productos, orden)
+        n_multi = sum(1 for p in todos if p['n'] > 1)
+        if solo_multi:
+            todos = [p for p in todos if p['n'] > 1]
+        total_lista = len(todos)
+        lista = todos[(pagina - 1) * POR_PAGINA_RAPIDO: pagina * POR_PAGINA_RAPIDO]
+        ids = {c['orden'].id for p in lista for c in p['compras']}
+        if ids:
+            for d in OrdenCompraDocumento.query.filter(OrdenCompraDocumento.orden_id.in_(list(ids))).order_by(OrdenCompraDocumento.id).all():
+                docs_oc.setdefault(d.orden_id, []).append(d)
+    elif vista == 'productos':
         todos = _mp_orden_productos(productos, orden)
         total_lista = len(todos)
         lista = todos[(pagina - 1) * POR_PAGINA_PRECIOS: pagina * POR_PAGINA_PRECIOS]
@@ -326,13 +344,13 @@ def oc_precios():
             c['dif_pct'] = round(100 * (c['precio'] - mb) / mb, 1) if mb else 0
         total_lista = len(todos)
         lista = todos[(pagina - 1) * 100: pagina * 100]
-    por_pag = 100 if vista == 'detalle' else POR_PAGINA_PRECIOS
+    por_pag = 100 if vista == 'detalle' else (POR_PAGINA_RAPIDO if vista == 'rapido' else POR_PAGINA_PRECIOS)
     opciones_prov = sorted({(c['prov_clave'], c['proveedor']) for c in _mp_compras({**f, 'prov': '', 'q': ''})}, key=lambda x: _clave_alfabetica(x[1]))
     return render_template('oc_precios.html', f=f, vista=vista, vistas=VISTAS_PRECIOS, orden=orden, ordenes_productos=ORDENES_PRODUCTOS,
                            res=res, lista=lista, total_lista=total_lista, pagina=pagina, paginas=max(1, -(-total_lista // por_pag)),
                            clases=CLASES_PRECIOS, etapas=ETAPAS_PRECIOS, tipos=TIPOS_OC, empresas_oc=EMPRESAS_OC, monedas=MONEDAS_OC, igv=IGV_OC,
                            opciones_prov=opciones_prov, seccion='precios', puede_ver_oc=session.get('role') in ROLES_OC_VEN,
-                           hoy=hora_peru().date())
+                           hoy=hora_peru().date(), docs_oc=docs_oc, solo_multi=solo_multi, n_multi=n_multi, n_productos=len(productos))
 
 
 def _mp_excel(f, compras, productos, proveedores):

@@ -3,14 +3,16 @@
    Uso:  {% from '_oc_docs_menu.html' import menu_docs_oc with context %}
          {{ menu_docs_oc(o, docs_de_la_orden) }}            -> botón con el número de documentos
          {{ menu_docs_oc(o, ds, texto='OC N° 000123') }}  -> botón con un texto propio
+         detalle_url=url_for('oc_detalle', orden_id=o.id) -> agrega "Abrir la orden en el sistema" arriba
    Necesita los globales oc_codigo y tipos_doc_oc (modulos/compras/base.py). #}
-{% macro menu_docs_oc(o, ds, texto=None, pdf=True, alinear='end', icono='bi-paperclip', clase='') %}
+{% macro menu_docs_oc(o, ds, texto=None, pdf=True, alinear='end', icono='bi-paperclip', clase='', detalle_url=None) %}
 <div class="dropdown d-inline-block oc-docs-dd">
     <button type="button" class="oc-docs-btn {{ clase }}" data-bs-toggle="dropdown" data-bs-auto-close="outside" data-bs-popper-config='{"strategy":"fixed"}'
             aria-expanded="false" title="Ver o descargar la orden y sus documentos">
         <i class="bi {{ icono }}"></i>{% if texto %} {{ texto }}{% else %} {{ (ds|length) + (1 if pdf else 0) }}{% endif %} <i class="bi bi-caret-down-fill" style="font-size:.55rem;"></i></button>
     <ul class="dropdown-menu dropdown-menu-{{ alinear }} shadow oc-docs-menu">
         <li class="oc-docs-cab">{{ oc_codigo(o) }} · documentos</li>
+        {% if detalle_url %}<li><a class="dropdown-item fw-bold py-1" href="{{ detalle_url }}" style="font-size:.78rem;color:#0B3D91;"><i class="bi bi-window-stack"></i> Abrir la orden en el sistema</a></li>{% endif %}
         {% if pdf %}
         <li class="oc-docs-fila">
             <i class="bi bi-file-earmark-pdf-fill text-danger"></i>

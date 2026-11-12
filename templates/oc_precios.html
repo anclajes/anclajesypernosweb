@@ -5,6 +5,8 @@
 {% include '_oc_nav.html' %}
 {% import '_graficos.html' as gr %}
 {{ gr.estilos() }}
+{% import '_oc_docs_menu.html' as dm with context %}
+{% if vista == 'rapido' %}{{ dm.estilos_docs_oc() }}{% endif %}
 {% macro px(v) %}{% if v is none %}—{% elif (v * 100)|round(6) == ((v * 100)|round(0)) %}{{ '{:,.2f}'.format(v) }}{% else %}{{ '{:,.4f}'.format(v).rstrip('0') }}{% endif %}{% endmacro %}
 {% macro dinero(v) %}{{ '{:,.2f}'.format(v or 0) }}{% endmacro %}
 {% set base_args = {'periodo': f.periodo, 'desde': f.desde.isoformat() if f.desde and f.periodo == 'rango' else '', 'hasta': f.hasta.isoformat() if f.hasta else '',
@@ -49,6 +51,45 @@
     .oc-l { font-size: .68rem; font-weight: 700; text-decoration: none; }
     .pag { display: flex; gap: 6px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin: 10px 0; font-size: .78rem; }
     .ayuda-mp { font-size: .74rem; background: #eff6ff; border: 1px solid #bfdbfe; color: #1e3a8a; border-radius: 10px; padding: 7px 10px; margin-bottom: 12px; }
+    /* ---- Consulta rápida por ítem ---- */
+    .rq-top { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-bottom: 10px; }
+    .rq-busca { display: flex; align-items: center; gap: 8px; flex: 1 1 420px; background: #fff; border: 2px solid #0B3D91; border-radius: 12px; padding: 4px 4px 4px 12px; }
+    .rq-busca i { color: #0B3D91; font-size: 1.05rem; }
+    .rq-busca input { border: 0; outline: 0; flex: 1; font-size: .95rem; min-width: 0; background: transparent; }
+    .rq-tog { display: inline-flex; background: #e2e8f0; border-radius: 10px; padding: 3px; gap: 3px; }
+    .rq-tog a { font-size: .76rem; font-weight: 700; color: #475569; text-decoration: none; border-radius: 8px; padding: 5px 10px; white-space: nowrap; }
+    .rq-tog a.on { background: #fff; color: #0f172a; box-shadow: 0 1px 2px rgba(15,23,42,.15); }
+    .rq-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 12px 14px; margin-bottom: 12px; box-shadow: 0 1px 2px rgba(15,23,42,.05); }
+    .rq-cab { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: flex-start; margin-bottom: 10px; }
+    .rq-cab .izq { flex: 1 1 320px; min-width: 0; }
+    .rq-nom { font-size: 1.02rem; font-weight: 800; color: #0f172a; line-height: 1.25; margin-top: 3px; overflow-wrap: anywhere; }
+    .rq-meta { font-size: .74rem; color: #475569; text-align: right; }
+    .rq-meta b { color: #0f172a; font-size: .86rem; }
+    .rq-emps { display: flex; gap: 4px; justify-content: flex-end; align-items: center; margin-top: 4px; flex-wrap: wrap; }
+    .rq-emp { display: inline-flex; align-items: center; gap: 4px; background: #fff; border: 1px solid #e2e8f0; border-radius: 7px; padding: 1px 6px 1px 2px; font-size: .68rem; font-weight: 700; color: #334155; white-space: nowrap; }
+    .rq-emp img { height: 18px; width: auto; max-width: 52px; object-fit: contain; }
+    .rq-precios { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+    .rq-box { border-radius: 12px; padding: 9px 12px; border: 1px solid #e2e8f0; background: #f8fafc; min-width: 0; }
+    .rq-box .et { font-size: .64rem; font-weight: 800; letter-spacing: .04em; color: #475569; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+    .rq-box .pr { font-size: 1.45rem; font-weight: 800; color: #0f172a; font-variant-numeric: tabular-nums; line-height: 1.2; margin-top: 2px; }
+    .rq-box .pr small { font-size: .66rem; font-weight: 600; color: #64748b; }
+    .rq-box .pv { font-size: .82rem; font-weight: 700; color: #1e293b; overflow-wrap: anywhere; }
+    .rq-box .ft { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: .72rem; color: #64748b; margin-top: 5px; }
+    .rq-box.mejor { background: #f0fdf4; border-color: #86efac; } .rq-box.mejor .et { color: #15803d; } .rq-box.mejor .pr { color: #15803d; }
+    .rq-box.caro { background: #fff7f7; border-color: #fecaca; } .rq-box.caro .pr { color: #b91c1c; }
+    .rq-box.igual { background: #f0fdf4; border-color: #bbf7d0; }
+    .rq-box.consejo { background: #fffbeb; border-color: #fde68a; font-size: .8rem; color: #422006; } .rq-box.consejo .et { color: #b45309; }
+    .rq-box.consejo .ah { margin-top: 6px; font-size: .74rem; color: #92400e; }
+    .rq-tag { font-size: .62rem; font-weight: 800; border-radius: 6px; padding: 1px 7px; }
+    .rq-tag.ok { background: #16a34a; color: #fff; } .rq-tag.up { background: #dc2626; color: #fff; }
+    .rq-mas { margin-top: 10px; }
+    .rq-mas > summary { font-size: .8rem; font-weight: 700; color: #0B3D91; cursor: pointer; }
+    .rq-rank { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+    .rq-rank span { font-size: .72rem; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 8px; padding: 2px 8px; }
+    .rq-rank span.uno { background: #dcfce7; border-color: #86efac; font-weight: 700; }
+    .rq-card .oc-docs-btn { font-size: .72rem; }
+    @media (max-width: 991.98px) { .rq-precios { grid-template-columns: 1fr 1fr; } .rq-box.consejo { grid-column: 1 / -1; } }
+    @media (max-width: 575.98px) { .rq-precios { grid-template-columns: 1fr; } .rq-meta { text-align: left; } .rq-emps { justify-content: flex-start; } }
 </style>
 
 <form method="GET" class="mp-filtros" id="formMP">
@@ -97,6 +138,7 @@
 </div>
 
 {% set k = res.k %}
+{% if vista != 'rapido' %}{# la consulta rápida va directo a los ítems: sin indicadores #}
 <div class="kpis">
     <div class="kpi" style="--c:#0B3D91;"><div class="v">S/ {{ dinero(k.PEN) }}</div><div class="t">Comprado en soles</div><div class="s">sin IGV · {{ k.ordenes }} orden(es)</div></div>
     <div class="kpi" style="--c:#0f766e;"><div class="v">US$ {{ dinero(k.USD) }}</div><div class="t">Comprado en dólares</div><div class="s">sin IGV · no se convierte a soles</div></div>
@@ -106,6 +148,7 @@
     <div class="kpi" style="--c:#475569;"><div class="v">{{ k.proveedores }}</div><div class="t">Proveedores</div><div class="s">{{ k['items'] }} ítem(s) comprados</div></div>
     <div class="kpi" style="--c:#dc2626;"><div class="v">{{ k.subieron }}</div><div class="t">Último precio mayor al mejor</div><div class="s">revisar al volver a comprar</div></div>
 </div>
+{% endif %}
 
 {% if not k['items'] %}
 <div class="text-center text-muted py-5 bg-white rounded-3 border"><i class="bi bi-tags display-6 opacity-25"></i>
@@ -172,6 +215,88 @@
 })();
 </script>
 
+{% elif vista == 'rapido' %}
+{% macro emp_chip(e) %}{% set ei = oc_empresas.get(e, {}) %}<span class="rq-emp" title="{{ ei.nombre }}">{% if ei.logo %}<img src="{{ url_for('static', filename='img/' ~ ei.logo) }}" alt="">{% endif %}{{ ei.corto or e }}</span>{% endmacro %}
+{% macro oc_menu(c) %}{{ dm.menu_docs_oc(c.orden, docs_oc.get(c.orden.id, []), texto=oc_codigo(c.orden), alinear='start', icono='bi-file-earmark-text',
+                                      detalle_url=(url_for('oc_detalle', orden_id=c.orden.id) if puede_ver_oc else none)) }}{% endmacro %}
+<div class="rq-top">
+    <form method="GET" class="rq-busca">
+        {% for a, v in base_args.items() if a != 'q' %}<input type="hidden" name="{{ a }}" value="{{ v }}">{% endfor %}
+        <input type="hidden" name="vista" value="rapido"><input type="hidden" name="orden" value="{{ orden }}">{% if not solo_multi %}<input type="hidden" name="todos" value="1">{% endif %}
+        <i class="bi bi-search"></i><input type="search" name="q" value="{{ f.q }}" placeholder="¿Qué buscas? Producto, código o proveedor · Ej: perno 1/2 · guantes · plancha" autofocus>
+        <button class="btn btn-primary btn-sm px-3">Buscar</button>
+    </form>
+    <div class="rq-tog">
+        <a href="{{ url_for('oc_precios', **dict(base_args, vista='rapido', orden=orden)) }}" class="{{ 'on' if solo_multi }}">Comprado más de una vez ({{ n_multi }})</a>
+        <a href="{{ url_for('oc_precios', **dict(base_args, vista='rapido', orden=orden, todos='1')) }}" class="{{ 'on' if not solo_multi }}">Todo ({{ n_productos }})</a>
+    </div>
+    <form method="GET" class="d-flex gap-1 align-items-center">{% for a, v in base_args.items() %}<input type="hidden" name="{{ a }}" value="{{ v }}">{% endfor %}
+        <input type="hidden" name="vista" value="rapido">{% if not solo_multi %}<input type="hidden" name="todos" value="1">{% endif %}
+        <label class="small text-muted mb-0">Ordenar:</label>
+        <select name="orden" class="form-select form-select-sm auto" style="width:auto;">{% for o, t in ordenes_productos.items() %}<option value="{{ o }}" {{ 'selected' if orden == o }}>{{ t }}</option>{% endfor %}</select></form>
+</div>
+<div class="ayuda-mp"><i class="bi bi-info-circle"></i> Cada tarjeta es un producto, insumo o servicio. En <b style="color:#15803d;">verde</b> el <b>mejor precio</b> que conseguimos y a quién;
+    al lado la <b>última compra</b> y un consejo para la próxima. Toca el número de la orden para <b>abrirla en el sistema, ver su PDF o descargar sus documentos</b>.
+    Precios <b>sin IGV</b>, por unidad, en la misma moneda.</div>
+{% if not lista %}
+<div class="vacio bg-white border rounded-3"><i class="bi bi-search fs-3 d-block opacity-25"></i>
+    {% if solo_multi and n_productos %}Ningún producto de esta búsqueda se compró más de una vez. <a href="{{ url_for('oc_precios', **dict(base_args, vista='rapido', orden=orden, todos='1')) }}">Ver todo</a>.
+    {% else %}No se encontró nada con esa búsqueda.{% endif %}</div>
+{% endif %}
+{% for p in lista %}{% set cl = clases[p.clase] %}{% set m = p.mejor %}{% set u = p.ultimo %}
+{% set es_mejor = (u.orden.id == m.orden.id and u.item.id == m.item.id) or u.precio <= m.precio %}
+<div class="rq-card">
+    <div class="rq-cab">
+        <div class="izq"><span class="clase" style="background: {{ cl.color }};"><i class="bi {{ cl.icono }}"></i> {{ cl.corto }}{% if p.servicio %} · {{ p.servicio }}{% endif %}</span>
+            {% if p.codigo %}<span class="cod">{{ p.codigo }}</span>{% endif %}
+            <div class="rq-nom">{{ p.descripcion }}</div>
+            <div class="sub">{{ [p.familia, p.calidad]|select|join(' · ') }}{{ ' · ' if p.familia or p.calidad }}precio por <b>{{ p.um or 'unidad' }}</b> en {{ 'soles' if p.moneda == 'PEN' else 'dólares' }}</div></div>
+        <div class="rq-meta"><b>{{ p.n }}</b> compra(s) · <b>{{ p.n_prov }}</b> proveedor(es)
+            <div class="rq-emps">Lo compró: {% for e in p.empresas %}{{ emp_chip(e) }}{% endfor %}</div></div>
+    </div>
+    <div class="rq-precios">
+        <div class="rq-box mejor">
+            <div class="et"><i class="bi bi-trophy-fill"></i> MEJOR PRECIO</div>
+            <div class="pr">{{ p.simbolo }} {{ px(m.precio) }} <small>sin IGV{% if not m.importacion %} · c/IGV {{ px(m.con_igv) }}{% else %} · importación{% endif %}</small></div>
+            <div class="pv">{{ m.proveedor }}</div>
+            <div class="ft"><span><i class="bi bi-calendar3"></i> {{ m.fecha.strftime('%d/%m/%Y') }}</span>{{ emp_chip(m.empresa) }}{{ oc_menu(m) }}</div>
+        </div>
+        <div class="rq-box {{ 'igual' if es_mejor else 'caro' }}">
+            <div class="et"><i class="bi bi-clock-history"></i> ÚLTIMA COMPRA
+                {% if es_mejor %}<span class="rq-tag ok">✔ al mejor precio</span>{% else %}<span class="rq-tag up">▲ {{ p.variacion }}% más caro</span>{% endif %}</div>
+            {% if p.n == 1 %}<div class="pv mt-1 text-muted fw-normal">Es la única compra: todavía no hay con qué comparar.</div>
+            {% else %}
+            <div class="pr">{{ p.simbolo }} {{ px(u.precio) }} <small>sin IGV</small></div>
+            <div class="pv">{{ u.proveedor }}</div>
+            <div class="ft"><span><i class="bi bi-calendar3"></i> {{ u.fecha.strftime('%d/%m/%Y') }}</span>{{ emp_chip(u.empresa) }}{{ oc_menu(u) }}</div>
+            {% endif %}
+        </div>
+        <div class="rq-box consejo">
+            <div class="et"><i class="bi bi-lightbulb-fill"></i> PARA LA PRÓXIMA COMPRA</div>
+            <div class="mt-1">{% if p.n_prov > 1 %}Pide precio primero a <b>{{ m.proveedor }}</b>: fue el más barato ({{ p.simbolo }} {{ px(m.precio) }}).
+                {% if not es_mejor %}En la última compra se pagó <b>{{ p.simbolo }} {{ px((u.precio - m.precio)|round(6)) }} más por {{ p.um or 'unidad' }}</b>.{% endif %}
+                {% else %}Solo se le ha comprado a <b>{{ m.proveedor }}</b>{% if p.n > 1 %} ({{ p.n }} veces){% endif %}: conviene <b>cotizar con otro proveedor</b> para comparar.{% endif %}</div>
+            {% if p.ahorro %}<div class="ah"><i class="bi bi-piggy-bank"></i> Si todo se compraba al mejor precio se ahorraba <b>{{ p.simbolo }} {{ dinero(p.ahorro) }}</b>.</div>{% endif %}
+        </div>
+    </div>
+    {% if p.n > 1 %}
+    <details class="rq-mas"><summary>Ver todas las compras ({{ p.n }}){% if p.n_prov > 1 %} y el ranking de proveedores ({{ p.n_prov }}){% endif %}</summary>
+        {% if p.n_prov > 1 %}<div class="rq-rank"><span class="text-muted border-0 bg-transparent ps-0">Del más barato al más caro:</span>
+            {% for r in p.ranking[:6] %}<span class="{{ 'uno' if r.dif_pct <= 0 }}">{{ loop.index }}. {{ r.proveedor }} · {{ p.simbolo }} {{ px(r.mejor.precio) }}{% if not loop.first %}{% if r.dif_pct > 0 %} (+{{ r.dif_pct }}%){% else %} (mismo precio){% endif %}{% endif %} · {{ r.veces }} {{ 'vez' if r.veces == 1 else 'veces' }}</span>{% endfor %}
+            {% if p.ranking|length > 6 %}<span class="text-muted">y {{ p.ranking|length - 6 }} más (ver la tabla)</span>{% endif %}</div>{% endif %}
+        <div class="table-responsive"><table class="table table-sm tabla-mp align-middle bg-white border">
+            <thead><tr><th>Fecha</th><th>Proveedor</th><th>Empresa</th><th class="n">Cantidad</th><th class="n">Precio (sin IGV)</th><th class="n">Vs. el mejor</th><th>Orden y documentos</th></tr></thead>
+            <tbody>{% for c in p.compras %}{% set d = ((100 * (c.precio - m.precio) / m.precio)|round(1)) if m.precio else 0 %}
+            <tr><td class="text-nowrap">{{ c.fecha.strftime('%d/%m/%Y') }}</td><td><b>{{ c.proveedor }}</b><div class="sub">{{ c.ruc }}</div></td><td>{{ emp_chip(c.empresa) }}</td>
+                <td class="n">{{ '{:,.4f}'.format(c.cantidad).rstrip('0').rstrip('.') }} {{ p.um }}</td>
+                <td class="n fw-bold {{ 'text-success' if d <= 0 }}">{{ p.simbolo }} {{ px(c.precio) }}</td>
+                <td class="n">{% if d <= 0 %}<span class="var ok">mejor</span>{% else %}<span class="var up">+{{ d }}%</span>{% endif %}</td>
+                <td>{{ oc_menu(c) }}</td></tr>
+            {% endfor %}</tbody></table></div>
+    </details>
+    {% endif %}
+</div>
+{% endfor %}
 {% elif vista == 'productos' %}
 <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
     <span class="small text-muted"><b>{{ total_lista }}</b> producto(s) / servicio(s) · un renglón por producto, moneda y U.M.</span>
@@ -255,11 +380,11 @@
     {% endfor %}</tbody></table></div>
 {% endif %}
 
-{% if vista in ['productos', 'proveedores', 'detalle'] and paginas > 1 %}
+{% if vista in ['rapido', 'productos', 'proveedores', 'detalle'] and paginas > 1 %}
 <div class="pag"><span>Página {{ pagina }} de {{ paginas }}</span>
     <div class="btn-group btn-group-sm">
-        <a class="btn btn-outline-primary {{ 'disabled' if pagina <= 1 }}" href="{{ url_for('oc_precios', **dict(base_args, vista=vista, orden=orden, pagina=pagina - 1)) }}">‹ Anterior</a>
-        <a class="btn btn-outline-primary {{ 'disabled' if pagina >= paginas }}" href="{{ url_for('oc_precios', **dict(base_args, vista=vista, orden=orden, pagina=pagina + 1)) }}">Siguiente ›</a>
+        <a class="btn btn-outline-primary {{ 'disabled' if pagina <= 1 }}" href="{{ url_for('oc_precios', **dict(base_args, vista=vista, orden=orden, pagina=pagina - 1, todos=('' if solo_multi else '1'))) }}">‹ Anterior</a>
+        <a class="btn btn-outline-primary {{ 'disabled' if pagina >= paginas }}" href="{{ url_for('oc_precios', **dict(base_args, vista=vista, orden=orden, pagina=pagina + 1, todos=('' if solo_multi else '1'))) }}">Siguiente ›</a>
     </div></div>
 {% endif %}
 
