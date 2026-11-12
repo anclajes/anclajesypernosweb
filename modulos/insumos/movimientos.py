@@ -15,7 +15,7 @@ def _oc_pendiente_insumos(oc_id):
         o = OrdenCompra.query.get(int(oc_id)) if oc_id else None
     except (TypeError, ValueError):
         return None
-    if o and o.estado == 'CONFORME' and o.destino == 'INSUMOS' and not o.insumo_ingreso_id and not o.es_contable:
+    if o and o.estado == 'CONFORME' and o.destino == 'INSUMOS' and not o.insumo_ingreso_id and not o.es_contable and not o.devuelta_almacen:
         return o
     return None
 
@@ -29,7 +29,7 @@ def _ordenes_pendientes_insumos(empresa=None):
         db.session.rollback()
         return []
     # las de TEMA CONTABLE no se registran en Insumos (no suman): se confirman en "Ingresos pendientes" de Compras
-    return [o for o in lista if not o.es_contable and (not empresa or (o.empresa or 'ANCLAJES') == empresa)]
+    return [o for o in lista if not o.es_contable and not o.devuelta_almacen and (not empresa or (o.empresa or 'ANCLAJES') == empresa)]
 
 
 def _n_oc_pendientes_insumos():
@@ -123,6 +123,13 @@ def insumos_pendientes_oc():
     session['insumos_empresa'] = empresa
     ordenes = _ordenes_pendientes_insumos(empresa)
     por_emp = {e: len(_ordenes_pendientes_insumos(e)) for e in EMPRESAS_INSUMOS}
+    try:
+        devueltas = [o for o in OrdenCompra.query.filter(OrdenCompra.estado.in_(['APROBADA', 'RECIBIDA', 'CONFORME', 'ENVIADA']), OrdenCompra.destino == 'INSUMOS',
+                                                         OrdenCompra.devuelta_almacen.is_(True), OrdenCompra.insumo_ingreso_id.is_(None)).all()
+                     if (o.empresa or 'ANCLAJES') == empresa]
+    except Exception:
+        db.session.rollback()
+        devueltas = []
     stocks = {st.insumo_id: st for st in InsumoStock.query.filter_by(empresa=empresa).all()}
     docs = {}
     for d in OrdenCompraDocumento.query.filter(OrdenCompraDocumento.orden_id.in_([o.id for o in ordenes] or [0])).all():
@@ -131,7 +138,7 @@ def insumos_pendientes_oc():
     return render_template('insumos_pendientes_oc.html', ordenes=ordenes, empresa=empresa, empresas=EMPRESAS_INSUMOS, por_emp=por_emp,
                            stocks=stocks, docs=docs, monedas=MONEDAS_OC, igv=IGV_OC, ahora=ahora, insumos={i.id: i for i in Insumo.query.all()},
                            puede_editar=session.get('role') in ROLES_INSUMOS_EDITAN, puede_ver_oc=session.get('role') in ROLES_OC_VEN,
-                           tipos_doc=TIPOS_DOC_OC, seccion='oc_pend')
+                           tipos_doc=TIPOS_DOC_OC, seccion='oc_pend', devueltas=devueltas)
 
 
 @app.route('/insumos/ingreso/guardar', methods=['POST'])

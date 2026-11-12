@@ -11,6 +11,7 @@
     .oc-imp-chip { display: inline-flex; align-items: center; gap: 3px; font-size: .58rem; font-weight: 800; letter-spacing: .02em; border-radius: 6px; padding: 0 6px;
                    background: #e0f2fe; color: #075985; border: 1px solid #7dd3fc; white-space: nowrap; vertical-align: middle; }
 </style>
+{% macro chip_dev(o) %}{% if o.devuelta_almacen %} <span class="oc-estado" style="color:#fff; background:#dc2626;" title="Devuelta por Almacén para corregir: {{ o.devolucion_motivo or '' }}"><i class="bi bi-arrow-return-left"></i> Devuelta por Almacén</span>{% endif %}{% endmacro %}
 {% macro chip_imp(o) %}{% if o.es_importacion %}<span class="oc-imp-chip" title="Importación · sin IGV · {{ monedas[o.moneda].simbolo }} ({{ o.moneda }})"><i class="bi bi-globe-americas"></i> IMPORTACIÓN</span>{% endif %}{% endmacro %}
 <style>
     .empresas { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
@@ -183,7 +184,7 @@
     {% endfor %}
 </div>
 
-{% macro estado_badge(o) %}{% set e = estados[o.estado] %}<span class="oc-estado" style="color: {{ e.color }}; background: {{ e.fondo }};"><i class="bi {{ e.icono }}"></i> {{ e.txt }}</span>{% if o.revision %} <span class="oc-estado" style="color:#9a3412; background:#ffedd5;" title="{{ 'Editada después de aprobada: ' ~ (o.motivo_edicion or '') }}"><i class="bi bi-arrow-repeat"></i> {{ 'Re-aprobación' if o.estado == 'ENVIADA' else 'Rev. ' ~ o.revision }}</span>{% endif %}{% if o.correccion_pendiente %} <span class="oc-estado" style="color:#9f1239; background:#ffe4e6;" title="Rechazada y corregida · Rechazo: {{ o.rechazo_previo or '' }} · Se corrigió: {{ o.correccion_nota or '' }}"><i class="bi bi-wrench-adjustable"></i> Corrección{{ (' ' ~ o.correcciones) if o.correcciones and o.correcciones > 1 }}</span>{% endif %}{% endmacro %}
+{% macro estado_badge(o) %}{% set e = estados[o.estado] %}<span class="oc-estado" style="color: {{ e.color }}; background: {{ e.fondo }};"><i class="bi {{ e.icono }}"></i> {{ e.txt }}</span>{% if o.revision %} <span class="oc-estado" style="color:#9a3412; background:#ffedd5;" title="{{ 'Editada después de aprobada: ' ~ (o.motivo_edicion or '') }}"><i class="bi bi-arrow-repeat"></i> {{ 'Re-aprobación' if o.estado == 'ENVIADA' else 'Rev. ' ~ o.revision }}</span>{% endif %}{% if o.correccion_pendiente %} <span class="oc-estado" style="color:#9f1239; background:#ffe4e6;" title="Rechazada y corregida · Rechazo: {{ o.rechazo_previo or '' }} · Se corrigió: {{ o.correccion_nota or '' }}"><i class="bi bi-wrench-adjustable"></i> Corrección{{ (' ' ~ o.correcciones) if o.correcciones and o.correcciones > 1 }}</span>{% endif %}{{ chip_dev(o) }}{% endmacro %}
 {% macro seguimiento(o) %}
     {% if o.estado in ['APROBADA', 'RECIBIDA'] and o.aprobado_por %}<div class="sub mt-1"><i class="bi bi-patch-check-fill text-success"></i> Aprobó {{ o.aprobado_por.nombre_completo }}</div>
         {% if o.fecha_aprobacion %}<div class="sub hora-ap" title="Fecha y hora de la aprobación"><i class="bi bi-clock"></i> {{ o.fecha_aprobacion.strftime('%d/%m/%Y %H:%M') }}</div>{% endif %}
@@ -285,7 +286,7 @@
                         <div class="creo" title="Quién registró la orden en el sistema{{ (' · ' ~ o.fecha_registro.strftime('%d/%m/%Y %H:%M')) if o.fecha_registro else '' }}"><i class="bi bi-pencil-square"></i> Creó <b>{{ (o.creado_por.nombre_completo or o.creado_por.username) if o.creado_por else '—' }}</b></div></div></td>
                     <td>{% if vista == 'conformes' %}{{ recepcion(o) }}{% else %}{{ entrega(o) }}{% endif %}</td>
                     <td class="text-end text-nowrap num fw-bold">{{ monedas[o.moneda].simbolo }} {{ '{:,.2f}'.format(o.total or 0) }}</td>
-                    <td>{% if vista == 'conformes' %}{{ destino_final(o) }}{% else %}{{ estado_badge(o) }}{{ seguimiento(o) }}{% endif %}</td>
+                    <td>{% if vista == 'conformes' %}{{ destino_final(o) }}{{ chip_dev(o) }}{% else %}{{ estado_badge(o) }}{{ seguimiento(o) }}{% endif %}</td>
                     <td>{{ pago_chip(o) }}</td>
                     <td class="text-nowrap">{{ docs_mini(o) }}</td>
                     <td class="pe-3 text-end text-nowrap">
@@ -318,7 +319,7 @@
             {% if o.solicitante_nombre %}· <i class="bi bi-person"></i> {{ oc_solicitante_txt(o) }}{% endif %}{% if o.motivo_compra %} <span class="mot">{{ o.motivo_compra|capitalize }}</span>{% endif %}</div>
         <div class="det"><i class="bi bi-pencil-square"></i> Creó <b>{{ (o.creado_por.nombre_completo or o.creado_por.username) if o.creado_por else '—' }}</b></div>
         <div class="mt-1">{% if vista == 'conformes' %}{{ recepcion(o) }}{% else %}{{ entrega(o) }}{% endif %}</div>
-        <div class="d-flex flex-wrap gap-2 align-items-start mt-2"><div>{% if vista == 'conformes' %}{{ destino_final(o) }}{% else %}{{ estado_badge(o) }}{% endif %}</div><div>{{ pago_chip(o) }}</div></div>
+        <div class="d-flex flex-wrap gap-2 align-items-start mt-2"><div>{% if vista == 'conformes' %}{{ destino_final(o) }}{{ chip_dev(o) }}{% else %}{{ estado_badge(o) }}{% endif %}</div><div>{{ pago_chip(o) }}</div></div>
         <div class="d-flex flex-wrap gap-1 align-items-center mt-1">{{ docs_mini(o) }}</div>
         {% if o.estado in ['APROBADA', 'RECIBIDA'] and o.aprobado_por %}<div class="sub mt-1"><i class="bi bi-patch-check-fill text-success"></i> Aprobó {{ o.aprobado_por.nombre_completo }}{% if o.fecha_aprobacion %} · {{ o.fecha_aprobacion.strftime('%d/%m/%Y %H:%M') }}{% endif %}</div>{% endif %}
         <div class="d-flex gap-2 mt-2">

@@ -268,6 +268,9 @@ def _asegurar_oc():
     _agregar_columnas_si_faltan('orden_compra_item', [('cantidad_cancelada', 'FLOAT DEFAULT 0'), ('kgs_mpcs', 'FLOAT'), ('precio_mil', 'FLOAT'),
                                                       ('detalle', 'VARCHAR(500)'), ('piezas', 'FLOAT'), ('precio_con_igv', 'FLOAT')])
     _agregar_columnas_si_faltan('orden_compra', [('es_contable', 'BOOLEAN DEFAULT FALSE'), ('contable_nota', 'VARCHAR(300)')])
+    _agregar_columnas_si_faltan('orden_compra', [('devuelta_almacen', 'BOOLEAN DEFAULT FALSE'), ('devolucion_motivo', 'VARCHAR(600)'),
+                                                 ('devolucion_items', 'TEXT'), ('devuelta_por_id', 'INTEGER'), ('fecha_devuelta', 'TIMESTAMP'),
+                                                 ('devoluciones', 'INTEGER DEFAULT 0')])
     _agregar_columnas_si_faltan('orden_compra', [('correcciones', 'INTEGER DEFAULT 0'), ('rechazo_previo', 'VARCHAR(500)'),
                                                  ('correccion_nota', 'VARCHAR(300)'), ('correccion_pendiente', 'BOOLEAN DEFAULT FALSE')])
     _agregar_columnas_si_faltan('orden_compra', [('directo_categoria', 'VARCHAR(100)'), ('directo_ubicacion', 'VARCHAR(100)'),
@@ -872,6 +875,44 @@ def _oc_bloqueo_cambio_empresa(orden):
     return None
 
 
+# ---------------- DEVOLVER A LOGÍSTICA (error visto al ir a ingresar) ----------------
+MOTIVOS_DEVOLUCION_OC = {'CANTIDAD': 'La cantidad no coincide (OC / guía / factura / lo que llegó)',
+                         'PRECIO': 'El precio o el total no coincide con la factura',
+                         'PRODUCTO': 'Producto, código o medida equivocada',
+                         'OTRO': 'Otro error'}
+app.add_template_global(MOTIVOS_DEVOLUCION_OC, 'motivos_devolucion_oc')
+
+
+def _oc_devolucion_items(orden):
+    try:
+        return json.loads(orden.devolucion_items) if orden.devolucion_items else []
+    except (TypeError, ValueError):
+        return []
+
+
+app.add_template_global(_oc_devolucion_items, 'oc_devolucion_items')
+
+
+def _oc_falta_ingresar(orden):
+    """¿Queda algo por ingresar / confirmar / entregar de esta orden? (si no, ya no tiene sentido devolverla)"""
+    if orden.estado not in ('APROBADA', 'RECIBIDA', 'CONFORME'):
+        return False
+    if orden.es_contable or orden.tipo == 'OS' or orden.destino == 'DIRECTO':
+        return orden.estado == 'CONFORME' and not orden.fecha_kardex
+    if orden.destino == 'INSUMOS':
+        return orden.estado == 'CONFORME' and not orden.insumo_ingreso_id
+    return any(not ei.fecha_ingreso for e in _oc_entregas(orden) if e.fecha_conforme for ei in e.items)
+
+
+def _oc_bloqueo_devuelta(orden):
+    """Mensaje si la orden está DEVUELTA a Logística (no se puede ingresar hasta que la corrijan); None si no."""
+    if orden is not None and getattr(orden, 'devuelta_almacen', False):
+        quien = orden.devuelta_por.nombre_completo if orden.devuelta_por else 'Almacén'
+        return (f"la {_oc_codigo(orden)} está DEVUELTA A LOGÍSTICA por {quien} ({orden.devolucion_motivo or 'error'}): "
+                "no se ingresa hasta que Logística la corrija y la devuelva")
+    return None
+
+
 def _oc_permisos(orden):
     """Qué puede hacer el usuario actual con esta orden (para mostrar solo los botones que corresponden)."""
     rol = session.get('role')
@@ -896,14 +937,23 @@ def _oc_permisos(orden):
         'observar': edita and e in ('APROBADA', 'RECIBIDA'),
         'documentos': edita and e not in ('ANULADA',),
         'borrar_docs': edita and e not in ('CONFORME', 'ANULADA'),
+        # DEVOLVER A LOGÍSTICA: Almacén o Logística, cuando al ir a ingresar ven que algo no cuadra (queda bloqueada para ingresar)
+        'devolver': rol in ROLES_OC_INGRESAN and not orden.devuelta_almacen and _oc_falta_ingresar(orden),
+        'devolucion_resolver': edita and bool(orden.devuelta_almacen) and e in ('APROBADA', 'RECIBIDA', 'CONFORME'),
+        'corregir_entrega': edita and bool(orden.devuelta_almacen) and e in ('APROBADA', 'RECIBIDA', 'CONFORME')
+                            and any(not ei.fecha_ingreso for en in _oc_entregas(orden) for ei in en.items),
         'ingresar': rol in ROLES_OC_INGRESAN and orden.destino == 'GENERAL' and not orden.fecha_kardex and not orden.es_contable
+                    and not orden.devuelta_almacen
                     and ((orden.tipo == 'OS' and e == 'CONFORME') or (orden.tipo == 'OC' and bool(_entregas_por_ingresar([orden])))),
-        'insumos': edita and e == 'CONFORME' and orden.destino == 'INSUMOS' and not orden.insumo_ingreso_id and not orden.es_contable,
+        'insumos': edita and e == 'CONFORME' and orden.destino == 'INSUMOS' and not orden.insumo_ingreso_id and not orden.es_contable
+                   and not orden.devuelta_almacen,
         # tema contable: al estar conforme no se ingresa, solo se CONFIRMA (no suma al inventario)
-        'confirmar_contable': rol in ROLES_OC_CONTABLE and bool(orden.es_contable) and e == 'CONFORME' and not orden.fecha_kardex,
+        'confirmar_contable': rol in ROLES_OC_CONTABLE and bool(orden.es_contable) and e == 'CONFORME' and not orden.fecha_kardex
+                              and not orden.devuelta_almacen,
         'deshacer_contable': rol == 'admin' and bool(orden.es_contable) and bool(orden.fecha_kardex),
         # uso directo: al estar conforme se ENTREGA (a quién, dónde, serie y garantía); luego se pueden corregir esos datos
-        'entregar_directo': rol in ROLES_OC_CONTABLE and orden.destino == 'DIRECTO' and not orden.es_contable and e == 'CONFORME' and not orden.fecha_kardex,
+        'entregar_directo': rol in ROLES_OC_CONTABLE and orden.destino == 'DIRECTO' and not orden.es_contable and e == 'CONFORME' and not orden.fecha_kardex
+                            and not orden.devuelta_almacen,
         'editar_directo': rol in ROLES_OC_CONTABLE and orden.destino == 'DIRECTO' and not orden.es_contable and bool(orden.fecha_kardex),
         'deshacer_directo': rol == 'admin' and orden.destino == 'DIRECTO' and bool(orden.fecha_kardex),
         'duplicar': edita and e != 'BORRADOR',
@@ -912,6 +962,9 @@ def _oc_permisos(orden):
         'cuentas': rol in ROLES_OC_PAGAN and bool(orden.oc_proveedor_id),
         'factura': rol in ROLES_OC_PAGAN and e not in ('ANULADA', 'RECHAZADA'),
     }
+
+
+app.add_template_global(_oc_permisos, 'oc_permisos')
 
 
 def _clave_natural(texto):

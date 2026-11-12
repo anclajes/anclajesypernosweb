@@ -28,7 +28,7 @@ def _directos_por_entregar(empresa=None):
     except Exception:
         db.session.rollback()
         return []
-    return [o for o in lista if not o.es_contable and (not empresa or (o.empresa or 'ANCLAJES') == empresa)]
+    return [o for o in lista if not o.es_contable and not o.devuelta_almacen and (not empresa or (o.empresa or 'ANCLAJES') == empresa)]
 
 
 def _directo_estado(orden):

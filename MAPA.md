@@ -256,6 +256,28 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
   chip "Corrección" en la lista y en la campana, aviso en la aprobación rápida y título "CORREGIDA · ..." en la notificación.
   Al aprobar o volver a rechazar, `correccion_pendiente` vuelve a False (la aprobada muestra "Aprobada después de N corrección(es)").
 
+## Compras: DEVOLVER a Logística desde Ingresos pendientes (v25)
+
+- Caso: la orden ya llegó y está conforme, pero al ir a ingresarla Almacén ve que no cuadra (cantidad, precio, producto).
+  Botón "↩ Devolver a Logística (hay un error)" (`_oc_permisos` → `devolver`: rol en ROLES_OC_INGRESAN, no devuelta y `_oc_falta_ingresar`)
+  en Ingresos pendientes (`oc_ingresos.html`), Insumos · Pendientes de OC (`insumos_pendientes_oc.html`) y el detalle de la orden.
+  Modal (`templates/_oc_devolucion.html` → `modal`): qué está mal (MOTIVOS_DEVOLUCION_OC), explicación (mín. 10) y la cantidad REAL por ítem.
+- `oc_devolver` (POST /ordenes/<id>/devolver): `devuelta_almacen=True`, `devolucion_motivo`, `devolucion_items` (JSON: oc / llegó / real / nota),
+  `devuelta_por`, `fecha_devuelta`, `devoluciones`+1; evento DEVUELTA; aviso OC_DEVUELTA a Logística; se apagan sus avisos ING_PENDIENTE/INSUMO_PENDIENTE.
+- Mientras está devuelta queda BLOQUEADA: fuera de `_entregas_por_ingresar`, `_contables_por_confirmar`, `_os_por_seguir`, `_directos_por_entregar`,
+  `_oc_pendiente_insumos`, `_ordenes_pendientes_insumos` y de los contadores; `oc_item_ingresar`, `oc_kardex_ingresar` y `oc_os_seguimiento`
+  revisan `_oc_bloqueo_devuelta`; permisos ingresar/insumos/confirmar_contable/entregar_directo = False. En Ingresos pendientes se ve con
+  banner rojo y sin botones (`.oc-card.devuelta`), y arriba la lista "Devueltas a Logística para corregir" (en qué está cada una).
+  La barra de Almacén muestra "N devuelta(s) a Logística" (`_pendientes_almacen()['dev']`).
+- Logística (banner con acciones en el detalle, `banner` + `modales_logistica`):
+  · Error en la ORDEN → "Editar la orden" (`reeditar`, vuelve a Gerencia; `oc_editar` precarga el motivo "Corrección pedida por … (Almacén)").
+    Gerencia ve "corrección pedida por Almacén" en la notificación y el banner. `oc_aprobar` llama `_oc_devolucion_cerrar(orden, 'REAPROBADA')`.
+  · Error en lo que se registró que LLEGÓ → "Corregir lo que llegó" (`oc_entrega_corregir`, POST /ordenes/entrega/<id>/corregir): solo ítems
+    sin ingresar, tope = pedido − cancelado − lo de otras entregas; 0 quita el ítem; entrega vacía se borra (sus docs quedan sin entrega);
+    recalcula estado con `_oc_etapa_por_entregas`; evento ENTREGA_CORREGIDA. No va a Gerencia.
+  · "Listo, devolver a Almacén" (`oc_devolucion_resolver`, nota obligatoria) → `_oc_devolucion_cerrar(orden, 'LISTA', nota)`.
+  Cerrar = `devuelta_almacen=False`, evento DEVOLUCION_RESUELTA y aviso OC_DEVOLUCION_LISTA a Almacén. Se conserva todo el historial.
+
 ## Kardex
 
 - Salida con motivo que "Inicia una OC" (Catálogos → Motivos, ej. REQUERIMIENTO DE MAESTRANZA): por defecto **sale como VENTA**

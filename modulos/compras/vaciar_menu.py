@@ -99,7 +99,7 @@ def _pendientes_almacen():
     """Lo que espera al jefe de almacén: ingresos de compras (material, servicios, contables, uso directo) y compras de
     insumos por ingresar, con el detalle por empresa. 'oc_ids' / 'ins_ids' identifican cada pendiente: la barra compara
     con lo que el usuario ya vio para avisar cuando llega uno NUEVO (aunque el total no cambie)."""
-    r = {'oc': 0, 'oc_det': {}, 'oc_emp': {e: 0 for e in EMPRESAS_OC}, 'oc_ids': [], 'ins': 0, 'ins_emp': {}, 'ins_ids': []}
+    r = {'oc': 0, 'oc_det': {}, 'oc_emp': {e: 0 for e in EMPRESAS_OC}, 'oc_ids': [], 'ins': 0, 'ins_emp': {}, 'ins_ids': [], 'dev': 0}
     if not _oc_ok:
         return r
     try:
@@ -114,6 +114,7 @@ def _pendientes_almacen():
                 r['oc_emp'][o.empresa or 'ANCLAJES'] = r['oc_emp'].get(o.empresa or 'ANCLAJES', 0) + 1
                 r['oc_ids'].append(f'o{o.id}')
         r['oc_det'] = {'material': mat, **{k: len(v) for k, v in otros.items()}}
+        r['dev'] = OrdenCompra.query.filter(OrdenCompra.devuelta_almacen.is_(True), OrdenCompra.estado.in_(['APROBADA', 'RECIBIDA', 'CONFORME', 'ENVIADA', 'RECHAZADA', 'BORRADOR'])).count()
         r['oc'] = mat + sum(len(v) for v in otros.values())
         if '_ordenes_pendientes_insumos' in globals():
             for e in EMPRESAS_INSUMOS:

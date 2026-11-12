@@ -1,0 +1,208 @@
+{#- DEVOLVER A LOGÍSTICA (v25): Almacén, al ir a ingresar, ve que algo no cuadra (cantidad, precio, producto) y devuelve la orden.
+    Queda BLOQUEADA para ingresar hasta que Logística la corrija:
+      · error en la ORDEN            -> "Editar la orden" (re-aprobación: vuelve a Gerencia; al aprobarla vuelve sola a Almacén)
+      · error en lo que se registró  -> "Corregir lo que llegó" (no va a Gerencia) + "Listo, devolver a Almacén"
+    Rutas: oc_devolver, oc_devolucion_resolver, oc_entrega_corregir (entregas.py). Se importa "with context". -#}
+
+{% macro estilos() %}
+<style>
+    .dv-banner { border: 2px solid #fca5a5; border-left: 6px solid #dc2626; background: #fef2f2; border-radius: 12px; padding: 10px 14px; margin: 8px 0; }
+    .dv-banner .dv-cab { display: flex; gap: 10px; align-items: flex-start; }
+    .dv-banner .dv-cab > i { font-size: 1.5rem; color: #dc2626; line-height: 1; }
+    .dv-banner .dv-tit { font-weight: 800; color: #991b1b; font-size: .9rem; }
+    .dv-banner .dv-tit .dv-vez { font-size: .66rem; background: #dc2626; color: #fff; border-radius: 6px; padding: 1px 6px; margin-left: 4px; vertical-align: middle; }
+    .dv-banner .dv-mot { font-size: .84rem; color: #7f1d1d; background: #fff; border: 1px dashed #fca5a5; border-radius: 8px; padding: 5px 9px; margin: 5px 0; overflow-wrap: anywhere; }
+    .dv-banner .dv-est { font-size: .76rem; color: #7f1d1d; }
+    .dv-banner .dv-est.gerencia { color: #9a3412; }
+    .dv-tabla { width: 100%; font-size: .76rem; background: #fff; border-radius: 8px; overflow: hidden; margin-top: 6px; border-collapse: collapse; }
+    .dv-tabla th { background: #fee2e2; color: #7f1d1d; font-weight: 700; padding: 4px 8px; text-align: left; white-space: nowrap; }
+    .dv-tabla td { padding: 4px 8px; border-top: 1px solid #fee2e2; vertical-align: top; }
+    .dv-tabla td.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .dv-tabla td.real { font-weight: 800; color: #b91c1c; }
+    .dv-acc { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; padding-top: 8px; border-top: 1px dashed #fca5a5; }
+    .dv-acc > span { font-size: .74rem; font-weight: 800; color: #7f1d1d; margin-right: 4px; }
+    .dv-acc .btn { font-weight: 700; display: inline-flex; flex-direction: column; align-items: flex-start; line-height: 1.15; text-align: left; }
+    .dv-acc .btn small { font-weight: 500; font-size: .64rem; opacity: .85; }
+    .dv-modal .modal-header { background: #dc2626; color: #fff; }
+    .dv-modal .modal-header .modal-title { color: #fff; }
+    .dv-modal .dv-ayuda { font-size: .78rem; background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px; padding: 8px 10px; color: #7f1d1d; }
+    .dv-modal table { font-size: .78rem; }
+    .dv-modal table td, .dv-modal table th { vertical-align: middle; }
+    .dv-modal .dv-in { max-width: 110px; }
+    .dv-ent { border: 1px solid #e2e8f0; border-radius: 10px; padding: 8px 10px; margin-bottom: 10px; }
+    .dv-ent .dv-ent-t { font-weight: 800; font-size: .82rem; margin-bottom: 4px; }
+    .oc-card.devuelta { border-color: #fca5a5; }
+    .oc-card.devuelta .form-ing, .oc-card.devuelta .dir-caja, .oc-card.devuelta .entrega-cab > button { display: none !important; }
+    .dv-bloq { font-size: .74rem; font-weight: 700; color: #b91c1c; background: #fee2e2; border-radius: 8px; padding: 4px 8px; display: inline-flex; gap: 4px; align-items: center; }
+    .dv-lista { background: #fff; border: 2px solid #fca5a5; border-radius: 12px; padding: 8px 12px; margin-bottom: 12px; }
+    .dv-lista summary { font-weight: 800; color: #991b1b; font-size: .86rem; cursor: pointer; }
+    .dv-lista .dv-fila { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; font-size: .78rem; padding: 5px 0; border-top: 1px solid #fee2e2; }
+    .dv-lista .dv-fila:first-of-type { border-top: 0; }
+    .dv-lista .dv-fila .m { color: #7f1d1d; flex: 1 1 260px; min-width: 0; overflow-wrap: anywhere; }
+    .dv-chip { display: inline-flex; align-items: center; gap: 3px; font-size: .62rem; font-weight: 800; border-radius: 6px; padding: 1px 6px; background: #dc2626; color: #fff; white-space: nowrap; }
+</style>
+{% endmacro %}
+
+{#- En qué está una orden devuelta (texto corto para Almacén) -#}
+{% macro estado_txt(o) -%}
+{%- if o.estado == 'ENVIADA' -%}Logística ya la corrigió · espera la re-aprobación de Gerencia
+{%- elif o.estado in ['RECHAZADA', 'BORRADOR'] -%}Logística la está corrigiendo (se retiró de aprobación)
+{%- else -%}Logística la está revisando{%- endif -%}
+{%- endmacro %}
+
+{% macro chip(o) %}{% if o.devuelta_almacen %}<span class="dv-chip" title="Devuelta por Almacén: {{ o.devolucion_motivo or '' }}"><i class="bi bi-arrow-return-left"></i> DEVUELTA POR ALMACÉN</span>{% endif %}{% endmacro %}
+
+{% macro boton(o, clase='btn-outline-danger', texto='Devolver a Logística (hay un error)', chico=False) %}
+<button type="button" class="btn {{ clase }} {{ 'btn-sm' if chico }} fw-bold" data-bs-toggle="modal" data-bs-target="#mDevolver{{ o.id }}"
+        title="La cantidad, el precio o el producto no cuadra: la orden vuelve a Logística para que la corrija">
+    <i class="bi bi-arrow-return-left"></i> {{ texto }}</button>
+{% endmacro %}
+
+{#- Modal para devolver: qué está mal + la cantidad real de cada ítem -#}
+{% macro modal(o, volver) %}
+{% set rec = oc_recepcion(o) %}
+<div class="modal fade dv-modal" id="mDevolver{{ o.id }}" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable"><div class="modal-content border-0 shadow">
+    <form method="POST" action="{{ url_for('oc_devolver', orden_id=o.id) }}" onsubmit="return confirm('¿Devolver {{ oc_codigo(o) }} a Logística? Nadie la podrá ingresar hasta que la corrijan.')">
+        <input type="hidden" name="volver" value="{{ volver }}">
+        <div class="modal-header py-2"><h6 class="modal-title fw-bold"><i class="bi bi-arrow-return-left"></i> Devolver {{ oc_codigo(o) }} a Logística</h6>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body">
+            <div class="dv-ayuda mb-2"><i class="bi bi-info-circle"></i> Úsalo cuando, al ir a ingresar, ves que la orden <b>no cuadra</b> con lo que de verdad se compró o llegó.
+                La orden queda <b>bloqueada</b> (nadie la ingresa al inventario) y <b>Logística recibe un aviso</b> para corregirla.
+                <b>No se pierde nada</b>: se conservan las entregas, los documentos y el historial. Cuando la corrijan, te llega un aviso y vuelve a tus pendientes.</div>
+            <div class="row g-2">
+                <div class="col-12 col-md-5"><label class="small fw-bold">¿Qué está mal? *</label>
+                    <select name="motivo_tipo" class="form-select form-select-sm" required><option value="">— Elige —</option>
+                        {% for k, txt in motivos_devolucion_oc.items() %}<option value="{{ k }}">{{ txt }}</option>{% endfor %}</select></div>
+                <div class="col-12 col-md-7"><label class="small fw-bold">Explícalo *</label>
+                    <textarea name="detalle" class="form-control form-control-sm" rows="2" minlength="10" maxlength="400" required
+                              placeholder="Ej: la OC dice 100 pernos pero se compraron y llegaron 80 (ver guía 001-2345)"></textarea></div>
+            </div>
+            <div class="small fw-bold mt-3 mb-1">Cantidad real de cada ítem <span class="fw-normal text-muted">(llena solo los que están mal; los demás déjalos vacíos)</span></div>
+            <div class="table-responsive"><table class="table table-sm mb-0">
+                <thead class="table-light"><tr><th>Ítem</th><th class="text-end">La OC dice</th><th class="text-end">Se registró que llegó</th><th>Cantidad real</th><th>Nota</th></tr></thead>
+                <tbody>{% for it in o.items %}{% set r = rec['items'].get(it.id, {}) %}
+                <tr><td><b>{{ it.item }}.</b> {{ (it.codigo ~ ' · ') if it.codigo }}{{ (it.descripcion or '')[:70] }}</td>
+                    <td class="text-end text-nowrap">{{ it.cantidad|cant }} {{ it.um }}</td>
+                    <td class="text-end text-nowrap">{{ (r.llego or 0)|cant }}</td>
+                    <td><input type="text" inputmode="decimal" name="real_{{ it.id }}" class="form-control form-control-sm dv-in" placeholder="—" pattern="[0-9]+([.,][0-9]+)?" title="Solo números"></td>
+                    <td><input type="text" name="nota_{{ it.id }}" class="form-control form-control-sm" maxlength="150" placeholder="Opcional"></td></tr>{% endfor %}</tbody>
+            </table></div>
+        </div>
+        <div class="modal-footer p-2 bg-light">
+            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+            <button class="btn btn-danger btn-sm fw-bold"><i class="bi bi-arrow-return-left"></i> Devolver a Logística</button>
+        </div>
+    </form>
+</div></div></div>
+{% endmacro %}
+
+{#- Banner rojo: quién la devolvió, por qué, qué ítems; y (si se pasa acciones) los botones de Logística -#}
+{% macro banner(o, p, acciones=True) %}
+{% if o.devuelta_almacen %}{% set its = oc_devolucion_items(o) %}
+<div class="dv-banner" id="devolucion">
+    <div class="dv-cab"><i class="bi bi-arrow-return-left"></i><div class="flex-fill">
+        <div class="dv-tit">DEVUELTA A LOGÍSTICA por {{ o.devuelta_por.nombre_completo if o.devuelta_por else 'Almacén' }}
+            {% if o.fecha_devuelta %}<span class="fw-normal">· {{ o.fecha_devuelta.strftime('%d/%m/%Y %H:%M') }}</span>{% endif %}
+            {% if (o.devoluciones or 0) > 1 %}<span class="dv-vez">{{ o.devoluciones }}.ª vez</span>{% endif %}</div>
+        <div class="dv-mot"><b>Qué está mal:</b> {{ o.devolucion_motivo or '—' }}</div>
+        {% if its %}
+        <div class="table-responsive"><table class="dv-tabla">
+            <tr><th>Ítem</th><th class="text-end">La OC dice</th><th class="text-end">Llegó (registrado)</th><th class="text-end">Real (según Almacén)</th><th>Nota</th></tr>
+            {% for x in its %}<tr><td><b>{{ x.item }}.</b> {{ (x.codigo ~ ' · ') if x.codigo }}{{ x.descripcion }}</td>
+                <td class="n">{{ x.oc|cant }} {{ x.um }}</td><td class="n">{{ (x.llego|cant) if x.llego is not none else '—' }}</td>
+                <td class="n real">{{ (x.real|cant) if x.real is not none else '—' }}</td><td>{{ x.nota or '' }}</td></tr>{% endfor %}
+        </table></div>
+        {% endif %}
+        <div class="dv-est mt-1 {{ 'gerencia' if o.estado == 'ENVIADA' }}"><i class="bi {{ 'bi-hourglass-split' if o.estado == 'ENVIADA' else 'bi-lock-fill' }}"></i>
+            {% if o.estado == 'ENVIADA' %}<b>Corrección pedida por Almacén:</b> Logística ya editó la orden y espera la <b>re-aprobación de Gerencia</b>. Al aprobarla, vuelve sola a Ingresos pendientes.
+            {% else %}<b>Bloqueada:</b> nadie la puede ingresar hasta que Logística la corrija y la devuelva a Almacén.{% endif %}</div>
+        {% if acciones and (p.devolucion_resolver or p.reeditar or p.reeditar_bloqueo or p.corregir_entrega) %}
+        <div class="dv-acc"><span>¿Dónde está el error?</span>
+            {% if p.reeditar %}<a class="btn btn-sm btn-warning" href="{{ url_for('oc_editar', orden_id=o.id) }}">
+                <span><i class="bi bi-pencil-square"></i> En la orden: editarla</span><small>cantidad / precio / producto · vuelve a Gerencia</small></a>
+            {% elif p.reeditar_bloqueo %}<span class="btn btn-sm btn-outline-secondary disabled"><span><i class="bi bi-lock"></i> No se puede editar la orden</span><small>{{ p.reeditar_bloqueo }}</small></span>{% endif %}
+            {% if p.corregir_entrega %}<button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#mCorrEnt{{ o.id }}">
+                <span><i class="bi bi-truck"></i> En lo que llegó: corregirlo</span><small>la orden está bien · no va a Gerencia</small></button>{% endif %}
+            {% if p.devolucion_resolver %}<button type="button" class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#mDevListo{{ o.id }}">
+                <span><i class="bi bi-arrow-return-right"></i> Listo, devolver a Almacén</span><small>ya se corrigió (o no había error)</small></button>{% endif %}
+        </div>
+        {% elif not acciones and p.devolucion_resolver %}
+        <div class="dv-acc"><a class="btn btn-sm btn-outline-danger" href="{{ url_for('oc_detalle', orden_id=o.id) }}#devolucion"><span><i class="bi bi-wrench-adjustable"></i> Corregirla en la orden</span><small>editar la orden o lo que llegó</small></a></div>
+        {% endif %}
+    </div></div>
+</div>
+{% endif %}
+{% endmacro %}
+
+{#- Modales de Logística: corregir lo que llegó (una tarjeta por entrega) y "Listo, devolver a Almacén" -#}
+{% macro modales_logistica(o, p) %}
+{% if p.corregir_entrega %}{% set rec = oc_recepcion(o) %}{% set its = oc_devolucion_items(o) %}
+{% set real_de = {} %}{% for x in its %}{% if x.real is not none %}{% set _ = real_de.update({x.item_id: x.real}) %}{% endif %}{% endfor %}
+{% set items = {} %}{% for it in o.items %}{% set _ = items.update({it.id: it}) %}{% endfor %}
+<div class="modal fade dv-modal" id="mCorrEnt{{ o.id }}" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable"><div class="modal-content border-0 shadow">
+    <div class="modal-header py-2" style="background:#0B3D91;"><h6 class="modal-title fw-bold"><i class="bi bi-truck"></i> Corregir lo que llegó · {{ oc_codigo(o) }}</h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+        <div class="dv-ayuda mb-2" style="background:#eff6ff; border-color:#bfdbfe; color:#1e3a8a;"><i class="bi bi-info-circle"></i>
+            Úsalo cuando <b>la orden está bien</b> pero se registró mal <b>cuánto llegó</b>. La orden <b>no cambia</b> y <b>no va a Gerencia</b>.
+            Lo que falte quedará <b>por llegar</b> (o usa "No llegará el resto"). Pon <b>0</b> para quitar un ítem de la entrega. Lo ya ingresado al inventario no se toca.
+            Si de verdad se compró una cantidad distinta, cierra esto y usa <b>Editar la orden</b>.</div>
+        {% for e in rec.entregas %}{% set pend = e.items|rejectattr('fecha_ingreso')|list %}{% if pend %}
+        <form method="POST" action="{{ url_for('oc_entrega_corregir', entrega_id=e.id) }}" class="dv-ent" onsubmit="return confirm('¿Guardar las cantidades corregidas de la entrega {{ e.numero }}?')">
+            <div class="dv-ent-t"><i class="bi bi-box-seam"></i> Entrega {{ e.numero }} · llegó {{ e.fecha.strftime('%d/%m/%Y') if e.fecha else '—' }}{% if e.numero_guia %} · guía {{ e.numero_guia }}{% endif %}
+                {% if e.fecha_conforme %}<span class="text-success small"><i class="bi bi-check-circle-fill"></i> conforme</span>{% endif %}</div>
+            <div class="table-responsive"><table class="table table-sm mb-1">
+                <thead class="table-light"><tr><th>Ítem</th><th class="text-end">La OC dice</th><th class="text-end">Real (Almacén)</th><th>Llegó en esta entrega</th></tr></thead>
+                <tbody>{% for ei in pend %}{% set it = items.get(ei.item_id) %}
+                <tr><td>{% if it %}<b>{{ it.item }}.</b> {{ (it.codigo ~ ' · ') if it.codigo }}{{ (it.descripcion or '')[:60] }}{% else %}—{% endif %}</td>
+                    <td class="text-end text-nowrap">{{ (it.cantidad|cant) if it else '' }} {{ it.um if it }}</td>
+                    <td class="text-end text-nowrap fw-bold text-danger">{{ (real_de[ei.item_id]|cant) if ei.item_id in real_de else '—' }}</td>
+                    <td><input type="text" inputmode="decimal" name="cant_{{ ei.id }}" value="{{ ei.cantidad|cant }}" class="form-control form-control-sm dv-in" required pattern="[0-9]+([.,][0-9]+)?" title="Solo números"></td></tr>{% endfor %}</tbody>
+            </table></div>
+            <div class="d-flex gap-2 align-items-center"><input type="text" name="nota" class="form-control form-control-sm" maxlength="150" placeholder="Nota (opcional): ej. se contó de nuevo con la guía">
+                <button class="btn btn-primary btn-sm fw-bold text-nowrap"><i class="bi bi-check2"></i> Guardar entrega {{ e.numero }}</button></div>
+        </form>
+        {% endif %}{% endfor %}
+    </div>
+</div></div></div>
+{% endif %}
+{% if p.devolucion_resolver %}
+<div class="modal fade dv-modal" id="mDevListo{{ o.id }}" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content border-0 shadow">
+    <form method="POST" action="{{ url_for('oc_devolucion_resolver', orden_id=o.id) }}">
+        <div class="modal-header py-2" style="background:#16a34a;"><h6 class="modal-title fw-bold"><i class="bi bi-arrow-return-right"></i> Devolver {{ oc_codigo(o) }} a Almacén</h6>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body">
+            <div class="dv-ayuda mb-2" style="background:#f0fdf4; border-color:#bbf7d0; color:#14532d;"><i class="bi bi-info-circle"></i>
+                La orden vuelve a <b>Ingresos pendientes</b> y Almacén recibe un aviso para ingresarla. Si el error estaba en la orden (cantidad, precio o producto), no uses esto: <b>edítala</b> (vuelve a Gerencia y, al aprobarla, regresa sola a Almacén).</div>
+            <label class="small fw-bold">¿Qué se corrigió? *</label>
+            <textarea name="nota" class="form-control form-control-sm" rows="2" minlength="5" maxlength="300" required placeholder="Ej: se corrigió la entrega 1 a 80 unidades; faltan 20 por llegar"></textarea>
+        </div>
+        <div class="modal-footer p-2 bg-light">
+            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+            <button class="btn btn-success btn-sm fw-bold"><i class="bi bi-arrow-return-right"></i> Listo, devolver a Almacén</button>
+        </div>
+    </form>
+</div></div></div>
+{% endif %}
+{% endmacro %}
+
+{#- Lista de las órdenes devueltas (para Almacén): en qué están -#}
+{% macro lista(devueltas, puede_ver_oc=True) %}
+{% if devueltas %}
+<details class="dv-lista" open>
+    <summary><i class="bi bi-arrow-return-left"></i> Devueltas a Logística para corregir <span class="dv-chip ms-1">{{ devueltas|length }}</span>
+        <span class="fw-normal small text-muted">· no se pueden ingresar hasta que vuelvan</span></summary>
+    {% for o in devueltas %}
+    <div class="dv-fila">
+        {% if puede_ver_oc %}<a class="fw-bold" href="{{ url_for('oc_detalle', orden_id=o.id) }}#devolucion">{{ oc_codigo(o) }}</a>{% else %}<b>{{ oc_codigo(o) }}</b>{% endif %}
+        <span class="emp-chip" style="background: {{ oc_empresas.get(o.empresa or 'ANCLAJES', {}).get('color', '#334155') }}; color:#fff; font-size:.58rem; font-weight:800; border-radius:5px; padding:0 5px;">{{ oc_empresas.get(o.empresa or 'ANCLAJES', {}).get('corto', '') }}</span>
+        <span class="text-muted">{{ o.razon_social }}</span>
+        <span class="m">{{ o.devolucion_motivo or '' }}</span>
+        <span class="small {{ 'text-warning' if o.estado == 'ENVIADA' else 'text-danger' }} fw-bold"><i class="bi {{ 'bi-hourglass-split' if o.estado == 'ENVIADA' else 'bi-wrench-adjustable' }}"></i> {{ estado_txt(o) }}</span>
+        <span class="small text-muted">{{ o.fecha_devuelta.strftime('%d/%m %H:%M') if o.fecha_devuelta else '' }}{% if o.devuelta_por %} · {{ o.devuelta_por.nombre_completo }}{% endif %}</span>
+    </div>
+    {% endfor %}
+</details>
+{% endif %}
+{% endmacro %}

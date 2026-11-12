@@ -314,6 +314,180 @@ def oc_cerrar_saldo(orden_id):
     return redirect(destino)
 
 
+# ============ DEVOLVER A LOGÍSTICA: al ir a ingresar se ve un error (cantidad, precio, producto...) ============
+# Almacén (o Logística) la devuelve con el motivo y la cantidad real de cada ítem; queda BLOQUEADA para ingresar. Logística:
+#   · si el error está en la ORDEN -> la edita (re-aprobación: vuelve a Gerencia; al re-aprobarla vuelve sola a Almacén)
+#   · si el error está en lo que se registró como LLEGADO -> corrige la entrega (no va a Gerencia) y pulsa "Listo, devolver a Almacén"
+def _oc_url_ingreso(orden):
+    """Dónde se ingresa / confirma / entrega esta orden."""
+    if orden.destino == 'INSUMOS' and not orden.es_contable:
+        return url_for('insumos_pendientes_oc', empresa=orden.empresa or 'ANCLAJES')
+    return url_for('oc_ingresos_pendientes')
+
+
+def _oc_devolucion_cerrar(orden, como, nota=''):
+    """Quita la marca DEVUELTA (ya se corrigió) y avisa a Almacén que ya puede ingresarla. como: 'REAPROBADA' | 'LISTA'."""
+    if not orden.devuelta_almacen:
+        return
+    orden.devuelta_almacen = False
+    txt = {'REAPROBADA': 'Gerencia re-aprobó la orden corregida', 'LISTA': 'Logística la revisó y la devolvió a Almacén'}.get(como, como)
+    _oc_evento(orden, 'DEVOLUCION_RESUELTA', f"{txt}" + (f" · {nota}" if nota else '') + f" · (se había devuelto por: {orden.devolucion_motivo or '-'})")
+    corto = EMPRESAS_OC.get(orden.empresa or 'ANCLAJES', {}).get('corto', '')
+    _notif_crear('OC_DEVOLUCION_LISTA', f"Corregida: ya puedes ingresar la {_oc_codigo(orden)} · {corto}",
+                 f"{orden.razon_social} · {txt}" + (f" · {nota}" if nota else ''), _oc_url_ingreso(orden), orden=orden, excluir=session.get('user_id'))
+
+
+def _num_form(valor):
+    """Número del formulario ('80', '80,5'); None si está vacío; ValueError si no es un número válido (>= 0)."""
+    t = (valor or '').strip().replace(',', '.')
+    if not t:
+        return None
+    v = float(t)
+    if v < 0 or v != v:
+        raise ValueError
+    return round(v, 4)
+
+
+@app.route('/ordenes/<int:orden_id>/devolver', methods=['POST'])
+@_ruta_oc('ingresar')
+def oc_devolver(orden_id):
+    orden = OrdenCompra.query.get_or_404(orden_id)
+    f = request.form
+    volver = _volver_seguro(f.get('volver'), url_for('oc_detalle', orden_id=orden.id))
+    if not _oc_permisos(orden)['devolver']:
+        flash('⛔ Esta orden no se puede devolver: ya está devuelta, ya se ingresó todo o todavía no llega.')
+        return redirect(volver)
+    tipo = f.get('motivo_tipo')
+    detalle = ' '.join((f.get('detalle') or '').split())[:400]
+    if tipo not in MOTIVOS_DEVOLUCION_OC or len(detalle) < 10:
+        flash('⛔ Elige qué está mal y explícalo (mínimo 10 letras) para que Logística sepa qué corregir.')
+        return redirect(volver)
+    rec = _oc_recepcion(orden)
+    items, resumen = [], []
+    for it in orden.items:
+        try:
+            real = _num_form(f.get(f'real_{it.id}'))
+        except ValueError:
+            flash(f'⛔ La cantidad real del ítem {it.item} no es un número válido.')
+            return redirect(volver)
+        nota_i = ' '.join((f.get(f'nota_{it.id}') or '').split())[:150]
+        if real is None and not nota_i:
+            continue
+        llego = rec['items'].get(it.id, {}).get('llego')
+        items.append({'item_id': it.id, 'item': it.item, 'descripcion': (it.descripcion or '')[:120], 'codigo': it.codigo or '', 'um': it.um or '',
+                      'oc': it.cantidad, 'llego': llego, 'real': real, 'nota': nota_i})
+        resumen.append(f"#{it.item} {(it.codigo or it.descripcion or '')[:30]}: OC {_cant_txt(it.cantidad)}"
+                       + (f", llegó {_cant_txt(llego)}" if llego else '') + (f", REAL {_cant_txt(real)}" if real is not None else '') + (f" ({nota_i})" if nota_i else ''))
+    ahora = hora_peru()
+    orden.devuelta_almacen = True
+    orden.devolucion_motivo = f"{MOTIVOS_DEVOLUCION_OC[tipo].split(' (')[0]}: {detalle}"[:600]
+    orden.devolucion_items = json.dumps(items, ensure_ascii=False)
+    orden.devuelta_por_id, orden.fecha_devuelta = session.get('user_id'), ahora
+    orden.devoluciones = (orden.devoluciones or 0) + 1
+    _oc_evento(orden, 'DEVUELTA', f"Devuelta a Logística por {session.get('nombre', '')} · {orden.devolucion_motivo}"
+                                  + (f" · {'; '.join(resumen)}" if resumen else ''))
+    corto = EMPRESAS_OC.get(orden.empresa or 'ANCLAJES', {}).get('corto', '')
+    _notif_crear('OC_DEVUELTA', f"DEVUELTA por Almacén · {_oc_codigo(orden)} · {corto}", f"{orden.razon_social} · {orden.devolucion_motivo}",
+                 url_for('oc_detalle', orden_id=orden.id), orden=orden, excluir=session.get('user_id'))
+    # ya no está "por ingresar" para Almacén: se apagan esos avisos de esta orden
+    Notificacion.query.filter(Notificacion.orden_id == orden.id, Notificacion.tipo.in_(TIPOS_POR_INGRESAR),
+                              Notificacion.leida.is_(False)).update({'leida': True, 'fecha_leida': ahora}, synchronize_session=False)
+    registrar_log(f"Devolvió a Logística la {_oc_codigo(orden)}: {orden.devolucion_motivo[:150]}", 'bi-arrow-return-left', 'text-danger')
+    db.session.commit()
+    flash(f'↩ {_oc_codigo(orden)} devuelta a Logística. Nadie la puede ingresar hasta que la corrijan; te avisaremos cuando esté lista.')
+    return redirect(volver)
+
+
+@app.route('/ordenes/<int:orden_id>/devolucion/resolver', methods=['POST'])
+@_ruta_oc('editar')
+def oc_devolucion_resolver(orden_id):
+    """Logística: "Listo, devolver a Almacén" (corrigió lo que llegó, o revisó y no había error)."""
+    orden = OrdenCompra.query.get_or_404(orden_id)
+    volver = url_for('oc_detalle', orden_id=orden.id)
+    if not _oc_permisos(orden)['devolucion_resolver']:
+        flash('⛔ Esta orden no está devuelta o todavía falta que Gerencia la apruebe.')
+        return redirect(volver)
+    nota = ' '.join((request.form.get('nota') or '').split())[:300]
+    if len(nota) < 5:
+        flash('⛔ Escribe qué se corrigió (o por qué está bien) para que Almacén lo sepa.')
+        return redirect(volver)
+    _oc_devolucion_cerrar(orden, 'LISTA', nota)
+    registrar_log(f"Devolvió a Almacén la {_oc_codigo(orden)} corregida: {nota[:150]}", 'bi-arrow-return-right', 'text-success')
+    db.session.commit()
+    flash(f'✅ {_oc_codigo(orden)} devuelta a Almacén: ya aparece otra vez en sus ingresos pendientes.')
+    return redirect(volver)
+
+
+@app.route('/ordenes/entrega/<int:entrega_id>/corregir', methods=['POST'])
+@_ruta_oc('editar')
+def oc_entrega_corregir(entrega_id):
+    """Logística corrige la CANTIDAD QUE LLEGÓ en una entrega (lo que no se ingresó aún). La orden no cambia: no va a Gerencia."""
+    e = OrdenCompraEntrega.query.get_or_404(entrega_id)
+    orden = OrdenCompra.query.get_or_404(e.orden_id)
+    volver = url_for('oc_detalle', orden_id=orden.id)
+    if not _oc_permisos(orden)['corregir_entrega']:
+        flash('⛔ Solo se corrige lo que llegó de una orden DEVUELTA por Almacén y que aún no se ingresó.')
+        return redirect(volver)
+    items = {i.id: i for i in orden.items}
+    otras = {}                       # lo que llegó de cada ítem en las OTRAS entregas
+    for en in _oc_entregas(orden):
+        if en.id != e.id:
+            for ei in en.items:
+                otras[ei.item_id] = otras.get(ei.item_id, 0) + (ei.cantidad or 0)
+    cambios, borrar = [], []
+    for ei in list(e.items):
+        if ei.fecha_ingreso:
+            continue
+        try:
+            nueva = _num_form(request.form.get(f'cant_{ei.id}'))
+        except ValueError:
+            flash('⛔ Una de las cantidades no es un número válido.')
+            return redirect(volver)
+        if nueva is None or abs(nueva - (ei.cantidad or 0)) < 1e-9:
+            continue
+        it = items.get(ei.item_id)
+        tope = ((it.cantidad or 0) - (it.cantidad_cancelada or 0) - otras.get(ei.item_id, 0)) if it else nueva
+        if it and nueva > tope + 1e-9:
+            flash(f"⛔ Ítem {it.item}: no puede haber llegado más ({_cant_txt(nueva)}) de lo que dice la orden ({_cant_txt(tope)} por llegar en esta entrega). "
+                  "Si de verdad se compró más, edita la orden (vuelve a Gerencia).")
+            return redirect(volver)
+        cambios.append(f"#{it.item if it else '?'} {((it.codigo or it.descripcion) if it else '')[:30]}: {_cant_txt(ei.cantidad)} → {_cant_txt(nueva)}")
+        if nueva <= 0:
+            borrar.append(ei)
+        else:
+            ei.cantidad = nueva
+    if not cambios:
+        flash('No cambiaste ninguna cantidad.')
+        return redirect(volver)
+    for ei in borrar:
+        db.session.delete(ei)
+    db.session.flush()
+    sin_items = not OrdenCompraEntregaItem.query.filter_by(entrega_id=e.id).count()
+    if sin_items:
+        OrdenCompraDocumento.query.filter_by(entrega_id=e.id).update({'entrega_id': None}, synchronize_session=False)
+        db.session.delete(e)
+        db.session.flush()
+    restantes = _oc_entregas(orden)
+    if not restantes:
+        orden.estado, orden.fecha_llegada, orden.recibido_por_id = 'APROBADA', None, None
+        orden.fecha_conforme, orden.conforme_por_id = None, None
+    else:
+        etapa = _oc_etapa_por_entregas(orden)
+        orden.estado = etapa
+        if etapa != 'CONFORME':
+            orden.fecha_conforme, orden.conforme_por_id = None, None
+        elif not orden.fecha_conforme:
+            orden.conforme_por_id, orden.fecha_conforme = session.get('user_id'), hora_peru()
+    _oc_evento(orden, 'ENTREGA_CORREGIDA', f"Entrega {e.numero}: se corrigió lo que llegó ({'; '.join(cambios)})"
+                                           + (' · la entrega quedó sin productos y se quitó' if sin_items else '')
+                                           + f" · {' '.join((request.form.get('nota') or '').split())[:150]}")
+    registrar_log(f"Corrigió lo que llegó en la entrega {e.numero} de la {_oc_codigo(orden)}: {'; '.join(cambios)[:150]}", 'bi-pencil-square', 'text-warning')
+    db.session.commit()
+    estado_txt = {'APROBADA': 'por recibir (falta que llegue lo demás)', 'RECIBIDA': 'material llegó (falta conformidad)', 'CONFORME': 'conforme'}.get(orden.estado, orden.estado)
+    flash(f'✅ Cantidades corregidas ({len(cambios)}). La orden queda {estado_txt}. Cuando todo esté bien, pulsa "Listo, devolver a Almacén".')
+    return redirect(volver)
+
+
 @app.route('/ordenes/<int:orden_id>/observacion', methods=['POST'])
 @_ruta_oc('editar')
 def oc_observacion(orden_id):
@@ -697,6 +871,8 @@ def _entregas_por_ingresar(ordenes=None):
     for o in ordenes:
         if o.tipo != 'OC' or o.destino != 'GENERAL' or o.es_contable:     # tema contable: no se ingresa (se confirma)
             continue
+        if o.devuelta_almacen:            # devuelta a Logística: no está pendiente para Almacén hasta que la corrijan
+            continue
         for e in _oc_entregas(o):
             if e.fecha_conforme:
                 pend = [ei for ei in e.items if not ei.fecha_ingreso]
@@ -718,12 +894,13 @@ def _contables_por_confirmar(empresa=None):
     except Exception:
         db.session.rollback()
         return []
-    return [o for o in lista if not empresa or (o.empresa or 'ANCLAJES') == empresa]
+    return [o for o in lista if not o.devuelta_almacen and (not empresa or (o.empresa or 'ANCLAJES') == empresa)]
 
 
 def _os_por_seguir():
     """Órdenes de SERVICIO conformes a las que Almacén todavía no les marcó el seguimiento (material de vuelta, movimiento registrado)."""
-    return [o for o in OrdenCompra.query.filter(OrdenCompra.estado == 'CONFORME', OrdenCompra.tipo == 'OS').all() if not o.fecha_kardex]
+    return [o for o in OrdenCompra.query.filter(OrdenCompra.estado == 'CONFORME', OrdenCompra.tipo == 'OS').all()
+            if not o.fecha_kardex and not o.devuelta_almacen]
 
 
 @app.route('/ordenes/ingresos')
@@ -747,7 +924,7 @@ def oc_ingresos_pendientes():
             if o.estado != 'CONFORME':
                 continue
             hecho = bool(o.fecha_kardex)
-            pend_emp[emp] += 0 if hecho else 1
+            pend_emp[emp] += 0 if (hecho or o.devuelta_almacen) else 1
             n_hechos += hecho and (emp_sel in ('TODAS', emp))
             if (emp_sel in ('TODAS', emp)) and ((vista == 'pendientes' and not hecho) or (vista == 'hechos' and hecho)):
                 grupos.append({'o': o, 'items': items, 'bloques': [], 'contable': True,
@@ -758,7 +935,7 @@ def oc_ingresos_pendientes():
             if o.estado != 'CONFORME':
                 continue
             hecho = bool(o.fecha_kardex)
-            pend_emp[emp] += 0 if hecho else 1
+            pend_emp[emp] += 0 if (hecho or o.devuelta_almacen) else 1
             n_hechos += hecho and (emp_sel in ('TODAS', emp))
             if (emp_sel in ('TODAS', emp)) and ((vista == 'pendientes' and not hecho) or (vista == 'hechos' and hecho)):
                 grupos.append({'o': o, 'items': items, 'bloques': [], 'directo': True,
@@ -767,7 +944,7 @@ def oc_ingresos_pendientes():
         if o.tipo == 'OS':
             if o.estado != 'CONFORME':
                 continue
-            pend_emp[emp] += 0 if o.fecha_kardex else 1
+            pend_emp[emp] += 0 if (o.fecha_kardex or o.devuelta_almacen) else 1
             hecho = bool(o.fecha_kardex)
             n_hechos += hecho and (emp_sel in ('TODAS', emp))
             if (emp_sel in ('TODAS', emp)) and ((vista == 'pendientes' and not hecho) or (vista == 'hechos' and hecho)):
@@ -779,7 +956,7 @@ def oc_ingresos_pendientes():
                 continue
             pend = [ei for ei in e.items if not ei.fecha_ingreso and ei.item_id in items]
             hechos = [ei for ei in e.items if ei.fecha_ingreso and ei.item_id in items]
-            pend_emp[emp] += len(pend)
+            pend_emp[emp] += 0 if o.devuelta_almacen else len(pend)
             if emp_sel in ('TODAS', emp):
                 n_hechos += len(hechos)
             lista = pend if vista == 'pendientes' else hechos
@@ -797,6 +974,13 @@ def oc_ingresos_pendientes():
     if vista == 'hechos':
         grupos = grupos[:80]
     pend_emp['TODAS'] = sum(pend_emp.values())
+    # devueltas a Logística (en cualquier etapa de la corrección): Almacén ve en qué están
+    try:
+        devueltas = [o for o in OrdenCompra.query.filter(OrdenCompra.devuelta_almacen.is_(True), OrdenCompra.estado != 'ANULADA')
+                     .order_by(OrdenCompra.fecha_devuelta).all() if emp_sel in ('TODAS', o.empresa or 'ANCLAJES')]
+    except Exception:
+        db.session.rollback()
+        devueltas = []
     stock, peso_inv = {}, {}
     for emp, Modelo in (('ANCLAJES', Product), ('IMPORTBOLTS', ProductImportBolts)):
         skus = {(i.sku_ingreso or i.codigo or '').upper() for g in grupos if (g['o'].empresa or 'ANCLAJES') == emp
@@ -822,7 +1006,7 @@ def oc_ingresos_pendientes():
     return render_template('oc_ingresos.html', grupos=grupos, docs=docs, puede_ver_oc=session.get('role') in ROLES_OC_VEN, vista=vista, stock=stock,
                            datos_kardex=datos_kardex, presentaciones=presentaciones, hoy_iso=hora_peru().date().isoformat(),
                            peso_inv=peso_inv, n_pendientes=pend_emp[emp_sel], n_hechos=n_hechos, monedas=MONEDAS_OC, ahora=hora_peru(),
-                           emp_sel=emp_sel, pend_emp=pend_emp, orden_lista=orden_lista,
+                           emp_sel=emp_sel, pend_emp=pend_emp, orden_lista=orden_lista, devueltas=devueltas,
                            directo_ubicaciones=[v.valor for v in _oc_catalogo('OC_DIRECTO_UBICACION')],
                            empresas_oc=EMPRESAS_OC, es_admin=session.get('role') == 'admin', seccion='ingresos')
 
@@ -841,6 +1025,9 @@ def oc_item_ingresar(ei_id):
     """Solo marcar como ingresado (quien ya hizo el movimiento a mano en el Kardex)."""
     ei, e, orden, item = _ei_y_orden(ei_id)
     volver = url_for('oc_ingresos_pendientes')
+    if _oc_bloqueo_devuelta(orden):
+        flash(f'⛔ No se puede ingresar: {_oc_bloqueo_devuelta(orden)}.')
+        return redirect(volver)
     if not item or not e.fecha_conforme or orden.destino != 'GENERAL' or orden.tipo != 'OC':
         flash('⛔ Esa entrega no tiene conformidad o no es para el inventario.')
         return redirect(volver)
@@ -973,6 +1160,9 @@ def oc_kardex_ingresar(entrega_id):
     orden = OrdenCompra.query.get_or_404(e.orden_id)
     volver = url_for('oc_ingresos_pendientes')
     f = request.form
+    if _oc_bloqueo_devuelta(orden):
+        flash(f'⛔ No se puede ingresar: {_oc_bloqueo_devuelta(orden)}.')
+        return redirect(volver)
     if not e.fecha_conforme or orden.destino != 'GENERAL' or orden.tipo != 'OC' or orden.estado not in ('APROBADA', 'RECIBIDA', 'CONFORME'):
         flash('⛔ Esa entrega no tiene conformidad o no es una compra para el inventario.')
         return redirect(volver)
@@ -1113,6 +1303,9 @@ def oc_os_seguimiento(orden_id):
     volver = url_for('oc_ingresos_pendientes')
     if orden.tipo != 'OS' or orden.estado != 'CONFORME':
         flash('⛔ Solo se marca el seguimiento de una orden de servicio conforme.')
+        return redirect(volver)
+    if _oc_bloqueo_devuelta(orden):
+        flash(f'⛔ No se puede marcar: {_oc_bloqueo_devuelta(orden)}.')
         return redirect(volver)
     if orden.fecha_kardex:
         flash('Esa orden de servicio ya tenía el seguimiento marcado.')

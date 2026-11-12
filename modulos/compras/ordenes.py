@@ -382,7 +382,12 @@ def oc_editar(orden_id):
     elif orden.estado != 'BORRADOR':
         flash('Esta orden no se puede editar en su estado actual. Si está enviada a Gerencia, primero "Retírala para corregir".')
         return redirect(url_for('oc_detalle', orden_id=orden.id))
-    return render_template('oc_form.html', **_contexto_form_oc(orden, _orden_a_previo(orden)))
+    previo = _orden_a_previo(orden)
+    if orden.devuelta_almacen and orden.estado in ESTADOS_REEDITABLES_OC:
+        # devuelta por Almacén: el motivo de la re-aprobación ya viene escrito (se puede completar)
+        quien = orden.devuelta_por.nombre_completo if orden.devuelta_por else 'Almacén'
+        previo['motivo_edicion'] = f"Corrección pedida por {quien} (Almacén): {orden.devolucion_motivo or ''}"[:300]
+    return render_template('oc_form.html', **_contexto_form_oc(orden, previo))
 
 
 @app.route('/ordenes/guardar', methods=['POST'])
@@ -674,11 +679,14 @@ def oc_aprobar(orden_id):
     era_correccion = bool(orden.correccion_pendiente)
     orden.estado, orden.aprobado_por_id, orden.fecha_aprobacion = etapa, session.get('user_id'), hora_peru()
     orden.correccion_pendiente = False
+    devuelta = bool(orden.devuelta_almacen)
     _oc_evento(orden, 'APROBADA', ' '.join((request.form.get('comentario') or '').split())[:300]
                or (f'Re-aprobada (Rev. {orden.revision}) con firma y sello de Gerencia' if orden.revision else 'Aprobada con firma y sello de Gerencia')
                + (f' · tras la corrección {orden.correcciones} del rechazo' if era_correccion else ''))
     _req_notificar_orden(orden, 'OC_APROBADA', f"Gerencia aprobó la {_oc_codigo(orden)} ({orden.razon_social})")
     _notif_orden_resuelta(orden, 'OC_APROBADA', ' '.join((request.form.get('comentario') or '').split())[:120])
+    if devuelta:
+        _oc_devolucion_cerrar(orden, 'REAPROBADA')        # la corrección que pidió Almacén ya está aprobada: vuelve a sus pendientes
     registrar_log(f"APROBÓ la {_oc_codigo(orden)} ({orden.razon_social}, {MONEDAS_OC[orden.moneda]['simbolo']} {orden.total:,.2f})",
                   'bi-patch-check-fill', 'text-success')
     db.session.commit()

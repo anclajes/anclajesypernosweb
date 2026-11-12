@@ -29,6 +29,12 @@ TIPOS_NOTIF = {
                          'está conforme: queda en Insumos internos → "Pendientes de Orden de Compra" (Anclajes o Import Bolts). '
                          'Se recuerda mientras falte registrarla.',
                          'roles': ['admin', 'almacen', 'logistica'], 'defecto': ['almacen'], 'icono': 'bi-basket2-fill', 'color': '#ca8a04'},
+    'OC_DEVUELTA': {'txt': 'OC devuelta por Almacén (hay un error)', 'ayuda': 'Cuando Almacén, al ir a ingresar, ve que la cantidad, el precio o el '
+                    'producto no cuadra y la devuelve a Logística para corregirla. Queda bloqueada para ingresar hasta que se corrija.',
+                    'roles': ['admin', 'logistica'], 'defecto': ['logistica', 'admin'], 'icono': 'bi-arrow-return-left', 'color': '#dc2626'},
+    'OC_DEVOLUCION_LISTA': {'txt': 'OC devuelta ya corregida (se puede ingresar)', 'ayuda': 'Cuando Logística corrige una orden que Almacén devolvió '
+                            '(o Gerencia re-aprueba la corrección) y vuelve a "Ingresos pendientes".',
+                            'roles': ['admin', 'almacen', 'logistica'], 'defecto': ['almacen'], 'icono': 'bi-arrow-return-right', 'color': '#16a34a'},
 }
 TIPOS_POR_INGRESAR = ('ING_PENDIENTE', 'INSUMO_PENDIENTE')       # salen en "Por ingresar" de la campana mientras sigan pendientes
 TIPOS_INSISTENTES = ('OC_POR_APROBAR',) + TIPOS_POR_INGRESAR     # su aviso de Windows se queda en pantalla hasta cerrarlo
@@ -96,7 +102,8 @@ def _notif_monto(orden):
 
 def _notif_orden_enviada(orden, reaprobacion=False):
     corto = EMPRESAS_OC.get(orden.empresa or 'ANCLAJES', {}).get('corto', '')
-    titulo = (f"Re-aprobar {_oc_codigo(orden)} · {corto}" if reaprobacion
+    titulo = (f"Re-aprobar {_oc_codigo(orden)} · {corto} · corrección pedida por Almacén" if reaprobacion and orden.devuelta_almacen
+              else f"Re-aprobar {_oc_codigo(orden)} · {corto}" if reaprobacion
               else f"CORREGIDA · {_oc_codigo(orden)} por aprobar · {corto}" if orden.correccion_pendiente
               else f"{_oc_codigo(orden)} por aprobar · {corto}")
     texto = f"{orden.razon_social} · {_notif_monto(orden)}" + (f" · pide {orden.solicitante_nombre}" if orden.solicitante_nombre else '')

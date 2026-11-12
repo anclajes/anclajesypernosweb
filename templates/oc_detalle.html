@@ -14,6 +14,7 @@
 {% from '_oc_contable.html' import chip_contable, aviso_contable, estilos_contable with context %}
 {{ estilos_contable() }}
 {% from '_oc_directo.html' import chip_directo, aviso_directo, estilos_directo, modal_entrega_directo with context %}
+{% import '_oc_devolucion.html' as dv with context %}
 {{ estilos_directo() }}
 {% set e = estados[orden.estado] %}
 {% set mon = monedas[orden.moneda] %}
@@ -65,6 +66,7 @@
     .linea .pt { position: absolute; left: 0; top: 3px; width: 14px; height: 14px; border-radius: 50%; background: #cbd5e1; border: 3px solid #fff; box-shadow: 0 0 0 1px #cbd5e1; }
     .linea .pt.APROBADA, .linea .pt.CONFORME, .linea .pt.KARDEX, .linea .pt.INGRESO_ITEM, .linea .pt.PAGO { background: #16a34a; } .linea .pt.RECHAZADA, .linea .pt.ANULADA { background: #dc2626; }
     .linea .pt.ENVIADA { background: #f59e0b; } .linea .pt.LLEGADA { background: #0891b2; } .linea .pt.CREADA { background: #0B3D91; } .linea .pt.OBSERVACION { background: #7c3aed; } .linea .pt.EDITADA_APROBADA { background: #ea580c; } .linea .pt.EMPRESA { background: #0891b2; }
+    .linea .pt.DEVUELTA { background: #dc2626; } .linea .pt.DEVOLUCION_RESUELTA { background: #16a34a; } .linea .pt.ENTREGA_CORREGIDA { background: #0B3D91; }
     .linea .t { font-size: .8rem; font-weight: 700; } .linea .s { font-size: .74rem; color: #64748b; }
     .acciones .btn { font-weight: 700; }
     .check-conf { border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 8px 10px; margin-bottom: 6px; }
@@ -198,6 +200,7 @@
     {% endif %}
 
     <div class="mt-2">
+    {{ dv.estilos() }}{{ dv.banner(orden, p) }}
     {% if atraso %}
         <div class="sello atraso mb-2"><i class="bi bi-alarm-fill"></i><div><b>ATRASADA {{ atraso }} día{{ 's' if atraso != 1 }}</b>
             <div class="small">Debía llegar el {{ oc_fecha_esperada(orden).strftime('%d/%m/%Y') }} y aún no se registra la llegada. Llama al proveedor y deja una observación.</div></div></div>
@@ -273,6 +276,7 @@
         {% if p.conforme %}<button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#mConforme"><i class="bi bi-check-circle-fill"></i> Dar conformidad{% if rec.entregas|length > 1 %} (entrega {{ rec.sin_conformar[0].numero }}){% endif %}</button>{% endif %}
         {% if p.cerrar_saldo %}<button class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#mSaldo"><i class="bi bi-scissors"></i> No llegará el resto</button>{% endif %}
         {% if p.insumos %}<a class="btn btn-warning" href="{{ url_for('insumos_ingreso_nuevo', oc=orden.id, empresa=orden.empresa or 'ANCLAJES') }}"><i class="bi bi-box-arrow-in-down"></i> Ingresar a Insumos</a>{% endif %}
+        {% if p.devolver %}{{ dv.boton(orden) }}{% endif %}
         {% if p.ingresar %}<a class="btn btn-warning" href="{{ url_for('oc_ingresos_pendientes') }}#oc{{ orden.id }}"><i class="bi {{ 'bi-clipboard-check' if orden.tipo == 'OS' else 'bi-box-arrow-in-down' }}"></i> {{ 'Seguimiento (Almacén)' if orden.tipo == 'OS' else 'Ingreso al inventario (Almacén)' }}</a>{% endif %}
         {% if p.confirmar_contable %}<form method="POST" action="{{ url_for('oc_contable_confirmar', orden_id=orden.id) }}" onsubmit="return confirmar(this, 'Confirmar {{ oc_codigo(orden) }} como TEMA CONTABLE: NO se suma nada al inventario. ¿Continuar?')">
             <button class="btn text-white" style="background:#6d28d9;"><i class="bi bi-calculator-fill"></i> Confirmar tema contable (no suma)</button></form>{% endif %}
@@ -295,6 +299,8 @@
 </div>
 {{ aviso_contable(orden) }}
 {{ aviso_directo(orden) }}
+{% if p.devolver %}{{ dv.modal(orden, url_for('oc_detalle', orden_id=orden.id)) }}{% endif %}
+{{ dv.modales_logistica(orden, p) }}
 
 <div class="row g-3">
     <div class="col-12 col-lg-8">
@@ -623,7 +629,9 @@
                                    'EDITADA_APROBADA': 'EDITADA DESPUÉS DE APROBADA (vuelve a Gerencia)', 'CORREGIDA': 'CORREGIDA TRAS UN RECHAZO',
                                    'EMPRESA': 'Cambio de empresa', 'KARDEX_OS': 'Kardex vinculado (venta tras servicio)',
                                    'SALDO_CERRADO': 'No llegará el resto (saldo cerrado)', 'CONTABLE': 'Tema contable confirmado',
-                                   'ENTREGA_DIRECTO': 'Bien entregado (uso directo)', 'DIRECTO_EDITADO': 'Entrega corregida (uso directo)'}.get(ev.accion, ev.accion) }}</div>
+                                   'ENTREGA_DIRECTO': 'Bien entregado (uso directo)', 'DIRECTO_EDITADO': 'Entrega corregida (uso directo)',
+                                   'DEVUELTA': '↩ DEVUELTA A LOGÍSTICA por Almacén (hay un error)', 'DEVOLUCION_RESUELTA': '↪ Corregida: vuelve a Almacén',
+                                   'ENTREGA_CORREGIDA': 'Se corrigió lo que llegó (entrega)'}.get(ev.accion, ev.accion) }}</div>
                 <div class="s">{{ ev.fecha.strftime('%d/%m/%Y %H:%M') }} · <b>{{ ev.usuario.nombre_completo if ev.usuario else 'Sistema' }}</b></div>
                 {% if ev.detalle %}<div class="s">{{ ev.detalle }}</div>{% endif %}
             </div>

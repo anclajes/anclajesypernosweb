@@ -3,6 +3,7 @@
 {% block subtitle %}Material conforme por ingresar al inventario{% endblock %}
 {% block content %}
 {% include '_oc_nav.html' %}
+{% import '_oc_devolucion.html' as dv with context %}{{ dv.estilos() }}
 <style>
     .vistas a { font-size: .8rem; font-weight: 700; border-radius: 20px; padding: 5px 14px; text-decoration: none; border: 1px solid #e2e8f0; color: #475569; background: #fff; white-space: nowrap; }
     .vistas a.on { background: #0f172a; color: #fff; border-color: #0f172a; }
@@ -108,6 +109,8 @@
     <a href="{{ url_for('inventario_importbolts') }}"><i class="bi bi-boxes"></i> Inventario Import Bolts</a>{% endif %}
 </div>
 
+{{ dv.lista(devueltas, puede_ver_oc) }}
+
 <details class="como" {{ 'open' if vista == 'pendientes' and n_pendientes }}>
     <summary><i class="bi bi-info-circle"></i> ¿Cómo funciona este apartado?</summary>
     <div class="pasos-ing">
@@ -143,7 +146,7 @@
 {% set ds = docs.get(o.id, []) %}{% set emp = o.empresa or 'ANCLAJES' %}
 {% set guias = ds|selectattr('tipo', 'equalto', 'GUIA')|list %}
 {% set einf = empresas_oc[emp] %}
-<div style="border-top: 4px solid {{ einf.acento or einf.color }}; --e: {{ einf.color }};" class="oc-card shadow-sm" id="oc{{ o.id }}" data-buscar="{{ (o.tipo ~ ' ' ~ oc_numero_txt(o) ~ ' ' ~ o.razon_social ~ ' ' ~ einf.corto ~ ' ' ~ (items.values()|map(attribute='descripcion')|join(' ')) ~ ' ' ~ (items.values()|map(attribute='codigo')|select|join(' ')))|upper }}">
+<div style="border-top: 4px solid {{ einf.acento or einf.color }}; --e: {{ einf.color }};" class="oc-card shadow-sm {{ 'devuelta' if o.devuelta_almacen }}" id="oc{{ o.id }}" data-buscar="{{ (o.tipo ~ ' ' ~ oc_numero_txt(o) ~ ' ' ~ o.razon_social ~ ' ' ~ einf.corto ~ ' ' ~ (items.values()|map(attribute='descripcion')|join(' ')) ~ ' ' ~ (items.values()|map(attribute='codigo')|select|join(' ')))|upper }}">
     <div class="emp-fila">
         <span class="emp-logo"><img src="{{ url_for('static', filename='img/' ~ einf.logo) }}" alt="{{ einf.corto }}"></span>
         <div class="emp-txt"><b>{{ einf.nombre }}</b>
@@ -197,7 +200,12 @@
             {% endfor %}
             {% if o.tipo == 'OS' %}{% for d in guias %}<a class="doc-b" href="{{ url_for('oc_documento_ver', doc_id=d.id) }}" target="_blank"><i class="bi bi-truck"></i> Guía {{ o.numero_guia or '' }}</a>{% endfor %}{% endif %}
             {% if o.tipo == 'OC' and not o.numero_factura and not (ds|selectattr('tipo', 'equalto', 'FACTURA')|list) %}<span class="small text-muted align-self-center">· la factura aún no se sube (no hace falta para ingresar)</span>{% endif %}
+            {% set po = oc_permisos(o) %}
+            {% if o.devuelta_almacen %}<span class="dv-bloq ms-auto"><i class="bi bi-lock-fill"></i> Bloqueada: devuelta a Logística</span>
+            {% elif vista == 'pendientes' and po.devolver %}<span class="ms-auto">{{ dv.boton(o, chico=True) }}</span>{% endif %}
         </div>
+        {% if o.devuelta_almacen %}{{ dv.banner(o, po, acciones=False) }}
+        {% elif vista == 'pendientes' and po.devolver %}{{ dv.modal(o, url_for('oc_ingresos_pendientes') ~ '#oc' ~ o.id) }}{% endif %}
     </div>
     {% if g.directo %}
     {% set sol = oc_solicitante_txt(o) %}

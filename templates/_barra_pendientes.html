@@ -29,6 +29,8 @@
     .pb-nuevo { display: none; position: absolute; top: -9px; right: 10px; background: #dc2626; color: #fff; font-size: .62rem; font-weight: 800; letter-spacing: .05em;
                 border-radius: 8px; padding: 1px 8px; box-shadow: 0 0 0 2px #fff; }
     .pb-item.nuevo .pb-nuevo { display: inline-block; }
+    .pb-txt small.pb-dev { color: #b91c1c; font-weight: 700; }
+    .pb-txt small.pb-dev[hidden] { display: none; }
     .pb-emps { display: flex; flex-direction: column; gap: 3px; flex: 0 0 auto; }
     .pb-emps a { font-size: .68rem; font-weight: 700; color: #334155; background: #fff; border: 1px solid #e2e8f0; border-radius: 7px; padding: 1px 7px; text-decoration: none; white-space: nowrap; }
     .pb-emps a:hover { border-color: #0B3D91; color: #0B3D91; }
@@ -45,7 +47,8 @@
     <div class="pb-item {{ 'hay' if pa.oc }}" id="pbOC" data-tipo="oc">
         <a class="pb-main" href="{{ url_for('oc_ingresos_pendientes') }}">
             <span class="pb-ico"><i class="bi bi-box-arrow-in-down"></i></span>
-            <span class="pb-txt"><b>Ingresos pendientes (OC)</b><small class="pb-det">{{ txt_oc(det) }}</small></span>
+            <span class="pb-txt"><b>Ingresos pendientes (OC)</b><small class="pb-det">{{ txt_oc(det) }}</small>
+                <small class="pb-dev" {{ 'hidden' if not pa.dev }}><i class="bi bi-arrow-return-left"></i> <span>{{ pa.dev or 0 }}</span> devuelta(s) a Logística para corregir</small></span>
             <span class="pb-n">{{ pa.oc }}</span></a>
         <span class="pb-emps">{% for e, info in oc_empresas.items() %}{% set n = (pa.oc_emp or {}).get(e, 0) %}
             <a href="{{ url_for('oc_ingresos_pendientes', empresa=e) }}" class="{{ 'cero' if not n }}" data-emp="{{ e }}">{{ info.corto }} <b>{{ n }}</b></a>{% endfor %}</span>
@@ -96,6 +99,7 @@
             el.querySelector('.pb-n').textContent = n;
             el.querySelector('.pb-nuevo').textContent = nuevos > 1 ? `¡${nuevos} NUEVOS!` : '¡NUEVO!';
             el.querySelector('.pb-det').textContent = tipo === 'oc' ? txtOC(datos.oc_det || {}) : (n ? `${n} compra(s) de insumos por ingresar` : 'nada por ingresar');
+            if (tipo === 'oc') { const dv = el.querySelector('.pb-dev'); if (dv) { dv.hidden = !datos.dev; dv.querySelector('span').textContent = datos.dev || 0; } }
             const emp = tipo === 'oc' ? (datos.oc_emp || {}) : (datos.ins_emp || {});
             el.querySelectorAll('.pb-emps a').forEach(a => { const v = emp[a.dataset.emp] || 0; a.querySelector('b').textContent = v; a.classList.toggle('cero', !v); });
         });

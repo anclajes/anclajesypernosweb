@@ -143,6 +143,14 @@ class OrdenCompra(db.Model):
     directo_categoria = db.Column(db.String(100))            # catálogo OC_DIRECTO_CATEGORIA (EQUIPOS DE CÓMPUTO Y TECNOLOGÍA...)
     directo_ubicacion = db.Column(db.String(100))            # catálogo OC_DIRECTO_UBICACION (OFICINA · ADMINISTRACIÓN...)
     directo_detalle = db.Column(db.String(200))              # para qué / dónde exactamente (opcional): "PC de contabilidad"
+    # DEVUELTA A LOGÍSTICA: al ir a ingresarla, Almacén (o Logística) vio un error (cantidad, precio, producto...). Mientras esté
+    # devuelta NADIE la ingresa; Logística corrige la orden (vuelve a Gerencia) o lo que se registró como llegado, y la devuelve.
+    devuelta_almacen = db.Column(db.Boolean, default=False)
+    devolucion_motivo = db.Column(db.String(600))            # "Cantidad no coincide: la factura dice 80 UN..."
+    devolucion_items = db.Column(db.Text)                    # JSON [{item_id, item, descripcion, um, oc, llego, real, nota}]
+    devuelta_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    fecha_devuelta = db.Column(db.DateTime, nullable=True)
+    devoluciones = db.Column(db.Integer, default=0)          # cuántas veces se devolvió
     directo_activo_fijo = db.Column(db.Boolean, default=False)   # contabilidad lo registra como activo fijo (opcional)
     directo_entregado_a = db.Column(db.String(120))          # a quién se entregó el bien
     revision = db.Column(db.Integer, default=0)            # cuántas veces se editó DESPUÉS de aprobada (Rev. 1, Rev. 2...)
@@ -193,6 +201,7 @@ class OrdenCompra(db.Model):
     recibido_por = db.relationship('User', foreign_keys=[recibido_por_id])
     conforme_por = db.relationship('User', foreign_keys=[conforme_por_id])
     kardex_registrado_por = db.relationship('User', foreign_keys=[kardex_registrado_por_id])
+    devuelta_por = db.relationship('User', foreign_keys=[devuelta_por_id])
     solicitante = db.relationship('User', foreign_keys=[solicitante_user_id])
     pagado_por = db.relationship('User', foreign_keys=[pagado_por_id])
     __table_args__ = (db.UniqueConstraint('empresa', 'tipo', 'numero', name='uq_orden_compra_emp_tipo_num'),)   # numeración propia por empresa
