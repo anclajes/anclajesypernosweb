@@ -297,6 +297,10 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
   que compró, OC), ÚLTIMA COMPRA (▲ % más caro o ✔ al mejor precio) y "PARA LA PRÓXIMA COMPRA" (a quién pedir precio, cuánto más se pagó,
   ahorro posible). "Ver todas las compras" = ranking + tabla. Cada OC abre `menu_docs_oc(..., detalle_url=...)`: abrir la orden en el
   sistema, PDF (abrir / descargar) y sus documentos. Sin indicadores arriba. Producto: `compras` (más nueva primero) y `empresas`.
+  Chips "Qué ver": Todo / Solo OC (sin servicios) / Solo servicios (OS) / Productos del inventario / Insumos / Uso directo (tipo + clase).
+- Filtros FAMILIA, CALIDAD y CÓDIGO (inventario general o insumos) en todas las vistas de Mejores precios: select con buscador
+  (`select.filtro-s2` + `static/js/filtros.js`, como en los inventarios): se elige o se escribe y busca por coincidencia sin tildes.
+  Calidades y códigos según la familia elegida (`opciones_familia/calidad/codigo`).
 - Mejores precios (v16): resumen sin donas ni doble eje; moneda global; condición de pago por MONTO sin IGV (antes con IGV)
   y n° de órdenes en el tooltip; clic en un proveedor → vista "Por producto" filtrada por él (`res.prov_graf`).
 - Más funciones (v17): `GR.mini` (mini tendencia de los KPIs), `GR.pareto`, `GR.proceso` (línea del proceso: mediana vs meta,
@@ -304,6 +308,9 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
   En barras apiladas el valor va dentro del tramo (`dataset.grDentro`). Montos cortos propios: "850 · 12.5 mil · 1.2 M".
 - Plan: Fase 3 (v18) precios finos (pesas, Pareto del ahorro, cascada precio/volumen,
   ahorro vs. compra anterior). Fase 4: dashboards de ventas / admin / insumos con esta base; PPV cuando exista precio estándar.
+
+## Órdenes de compra (lista): botón "🌐 Importaciones" (solo importaciones) y filtro "Importación" (todas / solo importaciones /
+   solo nacionales) = parámetro `importacion=si|no`; se mantiene al cambiar de pestaña.
 
 ## Reportes de compras: tablero (`modulos/compras/reportes.py`, `templates/oc_reportes.html`)
 

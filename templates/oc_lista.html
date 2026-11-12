@@ -68,7 +68,7 @@
     .card-oc .det { font-size: .74rem; color: #64748b; }
 </style>
 
-{% macro url_vista(v) %}{{ url_for('oc_lista', vista=v, tipo=tipo, destino=destino, proveedor=prov_id or '', solicitante=solicitante, motivo=motivo, creador=creador or '', contable=contable_f, pago=pago_f, docs=docs_f, q=buscar,
+{% macro url_vista(v) %}{{ url_for('oc_lista', vista=v, tipo=tipo, destino=destino, proveedor=prov_id or '', solicitante=solicitante, motivo=motivo, creador=creador or '', contable=contable_f, importacion=importacion_f, pago=pago_f, docs=docs_f, q=buscar,
                                     desde=desde.isoformat() if desde else '', hasta=hasta.isoformat() if hasta else '') }}{% endmacro %}
 
 <div class="empresas">
@@ -112,6 +112,11 @@
             href="{{ url_for('oc_lista', vista='todas' if 'todas' in vistas_orden else vista, contable='' if contable_f == 'si' else 'si') }}" title="Órdenes de tema contable (no suman al inventario)">
             <i class="bi bi-calculator"></i> Contables <span class="badge {{ 'bg-light text-dark' if contable_f == 'si' else 'bg-secondary' }}">{{ n_contables }}</span>
             {% if contables_por_confirmar %}<span class="badge bg-warning text-dark" title="Conformes, por confirmar">{{ contables_por_confirmar }} por confirmar</span>{% endif %}</a>{% endif %}
+        {% set args_imp = request.args.to_dict() %}{% set _ = args_imp.update({'vista': vista, 'importacion': '' if importacion_f == 'si' else 'si'}) %}
+        <a class="btn btn-sm {{ 'btn-info text-white' if importacion_f == 'si' else 'btn-outline-info' }}" style="{{ '' if importacion_f == 'si' else 'color:#0369a1;border-color:#7dd3fc;' }}"
+           href="{{ url_for('oc_lista', **args_imp) }}" title="{{ 'Quitar el filtro: ver todas' if importacion_f == 'si' else 'Ver solo las órdenes de importación' }}">
+            <i class="bi bi-globe-americas"></i> {{ 'Solo importaciones ✓' if importacion_f == 'si' else 'Importaciones' }}
+            <span class="badge {{ 'bg-light text-dark' if importacion_f == 'si' else 'bg-info' }}">{{ n_importaciones }}</span></a>
         <a class="btn btn-sm btn-outline-secondary" style="color:#9a3412;border-color:#fdba74;" href="{{ url_for('oc_registro_directo') }}" title="Bienes de uso directo (no van al inventario): dónde están, quién los tiene, serie y garantía">
             <i class="bi bi-pc-display"></i> Uso directo{% if directos_por_entregar %} <span class="badge bg-warning text-dark" title="Conformes, falta registrar la entrega">{{ directos_por_entregar }} por entregar</span>{% endif %}</a>
         {% set args_x = request.args.to_dict() %}{% set _ = args_x.update({'vista': vista, 'exportar': 'excel'}) %}
@@ -136,6 +141,10 @@
                 <select name="contable" class="form-select form-select-sm auto"><option value="">Todas</option>
                     <option value="si" {{ 'selected' if contable_f == 'si' }}>Solo tema contable (no suma)</option>
                     <option value="no" {{ 'selected' if contable_f == 'no' }}>Sin tema contable</option></select></div>
+            <div class="col-6 col-md-3 col-xl-2"><label>Importación</label>
+                <select name="importacion" class="form-select form-select-sm auto"><option value="">Todas</option>
+                    <option value="si" {{ 'selected' if importacion_f == 'si' }}>Solo importaciones</option>
+                    <option value="no" {{ 'selected' if importacion_f == 'no' }}>Solo compras nacionales</option></select></div>
             <div class="col-6 col-md-3 col-xl-2"><label>Creó</label>
                 <select name="creador" class="form-select form-select-sm auto"><option value="">Todos</option>
                     {% for uid, nom in creadores %}<option value="{{ uid }}" {{ 'selected' if uid == creador }}>{{ nom }}</option>{% endfor %}</select></div>

@@ -54,7 +54,8 @@ def _oc_precios(emp_sel='TODAS', q='', desde=None, hasta=None, tipo='OC'):
 
 
 def _mp_filtros_por_defecto(**kw):
-    f = {'empresa': 'TODAS', 'tipo': '', 'clase': '', 'moneda': '', 'prov': '', 'q': '', 'desde': None, 'hasta': None, 'etapa': 'aprobadas'}
+    f = {'empresa': 'TODAS', 'tipo': '', 'clase': '', 'moneda': '', 'prov': '', 'q': '', 'desde': None, 'hasta': None, 'etapa': 'aprobadas',
+         'familia': '', 'calidad': '', 'codigo': ''}
     f.update({k: v for k, v in kw.items() if k in f})
     return f
 
@@ -77,6 +78,10 @@ def _mp_filtros():
     return {'empresa': emp if emp in EMPRESAS_OC else 'TODAS', 'tipo': tipo if tipo in TIPOS_OC else '',
             'clase': clase if clase in CLASES_PRECIOS else '', 'moneda': moneda if moneda in MONEDAS_OC else '',
             'prov': (request.args.get('prov') or '').strip()[:40], 'q': ' '.join((request.args.get('q') or '').split())[:80],
+            # como en los inventarios: se elige de la lista o se escribe (busca por coincidencia, sin importar tildes)
+            'familia': ' '.join((request.args.get('familia') or '').upper().split())[:60],
+            'calidad': ' '.join((request.args.get('calidad') or '').upper().split())[:60],
+            'codigo': ' '.join((request.args.get('codigo') or '').upper().split())[:60],
             'desde': desde, 'hasta': hasta, 'periodo': periodo,
             'etapa': request.args.get('etapa') if request.args.get('etapa') in ETAPAS_PRECIOS else 'aprobadas'}
 
@@ -100,6 +105,8 @@ def _mp_compras(f):
     estados = ETAPAS_PRECIOS.get(f.get('etapa') or 'aprobadas', ETAPAS_PRECIOS['aprobadas'])[1]
     ordenes = OrdenCompra.query.filter(OrdenCompra.estado.in_(list(estados))).all()
     terminos = [t for t in _txt_sin_tildes(f.get('q') or '').upper().split() if t]
+    norm = lambda t: _txt_sin_tildes(t or '').upper()
+    f_fam, f_cal, f_cod = norm(f.get('familia')), norm(f.get('calidad')), norm(f.get('codigo'))
     compras = []
     for o in ordenes:
         if not o.fecha or (f['empresa'] != 'TODAS' and (o.empresa or 'ANCLAJES') != f['empresa']) or (f['tipo'] and o.tipo != f['tipo']):
@@ -116,6 +123,8 @@ def _mp_compras(f):
             continue
         for i in o.items:
             if not i.precio_unitario or not i.cantidad:
+                continue
+            if (f_fam and f_fam not in norm(i.familia)) or (f_cal and f_cal not in norm(i.calidad)) or (f_cod and f_cod not in norm(i.codigo)):
                 continue
             if terminos:
                 texto = _txt_sin_tildes(f"{i.codigo or ''} {i.descripcion} {i.familia or ''} {i.calidad or ''} {i.tipo_servicio or ''} "
@@ -345,11 +354,23 @@ def oc_precios():
         total_lista = len(todos)
         lista = todos[(pagina - 1) * 100: pagina * 100]
     por_pag = 100 if vista == 'detalle' else (POR_PAGINA_RAPIDO if vista == 'rapido' else POR_PAGINA_PRECIOS)
-    opciones_prov = sorted({(c['prov_clave'], c['proveedor']) for c in _mp_compras({**f, 'prov': '', 'q': ''})}, key=lambda x: _clave_alfabetica(x[1]))
+    base_ops = _mp_compras({**f, 'prov': '', 'q': '', 'familia': '', 'calidad': '', 'codigo': ''})
+    opciones_prov = sorted({(c['prov_clave'], c['proveedor']) for c in base_ops}, key=lambda x: _clave_alfabetica(x[1]))
+    # listas para los filtros con buscador (Familia, Calidad, Código): las calidades y códigos según la familia elegida
+    fam_n = _txt_sin_tildes(f['familia']).upper()
+    en_fam = [c for c in base_ops if not fam_n or fam_n in _txt_sin_tildes(c['familia']).upper()]
+    opciones_familia = sorted({c['familia'].upper() for c in base_ops if c['familia']}, key=_clave_alfabetica)
+    opciones_calidad = sorted({c['calidad'].upper() for c in en_fam if c['calidad']}, key=_clave_alfabetica)
+    cods = {}
+    for c in en_fam:
+        if c['codigo']:
+            cods.setdefault(c['codigo'].upper(), (c['descripcion'], c['clase']))
+    opciones_codigo = sorted(((k, d, cl) for k, (d, cl) in cods.items()), key=lambda x: x[0])[:3000]
     return render_template('oc_precios.html', f=f, vista=vista, vistas=VISTAS_PRECIOS, orden=orden, ordenes_productos=ORDENES_PRODUCTOS,
                            res=res, lista=lista, total_lista=total_lista, pagina=pagina, paginas=max(1, -(-total_lista // por_pag)),
                            clases=CLASES_PRECIOS, etapas=ETAPAS_PRECIOS, tipos=TIPOS_OC, empresas_oc=EMPRESAS_OC, monedas=MONEDAS_OC, igv=IGV_OC,
-                           opciones_prov=opciones_prov, seccion='precios', puede_ver_oc=session.get('role') in ROLES_OC_VEN,
+                           opciones_prov=opciones_prov, opciones_familia=opciones_familia, opciones_calidad=opciones_calidad,
+                           opciones_codigo=opciones_codigo, seccion='precios', puede_ver_oc=session.get('role') in ROLES_OC_VEN,
                            hoy=hora_peru().date(), docs_oc=docs_oc, solo_multi=solo_multi, n_multi=n_multi, n_productos=len(productos))
 
 
@@ -367,6 +388,8 @@ def _mp_excel(f, compras, productos, proveedores):
                   f"{('del ' + f['desde'].strftime('%d/%m/%Y')) if f['desde'] else 'desde el inicio'} "
                   f"{('al ' + f['hasta'].strftime('%d/%m/%Y')) if f['hasta'] else 'a hoy'}"
                   f"{' · solo ' + MONEDAS_OC[f['moneda']]['nombre'] if f['moneda'] else ''}{' · búsqueda: ' + f['q'] if f['q'] else ''}"
+                  f"{' · familia: ' + f['familia'] if f.get('familia') else ''}{' · calidad: ' + f['calidad'] if f.get('calidad') else ''}"
+                  f"{' · código: ' + f['codigo'] if f.get('codigo') else ''}"
                   f" · {ETAPAS_PRECIOS[f.get('etapa') or 'aprobadas'][0]}")
     nota = f"Órdenes aprobadas · precios SIN IGV · soles y dólares por separado · {filtro_txt}"
     # ---- Resumen ----

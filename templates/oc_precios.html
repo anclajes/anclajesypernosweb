@@ -10,7 +10,8 @@
 {% macro px(v) %}{% if v is none %}—{% elif (v * 100)|round(6) == ((v * 100)|round(0)) %}{{ '{:,.2f}'.format(v) }}{% else %}{{ '{:,.4f}'.format(v).rstrip('0') }}{% endif %}{% endmacro %}
 {% macro dinero(v) %}{{ '{:,.2f}'.format(v or 0) }}{% endmacro %}
 {% set base_args = {'periodo': f.periodo, 'desde': f.desde.isoformat() if f.desde and f.periodo == 'rango' else '', 'hasta': f.hasta.isoformat() if f.hasta else '',
-                    'empresa': f.empresa, 'tipo': f.tipo, 'clase': f.clase, 'moneda': f.moneda, 'prov': f.prov, 'q': f.q, 'etapa': f.etapa} %}
+                    'empresa': f.empresa, 'tipo': f.tipo, 'clase': f.clase, 'moneda': f.moneda, 'prov': f.prov, 'q': f.q, 'etapa': f.etapa,
+                    'familia': f.familia, 'calidad': f.calidad, 'codigo': f.codigo} %}
 <style>
     .mp-filtros { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 10px 12px; margin-bottom: 12px; }
     .mp-filtros label { font-size: .66rem; font-weight: 800; color: #64748b; text-transform: uppercase; margin-bottom: 1px; display: block; }
@@ -59,6 +60,14 @@
     .rq-tog { display: inline-flex; background: #e2e8f0; border-radius: 10px; padding: 3px; gap: 3px; }
     .rq-tog a { font-size: .76rem; font-weight: 700; color: #475569; text-decoration: none; border-radius: 8px; padding: 5px 10px; white-space: nowrap; }
     .rq-tog a.on { background: #fff; color: #0f172a; box-shadow: 0 1px 2px rgba(15,23,42,.15); }
+    .rq-ver { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 10px; }
+    .rq-ver .t { font-size: .7rem; font-weight: 800; color: #64748b; text-transform: uppercase; }
+    .rq-ver a { font-size: .76rem; font-weight: 700; color: #334155; background: #fff; border: 1px solid #cbd5e1; border-radius: 20px; padding: 4px 12px; text-decoration: none; white-space: nowrap; }
+    .rq-ver a.on { background: #0B3D91; border-color: #0B3D91; color: #fff; }
+    .rq-ver a.fil { background: #0f766e; border-color: #0f766e; }
+    .mp-filtros .select2-container .select2-selection--single { height: 31px; border-color: #dee2e6; border-radius: 6px; font-size: .84rem; }
+    .mp-filtros .select2-container .select2-selection__rendered { line-height: 29px; }
+    .mp-filtros .select2-container .select2-selection__arrow { height: 29px; }
     .rq-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 12px 14px; margin-bottom: 12px; box-shadow: 0 1px 2px rgba(15,23,42,.05); }
     .rq-cab { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: flex-start; margin-bottom: 10px; }
     .rq-cab .izq { flex: 1 1 320px; min-width: 0; }
@@ -123,6 +132,21 @@
                 {% for pk, nombre in opciones_prov %}<option value="{{ pk }}" {{ 'selected' if f.prov == pk }}>{{ nombre }}</option>{% endfor %}</select></div>
         <div class="col-12 col-md-7 col-xl-3"><label>Producto, código, familia o proveedor</label>
             <input type="search" name="q" value="{{ f.q }}" class="form-control form-control-sm" placeholder="Ej: perno 1/2 grado 5 · guantes · galvanizado"></div>
+        <div class="col-12 col-md-4 col-xl-3"><label>Familia <span class="text-lowercase fw-normal">(elige o escribe)</span></label>
+            <select name="familia" class="form-select form-select-sm filtro-s2" data-placeholder="-- Todas las familias --" data-form="formMP">
+                <option value=""></option>
+                {% if f.familia and f.familia not in opciones_familia %}<option value="{{ f.familia }}" selected>{{ f.familia }}</option>{% endif %}
+                {% for x in opciones_familia %}<option value="{{ x }}" {{ 'selected' if x == f.familia }}>{{ x }}</option>{% endfor %}</select></div>
+        <div class="col-6 col-md-4 col-xl-2"><label>Calidad</label>
+            <select name="calidad" class="form-select form-select-sm filtro-s2" data-placeholder="-- Todas --" data-form="formMP">
+                <option value=""></option>
+                {% if f.calidad and f.calidad not in opciones_calidad %}<option value="{{ f.calidad }}" selected>{{ f.calidad }}</option>{% endif %}
+                {% for x in opciones_calidad %}<option value="{{ x }}" {{ 'selected' if x == f.calidad }}>{{ x }}</option>{% endfor %}</select></div>
+        <div class="col-6 col-md-4 col-xl-4"><label>Código <span class="text-lowercase fw-normal">(inventario general o insumos)</span></label>
+            <select name="codigo" class="form-select form-select-sm filtro-s2" data-placeholder="-- Todos los códigos --" data-form="formMP">
+                <option value=""></option>
+                {% if f.codigo and f.codigo not in opciones_codigo|map('first')|list %}<option value="{{ f.codigo }}" selected>{{ f.codigo }}</option>{% endif %}
+                {% for cod, desc, cl in opciones_codigo %}<option value="{{ cod }}" {{ 'selected' if cod == f.codigo }}>{{ cod }} — {{ desc[:60] }}{{ ' (insumo)' if cl == 'INSUMOS' }}</option>{% endfor %}</select></div>
         <div class="col-12 col-xl-3 d-flex gap-2">
             <button class="btn btn-sm btn-primary flex-fill"><i class="bi bi-search"></i> Buscar</button>
             <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('oc_precios', vista=vista) }}" title="Quitar filtros"><i class="bi bi-x-lg"></i> Limpiar</a>
@@ -234,6 +258,15 @@
         <input type="hidden" name="vista" value="rapido">{% if not solo_multi %}<input type="hidden" name="todos" value="1">{% endif %}
         <label class="small text-muted mb-0">Ordenar:</label>
         <select name="orden" class="form-select form-select-sm auto" style="width:auto;">{% for o, t in ordenes_productos.items() %}<option value="{{ o }}" {{ 'selected' if orden == o }}>{{ t }}</option>{% endfor %}</select></form>
+</div>
+{% set ver_opts = [('todo', 'Todo', 'bi-grid', '', ''), ('oc', 'Solo OC (sin servicios)', 'bi-cart', 'OC', ''), ('os', 'Solo servicios (OS)', 'bi-gear', 'OS', ''),
+                    ('gen', 'Productos del inventario', 'bi-box-seam', '', 'GENERAL'), ('ins', 'Insumos', 'bi-tools', '', 'INSUMOS'), ('dir', 'Uso directo', 'bi-pc-display', '', 'DIRECTO')] %}
+<div class="rq-ver"><span class="t">Qué ver:</span>
+    {% for k, txt, ic, t_, c_ in ver_opts %}{% set on = (f.tipo == t_ and f.clase == c_) %}
+    <a href="{{ url_for('oc_precios', **dict(base_args, vista='rapido', orden=orden, tipo=t_, clase=c_, todos=('' if solo_multi else '1'))) }}" class="{{ 'on' if on }}"><i class="bi {{ ic }}"></i> {{ txt }}</a>{% endfor %}
+    {% if f.familia or f.calidad or f.codigo %}<span class="t ms-2">Filtrando:</span>
+        {% for campo, val in [('familia', f.familia), ('calidad', f.calidad), ('codigo', f.codigo)] if val %}
+        <a class="on fil" href="{{ url_for('oc_precios', **dict(base_args, vista='rapido', orden=orden, todos=('' if solo_multi else '1'), **{campo: ''})) }}" title="Quitar">{{ {'familia': 'Familia', 'calidad': 'Calidad', 'codigo': 'Código'}[campo] }}: {{ val }} ✕</a>{% endfor %}{% endif %}
 </div>
 <div class="ayuda-mp"><i class="bi bi-info-circle"></i> Cada tarjeta es un producto, insumo o servicio. En <b style="color:#15803d;">verde</b> el <b>mejor precio</b> que conseguimos y a quién;
     al lado la <b>última compra</b> y un consejo para la próxima. Toca el número de la orden para <b>abrirla en el sistema, ver su PDF o descargar sus documentos</b>.
@@ -402,4 +435,5 @@ document.querySelectorAll('[data-det]').forEach(b => b.addEventListener('click',
 }));
 </script>
 {% if vista == 'productos' %}{{ gr.librerias() }}{% endif %}
+<script src="{{ url_for('static', filename='js/filtros.js') }}?v=1"></script>
 {% endblock %}

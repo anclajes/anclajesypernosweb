@@ -45,6 +45,8 @@ def oc_lista():
     creador = a.get('creador', type=int)
     contable_f = a.get('contable', '')          # 'si' = solo tema contable · 'no' = sin tema contable
     contable_f = contable_f if contable_f in ('si', 'no') else ''
+    importacion_f = a.get('importacion', '')    # 'si' = solo importaciones · 'no' = solo compras nacionales
+    importacion_f = importacion_f if importacion_f in ('si', 'no') else ''
     desde, hasta = _fecha_param('desde', None), _fecha_param('hasta', None)
     buscar = ' '.join((a.get('q') or '').split())
     docs = {}
@@ -67,6 +69,8 @@ def oc_lista():
         if creador and o.creado_por_id != creador:
             continue
         if contable_f and bool(o.es_contable) != (contable_f == 'si'):
+            continue
+        if importacion_f and bool(o.es_importacion) != (importacion_f == 'si'):
             continue
         if pago_f:
             niv = pagos[o.id]['nivel']
@@ -113,8 +117,9 @@ def oc_lista():
     # quién creó la orden (la cuenta que la registró)
     creadores = sorted({(o.creado_por_id, o.creado_por.nombre_completo or o.creado_por.username) for o in todas if o.creado_por},
                        key=lambda x: _clave_alfabetica(x[1] or ''))
-    filtros_activos = sum(1 for x in (tipo, destino, prov_id, solicitante, motivo, pago_f, docs_f, desde, hasta, creador, contable_f) if x)
+    filtros_activos = sum(1 for x in (tipo, destino, prov_id, solicitante, motivo, pago_f, docs_f, desde, hasta, creador, contable_f, importacion_f) if x)
     n_contables = sum(1 for o in todas if o.es_contable)
+    n_importaciones = sum(1 for o in todas if o.es_importacion and en_vista(o, vista))
     contables_por_confirmar = sum(1 for o in todas if o.es_contable and o.estado == 'CONFORME' and not o.fecha_kardex)
     directos_por_entregar = sum(1 for o in todas if o.destino == 'DIRECTO' and o.estado == 'CONFORME' and not o.fecha_kardex)
     return render_template('oc_lista.html', ordenes=ordenes, vista=vista, vistas_orden=VISTAS_OC_ORDEN,
@@ -123,6 +128,7 @@ def oc_lista():
                            desde=desde, hasta=hasta, buscar=buscar, hoy=hoy, pagos=pagos, atrasos=atrasos, kpi=kpi, resumen=resumen,
                            total_filtrado=total_filtrado, proveedores=proveedores, solicitantes=solicitantes, motivos=motivos,
                            creadores=creadores, creador=creador, contable_f=contable_f, n_contables=n_contables,
+                           importacion_f=importacion_f, n_importaciones=n_importaciones,
                            contables_por_confirmar=contables_por_confirmar, directos_por_entregar=directos_por_entregar,
                            filtros_activos=filtros_activos, estados=ESTADOS_OC, tipos=TIPOS_OC, destinos=DESTINOS_OC, monedas=MONEDAS_OC,
                            puede_editar=rol in ROLES_OC_EDITAN, aprueba=rol in ROLES_OC_APRUEBAN, seccion='lista', emp_sel=emp_sel, conteo_emp=conteo_emp, empresas_oc=EMPRESAS_OC)
