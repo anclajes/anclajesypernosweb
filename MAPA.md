@@ -269,9 +269,14 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
   revisan `_oc_bloqueo_devuelta`; permisos ingresar/insumos/confirmar_contable/entregar_directo = False. En Ingresos pendientes se ve con
   banner rojo y sin botones (`.oc-card.devuelta`), y arriba la lista "Devueltas a Logística para corregir" (en qué está cada una).
   La barra de Almacén muestra "N devuelta(s) a Logística" (`_pendientes_almacen()['dev']`).
+  En Órdenes de compra: pestaña "↩ Devueltas por Almacén" (vista `devueltas` en VISTAS_OC_ORDEN/VISTAS_OC_EXTRA; `en_vista` usa
+  `devuelta_almacen`), late en rojo si hay alguna, más la tarjeta KPI "Devueltas por Almacén" y un recuadro con motivo y en qué está cada una.
 - Logística (banner con acciones en el detalle, `banner` + `modales_logistica`):
   · Error en la ORDEN → "Editar la orden" (`reeditar`, vuelve a Gerencia; `oc_editar` precarga el motivo "Corrección pedida por … (Almacén)").
     Gerencia ve "corrección pedida por Almacén" en la notificación y el banner. `oc_aprobar` llama `_oc_devolucion_cerrar(orden, 'REAPROBADA')`.
+    Con la orden devuelta se puede BAJAR la cantidad por debajo de lo registrado como llegado (mínimo: lo ya ingresado al inventario;
+    `_leer_orden_form`): al guardar, `_aplicar_datos_orden` ajusta solo las entregas (última primero, sin tocar lo ingresado; borra las que
+    quedan vacías) y deja el evento ENTREGA_CORREGIDA. Ej.: OC 3,000 registrada como llegada 3,000, real 1,820 → se edita a 1,820 y listo.
   · Error en lo que se registró que LLEGÓ → "Corregir lo que llegó" (`oc_entrega_corregir`, POST /ordenes/entrega/<id>/corregir): solo ítems
     sin ingresar, tope = pedido − cancelado − lo de otras entregas; 0 quita el ítem; entrega vacía se borra (sus docs quedan sin entrega);
     recalcula estado con `_oc_etapa_por_entregas`; evento ENTREGA_CORREGIDA. No va a Gerencia.

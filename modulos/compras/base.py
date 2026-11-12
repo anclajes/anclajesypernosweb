@@ -76,8 +76,8 @@ VISTAS_OC = {
     'todas': ('Todas', list(ESTADOS_OC)),
 }
 # Vistas que no dependen solo del estado (se calculan): atrasadas y por pagar
-VISTAS_OC_ORDEN = ['curso', 'aprobar', 'recibir', 'atrasadas', 'conformes', 'por_pagar', 'pagadas', 'cerradas', 'todas']
-VISTAS_OC_EXTRA = {'atrasadas': 'Atrasadas', 'por_pagar': 'Por pagar', 'pagadas': 'Pagadas'}
+VISTAS_OC_ORDEN = ['curso', 'aprobar', 'recibir', 'atrasadas', 'devueltas', 'conformes', 'por_pagar', 'pagadas', 'cerradas', 'todas']
+VISTAS_OC_EXTRA = {'atrasadas': 'Atrasadas', 'devueltas': '↩ Devueltas por Almacén', 'por_pagar': 'Por pagar', 'pagadas': 'Pagadas'}
 CATALOGOS_OC = {'OC_UM': 'Unidades de medida (U.M.)', 'OC_CONDICION_PAGO': 'Condiciones de pago', 'OC_SERVICIO': 'Tipos de servicio (OS)',
                 'OC_AREA': 'Áreas que solicitan', 'OC_SOLICITANTE': 'Otros solicitantes',
                 'OC_DIRECTO_CATEGORIA': 'Categorías de uso directo', 'OC_DIRECTO_UBICACION': 'Ubicaciones (uso directo)',
@@ -1354,7 +1354,13 @@ def _leer_orden_form(f, orden=None):
                 errores.append(f'"{it.descripcion[:45]}" ya llegó ({_cant_txt(llego)} {it.um}): no se puede quitar de la orden ni cambiar de producto.')
                 continue
             usados.add(k)
-            if items[k]['cantidad'] < llego - 1e-9:
+            if orden.devuelta_almacen:
+                # devuelta por Almacén: se puede bajar de lo que se registró como llegado (se corrige la entrega sola al guardar),
+                # pero nunca de lo que YA entró al inventario
+                ingresado = rec['items'][it.id]['ingresado']
+                if items[k]['cantidad'] < ingresado - 1e-9:
+                    errores.append(f'"{it.descripcion[:45]}": ya se INGRESARON al inventario {_cant_txt(ingresado)} {it.um}; la cantidad no puede ser menor.')
+            elif items[k]['cantidad'] < llego - 1e-9:
                 errores.append(f'"{it.descripcion[:45]}": ya llegaron {_cant_txt(llego)} {it.um}; la cantidad no puede ser menor.')
     subtotal = round(sum(i['total'] for i in items), 2)
     datos['subtotal'] = subtotal
@@ -1449,7 +1455,7 @@ def _aplicar_datos_orden(orden, datos, items, prov, contacto=None):
     if entregas_items:
         # re-edición con material ya recibido: lo que llegó sigue enlazado al ítem equivalente de la orden nueva
         db.session.flush()
-        usados = set()
+        usados, corregidas = set(), []
         for v in viejos:
             eis = [ei for ei in entregas_items if ei.item_id == v.id]
             if not eis and not v.cantidad_cancelada:
@@ -1461,7 +1467,33 @@ def _aplicar_datos_orden(orden, datos, items, prov, contacto=None):
             for ei in eis:
                 ei.item_id = nuevos[k].id
             llego = sum(ei.cantidad or 0 for ei in eis)
+            exceso = round(llego - (nuevos[k].cantidad or 0), 4)
+            if orden.devuelta_almacen and exceso > 1e-9:
+                # devuelta por Almacén y la orden ahora pide MENOS de lo que se registró como llegado: se corrige lo que llegó
+                # (primero la última entrega; lo ya ingresado al inventario no se toca)
+                for ei in sorted((x for x in eis if not x.fecha_ingreso), key=lambda x: (x.entrega.numero, x.id), reverse=True):
+                    if exceso <= 1e-9:
+                        break
+                    quita = min(ei.cantidad or 0, exceso)
+                    corregidas.append(f"#{nuevos[k].item} {(nuevos[k].codigo or nuevos[k].descripcion or '')[:30]} entrega {ei.entrega.numero}: "
+                                      f"{_cant_txt(ei.cantidad)} → {_cant_txt(round((ei.cantidad or 0) - quita, 4))}")
+                    ei.cantidad = round((ei.cantidad or 0) - quita, 4)
+                    exceso = round(exceso - quita, 4)
+                    if ei.cantidad <= 1e-9:
+                        ei.entrega.items.remove(ei)          # delete-orphan: se borra al guardar
+                llego = sum(ei.cantidad or 0 for ei in eis if ei.cantidad > 1e-9)
             nuevos[k].cantidad_cancelada = min(v.cantidad_cancelada or 0, max((nuevos[k].cantidad or 0) - llego, 0))
+        if corregidas:
+            db.session.flush()
+            vacias = [e for e in _oc_entregas(orden) if not e.items]
+            for e in vacias:
+                OrdenCompraDocumento.query.filter_by(entrega_id=e.id).update({'entrega_id': None}, synchronize_session=False)
+                db.session.delete(e)
+            db.session.flush()
+            if not _oc_entregas(orden):
+                orden.fecha_llegada, orden.recibido_por_id, orden.fecha_conforme, orden.conforme_por_id = None, None, None, None
+            _oc_evento(orden, 'ENTREGA_CORREGIDA', 'Al editar la orden (corrección pedida por Almacén) se ajustó lo que llegó: ' + '; '.join(corregidas)
+                       + (f' · se quitaron {len(vacias)} entrega(s) que quedaron vacías' if vacias else ''))
 
 
 def _req_avisar_orden(orden, antes):

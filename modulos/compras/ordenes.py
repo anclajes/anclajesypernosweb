@@ -28,6 +28,8 @@ def oc_lista():
     def en_vista(o, v):
         if v == 'atrasadas':
             return bool(atrasos[o.id])
+        if v == 'devueltas':          # Almacén la devolvió a Logística para corregir (bloqueada para ingresar)
+            return bool(o.devuelta_almacen) and o.estado != 'ANULADA'
         if v == 'por_pagar':
             return pagos[o.id]['habilitado'] and not pagos[o.id]['pagada']
         if v == 'pagadas':
@@ -107,7 +109,7 @@ def oc_lista():
         r['total'] += o.total or 0
         if pagos[o.id]['habilitado'] and not pagos[o.id]['pagada']:
             r['pendiente'] += o.total or 0
-    kpi = {'aprobar': conteo['aprobar'], 'atrasadas': conteo['atrasadas'],
+    kpi = {'aprobar': conteo['aprobar'], 'atrasadas': conteo['atrasadas'], 'devueltas': conteo['devueltas'],
            'vencidas': sum(1 for x in pagos.values() if x['nivel'] == 'vencida'),
            'por_vencer': sum(1 for x in pagos.values() if x['nivel'] == 'por_vencer'),
            'ingresar': sum(len(eis) for o_, _, eis in _entregas_por_ingresar() if emp_sel == 'TODAS' or (o_.empresa or 'ANCLAJES') == emp_sel)}

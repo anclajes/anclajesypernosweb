@@ -33,6 +33,15 @@
     .vistas a.on { background: #0f172a; color: #fff; border-color: #0f172a; }
     .vistas a .c { opacity: .7; margin-left: 3px; }
     .vistas a.alerta:not(.on) { border-color: #fca5a5; color: #b91c1c; }
+    .vistas a.v-dev.alerta:not(.on) { background: #fef2f2; border-width: 2px; border-color: #dc2626; animation: vDevLate 2s ease-out infinite; }
+    .vistas a.v-dev.on { background: #dc2626; border-color: #dc2626; }
+    .vistas a.v-dev.cero:not(.on) { opacity: .55; }
+    .kpi-dev { animation: vDevLate 2s ease-out infinite; }
+    @keyframes vDevLate { 0% { box-shadow: 0 0 0 0 rgba(220,38,38,.4); } 70% { box-shadow: 0 0 0 8px rgba(220,38,38,0); } 100% { box-shadow: 0 0 0 0 rgba(220,38,38,0); } }
+    @media (prefers-reduced-motion: reduce) { .vistas a.v-dev, .kpi-dev { animation: none !important; } }
+    .dev-l { background: #fef2f2; border: 1px solid #fca5a5; border-left: 5px solid #dc2626; border-radius: 10px; padding: 8px 12px; margin-bottom: 10px; font-size: .8rem; color: #7f1d1d; }
+    .dev-l .f { display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: baseline; padding: 4px 0; border-top: 1px dashed #fecaca; }
+    .dev-l .f .m { flex: 1 1 260px; min-width: 0; overflow-wrap: anywhere; }
     .filtros { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; }
     .filtros label { font-size: .68rem; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: .03em; margin-bottom: 1px; }
     .resumen { font-size: .78rem; color: #475569; margin-bottom: 8px; display: flex; flex-wrap: wrap; gap: 4px 14px; }
@@ -87,6 +96,7 @@
     <a class="kpi {{ 'cero' if not kpi.aprobar }}" style="--k:#f59e0b;" href="{{ url_for('oc_lista', vista='aprobar') }}"><i class="bi bi-hourglass-split"></i><div><div class="n">{{ kpi.aprobar }}</div><div class="t">Por aprobar</div></div></a>
     {% endif %}
     <a class="kpi {{ 'cero' if not kpi.atrasadas }}" style="--k:#dc2626;" href="{{ url_for('oc_lista', vista='atrasadas') }}"><i class="bi bi-alarm"></i><div><div class="n">{{ kpi.atrasadas }}</div><div class="t">Atrasadas<br>(no llega el material)</div></div></a>
+    {% if kpi.devueltas %}<a class="kpi kpi-dev" style="--k:#dc2626;" href="{{ url_for('oc_lista', vista='devueltas') }}"><i class="bi bi-arrow-return-left"></i><div><div class="n">{{ kpi.devueltas }}</div><div class="t">Devueltas por Almacén<br>(corregir para ingresar)</div></div></a>{% endif %}
     <a class="kpi {{ 'cero' if not kpi.vencidas }}" style="--k:#b91c1c;" href="{{ url_for('oc_lista', vista='por_pagar', pago='vencida') }}"><i class="bi bi-exclamation-octagon"></i><div><div class="n">{{ kpi.vencidas }}</div><div class="t">Pagos vencidos</div></div></a>
     <a class="kpi {{ 'cero' if not kpi.por_vencer }}" style="--k:#d97706;" href="{{ url_for('oc_lista', vista='por_pagar', pago='por_vencer') }}"><i class="bi bi-calendar2-week"></i><div><div class="n">{{ kpi.por_vencer }}</div><div class="t">Pagos por vencer<br>(5 días o menos)</div></div></a>
     <a class="kpi {{ 'cero' if not kpi.ingresar }}" style="--k:#0369a1;" href="{{ url_for('oc_ingresos_pendientes') if session.get('role') in ['admin', 'logistica'] else url_for('oc_lista', vista='conformes') }}"><i class="bi bi-box-arrow-in-down"></i><div><div class="n">{{ kpi.ingresar }}</div><div class="t">Ítems por ingresar<br>al inventario</div></div></a>
@@ -94,7 +104,7 @@
 
 <div class="vistas">
     {% for k in vistas_orden %}
-    <a href="{{ url_vista(k) }}" class="{{ 'on' if k == vista }} {{ 'alerta' if k == 'atrasadas' and conteo[k] }}">{{ nombres_vista[k] }}<span class="c">{{ conteo[k] }}</span></a>
+    <a href="{{ url_vista(k) }}" class="{{ 'on' if k == vista }} {{ 'alerta' if k in ['atrasadas', 'devueltas'] and conteo[k] }} {{ 'v-dev' if k == 'devueltas' }} {{ 'cero' if k == 'devueltas' and not conteo[k] }}">{{ nombres_vista[k] }}<span class="c">{{ conteo[k] }}</span></a>
     {% endfor %}
 </div>
 
@@ -171,6 +181,16 @@
     Para rechazar u observar, abre la orden con <b>Ver</b>.</div>
 {% elif vista == 'atrasadas' and ordenes %}
 <div class="alert alert-danger py-2 small"><i class="bi bi-alarm-fill"></i> Órdenes <b>aprobadas</b> cuya fecha de entrega ya pasó y el material todavía no llega. Llama al proveedor y deja una observación en la orden.</div>
+{% elif vista == 'devueltas' %}
+<div class="dev-l"><div class="mb-1"><i class="bi bi-arrow-return-left"></i> <b>Órdenes que Almacén devolvió a Logística</b> porque, al ir a ingresarlas, algo no cuadraba.
+    Están <b>bloqueadas</b> para ingresar hasta que se corrijan: abre cada una y usa <b>Editar la orden</b> (vuelve a Gerencia), <b>Corregir lo que llegó</b> o <b>Listo, devolver a Almacén</b>.
+    {% if emp_sel != 'TODAS' %}<a href="{{ url_for('oc_lista', empresa='TODAS', vista='devueltas') }}" class="fw-bold">Ver las de las dos empresas</a>{% endif %}</div>
+    {% for o in ordenes %}<div class="f"><a class="fw-bold" href="{{ url_for('oc_detalle', orden_id=o.id) }}#devolucion">{{ oc_codigo(o) }}</a>
+        <span>{{ o.razon_social }}</span><span class="m">{{ o.devolucion_motivo or '' }}</span>
+        <span class="fw-bold">{{ 'Espera re-aprobación de Gerencia' if o.estado == 'ENVIADA' else ('Logística corrigiendo' if o.estado in ['RECHAZADA', 'BORRADOR'] else 'Por corregir') }}</span>
+        <span class="text-muted">{{ o.fecha_devuelta.strftime('%d/%m %H:%M') if o.fecha_devuelta else '' }}{% if o.devuelta_por %} · {{ o.devuelta_por.nombre_completo }}{% endif %}</span></div>
+    {% else %}<div class="f">No hay órdenes devueltas{{ ' en esta empresa' if emp_sel != 'TODAS' }}. <i class="bi bi-check2-circle"></i></div>{% endfor %}
+</div>
 {% elif vista == 'por_pagar' %}
 <div class="alert alert-light border py-2 small"><i class="bi bi-cash-coin text-success"></i> Aprobadas por Gerencia y todavía <b>sin pagar</b>. Las de <b>crédito</b> avisan cuando faltan {{ 5 }} días o menos y cuando vencen;
     las de <b>contado</b> no tienen vencimiento. Para marcarla pagada se pide la <b>factura</b>.</div>
