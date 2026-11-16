@@ -9,7 +9,7 @@
 # Tope deducible por trabajador y día: 4% de la RMV (se avisa, no se bloquea). Ver MAPA.md.
 # Este archivo NO se importa: app.py lo carga (MODULOS_EN_ARCHIVOS), como si su código estuviera escrito ahí.
 # =====================================================================================
-from models import OrdenCompraMovilidad
+from models import OrdenCompraMovilidad, OCMovilidadTrabajador
 
 ROLES_MOV_VEN = ['admin', 'logistica', 'administracion']          # ven, crean, editan y firman (los mismos que ven la orden)
 ROLES_MOV_ANULAN = ['admin', 'logistica']                         # anulan y quitan la firma
@@ -20,6 +20,9 @@ MOV_MONTO_MAX = 9999.99
 MOV_MOTIVOS = ['RECOJO DE MATERIAL', 'ENCOMIENDA DE MATERIAL', 'ENVÍO DE MATERIAL POR AGENCIA', 'ENTREGA DE MATERIAL AL CLIENTE',
                'LLEVAR MATERIAL AL SERVICIO', 'RECOGER MATERIAL DEL SERVICIO', 'COMPRA DE MATERIAL', 'ENTREGA / RECOJO DE DOCUMENTOS',
                'PAGO / DEPÓSITO AL PROVEEDOR', 'VISITA AL PROVEEDOR']
+# "Elegir del sistema": las cuentas agrupadas por rol (en este orden). Los auditores no aparecen.
+MOV_ROLES_ORDEN = ['logistica', 'almacen', 'chofer', 'vendedor', 'administracion', 'admin', 'almacen_visor']
+MOV_ROLES_FUERA = ('auditor_stock',)
 MOV_MESES = ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO', 'AGOSTO', 'SETIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE']
 MOV_BASE_LEGAL = ('Base Legal: Inciso a1) del artículo 37º del TUO de la Ley del Impuesto a la Renta e inciso v) del artículo 21º del '
                   'Reglamento de la Ley del Impuesto a la Renta.')
@@ -33,6 +36,7 @@ def _asegurar_mov():
     global _mov_ok
     if not _mov_ok:
         OrdenCompraMovilidad.__table__.create(bind=db.engine, checkfirst=True)
+        OCMovilidadTrabajador.__table__.create(bind=db.engine, checkfirst=True)
         _mov_ok = True
 
 
@@ -210,13 +214,156 @@ def _mov_guardar_firma(m, data_url, claves):
     return viejo
 
 
+# ---------------------------- trabajadores guardados (para que se llenen solos) ----------------------------
+def _mov_rol_fuera(rol):
+    return (rol or '') in MOV_ROLES_FUERA or 'auditor' in (rol or '')
+
+
+def _mov_dni_valido(dni):
+    return bool(re.fullmatch(r'\d{8}', dni or '') or re.fullmatch(r'[0-9A-Z]{9,12}', dni or ''))
+
+
+def _mov_trab_json(t):
+    return {'id': t.id, 'nombre': t.nombre, 'dni': t.dni, 'cargo': t.cargo or '', 'user_id': t.user_id, 'activo': bool(t.activo),
+            'usuario': t.usuario.nombre_completo if t.usuario else '', 'rol': ROLE_LABELS.get(t.usuario.role, t.usuario.role) if t.usuario else ''}
+
+
+def _mov_opciones_trabajador():
+    """Opciones de "Elegir del sistema": cuentas por rol (sin auditores) + trabajadores guardados sin cuenta.
+    Cada opción trae nombre y DNI si ya se guardaron (o de su última planilla)."""
+    cat = OCMovilidadTrabajador.query.all()
+    por_user = {t.user_id: t for t in cat if t.user_id and t.activo}
+    previo_user = {}
+    for uid, nombre, dni in (db.session.query(OrdenCompraMovilidad.trabajador_user_id, OrdenCompraMovilidad.trabajador_nombre, OrdenCompraMovilidad.trabajador_dni)
+                             .filter(OrdenCompraMovilidad.trabajador_user_id.isnot(None)).order_by(OrdenCompraMovilidad.id).all()):
+        previo_user[uid] = (nombre, dni)
+    usuarios = [u for u in User.query.filter(User.desactivado.isnot(True)).order_by(User.nombre_completo).all() if not _mov_rol_fuera(u.role)]
+    repetidos = {}
+    for u in usuarios:
+        k = ' '.join((u.nombre_completo or '').split()).upper()
+        repetidos[k] = repetidos.get(k, 0) + 1
+    roles = [r for r in MOV_ROLES_ORDEN if r in ROLE_LABELS] + [r for r in ROLE_LABELS if r not in MOV_ROLES_ORDEN]
+    grupos, vistos = [], set()
+
+    def opcion(u):
+        t = por_user.get(u.id)
+        pn, pd = previo_user.get(u.id, (None, None))
+        etq = u.nombre_completo + (f" ({u.username})" if repetidos.get(' '.join((u.nombre_completo or '').split()).upper(), 0) > 1 else '')
+        return {'v': f'u:{u.id}', 'txt': etq, 'nombre': (t.nombre if t else (pn or u.nombre_completo or '')).upper(), 'dni': (t.dni if t else pd) or '',
+                'guardado': bool(t), 'user_id': u.id, 'trab_id': t.id if t else None}
+    for rol in roles:
+        if _mov_rol_fuera(rol):
+            continue
+        items = [opcion(u) for u in usuarios if u.role == rol]
+        vistos.update(i['user_id'] for i in items)
+        if items:
+            grupos.append({'label': ROLE_LABELS.get(rol, rol), 'items': items})
+    resto = [opcion(u) for u in usuarios if u.id not in vistos]
+    if resto:
+        grupos.append({'label': 'Otras cuentas', 'items': resto})
+    otros = sorted((t for t in cat if t.activo and not t.user_id), key=lambda t: t.nombre)
+    if otros:
+        grupos.append({'label': 'Otros trabajadores (sin cuenta en el sistema)',
+                       'items': [{'v': f't:{t.id}', 'txt': t.nombre + (f' · {t.cargo}' if t.cargo else ''), 'nombre': t.nombre, 'dni': t.dni,
+                                  'guardado': True, 'user_id': None, 'trab_id': t.id} for t in otros]})
+    return grupos
+
+
+def _mov_datos_trabajadores():
+    usuarios = [{'id': u.id, 'nombre': u.nombre_completo + (f" ({u.username})" if u.username else ''), 'rol': ROLE_LABELS.get(u.role, u.role)}
+                for u in User.query.filter(User.desactivado.isnot(True)).order_by(User.nombre_completo).all() if not _mov_rol_fuera(u.role)]
+    catalogo = [_mov_trab_json(t) for t in OCMovilidadTrabajador.query.order_by(OCMovilidadTrabajador.activo.desc(), OCMovilidadTrabajador.nombre).all()]
+    return {'status': 'success', 'grupos': _mov_opciones_trabajador(), 'catalogo': catalogo, 'usuarios': usuarios}
+
+
+def _mov_guardar_trabajador(nombre, dni, user_id=None, trab_id=None, cargo=None, quien=''):
+    """Crea o actualiza un trabajador guardado. Devuelve (trabajador, None) o (None, error). Sin commit."""
+    nombre = ' '.join((nombre or '').split()).upper()[:150]
+    dni = re.sub(r'[^0-9A-Za-z]', '', dni or '').upper()[:12]
+    if len(nombre) < 5:
+        return None, 'Escribe los nombres y apellidos (como en el DNI).'
+    if not _mov_dni_valido(dni):
+        return None, 'El DNI debe tener 8 dígitos (o el carné de extranjería, de 9 a 12).'
+    if user_id:
+        u = User.query.get(user_id)
+        if not u or _mov_rol_fuera(u.role):
+            return None, 'Esa cuenta no se puede usar.'
+    t = OCMovilidadTrabajador.query.get(trab_id) if trab_id else None
+    if not t and user_id:
+        t = OCMovilidadTrabajador.query.filter_by(user_id=user_id).first()
+    if not t:
+        t = OCMovilidadTrabajador.query.filter_by(dni=dni, user_id=None).first() if not user_id else None
+    otro = OCMovilidadTrabajador.query.filter(OCMovilidadTrabajador.dni == dni, OCMovilidadTrabajador.activo.isnot(False)).first()
+    if otro and (not t or otro.id != t.id):
+        return None, f'Ese DNI ya está guardado para {otro.nombre}.'
+    ahora = hora_peru()
+    if not t:
+        t = OCMovilidadTrabajador(creado_por=quien, fecha_creacion=ahora, activo=True)
+        db.session.add(t)
+    else:
+        t.actualizado_por, t.fecha_actualizacion = quien, ahora
+    t.nombre, t.dni, t.activo = nombre, dni, True
+    if user_id:
+        t.user_id = user_id
+    if cargo is not None:
+        t.cargo = ' '.join(cargo.split())[:100] or None
+    return t, None
+
+
+@app.route('/ordenes/movilidad/trabajadores')
+@_ruta_mov(como_json=True)
+def oc_movilidad_trabajadores():
+    return _mov_datos_trabajadores()
+
+
+@app.route('/ordenes/movilidad/trabajador/guardar', methods=['POST'])
+@_ruta_mov(como_json=True)
+def oc_movilidad_trabajador_guardar():
+    """Botón "Guardar para la próxima" del formulario y el formulario del ⚙ (agregar / editar trabajador)."""
+    f = request.form
+    sel = f.get('sel') or ''
+    user_id = f.get('user_id', type=int) or (int(sel[2:]) if sel.startswith('u:') and sel[2:].isdigit() else None)
+    trab_id = f.get('id', type=int) or (int(sel[2:]) if sel.startswith('t:') and sel[2:].isdigit() else None)
+    t, err = _mov_guardar_trabajador(f.get('nombre'), f.get('dni'), user_id, trab_id, f.get('cargo'), session.get('nombre', ''))
+    if err:
+        db.session.rollback()
+        return {'status': 'error', 'msg': err}
+    db.session.commit()
+    d = _mov_datos_trabajadores()
+    d['v'] = f'u:{t.user_id}' if t.user_id else f't:{t.id}'
+    d['msg'] = f'Guardado: {t.nombre} · DNI {t.dni}. La próxima vez se llena solo.'
+    return d
+
+
+@app.route('/ordenes/movilidad/trabajador/<int:trab_id>/activo', methods=['POST'])
+@_ruta_mov(como_json=True)
+def oc_movilidad_trabajador_activo(trab_id):
+    t = OCMovilidadTrabajador.query.get_or_404(trab_id)
+    t.activo = not t.activo
+    if t.activo:
+        otro = OCMovilidadTrabajador.query.filter(OCMovilidadTrabajador.dni == t.dni, OCMovilidadTrabajador.id != t.id,
+                                                  OCMovilidadTrabajador.activo.isnot(False)).first()
+        if otro:
+            db.session.rollback()
+            return {'status': 'error', 'msg': f'Ese DNI ya está guardado para {otro.nombre}.'}
+    t.actualizado_por, t.fecha_actualizacion = session.get('nombre', ''), hora_peru()
+    db.session.commit()
+    return _mov_datos_trabajadores()
+
+
 # ---------------------------- formulario ----------------------------
 def _mov_contexto(orden, m=None, previo=None):
     filas = (previo or {}).get('filas') or (_mov_filas(m) if m else [_mov_fila_sugerida(orden)])
-    usuarios = User.query.filter(User.desactivado.isnot(True)).order_by(User.nombre_completo).all()
     rmv = m.rmv if m and m.rmv else _mov_rmv()
-    return dict(orden=orden, m=m, previo=previo or {}, filas=filas, filas_max=MOV_FILAS_MAX, usuarios=usuarios,
-                trab_previos=_mov_trabajadores_previos(), motivos=_mov_motivos_previos(), empresas_oc=EMPRESAS_OC,
+    sel = (previo or {}).get('trabajador_sel')
+    if sel is None and m:
+        if m.trabajador_user_id:
+            sel = f'u:{m.trabajador_user_id}'
+        else:
+            t = OCMovilidadTrabajador.query.filter_by(dni=m.trabajador_dni, user_id=None).first()
+            sel = f't:{t.id}' if t else ''
+    return dict(orden=orden, m=m, previo=previo or {}, filas=filas, filas_max=MOV_FILAS_MAX, trab_grupos=_mov_opciones_trabajador(), trab_sel=sel or '',
+                motivos=_mov_motivos_previos(), empresas_oc=EMPRESAS_OC,
                 rmv=rmv, tope=_mov_tope(rmv), hoy=hora_peru().date(), seccion='lista', base_legal=MOV_BASE_LEGAL, nota_legal=MOV_NOTA,
                 siguiente={e: _mov_siguiente_numero(e) for e in EMPRESAS_OC}, codigo_oc=_oc_codigo(orden))
 
@@ -300,7 +447,7 @@ def oc_movilidad_guardar(orden_id):
         for e in dict.fromkeys(errores):
             flash('⛔ ' + e)
         previo = {'empresa': empresa, 'fecha_gasto': f.get('fecha_gasto'), 'trabajador_nombre': nombre, 'trabajador_dni': dni,
-                  'trabajador_user_id': f.get('trabajador_user_id', type=int), 'observacion': obs, 'filas': filas}
+                  'trabajador_sel': f.get('trabajador_sel') or '', 'observacion': obs, 'filas': filas}
         return render_template('oc_movilidad_form.html', **_mov_contexto(orden, m, previo))
     ahora = hora_peru()
     nuevo = m is None
@@ -312,7 +459,8 @@ def oc_movilidad_guardar(orden_id):
         m.actualizado_por, m.fecha_actualizacion = session.get('nombre', ''), ahora
     m.fecha_gasto, m.periodo = fecha, _mov_periodo(fecha)
     m.trabajador_nombre, m.trabajador_dni = nombre, dni
-    uid = f.get('trabajador_user_id', type=int)
+    sel = f.get('trabajador_sel') or ''
+    uid = int(sel[2:]) if sel.startswith('u:') and sel[2:].isdigit() else None
     m.trabajador_user_id = uid if uid and User.query.get(uid) else None
     m.filas = json.dumps(filas, ensure_ascii=False)
     m.total = round(sum(x['monto'] for x in filas), 2)
@@ -321,6 +469,8 @@ def oc_movilidad_guardar(orden_id):
     claves = []
     try:
         db.session.flush()
+        if not OCMovilidadTrabajador.query.filter(OCMovilidadTrabajador.dni == dni, OCMovilidadTrabajador.activo.isnot(False)).first():
+            _mov_guardar_trabajador(nombre, dni, m.trabajador_user_id, None, None, session.get('nombre', ''))
         if f.get('firma_png'):
             _mov_guardar_firma(m, f.get('firma_png'), claves)
         _mov_evento(m, ('creada' if nuevo else 'editada') + f" · {m.trabajador_nombre} (DNI {m.trabajador_dni}) · {m.fecha_gasto.strftime('%d/%m/%Y')}"

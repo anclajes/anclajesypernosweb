@@ -107,7 +107,7 @@
 </div>
 
 <form method="POST" id="formAnular" action="{{ url_for('insumos_salida_anular', salida_id=sal.id) }}" class="d-none"><input type="hidden" name="motivo" id="motivoAnular"></form>
-<script src="{{ url_for('static', filename='js/firma.js') }}?v=1"></script>
+<script src="{{ url_for('static', filename='js/firma.js') }}?v=2"></script>
 <script>
 const padEl = document.getElementById('padFirma');
 const pad = padEl ? FirmaPad(padEl) : null;

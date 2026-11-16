@@ -2,7 +2,7 @@
  * Uso: const pad = FirmaPad(canvas); pad.limpiar(); pad.vacia(); pad.png() */
 window.FirmaPad = function (canvas) {
     const ctx = canvas.getContext('2d');
-    let dibujando = false, trazos = 0, ultimo = null;
+    let dibujando = false, trazos = 0, ultimo = null, version = 0;
     function ajustar() {
         const r = canvas.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
         const copia = trazos ? canvas.toDataURL() : null;
@@ -10,7 +10,7 @@ window.FirmaPad = function (canvas) {
         canvas.height = Math.max(1, Math.round(r.height * dpr));
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.lineWidth = 2.2; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#0f172a';
-        if (copia) { const img = new Image(); img.onload = () => ctx.drawImage(img, 0, 0, r.width, r.height); img.src = copia; }
+        if (copia) { const v = ++version; const img = new Image(); img.onload = () => { if (v === version && trazos) ctx.drawImage(img, 0, 0, r.width, r.height); }; img.src = copia; }
     }
     function punto(e) {
         const r = canvas.getBoundingClientRect();
@@ -29,7 +29,9 @@ window.FirmaPad = function (canvas) {
     window.addEventListener('resize', ajustar);
     ajustar();
     return {
-        limpiar() { ctx.clearRect(0, 0, canvas.width, canvas.height); trazos = 0; },
+        // Se borra TODO el lienzo en píxeles reales: con el zoom del navegador por debajo de 100% (devicePixelRatio < 1)
+        // la escala dejaba sin borrar la parte derecha y de abajo.
+        limpiar() { version++; ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.restore(); trazos = 0; ultimo = null; dibujando = false; },
         vacia() { return trazos < 5; },
         png() {
             // Fondo blanco para que se vea bien en el PDF

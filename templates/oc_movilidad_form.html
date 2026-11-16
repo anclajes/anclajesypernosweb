@@ -79,21 +79,24 @@
                 <input type="date" name="fecha_gasto" id="fechaGasto" class="form-control" required max="{{ hoy.isoformat() }}"
                        value="{{ pv.fecha_gasto or (m.fecha_gasto.isoformat() if m else hoy.isoformat()) }}">
                 <div class="form-text" id="periodoTxt"></div></div>
-            <div class="col-12 col-md-3"><label class="small fw-bold">Elegir del sistema <span class="fw-normal text-muted">(opcional)</span></label>
-                <select name="trabajador_user_id" id="selUsuario" class="form-select">
-                    <option value="">— Otro / escribir —</option>
-                    {% set uid_sel = pv.trabajador_user_id or (m.trabajador_user_id if m else none) %}
-                    {% for u in usuarios %}<option value="{{ u.id }}" data-nombre="{{ u.nombre_completo|upper }}" {{ 'selected' if u.id == uid_sel }}>{{ u.nombre_completo }}</option>{% endfor %}
-                </select></div>
-            <div class="col-12 col-md-4"><label class="small fw-bold">Nombres y apellidos *</label>
-                <input name="trabajador_nombre" id="trabNombre" class="form-control text-uppercase" list="dlTrab" maxlength="150" required autocomplete="off"
-                       value="{{ pv.trabajador_nombre or (m.trabajador_nombre if m else '') }}" placeholder="Como figura en su DNI">
-                <datalist id="dlTrab">{% for t in trab_previos %}<option value="{{ t.nombre }}">DNI {{ t.dni }}</option>{% endfor %}</datalist></div>
-            <div class="col-12 col-md-2"><label class="small fw-bold">D.N.I. *</label>
+            <div class="col-12 col-md-9"><label class="small fw-bold">Elegir trabajador <span class="fw-normal text-muted">(se llenan solos su nombre y DNI)</span></label>
+                <div class="input-group">
+                    <select name="trabajador_sel" id="selTrab" class="form-select" data-sel="{{ trab_sel }}"></select>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#mTrab" title="Agregar o editar trabajadores (también los que no tienen cuenta en el sistema)">
+                        <i class="bi bi-gear"></i> <span class="d-none d-sm-inline">Trabajadores</span></button>
+                </div>
+                <div class="form-text" id="selTxt">Por rol. <b>✓</b> = ya tiene su DNI guardado. ¿No está? Pulsa <b>⚙ Trabajadores</b> y agrégalo.</div></div>
+            <div class="col-12 col-md-6"><label class="small fw-bold">Nombres y apellidos *</label>
+                <input name="trabajador_nombre" id="trabNombre" class="form-control text-uppercase" maxlength="150" required autocomplete="off"
+                       value="{{ pv.trabajador_nombre or (m.trabajador_nombre if m else '') }}" placeholder="Como figura en su DNI"></div>
+            <div class="col-7 col-md-3"><label class="small fw-bold">D.N.I. *</label>
                 <div class="input-group"><input name="trabajador_dni" id="trabDni" class="form-control" inputmode="numeric" maxlength="12" required autocomplete="off"
                        value="{{ pv.trabajador_dni or (m.trabajador_dni if m else '') }}" placeholder="8 dígitos">
                     <button type="button" class="btn btn-outline-secondary" id="btnDni" title="Buscar el nombre por DNI (RENIEC)"><i class="bi bi-search"></i></button></div>
                 <div class="form-text" id="dniTxt"></div></div>
+            <div class="col-5 col-md-3 d-flex flex-column justify-content-start"><label class="small fw-bold">&nbsp;</label>
+                <button type="button" class="btn btn-outline-success fw-bold" id="btnGuardarTrab" disabled title="Guarda nombre y DNI de este trabajador para que la próxima vez se llenen solos">
+                    <i class="bi bi-floppy"></i> Guardar para la próxima</button></div>
         </div>
     </div>
 
@@ -152,18 +155,47 @@
 {% endif %}
 </div>
 
+<div class="modal fade" id="mTrab" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable"><div class="modal-content border-0 shadow">
+    <div class="modal-header py-2 text-white" style="background:#3730a3;"><h6 class="modal-title fw-bold text-white"><i class="bi bi-people"></i> Trabajadores para las planillas de movilidad</h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+        <form id="formTrab" class="border rounded-3 p-2 mb-3" style="background:#f8fafc;" autocomplete="off">
+            <input type="hidden" name="id" id="tId">
+            <div class="small fw-bold mb-1" id="tTit">Agregar trabajador</div>
+            <div class="row g-2">
+                <div class="col-12 col-md-4"><label class="small">D.N.I. *</label>
+                    <div class="input-group input-group-sm"><input name="dni" id="tDni" class="form-control" inputmode="numeric" maxlength="12" required placeholder="8 dígitos">
+                        <button type="button" class="btn btn-outline-secondary" id="tBuscar" title="Buscar el nombre (RENIEC)"><i class="bi bi-search"></i></button></div></div>
+                <div class="col-12 col-md-8"><label class="small">Nombres y apellidos * <span class="text-muted">(como en el DNI)</span></label>
+                    <input name="nombre" id="tNombre" class="form-control form-control-sm text-uppercase" maxlength="150" required></div>
+                <div class="col-12 col-md-6"><label class="small">Su cuenta del sistema <span class="text-muted">(si tiene)</span></label>
+                    <select name="user_id" id="tUser" class="form-select form-select-sm"><option value="">— No usa el sistema —</option></select></div>
+                <div class="col-8 col-md-4"><label class="small">Cargo <span class="text-muted">(opcional)</span></label>
+                    <input name="cargo" id="tCargo" class="form-control form-control-sm" maxlength="100" placeholder="Ej: chofer, practicante"></div>
+                <div class="col-4 col-md-2 d-flex align-items-end gap-1"><button class="btn btn-sm btn-primary fw-bold w-100">Guardar</button></div>
+            </div>
+            <div class="small mt-1" id="tMsg"></div>
+            <button type="button" class="btn btn-sm btn-link px-0 d-none" id="tNuevo">+ Agregar otro (limpiar)</button>
+        </form>
+        <div class="table-responsive"><table class="table table-sm align-middle mb-0" style="font-size:.8rem;">
+            <thead class="table-light"><tr><th>Nombre</th><th>DNI</th><th>Cuenta / cargo</th><th></th></tr></thead>
+            <tbody id="tLista"><tr><td colspan="4" class="text-muted">Cargando…</td></tr></tbody>
+        </table></div>
+        <div class="form-text">Los que tienen cuenta aparecen en su rol; los demás, en "Otros trabajadores". Los auditores no se muestran. Desactivar no borra sus planillas.</div>
+    </div>
+</div></div></div>
+
 <template id="tplFila"><tr class="fila">
     <td class="mot"><input name="motivo" class="form-control form-control-sm text-uppercase" list="dlMot" maxlength="120" placeholder="Ej: RECOJO DE MATERIAL"></td>
     <td class="des"><input name="destino" class="form-control form-control-sm text-uppercase" maxlength="200" placeholder="Destino"></td>
     <td class="n"><input name="monto" class="form-control form-control-sm text-end monto" inputmode="decimal" placeholder="0.00"></td>
     <td class="x"><button type="button" class="btn btn-sm btn-outline-danger quitar" title="Quitar"><i class="bi bi-x-lg"></i></button></td>
 </tr></template>
-<script src="{{ url_for('static', filename='js/firma.js') }}?v=1"></script>
+<script src="{{ url_for('static', filename='js/firma.js') }}?v=2"></script>
 <script>
 (function () {
     const MESES = ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO', 'AGOSTO', 'SETIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'];
     const TOPE = {{ tope|tojson }}, MAX = {{ filas_max|tojson }};
-    const PREVIOS = {{ trab_previos|tojson }};
     const form = document.getElementById('formMov'), tbody = document.getElementById('filas');
     window.pad = FirmaPad(document.getElementById('padFirma'));
     const num = t => { const v = parseFloat(String(t || '').replace(',', '.').replace(/[^0-9.]/g, '')); return isFinite(v) ? v : 0; };
@@ -197,23 +229,95 @@
     form.querySelectorAll('input[name=empresa]').forEach(r => r.addEventListener('change', () => {
         {% if not m %}document.getElementById('numPrev').textContent = 'N° ' + r.dataset.sig;{% endif %}
     }));
-    // trabajador: del sistema, de planillas anteriores o por DNI (RENIEC)
+    // trabajador: elegido de la lista (por rol), guardado para la próxima, o por DNI (RENIEC)
     const nom = document.getElementById('trabNombre'), dni = document.getElementById('trabDni'), dniTxt = document.getElementById('dniTxt');
-    function dniDe(n) { const p = PREVIOS.find(x => x.nombre === (n || '').trim().toUpperCase()); return p ? p.dni : ''; }
-    document.getElementById('selUsuario').addEventListener('change', e => {
-        const o = e.target.selectedOptions[0]; if (!o || !o.dataset.nombre) return;
-        nom.value = o.dataset.nombre; const d = dniDe(nom.value);
-        if (d) { dni.value = d; dniTxt.textContent = 'DNI de planillas anteriores'; } else { dni.value = ''; dni.focus(); dniTxt.textContent = 'Escribe su DNI'; }
+    const sel = document.getElementById('selTrab'), selTxt = document.getElementById('selTxt'), btnG = document.getElementById('btnGuardarTrab');
+    const URL_TRAB = {{ url_for('oc_movilidad_trabajadores')|tojson }}, URL_TRAB_G = {{ url_for('oc_movilidad_trabajador_guardar')|tojson }};
+    let GRUPOS = {{ trab_grupos|tojson }}, DATOS = null;
+    const esc = t => String(t ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const opcion = v => { for (const g of GRUPOS) for (const it of g.items) if (it.v === v) return it; return null; };
+    const dniOk = v => /^\d{8}$/.test(v) || /^[0-9A-Z]{9,12}$/.test(v);
+    function pintarSel(v) {
+        sel.innerHTML = '<option value="">— Escribir a mano —</option>' + GRUPOS.map(g => `<optgroup label="${esc(g.label)}">` +
+            g.items.map(it => `<option value="${esc(it.v)}">${it.dni && it.guardado ? '✓ ' : ''}${esc(it.txt)}${it.dni ? ' · DNI ' + esc(it.dni) : ''}</option>`).join('') + '</optgroup>').join('');
+        sel.value = v && opcion(v) ? v : '';
+    }
+    function estadoGuardar() {
+        const it = opcion(sel.value), n = nom.value.trim().toUpperCase().replace(/\s+/g, ' '), d = dni.value.trim().toUpperCase();
+        const valido = n.length >= 5 && dniOk(d), igual = it && it.guardado && it.nombre === n && it.dni === d;
+        btnG.disabled = !valido || igual;
+        btnG.innerHTML = igual ? '<i class="bi bi-check2"></i> Ya está guardado' : '<i class="bi bi-floppy"></i> Guardar para la próxima';
+    }
+    sel.addEventListener('change', () => {
+        const it = opcion(sel.value);
+        if (!it) { selTxt.innerHTML = 'Escribe el nombre y el DNI. Con <b>Guardar para la próxima</b> queda en la lista.'; estadoGuardar(); return; }
+        nom.value = it.nombre; dni.value = it.dni || '';
+        if (it.dni) { selTxt.innerHTML = it.guardado ? '<span class="text-success fw-bold">✓ Nombre y DNI guardados</span>' : 'DNI de su última planilla: pulsa <b>Guardar para la próxima</b> para fijarlo.'; dniTxt.textContent = ''; }
+        else { selTxt.innerHTML = '<span class="text-warning-emphasis fw-bold">Falta su DNI:</span> escríbelo y pulsa <b>Guardar para la próxima</b>.'; dni.focus(); }
+        estadoGuardar();
     });
-    nom.addEventListener('change', () => { const d = dniDe(nom.value); if (d && !dni.value) { dni.value = d; dniTxt.textContent = 'DNI de planillas anteriores'; } });
-    document.getElementById('btnDni').addEventListener('click', () => {
-        const v = dni.value.replace(/\D/g, '');
-        if (v.length !== 8) { dniTxt.textContent = 'El DNI tiene 8 dígitos'; return; }
-        dniTxt.textContent = 'Buscando…';
+    [nom, dni].forEach(i => i.addEventListener('input', estadoGuardar));
+    function aplicar(d, v) {
+        if (!d || d.status !== 'success') return false;
+        GRUPOS = d.grupos; DATOS = d; pintarSel(v === undefined ? sel.value : v); pintarLista(); estadoGuardar(); return true;
+    }
+    btnG.addEventListener('click', () => {
+        const fd = new FormData(); fd.append('sel', sel.value); fd.append('nombre', nom.value); fd.append('dni', dni.value);
+        btnG.disabled = true;
+        fetch(URL_TRAB_G, { method: 'POST', body: fd, credentials: 'same-origin' }).then(r => r.json()).then(d => {
+            if (aplicar(d, d.v)) selTxt.innerHTML = `<span class="text-success fw-bold">✓ ${esc(d.msg)}</span>`;
+            else { selTxt.innerHTML = `<span class="text-danger fw-bold">${esc(d.msg || 'No se pudo guardar')}</span>`; estadoGuardar(); }
+        }).catch(() => { selTxt.textContent = 'No se pudo guardar: revisa tu conexión.'; estadoGuardar(); });
+    });
+    function buscarDni(inputDni, inputNom, txt) {
+        const v = inputDni.value.replace(/\D/g, '');
+        if (v.length !== 8) { txt.textContent = 'El DNI tiene 8 dígitos'; return; }
+        txt.textContent = 'Buscando…';
         const fd = new FormData(); fd.append('dni', v);
         fetch({{ url_for('oc_movilidad_dni')|tojson }}, { method: 'POST', body: fd, credentials: 'same-origin' }).then(r => r.json()).then(d => {
-            if (d.status === 'success') { nom.value = d.nombre; dniTxt.textContent = 'Nombre de ' + d.origen; } else dniTxt.textContent = d.msg || 'No encontrado';
-        }).catch(() => { dniTxt.textContent = 'No se pudo consultar: escríbelo a mano'; });
+            if (d.status === 'success') { inputNom.value = d.nombre; txt.textContent = 'Nombre de ' + d.origen; estadoGuardar(); } else txt.textContent = d.msg || 'No encontrado';
+        }).catch(() => { txt.textContent = 'No se pudo consultar: escríbelo a mano'; });
+    }
+    document.getElementById('btnDni').addEventListener('click', () => buscarDni(dni, nom, dniTxt));
+    pintarSel(sel.dataset.sel); estadoGuardar();
+    // ⚙ Trabajadores: agregar / editar / desactivar
+    const fT = document.getElementById('formTrab'), tMsg = document.getElementById('tMsg');
+    const tId = document.getElementById('tId'), tDni = document.getElementById('tDni'), tNom = document.getElementById('tNombre'), tUser = document.getElementById('tUser'), tCargo = document.getElementById('tCargo');
+    function limpiarT() { fT.reset(); tId.value = ''; document.getElementById('tTit').textContent = 'Agregar trabajador'; document.getElementById('tNuevo').classList.add('d-none'); tMsg.textContent = ''; }
+    function pintarLista() {
+        if (!DATOS) return;
+        const ya = tUser.value;
+        tUser.innerHTML = '<option value="">— No usa el sistema —</option>' + DATOS.usuarios.map(u => `<option value="${u.id}">${esc(u.nombre)} · ${esc(u.rol)}</option>`).join('');
+        tUser.value = ya;
+        const tb = document.getElementById('tLista');
+        tb.innerHTML = DATOS.catalogo.length ? DATOS.catalogo.map(t => `<tr class="${t.activo ? '' : 'text-muted'}">
+            <td><b>${esc(t.nombre)}</b>${t.activo ? '' : ' <span class="badge text-bg-secondary">inactivo</span>'}</td><td>${esc(t.dni)}</td>
+            <td>${t.usuario ? esc(t.usuario) + ' <span class="text-muted">· ' + esc(t.rol) + '</span>' : '<span class="text-muted">sin cuenta</span>'}${t.cargo ? '<br><span class="text-muted">' + esc(t.cargo) + '</span>' : ''}</td>
+            <td class="text-end text-nowrap"><button type="button" class="btn btn-sm btn-outline-primary py-0" data-ed="${t.id}">Editar</button>
+                <button type="button" class="btn btn-sm btn-link py-0 ${t.activo ? 'text-danger' : ''}" data-act="${t.id}">${t.activo ? 'Desactivar' : 'Activar'}</button></td></tr>`).join('')
+            : '<tr><td colspan="4" class="text-muted">Todavía no hay trabajadores guardados. Agrega el primero arriba (o usa "Guardar para la próxima" en la planilla).</td></tr>';
+    }
+    document.getElementById('mTrab').addEventListener('show.bs.modal', () => {
+        fetch(URL_TRAB, { credentials: 'same-origin' }).then(r => r.json()).then(d => aplicar(d)).catch(() => { tMsg.textContent = 'No se pudo cargar la lista.'; });
+    });
+    document.getElementById('tBuscar').addEventListener('click', () => buscarDni(tDni, tNom, tMsg));
+    document.getElementById('tNuevo').addEventListener('click', limpiarT);
+    document.getElementById('tLista').addEventListener('click', e => {
+        const ed = e.target.closest('[data-ed]'), ac = e.target.closest('[data-act]');
+        if (ed) {
+            const t = DATOS.catalogo.find(x => String(x.id) === ed.dataset.ed); if (!t) return;
+            tId.value = t.id; tDni.value = t.dni; tNom.value = t.nombre; tUser.value = t.user_id || ''; tCargo.value = t.cargo;
+            document.getElementById('tTit').textContent = 'Editar: ' + t.nombre; document.getElementById('tNuevo').classList.remove('d-none'); tNom.focus();
+        }
+        if (ac) fetch({{ url_for('oc_movilidad_trabajador_activo', trab_id=0)|tojson }}.replace('/0/', '/' + ac.dataset.act + '/'), { method: 'POST', credentials: 'same-origin' })
+            .then(r => r.json()).then(d => { if (!aplicar(d)) tMsg.textContent = d.msg || 'No se pudo cambiar.'; });
+    });
+    fT.addEventListener('submit', e => {
+        e.preventDefault();
+        fetch(URL_TRAB_G, { method: 'POST', body: new FormData(fT), credentials: 'same-origin' }).then(r => r.json()).then(d => {
+            if (aplicar(d)) { limpiarT(); tMsg.innerHTML = `<span class="text-success fw-bold">✓ ${esc(d.msg)}</span> Ya aparece en "Elegir trabajador".`; }
+            else tMsg.innerHTML = `<span class="text-danger fw-bold">${esc(d.msg || 'No se pudo guardar')}</span>`;
+        }).catch(() => { tMsg.textContent = 'No se pudo guardar: revisa tu conexión.'; });
     });
     // al guardar: limpiar filas vacías del final y pasar la firma
     form.addEventListener('submit', e => {

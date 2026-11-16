@@ -2,7 +2,7 @@
 Se importan al final de models.py: "from models import X" sigue funcionando igual. Ver MAPA.md."""
 from models import db, hora_peru
 
-__all__ = ['OCProveedor', 'OCContacto', 'OCMotivoRechazo', 'OrdenCompra', 'OrdenCompraItem', 'OrdenCompraEntrega', 'OrdenCompraEntregaItem', 'OrdenCompraEvento', 'OrdenCompraDocumento', 'OCCuentaBancaria', 'OCMotivoCompra', 'RequerimientoCompra', 'RequerimientoItem', 'RequerimientoDocumento', 'RequerimientoVisto', 'RequerimientoEvento', 'OCConfig', 'OrdenCompraMovilidad']
+__all__ = ['OCProveedor', 'OCContacto', 'OCMotivoRechazo', 'OrdenCompra', 'OrdenCompraItem', 'OrdenCompraEntrega', 'OrdenCompraEntregaItem', 'OrdenCompraEvento', 'OrdenCompraDocumento', 'OCCuentaBancaria', 'OCMotivoCompra', 'RequerimientoCompra', 'RequerimientoItem', 'RequerimientoDocumento', 'RequerimientoVisto', 'RequerimientoEvento', 'OCConfig', 'OrdenCompraMovilidad', 'OCMovilidadTrabajador']
 
 
 # =====================================================================================
@@ -503,3 +503,21 @@ class OrdenCompraMovilidad(db.Model):
     orden = db.relationship('OrdenCompra', backref=db.backref('movilidades', lazy='dynamic'))
     creado_por = db.relationship('User', foreign_keys=[creado_por_id])
     trabajador_user = db.relationship('User', foreign_keys=[trabajador_user_id])
+
+
+class OCMovilidadTrabajador(db.Model):
+    """Trabajadores guardados para las planillas de movilidad (nombre como en el DNI + DNI), para que se llenen solos.
+    user_id = su cuenta del sistema (si tiene); sin user_id = trabajador que no usa el sistema (chofer externo, practicante...)."""
+    __tablename__ = 'oc_movilidad_trabajador'
+    id = db.Column(db.Integer, primary_key=True)
+    nombre = db.Column(db.String(150), nullable=False)
+    dni = db.Column(db.String(15), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True, index=True)
+    cargo = db.Column(db.String(100))
+    activo = db.Column(db.Boolean, default=True)
+    creado_por = db.Column(db.String(100))
+    fecha_creacion = db.Column(db.DateTime, default=hora_peru)
+    actualizado_por = db.Column(db.String(100))
+    fecha_actualizacion = db.Column(db.DateTime)
+
+    usuario = db.relationship('User', foreign_keys=[user_id])

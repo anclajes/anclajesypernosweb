@@ -297,7 +297,12 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
   Todo queda en el historial de la orden (evento MOVILIDAD).
 - Tope deducible: 4% de la RMV por trabajador y día (RMV en OCConfig `MOV_RMV`, defecto S/ 1,230 = D.S. 015-2026-TR; el admin la cambia
   desde el formulario, `oc_movilidad_rmv`). Solo AVISA (no bloquea); cada planilla guarda la RMV con que se hizo (`rmv`).
-- Trabajador: elegir un usuario del sistema o escribir; DNI se recuerda de planillas anteriores o se busca en RENIEC (`oc_movilidad_dni`).
+- Trabajador: "Elegir trabajador" = cuentas del sistema AGRUPADAS POR ROL (sin auditores: MOV_ROLES_FUERA) + "Otros trabajadores
+  (sin cuenta)"; cada opción trae nombre y DNI guardados (✓). Tabla `oc_movilidad_trabajador` (modelo `OCMovilidadTrabajador`:
+  nombre, dni, user_id opcional, cargo, activo). Botón "Guardar para la próxima" (`oc_movilidad_trabajador_guardar`) y ⚙ Trabajadores
+  (modal: agregar / editar / desactivar, `oc_movilidad_trabajadores`, `oc_movilidad_trabajador_activo`). Al guardar una planilla, si
+  su DNI no estaba guardado, se guarda solo. DNI por RENIEC (`oc_movilidad_dni`).
+- Firma en pantalla (`static/js/firma.js` v2): "Borrar" limpia todo el lienzo también con zoom < 100% (antes quedaba la parte derecha/abajo).
 - PDF `templates/pdf_movilidad.html` (formato del modelo + logo, referencia de la orden, total en letras, firma, base legal y nota).
 - Vistas: panel "🚕 Planillas de movilidad" en el detalle (`_oc_movilidad.html` → `panel`) + botón arriba; en la lista de órdenes
   chip en Docs (`chip`: "🚕 n · S/ x", amarillo si falta firmar, "+ 🚕 Movilidad" si no tiene) y filtro Docs con/sin/sin firmar
