@@ -1,0 +1,99 @@
+<html>
+<head>
+<meta charset="utf-8">
+{#- PLANILLA POR GASTO DE MOVILIDAD - POR DÍA (xhtml2pdf). Una o varias planillas (lista mensual): una por página.
+    Mismo formato del modelo de la empresa + logo, N° correlativo, referencia de la orden, total en letras y firmas.
+    Ninguna celda vacía (xhtml2pdf): _generar_respuesta_pdf las rellena con &nbsp;. -#}
+<style>
+    @page { size: a4 portrait; margin: 1.1cm 1.2cm 1.1cm 1.2cm; }
+    body { font-family: Helvetica, Arial, sans-serif; font-size: 8.4pt; color: #111; line-height: 1.2; }
+    table { width: 100%; border-collapse: collapse; }
+    td, th { padding: 2px 4px; vertical-align: middle; }
+    .tit { font-size: 12.5pt; font-weight: bold; text-align: center; }
+    .emp { font-size: 8pt; text-align: center; }
+    td.nro-k { background-color: #1f4e9c; color: #fff; font-weight: bold; font-size: 8pt; text-align: center; border: 1px solid #111; }
+    td.nro-v { font-weight: bold; font-size: 11pt; text-align: center; border: 1px solid #111; }
+    td.k { font-weight: bold; font-size: 9pt; width: 16%; }
+    td.v { border: 1px solid #111; font-size: 9pt; text-align: center; }
+    td.v-l { border: 1px solid #111; font-size: 9pt; }
+    td.k-chico { font-weight: bold; font-size: 7.4pt; text-align: right; }
+    td.v-chico { border: 1px solid #111; font-size: 8pt; text-align: center; color: #7a1f5c; font-weight: bold; }
+    td.sec { font-weight: bold; font-size: 9.5pt; padding-top: 8px; }
+    td.sep { border-top: 1.5px solid #111; font-size: 1pt; padding: 0; }
+    th.cab { border: 1px solid #111; font-size: 8.6pt; font-weight: bold; text-align: center; background-color: #f2f2f2; padding: 3px; }
+    td.c { border-left: 1px solid #111; border-right: 1px solid #111; border-bottom: 1px solid #bbb; font-size: 8.4pt; padding: 3px 4px; }
+    td.n { border-left: 1px solid #111; border-right: 1px solid #111; border-bottom: 1px solid #bbb; font-size: 8.4pt; text-align: right; padding: 3px 4px; }
+    td.fin { border-top: 1px solid #111; font-size: 1pt; padding: 0; }
+    td.tot-k { font-weight: bold; font-size: 9.5pt; text-align: right; }
+    td.tot-v { border: 1px solid #111; font-weight: bold; font-size: 9.5pt; text-align: right; }
+    .letras { font-size: 7.4pt; font-style: italic; }
+    td.firma { border: 1px solid #111; text-align: center; vertical-align: bottom; font-size: 7.6pt; height: 78px; }
+    td.firma-t { border: 1px solid #111; border-bottom: 0; background-color: #f2f2f2; font-weight: bold; font-size: 8pt; text-align: center; }
+    .legal { font-size: 7.4pt; color: #222; }
+    .chico { font-size: 6.6pt; color: #555; }
+    td.anulada { color: #b91c1c; font-weight: bold; font-size: 15pt; text-align: center; border: 2px solid #b91c1c; padding: 4px; }
+    .ref { font-size: 7.6pt; color: #333; }
+</style>
+</head>
+<body>
+{% for P in planillas %}{% set m = P.m %}{% set o = P.o %}
+{% if not loop.first %}<pdf:nextpage />{% endif %}
+<table>
+    <tr>
+        <td style="width: 24%;">{% if P.logo %}<img src="{{ P.logo.uri }}" width="{{ (P.logo.ancho * 0.62)|round|int }}" height="{{ (P.logo.alto * 0.62)|round|int }}">{% else %}<b>{{ P.cfg.razon_social }}</b>{% endif %}</td>
+        <td style="width: 54%;"><div class="tit">PLANILLA POR GASTO DE MOVILIDAD - POR DÍA</div>
+            <div class="emp">{{ P.cfg.razon_social }} · RUC {{ P.cfg.ruc }}</div></td>
+        <td style="width: 22%;">
+            <table><tr><td class="nro-k" style="background-color: {{ P.tema.azul }};">N°</td></tr><tr><td class="nro-v">{{ P.numero }}</td></tr></table>
+        </td>
+    </tr>
+</table>
+{% if m.anulada %}<table style="margin-top: 6px;"><tr><td class="anulada">ANULADA · {{ m.anulada_motivo or '' }}</td></tr></table>{% endif %}
+<table style="margin-top: 8px;">
+    <tr><td class="k">Razón Social</td><td class="v" style="width: 46%;">{{ P.cfg.razon_social }}</td><td style="width: 2%;">&nbsp;</td>
+        <td class="k-chico" style="width: 18%;">Fecha de Emisión</td><td class="v-chico" style="width: 18%;">{{ m.fecha_emision.strftime('%d/%m/%Y') if m.fecha_emision else '' }}</td></tr>
+    <tr><td class="k">RUC</td><td class="v">{{ P.cfg.ruc }}</td><td>&nbsp;</td>
+        <td class="k-chico">Hora de Emisión</td><td class="v-chico">{{ m.fecha_emision.strftime('%I:%M %p').lstrip('0').replace('AM', 'a. m.').replace('PM', 'p. m.') if m.fecha_emision else '' }}</td></tr>
+    <tr><td class="k">PERIODO</td><td class="v-l">{{ m.periodo }}</td><td>&nbsp;</td>
+        <td class="k-chico">Fecha del gasto</td><td class="v-chico">{{ m.fecha_gasto.strftime('%d/%m/%Y') }}</td></tr>
+</table>
+<table style="margin-top: 4px;"><tr><td class="ref">Referencia: <b>{{ P.codigo_oc }}</b> · {{ o.razon_social }}{% if o.ruc %} (RUC {{ o.ruc }}){% endif %}{% if m.observacion %} · {{ m.observacion }}{% endif %}</td></tr></table>
+
+<table style="margin-top: 6px;"><tr><td class="sep">&nbsp;</td></tr></table>
+<table>
+    <tr><td class="sec" colspan="3" style="padding-left: 10%;">Datos del Trabajador</td></tr>
+    <tr><td style="width: 18%;">&nbsp;</td><td class="k" style="width: 22%;">Nombres y Apellidos</td><td class="v" style="width: 46%;"><b>{{ m.trabajador_nombre }}</b></td><td style="width: 14%;">&nbsp;</td></tr>
+    <tr><td>&nbsp;</td><td class="k">D.N.I.</td><td class="v"><b>{{ m.trabajador_dni }}</b></td><td>&nbsp;</td></tr>
+</table>
+
+<table style="margin-top: 8px;">
+    <tr><th class="cab" colspan="2">Desplazamiento</th><th class="cab" colspan="2">Monto gastado por (S/):</th></tr>
+    <tr><th class="cab" style="width: 34%;">Motivo</th><th class="cab" style="width: 40%;">Destino</th><th class="cab" style="width: 13%;">Viaje</th><th class="cab" style="width: 13%;">Trabajador</th></tr>
+    {% for f in P.filas %}
+    <tr><td class="c">{{ f.motivo }}</td><td class="c">{{ f.destino }}</td><td class="n">{{ '{:,.2f}'.format(f.monto or 0) }}</td>
+        <td class="n">{% if loop.last %}<b>{{ '{:,.2f}'.format(m.total or 0) }}</b>{% else %}&nbsp;{% endif %}</td></tr>
+    {% endfor %}
+    {% for _ in range(P.vacias) %}<tr><td class="c">&nbsp;</td><td class="c">&nbsp;</td><td class="n">&nbsp;</td><td class="n">&nbsp;</td></tr>{% endfor %}
+    <tr><td class="fin" colspan="4">&nbsp;</td></tr>
+</table>
+<table>
+    <tr><td style="width: 74%;" class="letras">{{ P.letras }}</td><td class="tot-k" style="width: 13%;">Total</td><td class="tot-v" style="width: 13%;">{{ '{:,.2f}'.format(m.total or 0) }}</td></tr>
+</table>
+
+<table style="margin-top: 14px;">
+    <tr><td class="firma-t" style="width: 46%;">Firma del Trabajador</td><td style="width: 8%;">&nbsp;</td><td class="firma-t" style="width: 46%;">Registrado por</td></tr>
+    <tr><td class="firma">{% if P.firma %}<img src="{{ P.firma.uri }}" width="{{ P.firma.ancho }}" height="{{ P.firma.alto }}"><br>{% else %}<br><br><br>{% endif %}
+            ______________________________<br><b>{{ m.trabajador_nombre }}</b><br>DNI {{ m.trabajador_dni }}
+            {% if m.firma_fecha %}<br><span class="chico">Firmó en pantalla el {{ m.firma_fecha.strftime('%d/%m/%Y %H:%M') }}</span>{% endif %}</td>
+        <td>&nbsp;</td>
+        <td class="firma"><br><br><br>______________________________<br><b>{{ P.registro or '-' }}</b><br>{{ o.tipo }} {{ P.codigo_oc.split('N° ')[-1] }}</td></tr>
+</table>
+
+<table style="margin-top: 14px;">
+    <tr><td class="legal">{{ P.base_legal }}</td></tr>
+    <tr><td class="legal" style="padding-top: 6px;">{{ P.nota_legal }}</td></tr>
+    <tr><td class="chico" style="padding-top: 10px;">Generado por el sistema · {{ P.cfg.razon_social }} · {{ P.numero }}{% if m.fecha_actualizacion %} · última edición {{ m.fecha_actualizacion.strftime('%d/%m/%Y %H:%M') }}{% endif %}</td></tr>
+</table>
+{% endfor %}
+</body>
+</html>

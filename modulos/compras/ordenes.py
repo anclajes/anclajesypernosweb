@@ -54,6 +54,7 @@ def oc_lista():
     docs = {}
     for d in OrdenCompraDocumento.query.all():
         docs.setdefault(d.orden_id, []).append(d)
+    movs_todas = _mov_por_orden([o.id for o in todas])      # planillas de movilidad vigentes (chip y filtro)
     ordenes = []
     for o in todas:
         if not en_vista(o, vista):
@@ -88,6 +89,14 @@ def oc_lista():
                 continue
             if docs_f == 'sin_certificado' and (not o.requiere_certificado or 'CERTIFICADO' in tipos_d):
                 continue
+            if docs_f in ('con_movilidad', 'sin_movilidad', 'movilidad_sin_firma'):
+                mvs = movs_todas.get(o.id, [])
+                if docs_f == 'con_movilidad' and not mvs:
+                    continue
+                if docs_f == 'sin_movilidad' and mvs:
+                    continue
+                if docs_f == 'movilidad_sin_firma' and not any(not _mov_firmada(x) for x in mvs):
+                    continue
         if desde and o.fecha < desde:
             continue
         if hasta and o.fecha > hasta:
@@ -125,7 +134,7 @@ def oc_lista():
     contables_por_confirmar = sum(1 for o in todas if o.es_contable and o.estado == 'CONFORME' and not o.fecha_kardex)
     directos_por_entregar = sum(1 for o in todas if o.destino == 'DIRECTO' and o.estado == 'CONFORME' and not o.fecha_kardex)
     return render_template('oc_lista.html', ordenes=ordenes, vista=vista, vistas_orden=VISTAS_OC_ORDEN,
-                           nombres_vista={**{k: v[0] for k, v in VISTAS_OC.items()}, **VISTAS_OC_EXTRA}, conteo=conteo, docs=docs,
+                           nombres_vista={**{k: v[0] for k, v in VISTAS_OC.items()}, **VISTAS_OC_EXTRA}, conteo=conteo, docs=docs, movs=movs_todas,
                            tipo=tipo, destino=destino, prov_id=prov_id, solicitante=solicitante, motivo=motivo, pago_f=pago_f, docs_f=docs_f,
                            desde=desde, hasta=hasta, buscar=buscar, hoy=hoy, pagos=pagos, atrasos=atrasos, kpi=kpi, resumen=resumen,
                            total_filtrado=total_filtrado, proveedores=proveedores, solicitantes=solicitantes, motivos=motivos,

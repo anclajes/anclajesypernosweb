@@ -2,7 +2,7 @@
 Se importan al final de models.py: "from models import X" sigue funcionando igual. Ver MAPA.md."""
 from models import db, hora_peru
 
-__all__ = ['OCProveedor', 'OCContacto', 'OCMotivoRechazo', 'OrdenCompra', 'OrdenCompraItem', 'OrdenCompraEntrega', 'OrdenCompraEntregaItem', 'OrdenCompraEvento', 'OrdenCompraDocumento', 'OCCuentaBancaria', 'OCMotivoCompra', 'RequerimientoCompra', 'RequerimientoItem', 'RequerimientoDocumento', 'RequerimientoVisto', 'RequerimientoEvento', 'OCConfig']
+__all__ = ['OCProveedor', 'OCContacto', 'OCMotivoRechazo', 'OrdenCompra', 'OrdenCompraItem', 'OrdenCompraEntrega', 'OrdenCompraEntregaItem', 'OrdenCompraEvento', 'OrdenCompraDocumento', 'OCCuentaBancaria', 'OCMotivoCompra', 'RequerimientoCompra', 'RequerimientoItem', 'RequerimientoDocumento', 'RequerimientoVisto', 'RequerimientoEvento', 'OCConfig', 'OrdenCompraMovilidad']
 
 
 # =====================================================================================
@@ -462,3 +462,44 @@ class OCConfig(db.Model):
     valor = db.Column(db.Text)
     actualizado_por = db.Column(db.String(100))
     fecha = db.Column(db.DateTime, default=hora_peru)
+
+
+class OrdenCompraMovilidad(db.Model):
+    """PLANILLA POR GASTO DE MOVILIDAD (por día y por trabajador) ligada a una OC u OS: sustenta el gasto de movilidad
+    (inciso a1 del art. 37 del TUO de la LIR e inciso v del art. 21 de su Reglamento). Numeración correlativa propia de
+    cada empresa; no se borra (se anula). Firmada (en pantalla o subiendo la hoja firmada a mano) ya no se edita."""
+    __tablename__ = 'orden_compra_movilidad'
+    id = db.Column(db.Integer, primary_key=True)
+    orden_id = db.Column(db.Integer, db.ForeignKey('orden_compra.id'), nullable=False, index=True)
+    empresa = db.Column(db.String(15), nullable=False, default='ANCLAJES', index=True)   # razón social / RUC que sustenta el gasto
+    numero = db.Column(db.Integer, nullable=False)                    # correlativo por empresa
+    fecha_gasto = db.Column(db.Date, nullable=False, index=True)      # día del desplazamiento (planilla POR DÍA)
+    fecha_emision = db.Column(db.DateTime, default=hora_peru)         # fecha y hora de emisión (al crearla)
+    periodo = db.Column(db.String(40))                                # "MES DE NOVIEMBRE 2026"
+    trabajador_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    trabajador_nombre = db.Column(db.String(150), nullable=False)
+    trabajador_dni = db.Column(db.String(15), nullable=False, index=True)
+    filas = db.Column(db.Text)                                        # JSON [{motivo, destino, monto}]
+    total = db.Column(db.Float, default=0)
+    rmv = db.Column(db.Float)                                         # RMV usada para el tope diario (4%)
+    observacion = db.Column(db.String(300))
+    firma_s3_key = db.Column(db.String(300))                          # firma en pantalla del trabajador (PNG)
+    firma_fecha = db.Column(db.DateTime)
+    firma_por = db.Column(db.String(100))                             # quién registró la firma en el sistema
+    escaneo_s3_key = db.Column(db.String(300))                        # la planilla impresa y firmada a mano (PDF o foto)
+    escaneo_tipo = db.Column(db.String(50))
+    escaneo_nombre = db.Column(db.String(200))
+    escaneo_fecha = db.Column(db.DateTime)
+    escaneo_por = db.Column(db.String(100))
+    anulada = db.Column(db.Boolean, default=False)
+    anulada_motivo = db.Column(db.String(300))
+    anulada_por = db.Column(db.String(100))
+    fecha_anulada = db.Column(db.DateTime)
+    creado_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    fecha_registro = db.Column(db.DateTime, default=hora_peru)
+    actualizado_por = db.Column(db.String(100))
+    fecha_actualizacion = db.Column(db.DateTime)
+
+    orden = db.relationship('OrdenCompra', backref=db.backref('movilidades', lazy='dynamic'))
+    creado_por = db.relationship('User', foreign_keys=[creado_por_id])
+    trabajador_user = db.relationship('User', foreign_keys=[trabajador_user_id])

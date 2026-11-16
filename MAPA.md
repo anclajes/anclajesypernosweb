@@ -37,6 +37,8 @@ modulos/
                          cliente, ingresos pendientes al inventario e ingreso al Kardex
     uso_directo.py       USO DIRECTO (/ordenes/uso-directo): bienes que no van a ningún inventario (PC, muebles...):
                          registrar / corregir la entrega (a quién, dónde, serie y garantía) y el registro con Excel
+    movilidad.py         PLANILLA POR GASTO DE MOVILIDAD por OC/OS (/ordenes/<id>/movilidad/nueva, /ordenes/movilidad):
+                         crear/editar, firma en pantalla u hoja firmada, anular, PDF (pdf_movilidad.html) y lista del mes
     certificados.py      CERTIFICADOS POR SUBIR (/ordenes/certificados): importaciones sin certificado de calidad
                          (el certificado es opcional: nunca frena la conformidad ni el ingreso)
     pdf_proveedores_config.py   PDF de la orden, proveedores y contactos, buscador de productos, configuración
@@ -282,6 +284,29 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
     recalcula estado con `_oc_etapa_por_entregas`; evento ENTREGA_CORREGIDA. No va a Gerencia.
   · "Listo, devolver a Almacén" (`oc_devolucion_resolver`, nota obligatoria) → `_oc_devolucion_cerrar(orden, 'LISTA', nota)`.
   Cerrar = `devuelta_almacen=False`, evento DEVOLUCION_RESUELTA y aviso OC_DEVOLUCION_LISTA a Almacén. Se conserva todo el historial.
+
+## Compras: PLANILLA POR GASTO DE MOVILIDAD (v26) · `modulos/compras/movilidad.py`
+
+- Tabla `orden_compra_movilidad` (modelo `OrdenCompraMovilidad`, se crea sola con `_asegurar_mov()`): una o varias por orden,
+  en CUALQUIER estado. Una planilla = un trabajador + un día (fecha_gasto) + sus desplazamientos `filas` (JSON motivo/destino/monto).
+- Empresa: por defecto la de la orden; se puede elegir la otra. Razón social, RUC y logo de `_oc_cfg(empresa)`; N° correlativo
+  propio de cada empresa (`_mov_siguiente_numero`, formato `00-00015`). Creada, la empresa ya no se cambia (no deja huecos).
+- No se borra: se ANULA con motivo (`oc_movilidad_anular`, admin/logística); el número no se reutiliza.
+- Firma del trabajador: en pantalla (canvas `static/js/firma.js`, en el formulario o después `oc_movilidad_firmar`) o subiendo la
+  hoja impresa y firmada a mano (`oc_movilidad_hoja`). Firmada = no se edita; para corregir: "Quitar firma" con motivo (`oc_movilidad_quitar_firma`).
+  Todo queda en el historial de la orden (evento MOVILIDAD).
+- Tope deducible: 4% de la RMV por trabajador y día (RMV en OCConfig `MOV_RMV`, defecto S/ 1,230 = D.S. 015-2026-TR; el admin la cambia
+  desde el formulario, `oc_movilidad_rmv`). Solo AVISA (no bloquea); cada planilla guarda la RMV con que se hizo (`rmv`).
+- Trabajador: elegir un usuario del sistema o escribir; DNI se recuerda de planillas anteriores o se busca en RENIEC (`oc_movilidad_dni`).
+- PDF `templates/pdf_movilidad.html` (formato del modelo + logo, referencia de la orden, total en letras, firma, base legal y nota).
+- Vistas: panel "🚕 Planillas de movilidad" en el detalle (`_oc_movilidad.html` → `panel`) + botón arriba; en la lista de órdenes
+  chip en Docs (`chip`: "🚕 n · S/ x", amarillo si falta firmar, "+ 🚕 Movilidad" si no tiene) y filtro Docs con/sin/sin firmar
+  (`_mov_por_orden`); pestaña "🚕 Movilidad" en el menú de Órdenes = lista del mes por empresa (`oc_movilidad_lista`) con KPIs,
+  excesos del tope, resumen por trabajador y "Ver todas en un PDF" (para contabilidad).
+- Roles: ven/crean/editan/firman admin, logística, administración (`ROLES_MOV_VEN`); anulan y quitan firma admin, logística.
+- PRUEBAS: en 🚕 Movilidad (solo admin) "Zona de pruebas: vaciar planillas" (`oc_movilidad_vaciar`, escribir BORRAR MOVILIDAD,
+  las dos empresas o una): borra planillas de todas las fechas + firmas/hojas en S3 + sus eventos MOVILIDAD (`_mov_vaciar`); la
+  numeración vuelve a 00-00001; no toca órdenes ni la RMV. "Vaciar datos del módulo" (oc_vaciar) también las borra (antes de las órdenes).
 
 ## Kardex
 

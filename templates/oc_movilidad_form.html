@@ -1,0 +1,226 @@
+{% extends "base.html" %}
+{% block title %}Planilla de movilidad{% endblock %}
+{% block subtitle %}{{ codigo_oc }}{% endblock %}
+{% block content %}
+{% include '_oc_nav.html' %}
+{% set pv = previo %}
+{% set emp_actual = pv.empresa or (m.empresa if m else (orden.empresa or 'ANCLAJES')) %}
+<style>
+    .mv-wrap { max-width: 1020px; margin: 0 auto; }
+    .mv-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 14px 16px; margin-bottom: 14px; }
+    .mv-t { font-size: .72rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #64748b; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+    .mv-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
+    .mv-head h1 { font-size: 1.15rem; font-weight: 800; margin: 0; }
+    .mv-num { font-size: .78rem; font-weight: 800; border-radius: 8px; padding: 3px 10px; background: #0f172a; color: #fff; font-variant-numeric: tabular-nums; }
+    .mv-emp { display: flex; gap: 8px; flex-wrap: wrap; }
+    .mv-emp label { display: flex; align-items: center; gap: 8px; border: 2px solid #e2e8f0; border-radius: 12px; padding: 6px 12px; cursor: pointer; background: #fff; min-width: 200px; }
+    .mv-emp input { display: none; }
+    .mv-emp input:checked + span { color: #0f172a; }
+    .mv-emp label:has(input:checked) { border-color: var(--c); background: color-mix(in srgb, var(--c) 7%, #fff); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 18%, transparent); }
+    .mv-emp label.bloq { cursor: not-allowed; opacity: .55; }
+    .mv-emp img { height: 26px; max-width: 80px; object-fit: contain; }
+    .mv-emp .n { font-size: .8rem; font-weight: 800; line-height: 1.15; }
+    .mv-emp .n small { display: block; font-weight: 500; color: #64748b; font-size: .68rem; }
+    .mv-tabla { width: 100%; border-collapse: separate; border-spacing: 0 6px; }
+    .mv-tabla th { font-size: .7rem; text-transform: uppercase; letter-spacing: .04em; color: #64748b; font-weight: 800; padding: 0 4px; }
+    .mv-tabla td { padding: 0 4px; vertical-align: top; }
+    .mv-tabla td.n { width: 130px; }
+    .mv-tabla td.x { width: 34px; }
+    .mv-total { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px; font-size: .9rem; margin-top: 4px; }
+    .mv-total b { font-size: 1.3rem; font-variant-numeric: tabular-nums; }
+    .mv-tope { font-size: .76rem; border-radius: 9px; padding: 6px 10px; background: #f1f5f9; color: #334155; }
+    .mv-tope.pasa { background: #fef2f2; color: #991b1b; border: 1px solid #fca5a5; }
+    .pad-firma { width: 100%; height: 170px; border: 1.5px dashed #94a3b8; border-radius: 10px; background: #fff; display: block; }
+    .mv-legal { font-size: .72rem; color: #475569; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 10px; padding: 8px 10px; }
+    .mv-barra { position: sticky; bottom: 0; z-index: 5; background: rgba(255,255,255,.96); backdrop-filter: blur(4px); border-top: 1px solid #e2e8f0; padding: 10px 0; margin-top: 6px; }
+    @media (max-width: 575.98px) {
+        .mv-tabla thead { display: none; }
+        .mv-tabla tr { display: grid; grid-template-columns: 1fr 110px 34px; gap: 4px; border: 1px solid #e2e8f0; border-radius: 10px; padding: 6px; margin-bottom: 8px; }
+        .mv-tabla td { padding: 0; }
+        .mv-tabla td.mot { grid-column: 1 / 4; } .mv-tabla td.des { grid-column: 1 / 2; } .mv-tabla td.n, .mv-tabla td.x { width: auto; }
+        .mv-emp label { min-width: 0; flex: 1 1 140px; }
+    }
+</style>
+<div class="mv-wrap">
+<form method="POST" action="{{ url_for('oc_movilidad_guardar', orden_id=orden.id) }}" id="formMov" novalidate>
+    {% if m %}<input type="hidden" name="mov_id" value="{{ m.id }}">{% endif %}
+    <input type="hidden" name="firma_png" id="firma_png">
+
+    <div class="mv-card">
+        <div class="mv-head">
+            <span style="font-size:1.8rem;">🚕</span>
+            <div class="flex-fill" style="min-width:220px;">
+                <h1>{{ 'Editar' if m else 'Nueva' }} planilla por gasto de movilidad <span class="text-muted fw-normal" style="font-size:.8rem;">· por día</span></h1>
+                <div class="small text-muted">Para la <a href="{{ url_for('oc_detalle', orden_id=orden.id) }}" class="fw-bold">{{ codigo_oc }}</a> · {{ orden.razon_social }}
+                    · estado {{ orden.estado|lower }} (se puede hacer en cualquier etapa)</div>
+            </div>
+            <span class="mv-num" id="numPrev">N° {{ mov_numero_txt(m) if m else ('00-%05d'|format(siguiente[emp_actual])) }}</span>
+        </div>
+    </div>
+
+    <div class="mv-card">
+        <div class="mv-t"><i class="bi bi-building"></i> ¿Qué empresa sustenta el gasto?</div>
+        <div class="mv-emp">
+            {% for e, info in empresas_oc.items() %}
+            <label style="--c: {{ info.color }};" class="{{ 'bloq' if m and m.empresa != e }}" title="{{ 'La empresa de una planilla ya creada no se cambia (su N° es correlativo de esa empresa)' if m and m.empresa != e }}">
+                <input type="radio" name="empresa" value="{{ e }}" {{ 'checked' if e == emp_actual }} {{ 'disabled' if m and m.empresa != e }} data-sig="{{ '00-%05d'|format(siguiente[e]) }}">
+                <img src="{{ url_for('static', filename='img/' ~ info.logo) }}" alt="">
+                <span class="n">{{ info.nombre }}<small>{% if e == (orden.empresa or 'ANCLAJES') %}empresa de la orden{% else %}otra empresa{% endif %}{% if not m %} · sigue el N° 00-{{ '%05d'|format(siguiente[e]) }}{% endif %}</small></span>
+            </label>
+            {% endfor %}
+        </div>
+        <div class="form-text">La planilla sale con la razón social, el RUC, el logo y la numeración correlativa de la empresa que elijas.</div>
+    </div>
+
+    <div class="mv-card">
+        <div class="mv-t"><i class="bi bi-person-badge"></i> Trabajador y día</div>
+        <div class="row g-2">
+            <div class="col-12 col-md-3"><label class="small fw-bold">Fecha del gasto *</label>
+                <input type="date" name="fecha_gasto" id="fechaGasto" class="form-control" required max="{{ hoy.isoformat() }}"
+                       value="{{ pv.fecha_gasto or (m.fecha_gasto.isoformat() if m else hoy.isoformat()) }}">
+                <div class="form-text" id="periodoTxt"></div></div>
+            <div class="col-12 col-md-3"><label class="small fw-bold">Elegir del sistema <span class="fw-normal text-muted">(opcional)</span></label>
+                <select name="trabajador_user_id" id="selUsuario" class="form-select">
+                    <option value="">— Otro / escribir —</option>
+                    {% set uid_sel = pv.trabajador_user_id or (m.trabajador_user_id if m else none) %}
+                    {% for u in usuarios %}<option value="{{ u.id }}" data-nombre="{{ u.nombre_completo|upper }}" {{ 'selected' if u.id == uid_sel }}>{{ u.nombre_completo }}</option>{% endfor %}
+                </select></div>
+            <div class="col-12 col-md-4"><label class="small fw-bold">Nombres y apellidos *</label>
+                <input name="trabajador_nombre" id="trabNombre" class="form-control text-uppercase" list="dlTrab" maxlength="150" required autocomplete="off"
+                       value="{{ pv.trabajador_nombre or (m.trabajador_nombre if m else '') }}" placeholder="Como figura en su DNI">
+                <datalist id="dlTrab">{% for t in trab_previos %}<option value="{{ t.nombre }}">DNI {{ t.dni }}</option>{% endfor %}</datalist></div>
+            <div class="col-12 col-md-2"><label class="small fw-bold">D.N.I. *</label>
+                <div class="input-group"><input name="trabajador_dni" id="trabDni" class="form-control" inputmode="numeric" maxlength="12" required autocomplete="off"
+                       value="{{ pv.trabajador_dni or (m.trabajador_dni if m else '') }}" placeholder="8 dígitos">
+                    <button type="button" class="btn btn-outline-secondary" id="btnDni" title="Buscar el nombre por DNI (RENIEC)"><i class="bi bi-search"></i></button></div>
+                <div class="form-text" id="dniTxt"></div></div>
+        </div>
+    </div>
+
+    <div class="mv-card">
+        <div class="mv-t"><i class="bi bi-signpost-split"></i> Desplazamientos del día <span class="fw-normal text-muted" style="text-transform:none; letter-spacing:0;">· motivo, destino y monto de cada uno (SUNAT los pide todos)</span></div>
+        <table class="mv-tabla">
+            <thead><tr><th>Motivo</th><th>Destino</th><th>Monto (S/)</th><th></th></tr></thead>
+            <tbody id="filas">
+            {% for f in filas %}
+            <tr class="fila">
+                <td class="mot"><input name="motivo" class="form-control form-control-sm text-uppercase" list="dlMot" maxlength="120" value="{{ f.motivo or '' }}" placeholder="Ej: RECOJO DE MATERIAL"></td>
+                <td class="des"><input name="destino" class="form-control form-control-sm text-uppercase" maxlength="200" value="{{ f.destino or '' }}" placeholder="Ej: AGENCIA SHALOM DE PALMERAS"></td>
+                <td class="n"><input name="monto" class="form-control form-control-sm text-end monto" inputmode="decimal" value="{{ '%.2f'|format(f.monto) if f.monto is not none else '' }}" placeholder="0.00"></td>
+                <td class="x"><button type="button" class="btn btn-sm btn-outline-danger quitar" title="Quitar"><i class="bi bi-x-lg"></i></button></td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        <datalist id="dlMot">{% for t in motivos %}<option value="{{ t }}">{% endfor %}</datalist>
+        <div class="d-flex flex-wrap gap-2 align-items-center mt-1">
+            <button type="button" class="btn btn-sm btn-outline-primary" id="btnFila"><i class="bi bi-plus-lg"></i> Agregar desplazamiento</button>
+            <span class="small text-muted">Máximo {{ filas_max }} por planilla. Si un viaje tuvo dos paradas, ponlas en el destino (ej. "AGENCIA SHALOM / CLIENTE SHAUTEC").</span>
+        </div>
+        <div class="mv-total">
+            <span class="mv-tope" id="topeBox">Tope deducible por trabajador y día: <b>S/ {{ '%.2f'|format(tope) }}</b> (4% de la RMV S/ {{ '{:,.2f}'.format(rmv) }})
+                {% if session.get('role') == 'admin' %}<a href="#" class="ms-1" data-bs-toggle="collapse" data-bs-target="#cajaRmv">cambiar RMV</a>{% endif %}</span>
+            <span>Total: <b id="totalTxt">S/ 0.00</b></span>
+        </div>
+        <div class="text-end small text-danger fw-bold mt-1" id="topeAviso" hidden></div>
+        <div class="mt-2"><label class="small fw-bold">Observación <span class="fw-normal text-muted">(opcional, sale en el PDF)</span></label>
+            <input name="observacion" class="form-control form-control-sm" maxlength="300" value="{{ pv.observacion or (m.observacion if m and m.observacion else '') }}" placeholder="Ej: se pagó taxi por material pesado"></div>
+    </div>
+
+    <div class="mv-card">
+        <div class="mv-t"><i class="bi bi-pen"></i> Firma del trabajador <span class="fw-normal text-muted" style="text-transform:none; letter-spacing:0;">· opcional ahora</span>
+            <button type="button" class="btn btn-sm btn-link ms-auto" onclick="pad.limpiar()">Borrar firma</button></div>
+        <canvas class="pad-firma" id="padFirma"></canvas>
+        <div class="form-text">Que el trabajador firme con el dedo (celular o tablet) o con el mouse. Si no está, guarda sin firmar: luego la firma en pantalla desde la orden,
+            o imprime el PDF, que la firme a mano y sube la foto. <b>Firmada ya no se edita</b> (para corregirla hay que quitar la firma y queda en el historial).</div>
+    </div>
+
+    <div class="mv-legal mb-2"><b>{{ base_legal }}</b><br>{{ nota_legal }}</div>
+
+    <div class="mv-barra d-flex flex-wrap gap-2 justify-content-end">
+        <a href="{{ url_for('oc_detalle', orden_id=orden.id) }}#movilidad" class="btn btn-light border">Cancelar</a>
+        <button class="btn btn-success fw-bold px-4"><i class="bi bi-check2-circle"></i> Guardar planilla</button>
+    </div>
+</form>
+{% if session.get('role') == 'admin' %}
+<div class="collapse" id="cajaRmv"><form method="POST" action="{{ url_for('oc_movilidad_rmv') }}" class="mv-card d-flex flex-wrap gap-2 align-items-end">
+    <input type="hidden" name="volver" value="{{ request.full_path }}">
+    <div><label class="small fw-bold">RMV vigente (S/)</label><input name="rmv" class="form-control form-control-sm" inputmode="decimal" value="{{ '%.2f'|format(rmv) }}" style="max-width:140px;"></div>
+    <button class="btn btn-sm btn-primary">Guardar RMV</button>
+    <span class="small text-muted">Sube con los decretos de aumento. Solo cambia el tope de las planillas nuevas (cada planilla guarda la RMV con que se hizo).</span>
+</form></div>
+{% endif %}
+</div>
+
+<template id="tplFila"><tr class="fila">
+    <td class="mot"><input name="motivo" class="form-control form-control-sm text-uppercase" list="dlMot" maxlength="120" placeholder="Ej: RECOJO DE MATERIAL"></td>
+    <td class="des"><input name="destino" class="form-control form-control-sm text-uppercase" maxlength="200" placeholder="Destino"></td>
+    <td class="n"><input name="monto" class="form-control form-control-sm text-end monto" inputmode="decimal" placeholder="0.00"></td>
+    <td class="x"><button type="button" class="btn btn-sm btn-outline-danger quitar" title="Quitar"><i class="bi bi-x-lg"></i></button></td>
+</tr></template>
+<script src="{{ url_for('static', filename='js/firma.js') }}?v=1"></script>
+<script>
+(function () {
+    const MESES = ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO', 'AGOSTO', 'SETIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'];
+    const TOPE = {{ tope|tojson }}, MAX = {{ filas_max|tojson }};
+    const PREVIOS = {{ trab_previos|tojson }};
+    const form = document.getElementById('formMov'), tbody = document.getElementById('filas');
+    window.pad = FirmaPad(document.getElementById('padFirma'));
+    const num = t => { const v = parseFloat(String(t || '').replace(',', '.').replace(/[^0-9.]/g, '')); return isFinite(v) ? v : 0; };
+    function total() {
+        let t = 0; tbody.querySelectorAll('.monto').forEach(i => t += num(i.value));
+        t = Math.round(t * 100) / 100;
+        document.getElementById('totalTxt').textContent = 'S/ ' + t.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const pasa = t > TOPE + 1e-9, av = document.getElementById('topeAviso');
+        document.getElementById('topeBox').classList.toggle('pasa', pasa);
+        av.hidden = !pasa;
+        if (pasa) av.textContent = `Pasa el tope diario en S/ ${(t - TOPE).toFixed(2)}: ese exceso no se podrá deducir como gasto (igual se puede guardar).`;
+        document.getElementById('btnFila').disabled = tbody.querySelectorAll('.fila').length >= MAX;
+    }
+    function nuevaFila(foco) {
+        if (tbody.querySelectorAll('.fila').length >= MAX) return;
+        const tr = document.getElementById('tplFila').content.firstElementChild.cloneNode(true);
+        tbody.appendChild(tr); if (foco) tr.querySelector('input').focus(); total();
+    }
+    tbody.addEventListener('input', e => { if (e.target.classList.contains('monto')) total(); });
+    tbody.addEventListener('click', e => {
+        const b = e.target.closest('.quitar'); if (!b) return;
+        b.closest('tr').remove(); if (!tbody.querySelector('.fila')) nuevaFila(); total();
+    });
+    document.getElementById('btnFila').addEventListener('click', () => nuevaFila(true));
+    if (!tbody.querySelector('.fila')) nuevaFila();
+    // periodo según la fecha
+    const fecha = document.getElementById('fechaGasto');
+    function periodo() { const v = fecha.value; document.getElementById('periodoTxt').textContent = v ? `Periodo: MES DE ${MESES[+v.slice(5, 7) - 1]} ${v.slice(0, 4)}` : ''; }
+    fecha.addEventListener('change', periodo); periodo();
+    // N° según la empresa
+    form.querySelectorAll('input[name=empresa]').forEach(r => r.addEventListener('change', () => {
+        {% if not m %}document.getElementById('numPrev').textContent = 'N° ' + r.dataset.sig;{% endif %}
+    }));
+    // trabajador: del sistema, de planillas anteriores o por DNI (RENIEC)
+    const nom = document.getElementById('trabNombre'), dni = document.getElementById('trabDni'), dniTxt = document.getElementById('dniTxt');
+    function dniDe(n) { const p = PREVIOS.find(x => x.nombre === (n || '').trim().toUpperCase()); return p ? p.dni : ''; }
+    document.getElementById('selUsuario').addEventListener('change', e => {
+        const o = e.target.selectedOptions[0]; if (!o || !o.dataset.nombre) return;
+        nom.value = o.dataset.nombre; const d = dniDe(nom.value);
+        if (d) { dni.value = d; dniTxt.textContent = 'DNI de planillas anteriores'; } else { dni.value = ''; dni.focus(); dniTxt.textContent = 'Escribe su DNI'; }
+    });
+    nom.addEventListener('change', () => { const d = dniDe(nom.value); if (d && !dni.value) { dni.value = d; dniTxt.textContent = 'DNI de planillas anteriores'; } });
+    document.getElementById('btnDni').addEventListener('click', () => {
+        const v = dni.value.replace(/\D/g, '');
+        if (v.length !== 8) { dniTxt.textContent = 'El DNI tiene 8 dígitos'; return; }
+        dniTxt.textContent = 'Buscando…';
+        const fd = new FormData(); fd.append('dni', v);
+        fetch({{ url_for('oc_movilidad_dni')|tojson }}, { method: 'POST', body: fd, credentials: 'same-origin' }).then(r => r.json()).then(d => {
+            if (d.status === 'success') { nom.value = d.nombre; dniTxt.textContent = 'Nombre de ' + d.origen; } else dniTxt.textContent = d.msg || 'No encontrado';
+        }).catch(() => { dniTxt.textContent = 'No se pudo consultar: escríbelo a mano'; });
+    });
+    // al guardar: limpiar filas vacías del final y pasar la firma
+    form.addEventListener('submit', e => {
+        document.getElementById('firma_png').value = pad.vacia() ? '' : pad.png();
+        const btn = form.querySelector('button.btn-success'); btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Guardando…';
+    });
+    total();
+})();
+</script>
+{% endblock %}

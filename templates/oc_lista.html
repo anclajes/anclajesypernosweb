@@ -6,7 +6,8 @@
 {% from '_oc_docs_menu.html' import menu_docs_oc, estilos_docs_oc with context %}
 {% from '_oc_contable.html' import chip_contable, estilos_contable with context %}
 {% from '_oc_directo.html' import estilos_directo with context %}
-{{ estilos_docs_oc() }}{{ estilos_contable() }}{{ estilos_directo() }}
+{% import '_oc_movilidad.html' as mvl with context %}
+{{ estilos_docs_oc() }}{{ estilos_contable() }}{{ estilos_directo() }}{{ mvl.estilos() }}
 <style>
     .oc-imp-chip { display: inline-flex; align-items: center; gap: 3px; font-size: .58rem; font-weight: 800; letter-spacing: .02em; border-radius: 6px; padding: 0 6px;
                    background: #e0f2fe; color: #075985; border: 1px solid #7dd3fc; white-space: nowrap; vertical-align: middle; }
@@ -168,7 +169,8 @@
                     <option value="{{ k }}" {{ 'selected' if k == pago_f }}>{{ t }}</option>{% endfor %}</select></div>
             <div class="col-6 col-md-3 col-xl-2"><label>Documentos</label>
                 <select name="docs" class="form-select form-select-sm auto"><option value="">Todos</option>
-                    {% for k, t in [('sin_factura', 'Sin factura'), ('sin_guia', 'Sin guía'), ('sin_certificado', 'Certificado pendiente (importación)')] %}
+                    {% for k, t in [('sin_factura', 'Sin factura'), ('sin_guia', 'Sin guía'), ('sin_certificado', 'Certificado pendiente (importación)'),
+                                    ('con_movilidad', '🚕 Con planilla de movilidad'), ('movilidad_sin_firma', '🚕 Movilidad sin firmar'), ('sin_movilidad', '🚕 Sin planilla de movilidad')] %}
                     <option value="{{ k }}" {{ 'selected' if k == docs_f }}>{{ t }}</option>{% endfor %}</select></div>
             <div class="col-6 col-md-3 col-xl-2"><label>Desde</label><input type="date" name="desde" class="form-control form-control-sm auto" value="{{ desde.isoformat() if desde else '' }}"></div>
             <div class="col-6 col-md-3 col-xl-2"><label>Hasta</label><input type="date" name="hasta" class="form-control form-control-sm auto" value="{{ hasta.isoformat() if hasta else '' }}"></div>
@@ -254,6 +256,7 @@
     {% if d %}<a class="dm ok" href="{{ url_for('oc_documento_ver', doc_id=d.id) }}" target="_blank" title="{{ nom }}">{{ ab }}</a>{% endif %}
     {% endfor %}
     <div class="mt-1">{{ menu_docs_oc(o, ds) }}</div>
+    <div class="mt-1">{{ mvl.chip(o, (movs or {}).get(o.id, [])) }}</div>
     {% if vista == 'conformes' %}
     {% if o.numero_guia %}<div class="sub">Guía {{ o.numero_guia }}</div>{% endif %}
     {% if o.numero_factura %}<div class="sub">Fact. {{ o.numero_factura }}</div>{% endif %}

@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}Planillas de movilidad{% endblock %}
+{% block subtitle %}{{ periodo }}{% endblock %}
+{% block content %}
+{% include '_oc_nav.html' %}
+{% import '_oc_movilidad.html' as mvl with context %}{{ mvl.estilos() }}
+<style>
+    .ml-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-bottom: 12px; }
+    .ml-kpi { background: #fff; border: 1px solid #e2e8f0; border-left: 5px solid var(--k, #4f46e5); border-radius: 12px; padding: 9px 12px; }
+    .ml-kpi .n { font-size: 1.35rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+    .ml-kpi .t { font-size: .72rem; color: #64748b; font-weight: 700; }
+    .ml-tabla td, .ml-tabla th { vertical-align: middle; font-size: .8rem; }
+    .ml-tabla tr.anul td { opacity: .5; text-decoration: line-through; }
+    .ml-tabla tr.anul td.acc { text-decoration: none; }
+    .ml-emp { font-size: .6rem; font-weight: 800; color: #fff; border-radius: 5px; padding: 0 6px; }
+    .ml-exc { font-size: .66rem; font-weight: 800; color: #b91c1c; }
+</style>
+<form class="d-flex flex-wrap gap-2 align-items-end mb-3" method="GET">
+    <div><label class="small fw-bold d-block">Empresa</label>
+        <div class="btn-group">{% for e, info in empresas_oc.items() %}<a class="btn btn-sm {{ 'btn-dark' if empresa == e else 'btn-outline-secondary' }}" href="{{ url_for('oc_movilidad_lista', empresa=e, mes=mes, estado=estado, q=buscar) }}">{{ info.corto }}</a>{% endfor %}
+            <a class="btn btn-sm {{ 'btn-dark' if empresa == 'TODAS' else 'btn-outline-secondary' }}" href="{{ url_for('oc_movilidad_lista', empresa='TODAS', mes=mes, estado=estado, q=buscar) }}">Las dos</a></div>
+        <input type="hidden" name="empresa" value="{{ empresa }}"></div>
+    <div><label class="small fw-bold">Mes del gasto</label>
+        <select name="mes" class="form-select form-select-sm" onchange="this.form.submit()">{% for k, t in meses %}<option value="{{ k }}" {{ 'selected' if k == mes }}>{{ t }}</option>{% endfor %}</select></div>
+    <div><label class="small fw-bold">Estado</label>
+        <select name="estado" class="form-select form-select-sm" onchange="this.form.submit()">
+            {% for k, t in [('', 'Todas'), ('sin_firma', 'Falta firmar'), ('firmadas', 'Firmadas'), ('anuladas', 'Anuladas')] %}<option value="{{ k }}" {{ 'selected' if k == estado }}>{{ t }}</option>{% endfor %}</select></div>
+    <div class="flex-fill" style="min-width:200px;"><label class="small fw-bold">Buscar</label>
+        <input name="q" value="{{ buscar }}" class="form-control form-control-sm" placeholder="Trabajador, DNI, N° de orden, proveedor, destino…"></div>
+    <button class="btn btn-sm btn-primary">Buscar</button>
+    <div class="ms-auto d-flex gap-1">
+        <a class="btn btn-sm btn-outline-danger fw-bold {{ 'disabled' if not n_vigentes }}" target="_blank" href="{{ url_for('oc_movilidad_lista', empresa=empresa, mes=mes, pdf=1, ver=1) }}"><i class="bi bi-file-earmark-pdf"></i> Ver todas en un PDF</a>
+        <a class="btn btn-sm btn-outline-secondary {{ 'disabled' if not n_vigentes }}" href="{{ url_for('oc_movilidad_lista', empresa=empresa, mes=mes, pdf=1) }}"><i class="bi bi-download"></i></a>
+    </div>
+</form>
+
+<div class="ml-kpis">
+    <div class="ml-kpi"><div class="n">{{ n_vigentes }}</div><div class="t">Planillas vigentes · {{ periodo }}</div></div>
+    <div class="ml-kpi" style="--k:#16a34a;"><div class="n">S/ {{ '{:,.2f}'.format(total) }}</div><div class="t">Total de movilidad del mes</div></div>
+    <div class="ml-kpi" style="--k:{{ '#f59e0b' if n_sin_firma else '#94a3b8' }};"><div class="n">{{ n_sin_firma }}</div><div class="t">Falta firmar (no sustentan el gasto)</div></div>
+    <div class="ml-kpi" style="--k:{{ '#dc2626' if excesos else '#94a3b8' }};"><div class="n">{{ excesos|length }}</div><div class="t">Días que pasan el tope (S/ {{ '%.2f'|format(tope) }} = 4% RMV S/ {{ '{:,.0f}'.format(rmv) }})</div></div>
+</div>
+
+<div class="table-responsive bg-white border rounded-3 mb-3">
+<table class="table table-sm table-hover mb-0 ml-tabla">
+    <thead class="table-light"><tr><th class="ps-3">N°</th><th>Fecha</th><th>Trabajador</th><th>Desplazamientos</th><th>Orden</th><th class="text-end">Monto</th><th>Firma</th><th class="pe-3"></th></tr></thead>
+    <tbody>
+    {% for mv in lista %}{% set emp = empresas_oc.get(mv.empresa, {}) %}{% set exc = excesos.get((mv.empresa, mv.trabajador_dni, mv.fecha_gasto)) %}
+    <tr class="{{ 'anul' if mv.anulada }}">
+        <td class="ps-3 text-nowrap"><b>{{ mov_numero_txt(mv) }}</b> <span class="ml-emp" style="background: {{ emp.color or '#334155' }};">{{ emp.corto or mv.empresa }}</span></td>
+        <td class="text-nowrap">{{ mv.fecha_gasto.strftime('%d/%m/%Y') }}</td>
+        <td><b>{{ mv.trabajador_nombre }}</b><div class="text-muted" style="font-size:.7rem;">DNI {{ mv.trabajador_dni }}</div>
+            {% if exc and not mv.anulada %}<div class="ml-exc"><i class="bi bi-exclamation-triangle"></i> ese día suma S/ {{ '%.2f'|format(exc) }} (tope S/ {{ '%.2f'|format(tope) }})</div>{% endif %}</td>
+        <td style="max-width:320px;">{% for f in mov_filas(mv) %}<div>{{ f.motivo }} → {{ f.destino }} <span class="text-muted">S/ {{ '%.2f'|format(f.monto or 0) }}</span></div>{% endfor %}</td>
+        <td class="text-nowrap"><a href="{{ url_for('oc_detalle', orden_id=mv.orden_id) }}#movilidad">{{ oc_codigo(mv.orden) }}</a><div class="text-muted" style="font-size:.7rem;">{{ (mv.orden.razon_social or '')[:28] }}</div></td>
+        <td class="text-end fw-bold text-nowrap">S/ {{ '%.2f'|format(mv.total or 0) }}</td>
+        <td>{% if mv.anulada %}<span class="mv-est anul">ANULADA</span>{% elif mov_firmada(mv) %}<span class="mv-est ok">Firmada</span>{% else %}<span class="mv-est falta">Falta</span>{% endif %}</td>
+        <td class="pe-3 text-nowrap acc">
+            <a class="btn btn-sm btn-outline-danger py-0" target="_blank" href="{{ url_for('oc_movilidad_pdf', mov_id=mv.id, ver=1) }}" title="Ver PDF"><i class="bi bi-file-earmark-pdf"></i></a>
+            <a class="btn btn-sm btn-outline-secondary py-0" href="{{ url_for('oc_movilidad_pdf', mov_id=mv.id) }}" title="Descargar PDF"><i class="bi bi-download"></i></a>
+            {% if mv.escaneo_s3_key %}<a class="btn btn-sm btn-outline-success py-0" target="_blank" href="{{ url_for('oc_movilidad_hoja_ver', mov_id=mv.id) }}" title="Hoja firmada a mano"><i class="bi bi-paperclip"></i></a>{% endif %}
+        </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="8" class="text-center text-muted py-4">No hay planillas de movilidad en {{ periodo }}{{ '' if empresa == 'TODAS' else ' para ' ~ empresas_oc[empresa].corto }}.
+        Se crean desde cada orden (botón <b>🚕 Crear planilla de movilidad</b>).</td></tr>
+    {% endfor %}
+    </tbody>
+</table>
+</div>
+
+{% if por_trab %}
+<div class="bg-white border rounded-3 p-3">
+    <div class="small fw-bold text-uppercase text-muted mb-2" style="letter-spacing:.05em;">Resumen por trabajador · {{ periodo }}</div>
+    <div class="table-responsive"><table class="table table-sm mb-0" style="font-size:.8rem;">
+        <thead class="table-light"><tr><th>Trabajador</th><th>DNI</th><th class="text-end">Planillas</th><th class="text-end">Días</th><th class="text-end">Total</th></tr></thead>
+        <tbody>{% for t in por_trab %}<tr><td>{{ t.nombre }}</td><td>{{ t.dni }}</td><td class="text-end">{{ t.n }}</td><td class="text-end">{{ t.dias|length }}</td><td class="text-end fw-bold">S/ {{ '%.2f'|format(t.total) }}</td></tr>{% endfor %}</tbody>
+    </table></div>
+</div>
+{% endif %}
+{% if session.get('role') == 'admin' %}
+<details class="mt-3" id="vaciarMov" style="max-width: 720px;">
+    <summary class="small fw-bold text-danger" style="cursor:pointer;"><i class="bi bi-exclamation-octagon"></i> Zona de pruebas: vaciar planillas de movilidad</summary>
+    <form method="POST" action="{{ url_for('oc_movilidad_vaciar') }}" class="border rounded-3 p-3 mt-2" style="background:#fef2f2; border-color:#fecaca !important;"
+          onsubmit="return confirm('¿Borrar estas planillas de movilidad? No se puede deshacer.')">
+        <input type="hidden" name="volver_empresa" value="{{ empresa }}">
+        <div class="small mb-2">Para dejar <b>limpio solo este apartado</b> después de probar y empezar con datos reales. Borra las planillas (de <b>todas las fechas</b>),
+            sus firmas y hojas firmadas, y sus líneas en el historial de las órdenes. <b>No toca</b> las órdenes, sus documentos ni ningún otro módulo.
+            La numeración vuelve a empezar en <b>N° 00-00001</b>. La RMV configurada se mantiene. <b>No se puede deshacer.</b></div>
+        <div class="row g-2 align-items-end">
+            <div class="col-12 col-md-5"><label class="small fw-bold">¿De qué empresa?</label>
+                <select name="empresa" class="form-select form-select-sm">
+                    <option value="TODAS">Las dos empresas ({{ conteo_vaciar.get('TODAS', 0) }} planilla(s))</option>
+                    {% for e, info in empresas_oc.items() %}<option value="{{ e }}">Solo {{ info.corto }} ({{ conteo_vaciar.get(e, 0) }})</option>{% endfor %}
+                </select></div>
+            <div class="col-12 col-md-4"><label class="small fw-bold">Escribe <span class="text-danger">BORRAR MOVILIDAD</span></label>
+                <input name="confirmacion" class="form-control form-control-sm" autocomplete="off" placeholder="BORRAR MOVILIDAD"></div>
+            <div class="col-12 col-md-3"><button class="btn btn-sm btn-danger fw-bold w-100" {{ 'disabled' if not conteo_vaciar.get('TODAS') }}><i class="bi bi-trash3-fill"></i> Vaciar</button></div>
+        </div>
+    </form>
+</details>
+{% endif %}
+{% endblock %}

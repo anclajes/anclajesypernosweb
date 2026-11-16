@@ -52,6 +52,13 @@ def oc_vaciar():
             extra.append(f'{n_movs} movimiento(s) del Kardex quedaron sin enlace a la orden (no se borran)')
         claves += [d.s3_key for d in RequerimientoDocumento.query.all() if d.s3_key]
         n_req = RequerimientoCompra.query.count()
+        # planillas de movilidad (cuelgan de las órdenes): se van con ellas
+        _asegurar_mov()
+        n_mov, claves_mov = _mov_vaciar('TODAS')
+        claves += claves_mov
+        db.session.flush()
+        if n_mov:
+            extra.append(f'{n_mov} planilla(s) de movilidad')
         for modelo in (OrdenCompraEntregaItem, OrdenCompraEntrega, OrdenCompraDocumento, OrdenCompraEvento, OrdenCompraItem, OrdenCompra,
                        RequerimientoDocumento, RequerimientoEvento, RequerimientoVisto, RequerimientoItem, RequerimientoCompra, Notificacion):
             modelo.query.delete(synchronize_session=False)

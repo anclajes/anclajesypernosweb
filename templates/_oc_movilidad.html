@@ -1,0 +1,155 @@
+{#- PLANILLAS DE MOVILIDAD (v26) de una orden: panel del detalle y chip de la lista de órdenes. Se importa "with context".
+    Rutas en modulos/compras/movilidad.py. -#}
+
+{% macro estilos() %}
+<style>
+    .mv-panel { border: 2px solid #c7d2fe; background: linear-gradient(180deg, #eef2ff 0, #fff 60px); }
+    .mv-panel .panel-t { color: #3730a3; }
+    .mv-crear { display: flex; align-items: center; gap: 10px; width: 100%; border: 2px dashed #818cf8; background: #fff; border-radius: 12px; padding: 10px 12px;
+                color: #3730a3; text-decoration: none; font-weight: 800; }
+    .mv-crear:hover { background: #eef2ff; color: #312e81; }
+    .mv-crear .ico { font-size: 1.5rem; }
+    .mv-crear small { display: block; font-weight: 500; color: #6366f1; font-size: .72rem; }
+    .mv-item { border: 1px solid #e2e8f0; border-radius: 12px; padding: 9px 11px; margin-bottom: 8px; background: #fff; }
+    .mv-item.nuevo { border-color: #22c55e; box-shadow: 0 0 0 3px rgba(34,197,94,.18); }
+    .mv-item.anulada { opacity: .6; background: #f8fafc; }
+    .mv-item .cab { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+    .mv-item .nro { font-weight: 800; font-variant-numeric: tabular-nums; }
+    .mv-item .tot { margin-left: auto; font-weight: 800; font-size: 1rem; font-variant-numeric: tabular-nums; }
+    .mv-item .det { font-size: .76rem; color: #475569; margin-top: 3px; }
+    .mv-item .acc { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 7px; }
+    .mv-est { font-size: .64rem; font-weight: 800; border-radius: 6px; padding: 1px 7px; white-space: nowrap; }
+    .mv-est.ok { background: #dcfce7; color: #166534; } .mv-est.falta { background: #fef3c7; color: #92400e; } .mv-est.anul { background: #e2e8f0; color: #334155; }
+    .mv-emp { font-size: .6rem; font-weight: 800; color: #fff; border-radius: 5px; padding: 0 6px; }
+    .mv-tope { font-size: .7rem; color: #b91c1c; font-weight: 700; }
+    .pad-firma { width: 100%; height: 180px; border: 1.5px dashed #94a3b8; border-radius: 10px; background: #fff; display: block; }
+    .mv-chip { display: inline-flex; align-items: center; gap: 3px; font-size: .64rem; font-weight: 800; border-radius: 7px; padding: 1px 7px; text-decoration: none; white-space: nowrap; }
+    .mv-chip.si { background: #e0e7ff; color: #3730a3; border: 1px solid #a5b4fc; }
+    .mv-chip.si.falta { background: #fef3c7; color: #92400e; border-color: #fcd34d; }
+    .mv-chip.no { background: #fff; color: #6366f1; border: 1px dashed #a5b4fc; }
+    .mv-chip.no:hover { background: #eef2ff; }
+</style>
+{% endmacro %}
+
+{#- Chip en la lista de órdenes: con planilla(s) -> cuántas y cuánto (amarillo si falta firmar); sin -> "+ Movilidad" -#}
+{% macro chip(o, lista) %}
+{% if lista %}{% set sin_firma = lista|rejectattr('firma_s3_key')|rejectattr('escaneo_s3_key')|list %}
+<a class="mv-chip si {{ 'falta' if sin_firma }}" href="{{ url_for('oc_detalle', orden_id=o.id) }}#movilidad"
+   title="{{ lista|length }} planilla(s) de movilidad · S/ {{ '%.2f'|format(lista|sum(attribute='total')) }}{{ (' · ' ~ sin_firma|length ~ ' sin firmar') if sin_firma }}">🚕 {{ lista|length }} · S/ {{ '%.2f'|format(lista|sum(attribute='total')) }}{% if sin_firma %} <i class="bi bi-pen"></i>{% endif %}</a>
+{% elif session.get('role') in roles_mov %}
+<a class="mv-chip no" href="{{ url_for('oc_movilidad_nueva', orden_id=o.id) }}" title="Crear planilla por gasto de movilidad para esta orden">+ 🚕 Movilidad</a>
+{% endif %}
+{% endmacro %}
+
+{#- Panel del detalle de la orden -#}
+{% macro panel(orden) %}
+{% set lista = oc_movilidades(orden) %}
+{% set vigentes = lista|rejectattr('anulada')|list %}
+{% set puede = session.get('role') in roles_mov %}
+{% set anula = session.get('role') in roles_mov_anulan %}
+{% set nuevo_id = (request.args.get('mov') or 0)|int(0) %}
+<div class="panel mv-panel" id="movilidad">
+    <div class="panel-t"><span style="font-size:1rem;">🚕</span> Planillas de movilidad
+        {% if vigentes %}<span class="ms-auto" style="text-transform:none; letter-spacing:0; font-size:.78rem; color:#0f172a;">{{ vigentes|length }} · <b>S/ {{ '%.2f'|format(vigentes|sum(attribute='total')) }}</b></span>{% endif %}</div>
+    {% if puede %}
+    <a class="mv-crear mb-2" href="{{ url_for('oc_movilidad_nueva', orden_id=orden.id) }}"><span class="ico">＋</span>
+        <span>Crear planilla de movilidad<small>Taxi, agencia, recojo o envío de esta orden · se llena sola con la orden, sale en PDF y se firma en pantalla</small></span></a>
+    {% endif %}
+    {% for mv in lista %}{% set firmada = mov_firmada(mv) %}{% set emp = empresas_oc.get(mv.empresa, {}) %}
+    <div class="mv-item {{ 'anulada' if mv.anulada }} {{ 'nuevo' if mv.id == nuevo_id }}">
+        <div class="cab">
+            <span class="nro">N° {{ mov_numero_txt(mv) }}</span>
+            <span class="mv-emp" style="background: {{ emp.color or '#334155' }};">{{ emp.corto or mv.empresa }}</span>
+            {% if mv.anulada %}<span class="mv-est anul">ANULADA</span>
+            {% elif firmada %}<span class="mv-est ok"><i class="bi bi-check2"></i> {{ 'Firmada en pantalla' if mv.firma_s3_key else 'Hoja firmada subida' }}</span>
+            {% else %}<span class="mv-est falta"><i class="bi bi-pen"></i> Falta la firma</span>{% endif %}
+            <span class="tot">S/ {{ '%.2f'|format(mv.total or 0) }}</span>
+        </div>
+        <div class="det"><b>{{ mv.trabajador_nombre }}</b> · DNI {{ mv.trabajador_dni }} · {{ mv.fecha_gasto.strftime('%d/%m/%Y') }}
+            · {% for f in mov_filas(mv) %}{{ f.motivo }} → {{ f.destino }} (S/ {{ '%.2f'|format(f.monto or 0) }}){{ '; ' if not loop.last }}{% endfor %}</div>
+        {% if mv.anulada %}<div class="det text-danger">Anulada por {{ mv.anulada_por }} · {{ mv.anulada_motivo }}</div>
+        {% elif (mv.total or 0) > (mv.rmv or 1230) * 0.04 + 0.001 %}<div class="mv-tope"><i class="bi bi-exclamation-triangle"></i> Pasa el tope diario deducible (S/ {{ '%.2f'|format((mv.rmv or 1230) * 0.04) }}).</div>{% endif %}
+        <div class="acc">
+            <a class="btn btn-sm btn-outline-danger py-0" href="{{ url_for('oc_movilidad_pdf', mov_id=mv.id, ver=1) }}" target="_blank"><i class="bi bi-file-earmark-pdf"></i> Ver PDF</a>
+            <a class="btn btn-sm btn-outline-secondary py-0" href="{{ url_for('oc_movilidad_pdf', mov_id=mv.id) }}"><i class="bi bi-download"></i> Descargar</a>
+            {% if mv.escaneo_s3_key %}<a class="btn btn-sm btn-outline-success py-0" href="{{ url_for('oc_movilidad_hoja_ver', mov_id=mv.id) }}" target="_blank"><i class="bi bi-paperclip"></i> Hoja firmada</a>{% endif %}
+            {% if puede and not mv.anulada %}
+                {% if not firmada %}
+                <a class="btn btn-sm btn-outline-primary py-0" href="{{ url_for('oc_movilidad_editar', mov_id=mv.id) }}"><i class="bi bi-pencil"></i> Editar</a>
+                <button type="button" class="btn btn-sm btn-primary py-0 fw-bold" data-bs-toggle="modal" data-bs-target="#mvFirmar{{ mv.id }}"><i class="bi bi-pen"></i> Firmar en pantalla</button>
+                <form method="POST" action="{{ url_for('oc_movilidad_hoja', mov_id=mv.id) }}" enctype="multipart/form-data" class="m-0">
+                    <label class="btn btn-sm btn-outline-success py-0 mb-0"><i class="bi bi-upload"></i> Subir hoja firmada
+                        <input type="file" name="archivo" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*" hidden onchange="this.form.submit()"></label></form>
+                {% elif anula %}
+                <button type="button" class="btn btn-sm btn-outline-warning py-0" data-bs-toggle="modal" data-bs-target="#mvQuitar{{ mv.id }}"><i class="bi bi-eraser"></i> Quitar firma para corregir</button>
+                {% endif %}
+                {% if anula %}<button type="button" class="btn btn-sm btn-link text-danger py-0" data-bs-toggle="modal" data-bs-target="#mvAnular{{ mv.id }}">Anular</button>{% endif %}
+            {% endif %}
+        </div>
+        {% if mv.firma_s3_key %}<div class="det">Firma: <img src="{{ url_for('oc_movilidad_firma', mov_id=mv.id) }}" alt="Firma" style="max-height:34px; vertical-align:middle;"> · {{ mv.firma_fecha.strftime('%d/%m/%Y %H:%M') if mv.firma_fecha else '' }}</div>{% endif %}
+    </div>
+    {% if puede and not mv.anulada %}
+    {% if not firmada %}
+    <div class="modal fade" id="mvFirmar{{ mv.id }}" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content border-0 shadow">
+        <div class="modal-header py-2 text-white" style="background:#3730a3;"><h6 class="modal-title fw-bold text-white"><i class="bi bi-pen"></i> Firma de {{ mv.trabajador_nombre }}</h6>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body">
+            <div class="small mb-2">N° {{ mov_numero_txt(mv) }} · {{ mv.fecha_gasto.strftime('%d/%m/%Y') }} · <b>S/ {{ '%.2f'|format(mv.total or 0) }}</b>. Que el trabajador firme con el dedo o el mouse:</div>
+            <canvas class="pad-firma" data-mov="{{ mv.id }}"></canvas>
+            <div class="form-text">Al guardar, la planilla queda firmada y ya no se edita.</div>
+        </div>
+        <div class="modal-footer p-2 bg-light">
+            <button type="button" class="btn btn-sm btn-link me-auto" onclick="mvPad({{ mv.id }}).limpiar()">Borrar</button>
+            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+            <button type="button" class="btn btn-primary btn-sm fw-bold" onclick="mvGuardarFirma({{ mv.id }}, {{ url_for('oc_movilidad_firmar', mov_id=mv.id)|tojson }})"><i class="bi bi-check2"></i> Guardar firma</button>
+        </div>
+    </div></div></div>
+    {% endif %}
+    {% if anula %}
+    {% if firmada %}
+    <div class="modal fade" id="mvQuitar{{ mv.id }}" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content border-0 shadow">
+        <form method="POST" action="{{ url_for('oc_movilidad_quitar_firma', mov_id=mv.id) }}">
+            <div class="modal-header py-2"><h6 class="modal-title fw-bold"><i class="bi bi-eraser"></i> Quitar la firma de la N° {{ mov_numero_txt(mv) }}</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body"><div class="small mb-2">Se quita la firma{{ ' y la hoja firmada' if mv.escaneo_s3_key }} para poder corregir la planilla. Queda en el historial de la orden; luego hay que volver a firmarla.</div>
+                <label class="small fw-bold">¿Por qué? *</label><input name="motivo" class="form-control form-control-sm" minlength="5" maxlength="200" required placeholder="Ej: el monto era 12.00, no 10.00"></div>
+            <div class="modal-footer p-2 bg-light"><button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-warning btn-sm fw-bold">Quitar firma</button></div>
+        </form>
+    </div></div></div>
+    {% endif %}
+    <div class="modal fade" id="mvAnular{{ mv.id }}" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content border-0 shadow">
+        <form method="POST" action="{{ url_for('oc_movilidad_anular', mov_id=mv.id) }}">
+            <div class="modal-header py-2 text-white" style="background:#b91c1c;"><h6 class="modal-title fw-bold text-white">Anular la planilla N° {{ mov_numero_txt(mv) }}</h6><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body"><div class="small mb-2">No se borra: queda como ANULADA (su número no se vuelve a usar, la numeración sigue siendo correlativa).</div>
+                <label class="small fw-bold">Motivo *</label><input name="motivo" class="form-control form-control-sm" minlength="5" maxlength="300" required placeholder="Ej: se hizo con la empresa equivocada"></div>
+            <div class="modal-footer p-2 bg-light"><button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-danger btn-sm fw-bold">Anular</button></div>
+        </form>
+    </div></div></div>
+    {% endif %}
+    {% endif %}
+    {% else %}
+    {% if not puede %}<div class="small text-muted">Esta orden no tiene planillas de movilidad.</div>{% endif %}
+    {% endfor %}
+    <div class="form-text" style="font-size:.68rem;">Se puede crear en cualquier etapa de la orden. Una planilla por trabajador y por día; cada empresa con su numeración.
+        <a href="{{ url_for('oc_movilidad_lista') }}">Ver todas las del mes</a> (para contabilidad).</div>
+</div>
+<script src="{{ url_for('static', filename='js/firma.js') }}?v=1"></script>
+<script>
+(function () {
+    const pads = {};
+    window.mvPad = id => pads[id];
+    document.querySelectorAll('#movilidad .modal').forEach(md => md.addEventListener('shown.bs.modal', () => {
+        const c = md.querySelector('canvas.pad-firma'); if (!c) return;
+        const id = c.dataset.mov; if (!pads[id]) pads[id] = FirmaPad(c); else pads[id].ajustar();
+    }));
+    window.mvGuardarFirma = function (id, url) {
+        const pad = pads[id];
+        if (!pad || pad.vacia()) { (window.Swal ? Swal.fire('Falta la firma', 'Firma en el recuadro con el dedo o el mouse.', 'warning') : alert('Falta la firma')); return; }
+        const fd = new FormData(); fd.append('firma_png', pad.png());
+        fetch(url, { method: 'POST', body: fd, credentials: 'same-origin' }).then(r => r.json()).then(d => {
+            if (d.status === 'success') location.replace(location.pathname + '?mov=' + id + '&t=' + Date.now() + '#movilidad');
+            else (window.Swal ? Swal.fire('No se guardó', d.msg || 'Error', 'error') : alert(d.msg));
+        }).catch(() => (window.Swal ? Swal.fire('No se guardó', 'Revisa tu conexión e intenta otra vez.', 'error') : alert('Error de conexión')));
+    };
+})();
+</script>
+{% endmacro %}
