@@ -342,8 +342,11 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
   "Ver ↗" y "No es duplicada" ahí mismo) y pestaña "⚠ Posibles duplicadas" (`_dup_mapa`, mira las dos empresas). Las anuladas por
   duplicada muestran "↪ duplicada de OC …" (mapeo `anulada_duplicada_de_id`); la original muestra en su detalle cuáles se anularon.
 - RECHAZADAS y ANULADAS no avisan ni se comparan (`DUP_ESTADOS_FUERA`); si una rechazada se corrige, vuelve a contar.
-- Comparar lado a lado: `oc_duplicados_comparar` (?a=&b=, `oc_dup_comparar.html`): datos y productos emparejados en verde, con
-  "No es duplicada" y "Anular X · queda Y" (Gerencia y Logística).
+- Comparar lado a lado: `oc_duplicados_comparar` (?ids=23,19,24 hasta DUP_COMPARAR_MAX = 6, o ?a=&b=; `oc_dup_comparar.html`):
+  una columna por orden; se marca cuál es la CORRECTA (radio; rechazadas/anuladas no pueden serlo) y lo que coincide con ella sale en
+  verde (datos `_dup_claves`, productos emparejados por código o descripción, razones por par). "Anular" (checkbox) en las que sobran →
+  `oc_anular_duplicadas_varias` (todas o ninguna; usa `_dup_anular`, el mismo de `oc_anular_duplicada`). "No es duplicada de …" por columna.
+  Desde la lista ("Comparar las N", `comparar_todas` en `_dup_mapa`) y el detalle ("Comparar las N juntas").
 
 ## Kardex
 

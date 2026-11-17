@@ -34,7 +34,8 @@
     <button type="button" class="dup-chip border-0 dropdown-toggle" style="background: {{ d.nivel.color }};" data-bs-toggle="dropdown" data-bs-auto-close="outside" data-bs-popper-config='{"strategy":"fixed"}'
             title="Posible duplicada: clic para ver con cuál y qué coincide">⚠ ¿Duplicada? {{ d.nivel.txt }}</button>
     <div class="dropdown-menu dup-menu p-2 shadow">
-        <div class="small fw-bold mb-1" style="color:#334155;">{{ oc_codigo(o) }} se parece a:</div>
+        <div class="d-flex align-items-center gap-1 mb-1"><span class="small fw-bold" style="color:#334155;">{{ oc_codigo(o) }} se parece a{{ (' ' ~ d.con|length ~ ' órdenes') if d.con|length > 1 }}:</span>
+            {% if d.comparar_todas %}<a class="btn btn-sm btn-dark py-0 ms-auto" href="{{ d.comparar_todas }}"><i class="bi bi-layout-three-columns"></i> Comparar las {{ d.con|length + 1 }}</a>{% endif %}</div>
         {% for c in d.con[:4] %}
         <div class="dup-mi" style="--n: {{ c.nivel.color }};">
             <div class="d-flex flex-wrap align-items-center gap-1"><span class="dup-niv">{{ c.nivel.txt }}</span><b>{{ c.codigo }}</b>
@@ -145,6 +146,7 @@
 {% set top = lista[0].nivel.k %}
 <div class="dup-box {{ top }} mb-2" id="duplicados">
     <div class="dup-t"><i class="bi bi-files"></i> {{ '¡Posible ORDEN DUPLICADA!' if top == 'alta' else 'Ojo: hay órdenes parecidas del mismo proveedor' }}</div>
+    {% if lista|length > 1 %}<a class="btn btn-sm btn-dark py-0 float-end" href="{{ oc_dup_url_comparar([orden.id] + lista|map(attribute='id')|list) }}"><i class="bi bi-layout-three-columns"></i> Comparar las {{ [lista|length + 1, 6]|min }} juntas</a>{% endif %}
     <div class="small">{% if orden.estado == 'ENVIADA' and es_admin %}<b>Antes de aprobar</b>, compara con {{ 'esta orden' if lista|length == 1 else 'estas órdenes' }}.{% else %}Compara antes de seguir: si es la misma compra, se anula una.{% endif %}</div>
     {% for x in lista %}
     <div class="dup-c" style="--n: {{ x.nivel.color }};">

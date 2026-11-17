@@ -272,9 +272,10 @@ def _dup_mapa(ordenes):
                                      'razones': r[1], 'estado': ESTADOS_OC.get(oy.estado, {}).get('txt', oy.estado),
                                      'total': _dup_dinero(oy.moneda, oy.total or 0), 'fecha': oy.fecha.strftime('%d/%m/%Y') if oy.fecha else '',
                                      'comparar': url_for('oc_duplicados_comparar', a=x['id'], b=oy.id)})
-    for m in mapa.values():
+    for oid, m in mapa.items():
         m['nivel'] = _dup_nivel(m['puntos'])
         m['con'].sort(key=lambda c: -c['puntos'])
+        m['comparar_todas'] = _dup_url_comparar([oid] + [c['id'] for c in m['con']]) if len(m['con']) > 1 else None
     return mapa
 
 
@@ -413,6 +414,14 @@ def oc_anular_duplicada(orden_id):
     if len(detalle) < 5:
         flash('⛔ Escribe el motivo (mínimo 5 letras).')
         return redirect(volver)
+    _dup_anular(orden, original, detalle)
+    db.session.commit()
+    flash(f'{_oc_codigo(orden)} anulada por duplicada de {_oc_codigo(original)}. Ya no aparece por pagar y su número no se vuelve a usar.')
+    return redirect(volver)
+
+
+def _dup_anular(orden, original, detalle):
+    """Anula `orden` por duplicada de `original` (sin commit). Ya se revisó _dup_bloqueo_anular y el rol."""
     estado_antes = orden.estado
     extra = []
     if orden.destino == 'DIRECTO' and orden.fecha_kardex:
@@ -425,13 +434,51 @@ def oc_anular_duplicada(orden_id):
     orden.anulacion_categoria, orden.anulacion_opcion = 'DUPLICADA', f'Orden duplicada de {_oc_codigo(original)}'[:150]
     orden.motivo_anulacion = detalle
     orden.anulada_duplicada_de_id = original.id
-    _oc_evento(orden, 'ANULADA', f"ANULADA POR DUPLICADA de {_oc_codigo(original)}: {detalle} (estaba: {ESTADOS_OC[estado_antes]['txt']}"
+    _oc_evento(orden, 'ANULADA', f"ANULADA POR DUPLICADA de {_oc_codigo(original)}: {detalle} (estaba: {ESTADOS_OC.get(estado_antes, {}).get('txt', estado_antes)}"
                                  + (f"; {'; '.join(extra)}" if extra else '') + ')')
     _oc_evento(original, 'DUPLICADO', f"Se anuló la {_oc_codigo(orden)} por ser DUPLICADA de esta orden: {detalle}"[:500])
     registrar_log(f"ANULÓ POR DUPLICADA la {_oc_codigo(orden)} (original {_oc_codigo(original)}): {detalle}"[:255], 'bi-files', 'text-danger')
+
+
+@app.route('/ordenes/duplicados/anular_varias', methods=['POST'])
+@_ruta_oc('editar')
+def oc_anular_duplicadas_varias():
+    """Desde 'Comparar': se elige la orden CORRECTA y se anulan de una vez las marcadas (todas o ninguna)."""
+    f = request.form
+    volver = _volver_seguro(f.get('volver'), url_for('oc_lista'))
+    if session.get('role') not in ROLES_ANULAN_DUPLICADA:
+        flash('⛔ Solo Gerencia o Logística anulan por duplicada.')
+        return redirect(volver)
+    original = OrdenCompra.query.get(f.get('original_id', type=int) or 0)
+    ids = [int(x) for x in f.getlist('anular_ids') if str(x).isdigit()]
+    detalle = ' '.join((f.get('motivo') or '').split())[:250]
+    if not original or original.estado in DUP_ESTADOS_FUERA:
+        flash('⛔ Elige la orden CORRECTA (la que se queda vigente).')
+        return redirect(volver)
+    ids = [i for i in dict.fromkeys(ids) if i != original.id]
+    if not ids:
+        flash('⛔ Marca al menos una orden para anular (no la correcta).')
+        return redirect(volver)
+    if len(detalle) < 5:
+        flash('⛔ Escribe el motivo (mínimo 5 letras).')
+        return redirect(volver)
+    ordenes, errores = [], []
+    for i in ids:
+        o = OrdenCompra.query.get(i)
+        bl = _dup_bloqueo_anular(o) if o else 'no existe'
+        if bl:
+            errores.append(f"{_oc_codigo(o) if o else i}: {bl}")
+        else:
+            ordenes.append(o)
+    if errores:
+        flash('⛔ No se anuló ninguna. ' + ' · '.join(errores))
+        return redirect(volver)
+    for o in ordenes:
+        _dup_anular(o, original, detalle)
     db.session.commit()
-    flash(f'{_oc_codigo(orden)} anulada por duplicada de {_oc_codigo(original)}. Ya no aparece por pagar y su número no se vuelve a usar.')
-    return redirect(volver)
+    flash(f"{len(ordenes)} orden(es) anulada(s) por duplicadas de {_oc_codigo(original)}: {', '.join(_oc_codigo(o) for o in ordenes)}. "
+          "Ya no aparecen por pagar y sus números no se vuelven a usar.")
+    return redirect(url_for('oc_detalle', orden_id=original.id))
 
 
 # ---------------------------- mapeo y comparar lado a lado ----------------------------
@@ -447,36 +494,68 @@ def _dup_anuladas_de(orden):
 app.add_template_global(_dup_anuladas_de, 'oc_dup_anuladas_de')
 
 
+DUP_COMPARAR_MAX = 6
+
+
+def _dup_url_comparar(ids):
+    ids = [i for i in dict.fromkeys(ids) if i][:DUP_COMPARAR_MAX]
+    return url_for('oc_duplicados_comparar', ids=','.join(str(i) for i in ids))
+
+
+app.add_template_global(_dup_url_comparar, 'oc_dup_url_comparar')
+
+
+def _dup_claves(o):
+    """Lo que se pinta de verde si coincide con la orden CORRECTA elegida (texto normalizado)."""
+    fa = _dup_factura(o.numero_factura)
+    return {'proveedor': '|'.join(_dup_prov(o.ruc, o.razon_social) or ('', '')), 'empresa': o.empresa or 'ANCLAJES',
+            'destino': f"{o.tipo}|{o.destino}", 'total': f"{o.moneda}|{round(o.total or 0, 1)}",
+            'factura': (f"{fa[0][0] if fa[0] else ''}{fa[0][1] if fa[0] else ''}|{fa[1]}" if fa and fa[0] else ''), 'factura_num': str(fa[1]) if fa else '',
+            'fecha': o.fecha.isoformat() if o.fecha else ''}
+
+
 @app.route('/ordenes/duplicados/comparar')
 @_ruta_oc()
 def oc_duplicados_comparar():
-    """Dos órdenes lado a lado: lo que coincide en verde, para decidir rápido si es la misma compra."""
-    a = OrdenCompra.query.get_or_404(request.args.get('a', type=int) or 0)
-    b = OrdenCompra.query.get_or_404(request.args.get('b', type=int) or 0)
-    da, db_ = _dup_datos(a), _dup_datos(b)
-    da['descartes'], db_['descartes'] = set(), set()               # comparar igual aunque el par esté descartado
-    r = _dup_comparar(da, db_) if a.id != b.id else None
-    # productos emparejados (mismo código o descripción parecida)
-    ib, filas, usados = list(b.items), [], set()
-    for ia in a.items:
-        ka, par = _dup_tokens(ia.descripcion), None
-        for j, x in enumerate(ib):
-            if j in usados:
-                continue
-            kb = _dup_tokens(x.descripcion)
-            jac = len(ka & kb) / len(ka | kb) if (ka or kb) else 0
-            if (ia.codigo and x.codigo and ia.codigo.strip().upper() == x.codigo.strip().upper()) or jac >= 0.6:
-                par = x
-                usados.add(j)
-                break
-        filas.append((ia, par))
-    filas += [(None, x) for j, x in enumerate(ib) if j not in usados]
-    fa, fb = _dup_factura(a.numero_factura), _dup_factura(b.numero_factura)
-    misma = {'proveedor': _dup_prov(a.ruc, a.razon_social) == _dup_prov(b.ruc, b.razon_social), 'empresa': (a.empresa or 'ANCLAJES') == (b.empresa or 'ANCLAJES'),
-             'total': a.moneda == b.moneda and abs((a.total or 0) - (b.total or 0)) <= max(0.5, 0.002 * max(a.total or 0, b.total or 0)),
-             'factura': _dup_misma_factura(fa, fb), 'destino': a.destino == b.destino, 'tipo': a.tipo == b.tipo}
-    dias = abs((a.fecha - b.fecha).days) if a.fecha and b.fecha else None
-    desc = {d.get('id') for d in _dup_descartes(a)}
-    return render_template('oc_dup_comparar.html', a=a, b=b, r=r, nivel=_dup_nivel(r[0]) if r else None, filas=filas, misma=misma, dias=dias,
-                           descartado=b.id in desc, estados=ESTADOS_OC, destinos=DESTINOS_OC, empresas_oc=EMPRESAS_OC,
-                           bloqueo_a=_dup_bloqueo_anular(a), bloqueo_b=_dup_bloqueo_anular(b), seccion='lista')
+    """Hasta DUP_COMPARAR_MAX órdenes lado a lado (?ids=23,19,30, o ?a=&b=). Se elige la CORRECTA y lo que coincide con ella
+    sale en verde; se pueden anular varias de una vez o marcar 'No es duplicada'."""
+    ids = [int(x) for x in (request.args.get('ids') or '').split(',') if x.strip().isdigit()]
+    ids += [x for x in (request.args.get('a', type=int), request.args.get('b', type=int)) if x]
+    ids = list(dict.fromkeys(ids))[:DUP_COMPARAR_MAX]
+    ords = [o for o in (OrdenCompra.query.get(i) for i in ids) if o]
+    if len(ords) < 2:
+        flash('Elige al menos dos órdenes para comparar.')
+        return redirect(url_for('oc_lista'))
+    datos = {o.id: _dup_datos(o) for o in ords}
+    for d in datos.values():
+        d['descartes'] = set()                      # comparar igual aunque el par esté descartado
+    pares = {}
+    for x in ords:
+        for y in ords:
+            if x.id != y.id:
+                r = _dup_comparar(datos[x.id], datos[y.id])
+                pares[f"{x.id}-{y.id}"] = {'nivel': _dup_nivel(r[0]) if r else None, 'razones': r[1] if r else [], 'dias': r[2] if r else None}
+    # productos: una fila por producto; en cada columna el de esa orden (mismo código o descripción parecida)
+    filas = []                                      # [{'tok': set, 'cod': str, 'items': {orden_id: item}}]
+    for o in ords:
+        for it in o.items:
+            tok, cod = _dup_tokens(it.descripcion), (it.codigo or '').strip().upper()
+            fila = None
+            for fl in filas:
+                if o.id in fl['items']:
+                    continue
+                jac = len(tok & fl['tok']) / len(tok | fl['tok']) if (tok or fl['tok']) else 0
+                if (cod and cod in fl['cods']) or jac >= 0.6:
+                    fila = fl
+                    break
+            if not fila:
+                fila = {'tok': tok, 'cods': set(), 'items': {}}
+                filas.append(fila)
+            fila['items'][o.id] = it
+            if cod:
+                fila['cods'].add(cod)
+    ref = next((o for o in ords if o.estado not in DUP_ESTADOS_FUERA), ords[0])     # la correcta propuesta: la primera vigente
+    descartes = {o.id: [d.get('id') for d in _dup_descartes(o)] for o in ords}
+    return render_template('oc_dup_comparar.html', ords=ords, ref=ref, pares=pares, filas=filas, claves={o.id: _dup_claves(o) for o in ords},
+                           bloqueos={o.id: _dup_bloqueo_anular(o) for o in ords}, descartes=descartes, fuera=DUP_ESTADOS_FUERA,
+                           estados=ESTADOS_OC, destinos=DESTINOS_OC, empresas_oc=EMPRESAS_OC, seccion='lista')
