@@ -24,7 +24,7 @@
         <select name="mes" class="form-select form-select-sm" onchange="this.form.submit()">{% for k, t in meses %}<option value="{{ k }}" {{ 'selected' if k == mes }}>{{ t }}</option>{% endfor %}</select></div>
     <div><label class="small fw-bold">Estado</label>
         <select name="estado" class="form-select form-select-sm" onchange="this.form.submit()">
-            {% for k, t in [('', 'Todas'), ('sin_firma', 'Falta firmar'), ('firmadas', 'Firmadas'), ('anuladas', 'Anuladas')] %}<option value="{{ k }}" {{ 'selected' if k == estado }}>{{ t }}</option>{% endfor %}</select></div>
+            {% for k, t in [('', 'Todas'), ('sin_firma', 'Falta firma del trabajador'), ('por_aprobar', 'Falta aprobación del encargado'), ('aprobadas', 'Aprobadas'), ('firmadas', 'Firmadas por el trabajador'), ('anuladas', 'Anuladas')] %}<option value="{{ k }}" {{ 'selected' if k == estado }}>{{ t }}</option>{% endfor %}</select></div>
     <div class="flex-fill" style="min-width:200px;"><label class="small fw-bold">Buscar</label>
         <input name="q" value="{{ buscar }}" class="form-control form-control-sm" placeholder="Trabajador, DNI, N° de orden, proveedor, destino…"></div>
     <button class="btn btn-sm btn-primary">Buscar</button>
@@ -34,16 +34,25 @@
     </div>
 </form>
 
+{% if es_encargado and n_por_aprobar %}
+<div class="d-flex flex-wrap align-items-center gap-2 mb-3 p-2 rounded-3" style="background:#f0fdf4; border:2px solid #86efac;">
+    <span style="font-size:1.4rem;">✅</span><div class="flex-fill"><b>Tienes {{ n_por_aprobar }} planilla(s) de {{ periodo }} por aprobar.</b>
+        <div class="small text-muted">Revisa cada una (PDF) y pulsa <b>Aprobar y firmar</b>.{% if firma_guardada %} Tu firma ya está guardada: se aprueba con un clic.{% endif %}</div></div>
+    {% if estado != 'por_aprobar' %}<a class="btn btn-sm btn-success fw-bold" href="{{ url_for('oc_movilidad_lista', empresa=empresa, mes=mes, estado='por_aprobar') }}">Ver solo las por aprobar</a>{% endif %}
+</div>
+{% endif %}
 <div class="ml-kpis">
     <div class="ml-kpi"><div class="n">{{ n_vigentes }}</div><div class="t">Planillas vigentes · {{ periodo }}</div></div>
-    <div class="ml-kpi" style="--k:#16a34a;"><div class="n">S/ {{ '{:,.2f}'.format(total) }}</div><div class="t">Total de movilidad del mes</div></div>
-    <div class="ml-kpi" style="--k:{{ '#f59e0b' if n_sin_firma else '#94a3b8' }};"><div class="n">{{ n_sin_firma }}</div><div class="t">Falta firmar (no sustentan el gasto)</div></div>
+    <div class="ml-kpi" style="--k:#16a34a;"><div class="n">S/ {{ '{:,.2f}'.format(total) }}</div><div class="t">Total de movilidad · {{ periodo }}</div></div>
+    <div class="ml-kpi" style="--k:{{ '#f59e0b' if n_sin_firma else '#94a3b8' }};"><div class="n">{{ n_sin_firma }}</div><div class="t">Falta la firma del trabajador (no sustentan el gasto)</div></div>
+    <a class="ml-kpi text-decoration-none text-reset" style="--k:{{ '#16a34a' if n_por_aprobar else '#94a3b8' }};" href="{{ url_for('oc_movilidad_lista', empresa=empresa, mes=mes, estado='por_aprobar') }}">
+        <div class="n">{{ n_por_aprobar }}</div><div class="t">Por aprobar{{ (' · ' ~ encargado.nombre_completo) if encargado else ' (falta elegir encargado)' }}</div></a>
     <div class="ml-kpi" style="--k:{{ '#dc2626' if excesos else '#94a3b8' }};"><div class="n">{{ excesos|length }}</div><div class="t">Días que pasan el tope (S/ {{ '%.2f'|format(tope) }} = 4% RMV S/ {{ '{:,.0f}'.format(rmv) }})</div></div>
 </div>
 
 <div class="table-responsive bg-white border rounded-3 mb-3">
 <table class="table table-sm table-hover mb-0 ml-tabla">
-    <thead class="table-light"><tr><th class="ps-3">N°</th><th>Fecha</th><th>Trabajador</th><th>Desplazamientos</th><th>Orden</th><th class="text-end">Monto</th><th>Firma</th><th class="pe-3"></th></tr></thead>
+    <thead class="table-light"><tr><th class="ps-3">N°</th><th>Fecha</th><th>Trabajador</th><th>Desplazamientos</th><th>Orden</th><th class="text-end">Monto</th><th>Firma / aprobación</th><th class="pe-3"></th></tr></thead>
     <tbody>
     {% for mv in lista %}{% set emp = empresas_oc.get(mv.empresa, {}) %}{% set exc = excesos.get((mv.empresa, mv.trabajador_dni, mv.fecha_gasto)) %}
     <tr class="{{ 'anul' if mv.anulada }}">
@@ -52,13 +61,17 @@
         <td><b>{{ mv.trabajador_nombre }}</b><div class="text-muted" style="font-size:.7rem;">DNI {{ mv.trabajador_dni }}</div>
             {% if exc and not mv.anulada %}<div class="ml-exc"><i class="bi bi-exclamation-triangle"></i> ese día suma S/ {{ '%.2f'|format(exc) }} (tope S/ {{ '%.2f'|format(tope) }})</div>{% endif %}</td>
         <td style="max-width:320px;">{% for f in mov_filas(mv) %}<div>{{ f.motivo }} → {{ f.destino }} <span class="text-muted">S/ {{ '%.2f'|format(f.monto or 0) }}</span></div>{% endfor %}</td>
-        <td class="text-nowrap"><a href="{{ url_for('oc_detalle', orden_id=mv.orden_id) }}#movilidad">{{ oc_codigo(mv.orden) }}</a><div class="text-muted" style="font-size:.7rem;">{{ (mv.orden.razon_social or '')[:28] }}</div></td>
+        <td class="text-nowrap">{% if session.get('role') in roles_mov %}<a href="{{ url_for('oc_detalle', orden_id=mv.orden_id) }}#movilidad">{{ oc_codigo(mv.orden) }}</a>{% else %}<b>{{ oc_codigo(mv.orden) }}</b>{% endif %}<div class="text-muted" style="font-size:.7rem;">{{ (mv.orden.razon_social or '')[:28] }}</div></td>
         <td class="text-end fw-bold text-nowrap">S/ {{ '%.2f'|format(mv.total or 0) }}</td>
-        <td>{% if mv.anulada %}<span class="mv-est anul">ANULADA</span>{% elif mov_firmada(mv) %}<span class="mv-est ok">Firmada</span>{% else %}<span class="mv-est falta">Falta</span>{% endif %}</td>
+        <td>{% if mv.anulada %}<span class="mv-est anul">ANULADA</span>
+            {% else %}{% if mov_firmada(mv) %}<span class="mv-est ok">Trabajador ✓</span>{% else %}<span class="mv-est falta">Falta firma</span>{% endif %}
+                {% if mov_aprobada(mv) %}<div><span class="mv-est ok" title="{{ mv.fecha_aprobada.strftime('%d/%m/%Y %H:%M') }}">Aprobada ✓ {{ mv.aprobado_por_nombre.split(' ')[0] if mv.aprobado_por_nombre }}</span></div>
+                {% elif mov_firmada(mv) %}<div><span class="mv-est falta">Falta aprobar</span></div>{% endif %}{% endif %}</td>
         <td class="pe-3 text-nowrap acc">
             <a class="btn btn-sm btn-outline-danger py-0" target="_blank" href="{{ url_for('oc_movilidad_pdf', mov_id=mv.id, ver=1) }}" title="Ver PDF"><i class="bi bi-file-earmark-pdf"></i></a>
             <a class="btn btn-sm btn-outline-secondary py-0" href="{{ url_for('oc_movilidad_pdf', mov_id=mv.id) }}" title="Descargar PDF"><i class="bi bi-download"></i></a>
             {% if mv.escaneo_s3_key %}<a class="btn btn-sm btn-outline-success py-0" target="_blank" href="{{ url_for('oc_movilidad_hoja_ver', mov_id=mv.id) }}" title="Hoja firmada a mano"><i class="bi bi-paperclip"></i></a>{% endif %}
+            {% if es_encargado and mov_lista_para_aprobar(mv) %}{{ mvl.boton_aprobar(mv) }}{% endif %}
         </td>
     </tr>
     {% else %}
@@ -78,6 +91,16 @@
     </table></div>
 </div>
 {% endif %}
+{% if session.get('role') == 'admin' %}
+<form method="POST" action="{{ url_for('oc_movilidad_encargado') }}" class="d-flex flex-wrap gap-2 align-items-end mt-3 p-2 border rounded-3 bg-white" style="max-width: 720px;">
+    <div class="flex-fill"><label class="small fw-bold">Encargado que aprueba y firma las planillas</label>
+        <select name="user_id" class="form-select form-select-sm">{% if not encargado %}<option value="">— Elegir —</option>{% endif %}
+            {% for u in usuarios_enc %}<option value="{{ u.id }}" {{ 'selected' if encargado and u.id == encargado.id }}>{{ u.nombre_completo }}{{ (' (' ~ u.username ~ ')') if u.username }}</option>{% endfor %}</select></div>
+    <button class="btn btn-sm btn-outline-primary">Guardar</button>
+    <div class="w-100 form-text mt-0">Solo esa persona puede aprobar; su firma sale en el PDF en "Aprobado por (Encargado)".</div>
+</form>
+{% endif %}
+{% if es_encargado %}{{ mvl.modal_aprobar() }}<script src="{{ url_for('static', filename='js/firma.js') }}?v=2"></script>{% endif %}
 {% if session.get('role') == 'admin' %}
 <details class="mt-3" id="vaciarMov" style="max-width: 720px;">
     <summary class="small fw-bold text-danger" style="cursor:pointer;"><i class="bi bi-exclamation-octagon"></i> Zona de pruebas: vaciar planillas de movilidad</summary>

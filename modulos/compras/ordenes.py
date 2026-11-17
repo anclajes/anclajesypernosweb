@@ -24,12 +24,15 @@ def oc_lista():
     todas = [o for o in todas_emp if emp_sel == 'TODAS' or (o.empresa or 'ANCLAJES') == emp_sel]
     pagos = {o.id: _oc_pago_info(o, hoy) for o in todas}
     atrasos = {o.id: _oc_atraso(o, hoy) for o in todas}
+    dups = _dup_mapa(todas_emp)           # posibles duplicadas (Alta/Media), mirando las dos empresas
 
     def en_vista(o, v):
         if v == 'atrasadas':
             return bool(atrasos[o.id])
         if v == 'devueltas':          # Almacén la devolvió a Logística para corregir (bloqueada para ingresar)
             return bool(o.devuelta_almacen) and o.estado != 'ANULADA'
+        if v == 'duplicadas':
+            return o.id in dups
         if v == 'por_pagar':
             return pagos[o.id]['habilitado'] and not pagos[o.id]['pagada']
         if v == 'pagadas':
@@ -134,7 +137,7 @@ def oc_lista():
     contables_por_confirmar = sum(1 for o in todas if o.es_contable and o.estado == 'CONFORME' and not o.fecha_kardex)
     directos_por_entregar = sum(1 for o in todas if o.destino == 'DIRECTO' and o.estado == 'CONFORME' and not o.fecha_kardex)
     return render_template('oc_lista.html', ordenes=ordenes, vista=vista, vistas_orden=VISTAS_OC_ORDEN,
-                           nombres_vista={**{k: v[0] for k, v in VISTAS_OC.items()}, **VISTAS_OC_EXTRA}, conteo=conteo, docs=docs, movs=movs_todas,
+                           nombres_vista={**{k: v[0] for k, v in VISTAS_OC.items()}, **VISTAS_OC_EXTRA}, conteo=conteo, docs=docs, movs=movs_todas, dups=dups,
                            tipo=tipo, destino=destino, prov_id=prov_id, solicitante=solicitante, motivo=motivo, pago_f=pago_f, docs_f=docs_f,
                            desde=desde, hasta=hasta, buscar=buscar, hoy=hoy, pagos=pagos, atrasos=atrasos, kpi=kpi, resumen=resumen,
                            total_filtrado=total_filtrado, proveedores=proveedores, solicitantes=solicitantes, motivos=motivos,
@@ -427,9 +430,25 @@ def oc_guardar():
         errores.append('Escribe el MOTIVO DE LA EDICIÓN (mínimo 10 letras): Gerencia lo verá al volver a aprobarla.')
     if correccion and len(motivo_edicion) < 10:
         errores.append('Escribe QUÉ CORREGISTE (mínimo 10 letras): Gerencia lo verá junto al motivo por el que la rechazó.')
+    dup_conf = None
+    if not errores and (f.get('accion') == 'enviar' or reaprobacion):
+        dup_err, dup_conf = _dup_control_envio(f, orden, datos, items)      # posible orden DUPLICADA (coincidencia alta)
+        if dup_err:
+            errores.append(dup_err)
     if errores:
         return render_template('oc_form.html', errores=errores, **_contexto_form_oc(orden, _previo_desde_form(f, datos, motivo_edicion)))
-    return _oc_guardar_datos(f, orden, datos, items, reaprobacion, motivo_edicion, volver, correccion)
+    resp = _oc_guardar_datos(f, orden, datos, items, reaprobacion, motivo_edicion, volver, correccion)
+    if dup_conf and getattr(resp, 'status_code', 200) in (301, 302, 303):      # solo si se guardó (no si volvió al formulario)
+        try:
+            guardada = orden or OrdenCompra.query.filter_by(creado_por_id=session.get('user_id')).order_by(OrdenCompra.id.desc()).first()
+            recien = guardada and (orden or (guardada.fecha_registro and (hora_peru() - guardada.fecha_registro).total_seconds() < 120))
+            if recien and guardada.estado != 'BORRADOR':
+                _dup_registrar_confirmacion(guardada, dup_conf)
+                db.session.commit()
+        except Exception:
+            db.session.rollback()
+            app.logger.exception('No se pudo guardar la revisión de duplicada')
+    return resp
 
 
 def _previo_desde_form(f, datos, motivo_edicion=''):

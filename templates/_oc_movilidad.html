@@ -48,6 +48,7 @@
 {% set puede = session.get('role') in roles_mov %}
 {% set anula = session.get('role') in roles_mov_anulan %}
 {% set nuevo_id = (request.args.get('mov') or 0)|int(0) %}
+{% set es_enc = mov_es_encargado() %}
 <div class="panel mv-panel" id="movilidad">
     <div class="panel-t"><span style="font-size:1rem;">🚕</span> Planillas de movilidad
         {% if vigentes %}<span class="ms-auto" style="text-transform:none; letter-spacing:0; font-size:.78rem; color:#0f172a;">{{ vigentes|length }} · <b>S/ {{ '%.2f'|format(vigentes|sum(attribute='total')) }}</b></span>{% endif %}</div>
@@ -63,6 +64,8 @@
             {% if mv.anulada %}<span class="mv-est anul">ANULADA</span>
             {% elif firmada %}<span class="mv-est ok"><i class="bi bi-check2"></i> {{ 'Firmada en pantalla' if mv.firma_s3_key else 'Hoja firmada subida' }}</span>
             {% else %}<span class="mv-est falta"><i class="bi bi-pen"></i> Falta la firma</span>{% endif %}
+            {% if not mv.anulada %}{% if mov_aprobada(mv) %}<span class="mv-est ok"><i class="bi bi-patch-check"></i> Aprobada por {{ mv.aprobado_por_nombre }}</span>
+            {% elif firmada %}{% set enc = mov_encargado() %}<span class="mv-est falta"><i class="bi bi-hourglass-split"></i> Falta aprobación{{ (' de ' ~ enc.nombre_completo) if enc }}</span>{% endif %}{% endif %}
             <span class="tot">S/ {{ '%.2f'|format(mv.total or 0) }}</span>
         </div>
         <div class="det"><b>{{ mv.trabajador_nombre }}</b> · DNI {{ mv.trabajador_dni }} · {{ mv.fecha_gasto.strftime('%d/%m/%Y') }}
@@ -73,6 +76,7 @@
             <a class="btn btn-sm btn-outline-danger py-0" href="{{ url_for('oc_movilidad_pdf', mov_id=mv.id, ver=1) }}" target="_blank"><i class="bi bi-file-earmark-pdf"></i> Ver PDF</a>
             <a class="btn btn-sm btn-outline-secondary py-0" href="{{ url_for('oc_movilidad_pdf', mov_id=mv.id) }}"><i class="bi bi-download"></i> Descargar</a>
             {% if mv.escaneo_s3_key %}<a class="btn btn-sm btn-outline-success py-0" href="{{ url_for('oc_movilidad_hoja_ver', mov_id=mv.id) }}" target="_blank"><i class="bi bi-paperclip"></i> Hoja firmada</a>{% endif %}
+            {% if es_enc and mov_lista_para_aprobar(mv) %}{{ boton_aprobar(mv) }}{% endif %}
             {% if puede and not mv.anulada %}
                 {% if not firmada %}
                 <a class="btn btn-sm btn-outline-primary py-0" href="{{ url_for('oc_movilidad_editar', mov_id=mv.id) }}"><i class="bi bi-pencil"></i> Editar</a>
@@ -132,6 +136,7 @@
     <div class="form-text" style="font-size:.68rem;">Se puede crear en cualquier etapa de la orden. Una planilla por trabajador y por día; cada empresa con su numeración.
         <a href="{{ url_for('oc_movilidad_lista') }}">Ver todas las del mes</a> (para contabilidad).</div>
 </div>
+{% if es_enc %}{{ modal_aprobar() }}{% endif %}
 <script src="{{ url_for('static', filename='js/firma.js') }}?v=2"></script>
 <script>
 (function () {
@@ -150,6 +155,76 @@
             else (window.Swal ? Swal.fire('No se guardó', d.msg || 'Error', 'error') : alert(d.msg));
         }).catch(() => (window.Swal ? Swal.fire('No se guardó', 'Revisa tu conexión e intenta otra vez.', 'error') : alert('Error de conexión')));
     };
+})();
+</script>
+{% endmacro %}
+
+
+{#- ENCARGADO (Luis Carlos): aprobar y firmar. Un solo modal por página; firma dibujada o la que dejó guardada. -#}
+{% macro boton_aprobar(mv, chico=True) %}
+<button type="button" class="btn btn-sm btn-success fw-bold {{ 'py-0' if chico }}" data-mv-aprobar="{{ mv.id }}" data-url="{{ url_for('oc_movilidad_aprobar', mov_id=mv.id) }}"
+        data-txt="N° {{ mov_numero_txt(mv) }} · {{ mv.trabajador_nombre }} · {{ mv.fecha_gasto.strftime('%d/%m/%Y') }} · S/ {{ '%.2f'|format(mv.total or 0) }}"
+        data-pdf="{{ url_for('oc_movilidad_pdf', mov_id=mv.id, ver=1) }}"><i class="bi bi-patch-check"></i> Aprobar y firmar</button>
+{% endmacro %}
+
+{% macro modal_aprobar() %}
+{% set tengo = mov_tengo_firma() %}
+<div class="modal fade" id="mvAprobar" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content border-0 shadow">
+    <div class="modal-header py-2 text-white" style="background:#15803d;"><h6 class="modal-title fw-bold text-white"><i class="bi bi-patch-check"></i> Aprobar y firmar como encargado</h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+        <div class="small mb-2"><b id="mvApTxt"></b> · <a href="#" id="mvApPdf" target="_blank">ver la planilla (PDF)</a></div>
+        {% if tengo %}
+        <div class="form-check"><input class="form-check-input" type="radio" name="mvApModo" id="mvApGuardada" value="g" checked>
+            <label class="form-check-label small fw-bold" for="mvApGuardada">Usar mi firma guardada</label></div>
+        <div class="border rounded-3 p-2 mb-2 text-center bg-white" id="mvApGuardadaBox"><img src="{{ url_for('oc_movilidad_mi_firma') }}" alt="Mi firma" style="max-height:90px; max-width:100%;"></div>
+        <div class="form-check"><input class="form-check-input" type="radio" name="mvApModo" id="mvApNueva" value="n">
+            <label class="form-check-label small fw-bold" for="mvApNueva">Firmar de nuevo</label></div>
+        {% endif %}
+        <div id="mvApPadBox" {{ 'hidden' if tengo }}>
+            <canvas class="pad-firma" id="mvApPad"></canvas>
+            <div class="d-flex justify-content-between align-items-center mt-1">
+                <div class="form-check mb-0"><input class="form-check-input" type="checkbox" id="mvApRecordar" checked>
+                    <label class="form-check-label small" for="mvApRecordar">Guardar mi firma para aprobar las próximas con un clic</label></div>
+                <button type="button" class="btn btn-sm btn-link" id="mvApBorrar">Borrar</button>
+            </div>
+        </div>
+        <div class="form-text">Al aprobar, tu firma sale en el PDF en "Aprobado por (Encargado)". Solo tú puedes aprobar las planillas de movilidad.</div>
+    </div>
+    <div class="modal-footer p-2 bg-light">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-success btn-sm fw-bold" id="mvApOk"><i class="bi bi-patch-check"></i> Aprobar y firmar</button>
+    </div>
+</div></div></div>
+<script>
+(function () {
+    const md = document.getElementById('mvAprobar'); if (!md || md.dataset.listo) return; md.dataset.listo = '1';
+    let pad = null, url = null;
+    const modoNueva = () => { const r = md.querySelector('input[name=mvApModo]:checked'); return !r || r.value === 'n'; };
+    function verModo() { const box = document.getElementById('mvApPadBox'); box.hidden = !modoNueva(); if (!box.hidden) setTimeout(() => { if (!pad) pad = FirmaPad(document.getElementById('mvApPad')); else pad.ajustar(); }, 30); }
+    md.querySelectorAll('input[name=mvApModo]').forEach(r => r.addEventListener('change', verModo));
+    md.addEventListener('shown.bs.modal', verModo);
+    document.getElementById('mvApBorrar').addEventListener('click', () => pad && pad.limpiar());
+    document.addEventListener('click', e => {
+        const b = e.target.closest('[data-mv-aprobar]'); if (!b) return;
+        url = b.dataset.url; document.getElementById('mvApTxt').textContent = b.dataset.txt; document.getElementById('mvApPdf').href = b.dataset.pdf;
+        if (pad) pad.limpiar();
+        bootstrap.Modal.getOrCreateInstance(md).show();
+    });
+    const aviso = (t, m, i) => window.Swal ? Swal.fire(t, m, i) : alert(m || t);
+    document.getElementById('mvApOk').addEventListener('click', () => {
+        const fd = new FormData();
+        if (modoNueva()) {
+            if (!pad || pad.vacia()) { aviso('Falta tu firma', 'Firma en el recuadro con el dedo o el mouse.', 'warning'); return; }
+            fd.append('firma_png', pad.png()); if (document.getElementById('mvApRecordar').checked) fd.append('recordar', '1');
+        }
+        const btn = document.getElementById('mvApOk'); btn.disabled = true;
+        fetch(url, { method: 'POST', body: fd, credentials: 'same-origin' }).then(r => r.json()).then(d => {
+            btn.disabled = false;
+            if (d.status === 'success') { const u = new URL(location.href); u.searchParams.set('t', Date.now()); location.replace(u.toString()); }
+            else aviso('No se aprobó', d.msg || 'Error', 'error');
+        }).catch(() => { btn.disabled = false; aviso('No se aprobó', 'Revisa tu conexión e intenta otra vez.', 'error'); });
+    });
 })();
 </script>
 {% endmacro %}

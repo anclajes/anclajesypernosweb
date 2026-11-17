@@ -2,6 +2,7 @@
 {% block title %}Órdenes de compra{% endblock %}
 {% block subtitle %}{{ ('Editar ' ~ oc_codigo(orden)) if orden else 'Nueva orden' }}{% endblock %}
 {% block content %}
+{% import '_oc_duplicados.html' as dupl with context %}{{ dupl.estilos() }}
 {% set vista = '' %}
 {% include '_oc_nav.html' %}
 {% set pv = previo or {} %}
@@ -492,6 +493,7 @@
             </div>
             <div class="fila small mt-1" id="tPesoFila" style="display:none; opacity:.8;"><span><i class="bi bi-speedometer2"></i> Peso total</span><span id="tPeso"></span></div>
         </div>
+        {{ dupl.caja_form(orden) }}
 
         <div class="card border-0 shadow-sm"><div class="card-body">
             <div class="lbl">Observaciones (opcional)</div>
@@ -1472,6 +1474,12 @@ porId('formOC').addEventListener('submit', function (e) {
         if (tipo() === 'OS' && !f.querySelector('.i-serv').value) err.push(`Ítem ${i + 1}: elige el tipo de servicio.`);
         if (f.querySelector('.ficha.falta')) err.push(`Ítem ${i + 1}: elige ${destino() === 'INSUMOS' ? 'el insumo del maestro' : 'el producto del inventario ' + corto()} de la lista (no se puede escribir a mano).`);
     });
+    if (accionPulsada === 'enviar' && window.dupFaltaConfirmar && window.dupFaltaConfirmar()) {
+        e.preventDefault(); porId('dupBox').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        Swal.fire({ icon: 'warning', title: 'Posible orden DUPLICADA', html: 'Hay una orden del mismo proveedor con coincidencia <b>alta</b>. Ábrela y compara.<br>'
+                    + 'Si <b>no</b> es duplicada, marca <b>"Revisé: esta NO es duplicada"</b> y escribe por qué. Si lo es, no la envíes.' });
+        return;
+    }
     if (err.length) { e.preventDefault(); Swal.fire({ icon: 'warning', title: 'Falta información', html: [...new Set(err)].map(esc).join('<br>') }); return; }
     if (accionPulsada === 'enviar' && !this.dataset.confirmado) {
         e.preventDefault();
@@ -1512,4 +1520,5 @@ else if (porId('ruc').value && porId('razon_social').value) {
     porId('fc_nombre').value = porId('contacto').value; porId('fc_tel').value = porId('telefono').value; porId('fc_mail').value = porId('email').value;
 }
 </script>
+{{ dupl.js_form() }}
 {% endblock %}

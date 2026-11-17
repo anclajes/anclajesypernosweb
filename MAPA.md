@@ -37,6 +37,7 @@ modulos/
                          cliente, ingresos pendientes al inventario e ingreso al Kardex
     uso_directo.py       USO DIRECTO (/ordenes/uso-directo): bienes que no van a ningún inventario (PC, muebles...):
                          registrar / corregir la entrega (a quién, dónde, serie y garantía) y el registro con Excel
+    duplicados.py        POSIBLES ÓRDENES DUPLICADAS: en vivo en el formulario, aviso en detalle/lista, "No es duplicada", "Anular por duplicada"
     movilidad.py         PLANILLA POR GASTO DE MOVILIDAD por OC/OS (/ordenes/<id>/movilidad/nueva, /ordenes/movilidad):
                          crear/editar, firma en pantalla u hoja firmada, anular, PDF (pdf_movilidad.html) y lista del mes
     certificados.py      CERTIFICADOS POR SUBIR (/ordenes/certificados): importaciones sin certificado de calidad
@@ -302,6 +303,13 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
   nombre, dni, user_id opcional, cargo, activo). Botón "Guardar para la próxima" (`oc_movilidad_trabajador_guardar`) y ⚙ Trabajadores
   (modal: agregar / editar / desactivar, `oc_movilidad_trabajadores`, `oc_movilidad_trabajador_activo`). Al guardar una planilla, si
   su DNI no estaba guardado, se guarda solo. DNI por RENIEC (`oc_movilidad_dni`).
+- APROBACIÓN del ENCARGADO (siempre Luis Carlos): campos aprobado_por_id/_nombre, fecha_aprobada, firma_aprob_s3_key (columnas con
+  `_agregar_columnas_si_faltan`). Encargado = OCConfig `MOV_ENCARGADO` (el admin lo elige en 🚕 Movilidad; si no, la cuenta "Luis Carlos…",
+  `_mov_encargado_id`, cache 60 s). Solo él aprueba (`oc_movilidad_aprobar`, también ve la lista y los PDF aunque su rol no sea de compras:
+  `_ruta_mov(encargado=True)`). Se aprueba cuando el trabajador ya firmó; firma dibujada o la guardada (OCConfig `MOV_FIRMA_U<id>`,
+  "Guardar mi firma" → luego un clic). Aviso arriba en todas las páginas (`mov_por_aprobar`, context processor) y filtro "Falta aprobación".
+  Quitar la firma también quita la aprobación. PDF: "Firma del Trabajador" | "Aprobado por (Encargado)" con firma; "Elaborado por" abajo a la
+  derecha, sin firma. Lista con mes=todos.
 - Firma en pantalla (`static/js/firma.js` v2): "Borrar" limpia todo el lienzo también con zoom < 100% (antes quedaba la parte derecha/abajo).
 - PDF `templates/pdf_movilidad.html` (formato del modelo + logo, referencia de la orden, total en letras, firma, base legal y nota).
 - Vistas: panel "🚕 Planillas de movilidad" en el detalle (`_oc_movilidad.html` → `panel`) + botón arriba; en la lista de órdenes
@@ -312,6 +320,23 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
 - PRUEBAS: en 🚕 Movilidad (solo admin) "Zona de pruebas: vaciar planillas" (`oc_movilidad_vaciar`, escribir BORRAR MOVILIDAD,
   las dos empresas o una): borra planillas de todas las fechas + firmas/hojas en S3 + sus eventos MOVILIDAD (`_mov_vaciar`); la
   numeración vuelve a 00-00001; no toca órdenes ni la RMV. "Vaciar datos del módulo" (oc_vaciar) también las borra (antes de las órdenes).
+
+## Compras: POSIBLES ÓRDENES DUPLICADAS (v27) · `modulos/compras/duplicados.py`
+
+- Solo se compara con órdenes del MISMO PROVEEDOR (RUC; si no hay, razón social) y no anuladas. Puntaje (`_dup_comparar`):
+  misma factura +60 (`_dup_factura`: FT01-2555 = FT01-00002555; FAC-0002555 = mismo número sin serie +45; series distintas = otra factura),
+  mismo monto +35 (parecido ±3% +15), mismos productos +30 (parecidos +15; `_dup_sim_items`: código o palabras, "5MT" = "5 MT"),
+  misma empresa +5, misma semana +15 (≤30 días +8), +5 si se hizo con "Duplicar". Ventana DUP_VENTANA_DIAS = 90 días
+  (más antiguas solo si coincide la factura, −15). Nivel (`DUP_NIVELES`): Alta ≥70, Media ≥45, Baja ≥25.
+- En vivo en `oc_form.html` (`_oc_duplicados.html` → caja_form + js_form; API `oc_duplicados_revisar`, los totales los calcula
+  `_leer_orden_form`). Para ENVIAR a Gerencia con nivel Alta: "Revisé: no es duplicada" + motivo ≥10 (`_dup_control_envio` en oc_guardar,
+  y en el navegador); se guarda en `duplicado_revision` y evento DUPLICADO_REVISADO (Gerencia lo ve en el detalle).
+- Detalle (`panel_detalle`, id #duplicados): aviso con las parecidas (Alta/Media), "No es duplicada" (`oc_duplicado_descartar`: el par se
+  guarda en `duplicado_descartes` de las dos y deja de avisar) y, para Gerencia, "Anular ESTA por duplicada" / botón "Anular por duplicada".
+- `oc_anular_duplicada` (Gerencia): anula aunque esté aprobada/conforme si NO está pagada y no ingresó nada a Kardex ni Insumos
+  (`_dup_bloqueo_anular`); la entrega de uso directo, la confirmación contable o el seguimiento de OS no lo impiden (no mueven inventario).
+  anulacion_categoria = 'DUPLICADA', `anulada_duplicada_de_id` = la original; evento en las dos; sale de Por pagar.
+- Lista: chip "⚠ ¿Duplicada? Alta/Media" junto al estado y pestaña "⚠ Posibles duplicadas" (`_dup_mapa`, mira las dos empresas).
 
 ## Kardex
 

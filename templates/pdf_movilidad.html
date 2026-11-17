@@ -33,6 +33,7 @@
     .chico { font-size: 6.6pt; color: #555; }
     td.anulada { color: #b91c1c; font-weight: bold; font-size: 15pt; text-align: center; border: 2px solid #b91c1c; padding: 4px; }
     .ref { font-size: 7.6pt; color: #333; }
+    td.elab { text-align: right; font-size: 8pt; vertical-align: bottom; }
 </style>
 </head>
 <body>
@@ -81,18 +82,23 @@
 </table>
 
 <table style="margin-top: 14px;">
-    <tr><td class="firma-t" style="width: 46%;">Firma del Trabajador</td><td style="width: 8%;">&nbsp;</td><td class="firma-t" style="width: 46%;">Registrado por</td></tr>
+    <tr><td class="firma-t" style="width: 46%;">Firma del Trabajador</td><td style="width: 8%;">&nbsp;</td><td class="firma-t" style="width: 46%;">Aprobado por (Encargado)</td></tr>
     <tr><td class="firma">{% if P.firma %}<img src="{{ P.firma.uri }}" width="{{ P.firma.ancho }}" height="{{ P.firma.alto }}"><br>{% else %}<br><br><br>{% endif %}
             ______________________________<br><b>{{ m.trabajador_nombre }}</b><br>DNI {{ m.trabajador_dni }}
             {% if m.firma_fecha %}<br><span class="chico">Firmó en pantalla el {{ m.firma_fecha.strftime('%d/%m/%Y %H:%M') }}</span>{% endif %}</td>
         <td>&nbsp;</td>
-        <td class="firma"><br><br><br>______________________________<br><b>{{ P.registro or '-' }}</b><br>{{ o.tipo }} {{ P.codigo_oc.split('N° ')[-1] }}</td></tr>
+        <td class="firma">{% if P.firma_aprob %}<img src="{{ P.firma_aprob.uri }}" width="{{ P.firma_aprob.ancho }}" height="{{ P.firma_aprob.alto }}"><br>{% else %}<br><br><br>{% endif %}
+            ______________________________<br><b>{{ (P.encargado or '-')|upper }}</b><br>Encargado
+            {% if m.fecha_aprobada %}<br><span class="chico">Aprobó y firmó el {{ m.fecha_aprobada.strftime('%d/%m/%Y %H:%M') }}</span>{% endif %}</td></tr>
 </table>
 
 <table style="margin-top: 14px;">
     <tr><td class="legal">{{ P.base_legal }}</td></tr>
     <tr><td class="legal" style="padding-top: 6px;">{{ P.nota_legal }}</td></tr>
-    <tr><td class="chico" style="padding-top: 10px;">Generado por el sistema · {{ P.cfg.razon_social }} · {{ P.numero }}{% if m.fecha_actualizacion %} · última edición {{ m.fecha_actualizacion.strftime('%d/%m/%Y %H:%M') }}{% endif %}</td></tr>
+</table>
+<table style="margin-top: 10px;">
+    <tr><td class="chico" style="width: 55%; vertical-align: bottom;">Generado por el sistema · {{ P.cfg.razon_social }} · {{ P.numero }}{% if m.fecha_actualizacion %} · última edición {{ m.fecha_actualizacion.strftime('%d/%m/%Y %H:%M') }}{% endif %}</td>
+        <td class="elab" style="width: 45%;">Elaborado por: <b>{{ P.registro or '-' }}</b>{% if m.fecha_registro %}<br><span class="chico">{{ m.fecha_registro.strftime('%d/%m/%Y %H:%M') }} · {{ o.tipo }} {{ P.codigo_oc.split('N° ')[-1] }}</span>{% endif %}</td></tr>
 </table>
 {% endfor %}
 </body>

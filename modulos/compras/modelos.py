@@ -151,6 +151,10 @@ class OrdenCompra(db.Model):
     devuelta_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     fecha_devuelta = db.Column(db.DateTime, nullable=True)
     devoluciones = db.Column(db.Integer, default=0)          # cuántas veces se devolvió
+    # POSIBLES DUPLICADAS (v27): confirmación al enviar ('no es duplicada'), pares descartados y, si se anuló por duplicada, la original
+    duplicado_revision = db.Column(db.Text)                  # JSON {ids, codigos, motivo, por, fecha}
+    duplicado_descartes = db.Column(db.Text)                 # JSON [{id, por, fecha, motivo}]
+    anulada_duplicada_de_id = db.Column(db.Integer, nullable=True)
     directo_activo_fijo = db.Column(db.Boolean, default=False)   # contabilidad lo registra como activo fijo (opcional)
     directo_entregado_a = db.Column(db.String(120))          # a quién se entregó el bien
     revision = db.Column(db.Integer, default=0)            # cuántas veces se editó DESPUÉS de aprobada (Rev. 1, Rev. 2...)
@@ -491,6 +495,10 @@ class OrdenCompraMovilidad(db.Model):
     escaneo_nombre = db.Column(db.String(200))
     escaneo_fecha = db.Column(db.DateTime)
     escaneo_por = db.Column(db.String(100))
+    aprobado_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)   # el ENCARGADO que aprueba y firma (Luis Carlos)
+    aprobado_por_nombre = db.Column(db.String(100))
+    fecha_aprobada = db.Column(db.DateTime)
+    firma_aprob_s3_key = db.Column(db.String(300))                    # firma del encargado al aprobar (PNG)
     anulada = db.Column(db.Boolean, default=False)
     anulada_motivo = db.Column(db.String(300))
     anulada_por = db.Column(db.String(100))
@@ -503,6 +511,7 @@ class OrdenCompraMovilidad(db.Model):
     orden = db.relationship('OrdenCompra', backref=db.backref('movilidades', lazy='dynamic'))
     creado_por = db.relationship('User', foreign_keys=[creado_por_id])
     trabajador_user = db.relationship('User', foreign_keys=[trabajador_user_id])
+    aprobado_por = db.relationship('User', foreign_keys=[aprobado_por_id])
 
 
 class OCMovilidadTrabajador(db.Model):

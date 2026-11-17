@@ -7,12 +7,13 @@
 {% from '_oc_contable.html' import chip_contable, estilos_contable with context %}
 {% from '_oc_directo.html' import estilos_directo with context %}
 {% import '_oc_movilidad.html' as mvl with context %}
-{{ estilos_docs_oc() }}{{ estilos_contable() }}{{ estilos_directo() }}{{ mvl.estilos() }}
+{% import '_oc_duplicados.html' as dupl with context %}
+{{ estilos_docs_oc() }}{{ estilos_contable() }}{{ estilos_directo() }}{{ mvl.estilos() }}{{ dupl.estilos() }}
 <style>
     .oc-imp-chip { display: inline-flex; align-items: center; gap: 3px; font-size: .58rem; font-weight: 800; letter-spacing: .02em; border-radius: 6px; padding: 0 6px;
                    background: #e0f2fe; color: #075985; border: 1px solid #7dd3fc; white-space: nowrap; vertical-align: middle; }
 </style>
-{% macro chip_dev(o) %}{% if o.devuelta_almacen %} <span class="oc-estado" style="color:#fff; background:#dc2626;" title="Devuelta por Almacén para corregir: {{ o.devolucion_motivo or '' }}"><i class="bi bi-arrow-return-left"></i> Devuelta por Almacén</span>{% endif %}{% endmacro %}
+{% macro chip_dev(o) %}{{ dupl.chip(o, dups) }}{% if o.devuelta_almacen %} <span class="oc-estado" style="color:#fff; background:#dc2626;" title="Devuelta por Almacén para corregir: {{ o.devolucion_motivo or '' }}"><i class="bi bi-arrow-return-left"></i> Devuelta por Almacén</span>{% endif %}{% endmacro %}
 {% macro chip_imp(o) %}{% if o.es_importacion %}<span class="oc-imp-chip" title="Importación · sin IGV · {{ monedas[o.moneda].simbolo }} ({{ o.moneda }})"><i class="bi bi-globe-americas"></i> IMPORTACIÓN</span>{% endif %}{% endmacro %}
 <style>
     .empresas { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
@@ -105,7 +106,7 @@
 
 <div class="vistas">
     {% for k in vistas_orden %}
-    <a href="{{ url_vista(k) }}" class="{{ 'on' if k == vista }} {{ 'alerta' if k in ['atrasadas', 'devueltas'] and conteo[k] }} {{ 'v-dev' if k == 'devueltas' }} {{ 'cero' if k == 'devueltas' and not conteo[k] }}">{{ nombres_vista[k] }}<span class="c">{{ conteo[k] }}</span></a>
+    <a href="{{ url_vista(k) }}" class="{{ 'on' if k == vista }} {{ 'alerta' if k in ['atrasadas', 'devueltas', 'duplicadas'] and conteo[k] }} {{ 'v-dev' if k in ['devueltas', 'duplicadas'] }} {{ 'cero' if k in ['devueltas', 'duplicadas'] and not conteo[k] }}">{{ nombres_vista[k] }}<span class="c">{{ conteo[k] }}</span></a>
     {% endfor %}
 </div>
 
@@ -183,6 +184,10 @@
     Para rechazar u observar, abre la orden con <b>Ver</b>.</div>
 {% elif vista == 'atrasadas' and ordenes %}
 <div class="alert alert-danger py-2 small"><i class="bi bi-alarm-fill"></i> Órdenes <b>aprobadas</b> cuya fecha de entrega ya pasó y el material todavía no llega. Llama al proveedor y deja una observación en la orden.</div>
+{% elif vista == 'duplicadas' %}
+<div class="dev-l" style="border-left-color:#ea580c;"><div><i class="bi bi-files"></i> <b>Posibles órdenes duplicadas</b> (mismo proveedor y coincidencia <b>alta</b> o <b>media</b>
+    en factura, monto, productos y fechas de los últimos 90 días). Abre cada una y compara: si es la misma compra, Gerencia la anula con
+    <b>Anular por duplicada</b>; si no, pulsa <b>No es duplicada</b> y deja de salir aquí. Se revisan las dos empresas.</div></div>
 {% elif vista == 'devueltas' %}
 <div class="dev-l"><div class="mb-1"><i class="bi bi-arrow-return-left"></i> <b>Órdenes que Almacén devolvió a Logística</b> porque, al ir a ingresarlas, algo no cuadraba.
     Están <b>bloqueadas</b> para ingresar hasta que se corrijan: abre cada una y usa <b>Editar la orden</b> (vuelve a Gerencia), <b>Corregir lo que llegó</b> o <b>Listo, devolver a Almacén</b>.

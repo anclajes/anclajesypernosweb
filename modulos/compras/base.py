@@ -76,8 +76,8 @@ VISTAS_OC = {
     'todas': ('Todas', list(ESTADOS_OC)),
 }
 # Vistas que no dependen solo del estado (se calculan): atrasadas y por pagar
-VISTAS_OC_ORDEN = ['curso', 'aprobar', 'recibir', 'atrasadas', 'devueltas', 'conformes', 'por_pagar', 'pagadas', 'cerradas', 'todas']
-VISTAS_OC_EXTRA = {'atrasadas': 'Atrasadas', 'devueltas': '↩ Devueltas por Almacén', 'por_pagar': 'Por pagar', 'pagadas': 'Pagadas'}
+VISTAS_OC_ORDEN = ['curso', 'aprobar', 'recibir', 'atrasadas', 'devueltas', 'duplicadas', 'conformes', 'por_pagar', 'pagadas', 'cerradas', 'todas']
+VISTAS_OC_EXTRA = {'atrasadas': 'Atrasadas', 'devueltas': '↩ Devueltas por Almacén', 'duplicadas': '⚠ Posibles duplicadas', 'por_pagar': 'Por pagar', 'pagadas': 'Pagadas'}
 CATALOGOS_OC = {'OC_UM': 'Unidades de medida (U.M.)', 'OC_CONDICION_PAGO': 'Condiciones de pago', 'OC_SERVICIO': 'Tipos de servicio (OS)',
                 'OC_AREA': 'Áreas que solicitan', 'OC_SOLICITANTE': 'Otros solicitantes',
                 'OC_DIRECTO_CATEGORIA': 'Categorías de uso directo', 'OC_DIRECTO_UBICACION': 'Ubicaciones (uso directo)',
@@ -271,6 +271,7 @@ def _asegurar_oc():
     _agregar_columnas_si_faltan('orden_compra', [('devuelta_almacen', 'BOOLEAN DEFAULT FALSE'), ('devolucion_motivo', 'VARCHAR(600)'),
                                                  ('devolucion_items', 'TEXT'), ('devuelta_por_id', 'INTEGER'), ('fecha_devuelta', 'TIMESTAMP'),
                                                  ('devoluciones', 'INTEGER DEFAULT 0')])
+    _agregar_columnas_si_faltan('orden_compra', [('duplicado_revision', 'TEXT'), ('duplicado_descartes', 'TEXT'), ('anulada_duplicada_de_id', 'INTEGER')])
     _agregar_columnas_si_faltan('orden_compra', [('correcciones', 'INTEGER DEFAULT 0'), ('rechazo_previo', 'VARCHAR(500)'),
                                                  ('correccion_nota', 'VARCHAR(300)'), ('correccion_pendiente', 'BOOLEAN DEFAULT FALSE')])
     _agregar_columnas_si_faltan('orden_compra', [('directo_categoria', 'VARCHAR(100)'), ('directo_ubicacion', 'VARCHAR(100)'),

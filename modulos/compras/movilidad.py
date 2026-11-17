@@ -37,14 +37,18 @@ def _asegurar_mov():
     if not _mov_ok:
         OrdenCompraMovilidad.__table__.create(bind=db.engine, checkfirst=True)
         OCMovilidadTrabajador.__table__.create(bind=db.engine, checkfirst=True)
+        _agregar_columnas_si_faltan('orden_compra_movilidad', [('aprobado_por_id', 'INTEGER'), ('aprobado_por_nombre', 'VARCHAR(100)'),
+                                                                ('fecha_aprobada', 'TIMESTAMP'), ('firma_aprob_s3_key', 'VARCHAR(300)')])
         _mov_ok = True
 
 
-def _ruta_mov(roles=None, como_json=False):
+def _ruta_mov(roles=None, como_json=False, encargado=False):
+    """roles: quién entra (por defecto ROLES_MOV_VEN). encargado=True: además entra el ENCARGADO que aprueba (sea cual sea su rol)."""
     def deco(f):
         @_wraps_insumos(f)
         def envoltura(*args, **kwargs):
-            if session.get('role') not in (roles or ROLES_MOV_VEN):
+            permitidos = ROLES_MOV_VEN if roles is None else roles
+            if session.get('role') not in permitidos and not (encargado and _mov_es_encargado()):
                 return ({'status': 'error', 'msg': 'No autorizado'}, 403) if como_json else ("Acceso denegado", 403)
             _asegurar_insumos()
             _asegurar_oc()
@@ -67,6 +71,63 @@ def _mov_rmv():
 
 def _mov_tope(rmv=None):
     return round((rmv or _mov_rmv()) * MOV_TOPE_PCT, 2)
+
+
+# ---- ENCARGADO que aprueba y firma cada planilla (siempre la misma persona: Luis Carlos; el admin lo puede cambiar) ----
+MOV_ENCARGADO_NOMBRE_DEF = 'LUIS CARLOS'
+_mov_enc_cache = {'hasta': None, 'id': None}
+
+
+def _mov_encargado_id():
+    """Usuario encargado (OCConfig MOV_ENCARGADO; si no se eligió, la cuenta activa que se llama "Luis Carlos..."). Cache 60 s."""
+    ahora = datetime.now()
+    if _mov_enc_cache['hasta'] and ahora < _mov_enc_cache['hasta']:
+        return _mov_enc_cache['id']
+    uid = None
+    try:
+        c = OCConfig.query.get('MOV_ENCARGADO')
+        if c and (c.valor or '').isdigit():
+            uid = int(c.valor)
+        else:
+            u = (User.query.filter(User.desactivado.isnot(True), func.upper(User.nombre_completo).like(MOV_ENCARGADO_NOMBRE_DEF + '%'))
+                 .order_by(User.id).first())
+            uid = u.id if u else None
+    except Exception:
+        db.session.rollback()
+    _mov_enc_cache.update(hasta=ahora + timedelta(seconds=60), id=uid)
+    return uid
+
+
+def _mov_encargado():
+    uid = _mov_encargado_id()
+    return User.query.get(uid) if uid else None
+
+
+def _mov_es_encargado():
+    uid = session.get('user_id')
+    return bool(uid) and uid == _mov_encargado_id()
+
+
+def _mov_aprobada(m):
+    return bool(m.fecha_aprobada and m.firma_aprob_s3_key)
+
+
+def _mov_firma_guardada_key(uid):
+    try:
+        c = OCConfig.query.get(f'MOV_FIRMA_U{uid}')
+        return c.valor if c and c.valor else None
+    except Exception:
+        db.session.rollback()
+        return None
+
+
+def _mov_por_aprobar_q():
+    return OrdenCompraMovilidad.query.filter(OrdenCompraMovilidad.anulada.isnot(True), OrdenCompraMovilidad.fecha_aprobada.is_(None))
+
+
+def _mov_lista_para_aprobar(m):
+    """Ya la firmó el trabajador (en pantalla o la hoja) y falta la aprobación del encargado."""
+    return not m.anulada and _mov_firmada(m) and not _mov_aprobada(m)
 
 
 def _mov_numero_txt(m):
@@ -193,6 +254,25 @@ app.add_template_global(_mov_firmada, 'mov_firmada')
 app.add_template_global(_mov_filas, 'mov_filas')
 app.add_template_global(ROLES_MOV_VEN, 'roles_mov')
 app.add_template_global(ROLES_MOV_ANULAN, 'roles_mov_anulan')
+app.add_template_global(_mov_aprobada, 'mov_aprobada')
+app.add_template_global(_mov_es_encargado, 'mov_es_encargado')
+app.add_template_global(_mov_encargado, 'mov_encargado')
+app.add_template_global(_mov_lista_para_aprobar, 'mov_lista_para_aprobar')
+app.add_template_global(lambda: bool(_mov_firma_guardada_key(session.get('user_id'))), 'mov_tengo_firma')
+
+
+@app.context_processor
+def _ctx_mov_aprobar():
+    """Aviso arriba para el encargado: planillas firmadas por el trabajador que esperan su aprobación."""
+    try:
+        if not session.get('user_id') or not _mov_es_encargado():
+            return {}
+        _asegurar_mov()
+        n = sum(1 for m in _mov_por_aprobar_q().all() if _mov_firmada(m))
+        return {'mov_por_aprobar': n}
+    except Exception:
+        db.session.rollback()
+        return {}
 
 
 def _mov_evento(m, accion_txt):
@@ -554,7 +634,7 @@ def oc_movilidad_hoja(mov_id):
 
 
 @app.route('/ordenes/movilidad/<int:mov_id>/hoja/ver')
-@_ruta_mov()
+@_ruta_mov(encargado=True)
 def oc_movilidad_hoja_ver(mov_id):
     m = OrdenCompraMovilidad.query.get_or_404(mov_id)
     if not m.escaneo_s3_key:
@@ -569,7 +649,7 @@ def oc_movilidad_hoja_ver(mov_id):
 
 
 @app.route('/ordenes/movilidad/<int:mov_id>/firma.png')
-@_ruta_mov()
+@_ruta_mov(encargado=True)
 def oc_movilidad_firma(mov_id):
     m = OrdenCompraMovilidad.query.get_or_404(mov_id)
     if not m.firma_s3_key:
@@ -592,13 +672,15 @@ def oc_movilidad_quitar_firma(mov_id):
     if not claves:
         flash('La planilla no tiene firma.')
         return redirect(volver)
+    estaba_aprobada = _mov_aprobada(m)
     m.firma_s3_key = m.firma_fecha = m.firma_por = None
     m.escaneo_s3_key = m.escaneo_tipo = m.escaneo_nombre = m.escaneo_fecha = m.escaneo_por = None
-    _mov_evento(m, f"se QUITÓ la firma para corregirla: {motivo}")
+    m.aprobado_por_id = m.aprobado_por_nombre = m.fecha_aprobada = m.firma_aprob_s3_key = None   # (el archivo de la firma del encargado se conserva)
+    _mov_evento(m, f"se QUITÓ la firma{' y la aprobación del encargado' if estaba_aprobada else ''} para corregirla: {motivo}")
     registrar_log(f"Quitó la firma de la {_mov_codigo(m)}: {motivo}", 'bi-eraser', 'text-warning')
     db.session.commit()
     _borrar_de_s3(claves)
-    flash('Firma quitada: ya puedes editar la planilla. Al terminar, vuelve a firmarla.')
+    flash('Firma quitada: ya puedes editar la planilla. Al terminar, vuelve a firmarla (y el encargado vuelve a aprobarla).')
     return redirect(volver)
 
 
@@ -658,6 +740,100 @@ def oc_movilidad_dni():
     return {'status': 'success', 'nombre': ' '.join(datos['razon_social'].split()).upper(), 'origen': 'RENIEC'}
 
 
+# ---------------------------- APROBACIÓN Y FIRMA DEL ENCARGADO ----------------------------
+def _mov_subir_png(data_url, clave):
+    if not (data_url or '').startswith('data:image/png;base64,'):
+        raise ValueError('Firma no válida.')
+    datos = base64.b64decode(data_url.split(',', 1)[1], validate=True)
+    if not datos.startswith(b'\x89PNG\r\n\x1a\n') or len(datos) > 400 * 1024:
+        raise ValueError('Firma no válida o demasiado grande.')
+    s3_client.upload_fileobj(io.BytesIO(datos), S3_BUCKET_NAME, clave, ExtraArgs={'ContentType': 'image/png'})
+    return clave
+
+
+@app.route('/ordenes/movilidad/<int:mov_id>/aprobar', methods=['POST'])
+@_ruta_mov((), como_json=True, encargado=True)
+def oc_movilidad_aprobar(mov_id):
+    """Solo el ENCARGADO: aprueba y firma (dibujando su firma, o con la que dejó guardada)."""
+    m = OrdenCompraMovilidad.query.get_or_404(mov_id)
+    if m.anulada:
+        return {'status': 'error', 'msg': 'La planilla está anulada.'}
+    if _mov_aprobada(m):
+        return {'status': 'error', 'msg': f'Ya la aprobó {m.aprobado_por_nombre}.'}
+    if not _mov_firmada(m):
+        return {'status': 'error', 'msg': 'Primero tiene que firmarla el trabajador (en pantalla o subiendo la hoja firmada).'}
+    uid, f = session.get('user_id'), request.form
+    nuevas = []
+    try:
+        if f.get('firma_png'):
+            clave = _mov_subir_png(f.get('firma_png'), f"ordenes/movilidad/encargado/firma_u{uid}_{uuid.uuid4().hex[:8]}.png")
+            nuevas.append(clave)
+            if f.get('recordar') == '1':
+                c = OCConfig.query.get(f'MOV_FIRMA_U{uid}') or OCConfig(clave=f'MOV_FIRMA_U{uid}')
+                c.valor, c.actualizado_por, c.fecha = clave, session.get('nombre', ''), hora_peru()
+                db.session.add(c)
+        else:
+            clave = _mov_firma_guardada_key(uid)
+            if not clave:
+                return {'status': 'error', 'msg': 'Firma en el recuadro para aprobar.'}
+        u = User.query.get(uid)
+        m.firma_aprob_s3_key, m.aprobado_por_id = clave, uid
+        m.aprobado_por_nombre = (u.nombre_completo if u else session.get('nombre', ''))[:100]
+        m.fecha_aprobada = hora_peru()
+        _mov_evento(m, f"APROBADA y firmada por el encargado {m.aprobado_por_nombre}")
+        registrar_log(f"Aprobó la {_mov_codigo(m)} (S/ {m.total:,.2f})", 'bi-patch-check', 'text-success')
+        db.session.commit()
+    except ValueError as e:
+        db.session.rollback()
+        _borrar_de_s3(nuevas)
+        return {'status': 'error', 'msg': str(e)}
+    except Exception as e:
+        db.session.rollback()
+        _borrar_de_s3(nuevas)
+        return {'status': 'error', 'msg': f'No se pudo aprobar: {e}'}
+    return {'status': 'success', 'msg': f'{_mov_codigo(m)} aprobada y firmada.', 'pdf': url_for('oc_movilidad_pdf', mov_id=m.id, ver=1)}
+
+
+@app.route('/ordenes/movilidad/mi_firma.png')
+@_ruta_mov((), encargado=True)
+def oc_movilidad_mi_firma():
+    clave = _mov_firma_guardada_key(session.get('user_id'))
+    if not clave:
+        return "Sin firma guardada", 404
+    obj = s3_client.get_object(Bucket=S3_BUCKET_NAME, Key=clave)
+    return send_file(io.BytesIO(obj['Body'].read()), mimetype='image/png')
+
+
+@app.route('/ordenes/movilidad/mi_firma/olvidar', methods=['POST'])
+@_ruta_mov((), como_json=True, encargado=True)
+def oc_movilidad_mi_firma_olvidar():
+    """El encargado deja de usar su firma guardada (el archivo se conserva: lo usan las planillas ya aprobadas)."""
+    c = OCConfig.query.get(f"MOV_FIRMA_U{session.get('user_id')}")
+    if c:
+        db.session.delete(c)
+        db.session.commit()
+    return {'status': 'success'}
+
+
+@app.route('/ordenes/movilidad/encargado', methods=['POST'])
+@_ruta_mov(['admin'])
+def oc_movilidad_encargado():
+    """Admin: quién aprueba y firma las planillas (por defecto Luis Carlos)."""
+    uid = request.form.get('user_id', type=int)
+    u = User.query.get(uid) if uid else None
+    if not u or u.desactivado:
+        flash('⛔ Elige la cuenta del encargado.')
+        return redirect(url_for('oc_movilidad_lista'))
+    c = OCConfig.query.get('MOV_ENCARGADO') or OCConfig(clave='MOV_ENCARGADO')
+    c.valor, c.actualizado_por, c.fecha = str(u.id), session.get('nombre', ''), hora_peru()
+    db.session.add(c)
+    registrar_log(f"Puso a {u.nombre_completo} como encargado que aprueba las planillas de movilidad", 'bi-person-check', 'text-info')
+    db.session.commit()
+    _mov_enc_cache['hasta'] = None
+    flash(f'✅ {u.nombre_completo} aprueba y firma las planillas de movilidad.')
+    return redirect(url_for('oc_movilidad_lista'))
+
+
 # ---------------------------- PDF ----------------------------
 def _mov_contexto_pdf(m):
     firma = None
@@ -667,8 +843,17 @@ def _mov_contexto_pdf(m):
             firma = _imagen_pdf(obj['Body'].read(), 52, 190, recortar=True)
         except Exception:
             app.logger.exception("No se pudo leer la firma de la planilla de movilidad %s", m.id)
+    firma_aprob = None
+    if m.firma_aprob_s3_key and m.fecha_aprobada:
+        try:
+            obj = s3_client.get_object(Bucket=S3_BUCKET_NAME, Key=m.firma_aprob_s3_key)
+            firma_aprob = _imagen_pdf(obj['Body'].read(), 52, 190, recortar=True)
+        except Exception:
+            app.logger.exception("No se pudo leer la firma del encargado de la planilla de movilidad %s", m.id)
+    enc = _mov_encargado()
     filas = _mov_filas(m)
     return {'m': m, 'o': m.orden, 'cfg': _oc_cfg(m.empresa), 'logo': _logo_pdf_insumos(m.empresa), 'firma': firma, 'filas': filas,
+            'firma_aprob': firma_aprob, 'encargado': m.aprobado_por_nombre or (enc.nombre_completo if enc else ''),
             'vacias': max(0, 8 - len(filas)), 'numero': _mov_numero_txt(m), 'letras': _monto_en_letras(m.total or 0, 'PEN'),
             'tema': TEMAS_PDF_OC.get(m.empresa, TEMAS_PDF_OC['ANCLAJES']), 'codigo_oc': _oc_codigo(m.orden),
             'base_legal': MOV_BASE_LEGAL, 'nota_legal': MOV_NOTA, 'registro': m.creado_por.nombre_completo if m.creado_por else ''}
@@ -679,7 +864,7 @@ def _mov_nombre_pdf(m):
 
 
 @app.route('/ordenes/movilidad/<int:mov_id>/pdf')
-@_ruta_mov()
+@_ruta_mov(encargado=True)
 def oc_movilidad_pdf(mov_id):
     m = OrdenCompraMovilidad.query.get_or_404(mov_id)
     html_pdf = render_template('pdf_movilidad.html', planillas=[_mov_contexto_pdf(m)])
@@ -692,7 +877,7 @@ def oc_movilidad_pdf(mov_id):
 
 # ---------------------------- LISTA (para contabilidad: todas las planillas del mes) ----------------------------
 @app.route('/ordenes/movilidad')
-@_ruta_mov()
+@_ruta_mov(encargado=True)
 def oc_movilidad_lista():
     hoy = hora_peru().date()
     a = request.args
@@ -704,7 +889,8 @@ def oc_movilidad_lista():
     except ValueError:
         ini = hoy.replace(day=1)
     fin = (ini.replace(day=28) + timedelta(days=4)).replace(day=1)
-    q = OrdenCompraMovilidad.query.filter(OrdenCompraMovilidad.fecha_gasto >= ini, OrdenCompraMovilidad.fecha_gasto < fin)
+    todos = mes == 'todos'           # todos los meses (p. ej. el encargado viendo todo lo que tiene por aprobar)
+    q = OrdenCompraMovilidad.query if todos else OrdenCompraMovilidad.query.filter(OrdenCompraMovilidad.fecha_gasto >= ini, OrdenCompraMovilidad.fecha_gasto < fin)
     if empresa != 'TODAS':
         q = q.filter(OrdenCompraMovilidad.empresa == empresa)
     estado = a.get('estado', '')
@@ -716,6 +902,10 @@ def oc_movilidad_lista():
         if estado == 'firmadas' and (m.anulada or not _mov_firmada(m)):
             continue
         if estado == 'anuladas' and not m.anulada:
+            continue
+        if estado == 'por_aprobar' and not _mov_lista_para_aprobar(m):
+            continue
+        if estado == 'aprobadas' and (m.anulada or not _mov_aprobada(m)):
             continue
         if buscar and buscar not in f"{m.trabajador_nombre} {m.trabajador_dni} {_oc_codigo(m.orden)} {m.orden.razon_social} {m.filas}".upper():
             continue
@@ -738,22 +928,26 @@ def oc_movilidad_lista():
             flash('No hay planillas vigentes en ese mes para juntar en un PDF.')
             return redirect(url_for('oc_movilidad_lista', empresa=empresa, mes=mes))
         html_pdf = render_template('pdf_movilidad.html', planillas=[_mov_contexto_pdf(m) for m in vigentes])
-        nombre = f"Movilidad_{empresa.title()}_{ini.strftime('%Y-%m')}.pdf"
+        nombre = f"Movilidad_{empresa.title()}_{'todas' if todos else ini.strftime('%Y-%m')}.pdf"
         resp = _generar_respuesta_pdf(html_pdf, nombre, 'las planillas de movilidad del mes')
         if a.get('ver') == '1' and not isinstance(resp, tuple):
             resp.headers['Content-Disposition'] = f'inline; filename="{nombre}"'
         return resp
-    meses = []
+    meses = [('todos', 'Todos los meses')]
     d = hoy.replace(day=1)
     for _ in range(18):
         meses.append((d.strftime('%Y-%m'), f"{MOV_MESES[d.month - 1].title()} {d.year}"))
         d = (d - timedelta(days=1)).replace(day=1)
-    return render_template('oc_movilidad_lista.html', lista=lista, empresa=empresa, mes=ini.strftime('%Y-%m'), meses=meses, estado=estado, buscar=buscar,
+    return render_template('oc_movilidad_lista.html', lista=lista, empresa=empresa, mes='todos' if todos else ini.strftime('%Y-%m'), meses=meses, estado=estado, buscar=buscar,
                            total=round(sum(m.total or 0 for m in vigentes), 2), n_vigentes=len(vigentes),
                            n_sin_firma=sum(1 for m in vigentes if not _mov_firmada(m)), excesos=excesos,
                            por_trab=sorted(por_trab.values(), key=lambda t: -t['total']), rmv=_mov_rmv(), tope=_mov_tope(),
-                           empresas_oc=EMPRESAS_OC, seccion='movilidad', periodo=f"{MOV_MESES[ini.month - 1].title()} {ini.year}",
-                           conteo_vaciar=_mov_conteo_vaciar() if session.get('role') == 'admin' else {})
+                           empresas_oc=EMPRESAS_OC, seccion='movilidad', periodo='todos los meses' if todos else f"{MOV_MESES[ini.month - 1].title()} {ini.year}",
+                           conteo_vaciar=_mov_conteo_vaciar() if session.get('role') == 'admin' else {},
+                           n_por_aprobar=sum(1 for m in vigentes if _mov_lista_para_aprobar(m)), encargado=_mov_encargado(),
+                           es_encargado=_mov_es_encargado(), firma_guardada=bool(_mov_firma_guardada_key(session.get('user_id'))) if _mov_es_encargado() else False,
+                           usuarios_enc=[u for u in User.query.filter(User.desactivado.isnot(True)).order_by(User.nombre_completo).all() if not _mov_rol_fuera(u.role)]
+                           if session.get('role') == 'admin' else [])
 
 
 # ---------------------------- VACIAR (pruebas) ----------------------------

@@ -1,0 +1,192 @@
+{#- POSIBLES ÓRDENES DUPLICADAS (v27): caja en vivo del formulario, aviso del detalle (lo ve Gerencia antes de aprobar),
+    chip de la lista y "Anular por duplicada". Lógica en modulos/compras/duplicados.py. Se importa "with context". -#}
+
+{% macro estilos() %}
+<style>
+    .dup-box { border: 2px solid #fdba74; background: #fff7ed; border-radius: 14px; padding: 10px 12px; }
+    .dup-box.alta { border-color: #f87171; background: #fef2f2; }
+    .dup-box .dup-t { font-weight: 800; font-size: .9rem; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .dup-box.alta .dup-t { color: #991b1b; } .dup-box.media .dup-t { color: #9a3412; } .dup-box.baja .dup-t { color: #334155; }
+    .dup-box.baja { border-color: #cbd5e1; background: #f8fafc; }
+    .dup-c { background: #fff; border: 1px solid #e2e8f0; border-left: 5px solid var(--n, #64748b); border-radius: 10px; padding: 8px 10px; margin-top: 8px; font-size: .78rem; }
+    .dup-c .cab { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+    .dup-c .cab b.cod { font-size: .86rem; }
+    .dup-niv { font-size: .62rem; font-weight: 800; color: #fff; border-radius: 6px; padding: 1px 7px; background: var(--n, #64748b); white-space: nowrap; }
+    .dup-est { font-size: .62rem; font-weight: 800; border-radius: 6px; padding: 1px 6px; border: 1px solid currentColor; white-space: nowrap; }
+    .dup-raz { display: flex; flex-wrap: wrap; gap: 3px; margin: 5px 0; }
+    .dup-raz span { font-size: .66rem; font-weight: 700; background: #f1f5f9; color: #334155; border-radius: 6px; padding: 1px 6px; }
+    .dup-its { color: #475569; }
+    .dup-conf { border-top: 1px dashed #fca5a5; margin-top: 8px; padding-top: 8px; }
+    .dup-chip { display: inline-flex; align-items: center; gap: 3px; font-size: .6rem; font-weight: 800; color: #fff; border-radius: 6px; padding: 1px 6px; text-decoration: none; white-space: nowrap; }
+    .dup-ok { font-size: .74rem; color: #166534; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 6px 10px; margin-top: 8px; }
+</style>
+{% endmacro %}
+
+{#- Lista de la tabla de órdenes -#}
+{% macro chip(o, dups) %}{% set d = (dups or {}).get(o.id) %}{% if d and d.nivel %}
+<a class="dup-chip" style="background: {{ d.nivel.color }};" href="{{ url_for('oc_detalle', orden_id=o.id) }}#duplicados"
+   title="Posible duplicada (coincidencia {{ d.nivel.txt|lower }}) con {{ d.con|length }} orden(es) del mismo proveedor">⚠ ¿Duplicada? {{ d.nivel.txt }}</a>
+{% endif %}{% endmacro %}
+
+{#- FORMULARIO: caja que se llena en vivo + confirmación para enviar si hay coincidencia Alta -#}
+{% macro caja_form(orden) %}
+{% set rev = oc_dup_revision(orden) if orden else none %}
+<div id="dupBox" class="dup-box mb-3" hidden>
+    <div class="dup-t"><i class="bi bi-files"></i> <span id="dupTit"></span></div>
+    <div class="small" id="dupSub"></div>
+    <div id="dupLista"></div>
+    <div class="dup-conf" id="dupConf" hidden>
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="dup_revisado" value="1" id="dupRevisado" {{ 'checked' if rev }}>
+            <label class="form-check-label small fw-bold" for="dupRevisado">Revisé las órdenes de arriba: esta NO es duplicada</label></div>
+        <input name="dup_motivo" id="dupMotivo" class="form-control form-control-sm mt-1" maxlength="300" value="{{ rev.motivo if rev else '' }}"
+               placeholder="¿Por qué? Ej: se necesitaba más material / es otra compra del mismo producto (mín. 10 letras)">
+        <div class="form-text">Para <b>enviarla a Gerencia</b> con una coincidencia <b>alta</b> hay que confirmarlo. Queda en el historial y Gerencia lo ve al aprobar.</div>
+    </div>
+</div>
+{% endmacro %}
+
+{% macro js_form() %}
+<script>
+(function () {
+    const form = document.getElementById('formOC'), box = document.getElementById('dupBox');
+    if (!form || !box) return;
+    const URL_DUP = {{ url_for('oc_duplicados_revisar')|tojson }};
+    const esc = t => String(t ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    let t = null, ultimo = '', enCurso = null;
+    window.DUP_ALTA = [];
+    function listo() {
+        const ruc = (form.querySelector('[name=ruc]') || {}).value || '', razon = (form.querySelector('[name=razon_social]') || {}).value || '';
+        const conPrecio = [...form.querySelectorAll('[name="precio_unitario[]"]')].some(i => parseFloat(i.value) > 0);
+        return (ruc.replace(/\D/g, '').length >= 8 || razon.trim().length >= 3) && conPrecio;
+    }
+    function pintar(lista) {
+        window.DUP_ALTA = lista.filter(x => x.nivel && x.nivel.k === 'alta').map(x => x.id);
+        if (!lista.length) { box.hidden = true; return; }
+        const top = lista[0].nivel ? lista[0].nivel.k : 'baja';
+        box.hidden = false; box.className = 'dup-box mb-3 ' + top;
+        document.getElementById('dupTit').textContent = top === 'alta' ? '¡Posible ORDEN DUPLICADA!' : top === 'media' ? 'Ojo: hay órdenes parecidas' : 'Otras órdenes recientes a este proveedor';
+        document.getElementById('dupSub').innerHTML = top === 'baja' ? 'Solo para que lo tengas en cuenta.'
+            : 'Ábrela y compara: si es la misma compra, <b>no la hagas otra vez</b>. Si es otra compra (se necesita más material, se dividió…), sigue.';
+        document.getElementById('dupLista').innerHTML = lista.map(x => `<div class="dup-c" style="--n:${x.nivel ? x.nivel.color : '#94a3b8'};">
+            <div class="cab">${x.nivel ? `<span class="dup-niv">Coincidencia ${esc(x.nivel.txt)}</span>` : ''}<b class="cod">${esc(x.codigo)}</b>
+                <span class="text-muted">${esc(x.empresa)} · ${esc(x.destino)}</span>
+                <span class="dup-est" style="color:${esc(x.estado_color)};">${esc(x.estado)}${x.pagada ? ' · PAGADA' : ''}</span>
+                <span class="ms-auto fw-bold">${esc(x.total)}</span>
+                <a class="btn btn-sm btn-outline-primary py-0" href="${esc(x.url)}" target="_blank">Ver orden ↗</a></div>
+            <div class="dup-raz">${x.razones.map(r => `<span>${esc(r)}</span>`).join('')}</div>
+            <div class="dup-its"><b>${esc(x.fecha)}</b> (${x.dias ? 'hace ' + x.dias + ' día(s) de diferencia' : 'mismo día'}) · creó ${esc(x.creo || '-')} · solicitó ${esc(x.solicito || '-')}${x.factura ? ' · factura ' + esc(x.factura) : ''}<br>
+                ${x.prods.map(i => `${esc(i.d)} · ${esc(i.c)} ${esc(i.um)}`).join(' · ')}${x.n_items > x.prods.length ? ` · y ${x.n_items - x.prods.length} más` : ''}</div></div>`).join('');
+        document.getElementById('dupConf').hidden = !window.DUP_ALTA.length;
+    }
+    function revisar() {
+        if (!listo()) { box.hidden = true; window.DUP_ALTA = []; return; }
+        const fd = new FormData(form); fd.delete('accion');
+        const firma = JSON.stringify([...fd.entries()].filter(([k]) => !k.startsWith('dup_') && !k.startsWith('doc_')));
+        if (firma === ultimo) return; ultimo = firma;
+        if (enCurso) enCurso.abort(); enCurso = new AbortController();
+        fetch(URL_DUP, { method: 'POST', body: fd, credentials: 'same-origin', signal: enCurso.signal })
+            .then(r => r.json()).then(d => { if (d.status === 'success') pintar(d.lista || []); }).catch(() => {});
+    }
+    const pronto = () => { clearTimeout(t); t = setTimeout(revisar, 900); };
+    form.addEventListener('input', e => { if (!(e.target.name || '').startsWith('dup_')) pronto(); });
+    form.addEventListener('change', e => { if (!(e.target.name || '').startsWith('dup_')) pronto(); });
+    setTimeout(revisar, 1200);
+    setInterval(() => { if (document.visibilityState === 'visible') revisar(); }, 15000);   // por si el proveedor se eligió sin tocar campos
+    // si hay coincidencia alta, para ENVIAR hay que confirmar (también lo controla el servidor)
+    window.dupFaltaConfirmar = () => window.DUP_ALTA.length && !(document.getElementById('dupRevisado').checked && document.getElementById('dupMotivo').value.trim().length >= 10);
+})();
+</script>
+{% endmacro %}
+
+{#- DETALLE: aviso (antes de aprobar), "No es duplicada" y "Anular por duplicada" -#}
+{% macro panel_detalle(orden, p) %}
+{% set lista = oc_duplicados(orden) %}
+{% set rev = oc_dup_revision(orden) %}
+{% set es_admin = session.get('role') == 'admin' %}
+{% if orden.estado == 'ANULADA' and orden.anulada_duplicada_de_id %}
+<div class="dup-box baja mb-2" id="duplicados"><div class="dup-t"><i class="bi bi-files"></i> Anulada por DUPLICADA de
+    <a href="{{ url_for('oc_detalle', orden_id=orden.anulada_duplicada_de_id) }}">la orden original</a></div>
+    <div class="small">{{ orden.motivo_anulacion or '' }}</div></div>
+{% elif lista %}
+{% set top = lista[0].nivel.k %}
+<div class="dup-box {{ top }} mb-2" id="duplicados">
+    <div class="dup-t"><i class="bi bi-files"></i> {{ '¡Posible ORDEN DUPLICADA!' if top == 'alta' else 'Ojo: hay órdenes parecidas del mismo proveedor' }}</div>
+    <div class="small">{% if orden.estado == 'ENVIADA' and es_admin %}<b>Antes de aprobar</b>, compara con {{ 'esta orden' if lista|length == 1 else 'estas órdenes' }}.{% else %}Compara antes de seguir: si es la misma compra, se anula una.{% endif %}</div>
+    {% for x in lista %}
+    <div class="dup-c" style="--n: {{ x.nivel.color }};">
+        <div class="cab"><span class="dup-niv">Coincidencia {{ x.nivel.txt }}</span><b class="cod">{{ x.codigo }}</b>
+            <span class="text-muted">{{ x.empresa }} · {{ x.destino }}</span>
+            <span class="dup-est" style="color: {{ x.estado_color }};">{{ x.estado }}{{ ' · PAGADA' if x.pagada }}</span>
+            <span class="ms-auto fw-bold">{{ x.total }}</span>
+            <a class="btn btn-sm btn-outline-primary py-0" href="{{ x.url }}" target="_blank">Ver orden ↗</a></div>
+        <div class="dup-raz">{% for r in x.razones %}<span>{{ r }}</span>{% endfor %}</div>
+        <div class="dup-its"><b>{{ x.fecha }}</b> · creó {{ x.creo or '-' }} · solicitó {{ x.solicito or '-' }}{{ (' · factura ' ~ x.factura) if x.factura }}<br>
+            {% for i in x.prods %}{{ i.d }} · {{ i.c }} {{ i.um }}{{ ' · ' if not loop.last }}{% endfor %}{{ (' · y ' ~ (x.n_items - x.prods|length) ~ ' más') if x.n_items > x.prods|length }}</div>
+        <div class="d-flex flex-wrap gap-1 mt-2">
+            {% if p.observar or p.editar or p.reeditar or es_admin %}<button type="button" class="btn btn-sm btn-outline-success py-0" data-bs-toggle="modal" data-bs-target="#dupNo{{ x.id }}"><i class="bi bi-check2"></i> No es duplicada</button>{% endif %}
+            {% if es_admin and not oc_dup_bloqueo_anular(orden) %}<button type="button" class="btn btn-sm btn-outline-danger py-0" data-bs-toggle="modal" data-bs-target="#dupAnular" data-original="{{ x.id }}"><i class="bi bi-slash-circle"></i> Anular ESTA por duplicada</button>{% endif %}
+        </div>
+    </div>
+    <div class="modal fade" id="dupNo{{ x.id }}" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content border-0 shadow">
+        <form method="POST" action="{{ url_for('oc_duplicado_descartar', orden_id=orden.id) }}"><input type="hidden" name="otra_id" value="{{ x.id }}">
+            <div class="modal-header py-2"><h6 class="modal-title fw-bold">{{ oc_codigo(orden) }} no es duplicada de {{ x.codigo }}</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body"><div class="small mb-2">Ya no se avisará este par (en las dos órdenes). Queda en el historial.</div>
+                <label class="small fw-bold">¿Por qué? *</label><input name="motivo" class="form-control form-control-sm" minlength="5" maxlength="200" required placeholder="Ej: es otra compra: se necesitaba más papel"></div>
+            <div class="modal-footer p-2 bg-light"><button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-success btn-sm fw-bold">Confirmar</button></div>
+        </form>
+    </div></div></div>
+    {% endfor %}
+    {% if rev %}<div class="dup-ok"><i class="bi bi-person-check"></i> <b>{{ rev.por }}</b> revisó al enviarla ({{ rev.fecha }}) que NO es duplicada de {{ rev.codigos|join(', ') }}: “{{ rev.motivo }}”</div>{% endif %}
+</div>
+{% elif rev %}
+<div class="dup-ok mb-2" id="duplicados"><i class="bi bi-person-check"></i> Se revisó al enviarla que NO es duplicada de {{ rev.codigos|join(', ') }} ({{ rev.por }}, {{ rev.fecha }}): “{{ rev.motivo }}”</div>
+{% endif %}
+{% if es_admin and orden.estado != 'ANULADA' %}{{ modal_anular(orden) }}{% endif %}
+{% endmacro %}
+
+{#- Botón para Gerencia en las acciones (siempre a la mano, aunque no salte el aviso) -#}
+{% macro boton_anular(orden) %}
+{% if session.get('role') == 'admin' and orden.estado not in ['ANULADA', 'BORRADOR'] %}{% set bl = oc_dup_bloqueo_anular(orden) %}
+<button type="button" class="btn btn-outline-danger" {{ 'disabled' if bl }} data-bs-toggle="modal" data-bs-target="#dupAnular" title="{{ ('No se puede: ' ~ bl) if bl else 'Es la misma compra que otra orden: se anula esta (aunque ya esté aprobada o conforme)' }}">
+    <i class="bi bi-files"></i> Anular por duplicada</button>
+{% endif %}
+{% endmacro %}
+
+{% macro modal_anular(orden) %}
+{% set bl = oc_dup_bloqueo_anular(orden) %}
+<div class="modal fade" id="dupAnular" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable"><div class="modal-content border-0 shadow">
+    <form method="POST" action="{{ url_for('oc_anular_duplicada', orden_id=orden.id) }}" onsubmit="return confirm('¿Anular {{ oc_codigo(orden) }} por duplicada? No se puede deshacer.')">
+        <div class="modal-header py-2 text-white" style="background:#b91c1c;"><h6 class="modal-title fw-bold text-white"><i class="bi bi-files"></i> Anular {{ oc_codigo(orden) }} por DUPLICADA</h6>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body">
+            {% if bl %}<div class="alert alert-warning small mb-0">No se puede anular: {{ bl }}.</div>
+            {% else %}
+            <div class="small mb-2" style="background:#fef2f2; border:1px solid #fecaca; border-radius:10px; padding:8px 10px; color:#7f1d1d;">
+                Se anula <b>esta</b> orden ({{ oc_codigo(orden) }}) y queda vigente la <b>original</b> que elijas.
+                Sale de <b>Por pagar</b>, su número no se vuelve a usar y queda en el historial de las dos.
+                {% if orden.destino == 'DIRECTO' and orden.fecha_kardex %}La entrega de uso directo registrada no movió inventario.{% endif %}</div>
+            <label class="small fw-bold">¿De cuál es duplicada? (la que se queda) *</label>
+            <div class="list-group mb-2" style="max-height: 260px; overflow:auto;">
+            {% for x in oc_dup_opciones(orden) %}
+                <label class="list-group-item d-flex gap-2 align-items-start small">
+                    <input class="form-check-input mt-1" type="radio" name="original_id" value="{{ x.id }}" required>
+                    <span class="flex-fill"><b>{{ x.codigo }}</b> · {{ x.fecha }} · {{ x.estado }} · <b>{{ x.total }}</b>
+                        {% if x.nivel %}<span class="dup-niv ms-1" style="--n: {{ x.nivel.color }};">Coincidencia {{ x.nivel.txt }}</span>{% endif %}
+                        {% if x.razones %}<br><span class="text-muted">{{ x.razones|join(' · ') }}</span>{% endif %}</span></label>
+            {% else %}<div class="small text-muted p-2">No hay otras órdenes de este proveedor en los últimos 6 meses.</div>{% endfor %}
+            </div>
+            <label class="small fw-bold">Motivo *</label>
+            <input name="motivo" class="form-control form-control-sm" minlength="5" maxlength="250" required placeholder="Ej: se registró dos veces la misma compra (misma factura FT01-2555)">
+            {% endif %}
+        </div>
+        <div class="modal-footer p-2 bg-light"><button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+            {% if not bl %}<button class="btn btn-danger btn-sm fw-bold">Anular por duplicada</button>{% endif %}</div>
+    </form>
+</div></div></div>
+<script>
+document.getElementById('dupAnular')?.addEventListener('show.bs.modal', e => {
+    const id = e.relatedTarget && e.relatedTarget.dataset.original;
+    if (id) { const r = document.querySelector(`#dupAnular input[name=original_id][value="${id}"]`); if (r) r.checked = true; }
+});
+</script>
+{% endmacro %}
