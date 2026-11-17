@@ -18,14 +18,44 @@
     .dup-its { color: #475569; }
     .dup-conf { border-top: 1px dashed #fca5a5; margin-top: 8px; padding-top: 8px; }
     .dup-chip { display: inline-flex; align-items: center; gap: 3px; font-size: .6rem; font-weight: 800; color: #fff; border-radius: 6px; padding: 1px 6px; text-decoration: none; white-space: nowrap; }
+    .dup-menu { width: min(430px, 92vw); font-size: .74rem; }
+    .dup-mi { border: 1px solid #e2e8f0; border-left: 4px solid var(--n, #64748b); border-radius: 9px; padding: 6px 8px; margin-top: 6px; white-space: normal; }
+    button.dup-chip { cursor: pointer; }
     .dup-ok { font-size: .74rem; color: #166534; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 6px 10px; margin-top: 8px; }
 </style>
 {% endmacro %}
 
 {#- Lista de la tabla de órdenes -#}
-{% macro chip(o, dups) %}{% set d = (dups or {}).get(o.id) %}{% if d and d.nivel %}
-<a class="dup-chip" style="background: {{ d.nivel.color }};" href="{{ url_for('oc_detalle', orden_id=o.id) }}#duplicados"
-   title="Posible duplicada (coincidencia {{ d.nivel.txt|lower }}) con {{ d.con|length }} orden(es) del mismo proveedor">⚠ ¿Duplicada? {{ d.nivel.txt }}</a>
+{% macro chip(o, dups, cods=none) %}{% set d = (dups or {}).get(o.id) %}
+{% if o.estado == 'ANULADA' and o.anulada_duplicada_de_id %}
+<a class="dup-chip" style="background:#64748b;" href="{{ url_for('oc_detalle', orden_id=o.anulada_duplicada_de_id) }}" title="Se anuló por ser duplicada; la orden correcta es esta">↪ duplicada de {{ (cods or {}).get(o.anulada_duplicada_de_id, 'otra orden') }}</a>
+{% elif d and d.nivel %}
+<span class="dropdown d-inline-block dup-dd">
+    <button type="button" class="dup-chip border-0 dropdown-toggle" style="background: {{ d.nivel.color }};" data-bs-toggle="dropdown" data-bs-auto-close="outside" data-bs-popper-config='{"strategy":"fixed"}'
+            title="Posible duplicada: clic para ver con cuál y qué coincide">⚠ ¿Duplicada? {{ d.nivel.txt }}</button>
+    <div class="dropdown-menu dup-menu p-2 shadow">
+        <div class="small fw-bold mb-1" style="color:#334155;">{{ oc_codigo(o) }} se parece a:</div>
+        {% for c in d.con[:4] %}
+        <div class="dup-mi" style="--n: {{ c.nivel.color }};">
+            <div class="d-flex flex-wrap align-items-center gap-1"><span class="dup-niv">{{ c.nivel.txt }}</span><b>{{ c.codigo }}</b>
+                <span class="text-muted">{{ c.fecha }} · {{ c.estado }}</span><span class="ms-auto fw-bold">{{ c.total }}</span></div>
+            <div class="dup-raz">{% for r in c.razones %}<span>✓ {{ r }}</span>{% endfor %}</div>
+            <div class="d-flex flex-wrap gap-1">
+                <a class="btn btn-sm btn-primary py-0" href="{{ c.comparar }}"><i class="bi bi-layout-split"></i> Comparar lado a lado</a>
+                <a class="btn btn-sm btn-outline-secondary py-0" href="{{ c.url }}" target="_blank">Ver ↗</a>
+                {% if session.get('role') in ['admin', 'logistica'] %}<button type="button" class="btn btn-sm btn-outline-success py-0" data-bs-toggle="collapse" data-bs-target="#dupNoL{{ o.id }}_{{ c.id }}">No es duplicada</button>{% endif %}
+            </div>
+            {% if session.get('role') in ['admin', 'logistica'] %}
+            <form class="collapse mt-1" id="dupNoL{{ o.id }}_{{ c.id }}" method="POST" action="{{ url_for('oc_duplicado_descartar', orden_id=o.id) }}">
+                <input type="hidden" name="otra_id" value="{{ c.id }}"><input type="hidden" name="volver" value="{{ request.full_path }}">
+                <div class="input-group input-group-sm"><input name="motivo" class="form-control" minlength="5" maxlength="200" required placeholder="¿Por qué? Ej: fue otra compra">
+                    <button class="btn btn-success">Confirmar</button></div>
+            </form>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</span>
 {% endif %}{% endmacro %}
 
 {#- FORMULARIO: caja que se llena en vivo + confirmación para enviar si hay coincidencia Alta -#}
@@ -101,6 +131,9 @@
 {#- DETALLE: aviso (antes de aprobar), "No es duplicada" y "Anular por duplicada" -#}
 {% macro panel_detalle(orden, p) %}
 {% set lista = oc_duplicados(orden) %}
+{% set anuladas = oc_dup_anuladas_de(orden) %}
+{% if anuladas %}<div class="dup-ok mb-2"><i class="bi bi-diagram-2"></i> <b>Esta es la orden correcta.</b> Se anularon por ser duplicadas de esta:
+    {% for x in anuladas %}<a href="{{ url_for('oc_detalle', orden_id=x.id) }}" class="fw-bold">{{ oc_codigo(x) }}</a>{{ (' (' ~ x.fecha_anulacion.strftime('%d/%m/%Y') ~ ')') if x.fecha_anulacion }}{{ ', ' if not loop.last }}{% endfor %}</div>{% endif %}
 {% set rev = oc_dup_revision(orden) %}
 {% set es_admin = session.get('role') == 'admin' %}
 {% if orden.estado == 'ANULADA' and orden.anulada_duplicada_de_id %}
@@ -118,6 +151,7 @@
             <span class="text-muted">{{ x.empresa }} · {{ x.destino }}</span>
             <span class="dup-est" style="color: {{ x.estado_color }};">{{ x.estado }}{{ ' · PAGADA' if x.pagada }}</span>
             <span class="ms-auto fw-bold">{{ x.total }}</span>
+            {% if x.comparar %}<a class="btn btn-sm btn-primary py-0" href="{{ x.comparar }}"><i class="bi bi-layout-split"></i> Comparar lado a lado</a>{% endif %}
             <a class="btn btn-sm btn-outline-primary py-0" href="{{ x.url }}" target="_blank">Ver orden ↗</a></div>
         <div class="dup-raz">{% for r in x.razones %}<span>{{ r }}</span>{% endfor %}</div>
         <div class="dup-its"><b>{{ x.fecha }}</b> · creó {{ x.creo or '-' }} · solicitó {{ x.solicito or '-' }}{{ (' · factura ' ~ x.factura) if x.factura }}<br>

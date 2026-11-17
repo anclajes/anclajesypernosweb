@@ -13,6 +13,7 @@
 import unicodedata
 
 DUP_VENTANA_DIAS = 90
+DUP_ESTADOS_FUERA = ('ANULADA', 'RECHAZADA')      # no avisan ni se comparan (una rechazada no se compra; si la corrigen, vuelve a contar)
 DUP_NIVELES = [(70, 'alta', 'Alta', '#dc2626'), (45, 'media', 'Media', '#ea580c'), (25, 'baja', 'Baja', '#64748b')]
 DUP_PALABRAS_FUERA = {'DE', 'LA', 'EL', 'LOS', 'LAS', 'X', 'Y', 'CON', 'PARA', 'POR', 'EN', 'UN', 'UNA', 'DEL', 'AL', 'A'}
 
@@ -23,17 +24,48 @@ def _dup_sin_tildes(t):
 
 
 def _dup_factura(txt):
-    """'FT01-00002555' -> (1, 2555) · 'FAC-0002555' -> (None, 2555) · 'F001 N° 2555' -> (1, 2555). (serie, número) o None."""
-    t = _dup_sin_tildes(txt).strip()
-    grupos = re.findall(r'\d+', t)
-    if not grupos or int(grupos[-1]) == 0:
-        return None
-    num = int(grupos[-1])
-    antes = t[:t.rfind(grupos[-1])]
-    antes = re.sub(r'N\s*[°º]|\bNRO\b\.?|\bNUMERO\b|\bNUM\b\.?|\bNO\b\.?', ' ', antes)
-    antes = re.sub(r'\b(FACTURA|FACT|FAC|ELECTRONICA)\b', ' ', antes)
-    dig = re.findall(r'\d+', antes)
-    return (int(dig[-1]) if dig else None, num)
+    """Factura -> (serie, número). La SERIE de SUNAT son 4 caracteres: letras + números (F001, FT01, E001, FA01...) o solo
+    números en las físicas (001, 0001). La serie se compara COMPLETA (F001 ≠ E001 ≠ FT01) y sin ceros de relleno
+    (F001-00003527 = F001-3527). Ejemplos:
+      'Factura F001-00003527' -> (('F', 1), 3527) · 'E001-1736' -> (('E', 1), 1736) · 'FT01-00002555' -> (('FT', 1), 2555)
+      'F0013527' (sin guion) -> (('F', 1), 3527) · '001-2555' -> (('', 1), 2555) · 'FAC-0002555' / '2555' -> (None, 2555)
+    serie None = no se escribió. Devuelve None si no hay número."""
+    t = _dup_sin_tildes(txt)
+    t = re.sub(r'N\s*[°º]|\bNRO\b\.?|\bNUMERO\b|\bNUM\b\.?|\bNO\b\.|#|:', ' ', t)
+    t = re.sub(r'\b(FACTURA|FACT|FAC|ELECTRONICA|ELECT)\b\.?', ' ', t)
+    t = ' '.join(t.split())
+    m = re.search(r'\b([A-Z]{1,3})\s*(\d{1,3})\s*[-–—/_. ]\s*(\d{1,10})\b', t)          # F001-3527 · FT01 00002555 · E001/1736
+    if m and len(m.group(1)) + len(m.group(2)) <= 4:
+        serie, num = (m.group(1), int(m.group(2))), int(m.group(3))
+    else:
+        m = re.search(r'\b(\d{3,4})\s*[-–—/_.]\s*(\d{1,10})\b', t)                         # física: 001-2555
+        if m:
+            serie, num = ('', int(m.group(1))), int(m.group(2))
+        else:
+            m = re.search(r'\b([A-Z]{1,3})(\d{2,})\b', t)                                   # pegado: F0013527 -> F001 + 3527
+            if m and len(m.group(1)) < 4 and len(m.group(2)) > 4 - len(m.group(1)):
+                corte = 4 - len(m.group(1))
+                serie, num = (m.group(1), int(m.group(2)[:corte])), int(m.group(2)[corte:] or 0)
+            else:
+                grupos = re.findall(r'\d+', t)
+                if not grupos:
+                    return None
+                serie, num = None, int(grupos[-1])
+    return (serie, num) if num else None
+
+
+def _dup_misma_factura(fa, fb):
+    """2 = misma factura (misma serie completa y número) · 1 = mismo número y a una le falta la serie (o sus letras) · 0 = otra."""
+    if not fa or not fb or fa[1] != fb[1]:
+        return 0
+    sa, sb = fa[0], fb[0]
+    if sa is None or sb is None:
+        return 1
+    if sa == sb:
+        return 2
+    if sa[1] == sb[1] and (not sa[0] or not sb[0]):        # '001-2555' y 'F001-2555': falta la letra en una
+        return 1
+    return 0                                                # F001 ≠ E001 ≠ FT01: son facturas distintas
 
 
 def _dup_txt_factura(fa, fb):
@@ -112,8 +144,9 @@ def _dup_comparar(a, b):
         return None
     pts, razones, fact = 5, ['Mismo proveedor'], 0
     fa, fb = _dup_factura(a['factura']), _dup_factura(b['factura'])
-    if fa and fb and fa[1] == fb[1] and not (fa[0] is not None and fb[0] is not None and fa[0] != fb[0]):
-        if fa[0] is not None and fb[0] is not None:
+    nivel_fact = _dup_misma_factura(fa, fb)
+    if nivel_fact:
+        if nivel_fact == 2:
             pts, fact = pts + 60, 2
             razones.append(f"Misma factura ({_dup_txt_factura(a['factura'], b['factura'])})")
         else:
@@ -159,11 +192,11 @@ def _dup_comparar(a, b):
     return pts, razones, dias
 
 
-def _dup_json(b, pts, razones, dias):
+def _dup_json(b, pts, razones, dias, a_id=None):
     o = b['_o']
     est = ESTADOS_OC.get(o.estado, {})
     its = _dup_items_de(b)
-    return {'id': o.id, 'codigo': _oc_codigo(o), 'url': url_for('oc_detalle', orden_id=o.id), 'empresa': EMPRESAS_OC.get(o.empresa or 'ANCLAJES', {}).get('corto', ''),
+    return {'id': o.id, 'codigo': _oc_codigo(o), 'url': url_for('oc_detalle', orden_id=o.id), 'comparar': (url_for('oc_duplicados_comparar', a=a_id, b=o.id) if a_id else None), 'empresa': EMPRESAS_OC.get(o.empresa or 'ANCLAJES', {}).get('corto', ''),
             'destino': DESTINOS_OC.get(o.destino, o.destino), 'estado': est.get('txt', o.estado), 'estado_color': est.get('color', '#64748b'),
             'fecha': o.fecha.strftime('%d/%m/%Y') if o.fecha else '', 'dias': dias, 'total': _dup_dinero(o.moneda, o.total or 0),
             'factura': o.numero_factura or '', 'proveedor': o.razon_social, 'solicito': _oc_solicitante_txt(o) or '',
@@ -178,7 +211,7 @@ def _dup_buscar(a, minimo=25, limite=8):
     if not a.get('prov'):
         return []
     try:
-        q = OrdenCompra.query.filter(OrdenCompra.estado != 'ANULADA')
+        q = OrdenCompra.query.filter(OrdenCompra.estado.notin_(DUP_ESTADOS_FUERA))
         if a['prov'][0] == 'R':
             q = q.filter(OrdenCompra.ruc.ilike(f"%{a['prov'][1]}%"))
         else:
@@ -190,7 +223,7 @@ def _dup_buscar(a, minimo=25, limite=8):
             b = _dup_datos(o)
             r = _dup_comparar(a, b)
             if r and r[0] >= minimo:
-                res.append(_dup_json(b, *r))
+                res.append(_dup_json(b, *r, a_id=a.get('id')))
     except Exception:
         db.session.rollback()
         app.logger.exception('No se pudieron buscar órdenes duplicadas')
@@ -201,7 +234,7 @@ def _dup_buscar(a, minimo=25, limite=8):
 
 def _oc_duplicados(orden, minimo=45):
     """Para el detalle: las posibles duplicadas (alta/media) de una orden guardada."""
-    if not orden or orden.estado == 'ANULADA':
+    if not orden or orden.estado in DUP_ESTADOS_FUERA:
         return []
     return _dup_buscar(_dup_datos(orden), minimo=minimo)
 
@@ -211,10 +244,11 @@ app.add_template_global(_dup_descartes, 'oc_dup_descartes')
 
 
 def _dup_mapa(ordenes):
-    """Para la lista: {orden_id: {'nivel', 'con': [ids]}} solo Alta/Media (una pasada por proveedor)."""
+    """Para la lista: {orden_id: {'nivel', 'puntos', 'con': [{id, codigo, url, nivel, razones, estado, total, fecha}]}}
+    solo Alta/Media (una pasada por proveedor; sin anuladas ni rechazadas)."""
     grupos = {}
     for o in ordenes:
-        if o.estado == 'ANULADA':
+        if o.estado in DUP_ESTADOS_FUERA:
             continue
         d = _dup_datos(o)
         if d['prov']:
@@ -232,9 +266,14 @@ def _dup_mapa(ordenes):
                 for x, y in ((a, b), (b, a)):
                     m = mapa.setdefault(x['id'], {'puntos': 0, 'con': []})
                     m['puntos'] = max(m['puntos'], r[0])
-                    m['con'].append(y['id'])
+                    oy = y['_o']
+                    m['con'].append({'id': oy.id, 'puntos': r[0], 'codigo': _oc_codigo(oy), 'url': url_for('oc_detalle', orden_id=oy.id), 'nivel': _dup_nivel(r[0]),
+                                     'razones': r[1], 'estado': ESTADOS_OC.get(oy.estado, {}).get('txt', oy.estado),
+                                     'total': _dup_dinero(oy.moneda, oy.total or 0), 'fecha': oy.fecha.strftime('%d/%m/%Y') if oy.fecha else '',
+                                     'comparar': url_for('oc_duplicados_comparar', a=x['id'], b=oy.id)})
     for m in mapa.values():
         m['nivel'] = _dup_nivel(m['puntos'])
+        m['con'].sort(key=lambda c: -c['puntos'])
     return mapa
 
 
@@ -299,7 +338,7 @@ def oc_duplicado_descartar(orden_id):
     orden = OrdenCompra.query.get_or_404(orden_id)
     otra = OrdenCompra.query.get_or_404(request.form.get('otra_id', type=int) or 0)
     motivo = ' '.join((request.form.get('motivo') or '').split())[:200]
-    volver = url_for('oc_detalle', orden_id=orden.id)
+    volver = _volver_seguro(request.form.get('volver'), url_for('oc_detalle', orden_id=orden.id))
     if len(motivo) < 5:
         flash('⛔ Escribe por qué no es duplicada (mínimo 5 letras).')
         return redirect(volver)
@@ -335,7 +374,7 @@ def _dup_opciones_original(orden):
     parecidas = _dup_buscar(_dup_datos(orden), minimo=0, limite=15)
     vistos = {x['id'] for x in parecidas}
     desde = (orden.fecha or hora_peru().date()) - timedelta(days=180)
-    q = OrdenCompra.query.filter(OrdenCompra.estado != 'ANULADA', OrdenCompra.id != orden.id, OrdenCompra.fecha >= desde)
+    q = OrdenCompra.query.filter(OrdenCompra.estado.notin_(DUP_ESTADOS_FUERA), OrdenCompra.id != orden.id, OrdenCompra.fecha >= desde)
     prov = _dup_prov(orden.ruc, orden.razon_social)
     if prov and prov[0] == 'R':
         q = q.filter(OrdenCompra.ruc.ilike(f'%{prov[1]}%'))
@@ -363,7 +402,7 @@ def oc_anular_duplicada(orden_id):
         return redirect(volver)
     original = OrdenCompra.query.get(request.form.get('original_id', type=int) or 0)
     detalle = ' '.join((request.form.get('motivo') or '').split())[:250]
-    if not original or original.id == orden.id or original.estado == 'ANULADA':
+    if not original or original.id == orden.id or original.estado in DUP_ESTADOS_FUERA:
         flash('⛔ Elige la orden ORIGINAL (la que se queda vigente).')
         return redirect(volver)
     if len(detalle) < 5:
@@ -388,3 +427,51 @@ def oc_anular_duplicada(orden_id):
     db.session.commit()
     flash(f'{_oc_codigo(orden)} anulada por duplicada de {_oc_codigo(original)}. Ya no aparece por pagar y su número no se vuelve a usar.')
     return redirect(volver)
+
+
+# ---------------------------- mapeo y comparar lado a lado ----------------------------
+def _dup_anuladas_de(orden):
+    """Las órdenes que se anularon por ser DUPLICADAS de esta (para el detalle de la original)."""
+    try:
+        return OrdenCompra.query.filter(OrdenCompra.anulada_duplicada_de_id == orden.id).order_by(OrdenCompra.id).all()
+    except Exception:
+        db.session.rollback()
+        return []
+
+
+app.add_template_global(_dup_anuladas_de, 'oc_dup_anuladas_de')
+
+
+@app.route('/ordenes/duplicados/comparar')
+@_ruta_oc()
+def oc_duplicados_comparar():
+    """Dos órdenes lado a lado: lo que coincide en verde, para decidir rápido si es la misma compra."""
+    a = OrdenCompra.query.get_or_404(request.args.get('a', type=int) or 0)
+    b = OrdenCompra.query.get_or_404(request.args.get('b', type=int) or 0)
+    da, db_ = _dup_datos(a), _dup_datos(b)
+    da['descartes'], db_['descartes'] = set(), set()               # comparar igual aunque el par esté descartado
+    r = _dup_comparar(da, db_) if a.id != b.id else None
+    # productos emparejados (mismo código o descripción parecida)
+    ib, filas, usados = list(b.items), [], set()
+    for ia in a.items:
+        ka, par = _dup_tokens(ia.descripcion), None
+        for j, x in enumerate(ib):
+            if j in usados:
+                continue
+            kb = _dup_tokens(x.descripcion)
+            jac = len(ka & kb) / len(ka | kb) if (ka or kb) else 0
+            if (ia.codigo and x.codigo and ia.codigo.strip().upper() == x.codigo.strip().upper()) or jac >= 0.6:
+                par = x
+                usados.add(j)
+                break
+        filas.append((ia, par))
+    filas += [(None, x) for j, x in enumerate(ib) if j not in usados]
+    fa, fb = _dup_factura(a.numero_factura), _dup_factura(b.numero_factura)
+    misma = {'proveedor': _dup_prov(a.ruc, a.razon_social) == _dup_prov(b.ruc, b.razon_social), 'empresa': (a.empresa or 'ANCLAJES') == (b.empresa or 'ANCLAJES'),
+             'total': a.moneda == b.moneda and abs((a.total or 0) - (b.total or 0)) <= max(0.5, 0.002 * max(a.total or 0, b.total or 0)),
+             'factura': _dup_misma_factura(fa, fb), 'destino': a.destino == b.destino, 'tipo': a.tipo == b.tipo}
+    dias = abs((a.fecha - b.fecha).days) if a.fecha and b.fecha else None
+    desc = {d.get('id') for d in _dup_descartes(a)}
+    return render_template('oc_dup_comparar.html', a=a, b=b, r=r, nivel=_dup_nivel(r[0]) if r else None, filas=filas, misma=misma, dias=dias,
+                           descartado=b.id in desc, estados=ESTADOS_OC, destinos=DESTINOS_OC, empresas_oc=EMPRESAS_OC,
+                           bloqueo_a=_dup_bloqueo_anular(a), bloqueo_b=_dup_bloqueo_anular(b), seccion='lista')

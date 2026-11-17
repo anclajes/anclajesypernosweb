@@ -13,7 +13,7 @@
     .oc-imp-chip { display: inline-flex; align-items: center; gap: 3px; font-size: .58rem; font-weight: 800; letter-spacing: .02em; border-radius: 6px; padding: 0 6px;
                    background: #e0f2fe; color: #075985; border: 1px solid #7dd3fc; white-space: nowrap; vertical-align: middle; }
 </style>
-{% macro chip_dev(o) %}{{ dupl.chip(o, dups) }}{% if o.devuelta_almacen %} <span class="oc-estado" style="color:#fff; background:#dc2626;" title="Devuelta por Almacén para corregir: {{ o.devolucion_motivo or '' }}"><i class="bi bi-arrow-return-left"></i> Devuelta por Almacén</span>{% endif %}{% endmacro %}
+{% macro chip_dev(o) %}{{ dupl.chip(o, dups, cods_dup) }}{% if o.devuelta_almacen %} <span class="oc-estado" style="color:#fff; background:#dc2626;" title="Devuelta por Almacén para corregir: {{ o.devolucion_motivo or '' }}"><i class="bi bi-arrow-return-left"></i> Devuelta por Almacén</span>{% endif %}{% endmacro %}
 {% macro chip_imp(o) %}{% if o.es_importacion %}<span class="oc-imp-chip" title="Importación · sin IGV · {{ monedas[o.moneda].simbolo }} ({{ o.moneda }})"><i class="bi bi-globe-americas"></i> IMPORTACIÓN</span>{% endif %}{% endmacro %}
 <style>
     .empresas { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }

@@ -25,6 +25,7 @@ def oc_lista():
     pagos = {o.id: _oc_pago_info(o, hoy) for o in todas}
     atrasos = {o.id: _oc_atraso(o, hoy) for o in todas}
     dups = _dup_mapa(todas_emp)           # posibles duplicadas (Alta/Media), mirando las dos empresas
+    orig_dup = {x.anulada_duplicada_de_id for x in todas_emp if x.anulada_duplicada_de_id}   # originales de las anuladas por duplicada
 
     def en_vista(o, v):
         if v == 'atrasadas':
@@ -138,6 +139,7 @@ def oc_lista():
     directos_por_entregar = sum(1 for o in todas if o.destino == 'DIRECTO' and o.estado == 'CONFORME' and not o.fecha_kardex)
     return render_template('oc_lista.html', ordenes=ordenes, vista=vista, vistas_orden=VISTAS_OC_ORDEN,
                            nombres_vista={**{k: v[0] for k, v in VISTAS_OC.items()}, **VISTAS_OC_EXTRA}, conteo=conteo, docs=docs, movs=movs_todas, dups=dups,
+                           cods_dup={o.id: _oc_codigo(o) for o in todas_emp if o.id in orig_dup},
                            tipo=tipo, destino=destino, prov_id=prov_id, solicitante=solicitante, motivo=motivo, pago_f=pago_f, docs_f=docs_f,
                            desde=desde, hasta=hasta, buscar=buscar, hoy=hoy, pagos=pagos, atrasos=atrasos, kpi=kpi, resumen=resumen,
                            total_filtrado=total_filtrado, proveedores=proveedores, solicitantes=solicitantes, motivos=motivos,

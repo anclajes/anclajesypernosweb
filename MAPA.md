@@ -324,7 +324,9 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
 ## Compras: POSIBLES ÓRDENES DUPLICADAS (v27) · `modulos/compras/duplicados.py`
 
 - Solo se compara con órdenes del MISMO PROVEEDOR (RUC; si no hay, razón social) y no anuladas. Puntaje (`_dup_comparar`):
-  misma factura +60 (`_dup_factura`: FT01-2555 = FT01-00002555; FAC-0002555 = mismo número sin serie +45; series distintas = otra factura),
+  misma factura +60 (`_dup_factura` → (serie, número); serie SUNAT completa = letras + número: F001 ≠ E001 ≠ FT01, sin ceros de relleno:
+  F001-00003527 = F001-3527 = F0013527 = "Factura F001 N° 3527"; `_dup_misma_factura`: sin serie (FAC-0002555, 2555) o sin letras
+  (001-2555 vs F001-2555) = mismo número +45; series distintas = otra factura),
   mismo monto +35 (parecido ±3% +15), mismos productos +30 (parecidos +15; `_dup_sim_items`: código o palabras, "5MT" = "5 MT"),
   misma empresa +5, misma semana +15 (≤30 días +8), +5 si se hizo con "Duplicar". Ventana DUP_VENTANA_DIAS = 90 días
   (más antiguas solo si coincide la factura, −15). Nivel (`DUP_NIVELES`): Alta ≥70, Media ≥45, Baja ≥25.
@@ -336,7 +338,12 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
 - `oc_anular_duplicada` (Gerencia): anula aunque esté aprobada/conforme si NO está pagada y no ingresó nada a Kardex ni Insumos
   (`_dup_bloqueo_anular`); la entrega de uso directo, la confirmación contable o el seguimiento de OS no lo impiden (no mueven inventario).
   anulacion_categoria = 'DUPLICADA', `anulada_duplicada_de_id` = la original; evento en las dos; sale de Por pagar.
-- Lista: chip "⚠ ¿Duplicada? Alta/Media" junto al estado y pestaña "⚠ Posibles duplicadas" (`_dup_mapa`, mira las dos empresas).
+- Lista: chip "⚠ ¿Duplicada? Alta/Media" junto al estado (al hacer clic: con cuál se parece, qué coincide, "Comparar lado a lado",
+  "Ver ↗" y "No es duplicada" ahí mismo) y pestaña "⚠ Posibles duplicadas" (`_dup_mapa`, mira las dos empresas). Las anuladas por
+  duplicada muestran "↪ duplicada de OC …" (mapeo `anulada_duplicada_de_id`); la original muestra en su detalle cuáles se anularon.
+- RECHAZADAS y ANULADAS no avisan ni se comparan (`DUP_ESTADOS_FUERA`); si una rechazada se corrige, vuelve a contar.
+- Comparar lado a lado: `oc_duplicados_comparar` (?a=&b=, `oc_dup_comparar.html`): datos y productos emparejados en verde, con
+  "No es duplicada" y "Anular X · queda Y" (Gerencia).
 
 ## Kardex
 

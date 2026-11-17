@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Comparar órdenes{% endblock %}
+{% block subtitle %}{{ oc_codigo(a) }} vs {{ oc_codigo(b) }}{% endblock %}
+{% block content %}
+{% include '_oc_nav.html' %}
+{#- Dos órdenes lado a lado (posible duplicada): lo que coincide en verde. Ruta oc_duplicados_comparar (duplicados.py). -#}
+<style>
+    .cmp-wrap { max-width: 1100px; margin: 0 auto; }
+    .cmp-cab { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; background: #fff; border: 2px solid var(--n, #cbd5e1); border-radius: 14px; padding: 10px 14px; margin-bottom: 12px; }
+    .cmp-niv { font-size: .72rem; font-weight: 800; color: #fff; border-radius: 7px; padding: 2px 9px; background: var(--n, #64748b); }
+    .cmp-raz span { display: inline-block; font-size: .7rem; font-weight: 700; background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; border-radius: 7px; padding: 1px 7px; margin: 2px 2px 0 0; }
+    .cmp-t { width: 100%; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; border-collapse: separate; border-spacing: 0; font-size: .82rem; }
+    .cmp-t th, .cmp-t td { padding: 6px 10px; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+    .cmp-t thead th { background: #0f172a; color: #fff; font-size: .8rem; }
+    .cmp-t th.k { width: 150px; color: #64748b; font-weight: 700; background: #f8fafc; }
+    .cmp-t tr.igual td { background: #f0fdf4; }
+    .cmp-t tr.igual th.k::after { content: ' ✓'; color: #16a34a; }
+    .cmp-t tr.dif td { background: #fff; }
+    .cmp-t tr.medio td { background: #fffbeb; }
+    .cmp-t td.vacio { color: #94a3b8; font-style: italic; }
+    .cmp-acc { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 10px 12px; margin-top: 12px; }
+    @media (max-width: 575.98px) { .cmp-t th.k { width: 90px; } .cmp-t { font-size: .74rem; } }
+</style>
+<div class="cmp-wrap">
+    <div class="cmp-cab" style="--n: {{ nivel.color if nivel else '#cbd5e1' }};">
+        <span style="font-size:1.4rem;">🔍</span>
+        <div class="flex-fill">
+            <div class="fw-bold">¿Es la misma compra?
+                {% if nivel %}<span class="cmp-niv ms-1">Coincidencia {{ nivel.txt }}</span>{% elif descartado %}<span class="cmp-niv ms-1" style="background:#16a34a;">Marcadas como NO duplicadas</span>{% else %}<span class="cmp-niv ms-1">Poca coincidencia</span>{% endif %}</div>
+            {% if r %}<div class="cmp-raz">{% for x in r[1] %}<span>✓ {{ x }}</span>{% endfor %}</div>{% endif %}
+        </div>
+        <a href="javascript:history.back()" class="btn btn-sm btn-light border">← Volver</a>
+    </div>
+
+    {% macro fila(k, va, vb, igual=none, cls=none) %}
+    <tr class="{{ cls or ('igual' if igual else ('dif' if igual is not none else '')) }}"><th class="k">{{ k }}</th>
+        <td class="{{ 'vacio' if not va }}">{{ va or '—' }}</td><td class="{{ 'vacio' if not vb }}">{{ vb or '—' }}</td></tr>
+    {% endmacro %}
+    {% set ea, eb = estados.get(a.estado, {}), estados.get(b.estado, {}) %}
+    <div class="table-responsive"><table class="cmp-t">
+        <thead><tr><th></th>
+            <th><a href="{{ url_for('oc_detalle', orden_id=a.id) }}" class="text-white">{{ oc_codigo(a) }}</a></th>
+            <th><a href="{{ url_for('oc_detalle', orden_id=b.id) }}" class="text-white">{{ oc_codigo(b) }}</a></th></tr></thead>
+        <tbody>
+        {{ fila('Proveedor', a.razon_social ~ (' · RUC ' ~ a.ruc if a.ruc else ''), b.razon_social ~ (' · RUC ' ~ b.ruc if b.ruc else ''), misma.proveedor) }}
+        {{ fila('Empresa', empresas_oc.get(a.empresa or 'ANCLAJES', {}).get('corto'), empresas_oc.get(b.empresa or 'ANCLAJES', {}).get('corto'), misma.empresa) }}
+        {{ fila('Tipo / destino', a.tipo ~ ' · ' ~ destinos.get(a.destino, a.destino), b.tipo ~ ' · ' ~ destinos.get(b.destino, b.destino), misma.destino and misma.tipo) }}
+        {{ fila('Fecha', (a.fecha.strftime('%d/%m/%Y') if a.fecha else ''), (b.fecha.strftime('%d/%m/%Y') ~ (' · ' ~ dias ~ ' día(s) de diferencia' if dias is not none else '') if b.fecha else ''), (dias is not none and dias <= 7)) }}
+        {{ fila('Total', ('US$ ' if a.moneda == 'USD' else 'S/ ') ~ '{:,.2f}'.format(a.total or 0), ('US$ ' if b.moneda == 'USD' else 'S/ ') ~ '{:,.2f}'.format(b.total or 0), misma.total) }}
+        {{ fila('Factura', a.numero_factura, b.numero_factura, cls=('igual' if misma.factura == 2 else ('medio' if misma.factura == 1 else ('dif' if a.numero_factura and b.numero_factura else '')))) }}
+        {{ fila('Estado', ea.txt ~ (' · PAGADA' if (a.estado_pago or '') == 'PAGADO' else ''), eb.txt ~ (' · PAGADA' if (b.estado_pago or '') == 'PAGADO' else '')) }}
+        {{ fila('Solicitó / motivo', (oc_solicitante_txt(a) or '') ~ ' · ' ~ (a.motivo_compra or ''), (oc_solicitante_txt(b) or '') ~ ' · ' ~ (b.motivo_compra or '')) }}
+        {{ fila('Creó', a.creado_por.nombre_completo if a.creado_por else '', b.creado_por.nombre_completo if b.creado_por else '') }}
+        </tbody>
+    </table></div>
+
+    <div class="small fw-bold text-uppercase text-muted mt-3 mb-1" style="letter-spacing:.05em;">Productos <span class="fw-normal text-lowercase">(en verde: el mismo producto en las dos)</span></div>
+    <div class="table-responsive"><table class="cmp-t">
+        <thead><tr><th style="width:50%;">{{ oc_codigo(a) }}</th><th>{{ oc_codigo(b) }}</th></tr></thead>
+        <tbody>
+        {% for ia, ib in filas %}
+        <tr class="{{ 'igual' if ia and ib else 'dif' }}">
+            <td class="{{ 'vacio' if not ia }}">{% if ia %}{{ (ia.codigo ~ ' · ') if ia.codigo }}{{ ia.descripcion }}<br><b>{{ ia.cantidad|cant }} {{ ia.um }}</b> · {{ '{:,.4f}'.format(ia.precio_unitario or 0) }} c/u{% else %}no está{% endif %}</td>
+            <td class="{{ 'vacio' if not ib }}">{% if ib %}{{ (ib.codigo ~ ' · ') if ib.codigo }}{{ ib.descripcion }}<br><b>{{ ib.cantidad|cant }} {{ ib.um }}</b> · {{ '{:,.4f}'.format(ib.precio_unitario or 0) }} c/u{% else %}no está{% endif %}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table></div>
+
+    <div class="cmp-acc">
+        <div class="small fw-bold mb-2">¿Qué hago?</div>
+        <div class="row g-2">
+            {% if session.get('role') in ['admin', 'logistica'] and not descartado %}
+            <div class="col-12 col-lg-4"><form method="POST" action="{{ url_for('oc_duplicado_descartar', orden_id=a.id) }}" class="border rounded-3 p-2 h-100" style="background:#f0fdf4;">
+                <input type="hidden" name="otra_id" value="{{ b.id }}"><input type="hidden" name="volver" value="{{ request.full_path }}">
+                <div class="small fw-bold text-success mb-1"><i class="bi bi-check2-circle"></i> Son compras distintas</div>
+                <input name="motivo" class="form-control form-control-sm mb-1" minlength="5" maxlength="200" required placeholder="¿Por qué? Ej: se necesitó más material">
+                <button class="btn btn-sm btn-success w-100">No es duplicada (dejar de avisar)</button></form></div>
+            {% endif %}
+            {% if session.get('role') == 'admin' %}
+            {% for anular, queda, bl in [(a, b, bloqueo_a), (b, a, bloqueo_b)] %}
+            <div class="col-12 col-md-6 col-lg-4"><form method="POST" action="{{ url_for('oc_anular_duplicada', orden_id=anular.id) }}" class="border rounded-3 p-2 h-100" style="background:#fef2f2;"
+                      onsubmit="return confirm('¿Anular {{ oc_codigo(anular) }} por duplicada? Queda vigente {{ oc_codigo(queda) }}. No se puede deshacer.')">
+                <input type="hidden" name="original_id" value="{{ queda.id }}">
+                <div class="small fw-bold text-danger mb-1"><i class="bi bi-files"></i> Anular {{ oc_codigo(anular) }} · queda {{ oc_codigo(queda) }}</div>
+                {% if bl %}<div class="small text-muted">No se puede: {{ bl }}.</div>
+                {% else %}<input name="motivo" class="form-control form-control-sm mb-1" minlength="5" maxlength="250" required placeholder="Motivo (ej. se registró dos veces)">
+                <button class="btn btn-sm btn-danger w-100">Anular por duplicada</button>{% endif %}</form></div>
+            {% endfor %}
+            {% endif %}
+        </div>
+        <div class="form-text">Las <b>rechazadas</b> y <b>anuladas</b> ya no avisan como duplicadas. Al anular por duplicada se guarda cuál es la orden correcta.</div>
+    </div>
+</div>
+{% endblock %}
