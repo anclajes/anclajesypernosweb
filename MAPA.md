@@ -347,6 +347,8 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
   verde (datos `_dup_claves`, productos emparejados por código o descripción, razones por par). "Anular" (checkbox) en las que sobran →
   `oc_anular_duplicadas_varias` (todas o ninguna; usa `_dup_anular`, el mismo de `oc_anular_duplicada`). "No es duplicada de …" por columna.
   Desde la lista ("Comparar las N", `comparar_todas` en `_dup_mapa`) y el detalle ("Comparar las N juntas").
+  Diseño (v27.5): usa todo el ancho (con 2 órdenes máx. 1400px), letra .9rem; en pantallas ≥1400px la cabecera queda fija al bajar.
+  La barra "Motivo + Anular" va debajo de la tabla en una línea y solo se queda fija abajo (`.cmp-acc.fija`) cuando hay algo marcado.
 
 ## Kardex
 

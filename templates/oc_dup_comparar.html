@@ -9,24 +9,33 @@
 {% set edita = session.get('role') in ['admin', 'logistica'] %}
 {% set n = ords|length %}
 <style>
-    .cmp-wrap { max-width: {{ 520 + n * 200 }}px; margin: 0 auto; }
-    .cmp-ayuda { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 8px 12px; margin-bottom: 10px; font-size: .8rem; }
-    .cmp-t { width: 100%; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; border-collapse: separate; border-spacing: 0; font-size: .8rem; table-layout: fixed; }
-    .cmp-t th, .cmp-t td { padding: 6px 9px; border-bottom: 1px solid #f1f5f9; vertical-align: top; overflow-wrap: anywhere; }
-    .cmp-t thead th { background: #0f172a; color: #fff; font-size: .78rem; vertical-align: bottom; }
+    {#- v27.5: usa todo el ancho de la pantalla (con 2 órdenes se limita un poco para que no queden columnas larguísimas) -#}
+    .cmp-wrap { width: 100%; max-width: {{ '1400px' if n <= 2 else '100%' }}; margin: 0 auto; }
+    .cmp-ayuda { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 10px 14px; margin-bottom: 12px; font-size: .9rem; }
+    .cmp-t { width: 100%; min-width: {{ 170 + n * 200 }}px; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; border-collapse: separate; border-spacing: 0; font-size: .9rem; line-height: 1.4; table-layout: fixed; }
+    .cmp-t th, .cmp-t td { padding: 10px 14px; border-bottom: 1px solid #f1f5f9; vertical-align: top; overflow-wrap: anywhere; }
+    .cmp-t thead th { background: #0f172a; color: #fff; font-size: .85rem; vertical-align: bottom; }
+    @media (min-width: 1400px) { .cmp-scroll { overflow: visible !important; } .cmp-t thead th { position: sticky; top: 0; z-index: 2; } }
+    .cmp-t thead th:first-child { border-top-left-radius: 12px; } .cmp-t thead th:last-child { border-top-right-radius: 12px; }
     .cmp-t thead th.correcta { background: #15803d; }
-    .cmp-t th.k { width: 128px; color: #64748b; font-weight: 700; background: #f8fafc; }
+    .cmp-t th.k { width: 170px; color: #64748b; font-weight: 700; background: #f8fafc; }
     .cmp-t td.ok { background: #dcfce7; } .cmp-t td.medio { background: #fef9c3; }
     .cmp-t td.ref { background: #f0fdf4; box-shadow: inset 3px 0 0 #16a34a; }
     .cmp-t td.vacio { color: #94a3b8; font-style: italic; }
-    .cmp-col { display: flex; flex-direction: column; gap: 4px; }
-    .cmp-col a { color: #fff; font-weight: 800; }
-    .cmp-col label { display: flex; align-items: center; gap: 5px; font-weight: 600; font-size: .72rem; cursor: pointer; background: rgba(255,255,255,.12); border-radius: 7px; padding: 2px 6px; }
+    .cmp-col { display: flex; flex-direction: column; gap: 6px; }
+    .cmp-col a { color: #fff; font-weight: 800; font-size: 1.05rem; }
+    .cmp-col .cmp-ops { display: flex; flex-wrap: wrap; gap: 6px; }
+    .cmp-col label { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: .82rem; cursor: pointer; background: rgba(255,255,255,.12); border-radius: 8px; padding: 4px 10px; }
+    .cmp-col label:has(.cmp-anular:checked) { background: #dc2626; }
     .cmp-col label.dis { opacity: .5; cursor: not-allowed; }
-    .cmp-niv { font-size: .62rem; font-weight: 800; color: #fff; border-radius: 6px; padding: 1px 6px; }
-    .cmp-raz { font-size: .66rem; color: #166534; }
-    .cmp-acc { position: sticky; bottom: 0; background: rgba(255,255,255,.97); border: 1px solid #e2e8f0; border-radius: 12px; padding: 10px 12px; margin-top: 12px; box-shadow: 0 -4px 12px rgba(15,23,42,.06); }
-    .cmp-est { font-size: .62rem; font-weight: 800; border-radius: 6px; padding: 1px 6px; background: #f1f5f9; }
+    .cmp-niv { font-size: .75rem; font-weight: 800; color: #fff; border-radius: 6px; padding: 1px 6px; }
+    .cmp-raz { font-size: .8rem; color: #166534; margin-top: 4px; }
+    {#- la barra de anular NO tapa la tabla: va debajo, en una línea; solo se queda fija abajo cuando hay algo marcado -#}
+    .cmp-acc { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 10px 14px; margin-top: 14px; font-size: .88rem; }
+    .cmp-acc .cmp-form { display: none; }
+    .cmp-acc.fija { position: sticky; bottom: 8px; z-index: 3; border-color: #fca5a5; background: #fff5f5; box-shadow: 0 -6px 18px rgba(15,23,42,.12); }
+    .cmp-acc.fija .cmp-form { display: flex; } .cmp-acc .cmp-form input { flex: 1 1 320px; width: auto; } .cmp-acc.fija .cmp-hint { display: none; }
+    .cmp-est { align-self: flex-start; font-size: .75rem; font-weight: 800; border-radius: 6px; padding: 1px 6px; background: #f1f5f9; }
 </style>
 <div class="cmp-wrap">
     <div class="cmp-ayuda d-flex flex-wrap align-items-center gap-2">
@@ -39,19 +48,19 @@
     <form method="POST" action="{{ url_for('oc_anular_duplicadas_varias') }}" id="formCmp"
           onsubmit="return cmpConfirmar()">
     <input type="hidden" name="volver" value="{{ request.full_path }}">
-    <div class="table-responsive"><table class="cmp-t" id="cmpT">
-        <colgroup><col style="width:128px;">{% for o in ords %}<col>{% endfor %}</colgroup>
+    <div class="table-responsive cmp-scroll"><table class="cmp-t" id="cmpT">
+        <colgroup><col style="width:170px;">{% for o in ords %}<col>{% endfor %}</colgroup>
         <thead><tr><th></th>
         {% for o in ords %}{% set bl = bloqueos[o.id] %}{% set fuera_o = o.estado in fuera %}
             <th data-col="{{ o.id }}" class="{{ 'correcta' if o.id == ref.id }}"><div class="cmp-col">
                 <a href="{{ url_for('oc_detalle', orden_id=o.id) }}" target="_blank">{{ oc_codigo(o) }} ↗</a>
                 <span class="cmp-est" style="color: {{ estados.get(o.estado, {}).get('color', '#334155') }};">{{ estados.get(o.estado, {}).get('txt', o.estado) }}{{ ' · PAGADA' if (o.estado_pago or '') == 'PAGADO' }}</span>
-                <label class="{{ 'dis' if fuera_o }}" title="{{ 'Una rechazada o anulada no puede ser la correcta' if fuera_o }}">
+                <div class="cmp-ops"><label class="{{ 'dis' if fuera_o }}" title="{{ 'Una rechazada o anulada no puede ser la correcta' if fuera_o }}">
                     <input type="radio" name="original_id" value="{{ o.id }}" {{ 'checked' if o.id == ref.id and not fuera_o }} {{ 'disabled' if fuera_o }}> Es la correcta</label>
                 {% if anula %}
                 <label class="{{ 'dis' if bl }}" title="{{ ('No se puede: ' ~ bl) if bl else 'Anular esta por duplicada de la correcta' }}">
                     <input type="checkbox" name="anular_ids" value="{{ o.id }}" class="cmp-anular" {{ 'disabled' if bl }} data-bloq="{{ 1 if bl else '' }}"> Anular{{ ' (no se puede)' if bl }}</label>
-                {% endif %}
+                {% endif %}</div>
             </div></th>
         {% endfor %}</tr></thead>
         <tbody>
@@ -82,11 +91,13 @@
     </table></div>
 
     {% if anula %}
-    <div class="cmp-acc d-flex flex-wrap gap-2 align-items-end">
-        <div class="flex-fill" style="min-width:220px;"><label class="small fw-bold">Motivo para anular las marcadas *</label>
-            <input name="motivo" class="form-control form-control-sm" maxlength="250" placeholder="Ej: se registró dos veces la misma compra (misma factura)"></div>
-        <button class="btn btn-danger btn-sm fw-bold" id="cmpBtn" disabled><i class="bi bi-files"></i> <span>Anular las marcadas</span></button>
-        <div class="w-100 form-text mt-0">Se anulan <b>todas o ninguna</b>: si una no se puede (pagada o ya ingresada al Kardex/Insumos), no se deja marcar. Quedan como duplicadas de la correcta, en el historial de todas.</div>
+    <div class="cmp-acc" id="cmpAcc">
+        <div class="cmp-hint text-muted"><i class="bi bi-info-circle"></i> Para anular, marca <b>Anular</b> arriba en las que sobran. Se anulan <b>todas o ninguna</b>; las pagadas o ya ingresadas al Kardex/Insumos no se dejan marcar.</div>
+        <div class="cmp-form flex-wrap gap-2 align-items-center">
+            <b class="text-danger" id="cmpCuenta"></b>
+            <input name="motivo" class="form-control form-control-sm" maxlength="250" placeholder="Motivo para anular * — Ej: se registró dos veces la misma compra (misma factura)">
+            <button class="btn btn-danger btn-sm fw-bold" id="cmpBtn" disabled><i class="bi bi-files"></i> <span>Anular las marcadas</span></button>
+        </div>
     </div>
     {% endif %}
     </form>
@@ -148,6 +159,9 @@
         const btn = document.getElementById('cmpBtn'); if (!btn) return;
         const n = form.querySelectorAll('.cmp-anular:checked').length;
         btn.disabled = !n || !correcta(); btn.querySelector('span').textContent = n ? `Anular ${n} orden(es) marcada(s)` : 'Anular las marcadas';
+        document.getElementById('cmpAcc').classList.toggle('fija', n > 0);
+        const cu = document.getElementById('cmpCuenta');
+        if (cu) cu.textContent = n ? [...form.querySelectorAll('.cmp-anular:checked')].map(ch => COD[ch.value]).join(', ') + ' → duplicada(s) de ' + (COD[correcta()] || '?') : '';
     }
     window.cmpConfirmar = function () {
         const marcadas = [...form.querySelectorAll('.cmp-anular:checked')].map(ch => COD[ch.value]);
