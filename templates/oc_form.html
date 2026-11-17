@@ -127,12 +127,13 @@
     <div class="tit"><i class="bi bi-exclamation-diamond-fill"></i> Estás editando una orden YA APROBADA · quedará como Rev. {{ (orden.revision or 0) + 1 }}</div>
     <div class="small mb-2">Al guardar, la orden <b>vuelve a Gerencia</b> ("Por aprobar") y el PDF pierde la firma hasta que la aprueben otra vez.
         Se puede editar mientras <b>no esté pagada</b> y Almacén <b>no haya ingresado</b> nada al inventario. Mantiene su número {{ oc_codigo(orden) }}.
-        {% if orden.fecha_llegada %}<br><b>El material ya llegó</b> ({{ orden.fecha_llegada.strftime('%d/%m/%Y') }}): úsalo para <b>cuadrar la orden</b> con lo que llegó de verdad (ej. llegó menos y se aceptó).
+        {% if orden.fecha_llegada %}<br><b>El material ya llegó</b> ({{ orden.fecha_llegada.strftime('%d/%m/%Y') }}): úsalo para <b>cuadrar la orden</b> con lo que llegó de verdad (ej. llegó menos, o un ítem no vino y se quita).
+        Se puede bajar o quitar lo que todavía no entró al inventario: lo registrado como llegado se ajusta solo y queda en el historial.
         Al re-aprobarla vuelve a "{{ 'Conforme' if orden.fecha_conforme else 'Material llegó' }}" con todo lo ya registrado (guía, factura, conformidad).{% endif %}</div>
     {% if orden.devuelta_almacen %}
     <div class="small mb-2 p-2 rounded-3" style="background:#fef2f2; border:1px solid #fca5a5; color:#7f1d1d;"><b><i class="bi bi-arrow-return-left"></i> Corrección pedida por Almacén:</b>
         {{ orden.devolucion_motivo or '' }}{% for x in oc_devolucion_items(orden) if x.real is not none %}<br>· <b>{{ x.codigo or x.descripcion }}</b>: la OC dice {{ x.oc|cant }}, lo real es <b>{{ x.real|cant }}</b>{% endfor %}
-        <br>Puedes <b>bajar la cantidad</b> aunque se haya registrado que llegó más: al guardar, <b>lo que llegó se ajusta solo</b> a la nueva cantidad
+        <br>Puedes <b>bajar la cantidad</b> o <b>quitar un ítem que no llegó</b> aunque se haya registrado como llegado: al guardar, <b>lo que llegó se ajusta solo</b>
         (lo ya ingresado al inventario no se toca). Al re-aprobarla Gerencia, vuelve sola a Ingresos pendientes de Almacén.</div>
     {% endif %}
     <label class="small fw-bold">Motivo de la edición * <span class="fw-normal text-muted">(lo verá el Gerente al re-aprobar)</span></label>

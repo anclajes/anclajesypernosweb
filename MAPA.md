@@ -286,6 +286,9 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
     Con la orden devuelta se puede BAJAR la cantidad por debajo de lo registrado como llegado (mínimo: lo ya ingresado al inventario;
     `_leer_orden_form`): al guardar, `_aplicar_datos_orden` ajusta solo las entregas (última primero, sin tocar lo ingresado; borra las que
     quedan vacías) y deja el evento ENTREGA_CORREGIDA. Ej.: OC 3,000 registrada como llegada 3,000, real 1,820 → se edita a 1,820 y listo.
+    v28.3: vale para CUALQUIER re-edición (devuelta o no) y también para QUITAR un ítem registrado como llegado: lo que manda es lo
+    INGRESADO al inventario (no se quita ni se baja de eso; si se ingresó por error → "Revertir ingreso al Kardex"), no lo registrado como
+    llegado (a veces se avanza el flujo sin contar). Al quitarlo, `_aplicar_datos_orden` borra sus entrega-ítems ("se quitó de la orden …").
   · Error en lo que se registró que LLEGÓ → "Corregir lo que llegó" (`oc_entrega_corregir`, POST /ordenes/entrega/<id>/corregir): solo ítems
     sin ingresar, tope = pedido − cancelado − lo de otras entregas; 0 quita el ítem; entrega vacía se borra (sus docs quedan sin entrega);
     recalcula estado con `_oc_etapa_por_entregas`; evento ENTREGA_CORREGIDA. No va a Gerencia.

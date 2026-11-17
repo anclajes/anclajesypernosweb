@@ -1347,26 +1347,24 @@ def _leer_orden_form(f, orden=None):
     if len(items) > 60:
         errores.append('Máximo 60 ítems por orden.')
     if orden and orden.fecha_llegada:
-        # lo que ya llegó no se puede quitar ni bajar de lo recibido
+        # v28.3: lo que MANDA es lo que ya ENTRÓ AL INVENTARIO (Almacén lo revisa con guía y factura), no lo que se registró como
+        # "llegado" (a veces se avanza el flujo sin contar al 100%). Se puede BAJAR la cantidad o QUITAR el ítem mientras no se haya
+        # ingresado: al guardar, lo registrado como llegado se ajusta o se borra solo (_aplicar_datos_orden) y queda en el historial.
         rec = _oc_recepcion(orden)
         usados = set()
         for it in orden.items:
-            llego = rec['items'][it.id]['llego']
+            llego, ingresado = rec['items'][it.id]['llego'], rec['items'][it.id]['ingresado']
             if llego <= 0:
                 continue
             k = _oc_item_equivalente(it, items, usados)
             if k is None:
-                errores.append(f'"{it.descripcion[:45]}" ya llegó ({_cant_txt(llego)} {it.um}): no se puede quitar de la orden ni cambiar de producto.')
+                if ingresado > 1e-9:
+                    errores.append(f'"{it.descripcion[:45]}": ya se INGRESARON al inventario {_cant_txt(ingresado)} {it.um}; no se puede quitar de la orden '
+                                   '(si se ingresó por error, Almacén pide "Revertir ingreso al Kardex").')
                 continue
             usados.add(k)
-            if orden.devuelta_almacen:
-                # devuelta por Almacén: se puede bajar de lo que se registró como llegado (se corrige la entrega sola al guardar),
-                # pero nunca de lo que YA entró al inventario
-                ingresado = rec['items'][it.id]['ingresado']
-                if items[k]['cantidad'] < ingresado - 1e-9:
-                    errores.append(f'"{it.descripcion[:45]}": ya se INGRESARON al inventario {_cant_txt(ingresado)} {it.um}; la cantidad no puede ser menor.')
-            elif items[k]['cantidad'] < llego - 1e-9:
-                errores.append(f'"{it.descripcion[:45]}": ya llegaron {_cant_txt(llego)} {it.um}; la cantidad no puede ser menor.')
+            if items[k]['cantidad'] < ingresado - 1e-9:
+                errores.append(f'"{it.descripcion[:45]}": ya se INGRESARON al inventario {_cant_txt(ingresado)} {it.um}; la cantidad no puede ser menor.')
     subtotal = round(sum(i['total'] for i in items), 2)
     datos['subtotal'] = subtotal
     datos['igv'] = 0.0 if es_imp else round(subtotal * IGV_OC, 2)
@@ -1467,14 +1465,22 @@ def _aplicar_datos_orden(orden, datos, items, prov, contacto=None):
                 continue
             k = _oc_item_equivalente(v, nuevos, usados)
             if k is None:
+                # v28.3: se QUITÓ de la orden un ítem que figuraba como llegado (y no se ingresó: _leer_orden_form lo valida):
+                # se borra lo registrado como llegado de ese ítem
+                for ei in eis:
+                    if ei.fecha_ingreso:
+                        continue
+                    corregidas.append(f"se quitó de la orden #{v.item} {(v.codigo or v.descripcion or '')[:30]} (entrega {ei.entrega.numero}: "
+                                      f"se registró que llegó {_cant_txt(ei.cantidad)} {v.um})")
+                    ei.entrega.items.remove(ei)          # delete-orphan: se borra al guardar
                 continue
             usados.add(k)
             for ei in eis:
                 ei.item_id = nuevos[k].id
             llego = sum(ei.cantidad or 0 for ei in eis)
             exceso = round(llego - (nuevos[k].cantidad or 0), 4)
-            if orden.devuelta_almacen and exceso > 1e-9:
-                # devuelta por Almacén y la orden ahora pide MENOS de lo que se registró como llegado: se corrige lo que llegó
+            if exceso > 1e-9:
+                # la orden ahora pide MENOS de lo que se registró como llegado: se corrige lo que llegó
                 # (primero la última entrega; lo ya ingresado al inventario no se toca)
                 for ei in sorted((x for x in eis if not x.fecha_ingreso), key=lambda x: (x.entrega.numero, x.id), reverse=True):
                     if exceso <= 1e-9:
@@ -1497,7 +1503,8 @@ def _aplicar_datos_orden(orden, datos, items, prov, contacto=None):
             db.session.flush()
             if not _oc_entregas(orden):
                 orden.fecha_llegada, orden.recibido_por_id, orden.fecha_conforme, orden.conforme_por_id = None, None, None, None
-            _oc_evento(orden, 'ENTREGA_CORREGIDA', 'Al editar la orden (corrección pedida por Almacén) se ajustó lo que llegó: ' + '; '.join(corregidas)
+            _oc_evento(orden, 'ENTREGA_CORREGIDA', 'Al editar la orden' + (' (corrección pedida por Almacén)' if orden.devuelta_almacen else '')
+                       + ' se ajustó lo que llegó: ' + '; '.join(corregidas)
                        + (f' · se quitaron {len(vacias)} entrega(s) que quedaron vacías' if vacias else ''))
 
 
