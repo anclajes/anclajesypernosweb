@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Comparar órdenes{% endblock %}
-{% block subtitle %}{{ ords|map('attribute', 'numero')|join(' · ') }}{% endblock %}
+{% block subtitle %}{% for o in ords %}{{ oc_codigo(o) }}{{ ' · ' if not loop.last }}{% endfor %}{% endblock %}
 {% block content %}
 {% include '_oc_nav.html' %}
 {#- 2 a 6 órdenes lado a lado (posibles duplicadas). Se elige la CORRECTA (radio) y lo que coincide con ella sale en verde;
