@@ -244,6 +244,7 @@
 {% endif %}
 {% import '_kardex_venta.html' as kv with context %}
 {% import '_oc_docs_menu.html' as dm with context %}
+{% import '_oc_reversion.html' as rv with context %}{{ rv.estilos() }}
 {{ dm.estilos_docs_oc() }}
 {{ kv.estilos() }}
 {{ kv.banner(vs_filtro) }}
@@ -431,6 +432,7 @@
                         {% if session.get('role') in roles_eliminan_kardex and puede_eliminar_mov(origen_kardex, m) %}
                         <div><button type="button" class="btn btn-link btn-sm p-0 text-danger" style="font-size:.7rem;" title="Eliminar este movimiento (registrado por error): revierte el stock y queda en la auditoría"
                                 onclick="eliminarMovKardex({{ m.id }})"><i class="bi bi-trash3"></i> Eliminar</button></div>{% endif %}
+                        {{ rv.kardex_link(m, (oc_por_mov or {}).get(m.id)) }}
                     </td>
                 </tr>
                 {% else %}

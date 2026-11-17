@@ -141,6 +141,18 @@ def _rev_resumen(items):
     return ', '.join(f"#{x['item']} −{x['cantidad']} {x['sku'] or ''}".strip() for x in items) or '-'
 
 
+@app.route('/ordenes/<int:orden_id>/reversion')
+@_ruta_oc('ingresar')
+def oc_reversion_ver(orden_id):
+    """v28.1 · Página de la reversión de UNA orden (se llega desde los Kardex de Anclajes / Import Bolts): lo que entró al Kardex,
+    el pedido pendiente (Logística lo confirma aquí) o el formulario para pedirlo (Almacén). ?desde= a dónde volver."""
+    orden = OrdenCompra.query.get_or_404(orden_id)
+    desde = _volver_seguro(request.args.get('desde'), url_for('ver_kardex_importbolts' if (orden.empresa or 'ANCLAJES') == 'IMPORTBOLTS' else 'ver_kardex'))
+    aqui = url_for('oc_reversion_ver', orden_id=orden.id, desde=desde)
+    return render_template('oc_reversion.html', orden=orden, desde=desde, aqui=aqui, abrir=request.args.get('abrir') == '1',
+                           puede_ver_oc=session.get('role') in ROLES_OC_VEN, estados=ESTADOS_OC, seccion='ingresos')
+
+
 @app.route('/ordenes/<int:orden_id>/reversion/solicitar', methods=['POST'])
 @_ruta_oc('ingresar')
 def oc_reversion_solicitar(orden_id):
@@ -190,7 +202,7 @@ def oc_reversion_solicitar(orden_id):
     _oc_evento(orden, 'REVERSION_PEDIDA', f"{session.get('nombre', '')} pidió revertir el ingreso al Kardex ({_rev_resumen(elegidos)}) y {que.lower()}: {motivo}")
     corto = EMPRESAS_OC.get(orden.empresa or 'ANCLAJES', {}).get('corto', '')
     _notif_crear('OC_REVERSION', f"Confirmar reversión de ingreso · {_oc_codigo(orden)} · {corto}", f"{que} · {_rev_resumen(elegidos)} · {motivo}",
-                 volver, orden=orden, excluir=session.get('user_id'))
+                 url_for('oc_reversion_ver', orden_id=orden.id), orden=orden, excluir=session.get('user_id'))
     registrar_log(f"Pidió revertir el ingreso al Kardex de la {_oc_codigo(orden)} ({_rev_resumen(elegidos)}; {que}): {motivo[:120]}", 'bi-arrow-counterclockwise', 'text-warning')
     db.session.commit()
     flash(f'↩ Reversión pedida para {_oc_codigo(orden)}. Todavía NO cambió el stock: Logística debe confirmarla. Mientras tanto no se ingresa nada más de esta orden.')
@@ -279,7 +291,7 @@ def oc_reversion_confirmar(rev_id):
         corto = EMPRESAS_OC.get(orden.empresa or 'ANCLAJES', {}).get('corto', '')
         _notif_crear('OC_REVERSION_LISTA', f"Revertido el ingreso de {_oc_codigo(orden)} · {corto}",
                      f"{resumen} · " + (f"anulada por duplicada de {_oc_codigo(original)}" if original else 'devuelta a Logística para corregirla'),
-                     url_for('oc_detalle', orden_id=orden.id), orden=orden, excluir=session.get('user_id'))
+                     url_for('oc_reversion_ver', orden_id=orden.id), orden=orden, excluir=session.get('user_id'))
         registrar_log(f"Confirmó la REVERSIÓN del ingreso al Kardex {corto} de la {_oc_codigo(orden)} ({resumen})"
                       + (f"; anulada por duplicada de {_oc_codigo(original)}" if original else '; devuelta a Logística'), 'bi-arrow-counterclockwise', 'text-danger')
         db.session.commit()
@@ -321,7 +333,7 @@ def oc_reversion_rechazar(rev_id):
     rev.resuelto_por_id, rev.fecha_resuelta, rev.nota_resolucion = session.get('user_id'), hora_peru(), nota or None
     _oc_evento(orden, 'REVERSION_NO', f"{'Cancelada' if cancela else 'Rechazada'} la reversión de ingreso por {session.get('nombre', '')}" + (f": {nota}" if nota else ''))
     if not cancela:
-        _notif_crear('OC_REVERSION_LISTA', f"Logística rechazó revertir {_oc_codigo(orden)}", nota, url_for('oc_detalle', orden_id=orden.id),
+        _notif_crear('OC_REVERSION_LISTA', f"Logística rechazó revertir {_oc_codigo(orden)}", nota, url_for('oc_reversion_ver', orden_id=orden.id),
                      orden=orden, excluir=session.get('user_id'))
     db.session.commit()
     flash('Reversión ' + ('cancelada.' if cancela else 'rechazada: el stock y la orden siguen igual.'))

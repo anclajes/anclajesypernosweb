@@ -50,7 +50,7 @@
                 {% if f.movimientos_ajustados %}<div class="text-muted" style="font-size:.66rem;">{{ f.movimientos_ajustados }} saldo(s) corregido(s)</div>{% endif %}</td>
             <td class="mot">{% if f.orden_compra_id %}{% set oc = ocs.get(f.orden_compra_id) %}
                 <div class="mb-1"><span class="badge" style="background:#d97706;"><i class="bi bi-arrow-counterclockwise"></i> Reversión de OC</span>
-                {% if oc %}{% if ver_oc %}<a class="fw-bold small" href="{{ url_for('oc_detalle', orden_id=oc.id) }}#reversion">{{ oc_codigo(oc) }}</a>{% else %}<b class="small">{{ oc_codigo(oc) }}</b>{% endif %}
+                {% if oc %}<a class="fw-bold small" href="{{ url_for('oc_detalle', orden_id=oc.id) ~ '#reversion' if ver_oc else url_for('oc_reversion_ver', orden_id=oc.id) }}">{{ oc_codigo(oc) }}</a>
                     {% if oc.estado == 'ANULADA' %}<span class="badge text-bg-secondary" style="font-size:.6rem;">ANULADA{{ ' por duplicada' if oc.anulada_duplicada_de_id }}</span>{% endif %}{% endif %}</div>{% endif %}
                 <i class="bi bi-chat-left-text text-danger"></i> {{ f.motivo_eliminacion }}</td>
         </tr>

@@ -31,6 +31,17 @@
 {% else %}{% set its = oc_rev_items(r) %}<span class="rv-chip" style="background:#475569;" title="Se revirtió el ingreso al Kardex el {{ r.fecha_resuelta.strftime('%d/%m/%Y') if r.fecha_resuelta else '' }}: {{ r.motivo }}"><i class="bi bi-arrow-counterclockwise"></i> Kardex revertido {% for x in its %}−{{ x.cantidad }} {{ x.sku }}{{ ', ' if not loop.last }}{% endfor %}</span>{% endif %}
 {% endif %}{% endmacro %}
 
+{#- v28.1 · En los Kardex (Anclajes e Import Bolts): en cada ENTRADA que vino de una OC, el acceso a revertir su ingreso
+    (Almacén / Gerencia lo piden; Logística ve el pendiente para confirmarlo). ocm = oc_por_mov[m.id] -#}
+{% macro kardex_link(m, ocm) %}{% if ocm and m.tipo == 'ENTRADA' and ocm.orden.tipo == 'OC' and session.get('role') in ['admin', 'almacen', 'logistica'] %}
+{% set r = oc_rev_mapa().get(ocm.orden.id) %}{% set url = url_for('oc_reversion_ver', orden_id=ocm.orden.id, desde=request.full_path) %}
+{% if r and r.estado == 'PENDIENTE' %}<div><a href="{{ url }}" class="rv-chip text-decoration-none" style="background:#d97706;" title="Almacén pidió revertir el ingreso de {{ ocm.codigo }}: {{ r.motivo }}">
+    <i class="bi bi-arrow-counterclockwise"></i> Reversión por confirmar</a></div>
+{% elif session.get('role') in roles_solicitan_reversion and ocm.orden.estado in ['APROBADA', 'RECIBIDA', 'CONFORME'] %}<div><a href="{{ url_for('oc_reversion_ver', orden_id=ocm.orden.id, desde=request.full_path, abrir=1) }}"
+    class="btn btn-link btn-sm p-0 text-warning-emphasis" style="font-size:.7rem;" title="Vino de {{ ocm.codigo }}: si se ingresó mal o la OC está duplicada, pide revertirlo (Logística lo confirma)">
+    <i class="bi bi-arrow-counterclockwise"></i> Revertir ingreso (OC)</a></div>{% endif %}
+{% endif %}{% endmacro %}
+
 {% macro tabla(items, hecha=False) %}
 <table class="rv-t"><thead><tr><th>Ítem</th><th>Producto en el Kardex</th><th class="text-end">Se descuenta</th><th class="text-end">Stock</th></tr></thead><tbody>
 {% for x in items %}<tr><td>#{{ x.item }} {{ x.descripcion[:70] }}<div class="text-muted small">OC: {{ x.cantidad_oc|cant if x.cantidad_oc is not none else '' }} {{ x.um }}{{ (' · entrega ' ~ x.entregas|join(', ')) if x.entregas }}</div></td>

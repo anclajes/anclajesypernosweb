@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Revertir ingreso · {{ oc_codigo(orden) }}{% endblock %}
+{% block subtitle %}{{ orden.razon_social[:60] }}{% endblock %}
+{% block content %}
+{#- v28.1 · Reversión de ingreso al Kardex de UNA orden (desde los Kardex). Ruta oc_reversion_ver (kardex/revertir_oc.py). -#}
+{% import '_oc_reversion.html' as rv with context %}{{ rv.estilos() }}
+{% set emp = oc_empresas.get(orden.empresa or 'ANCLAJES', {}) %}
+{% set no = oc_rev_puede_solicitar(orden) %}
+{% set revs = oc_rev_de_orden(orden) %}
+<div style="max-width: 1000px; margin: 0 auto;">
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-3 bg-white border rounded-3 p-3" style="border-top: 4px solid {{ emp.get('color', '#334155') }} !important;">
+        <div class="flex-fill">
+            <div class="small text-muted">Revertir ingreso al Kardex {{ emp.get('corto', '') }}</div>
+            <div class="fs-5 fw-bold">{% if puede_ver_oc %}<a href="{{ url_for('oc_detalle', orden_id=orden.id) }}">{{ oc_codigo(orden) }}</a>{% else %}{{ oc_codigo(orden) }}{% endif %}
+                <span class="badge ms-1" style="background: {{ estados.get(orden.estado, {}).get('color', '#334155') }}; font-size:.7rem;">{{ estados.get(orden.estado, {}).get('txt', orden.estado) }}</span>
+                {% if (orden.estado_pago or '') == 'PAGADO' %}<span class="badge bg-success ms-1" style="font-size:.7rem;">PAGADA</span>{% endif %}</div>
+            <div class="small">{{ orden.razon_social }}{{ (' · ' ~ orden.numero_factura) if orden.numero_factura }}</div>
+        </div>
+        <a href="{{ desde }}" class="btn btn-sm btn-light border">← Volver al Kardex</a>
+    </div>
+
+    {{ rv.panel(orden, aqui) }}
+
+    {% if not no %}
+    <div class="bg-white border rounded-3 p-3 mb-3">
+        <div class="fw-bold mb-1"><i class="bi bi-box-arrow-in-down"></i> Lo que entró al Kardex desde esta orden</div>
+        {{ rv.tabla(oc_rev_ingresados(orden)) }}
+        <div class="d-flex flex-wrap gap-2 align-items-center mt-3">
+            {{ rv.boton(orden) }}
+            <span class="small text-muted">Se ingresó una cantidad o unidad equivocada, o la OC está duplicada: pídelo aquí y <b>Logística lo confirma</b>. Hasta entonces no cambia el stock.</span>
+        </div>
+    </div>
+    {{ rv.modal(orden, aqui) }}
+    {% elif not (revs|selectattr('estado', 'in', ['PENDIENTE', 'CONFIRMADA'])|list) %}
+    <div class="alert alert-light border"><i class="bi bi-info-circle"></i> No se puede pedir la reversión de esta orden: {{ no }}.</div>
+    {% endif %}
+
+    {% set otras = revs|selectattr('estado', 'in', ['RECHAZADA', 'CANCELADA'])|list %}
+    {% if otras %}
+    <div class="small text-muted mt-2"><b>Pedidos anteriores:</b>
+        {% for r in otras %}<div>· {{ r.fecha_solicitud.strftime('%d/%m/%Y') if r.fecha_solicitud }} — {{ estados_reversion[r.estado].txt }}{{ (': ' ~ r.nota_resolucion) if r.nota_resolucion }} ({{ r.motivo }})</div>{% endfor %}</div>
+    {% endif %}
+</div>
+{{ rv.js() }}
+{% if abrir and not no %}
+<script>document.addEventListener('DOMContentLoaded', () => { const m = document.getElementById('mRev{{ orden.id }}'); if (m && window.bootstrap) bootstrap.Modal.getOrCreateInstance(m).show(); });</script>
+{% endif %}
+{% endblock %}

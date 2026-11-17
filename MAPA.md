@@ -385,6 +385,10 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
   · Se ve: panel en el detalle y en la tarjeta de Ingresos (`rv.panel`), chip en la lista de OC ("Reversión por confirmar" /
     "Kardex revertido −6 SKU", `rv.chip` con `_rev_mapa` cacheado en `g`), eventos REVERSION_PEDIDA / REVERSION / REVERSION_NO, y en
     "Movimientos eliminados" la etiqueta "↩ Reversión de OC" + filtro `tipo=oc`. El Kardex ya no dice "deshacer" para los de OC: apunta aquí.
+  · Desde los Kardex (v28.1): en cada ENTRADA de una OC (Anclajes e Import Bolts) `rv.kardex_link` muestra "↩ Revertir ingreso (OC)"
+    (admin, almacen) o "Reversión por confirmar". Lleva a la página `oc_reversion_ver` (/ordenes/<id>/reversion, `oc_reversion.html`,
+    roles de Ingresos): lo que entró, el pedido pendiente (Logística confirma ahí) o el formulario (se abre solo con ?abrir=1); ?desde= vuelve al Kardex.
+    Los avisos OC_REVERSION / OC_REVERSION_LISTA llevan a esa página (Almacén no puede abrir el detalle de la OC).
 
 ## Avisos de Windows
 
