@@ -349,6 +349,11 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
   Desde la lista ("Comparar las N", `comparar_todas` en `_dup_mapa`) y el detalle ("Comparar las N juntas").
   Diseño (v27.5): usa todo el ancho (con 2 órdenes máx. 1400px), letra .9rem; en pantallas ≥1400px la cabecera queda fija al bajar.
   La barra "Motivo + Anular" va debajo de la tabla en una línea y solo se queda fija abajo (`.cmp-acc.fija`) cuando hay algo marcado.
+- Por qué NO se puede anular (v27.6): `_dup_bloqueos_lista(orden)` (global `oc_dup_bloqueos`) da TODAS las razones con qué hacer y enlace
+  (💰 pagada → la orden; 📦 sumada a Insumos → ingreso #N, que solo Gerencia anula si no se sacó nada; 🏭 ingresada al Kardex → entregas).
+  `_dup_bloqueo_anular` sigue dando una frase (para mensajes). En comparar: fila "¿Se puede anular?" y "🔒 No se puede anular" en la cabecera;
+  la correcta propuesta es la vigente que ya no se puede anular. En el detalle, el botón "Anular por duplicada — ¿por qué no se puede?" abre la
+  ventana con las razones (sin botón de anular).
 
 ## Kardex
 

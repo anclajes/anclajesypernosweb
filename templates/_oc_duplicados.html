@@ -184,8 +184,9 @@
 {#- Botón para Gerencia en las acciones (siempre a la mano, aunque no salte el aviso) -#}
 {% macro boton_anular(orden) %}
 {% if session.get('role') in roles_anulan_duplicada and orden.estado not in ['ANULADA', 'BORRADOR'] %}{% set bl = oc_dup_bloqueo_anular(orden) %}
-<button type="button" class="btn btn-outline-danger" {{ 'disabled' if bl }} data-bs-toggle="modal" data-bs-target="#dupAnular" title="{{ ('No se puede: ' ~ bl) if bl else 'Es la misma compra que otra orden: se anula esta (aunque ya esté aprobada o conforme)' }}">
-    <i class="bi bi-files"></i> Anular por duplicada</button>
+{#- v27.6: si no se puede, el botón igual abre la ventana, que explica POR QUÉ y qué hacer -#}
+<button type="button" class="btn {{ 'btn-outline-secondary' if bl else 'btn-outline-danger' }}" data-bs-toggle="modal" data-bs-target="#dupAnular" title="{{ ('No se puede: ' ~ bl) if bl else 'Es la misma compra que otra orden: se anula esta (aunque ya esté aprobada o conforme)' }}">
+    <i class="bi {{ 'bi-lock' if bl else 'bi-files' }}"></i> Anular por duplicada{{ ' — ¿por qué no se puede?' if bl }}</button>
 {% endif %}
 {% endmacro %}
 
@@ -196,7 +197,10 @@
         <div class="modal-header py-2 text-white" style="background:#b91c1c;"><h6 class="modal-title fw-bold text-white"><i class="bi bi-files"></i> Anular {{ oc_codigo(orden) }} por DUPLICADA</h6>
             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
         <div class="modal-body">
-            {% if bl %}<div class="alert alert-warning small mb-0">No se puede anular: {{ bl }}.</div>
+            {% if bl %}<div class="fw-bold mb-2 text-danger"><i class="bi bi-lock"></i> {{ oc_codigo(orden) }} no se puede anular por duplicada:</div>
+            {% for b in oc_dup_bloqueos(orden) %}<div class="alert alert-danger small py-2 mb-2"><b>{{ b.ico }} {{ b.titulo }}</b>{% if b.hacer %}<div class="mt-1 text-body">{{ b.hacer }}</div>{% endif %}
+                {% if b.url %}<a href="{{ b.url }}" class="fw-bold d-inline-block mt-1">{{ b.url_txt }} →</a>{% endif %}</div>{% endfor %}
+            <div class="small text-muted">Cuando resuelvas {{ 'esto' if oc_dup_bloqueos(orden)|length == 1 else 'todos los puntos' }}, vuelve aquí y ya se podrá anular.</div>
             {% else %}
             <div class="small mb-2" style="background:#fef2f2; border:1px solid #fecaca; border-radius:10px; padding:8px 10px; color:#7f1d1d;">
                 Se anula <b>esta</b> orden ({{ oc_codigo(orden) }}) y queda vigente la <b>original</b> que elijas.

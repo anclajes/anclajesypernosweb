@@ -355,20 +355,39 @@ def oc_duplicado_descartar(orden_id):
     return redirect(volver)
 
 
-def _dup_bloqueo_anular(orden):
-    """Por qué NO se puede anular por duplicada (None = sí se puede)."""
+def _dup_bloqueos_lista(orden):
+    """v27.6: TODAS las razones por las que no se puede anular por duplicada, cada una con qué hacer y a dónde ir.
+    [] = sí se puede. Cada una: {'ico', 'titulo', 'txt' (frase corta para mensajes), 'hacer', 'url', 'url_txt'}."""
     if orden.estado == 'ANULADA':
-        return 'ya está anulada'
+        return [{'ico': '🚫', 'titulo': 'Ya está anulada', 'txt': 'ya está anulada', 'hacer': '', 'url': None, 'url_txt': ''}]
+    r, url_oc = [], url_for('oc_detalle', orden_id=orden.id)
     if (orden.estado_pago or 'PENDIENTE') == 'PAGADO':
-        return 'ya está pagada: primero deshaz el pago (o gestiona la devolución / nota de crédito con el proveedor)'
+        r.append({'ico': '💰', 'titulo': 'Ya está pagada', 'txt': 'ya está pagada: primero deshaz el pago (o gestiona la devolución / nota de crédito con el proveedor)',
+                  'hacer': 'Si el pago se registró por error, Administración/Gerencia lo deshace en la orden. Si de verdad se pagó dos veces, '
+                           'hay que pedir la devolución o una nota de crédito al proveedor.', 'url': url_oc, 'url_txt': 'Ver el pago en la orden'})
     if orden.insumo_ingreso_id:
-        return 'ya se ingresó a Insumos internos: primero anula ese ingreso'
+        r.append({'ico': '📦', 'titulo': f'Ya se sumó al inventario de Insumos (ingreso #{orden.insumo_ingreso_id})',
+                  'txt': 'ya se ingresó a Insumos internos: primero anula ese ingreso',
+                  'hacer': 'Esos productos ya están en el stock de Insumos. Gerencia debe anular primero ese ingreso '
+                           '(solo se puede si no se sacó nada de él).',
+                  'url': url_for('insumos_ingreso_detalle', ingreso_id=orden.insumo_ingreso_id), 'url_txt': f'Ver ingreso #{orden.insumo_ingreso_id}'})
     if any(i.fecha_ingreso for i in orden.items) or any(ei.fecha_ingreso for e in _oc_entregas(orden) for ei in e.items):
-        return 'Almacén ya ingresó productos de esta orden al Kardex: primero revierte ese ingreso'
-    return None
+        r.append({'ico': '🏭', 'titulo': 'Almacén ya la ingresó al Kardex', 'txt': 'Almacén ya ingresó productos de esta orden al Kardex: primero revierte ese ingreso',
+                  'hacer': 'Esos productos ya suman en el inventario (Kardex). Primero hay que revertir ese ingreso.',
+                  'url': url_oc, 'url_txt': 'Ver las entregas en la orden'})
+    return r
+
+
+def _dup_bloqueo_anular(orden):
+    """Por qué NO se puede anular por duplicada, en una frase (None = sí se puede). Detalle completo: _dup_bloqueos_lista."""
+    r = _dup_bloqueos_lista(orden)
+    if not r:
+        return None
+    return r[0]['txt'] if len(r) == 1 else '; '.join(x['txt'].split(':')[0] for x in r) + ' (resuelve cada punto primero)'
 
 
 app.add_template_global(_dup_bloqueo_anular, 'oc_dup_bloqueo_anular')
+app.add_template_global(_dup_bloqueos_lista, 'oc_dup_bloqueos')
 app.add_template_global(ROLES_ANULAN_DUPLICADA, 'roles_anulan_duplicada')
 
 
@@ -554,8 +573,11 @@ def oc_duplicados_comparar():
             fila['items'][o.id] = it
             if cod:
                 fila['cods'].add(cod)
-    ref = next((o for o in ords if o.estado not in DUP_ESTADOS_FUERA), ords[0])     # la correcta propuesta: la primera vigente
+    bloqueos_det = {o.id: _dup_bloqueos_lista(o) for o in ords}
+    vigentes = [o for o in ords if o.estado not in DUP_ESTADOS_FUERA]
+    # la correcta propuesta: la vigente que YA NO se puede anular (pagada / ingresada: esa es la que se queda); si no, la primera vigente
+    ref = next((o for o in vigentes if bloqueos_det[o.id]), vigentes[0] if vigentes else ords[0])
     descartes = {o.id: [d.get('id') for d in _dup_descartes(o)] for o in ords}
     return render_template('oc_dup_comparar.html', ords=ords, ref=ref, pares=pares, filas=filas, claves={o.id: _dup_claves(o) for o in ords},
-                           bloqueos={o.id: _dup_bloqueo_anular(o) for o in ords}, descartes=descartes, fuera=DUP_ESTADOS_FUERA,
+                           bloqueos={o.id: _dup_bloqueo_anular(o) for o in ords}, bloqueos_det=bloqueos_det, descartes=descartes, fuera=DUP_ESTADOS_FUERA,
                            estados=ESTADOS_OC, destinos=DESTINOS_OC, empresas_oc=EMPRESAS_OC, seccion='lista')

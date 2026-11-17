@@ -35,6 +35,15 @@
     .cmp-acc .cmp-form { display: none; }
     .cmp-acc.fija { position: sticky; bottom: 8px; z-index: 3; border-color: #fca5a5; background: #fff5f5; box-shadow: 0 -6px 18px rgba(15,23,42,.12); }
     .cmp-acc.fija .cmp-form { display: flex; } .cmp-acc .cmp-form input { flex: 1 1 320px; width: auto; } .cmp-acc.fija .cmp-hint { display: none; }
+    {#- v27.6: fila "¿Se puede anular?" con el porqué y qué hacer -#}
+    .cmp-bq { font-size: .84rem; } .cmp-bq .c { display: none; color: #15803d; font-weight: 700; }
+    .cmp-bq.es-c .c { display: block; } .cmp-bq.es-c .x { display: none; }
+    .cmp-bq .si { color: #15803d; font-weight: 700; }
+    .cmp-bq .no { background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px; padding: 8px 10px; }
+    .cmp-bq .no + .no { margin-top: 6px; }
+    .cmp-bq .no b { color: #b91c1c; display: block; } .cmp-bq .no p { margin: 2px 0 4px; color: #475569; }
+    .cmp-bq .no a { font-weight: 700; color: #b91c1c; }
+    .cmp-col label.bloq { background: rgba(220,38,38,.28); opacity: 1; }
     .cmp-est { align-self: flex-start; font-size: .75rem; font-weight: 800; border-radius: 6px; padding: 1px 6px; background: #f1f5f9; }
 </style>
 <div class="cmp-wrap">
@@ -58,13 +67,19 @@
                 <div class="cmp-ops"><label class="{{ 'dis' if fuera_o }}" title="{{ 'Una rechazada o anulada no puede ser la correcta' if fuera_o }}">
                     <input type="radio" name="original_id" value="{{ o.id }}" {{ 'checked' if o.id == ref.id and not fuera_o }} {{ 'disabled' if fuera_o }}> Es la correcta</label>
                 {% if anula %}
-                <label class="{{ 'dis' if bl }}" title="{{ ('No se puede: ' ~ bl) if bl else 'Anular esta por duplicada de la correcta' }}">
-                    <input type="checkbox" name="anular_ids" value="{{ o.id }}" class="cmp-anular" {{ 'disabled' if bl }} data-bloq="{{ 1 if bl else '' }}"> Anular{{ ' (no se puede)' if bl }}</label>
+                <label class="{{ 'dis bloq' if bl }}" title="{{ ('No se puede: ' ~ bl) if bl else 'Anular esta por duplicada de la correcta' }}">
+                    <input type="checkbox" name="anular_ids" value="{{ o.id }}" class="cmp-anular" {{ 'disabled' if bl }} data-bloq="{{ 1 if bl else '' }}">{% if bl %} 🔒 No se puede anular{% else %} Anular{% endif %}</label>
                 {% endif %}</div>
             </div></th>
         {% endfor %}</tr></thead>
         <tbody>
         <tr><th class="k">Coincide con la correcta</th>{% for o in ords %}<td class="cmp-par" data-col="{{ o.id }}"></td>{% endfor %}</tr>
+        {% if anula %}
+        <tr><th class="k">¿Se puede anular?</th>{% for o in ords %}{% set bd = bloqueos_det[o.id] %}
+            <td class="cmp-bq" data-col="{{ o.id }}"><div class="c">✓ Es la correcta: se queda</div>
+                <div class="x">{% for b in bd %}<div class="no"><b>{{ b.ico }} No se puede: {{ b.titulo }}</b>{% if b.hacer %}<p>{{ b.hacer }}</p>{% endif %}{% if b.url %}<a href="{{ b.url }}" target="_blank">{{ b.url_txt }} ↗</a>{% endif %}</div>
+                {% else %}<span class="si">✓ Sí se puede anular</span>{% endfor %}</div></td>{% endfor %}</tr>
+        {% endif %}
         {% macro fila(k, campo, valores) %}
         <tr data-campo="{{ campo }}"><th class="k">{{ k }}</th>{% for o in ords %}{% set v = valores[loop.index0] %}<td data-col="{{ o.id }}" class="{{ 'vacio' if not v }}">{{ v or '—' }}</td>{% endfor %}</tr>
         {% endmacro %}
@@ -143,6 +158,7 @@
             td.innerHTML = p && p.nivel ? `<span class="cmp-niv" style="background:${p.nivel.color}">${esc(p.nivel.txt)}</span><div class="cmp-raz">${p.razones.map(r => '✓ ' + esc(r)).join('<br>')}</div>`
                                         : '<span class="text-muted small">Poca coincidencia</span>';
         });
+        t.querySelectorAll('td.cmp-bq').forEach(td => td.classList.toggle('es-c', td.dataset.col === c));
         t.querySelectorAll('td.cmp-no').forEach(td => {
             if (td.dataset.col === c) { td.innerHTML = ''; return; }
             const ya = (DESC[td.dataset.col] || []).includes(+c);
