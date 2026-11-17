@@ -462,6 +462,13 @@
 
         {# jefe de almacén: lo que tiene que ingresar, siempre arriba (con aviso cuando llega algo nuevo) #}
         {% if pend_alm %}{% include '_barra_pendientes.html' %}{% endif %}
+        {% if rev_por_confirmar and request.endpoint not in ['oc_reversiones', 'oc_reversion_ver'] %}
+        <a href="{{ url_for('oc_reversiones') }}" class="d-flex align-items-center gap-2 my-2 px-3 py-2 rounded-3 text-decoration-none"
+           style="background:#fffbeb; border:2px solid #fcd34d; color:#78350f;">
+            <span style="font-size:1.2rem;"><i class="bi bi-arrow-counterclockwise"></i></span><span class="flex-fill"><b>{{ rev_por_confirmar }} reversión(es) de ingreso al Kardex por confirmar</b>
+                <span class="small d-block">Almacén pidió revertir lo que entró de una OC (mal digitada o duplicada): revísala y confírmala o recházala.</span></span>
+            <span class="btn btn-sm btn-warning fw-bold">Revisar</span></a>
+        {% endif %}
         {% if mov_por_aprobar and request.endpoint != 'oc_movilidad_lista' %}
         <a href="{{ url_for('oc_movilidad_lista', empresa='TODAS', estado='por_aprobar', mes='todos') }}" class="d-flex align-items-center gap-2 my-2 px-3 py-2 rounded-3 text-decoration-none"
            style="background:#f0fdf4; border:2px solid #86efac; color:#14532d;">

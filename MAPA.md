@@ -389,6 +389,12 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
     (admin, almacen) o "Reversión por confirmar". Lleva a la página `oc_reversion_ver` (/ordenes/<id>/reversion, `oc_reversion.html`,
     roles de Ingresos): lo que entró, el pedido pendiente (Logística confirma ahí) o el formulario (se abre solo con ?abrir=1); ?desde= vuelve al Kardex.
     Los avisos OC_REVERSION / OC_REVERSION_LISTA llevan a esa página (Almacén no puede abrir el detalle de la OC).
+  · Dónde lo ve Logística (v28.2): aviso amarillo arriba de TODAS las páginas ("N reversión(es) de ingreso al Kardex por confirmar",
+    context processor `_rev_ctx` → `rev_por_confirmar`, en base.html) que lleva a la lista `oc_reversiones` (/ordenes/reversiones,
+    `oc_reversiones.html`: pendientes con Confirmar/Rechazar + historial); también la campana (OC_REVERSION) y el link en Ingresos pendientes.
+  · OJO modelos nuevos: app.py solo importa sus modelos; un módulo con modelo nuevo hace `from models import ...` arriba
+    (v28 falló en producción por eso: NameError OCReversionKardex). `_asegurar_rev()` crea tabla/columnas al arrancar y reintenta
+    en before_request (oc_reversion*, kardex_eliminar*, kardex_eliminados) si falló.
 
 ## Avisos de Windows
 

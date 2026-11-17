@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Reversiones de ingreso{% endblock %}
+{% block subtitle %}Ingresos de OC al Kardex que se piden revertir (mal digitados o duplicados){% endblock %}
+{% block content %}
+{#- v28.2 · Lista de reversiones (ruta oc_reversiones, kardex/revertir_oc.py): las que esperan a Logística arriba, luego el historial. -#}
+{% import '_oc_reversion.html' as rv with context %}{{ rv.estilos() }}
+<style>
+    .rvl-t { width: 100%; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; border-collapse: separate; border-spacing: 0; font-size: .84rem; }
+    .rvl-t th { background: #0f172a; color: #fff; padding: 8px 10px; font-size: .76rem; white-space: nowrap; }
+    .rvl-t th:first-child { border-top-left-radius: 12px; } .rvl-t th:last-child { border-top-right-radius: 12px; }
+    .rvl-t td { padding: 9px 10px; border-top: 1px solid #f1f5f9; vertical-align: top; }
+</style>
+<div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+    <a href="{{ url_for('oc_reversiones') }}" class="btn btn-sm {{ 'btn-dark' if emp == 'TODAS' else 'btn-outline-secondary' }}">Las dos</a>
+    {% for k, info in oc_empresas.items() %}<a href="{{ url_for('oc_reversiones', empresa=k) }}" class="btn btn-sm {{ 'btn-dark' if emp == k else 'btn-outline-secondary' }}">{{ info.corto }}</a>{% endfor %}
+    <a href="{{ url_for('oc_ingresos_pendientes', vista='hechos') }}" class="btn btn-sm btn-light border ms-auto"><i class="bi bi-box-arrow-in-down"></i> Ingresos (ya ingresados)</a>
+</div>
+
+<h6 class="fw-bold"><i class="bi bi-hourglass-split text-warning"></i> Esperando que Logística confirme <span class="badge bg-warning text-dark">{{ pend|length }}</span></h6>
+{% for r in pend %}
+<div class="mb-2"><div class="d-flex align-items-center gap-2 small fw-bold">
+    <a href="{{ url_for('oc_reversion_ver', orden_id=r.orden_id, desde=url_for('oc_reversiones')) }}">{{ oc_codigo(r.orden) }}</a>
+    <span class="text-muted fw-normal">{{ r.orden.razon_social }} · {{ oc_empresas.get(r.empresa or 'ANCLAJES', {}).get('corto', '') }}</span></div>
+    {{ rv.panel(r.orden, url_for('oc_reversiones')) }}</div>
+{% else %}
+<div class="text-muted small bg-white border rounded-3 p-3 mb-3">No hay reversiones esperando confirmación.</div>
+{% endfor %}
+
+<h6 class="fw-bold mt-4"><i class="bi bi-clock-history"></i> Historial</h6>
+{% if otras %}
+<div class="table-responsive"><table class="rvl-t">
+    <thead><tr><th>Orden</th><th>Qué se pidió</th><th>Se descontó</th><th>Pidió</th><th>Resultado</th></tr></thead>
+    <tbody>{% for r in otras %}{% set its = oc_rev_items(r) %}<tr>
+        <td class="text-nowrap"><a class="fw-bold" href="{{ url_for('oc_reversion_ver', orden_id=r.orden_id, desde=url_for('oc_reversiones')) }}">{{ oc_codigo(r.orden) }}</a>
+            <div class="small text-muted">{{ oc_empresas.get(r.empresa or 'ANCLAJES', {}).get('corto', '') }}</div></td>
+        <td><b>{{ modos_reversion[r.modo].txt }}</b>{% if r.original %} de {{ oc_codigo(r.original) }}{% endif %}<div class="small text-muted">{{ r.motivo }}</div></td>
+        <td class="text-nowrap">{% for x in its %}<div>−{{ x.cantidad }} <b>{{ x.sku }}</b>{% if r.estado == 'CONFIRMADA' and x.stock_antes is not none %} <span class="small text-muted">({{ x.stock_antes }} → {{ x.stock_despues }})</span>{% endif %}</div>{% endfor %}</td>
+        <td class="small">{{ r.solicitado_por.nombre_completo if r.solicitado_por else '-' }}<div class="text-muted">{{ r.fecha_solicitud.strftime('%d/%m/%Y %H:%M') if r.fecha_solicitud }}</div></td>
+        <td class="small"><span class="fw-bold" style="color: {{ estados_reversion[r.estado].color }};">{{ estados_reversion[r.estado].txt }}</span>
+            <div class="text-muted">{{ r.resuelto_por.nombre_completo if r.resuelto_por else '' }}{{ (' · ' ~ r.fecha_resuelta.strftime('%d/%m/%Y %H:%M')) if r.fecha_resuelta }}</div>
+            {% if r.nota_resolucion %}<div>{{ r.nota_resolucion }}</div>{% endif %}</td>
+    </tr>{% endfor %}</tbody>
+</table></div>
+{% else %}<div class="text-muted small">Todavía no hay reversiones resueltas.</div>{% endif %}
+{% endblock %}

@@ -14,6 +14,8 @@
 # Este archivo NO se importa: app.py lo carga (lista MODULOS_EN_ARCHIVOS), después de kardex/eliminar.py. Ver MAPA.md.
 # =====================================================================================
 
+from models import OCReversionKardex, MovimientoEliminado   # los modelos nuevos se importan aquí (app.py solo importa los suyos)
+
 ROLES_SOLICITAN_REVERSION = ['admin', 'almacen']      # Jefe de Almacén (y Gerencia)
 ROLES_CONFIRMAN_REVERSION = ['logistica']             # por ahora solo Logística (son errores al crear la OC)
 MODOS_REVERSION = {
@@ -27,12 +29,31 @@ ESTADOS_REVERSION = {'PENDIENTE': {'txt': 'Esperando que Logística confirme', '
                      'RECHAZADA': {'txt': 'Rechazada por Logística', 'color': '#dc2626'},
                      'CANCELADA': {'txt': 'Cancelada', 'color': '#64748b'}}
 
-try:
-    with app.app_context():
+_rev_ok = False
+
+
+def _asegurar_rev():
+    """Crea la tabla y las 2 columnas nuevas de movimiento_eliminado si faltan. Se intenta al arrancar y, si falló, otra vez
+    al usar la reversión o "Movimientos eliminados" (si faltan las columnas, eliminar un movimiento daría error)."""
+    global _rev_ok
+    if _rev_ok:
+        return
+    try:
         OCReversionKardex.__table__.create(bind=db.engine, checkfirst=True)
         _agregar_columnas_si_faltan('movimiento_eliminado', [('orden_compra_id', 'INTEGER'), ('reversion_id', 'INTEGER')])
-except Exception as _e_rev:
-    print(f"Aviso: no se pudo preparar la reversión de ingresos de OC: {_e_rev}")
+        _rev_ok = True
+    except Exception as e:
+        print(f"Aviso: no se pudo preparar la reversión de ingresos de OC: {e}")
+
+
+with app.app_context():
+    _asegurar_rev()
+
+
+@app.before_request
+def _rev_antes():
+    if not _rev_ok and (request.endpoint or '').startswith(('oc_reversion', 'kardex_eliminar', 'kardex_eliminados')):
+        _asegurar_rev()
 
 
 def _rev_items_json(rev):
@@ -338,3 +359,31 @@ def oc_reversion_rechazar(rev_id):
     db.session.commit()
     flash('Reversión ' + ('cancelada.' if cancela else 'rechazada: el stock y la orden siguen igual.'))
     return redirect(volver)
+
+
+@app.route('/ordenes/reversiones')
+@_ruta_oc('ingresar')
+def oc_reversiones():
+    """v28.2 · Todas las reversiones de ingreso: las que esperan que Logística confirme, arriba; luego el historial."""
+    _asegurar_rev()
+    emp = (request.args.get('empresa') or 'TODAS').upper()
+    q = OCReversionKardex.query
+    if emp in EMPRESAS_OC:
+        q = q.filter(OCReversionKardex.empresa == emp)
+    revs = q.order_by(OCReversionKardex.id.desc()).limit(300).all()
+    pend = [r for r in revs if r.estado == 'PENDIENTE']
+    return render_template('oc_reversiones.html', pend=pend, otras=[r for r in revs if r.estado != 'PENDIENTE'], emp=emp,
+                           puede_ver_oc=session.get('role') in ROLES_OC_VEN, seccion='ingresos')
+
+
+@app.context_processor
+def _rev_ctx():
+    """Aviso arriba de todas las páginas para Logística: reversiones de ingreso esperando su confirmación."""
+    if session.get('role') not in ROLES_CONFIRMAN_REVERSION:
+        return {}
+    try:
+        n = OCReversionKardex.query.filter_by(estado='PENDIENTE').count() if _rev_ok else 0
+    except Exception:
+        db.session.rollback()
+        n = 0
+    return {'rev_por_confirmar': n}

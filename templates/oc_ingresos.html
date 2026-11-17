@@ -105,6 +105,7 @@
     <a href="{{ url_for('oc_ingresos_pendientes') }}" class="{{ 'on' if vista == 'pendientes' }}"><i class="bi bi-hourglass-split"></i> Pendientes <span class="opacity-75">{{ n_pendientes }}</span></a>
     <a href="{{ url_for('oc_ingresos_pendientes', vista='hechos') }}" class="{{ 'on' if vista == 'hechos' }}"><i class="bi bi-check2-all"></i> Ya ingresados <span class="opacity-75">{{ n_hechos }}</span></a>
     <a href="{{ url_for('oc_ingresos_pendientes', vista='devueltas') }}" class="{{ 'on' if vista == 'devueltas' }}" title="Las que Almacén devolvió a Logística: si regresaron y se sumaron, si siguen en Logística o si se anularon"><i class="bi bi-arrow-return-left"></i> Devueltas (historial) <span class="opacity-75">{{ n_hist }}</span></a>
+    <a href="{{ url_for('oc_reversiones') }}" title="Ingresos al Kardex que se pidió revertir (OC mal digitada o duplicada): pendientes de Logística e historial"><i class="bi bi-arrow-counterclockwise"></i> Reversiones de ingreso</a>
     {% if emp_sel != 'IMPORTBOLTS' %}<a href="{{ url_for('ver_kardex') }}" class="ms-auto"><i class="bi bi-clock-history"></i> Kardex Anclajes</a>
     <a href="{{ url_for('inventario') }}"><i class="bi bi-boxes"></i> Inventario Anclajes</a>{% endif %}
     {% if emp_sel != 'ANCLAJES' %}<a href="{{ url_for('ver_kardex_importbolts') }}" class="{{ 'ms-auto' if emp_sel == 'IMPORTBOLTS' }}"><i class="bi bi-clock-history"></i> Kardex Import Bolts</a>
