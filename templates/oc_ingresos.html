@@ -4,6 +4,7 @@
 {% block content %}
 {% include '_oc_nav.html' %}
 {% import '_oc_devolucion.html' as dv with context %}{{ dv.estilos() }}
+{% import '_oc_reversion.html' as rv with context %}{{ rv.estilos() }}
 <style>
     .vistas a { font-size: .8rem; font-weight: 700; border-radius: 20px; padding: 5px 14px; text-decoration: none; border: 1px solid #e2e8f0; color: #475569; background: #fff; white-space: nowrap; }
     .vistas a.on { background: #0f172a; color: #fff; border-color: #0f172a; }
@@ -103,12 +104,16 @@
 <div class="d-flex flex-wrap gap-2 align-items-center mb-2 vistas">
     <a href="{{ url_for('oc_ingresos_pendientes') }}" class="{{ 'on' if vista == 'pendientes' }}"><i class="bi bi-hourglass-split"></i> Pendientes <span class="opacity-75">{{ n_pendientes }}</span></a>
     <a href="{{ url_for('oc_ingresos_pendientes', vista='hechos') }}" class="{{ 'on' if vista == 'hechos' }}"><i class="bi bi-check2-all"></i> Ya ingresados <span class="opacity-75">{{ n_hechos }}</span></a>
+    <a href="{{ url_for('oc_ingresos_pendientes', vista='devueltas') }}" class="{{ 'on' if vista == 'devueltas' }}" title="Las que Almacén devolvió a Logística: si regresaron y se sumaron, si siguen en Logística o si se anularon"><i class="bi bi-arrow-return-left"></i> Devueltas (historial) <span class="opacity-75">{{ n_hist }}</span></a>
     {% if emp_sel != 'IMPORTBOLTS' %}<a href="{{ url_for('ver_kardex') }}" class="ms-auto"><i class="bi bi-clock-history"></i> Kardex Anclajes</a>
     <a href="{{ url_for('inventario') }}"><i class="bi bi-boxes"></i> Inventario Anclajes</a>{% endif %}
     {% if emp_sel != 'ANCLAJES' %}<a href="{{ url_for('ver_kardex_importbolts') }}" class="{{ 'ms-auto' if emp_sel == 'IMPORTBOLTS' }}"><i class="bi bi-clock-history"></i> Kardex Import Bolts</a>
     <a href="{{ url_for('inventario_importbolts') }}"><i class="bi bi-boxes"></i> Inventario Import Bolts</a>{% endif %}
 </div>
 
+{% if vista == 'devueltas' %}
+{{ dv.historial(hist, hist_cuenta, hist_estados, puede_ver_oc) }}
+{% else %}
 {{ dv.lista(devueltas, puede_ver_oc) }}
 
 <details class="como" {{ 'open' if vista == 'pendientes' and n_pendientes }}>
@@ -202,10 +207,13 @@
             {% if o.tipo == 'OC' and not o.numero_factura and not (ds|selectattr('tipo', 'equalto', 'FACTURA')|list) %}<span class="small text-muted align-self-center">· la factura aún no se sube (no hace falta para ingresar)</span>{% endif %}
             {% set po = oc_permisos(o) %}
             {% if o.devuelta_almacen %}<span class="dv-bloq ms-auto"><i class="bi bi-lock-fill"></i> Bloqueada: devuelta a Logística</span>
-            {% elif vista == 'pendientes' and po.devolver %}<span class="ms-auto">{{ dv.boton(o, chico=True) }}</span>{% endif %}
+            {% elif vista == 'pendientes' and po.devolver %}<span class="ms-auto">{{ dv.boton(o, chico=True) }}</span>
+            {% elif vista == 'hechos' and not o.es_contable and o.destino == 'GENERAL' %}<span class="ms-auto">{{ rv.boton(o, chico=True) }}</span>{% endif %}
         </div>
         {% if o.devuelta_almacen %}{{ dv.banner(o, po, acciones=False) }}
         {% elif vista == 'pendientes' and po.devolver %}{{ dv.modal(o, url_for('oc_ingresos_pendientes') ~ '#oc' ~ o.id) }}{% endif %}
+        {% if o.destino == 'GENERAL' and not o.es_contable %}{% set _vr = url_for('oc_ingresos_pendientes', vista=vista) ~ '#oc' ~ o.id %}{{ rv.panel(o, _vr) }}
+        {% if vista == 'hechos' %}{{ rv.modal(o, _vr) }}{% endif %}{% endif %}
     </div>
     {% if g.directo %}
     {% set sol = oc_solicitante_txt(o) %}
@@ -380,6 +388,8 @@
 <div class="text-center text-muted py-5 bg-white rounded-3 border"><i class="bi bi-inbox display-6 opacity-25"></i>
     <p class="mt-2 mb-0">{{ 'No hay material pendiente de ingresar.' if vista == 'pendientes' else 'Todavía no se marcó ningún ingreso.' }}</p></div>
 {% endfor %}
+{% endif %}{#- vista devueltas -#}
+{{ rv.js() }}
 
 <!-- Movimiento de Kardex precargado desde la orden -->
 <div class="modal fade" id="modalKardex" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg"><div class="modal-content border-0 shadow">

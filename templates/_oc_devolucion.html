@@ -206,3 +206,81 @@
 </details>
 {% endif %}
 {% endmacro %}
+
+{#- v27.7 · HISTORIAL de devueltas (Ingresos pendientes → "Devueltas (historial)"): cada devolución, cómo se resolvió y en qué terminó.
+    filas: _oc_devueltas_historial (entregas.py) -#}
+{% macro historial(filas, cuenta, estados, puede_ver_oc=True) %}
+<style>
+    .dh-kpis { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+    .dh-kpis button { border: 2px solid #e2e8f0; background: #fff; border-radius: 12px; padding: 6px 12px; font-size: .8rem; font-weight: 700; color: #334155; display: inline-flex; gap: 6px; align-items: center; }
+    .dh-kpis button b { font-size: 1.05rem; color: var(--c); }
+    .dh-kpis button.on { border-color: var(--c); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 15%, transparent); }
+    .dh-t { width: 100%; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; border-collapse: separate; border-spacing: 0; font-size: .84rem; }
+    .dh-t th { background: #0f172a; color: #fff; padding: 8px 10px; font-size: .76rem; white-space: nowrap; }
+    .dh-t th:first-child { border-top-left-radius: 12px; } .dh-t th:last-child { border-top-right-radius: 12px; }
+    .dh-t td { padding: 9px 10px; border-top: 1px solid #f1f5f9; vertical-align: top; }
+    .dh-res { display: inline-flex; gap: 5px; align-items: center; font-weight: 800; color: var(--c); background: color-mix(in srgb, var(--c) 10%, #fff);
+              border: 1px solid color-mix(in srgb, var(--c) 35%, #fff); border-radius: 8px; padding: 3px 8px; font-size: .78rem; }
+    .dh-ciclo { border-left: 3px solid #fca5a5; padding: 2px 0 2px 8px; }
+    .dh-ciclo + .dh-ciclo { margin-top: 8px; }
+    .dh-ciclo .m { color: #7f1d1d; overflow-wrap: anywhere; }
+    .dh-ciclo .r { color: #166534; margin-top: 2px; overflow-wrap: anywhere; }
+    .dh-ciclo .r.no { color: #b45309; }
+    .dh-f { font-size: .72rem; color: #64748b; }
+</style>
+<div class="small text-muted mb-2"><i class="bi bi-info-circle"></i> Órdenes que Almacén <b>devolvió a Logística</b> alguna vez: por qué se devolvió, cómo la corrigieron y en qué terminó.
+    Pulsa un recuadro para filtrar.</div>
+<div class="dh-kpis" id="dhKpis">
+    <button type="button" class="on" data-k="" style="--c:#0f172a;">Todas <b>{{ filas|length }}</b></button>
+    {% for k, e in estados.items() %}{% if cuenta.get(k) %}
+    <button type="button" data-k="{{ k }}" style="--c:{{ e.color }};"><i class="bi {{ e.ico }}"></i> {{ e.txt }} <b>{{ cuenta[k] }}</b></button>{% endif %}{% endfor %}
+    <input type="search" id="dhBuscar" class="form-control form-control-sm ms-auto" style="max-width:300px;" placeholder="Buscar OC, proveedor o motivo">
+</div>
+{% if filas %}
+<div class="table-responsive"><table class="dh-t" id="dhT">
+    <thead><tr><th>Orden</th><th>Proveedor</th><th>Devoluciones y cómo se corrigió</th><th>En qué terminó</th></tr></thead>
+    <tbody>
+    {% for f in filas %}{% set o = f.o %}{% set emp = oc_empresas.get(o.empresa or 'ANCLAJES', {}) %}
+    <tr data-k="{{ f.k }}" data-buscar="{{ (oc_codigo(o) ~ ' ' ~ o.razon_social ~ ' ' ~ (f.ciclos|map(attribute='motivo')|join(' ')))|upper }}">
+        <td style="white-space:nowrap;">
+            {% if puede_ver_oc %}<a class="fw-bold" href="{{ url_for('oc_detalle', orden_id=o.id) }}">{{ oc_codigo(o) }}</a>{% else %}<b>{{ oc_codigo(o) }}</b>{% endif %}
+            <div><span style="background: {{ emp.get('color', '#334155') }}; color:#fff; font-size:.6rem; font-weight:800; border-radius:5px; padding:0 5px;">{{ emp.get('corto', '') }}</span>
+                {% if f.ciclos|length > 1 %}<span class="badge bg-danger ms-1" title="Se devolvió más de una vez">{{ f.ciclos|length }} veces</span>{% endif %}</div>
+            <div class="dh-f">{{ oc_destino_txt(o) }}</div></td>
+        <td>{{ o.razon_social }}</td>
+        <td>{% for c in f.ciclos %}<div class="dh-ciclo">
+            <div class="dh-f"><i class="bi bi-arrow-return-left text-danger"></i> {{ c.fecha.strftime('%d/%m/%Y %H:%M') if c.fecha else '' }}{{ (' · ' ~ c.por) if c.por }}{{ (' · ' ~ loop.index ~ '.ª vez') if f.ciclos|length > 1 }}</div>
+            <div class="m">{{ c.motivo }}</div>
+            {% if c.res %}<div class="r"><i class="bi bi-arrow-return-right"></i> <b>Regresó</b> {{ c.res.fecha.strftime('%d/%m/%Y') if c.res.fecha else '' }}{{ (' · ' ~ c.res.por) if c.res.por }}
+                {% if c.res.dias is not none %}<span class="dh-f">({{ 'el mismo día' if c.res.dias == 0 else ('en ' ~ c.res.dias ~ ' día' ~ ('s' if c.res.dias != 1 else '')) }})</span>{% endif %}: {{ c.res.txt }}</div>
+            {% elif f.k == 'logistica' and loop.last %}<div class="r no"><i class="bi bi-hourglass-split"></i> Todavía no regresa{% if c.fecha %} · hace {{ (ahora - c.fecha).days }} día(s){% endif %}</div>
+            {% elif f.k in ('anulada', 'rechazada') and loop.last %}<div class="r no"><i class="bi bi-dash-circle"></i> No regresó</div>{% endif %}
+        </div>{% endfor %}</td>
+        <td style="min-width:210px;"><span class="dh-res" style="--c:{{ f.info.color }};"><i class="bi {{ f.info.ico }}"></i> {{ f.txt }}</span>
+            {% if f.sub %}<div class="dh-f mt-1">{{ f.sub }}</div>{% endif %}
+            {% if f.fecha and f.k in ('sumada', 'parcial', 'anulada', 'rechazada') %}<div class="dh-f mt-1">{{ f.fecha.strftime('%d/%m/%Y %H:%M') }}</div>{% endif %}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+</table></div>
+<div class="text-center text-muted small py-3 d-none" id="dhVacio">Ninguna coincide con el filtro.</div>
+{% else %}
+<div class="text-center text-muted py-5 bg-white rounded-3 border"><i class="bi bi-arrow-return-left display-6 opacity-25"></i>
+    <p class="mt-2 mb-0">Todavía no se ha devuelto ninguna orden a Logística.</p></div>
+{% endif %}
+<script>
+(function () {
+    const t = document.getElementById('dhT'); if (!t) return;
+    const kp = document.getElementById('dhKpis'), q = document.getElementById('dhBuscar');
+    let k = '';
+    function filtrar() {
+        const txt = (q.value || '').trim().toUpperCase(); let n = 0;
+        t.querySelectorAll('tbody tr').forEach(tr => { const ok = (!k || tr.dataset.k === k) && (!txt || tr.dataset.buscar.includes(txt)); tr.classList.toggle('d-none', !ok); n += ok; });
+        document.getElementById('dhVacio').classList.toggle('d-none', n > 0);
+    }
+    kp.addEventListener('click', e => { const b = e.target.closest('button[data-k]'); if (!b) return; k = b.dataset.k;
+        kp.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); filtrar(); });
+    q.addEventListener('input', filtrar);
+})();
+</script>
+{% endmacro %}

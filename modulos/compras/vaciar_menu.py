@@ -59,6 +59,14 @@ def oc_vaciar():
         db.session.flush()
         if n_mov:
             extra.append(f'{n_mov} planilla(s) de movilidad')
+        # reversiones de ingreso al Kardex (v28): cuelgan de las órdenes; su copia en "Movimientos eliminados" queda sin enlace
+        try:
+            with db.session.begin_nested():
+                OCReversionKardex.query.delete(synchronize_session=False)
+                MovimientoEliminado.query.filter(MovimientoEliminado.orden_compra_id.isnot(None)).update(
+                    {'orden_compra_id': None, 'reversion_id': None}, synchronize_session=False)
+        except Exception as e_rev:
+            app.logger.warning(f'Vaciar OC: no se limpiaron las reversiones de ingreso: {e_rev}')
         for modelo in (OrdenCompraEntregaItem, OrdenCompraEntrega, OrdenCompraDocumento, OrdenCompraEvento, OrdenCompraItem, OrdenCompra,
                        RequerimientoDocumento, RequerimientoEvento, RequerimientoVisto, RequerimientoItem, RequerimientoCompra, Notificacion):
             modelo.query.delete(synchronize_session=False)

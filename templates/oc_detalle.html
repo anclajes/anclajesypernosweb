@@ -17,6 +17,7 @@
 {% import '_oc_devolucion.html' as dv with context %}
 {% import '_oc_movilidad.html' as mvl with context %}
 {% import '_oc_duplicados.html' as dupl with context %}
+{% import '_oc_reversion.html' as rv with context %}
 {{ estilos_directo() }}
 {% set e = estados[orden.estado] %}
 {% set mon = monedas[orden.moneda] %}
@@ -69,7 +70,7 @@
     .linea .pt.APROBADA, .linea .pt.CONFORME, .linea .pt.KARDEX, .linea .pt.INGRESO_ITEM, .linea .pt.PAGO { background: #16a34a; } .linea .pt.RECHAZADA, .linea .pt.ANULADA { background: #dc2626; }
     .linea .pt.ENVIADA { background: #f59e0b; } .linea .pt.LLEGADA { background: #0891b2; } .linea .pt.CREADA { background: #0B3D91; } .linea .pt.OBSERVACION { background: #7c3aed; } .linea .pt.EDITADA_APROBADA { background: #ea580c; } .linea .pt.EMPRESA { background: #0891b2; }
     .linea .pt.MOVILIDAD { background: #4f46e5; } .linea .pt.DUPLICADO_REVISADO { background: #16a34a; } .linea .pt.DUPLICADO { background: #ea580c; }
-    .linea .pt.DEVUELTA { background: #dc2626; } .linea .pt.DEVOLUCION_RESUELTA { background: #16a34a; } .linea .pt.ENTREGA_CORREGIDA { background: #0B3D91; }
+    .linea .pt.DEVUELTA { background: #dc2626; } .linea .pt.DEVOLUCION_RESUELTA { background: #16a34a; } .linea .pt.ENTREGA_CORREGIDA { background: #0B3D91; } .linea .pt.REVERSION, .linea .pt.REVERSION_PEDIDA { background: #d97706; }
     .linea .t { font-size: .8rem; font-weight: 700; } .linea .s { font-size: .74rem; color: #64748b; }
     .acciones .btn { font-weight: 700; }
     .check-conf { border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 8px 10px; margin-bottom: 6px; }
@@ -205,6 +206,7 @@
     <div class="mt-2">
     {{ dv.estilos() }}{{ dv.banner(orden, p) }}
     {{ dupl.estilos() }}{{ dupl.panel_detalle(orden, p) }}
+    {{ rv.estilos() }}{{ rv.panel(orden, url_for('oc_detalle', orden_id=orden.id) ~ '#reversion') }}
     {% if atraso %}
         <div class="sello atraso mb-2"><i class="bi bi-alarm-fill"></i><div><b>ATRASADA {{ atraso }} día{{ 's' if atraso != 1 }}</b>
             <div class="small">Debía llegar el {{ oc_fecha_esperada(orden).strftime('%d/%m/%Y') }} y aún no se registra la llegada. Llama al proveedor y deja una observación.</div></div></div>
@@ -282,6 +284,7 @@
         {% if p.insumos %}<a class="btn btn-warning" href="{{ url_for('insumos_ingreso_nuevo', oc=orden.id, empresa=orden.empresa or 'ANCLAJES') }}"><i class="bi bi-box-arrow-in-down"></i> Ingresar a Insumos</a>{% endif %}
         {% if p.devolver %}{{ dv.boton(orden) }}{% endif %}
         {{ dupl.boton_anular(orden) }}
+        {{ rv.boton(orden) }}
         {% if session.get('role') in roles_mov %}{% set n_mv = oc_movilidades(orden)|rejectattr('anulada')|list|length %}
         <a class="btn text-white" style="background:#4f46e5;" href="{{ url_for('oc_movilidad_nueva', orden_id=orden.id) if not n_mv else '#movilidad' }}"
            title="Planilla por gasto de movilidad (taxi, agencia, recojo o envío de esta orden)">🚕 {{ 'Crear planilla de movilidad' if not n_mv else ('Movilidad (' ~ n_mv ~ ')') }}</a>{% endif %}
@@ -309,6 +312,7 @@
 {{ aviso_directo(orden) }}
 {% if p.devolver %}{{ dv.modal(orden, url_for('oc_detalle', orden_id=orden.id)) }}{% endif %}
 {{ dv.modales_logistica(orden, p) }}
+{{ rv.modal(orden, url_for('oc_detalle', orden_id=orden.id) ~ '#reversion') }}{{ rv.js() }}
 
 <div class="row g-3">
     <div class="col-12 col-lg-8">
@@ -642,7 +646,9 @@
                                    'ENTREGA_DIRECTO': 'Bien entregado (uso directo)', 'DIRECTO_EDITADO': 'Entrega corregida (uso directo)',
                                    'DEVUELTA': '↩ DEVUELTA A LOGÍSTICA por Almacén (hay un error)', 'DEVOLUCION_RESUELTA': '↪ Corregida: vuelve a Almacén',
                                    'ENTREGA_CORREGIDA': 'Se corrigió lo que llegó (entrega)', 'MOVILIDAD': '🚕 Planilla de movilidad',
-                                   'DUPLICADO_REVISADO': 'Revisado: no es duplicada', 'DUPLICADO': 'Se anuló una orden duplicada de esta'}.get(ev.accion, ev.accion) }}</div>
+                                   'DUPLICADO_REVISADO': 'Revisado: no es duplicada', 'DUPLICADO': 'Se anuló una orden duplicada de esta',
+                                   'REVERSION_PEDIDA': '↩ Almacén pidió revertir el ingreso al Kardex', 'REVERSION': '↩ Ingreso al Kardex REVERTIDO (stock descontado)',
+                                   'REVERSION_NO': 'Reversión de ingreso rechazada / cancelada'}.get(ev.accion, ev.accion) }}</div>
                 <div class="s">{{ ev.fecha.strftime('%d/%m/%Y %H:%M') }} · <b>{{ ev.usuario.nombre_completo if ev.usuario else 'Sistema' }}</b></div>
                 {% if ev.detalle %}<div class="s">{{ ev.detalle }}</div>{% endif %}
             </div>

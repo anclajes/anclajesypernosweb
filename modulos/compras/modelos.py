@@ -2,7 +2,7 @@
 Se importan al final de models.py: "from models import X" sigue funcionando igual. Ver MAPA.md."""
 from models import db, hora_peru
 
-__all__ = ['OCProveedor', 'OCContacto', 'OCMotivoRechazo', 'OrdenCompra', 'OrdenCompraItem', 'OrdenCompraEntrega', 'OrdenCompraEntregaItem', 'OrdenCompraEvento', 'OrdenCompraDocumento', 'OCCuentaBancaria', 'OCMotivoCompra', 'RequerimientoCompra', 'RequerimientoItem', 'RequerimientoDocumento', 'RequerimientoVisto', 'RequerimientoEvento', 'OCConfig', 'OrdenCompraMovilidad', 'OCMovilidadTrabajador']
+__all__ = ['OCProveedor', 'OCContacto', 'OCMotivoRechazo', 'OrdenCompra', 'OrdenCompraItem', 'OrdenCompraEntrega', 'OrdenCompraEntregaItem', 'OrdenCompraEvento', 'OrdenCompraDocumento', 'OCCuentaBancaria', 'OCMotivoCompra', 'RequerimientoCompra', 'RequerimientoItem', 'RequerimientoDocumento', 'RequerimientoVisto', 'RequerimientoEvento', 'OCConfig', 'OrdenCompraMovilidad', 'OCMovilidadTrabajador', 'OCReversionKardex']
 
 
 # =====================================================================================
@@ -530,3 +530,32 @@ class OCMovilidadTrabajador(db.Model):
     fecha_actualizacion = db.Column(db.DateTime)
 
     usuario = db.relationship('User', foreign_keys=[user_id])
+
+
+class OCReversionKardex(db.Model):
+    """v28 · REVERTIR EL INGRESO AL KARDEX de una OC registrada mal (cantidad / unidad equivocada) o DUPLICADA.
+    Paso 1: el Jefe de Almacén (o Gerencia) lo SOLICITA: elige los ítems, el motivo y qué hacer con la orden:
+        CORREGIR  -> se revierte y la orden vuelve a Logística (devuelta) para que la editen y se ingrese bien;
+        DUPLICADA -> se revierte y la orden se ANULA por duplicada de la correcta (original_id), con su mapeo.
+    Paso 2: Logística CONFIRMA (todo o nada: se eliminan los movimientos del Kardex con auditoría en "Movimientos eliminados",
+    se descuenta el stock, se corrigen los saldos posteriores y se quita la marca de ingresado) o la RECHAZA.
+    Mientras está PENDIENTE no cambia nada (solo se bloquea ingresar más de esa orden)."""
+    __tablename__ = 'oc_reversion_kardex'
+    id = db.Column(db.Integer, primary_key=True)
+    orden_id = db.Column(db.Integer, db.ForeignKey('orden_compra.id'), nullable=False, index=True)
+    empresa = db.Column(db.String(15))
+    modo = db.Column(db.String(12), nullable=False)                 # CORREGIR / DUPLICADA
+    original_id = db.Column(db.Integer, db.ForeignKey('orden_compra.id'), nullable=True)   # la orden correcta (DUPLICADA)
+    motivo = db.Column(db.String(500), nullable=False)
+    items = db.Column(db.Text)              # JSON [{item_id, item, descripcion, um, sku, cantidad, movs:[ids], stock_antes, stock_despues}]
+    estado = db.Column(db.String(12), default='PENDIENTE', index=True)   # PENDIENTE / CONFIRMADA / RECHAZADA / CANCELADA
+    solicitado_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    fecha_solicitud = db.Column(db.DateTime, default=hora_peru)
+    resuelto_por_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    fecha_resuelta = db.Column(db.DateTime)
+    nota_resolucion = db.Column(db.String(500))
+
+    orden = db.relationship('OrdenCompra', foreign_keys=[orden_id])
+    original = db.relationship('OrdenCompra', foreign_keys=[original_id])
+    solicitado_por = db.relationship('User', foreign_keys=[solicitado_por_id])
+    resuelto_por = db.relationship('User', foreign_keys=[resuelto_por_id])

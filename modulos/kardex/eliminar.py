@@ -35,7 +35,8 @@ def _bloqueo_eliminar_mov(origen, m, rol=None):
         return 'Solo Gerencia y el Jefe de Almacén pueden eliminar movimientos.'
     motivo = (m.motivo or '').upper()
     if getattr(m, 'orden_compra_id', None):
-        return 'Vino de una Orden de Compra: corrígelo en Compras → Ingresos pendientes (deshacer el ingreso).'
+        return ('Vino de una Orden de Compra: ábrela y pulsa "Revertir ingreso al Kardex" (lo pide el Jefe de Almacén y lo confirma Logística; '
+                'sirve para corregir la orden o anularla por duplicada).')
     if m.proceso_oc_id:
         return 'Es parte de un proceso por OC (maestranza / transformación): corrígelo desde el proceso.'
     if getattr(m, 'orden_servicio_id', None):
@@ -74,6 +75,43 @@ def _plan_eliminar_mov(origen, m):
             return delta, actual, nuevo, posteriores, (f'No se puede: el saldo del movimiento del {p.fecha.strftime("%d/%m/%Y %H:%M")} '
                                                        f'quedaría negativo ({p.stock_nuevo + delta}). Revisa los movimientos posteriores.')
     return delta, actual, nuevo, posteriores, None
+
+
+def _eliminar_mov_auditado(origen, m, motivo_elim, plan=None, orden_compra_id=None, reversion_id=None):
+    """Elimina el movimiento `m` dejando su copia en MovimientoEliminado (SIN commit): revierte el stock y corrige el saldo
+    de los movimientos posteriores. Lo usan "Eliminar movimiento" y la reversión de ingreso de una OC (v28).
+    Devuelve (delta, stock_antes, stock_despues, n_posteriores, producto). ValueError si no se puede (stock insuficiente...)."""
+    _, Producto = _modelos_kardex(origen)
+    delta, actual, nuevo, posteriores, err = plan + (None,) if plan else _plan_eliminar_mov(origen, m)
+    if err:
+        raise ValueError(err)
+    col_doc = MovimientoDocumento.movimiento_ib_id if origen == 'IMPORTBOLTS' else MovimientoDocumento.movimiento_id
+    docs = MovimientoDocumento.query.filter(col_doc == m.id).all()
+    prod = Producto.query.get(m.product_id)
+    copia = {c.name: (getattr(m, c.name).isoformat() if hasattr(getattr(m, c.name), 'isoformat') else getattr(m, c.name))
+             for c in m.__table__.columns}
+    copia['documentos'] = [{'tipo': d.tipo_documento, 'nombre': d.nombre_original, 's3_key': d.s3_key} for d in docs]
+    db.session.add(MovimientoEliminado(
+        origen=origen, movimiento_id=m.id, product_id=m.product_id, sku=prod.sku, producto=(prod.nombre or '')[:500], tipo=m.tipo,
+        cantidad=m.cantidad, fecha_movimiento=m.fecha, motivo=(m.motivo or '')[:200], referencia=(m.referencia or '')[:50] or None,
+        proveedor=(' · '.join(x for x in ((m.razon_social_proveedor or getattr(m, 'cliente_razon', None) or ''), (m.ruc_proveedor or '')) if x))[:200] or None,
+        registrado_por=(m.user.nombre_completo or m.user.username) if m.user else None,
+        stock_antes=actual, stock_despues=nuevo, movimientos_ajustados=len(posteriores),
+        datos=json.dumps(copia, ensure_ascii=False, default=str), eliminado_por_id=session.get('user_id'),
+        eliminado_por=session.get('nombre', '') or session.get('username', ''), rol=session.get('role'),
+        fecha_eliminacion=hora_peru(), motivo_eliminacion=motivo_elim[:300], orden_compra_id=orden_compra_id, reversion_id=reversion_id))
+    # el saldo de los movimientos posteriores se corrige (como si este nunca se hubiera registrado)
+    for p in posteriores:
+        if p.stock_anterior is not None:
+            p.stock_anterior += delta
+        if p.stock_nuevo is not None:
+            p.stock_nuevo += delta
+    prod.stock_actual = nuevo
+    for d in docs:          # el archivo se conserva en S3 (su referencia queda en la auditoría)
+        db.session.delete(d)
+    db.session.delete(m)
+    db.session.flush()
+    return delta, actual, nuevo, len(posteriores), prod
 
 
 @app.route('/kardex/<origen>/movimiento/<int:mov_id>/eliminar/previa')
@@ -116,33 +154,9 @@ def kardex_eliminar_movimiento(origen, mov_id):
     if err:
         flash(f'⛔ {err}')
         return redirect(destino)
-    col_doc = MovimientoDocumento.movimiento_ib_id if origen == 'IMPORTBOLTS' else MovimientoDocumento.movimiento_id
-    docs = MovimientoDocumento.query.filter(col_doc == m.id).all()
     prod = Producto.query.get(m.product_id)
-    ahora = hora_peru()
-    copia = {c.name: (getattr(m, c.name).isoformat() if hasattr(getattr(m, c.name), 'isoformat') else getattr(m, c.name))
-             for c in m.__table__.columns}
-    copia['documentos'] = [{'tipo': d.tipo_documento, 'nombre': d.nombre_original, 's3_key': d.s3_key} for d in docs]
     try:
-        db.session.add(MovimientoEliminado(
-            origen=origen, movimiento_id=m.id, product_id=m.product_id, sku=prod.sku, producto=(prod.nombre or '')[:500], tipo=m.tipo,
-            cantidad=m.cantidad, fecha_movimiento=m.fecha, motivo=(m.motivo or '')[:200], referencia=(m.referencia or '')[:50] or None,
-            proveedor=(' · '.join(x for x in ((m.razon_social_proveedor or getattr(m, 'cliente_razon', None) or ''), (m.ruc_proveedor or '')) if x))[:200] or None,
-            registrado_por=(m.user.nombre_completo or m.user.username) if m.user else None,
-            stock_antes=actual, stock_despues=nuevo, movimientos_ajustados=len(posteriores),
-            datos=json.dumps(copia, ensure_ascii=False, default=str), eliminado_por_id=session.get('user_id'),
-            eliminado_por=session.get('nombre', '') or session.get('username', ''), rol=session.get('role'),
-            fecha_eliminacion=ahora, motivo_eliminacion=motivo_elim))
-        # el saldo de los movimientos posteriores se corrige (como si este nunca se hubiera registrado)
-        for p in posteriores:
-            if p.stock_anterior is not None:
-                p.stock_anterior += delta
-            if p.stock_nuevo is not None:
-                p.stock_nuevo += delta
-        prod.stock_actual = nuevo
-        for d in docs:          # el archivo se conserva en S3 (su referencia queda en la auditoría)
-            db.session.delete(d)
-        db.session.delete(m)
+        _eliminar_mov_auditado(origen, m, motivo_elim, plan=(delta, actual, nuevo, posteriores))
         registrar_log(f"ELIMINÓ del Kardex {EMPRESAS_OC.get(origen, {}).get('corto', origen)} el movimiento #{mov_id} "
                       f"({m.tipo} {m.cantidad} de {prod.sku}, {m.fecha.strftime('%d/%m/%Y %H:%M') if m.fecha else ''}): stock {actual} → {nuevo}. "
                       f"Motivo: {motivo_elim}", 'bi-trash3-fill', 'text-danger')
@@ -174,5 +188,11 @@ def kardex_eliminados():
         q = q.filter(db.or_(MovimientoEliminado.sku.ilike(b), MovimientoEliminado.producto.ilike(b), MovimientoEliminado.motivo.ilike(b),
                             MovimientoEliminado.motivo_eliminacion.ilike(b), MovimientoEliminado.eliminado_por.ilike(b),
                             MovimientoEliminado.proveedor.ilike(b), MovimientoEliminado.referencia.ilike(b)))
+    tipo = request.args.get('tipo', '')
+    if tipo == 'oc':
+        q = q.filter(MovimientoEliminado.orden_compra_id.isnot(None))
     filas = q.order_by(MovimientoEliminado.fecha_eliminacion.desc(), MovimientoEliminado.id.desc()).limit(500).all()
-    return render_template('kardex_eliminados.html', filas=filas, origen=origen, buscar=buscar, empresas_oc=EMPRESAS_OC)
+    ids_oc = {f.orden_compra_id for f in filas if getattr(f, 'orden_compra_id', None)}
+    ocs = {o.id: o for o in OrdenCompra.query.filter(OrdenCompra.id.in_(list(ids_oc))).all()} if ids_oc else {}
+    return render_template('kardex_eliminados.html', filas=filas, origen=origen, buscar=buscar, empresas_oc=EMPRESAS_OC, ocs=ocs, tipo=tipo,
+                           ver_oc=session.get('role') in ROLES_OC_VEN)

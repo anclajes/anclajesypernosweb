@@ -33,3 +33,5 @@ class MovimientoEliminado(db.Model):
     rol = db.Column(db.String(30))
     fecha_eliminacion = db.Column(db.DateTime, default=hora_peru, index=True)
     motivo_eliminacion = db.Column(db.String(300), nullable=False)
+    orden_compra_id = db.Column(db.Integer, nullable=True, index=True)   # v28: si se eliminó al REVERTIR el ingreso de una OC
+    reversion_id = db.Column(db.Integer, nullable=True)                  # OCReversionKardex que lo revirtió

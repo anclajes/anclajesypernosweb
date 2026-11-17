@@ -35,6 +35,11 @@ TIPOS_NOTIF = {
     'OC_DEVOLUCION_LISTA': {'txt': 'OC devuelta ya corregida (se puede ingresar)', 'ayuda': 'Cuando Logística corrige una orden que Almacén devolvió '
                             '(o Gerencia re-aprueba la corrección) y vuelve a "Ingresos pendientes".',
                             'roles': ['admin', 'almacen', 'logistica'], 'defecto': ['almacen'], 'icono': 'bi-arrow-return-right', 'color': '#16a34a'},
+    'OC_REVERSION': {'txt': 'Reversión de ingreso al Kardex por confirmar', 'ayuda': 'Cuando el Jefe de Almacén pide revertir lo que entró al Kardex '
+                     'desde una OC (se ingresó mal o es duplicada). Logística la confirma o la rechaza.',
+                     'roles': ['admin', 'logistica'], 'defecto': ['logistica', 'admin'], 'icono': 'bi-arrow-counterclockwise', 'color': '#d97706'},
+    'OC_REVERSION_LISTA': {'txt': 'Reversión de ingreso resuelta', 'ayuda': 'Cuando Logística confirma (o rechaza) la reversión de un ingreso al Kardex que pediste.',
+                           'roles': ['admin', 'almacen', 'logistica'], 'defecto': ['almacen', 'admin'], 'icono': 'bi-arrow-counterclockwise', 'color': '#16a34a'},
 }
 TIPOS_POR_INGRESAR = ('ING_PENDIENTE', 'INSUMO_PENDIENTE')       # salen en "Por ingresar" de la campana mientras sigan pendientes
 TIPOS_INSISTENTES = ('OC_POR_APROBAR',) + TIPOS_POR_INGRESAR     # su aviso de Windows se queda en pantalla hasta cerrarlo

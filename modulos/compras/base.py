@@ -911,6 +911,10 @@ def _oc_bloqueo_devuelta(orden):
         quien = orden.devuelta_por.nombre_completo if orden.devuelta_por else 'Almacén'
         return (f"la {_oc_codigo(orden)} está DEVUELTA A LOGÍSTICA por {quien} ({orden.devolucion_motivo or 'error'}): "
                 "no se ingresa hasta que Logística la corrija y la devuelva")
+    rev_pend = globals().get('_rev_pendiente')          # v28 (kardex/revertir_oc.py)
+    if orden is not None and rev_pend and rev_pend(orden):
+        return (f"la {_oc_codigo(orden)} tiene una REVERSIÓN DE INGRESO AL KARDEX esperando que Logística la confirme: "
+                "no se ingresa nada más hasta que se resuelva")
     return None
 
 

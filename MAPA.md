@@ -49,6 +49,7 @@ modulos/
     modelos.py           tabla MovimientoEliminado (auditoría de movimientos eliminados)
     eliminar.py          ELIMINAR un movimiento registrado por error (Gerencia y Jefe de Almacén): revierte el stock, corrige
                          los saldos posteriores y guarda la copia en "Movimientos eliminados" (/kardex/eliminados)
+    revertir_oc.py       REVERTIR EL INGRESO AL KARDEX de una OC (v28): lo pide Almacén, lo confirma Logística (ver "## Kardex")
     venta_servicio.py    salida a MAESTRANZA / TRANSFORMACIÓN que sale como VENTA (cliente, OC del cliente opcional y
                          editable después) y su vínculo con las Órdenes de Servicio (desde el movimiento, el Kardex o la OS)
   avisos/              CAMPANA Y AVISOS
@@ -274,6 +275,11 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
   La barra de Almacén muestra "N devuelta(s) a Logística" (`_pendientes_almacen()['dev']`).
   En Órdenes de compra: pestaña "↩ Devueltas por Almacén" (vista `devueltas` en VISTAS_OC_ORDEN/VISTAS_OC_EXTRA; `en_vista` usa
   `devuelta_almacen`), late en rojo si hay alguna, más la tarjeta KPI "Devueltas por Almacén" y un recuadro con motivo y en qué está cada una.
+- Historial (v27.7): Ingresos pendientes → pestaña "Devueltas (historial)" (vista `devueltas` de `oc_ingresos_pendientes`).
+  `_oc_devueltas_historial(emp)` (entregas.py): toda orden con `devoluciones > 0` (máx. DEV_HIST_LIMITE), sus ciclos desde los eventos
+  DEVUELTA → DEVOLUCION_RESUELTA (motivo, quién, cuándo, cómo se corrigió, en cuántos días) y el resultado `_dev_hist_resultado`
+  (DEV_HIST_ESTADOS: sigue en Logística / regresó · falta ingresar / ingresada en parte / regresó y se sumó / anulada / rechazada).
+  Plantilla: macro `historial` de `_oc_devolucion.html` (recuadros-filtro + buscador).
 - Logística (banner con acciones en el detalle, `banner` + `modales_logistica`):
   · Error en la ORDEN → "Editar la orden" (`reeditar`, vuelve a Gerencia; `oc_editar` precarga el motivo "Corrección pedida por … (Almacén)").
     Gerencia ve "corrección pedida por Almacén" en la notificación y el banner. `oc_aprobar` llama `_oc_devolucion_cerrar(orden, 'REAPROBADA')`.
@@ -366,6 +372,19 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
   entrada se descuenta) y corrige el saldo de los posteriores; no deja stock negativo. No se eliminan los de OC, proceso por OC, pedidos (NP-),
   inter-empresa, saldo inicial ni auditorías. Auditoría completa en "Movimientos eliminados".
 - Borrar un código del Maestro: el "Saldo Inicial" (carga del Excel) no cuenta como movimiento; si es el único, se borra con el código.
+- **Revertir el ingreso de una OC** (v28, `modulos/kardex/revertir_oc.py`, plantilla `_oc_reversion.html`, tabla `oc_reversion_kardex`
+  = OCReversionKardex): para una OC mal digitada (6 MT en vez de 1 UN) o DUPLICADA que ya sumó al Kardex.
+  · Pide: ROLES_SOLICITAN_REVERSION (admin, almacen) desde Ingresos pendientes → "Ya ingresados" (botón en la tarjeta) o el detalle
+    (`oc_reversion_solicitar`). Modo CORREGIR (ítems elegidos; la orden vuelve a Logística como DEVUELTA, entra al historial de devueltas)
+    o DUPLICADA (todo; se elige la correcta y se anula con `_dup_anular` → mapeo). Vista previa del stock (`_rev_ingresados`, no deja si no alcanza).
+    Mientras está PENDIENTE no cambia nada y `_oc_bloqueo_devuelta` impide ingresar más de esa orden. Aviso OC_REVERSION a Logística.
+  · Confirma: ROLES_CONFIRMAN_REVERSION (solo logistica, por ahora) `oc_reversion_confirmar` (todo o nada): `_eliminar_mov_auditado`
+    (eliminar.py, el mismo de "Eliminar") de cada movimiento → stock descontado, saldos posteriores corregidos, copia en MovimientoEliminado
+    con `orden_compra_id` y `reversion_id`; quita la marca de ingresado (entrega-ítems e ítems, fecha_kardex). DUPLICADA pagada: no deja
+    (Gerencia quita el pagado primero). `oc_reversion_rechazar` (Logística rechaza con nota; quien la pidió o Gerencia la cancela: cancelar=1).
+  · Se ve: panel en el detalle y en la tarjeta de Ingresos (`rv.panel`), chip en la lista de OC ("Reversión por confirmar" /
+    "Kardex revertido −6 SKU", `rv.chip` con `_rev_mapa` cacheado en `g`), eventos REVERSION_PEDIDA / REVERSION / REVERSION_NO, y en
+    "Movimientos eliminados" la etiqueta "↩ Reversión de OC" + filtro `tipo=oc`. El Kardex ya no dice "deshacer" para los de OC: apunta aquí.
 
 ## Avisos de Windows
 

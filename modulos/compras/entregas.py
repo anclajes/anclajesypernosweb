@@ -903,12 +903,93 @@ def _os_por_seguir():
             if not o.fecha_kardex and not o.devuelta_almacen]
 
 
+# ---------------------------- HISTORIAL DE DEVUELTAS (v27.7) ----------------------------
+# Toda orden que Almacén devolvió alguna vez a Logística (devoluciones > 0): cada devolución con su motivo y cómo se resolvió,
+# y en qué terminó: sigue en Logística, regresó y se sumó al inventario, regresó pero falta ingresar, o se anuló / rechazó.
+DEV_HIST_LIMITE = 200
+DEV_HIST_ESTADOS = {
+    'logistica': {'txt': 'Sigue en Logística', 'ico': 'bi-wrench-adjustable', 'color': '#dc2626'},
+    'pendiente': {'txt': 'Regresó · falta ingresar', 'ico': 'bi-hourglass-split', 'color': '#d97706'},
+    'parcial':   {'txt': 'Regresó · ingresada en parte', 'ico': 'bi-pie-chart', 'color': '#2563eb'},
+    'sumada':    {'txt': 'Regresó y se sumó', 'ico': 'bi-check2-circle', 'color': '#16a34a'},
+    'anulada':   {'txt': 'No volvió: anulada', 'ico': 'bi-x-octagon', 'color': '#475569'},
+    'rechazada': {'txt': 'No volvió: rechazada', 'ico': 'bi-x-circle', 'color': '#475569'},
+}
+_EV_SUMA = ('KARDEX', 'INSUMOS', 'ENTREGA_DIRECTO', 'CONTABLE', 'SEGUIMIENTO', 'KARDEX_OS', 'INGRESO_ITEM')
+
+
+def _dev_hist_resultado(o, evs):
+    """En qué terminó la orden devuelta: (clave de DEV_HIST_ESTADOS, texto, detalle, fecha)."""
+    def ult(acciones):
+        return next((e for e in reversed(evs) if e.accion in acciones), None)
+    if o.estado == 'ANULADA':
+        sub = ('por duplicada de ' + _oc_codigo(OrdenCompra.query.get(o.anulada_duplicada_de_id))) if o.anulada_duplicada_de_id and OrdenCompra.query.get(o.anulada_duplicada_de_id) else ''
+        return 'anulada', 'No volvió: se anuló', ' · '.join(x for x in (sub, o.motivo_anulacion or '') if x), getattr(o, 'fecha_anulacion', None)
+    if o.estado == 'RECHAZADA':
+        e = ult(('RECHAZADA',))
+        return 'rechazada', 'No volvió: Gerencia la rechazó', (e.detalle if e else ''), (e.fecha if e else None)
+    if o.devuelta_almacen:
+        return 'logistica', ('Esperando que Gerencia re-apruebe la corrección' if o.estado == 'ENVIADA' else 'Sigue en Logística, corrigiendo'), '', o.fecha_devuelta
+    e = ult(_EV_SUMA)
+    if o.destino == 'INSUMOS' and not o.es_contable:
+        if o.insumo_ingreso_id:
+            return 'sumada', 'Regresó y se sumó a Insumos', f'ingreso #{o.insumo_ingreso_id}', (e.fecha if e else None)
+        return 'pendiente', 'Regresó · falta ingresar a Insumos', '', None
+    if o.es_contable or o.destino == 'DIRECTO' or o.tipo == 'OS':
+        txt = ('Regresó y se confirmó (tema contable)' if o.es_contable else 'Regresó y se registró la entrega (uso directo)' if o.destino == 'DIRECTO'
+               else 'Regresó · seguimiento hecho')
+        falta = ('Regresó · falta confirmarla' if o.es_contable else 'Regresó · falta registrar la entrega' if o.destino == 'DIRECTO'
+                 else 'Regresó · falta marcar el seguimiento')
+        return ('sumada', txt, '', o.fecha_kardex) if o.fecha_kardex else ('pendiente', falta, '', None)
+    ie = _oc_ingreso_estado(o)
+    if ie['completo']:
+        return 'sumada', 'Regresó y se sumó al inventario', '', o.fecha_kardex or (ie['ultimo'].fecha_ingreso if ie['ultimo'] else None)
+    if ie['entregas_ing']:
+        return 'parcial', f"Regresó · ingresada en parte ({ie['hechos']} de {ie['total']} ítems completos)", '', (ie['ultimo'].fecha_ingreso if ie['ultimo'] else None)
+    return 'pendiente', 'Regresó · falta ingresar al inventario', '', None
+
+
+def _oc_devueltas_historial(emp_sel='TODAS'):
+    """Órdenes que se devolvieron alguna vez, la más reciente arriba, con sus ciclos devolución → resolución y el resultado."""
+    try:
+        ords = [o for o in OrdenCompra.query.filter(OrdenCompra.devoluciones > 0).order_by(OrdenCompra.id.desc()).limit(DEV_HIST_LIMITE).all()
+                if emp_sel in ('TODAS', o.empresa or 'ANCLAJES')]
+    except Exception:
+        db.session.rollback()
+        return [], {}
+    evs = {}
+    if ords:
+        for e in (OrdenCompraEvento.query.filter(OrdenCompraEvento.orden_id.in_([o.id for o in ords]))
+                  .order_by(OrdenCompraEvento.fecha, OrdenCompraEvento.id).all()):
+            evs.setdefault(e.orden_id, []).append(e)
+    filas, cuenta = [], {k: 0 for k in DEV_HIST_ESTADOS}
+    for o in ords:
+        lista = evs.get(o.id, [])
+        ciclos = []
+        for e in lista:
+            if e.accion == 'DEVUELTA':
+                det = re.sub(r'^Devuelta a Logística por [^·]*·\s*', '', e.detalle or '')
+                ciclos.append({'fecha': e.fecha, 'por': e.usuario.nombre_completo if e.usuario else '', 'motivo': det, 'res': None})
+            elif e.accion == 'DEVOLUCION_RESUELTA' and ciclos and not ciclos[-1]['res']:
+                det = re.sub(r'\s*·\s*\(se había devuelto por:.*$', '', e.detalle or '')
+                ciclos[-1]['res'] = {'fecha': e.fecha, 'por': e.usuario.nombre_completo if e.usuario else '', 'txt': det,
+                                     'dias': max((e.fecha - ciclos[-1]['fecha']).days, 0) if e.fecha and ciclos[-1]['fecha'] else None}
+        if not ciclos:      # devuelta antes de que existiera el historial de eventos: lo que quedó en la orden
+            ciclos.append({'fecha': o.fecha_devuelta, 'por': o.devuelta_por.nombre_completo if o.devuelta_por else '', 'motivo': o.devolucion_motivo or '', 'res': None})
+        k, txt, sub, fecha = _dev_hist_resultado(o, lista)
+        cuenta[k] += 1
+        filas.append({'o': o, 'ciclos': ciclos, 'k': k, 'txt': txt, 'sub': sub, 'fecha': fecha, 'info': DEV_HIST_ESTADOS[k],
+                      'ultima': ciclos[-1]['fecha'] or o.fecha_devuelta})
+    filas.sort(key=lambda f: (f['ultima'] or datetime.min, f['o'].id), reverse=True)
+    return filas, cuenta
+
+
 @app.route('/ordenes/ingresos')
 @_ruta_oc('ingresar')
 def oc_ingresos_pendientes():
     """Lo que llegó con OC y ya tiene conformidad (por entrega, si llegó por partes): Almacén lo ingresa al Kardex."""
     vista = request.args.get('vista', 'pendientes')
-    vista = vista if vista in ('pendientes', 'hechos') else 'pendientes'
+    vista = vista if vista in ('pendientes', 'hechos', 'devueltas') else 'pendientes'
     emp_sel = (request.args.get('empresa') or session.get('oc_empresa_ing') or 'TODAS').upper()
     emp_sel = emp_sel if emp_sel in EMPRESAS_OC or emp_sel == 'TODAS' else 'TODAS'
     session['oc_empresa_ing'] = emp_sel
@@ -1003,7 +1084,14 @@ def oc_ingresos_pendientes():
                               for d in docs.get(g['o'].id, []) if d.tipo != 'GUIA' or d.entrega_id in (None, b['e'].id)]
                 datos_kardex[b['e'].id] = dk
     presentaciones = [pr.nombre for pr in Presentacion.query.filter_by(activo=True).order_by(Presentacion.nombre).all()]
-    return render_template('oc_ingresos.html', grupos=grupos, docs=docs, puede_ver_oc=session.get('role') in ROLES_OC_VEN, vista=vista, stock=stock,
+    hist, hist_cuenta = _oc_devueltas_historial(emp_sel) if vista == 'devueltas' else ([], {})
+    try:
+        n_hist = sum(1 for o in OrdenCompra.query.with_entities(OrdenCompra.empresa).filter(OrdenCompra.devoluciones > 0).all()
+                     if emp_sel in ('TODAS', o.empresa or 'ANCLAJES'))
+    except Exception:
+        db.session.rollback()
+        n_hist = 0
+    return render_template('oc_ingresos.html', hist=hist, hist_cuenta=hist_cuenta, hist_estados=DEV_HIST_ESTADOS, n_hist=n_hist, grupos=grupos, docs=docs, puede_ver_oc=session.get('role') in ROLES_OC_VEN, vista=vista, stock=stock,
                            datos_kardex=datos_kardex, presentaciones=presentaciones, hoy_iso=hora_peru().date().isoformat(),
                            peso_inv=peso_inv, n_pendientes=pend_emp[emp_sel], n_hechos=n_hechos, monedas=MONEDAS_OC, ahora=hora_peru(),
                            emp_sel=emp_sel, pend_emp=pend_emp, orden_lista=orden_lista, devueltas=devueltas,

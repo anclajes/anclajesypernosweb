@@ -1,0 +1,162 @@
+{#- v28 · REVERTIR EL INGRESO AL KARDEX de una OC (kardex/revertir_oc.py).
+    Almacén lo pide (boton + modal), Logística lo confirma o rechaza (panel). Se usa en el detalle de la OC y en Ingresos pendientes.
+    Importar con: {% import '_oc_reversion.html' as rv with context %} -#}
+
+{% macro estilos() %}
+<style>
+    .rv-panel { border: 2px solid #fcd34d; border-left: 6px solid #d97706; background: #fffbeb; border-radius: 12px; padding: 10px 14px; margin: 8px 0; }
+    .rv-panel.hecha { border-color: #cbd5e1; border-left-color: #475569; background: #f8fafc; }
+    .rv-panel .rv-tit { font-weight: 800; color: #92400e; font-size: .92rem; }
+    .rv-panel.hecha .rv-tit { color: #334155; }
+    .rv-panel .rv-mot { font-size: .84rem; background: #fff; border: 1px dashed #fcd34d; border-radius: 8px; padding: 5px 9px; margin: 6px 0; overflow-wrap: anywhere; }
+    .rv-t { width: 100%; font-size: .8rem; background: #fff; border-radius: 8px; overflow: hidden; border-collapse: collapse; margin-top: 6px; }
+    .rv-t th { background: #fef3c7; color: #78350f; font-weight: 700; padding: 5px 8px; text-align: left; white-space: nowrap; }
+    .rv-panel.hecha .rv-t th { background: #e2e8f0; color: #334155; }
+    .rv-t td { padding: 5px 8px; border-top: 1px solid #fde68a; vertical-align: top; }
+    .rv-t td.n { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .rv-t td.menos { font-weight: 800; color: #b91c1c; }
+    .rv-acc { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; padding-top: 8px; border-top: 1px dashed #fcd34d; }
+    .rv-modal .modal-header { background: #b45309; color: #fff; } .rv-modal .modal-title { color: #fff; }
+    .rv-modos { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px; }
+    .rv-modos label { border: 2px solid #e2e8f0; border-radius: 12px; padding: 10px 12px; cursor: pointer; font-size: .82rem; display: block; }
+    .rv-modos label b { display: block; font-size: .92rem; }
+    .rv-modos label:has(input:checked) { border-color: #b45309; background: #fffbeb; }
+    .rv-chip { font-size: .64rem; font-weight: 800; border-radius: 6px; padding: 1px 6px; color: #fff; white-space: nowrap; }
+</style>
+{% endmacro %}
+
+{#- Chip para la lista de órdenes -#}
+{% macro chip(o) %}{% set r = oc_rev_mapa().get(o.id) %}{% if r %}
+{% if r.estado == 'PENDIENTE' %}<span class="rv-chip" style="background:#d97706;" title="Almacén pidió revertir el ingreso al Kardex: {{ r.motivo }}"><i class="bi bi-arrow-counterclockwise"></i> Reversión por confirmar</span>
+{% else %}{% set its = oc_rev_items(r) %}<span class="rv-chip" style="background:#475569;" title="Se revirtió el ingreso al Kardex el {{ r.fecha_resuelta.strftime('%d/%m/%Y') if r.fecha_resuelta else '' }}: {{ r.motivo }}"><i class="bi bi-arrow-counterclockwise"></i> Kardex revertido {% for x in its %}−{{ x.cantidad }} {{ x.sku }}{{ ', ' if not loop.last }}{% endfor %}</span>{% endif %}
+{% endif %}{% endmacro %}
+
+{% macro tabla(items, hecha=False) %}
+<table class="rv-t"><thead><tr><th>Ítem</th><th>Producto en el Kardex</th><th class="text-end">Se descuenta</th><th class="text-end">Stock</th></tr></thead><tbody>
+{% for x in items %}<tr><td>#{{ x.item }} {{ x.descripcion[:70] }}<div class="text-muted small">OC: {{ x.cantidad_oc|cant if x.cantidad_oc is not none else '' }} {{ x.um }}{{ (' · entrega ' ~ x.entregas|join(', ')) if x.entregas }}</div></td>
+    <td><b>{{ x.sku or '—' }}</b>{% if x.producto %}<div class="text-muted small">{{ x.producto[:60] }}</div>{% endif %}{% if x.manual %}<div class="small text-muted">(parte marcada a mano: solo se quita la marca)</div>{% endif %}</td>
+    <td class="n menos">−{{ x.cantidad }}</td>
+    <td class="n">{% if x.stock_antes is not none %}{{ x.stock_antes }} → <b>{{ x.stock_despues }}</b>{% if not hecha %}<div class="small text-muted">{{ 'hoy' }}</div>{% endif %}{% else %}—{% endif %}</td></tr>{% endfor %}
+</tbody></table>
+{% endmacro %}
+
+{#- Panel: reversión pendiente (Logística confirma / rechaza; quien la pidió la cancela) y las ya revertidas -#}
+{% macro panel(orden, volver) %}
+{% set revs = oc_rev_de_orden(orden) %}
+{% for r in revs if r.estado in ['PENDIENTE', 'CONFIRMADA'] %}
+{% set its = oc_rev_items(r) %}{% set m = modos_reversion[r.modo] %}
+<div class="rv-panel {{ 'hecha' if r.estado == 'CONFIRMADA' }}" id="reversion">
+    <div class="rv-tit"><i class="bi bi-arrow-counterclockwise"></i>
+        {% if r.estado == 'PENDIENTE' %}REVERSIÓN DE INGRESO AL KARDEX · esperando que Logística la confirme
+        {% else %}INGRESO AL KARDEX REVERTIDO{% endif %}
+        <span class="rv-chip ms-1" style="background:{{ '#b45309' if r.modo == 'DUPLICADA' else '#0B3D91' }};"><i class="bi {{ m.ico }}"></i> {{ m.txt }}{% if r.original %} de {{ oc_codigo(r.original) }}{% endif %}</span></div>
+    <div class="small mt-1">Pidió <b>{{ r.solicitado_por.nombre_completo if r.solicitado_por else '-' }}</b> el {{ r.fecha_solicitud.strftime('%d/%m/%Y %H:%M') if r.fecha_solicitud }}
+        {% if r.estado == 'CONFIRMADA' %} · confirmó <b>{{ r.resuelto_por.nombre_completo if r.resuelto_por else '-' }}</b> el {{ r.fecha_resuelta.strftime('%d/%m/%Y %H:%M') if r.fecha_resuelta }}{% endif %}</div>
+    <div class="rv-mot"><b>Qué pasó:</b> {{ r.motivo }}{% if r.nota_resolucion %}<div class="mt-1"><b>Nota de Logística:</b> {{ r.nota_resolucion }}</div>{% endif %}</div>
+    {% if r.original %}<div class="small">La orden correcta (la que se queda): <a href="{{ url_for('oc_detalle', orden_id=r.original.id) if session.get('role') in ['admin', 'logistica', 'administracion'] else '#' }}" class="fw-bold">{{ oc_codigo(r.original) }}</a>
+        · {{ r.original.razon_social }}</div>{% endif %}
+    {{ tabla(its, r.estado == 'CONFIRMADA') }}
+    {% if r.estado == 'CONFIRMADA' %}
+    <div class="small text-muted mt-2"><i class="bi bi-info-circle"></i> El stock se descontó y los movimientos quedaron en el Kardex → <b>Movimientos eliminados</b>
+        (con esta orden y el motivo).{% if r.modo == 'CORREGIR' %} La orden volvió a Logística para corregirla; luego Almacén la ingresa bien.{% else %} La orden quedó ANULADA por duplicada.{% endif %}
+        {% if session.get('role') in ['admin', 'almacen', 'logistica', 'administracion'] %}<a href="{{ url_for('kardex_eliminados', origen=orden.empresa or 'ANCLAJES', q=oc_codigo(orden).split(' ')[-1]) }}">Ver en el Kardex ↗</a>{% endif %}</div>
+    {% else %}
+    <div class="rv-acc">
+        {% if session.get('role') in roles_confirman_reversion %}
+        {% if r.modo == 'DUPLICADA' and (orden.estado_pago or '') == 'PAGADO' %}<div class="w-100 alert alert-danger small py-1 mb-1"><i class="bi bi-cash-coin"></i> Esta orden está <b>PAGADA</b>: no se puede anular. Que Gerencia quite el pagado en la orden (y lo registre en la correcta) antes de confirmar.</div>{% endif %}
+        <form method="POST" action="{{ url_for('oc_reversion_confirmar', rev_id=r.id) }}" class="d-flex flex-wrap gap-2 align-items-center flex-fill"
+              onsubmit="return confirm('¿Confirmar? Se descuenta del stock ({% for x in its %}−{{ x.cantidad }} {{ x.sku }}{{ ', ' if not loop.last }}{% endfor %}), los movimientos salen del Kardex (quedan en Movimientos eliminados) y la orden {{ 'se ANULA por duplicada' if r.modo == 'DUPLICADA' else 'vuelve a Logística para corregirla' }}. No se puede deshacer.')">
+            <input type="hidden" name="volver" value="{{ volver }}">
+            <input name="nota" class="form-control form-control-sm" style="flex:1 1 220px;" maxlength="300" placeholder="Nota (opcional)">
+            <button class="btn btn-sm btn-danger fw-bold"><i class="bi bi-check2-circle"></i> Confirmar reversión</button></form>
+        <form method="POST" action="{{ url_for('oc_reversion_rechazar', rev_id=r.id) }}" onsubmit="const n = prompt('¿Por qué la rechazas? (mínimo 5 letras)'); if (!n || n.trim().length < 5) return false; this.nota.value = n.trim(); return true;">
+            <input type="hidden" name="volver" value="{{ volver }}"><input type="hidden" name="nota">
+            <button class="btn btn-sm btn-outline-secondary"><i class="bi bi-x-lg"></i> Rechazar</button></form>
+        {% else %}<span class="small fw-bold text-warning-emphasis"><i class="bi bi-hourglass-split"></i> Logística debe confirmarla. Todavía no cambió el stock; no se ingresa nada más de esta orden.</span>{% endif %}
+        {% if session.get('user_id') == r.solicitado_por_id or session.get('role') == 'admin' %}
+        <form method="POST" action="{{ url_for('oc_reversion_rechazar', rev_id=r.id) }}" class="ms-auto" onsubmit="return confirm('¿Cancelar este pedido de reversión?')">
+            <input type="hidden" name="volver" value="{{ volver }}"><input type="hidden" name="cancelar" value="1">
+            <button class="btn btn-sm btn-link text-muted">Cancelar pedido</button></form>{% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endfor %}
+{% endmacro %}
+
+{% macro boton(orden, chico=False) %}
+{% if not oc_rev_puede_solicitar(orden) %}
+<button type="button" class="btn {{ 'btn-sm' if chico }} btn-outline-warning fw-bold" data-bs-toggle="modal" data-bs-target="#mRev{{ orden.id }}"
+        title="Se ingresó mal (cantidad / unidad) o es una OC duplicada: pide revertir lo que entró al Kardex. Logística lo confirma.">
+    <i class="bi bi-arrow-counterclockwise"></i> Revertir ingreso al Kardex</button>
+{% endif %}
+{% endmacro %}
+
+{% macro modal(orden, volver) %}
+{% if not oc_rev_puede_solicitar(orden) %}
+{% set its = oc_rev_ingresados(orden) %}{% set ops = oc_dup_opciones(orden) %}
+<div class="modal fade rv-modal" id="mRev{{ orden.id }}" tabindex="-1"><div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable"><div class="modal-content border-0 shadow">
+<form method="POST" action="{{ url_for('oc_reversion_solicitar', orden_id=orden.id) }}" onsubmit="return rvEnviar(this)">
+    <input type="hidden" name="volver" value="{{ volver }}">
+    <div class="modal-header py-2"><h6 class="modal-title fw-bold"><i class="bi bi-arrow-counterclockwise"></i> Revertir ingreso al Kardex · {{ oc_codigo(orden) }}</h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+        <div class="small mb-2" style="background:#fffbeb; border:1px solid #fde68a; border-radius:10px; padding:8px 10px;">
+            <b>¿Cómo funciona?</b> Tú lo pides y <b>Logística lo confirma</b>. Al confirmar: los movimientos salen del Kardex (quedan en <b>Movimientos eliminados</b>),
+            se descuenta el stock y se corrigen los saldos. Hasta entonces <b>no cambia nada</b>.</div>
+        <div class="fw-bold small mb-1">1. ¿Qué pasó con esta orden?</div>
+        <div class="rv-modos mb-3">
+            {% for k, m in modos_reversion.items() %}<label><input type="radio" name="modo" value="{{ k }}" class="form-check-input me-1 rv-modo" {{ 'checked' if loop.first }}>
+                <b><i class="bi {{ m.ico }}"></i> {{ m.txt }}</b><span class="text-muted">{{ m.ayuda }}</span></label>{% endfor %}
+        </div>
+        <div class="rv-dup mb-3 d-none">
+            <div class="fw-bold small mb-1">2. ¿Cuál es la orden CORRECTA (la que se queda)?</div>
+            <select name="original_id" class="form-select form-select-sm">
+                <option value="">— Elige la orden correcta —</option>
+                {% for x in ops %}<option value="{{ x.id }}">{{ x.codigo }} · {{ x.fecha }} · {{ x.total }} · {{ x.estado }}{% if x.nivel %} · coincidencia {{ x.nivel.txt }}{% endif %}</option>{% endfor %}
+            </select>
+            {% if (orden.estado_pago or '') == 'PAGADO' %}<div class="alert alert-warning small py-1 mt-2 mb-0"><i class="bi bi-cash-coin"></i> Esta orden está <b>PAGADA</b>: antes de que Logística confirme, Gerencia debe quitar el pagado en la orden.</div>{% endif %}
+            <div class="form-text">Se revierte <b>todo</b> lo que entró de esta orden y queda anulada como duplicada de la que elijas (las dos quedan enlazadas).</div>
+        </div>
+        <div class="fw-bold small mb-1"><span class="rv-n">2</span>. Lo que se descuenta del Kardex {{ oc_empresas.get(orden.empresa or 'ANCLAJES', {}).get('corto', '') }}</div>
+        <table class="rv-t"><thead><tr><th class="rv-chk"></th><th>Ítem</th><th>Producto</th><th class="text-end">Se descuenta</th><th class="text-end">Stock hoy → después</th></tr></thead><tbody>
+        {% for x in its %}<tr class="{{ 'table-danger' if x.falta_stock }}">
+            <td class="rv-chk"><input type="checkbox" name="item_id" value="{{ x.item_id }}" class="form-check-input rv-it" {{ 'disabled' if x.falta_stock else 'checked' if its|length == 1 }}></td>
+            <td>#{{ x.item }} {{ x.descripcion[:60] }}<div class="text-muted small">OC: {{ x.cantidad_oc|cant }} {{ x.um }}</div></td>
+            <td><b>{{ x.sku or '—' }}</b><div class="text-muted small">{{ x.producto[:50] }}</div></td>
+            <td class="n menos">−{{ x.cantidad }}</td>
+            <td class="n">{% if x.stock_antes is not none %}{{ x.stock_antes }} → <b>{{ x.stock_despues }}</b>{% else %}—{% endif %}
+                {% if x.falta_stock %}<div class="small text-danger fw-bold">No alcanza: ya salió parte</div>{% endif %}</td></tr>{% endfor %}
+        </tbody></table>
+        <div class="fw-bold small mb-1 mt-3"><span class="rv-n2">3</span>. Explica qué pasó *</div>
+        <textarea name="motivo" class="form-control form-control-sm" rows="2" maxlength="500" placeholder="Ej: se digitó 6 MT pero era 1 UN de 6 metros; se ingresó 6 y era 1"></textarea>
+    </div>
+    <div class="modal-footer p-2 bg-light"><button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+        <button class="btn btn-warning btn-sm fw-bold"><i class="bi bi-send"></i> Pedir reversión a Logística</button></div>
+</form>
+</div></div></div>
+{% endif %}
+{% endmacro %}
+
+{#- una sola vez por página, después de los modales -#}
+{% macro js() %}
+<script>
+(function () {
+    function ajustar(f) {
+        const dup = f.querySelector('.rv-modo:checked')?.value === 'DUPLICADA';
+        f.querySelector('.rv-dup').classList.toggle('d-none', !dup);
+        f.querySelectorAll('.rv-chk').forEach(c => c.classList.toggle('d-none', dup));
+        f.querySelectorAll('.rv-it').forEach(c => { if (dup && !c.disabled) c.checked = true; });
+        f.querySelector('.rv-n').textContent = dup ? '3' : '2'; f.querySelector('.rv-n2').textContent = dup ? '4' : '3';
+    }
+    document.querySelectorAll('.rv-modal form').forEach(f => { ajustar(f); f.addEventListener('change', e => { if (e.target.classList.contains('rv-modo')) ajustar(f); }); });
+    window.rvEnviar = function (f) {
+        const dup = f.querySelector('.rv-modo:checked')?.value === 'DUPLICADA';
+        if (dup && !f.original_id.value) { alert('Elige cuál es la orden correcta (la que se queda).'); return false; }
+        if (!dup && !f.querySelector('.rv-it:checked')) { alert('Marca al menos un ítem a revertir.'); return false; }
+        if (dup && f.querySelector('.rv-it:disabled')) { alert('No alcanza el stock de algún producto: primero corrige esas salidas.'); return false; }
+        if ((f.motivo.value || '').trim().length < 10) { alert('Explica qué pasó (mínimo 10 letras).'); return false; }
+        return true;
+    };
+})();
+</script>
+{% endmacro %}

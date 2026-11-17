@@ -17,11 +17,15 @@
 </div>
 <div class="alert alert-light border small py-2"><i class="bi bi-info-circle text-primary"></i> Cuando un movimiento se registró por error, Gerencia o el Jefe de Almacén lo eliminan con un motivo:
     el stock se revierte (una salida vuelve, una entrada se descuenta), se corrige el saldo de los movimientos posteriores y deja de contar en el Kardex y en las estadísticas.
-    Aquí queda la copia completa de lo que se eliminó.</div>
+    Aquí queda la copia completa de lo que se eliminó. Los marcados <span class="badge" style="background:#d97706;">↩ Reversión de OC</span> son ingresos de una orden de compra
+    que se revirtieron (los pide el Jefe de Almacén y los confirma Logística) porque la orden estaba mal digitada o era duplicada.</div>
 <form method="GET" class="row g-2 align-items-end mb-3">
     <div class="col-6 col-md-2"><label class="small fw-bold text-muted">Kardex</label>
         <select name="origen" class="form-select form-select-sm" onchange="this.form.submit()">
             {% for k, t in [('TODOS', 'Los dos'), ('ANCLAJES', 'Anclajes'), ('IMPORTBOLTS', 'Import Bolts')] %}<option value="{{ k }}" {{ 'selected' if k == origen }}>{{ t }}</option>{% endfor %}</select></div>
+    <div class="col-6 col-md-3"><label class="small fw-bold text-muted">Cuáles</label>
+        <select name="tipo" class="form-select form-select-sm" onchange="this.form.submit()">
+            <option value="" {{ 'selected' if not tipo }}>Todos</option><option value="oc" {{ 'selected' if tipo == 'oc' }}>↩ Reversiones de ingreso de OC</option></select></div>
     <div class="col-12 col-md-5"><label class="small fw-bold text-muted">Buscar</label>
         <div class="input-group input-group-sm"><input type="text" name="q" class="form-control" value="{{ buscar }}" placeholder="Código, producto, motivo, quién lo eliminó, cliente / proveedor">
             <button class="btn btn-primary"><i class="bi bi-search"></i></button></div></div>
@@ -44,7 +48,11 @@
             <td class="small">{{ f.proveedor or '-' }}</td>
             <td class="text-center text-nowrap"><b>{{ f.stock_antes }}</b> → <b>{{ f.stock_despues }}</b>
                 {% if f.movimientos_ajustados %}<div class="text-muted" style="font-size:.66rem;">{{ f.movimientos_ajustados }} saldo(s) corregido(s)</div>{% endif %}</td>
-            <td class="mot"><i class="bi bi-chat-left-text text-danger"></i> {{ f.motivo_eliminacion }}</td>
+            <td class="mot">{% if f.orden_compra_id %}{% set oc = ocs.get(f.orden_compra_id) %}
+                <div class="mb-1"><span class="badge" style="background:#d97706;"><i class="bi bi-arrow-counterclockwise"></i> Reversión de OC</span>
+                {% if oc %}{% if ver_oc %}<a class="fw-bold small" href="{{ url_for('oc_detalle', orden_id=oc.id) }}#reversion">{{ oc_codigo(oc) }}</a>{% else %}<b class="small">{{ oc_codigo(oc) }}</b>{% endif %}
+                    {% if oc.estado == 'ANULADA' %}<span class="badge text-bg-secondary" style="font-size:.6rem;">ANULADA{{ ' por duplicada' if oc.anulada_duplicada_de_id }}</span>{% endif %}{% endif %}</div>{% endif %}
+                <i class="bi bi-chat-left-text text-danger"></i> {{ f.motivo_eliminacion }}</td>
         </tr>
         {% else %}
         <tr><td colspan="8" class="text-center text-muted py-5">No hay movimientos eliminados{{ ' con esa búsqueda' if buscar }}.</td></tr>

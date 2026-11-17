@@ -15798,6 +15798,7 @@ MODULOS_EN_ARCHIVOS = [
     'modulos/compras/vaciar_menu.py',
     'modulos/kardex/venta_servicio.py',
     'modulos/kardex/eliminar.py',
+    'modulos/kardex/revertir_oc.py',
     'modulos/avisos/notificaciones.py',
     'modulos/avisos/push.py',
     'modulos/avisos/agente.py',
