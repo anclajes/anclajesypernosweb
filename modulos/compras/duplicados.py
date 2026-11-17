@@ -7,12 +7,13 @@
 # que coincida la factura). Puntaje -> nivel Alta / Media / Baja.
 #   · En vivo al crear/editar (oc_duplicados_revisar) · para ENVIAR a Gerencia con nivel Alta hay que confirmar "no es duplicada"
 #   · En el detalle (antes de aprobar) y en la lista (pestaña "Posibles duplicadas")
-#   · "No es duplicada" descarta el par · "Anular por duplicada" (Gerencia) aunque esté conforme: si no se pagó ni ingresó nada
+#   · "No es duplicada" descarta el par · "Anular por duplicada" (Gerencia y Logística) aunque esté conforme: si no se pagó ni ingresó nada
 # Este archivo NO se importa: app.py lo carga (MODULOS_EN_ARCHIVOS), como si su código estuviera escrito ahí.
 # =====================================================================================
 import unicodedata
 
 DUP_VENTANA_DIAS = 90
+ROLES_ANULAN_DUPLICADA = ['admin', 'logistica']   # pueden "Anular por duplicada" (los mismos de editar órdenes)
 DUP_ESTADOS_FUERA = ('ANULADA', 'RECHAZADA')      # no avisan ni se comparan (una rechazada no se compra; si la corrigen, vuelve a contar)
 DUP_NIVELES = [(70, 'alta', 'Alta', '#dc2626'), (45, 'media', 'Media', '#ea580c'), (25, 'baja', 'Baja', '#64748b')]
 DUP_PALABRAS_FUERA = {'DE', 'LA', 'EL', 'LOS', 'LAS', 'X', 'Y', 'CON', 'PARA', 'POR', 'EN', 'UN', 'UNA', 'DEL', 'AL', 'A'}
@@ -367,6 +368,7 @@ def _dup_bloqueo_anular(orden):
 
 
 app.add_template_global(_dup_bloqueo_anular, 'oc_dup_bloqueo_anular')
+app.add_template_global(ROLES_ANULAN_DUPLICADA, 'roles_anulan_duplicada')
 
 
 def _dup_opciones_original(orden):
@@ -390,12 +392,15 @@ app.add_template_global(_dup_opciones_original, 'oc_dup_opciones')
 
 
 @app.route('/ordenes/<int:orden_id>/anular_duplicada', methods=['POST'])
-@_ruta_oc('aprobar')
+@_ruta_oc('editar')
 def oc_anular_duplicada(orden_id):
-    """GERENCIA: anula una orden que es DUPLICADA de otra, aunque ya esté aprobada o conforme (si no se pagó ni ingresó nada).
+    """GERENCIA o LOGÍSTICA (ROLES_ANULAN_DUPLICADA): anula una orden que es DUPLICADA de otra, aunque ya esté aprobada o conforme (si no se pagó ni ingresó nada).
     Su número no se vuelve a usar; queda en el historial de las dos órdenes y sale del 'Por pagar'."""
     orden = OrdenCompra.query.get_or_404(orden_id)
     volver = url_for('oc_detalle', orden_id=orden.id)
+    if session.get('role') not in ROLES_ANULAN_DUPLICADA:
+        flash('⛔ Solo Gerencia o Logística anulan por duplicada.')
+        return redirect(volver)
     bloqueo = _dup_bloqueo_anular(orden)
     if bloqueo:
         flash(f'⛔ No se puede anular: {bloqueo}.')

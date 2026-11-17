@@ -77,7 +77,7 @@
                 <input name="motivo" class="form-control form-control-sm mb-1" minlength="5" maxlength="200" required placeholder="¿Por qué? Ej: se necesitó más material">
                 <button class="btn btn-sm btn-success w-100">No es duplicada (dejar de avisar)</button></form></div>
             {% endif %}
-            {% if session.get('role') == 'admin' %}
+            {% if session.get('role') in roles_anulan_duplicada %}
             {% for anular, queda, bl in [(a, b, bloqueo_a), (b, a, bloqueo_b)] %}
             <div class="col-12 col-md-6 col-lg-4"><form method="POST" action="{{ url_for('oc_anular_duplicada', orden_id=anular.id) }}" class="border rounded-3 p-2 h-100" style="background:#fef2f2;"
                       onsubmit="return confirm('¿Anular {{ oc_codigo(anular) }} por duplicada? Queda vigente {{ oc_codigo(queda) }}. No se puede deshacer.')">

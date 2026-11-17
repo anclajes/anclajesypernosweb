@@ -335,7 +335,7 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
   y en el navegador); se guarda en `duplicado_revision` y evento DUPLICADO_REVISADO (Gerencia lo ve en el detalle).
 - Detalle (`panel_detalle`, id #duplicados): aviso con las parecidas (Alta/Media), "No es duplicada" (`oc_duplicado_descartar`: el par se
   guarda en `duplicado_descartes` de las dos y deja de avisar) y, para Gerencia, "Anular ESTA por duplicada" / botón "Anular por duplicada".
-- `oc_anular_duplicada` (Gerencia): anula aunque esté aprobada/conforme si NO está pagada y no ingresó nada a Kardex ni Insumos
+- `oc_anular_duplicada` (Gerencia y Logística, `ROLES_ANULAN_DUPLICADA`): anula aunque esté aprobada/conforme si NO está pagada y no ingresó nada a Kardex ni Insumos
   (`_dup_bloqueo_anular`); la entrega de uso directo, la confirmación contable o el seguimiento de OS no lo impiden (no mueven inventario).
   anulacion_categoria = 'DUPLICADA', `anulada_duplicada_de_id` = la original; evento en las dos; sale de Por pagar.
 - Lista: chip "⚠ ¿Duplicada? Alta/Media" junto al estado (al hacer clic: con cuál se parece, qué coincide, "Comparar lado a lado",
@@ -343,7 +343,7 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
   duplicada muestran "↪ duplicada de OC …" (mapeo `anulada_duplicada_de_id`); la original muestra en su detalle cuáles se anularon.
 - RECHAZADAS y ANULADAS no avisan ni se comparan (`DUP_ESTADOS_FUERA`); si una rechazada se corrige, vuelve a contar.
 - Comparar lado a lado: `oc_duplicados_comparar` (?a=&b=, `oc_dup_comparar.html`): datos y productos emparejados en verde, con
-  "No es duplicada" y "Anular X · queda Y" (Gerencia).
+  "No es duplicada" y "Anular X · queda Y" (Gerencia y Logística).
 
 ## Kardex
 

@@ -136,6 +136,7 @@
     {% for x in anuladas %}<a href="{{ url_for('oc_detalle', orden_id=x.id) }}" class="fw-bold">{{ oc_codigo(x) }}</a>{{ (' (' ~ x.fecha_anulacion.strftime('%d/%m/%Y') ~ ')') if x.fecha_anulacion }}{{ ', ' if not loop.last }}{% endfor %}</div>{% endif %}
 {% set rev = oc_dup_revision(orden) %}
 {% set es_admin = session.get('role') == 'admin' %}
+{% set anula = session.get('role') in roles_anulan_duplicada %}
 {% if orden.estado == 'ANULADA' and orden.anulada_duplicada_de_id %}
 <div class="dup-box baja mb-2" id="duplicados"><div class="dup-t"><i class="bi bi-files"></i> Anulada por DUPLICADA de
     <a href="{{ url_for('oc_detalle', orden_id=orden.anulada_duplicada_de_id) }}">la orden original</a></div>
@@ -158,7 +159,7 @@
             {% for i in x.prods %}{{ i.d }} · {{ i.c }} {{ i.um }}{{ ' · ' if not loop.last }}{% endfor %}{{ (' · y ' ~ (x.n_items - x.prods|length) ~ ' más') if x.n_items > x.prods|length }}</div>
         <div class="d-flex flex-wrap gap-1 mt-2">
             {% if p.observar or p.editar or p.reeditar or es_admin %}<button type="button" class="btn btn-sm btn-outline-success py-0" data-bs-toggle="modal" data-bs-target="#dupNo{{ x.id }}"><i class="bi bi-check2"></i> No es duplicada</button>{% endif %}
-            {% if es_admin and not oc_dup_bloqueo_anular(orden) %}<button type="button" class="btn btn-sm btn-outline-danger py-0" data-bs-toggle="modal" data-bs-target="#dupAnular" data-original="{{ x.id }}"><i class="bi bi-slash-circle"></i> Anular ESTA por duplicada</button>{% endif %}
+            {% if anula and not oc_dup_bloqueo_anular(orden) %}<button type="button" class="btn btn-sm btn-outline-danger py-0" data-bs-toggle="modal" data-bs-target="#dupAnular" data-original="{{ x.id }}"><i class="bi bi-slash-circle"></i> Anular ESTA por duplicada</button>{% endif %}
         </div>
     </div>
     <div class="modal fade" id="dupNo{{ x.id }}" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content border-0 shadow">
@@ -175,12 +176,12 @@
 {% elif rev %}
 <div class="dup-ok mb-2" id="duplicados"><i class="bi bi-person-check"></i> Se revisó al enviarla que NO es duplicada de {{ rev.codigos|join(', ') }} ({{ rev.por }}, {{ rev.fecha }}): “{{ rev.motivo }}”</div>
 {% endif %}
-{% if es_admin and orden.estado != 'ANULADA' %}{{ modal_anular(orden) }}{% endif %}
+{% if anula and orden.estado != 'ANULADA' %}{{ modal_anular(orden) }}{% endif %}
 {% endmacro %}
 
 {#- Botón para Gerencia en las acciones (siempre a la mano, aunque no salte el aviso) -#}
 {% macro boton_anular(orden) %}
-{% if session.get('role') == 'admin' and orden.estado not in ['ANULADA', 'BORRADOR'] %}{% set bl = oc_dup_bloqueo_anular(orden) %}
+{% if session.get('role') in roles_anulan_duplicada and orden.estado not in ['ANULADA', 'BORRADOR'] %}{% set bl = oc_dup_bloqueo_anular(orden) %}
 <button type="button" class="btn btn-outline-danger" {{ 'disabled' if bl }} data-bs-toggle="modal" data-bs-target="#dupAnular" title="{{ ('No se puede: ' ~ bl) if bl else 'Es la misma compra que otra orden: se anula esta (aunque ya esté aprobada o conforme)' }}">
     <i class="bi bi-files"></i> Anular por duplicada</button>
 {% endif %}
