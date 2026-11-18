@@ -7081,7 +7081,7 @@ def admin_maestro_editar(sku):
     if familia_nueva not in familias_validas:
         return {'status': 'error', 'msg': f'"{familia_nueva}" no es una familia reconocida. '
                                            f'Elige una de la lista (para crear una familia nueva, usa '
-                                           f'"Nuevo Producto").'}
+                                           f'el botón "Nueva familia" del Maestro).'}
 
     # Calidad OBLIGATORIA y del catálogo (igual que en "Nuevo Producto"): evita dejarla vacía o crear
     # variantes por error de tipeo ("GALVANIZADO" vs "GALVANISADO"). Si coincide ignorando
@@ -15799,6 +15799,7 @@ MODULOS_EN_ARCHIVOS = [
     'modulos/kardex/venta_servicio.py',
     'modulos/kardex/eliminar.py',
     'modulos/kardex/revertir_oc.py',
+    'modulos/kardex/maestro_familias.py',
     'modulos/avisos/notificaciones.py',
     'modulos/avisos/push.py',
     'modulos/avisos/agente.py',

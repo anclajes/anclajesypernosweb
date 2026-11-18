@@ -86,6 +86,14 @@
             <button type="button" class="btn btn-outline-dark btn-sm" id="btnImprimirCodigosSeleccionados" disabled onclick="imprimirCodigosSeleccionados()">
                 <i class="bi bi-printer-fill"></i> Imprimir códigos seleccionados (<span id="contadorSeleccionadosMaestro">0</span>)
             </button>
+            {#- v29: familias (modulos/kardex/maestro_familias.py) -#}
+            <button type="button" class="btn btn-outline-primary btn-sm fw-bold" id="btnTraspasarFamilia" disabled onclick="abrirTraspasoFamilia()"
+                    title="Pasa los productos marcados (de cualquier página) a otra familia, en el Maestro, Anclajes e ImportBolts">
+                <i class="bi bi-folder-symlink"></i> Pasar a otra familia (<span id="contadorTraspasoFamilia">0</span>)
+            </button>
+            <button type="button" class="btn btn-outline-success btn-sm" data-bs-toggle="modal" data-bs-target="#modalNuevaFamilia" title="Crear una familia nueva sin tener que crear un producto">
+                <i class="bi bi-folder-plus"></i> Nueva familia
+            </button>
         </div>
         {% endif %}
     </div>
@@ -399,6 +407,9 @@ function actualizarContadorSeleccionadosMaestro() {
     const boton = document.getElementById('btnImprimirCodigosSeleccionados');
     if (contador) contador.textContent = total;
     if (boton) boton.disabled = total === 0;
+    const cTr = document.getElementById('contadorTraspasoFamilia'), bTr = document.getElementById('btnTraspasarFamilia');
+    if (cTr) cTr.textContent = total;
+    if (bTr) bTr.disabled = total === 0;
 
     // Si algunas (pero no todas) las filas visibles están marcadas, el checkbox "Todo"
     // de esta página queda en estado indeterminado en vez de marcado u ocultamente
@@ -493,6 +504,93 @@ function mantenerMayusYCursor(el) {
             el.setSelectionRange(inicio, fin);
         }
     }
+}
+</script>
+{% set fams = maestro_familias_conteo() %}
+<style>
+    .fam-lista { max-height: 220px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 10px; font-size: .8rem; }
+    .fam-lista div { display: flex; justify-content: space-between; padding: 4px 10px; border-bottom: 1px solid #f1f5f9; }
+    .fam-lista div.vacia { color: #64748b; font-style: italic; }
+    .fam-skus { display: flex; flex-wrap: wrap; gap: 4px; max-height: 130px; overflow-y: auto; }
+    .fam-skus span { background: #eef2ff; color: #1e3a8a; border-radius: 6px; padding: 1px 7px; font-size: .72rem; font-weight: 700; }
+    .fam-modo { border: 2px solid #e2e8f0; border-radius: 12px; padding: 10px 12px; display: block; cursor: pointer; }
+    .fam-modo:has(input:checked) { border-color: #0B3D91; background: #f5f8ff; }
+</style>
+<div class="modal fade" id="modalNuevaFamilia" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+    <div class="modal-header py-2"><h6 class="modal-title fw-bold"><i class="bi bi-folder-plus text-success"></i> Nueva familia</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+        <label class="small fw-bold">Nombre de la familia *</label>
+        <input type="text" id="famNuevaNombre" class="form-control" maxlength="50" placeholder="Ej: BARRA ROSCADA INOX. 316" oninput="mantenerMayusYCursor(this)">
+        <div class="form-text">Se crea en Anclajes e ImportBolts, sin productos. Luego pásale productos con <b>"Pasar a otra familia"</b> o elígela en <b>"Nuevo Producto"</b>.</div>
+        <div class="small fw-bold mt-3 mb-1">Familias que ya existen ({{ fams|length }})</div>
+        <div class="fam-lista">{% for f in fams %}<div class="{{ 'vacia' if not f.n }}"><span>{{ f.nombre }}</span><span>{{ f.n if f.n else 'sin productos' }}</span></div>{% endfor %}</div>
+    </div>
+    <div class="modal-footer p-2"><button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-success btn-sm fw-bold" onclick="crearFamiliaMaestro(this)"><i class="bi bi-check2"></i> Crear familia</button></div>
+</div></div></div>
+
+<div class="modal fade" id="modalTraspasoFamilia" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-lg"><div class="modal-content">
+    <div class="modal-header py-2"><h6 class="modal-title fw-bold"><i class="bi bi-folder-symlink text-primary"></i> Pasar <span id="famTrN">0</span> producto(s) a otra familia</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+        <div class="small fw-bold mb-1">Productos marcados <span class="fw-normal text-muted">(de todas las páginas; para cambiarlos, cierra y marca / desmarca en la lista)</span></div>
+        <div class="fam-skus mb-3" id="famTrSkus"></div>
+        <div class="small fw-bold mb-1">¿A qué familia pasan?</div>
+        <div class="row g-2">
+            <div class="col-md-7"><label class="fam-modo"><input type="radio" name="famTrModo" value="existe" class="form-check-input me-1" checked onchange="famTrModo()"> <b>Una familia que ya existe</b>
+                <select id="famTrDestino" class="form-select form-select-sm mt-2">
+                    <option value="">— Elige la familia —</option>
+                    {% for f in fams %}<option value="{{ f.nombre }}">{{ f.nombre }} ({{ f.n if f.n else 'vacía' }})</option>{% endfor %}
+                </select></label></div>
+            <div class="col-md-5"><label class="fam-modo"><input type="radio" name="famTrModo" value="nueva" class="form-check-input me-1" onchange="famTrModo()"> <b>Una familia nueva</b>
+                <input type="text" id="famTrNueva" class="form-control form-control-sm mt-2" maxlength="50" placeholder="Nombre de la familia nueva" oninput="mantenerMayusYCursor(this)" disabled></label></div>
+        </div>
+        <div class="form-text mt-2">Cambia la familia en el <b>Maestro, Anclajes e ImportBolts</b>; el código, la descripción, la calidad, el stock y los movimientos no cambian.
+            Queda en el historial del Maestro. Las órdenes de compra ya hechas no se tocan.</div>
+    </div>
+    <div class="modal-footer p-2"><button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-primary btn-sm fw-bold" onclick="traspasarFamiliaMaestro(this)"><i class="bi bi-folder-symlink"></i> Pasar a esa familia</button></div>
+</div></div></div>
+<script>
+function famEnviar(url, datos, boton) {
+    boton.disabled = true;
+    return fetch(url, { method: 'POST', body: new URLSearchParams(datos), headers: { 'X-Requested-With': 'fetch' } })
+        .then(r => r.json()).finally(() => { boton.disabled = false; });
+}
+function crearFamiliaMaestro(boton) {
+    const nombre = document.getElementById('famNuevaNombre').value.trim();
+    if (!nombre) { Swal.fire({ icon: 'warning', title: 'Escribe el nombre de la familia' }); return; }
+    famEnviar({{ url_for('admin_maestro_familia_nueva')|tojson }}, { nombre }, boton).then(d => {
+        if (d.status !== 'success') { Swal.fire({ icon: 'error', title: 'No se creó', text: d.msg }); return; }
+        Swal.fire({ icon: 'success', title: 'Familia creada', text: d.msg }).then(() => location.reload());
+    }).catch(() => Swal.fire({ icon: 'error', title: 'Error de conexión' }));
+}
+function famTrModo() {
+    const nueva = document.querySelector('input[name=famTrModo]:checked').value === 'nueva';
+    document.getElementById('famTrNueva').disabled = !nueva; document.getElementById('famTrDestino').disabled = nueva;
+    (nueva ? document.getElementById('famTrNueva') : document.getElementById('famTrDestino')).focus();
+}
+function abrirTraspasoFamilia() {
+    const skus = obtenerSkusSeleccionadosGlobal();
+    if (!skus.length) return;
+    document.getElementById('famTrN').textContent = skus.length;
+    const cont = document.getElementById('famTrSkus'); cont.innerHTML = '';
+    skus.forEach(s => { const e = document.createElement('span'); e.textContent = s; cont.appendChild(e); });
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('modalTraspasoFamilia')).show();
+}
+function traspasarFamiliaMaestro(boton) {
+    const skus = obtenerSkusSeleccionadosGlobal();
+    const nueva = document.querySelector('input[name=famTrModo]:checked').value === 'nueva';
+    const familia = (nueva ? document.getElementById('famTrNueva') : document.getElementById('famTrDestino')).value.trim();
+    if (!familia) { Swal.fire({ icon: 'warning', title: nueva ? 'Escribe el nombre de la familia nueva' : 'Elige la familia a la que pasan' }); return; }
+    Swal.fire({ icon: 'question', title: `¿Pasar ${skus.length} producto(s) a "${familia}"?`, text: 'Se cambia en el Maestro, Anclajes e ImportBolts.',
+                showCancelButton: true, confirmButtonText: 'Sí, pasar', cancelButtonText: 'Cancelar' }).then(r => {
+        if (!r.isConfirmed) return;
+        famEnviar({{ url_for('admin_maestro_familia_traspasar')|tojson }}, { skus: skus.join(','), familia, es_nueva: nueva ? '1' : '' }, boton).then(d => {
+            if (d.status !== 'success') { Swal.fire({ icon: 'error', title: 'No se pasó', text: d.msg }); return; }
+            guardarSkusSeleccionadosGlobal([]);
+            Swal.fire({ icon: 'success', title: 'Listo', text: d.msg }).then(() => location.reload());
+        }).catch(() => Swal.fire({ icon: 'error', title: 'Error de conexión' }));
+    });
 }
 </script>
 <div class="modal fade" id="modalEditarMaestro" tabindex="-1">

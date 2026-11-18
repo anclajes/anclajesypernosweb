@@ -50,6 +50,11 @@ modulos/
     eliminar.py          ELIMINAR un movimiento registrado por error (Gerencia y Jefe de Almacén): revierte el stock, corrige
                          los saldos posteriores y guarda la copia en "Movimientos eliminados" (/kardex/eliminados)
     revertir_oc.py       REVERTIR EL INGRESO AL KARDEX de una OC (v28): lo pide Almacén, lo confirma Logística (ver "## Kardex")
+    maestro_familias.py  MAESTRO · FAMILIAS (v29): "Nueva familia" sola (Category + CategoryImportBolts, máx. 50 letras, sin
+                         repetir ignorando mayúsc./espacios) y "Pasar a otra familia" de los productos marcados con los checks del
+                         catálogo (misma selección en localStorage que "Imprimir códigos"; máx. 500): cambia MaestroProducto.familia,
+                         Product.categoria y ProductImportBolts.categoria, con MaestroCambioLog campo 'familia' (lote FAM-...).
+                         Global `maestro_familias_conteo()` (familias con cuántos productos; 0 = vacía). UI en admin_maestro.html.
     venta_servicio.py    salida a MAESTRANZA / TRANSFORMACIÓN que sale como VENTA (cliente, OC del cliente opcional y
                          editable después) y su vínculo con las Órdenes de Servicio (desde el movimiento, el Kardex o la OS)
   avisos/              CAMPANA Y AVISOS
