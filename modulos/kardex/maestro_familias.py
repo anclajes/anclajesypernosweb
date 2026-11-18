@@ -24,15 +24,26 @@ def _familias_catalogo_conteo():
 app.add_template_global(_familias_catalogo_conteo, 'maestro_familias_conteo')
 
 
+def _familia_norm(t):
+    """Para comparar familias: mayúsculas, sin acentos, sin puntos / comas / guiones y sin espacios de más
+    ("TUERCA HEX. INOX." = "tuerca hex inox"). Igual que famNorm() en admin_maestro.html."""
+    import unicodedata
+    t = unicodedata.normalize('NFD', (t or '').upper())
+    t = ''.join(c for c in t if unicodedata.category(c) != 'Mn')
+    return ' '.join(re.sub(r"[.,;:\-_/()'\"]+", ' ', t).split())
+
+
 def _familia_validar_nueva(nombre):
-    """(nombre limpio, None) o (None, error). No puede existir ya (sin importar mayúsculas / espacios) en Anclajes ni ImportBolts."""
+    """(nombre limpio, None) o (None, error). No puede existir ya (sin importar mayúsculas, acentos, puntos ni espacios)
+    en Anclajes ni ImportBolts."""
     nombre = ' '.join(_texto_limpio(nombre or '').upper().split())
     if not nombre:
         return None, 'Escribe el nombre de la familia nueva.'
     if len(nombre) > FAMILIA_MAX_LARGO:
         return None, f'El nombre es muy largo ({len(nombre)} letras): máximo {FAMILIA_MAX_LARGO}.'
+    clave = _familia_norm(nombre)
     for modelo in (Category, CategoryImportBolts):
-        ya = next((c.nombre for c in modelo.query.all() if ' '.join((c.nombre or '').upper().split()) == nombre), None)
+        ya = next((c.nombre for c in modelo.query.all() if _familia_norm(c.nombre) == clave), None)
         if ya:
             return None, f'La familia "{nombre}" ya existe como "{ya}": elígela de la lista.'
     return nombre, None
@@ -123,3 +134,14 @@ def admin_maestro_familia_traspasar():
         extra.append(f'{len(no_estan)} no están en el Maestro: {", ".join(no_estan[:5])}')
     return {'status': 'success', 'movidos': len(mover), 'familia': destino,
             'msg': f'✅ {len(mover)} producto(s) pasaron a "{destino}" (Maestro, Anclajes e ImportBolts).' + (f' ({"; ".join(extra)})' if extra else '')}
+
+
+@app.route('/admin/maestro/familia/origen', methods=['POST'])
+def admin_maestro_familia_origen():
+    """v29.1 · De qué familia vienen los productos marcados (para mostrarlo antes de pasarlos): [{sku, nombre, familia}]."""
+    if session.get('role') not in ROLES_FAMILIAS_MAESTRO:
+        return {'status': 'error', 'msg': 'No autorizado'}, 403
+    skus = list(dict.fromkeys(s.strip().upper() for s in (request.form.get('skus') or '').split(',') if s.strip()))[:TRASPASO_MAX]
+    ms = {m.sku: m for m in MaestroProducto.query.filter(MaestroProducto.sku.in_(skus)).all()} if skus else {}
+    items = [{'sku': s, 'nombre': ms[s].nombre if s in ms else '', 'familia': ms[s].familia if s in ms else None} for s in skus]
+    return {'status': 'success', 'items': items}

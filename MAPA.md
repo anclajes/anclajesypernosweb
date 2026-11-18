@@ -55,6 +55,9 @@ modulos/
                          catálogo (misma selección en localStorage que "Imprimir códigos"; máx. 500): cambia MaestroProducto.familia,
                          Product.categoria y ProductImportBolts.categoria, con MaestroCambioLog campo 'familia' (lote FAM-...).
                          Global `maestro_familias_conteo()` (familias con cuántos productos; 0 = vacía). UI en admin_maestro.html.
+                         v29.1: mientras se escribe busca familias PARECIDAS (JS famParecido: sin acentos/puntos, palabras
+                         en común, errores de tipeo) y bloquea la igual; el servidor compara con `_familia_norm`. "Pasar a otra
+                         familia" muestra la familia de ORIGEN (`admin_maestro_familia_origen`) y "De: X ➜ A: Y".
     venta_servicio.py    salida a MAESTRANZA / TRANSFORMACIÓN que sale como VENTA (cliente, OC del cliente opcional y
                          editable después) y su vínculo con las Órdenes de Servicio (desde el movimiento, el Kardex o la OS)
   avisos/              CAMPANA Y AVISOS

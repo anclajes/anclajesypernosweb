@@ -507,43 +507,68 @@ function mantenerMayusYCursor(el) {
 }
 </script>
 {% set fams = maestro_familias_conteo() %}
+{#- v29 / v29.1: familias (modulos/kardex/maestro_familias.py). Mientras se escribe, busca familias PARECIDAS (sin acentos,
+    puntos ni espacios de más; también con errores de tipeo) para no crear duplicadas. -#}
 <style>
-    .fam-lista { max-height: 220px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 10px; font-size: .8rem; }
-    .fam-lista div { display: flex; justify-content: space-between; padding: 4px 10px; border-bottom: 1px solid #f1f5f9; }
-    .fam-lista div.vacia { color: #64748b; font-style: italic; }
-    .fam-skus { display: flex; flex-wrap: wrap; gap: 4px; max-height: 130px; overflow-y: auto; }
-    .fam-skus span { background: #eef2ff; color: #1e3a8a; border-radius: 6px; padding: 1px 7px; font-size: .72rem; font-weight: 700; }
-    .fam-modo { border: 2px solid #e2e8f0; border-radius: 12px; padding: 10px 12px; display: block; cursor: pointer; }
+    .fam-lista { max-height: 230px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 10px; font-size: .8rem; background: #fff; }
+    .fam-lista .f { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 5px 10px; border-bottom: 1px solid #f1f5f9; }
+    .fam-lista .f.vacia .nm { color: #64748b; font-style: italic; }
+    .fam-lista .f.clic { cursor: pointer; } .fam-lista .f.clic:hover { background: #f5f8ff; }
+    .fam-lista .f.sel { background: #dbeafe; font-weight: 700; }
+    .fam-lista .f.orig { opacity: .55; cursor: not-allowed; }
+    .fam-lista .f .n { color: #64748b; font-size: .72rem; white-space: nowrap; }
+    .fam-lista mark { background: #fef08a; padding: 0 1px; border-radius: 3px; }
+    .fam-pct { font-size: .62rem; font-weight: 800; border-radius: 5px; padding: 0 5px; color: #fff; }
+    .fam-aviso { font-size: .8rem; border-radius: 8px; padding: 6px 10px; margin-top: 6px; display: none; }
+    .fam-aviso.ya { display: block; background: #fef2f2; border: 1px solid #fca5a5; color: #991b1b; }
+    .fam-aviso.par { display: block; background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
+    .fam-aviso.ok { display: block; background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; }
+    .fam-orig { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 10px 12px; }
+    .fam-orig .chip { display: inline-flex; gap: 6px; align-items: center; background: #fff; border: 2px solid #94a3b8; border-radius: 10px; padding: 3px 10px; font-weight: 800; font-size: .84rem; margin: 2px 4px 2px 0; }
+    .fam-orig .chip b { background: #475569; color: #fff; border-radius: 6px; padding: 0 6px; font-size: .72rem; }
+    .fam-orig table { width: 100%; font-size: .76rem; } .fam-orig td { padding: 2px 6px; border-top: 1px solid #f1f5f9; }
+    .fam-flecha { font-size: .9rem; font-weight: 800; color: #0B3D91; background: #eef4ff; border-radius: 10px; padding: 8px 12px; margin-top: 10px; }
+    .fam-modo { border: 2px solid #e2e8f0; border-radius: 12px; padding: 10px 12px; display: block; cursor: pointer; height: 100%; }
     .fam-modo:has(input:checked) { border-color: #0B3D91; background: #f5f8ff; }
 </style>
 <div class="modal fade" id="modalNuevaFamilia" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content">
     <div class="modal-header py-2"><h6 class="modal-title fw-bold"><i class="bi bi-folder-plus text-success"></i> Nueva familia</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
     <div class="modal-body">
         <label class="small fw-bold">Nombre de la familia *</label>
-        <input type="text" id="famNuevaNombre" class="form-control" maxlength="50" placeholder="Ej: BARRA ROSCADA INOX. 316" oninput="mantenerMayusYCursor(this)">
+        <input type="text" id="famNuevaNombre" class="form-control" maxlength="50" autocomplete="off" placeholder="Ej: BARRA ROSCADA INOX. 316"
+               oninput="mantenerMayusYCursor(this); famPintarNueva()">
+        <div class="fam-aviso" id="famNuevaAviso"></div>
         <div class="form-text">Se crea en Anclajes e ImportBolts, sin productos. Luego pásale productos con <b>"Pasar a otra familia"</b> o elígela en <b>"Nuevo Producto"</b>.</div>
-        <div class="small fw-bold mt-3 mb-1">Familias que ya existen ({{ fams|length }})</div>
-        <div class="fam-lista">{% for f in fams %}<div class="{{ 'vacia' if not f.n }}"><span>{{ f.nombre }}</span><span>{{ f.n if f.n else 'sin productos' }}</span></div>{% endfor %}</div>
+        <div class="small fw-bold mt-3 mb-1" id="famNuevaTit">Familias que ya existen ({{ fams|length }})</div>
+        <div class="fam-lista" id="famNuevaLista"></div>
     </div>
     <div class="modal-footer p-2"><button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
-        <button type="button" class="btn btn-success btn-sm fw-bold" onclick="crearFamiliaMaestro(this)"><i class="bi bi-check2"></i> Crear familia</button></div>
+        <button type="button" class="btn btn-success btn-sm fw-bold" id="famNuevaBtn" onclick="crearFamiliaMaestro(this)"><i class="bi bi-check2"></i> Crear familia</button></div>
 </div></div></div>
 
-<div class="modal fade" id="modalTraspasoFamilia" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-lg"><div class="modal-content">
+<div class="modal fade" id="modalTraspasoFamilia" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable"><div class="modal-content">
     <div class="modal-header py-2"><h6 class="modal-title fw-bold"><i class="bi bi-folder-symlink text-primary"></i> Pasar <span id="famTrN">0</span> producto(s) a otra familia</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
     <div class="modal-body">
-        <div class="small fw-bold mb-1">Productos marcados <span class="fw-normal text-muted">(de todas las páginas; para cambiarlos, cierra y marca / desmarca en la lista)</span></div>
-        <div class="fam-skus mb-3" id="famTrSkus"></div>
-        <div class="small fw-bold mb-1">¿A qué familia pasan?</div>
+        <div class="fam-orig mb-3">
+            <div class="small fw-bold mb-1"><i class="bi bi-box-arrow-up-right"></i> Familia de ORIGEN (de dónde salen)</div>
+            <div id="famTrOrigen"><span class="text-muted small">Buscando…</span></div>
+            <details class="mt-1"><summary class="small text-primary" style="cursor:pointer;">Ver los productos marcados</summary>
+                <div style="max-height:170px; overflow-y:auto;"><table id="famTrTabla"></table></div></details>
+            <div class="small text-muted mt-1">Marcados en todas las páginas; para cambiarlos, cierra y marca / desmarca en la lista.</div>
+        </div>
+        <div class="small fw-bold mb-1">¿A qué familia pasan? (DESTINO)</div>
         <div class="row g-2">
             <div class="col-md-7"><label class="fam-modo"><input type="radio" name="famTrModo" value="existe" class="form-check-input me-1" checked onchange="famTrModo()"> <b>Una familia que ya existe</b>
-                <select id="famTrDestino" class="form-select form-select-sm mt-2">
-                    <option value="">— Elige la familia —</option>
-                    {% for f in fams %}<option value="{{ f.nombre }}">{{ f.nombre }} ({{ f.n if f.n else 'vacía' }})</option>{% endfor %}
-                </select></label></div>
+                <input type="text" id="famTrBuscar" class="form-control form-control-sm mt-2" autocomplete="off" placeholder="Escribe para buscar la familia…" oninput="mantenerMayusYCursor(this); famPintarDestino()">
+                <input type="hidden" id="famTrDestino">
+                <div class="fam-lista mt-1" id="famTrLista" style="max-height:190px;"></div></label></div>
             <div class="col-md-5"><label class="fam-modo"><input type="radio" name="famTrModo" value="nueva" class="form-check-input me-1" onchange="famTrModo()"> <b>Una familia nueva</b>
-                <input type="text" id="famTrNueva" class="form-control form-control-sm mt-2" maxlength="50" placeholder="Nombre de la familia nueva" oninput="mantenerMayusYCursor(this)" disabled></label></div>
+                <input type="text" id="famTrNueva" class="form-control form-control-sm mt-2" maxlength="50" autocomplete="off" placeholder="Nombre de la familia nueva"
+                       oninput="mantenerMayusYCursor(this); famPintarTrNueva()" disabled>
+                <div class="fam-aviso" id="famTrNuevaAviso"></div>
+                <div class="fam-lista mt-1" id="famTrNuevaLista" style="max-height:150px; display:none;"></div></label></div>
         </div>
+        <div class="fam-flecha" id="famTrFlecha"></div>
         <div class="form-text mt-2">Cambia la familia en el <b>Maestro, Anclajes e ImportBolts</b>; el código, la descripción, la calidad, el stock y los movimientos no cambian.
             Queda en el historial del Maestro. Las órdenes de compra ya hechas no se tocan.</div>
     </div>
@@ -551,38 +576,148 @@ function mantenerMayusYCursor(el) {
         <button type="button" class="btn btn-primary btn-sm fw-bold" onclick="traspasarFamiliaMaestro(this)"><i class="bi bi-folder-symlink"></i> Pasar a esa familia</button></div>
 </div></div></div>
 <script>
+const FAMS = {{ fams|tojson }};
+let famOrigen = {};          // {familia: n} de los productos marcados
+// --- parecido entre nombres de familia: sin acentos, puntos, guiones ni espacios de más; palabras en común y errores de tipeo
+function famNorm(t) { return (t || '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[.,;:\-_/()'"]+/g, ' ').replace(/\s+/g, ' ').trim(); }
+function famLev(a, b) {
+    if (a === b) return 0; const m = a.length, n = b.length; if (!m || !n) return m || n;
+    let prev = Array.from({ length: n + 1 }, (_, j) => j);
+    for (let i = 1; i <= m; i++) { const cur = [i]; for (let j = 1; j <= n; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); prev = cur; }
+    return prev[n];
+}
+function famParecido(q, f) {
+    const a = famNorm(q), b = famNorm(f); if (!a || !b) return 0;
+    if (a === b) return 100;
+    if (a.replace(/ /g, '') === b.replace(/ /g, '')) return 98;
+    const ta = a.split(' '), tb = b.split(' ');
+    const igual = (x, y) => x === y || (x.length >= 3 && y.length >= 3 && (x.startsWith(y) || y.startsWith(x))) || (x.length >= 5 && famLev(x, y) <= 1);
+    const comunes = ta.filter(x => tb.some(y => igual(x, y))).length;
+    let p = Math.round(80 * comunes / Math.max(ta.length, tb.length));
+    if (b.includes(a) || a.includes(b)) p = Math.max(p, 70);
+    const lev = 1 - famLev(a, b) / Math.max(a.length, b.length);
+    p = Math.max(p, Math.round(lev * 90));
+    if (comunes === ta.length && ta.length) p = Math.max(p, 60);       // todo lo escrito está en la familia
+    return Math.min(p, 97);
+}
+function famResaltar(nombre, q) {
+    const pal = famNorm(q).split(' ').filter(x => x.length >= 2);
+    const esc = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+    let h = esc(nombre);
+    pal.forEach(w => { h = h.replace(new RegExp('(' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'ig'), '<mark>$1</mark>'); });
+    return h;
+}
+function famColor(p) { return p >= 95 ? '#dc2626' : p >= 70 ? '#d97706' : '#64748b'; }
+function famBuscar(q, min) { return FAMS.map(f => ({ ...f, p: famParecido(q, f.nombre) })).filter(f => f.p >= min).sort((x, y) => y.p - x.p || x.nombre.localeCompare(y.nombre)); }
+function famFila(f, q, extra) {
+    const pct = q ? `<span class="fam-pct" style="background:${famColor(f.p)}">${f.p >= 95 ? 'igual' : f.p + '%'}</span>` : '';
+    return `<div class="f ${f.n ? '' : 'vacia'} ${extra || ''}" data-fam="${f.nombre.replace(/"/g, '&quot;')}"><span class="nm">${famResaltar(f.nombre, q)}</span>` +
+           `<span class="n">${pct} ${f.n ? f.n + ' prod.' : 'sin productos'}</span></div>`;
+}
+// aviso de "ya existe / parecidas" para un nombre de familia NUEVA
+function famAviso(q, avisoEl) {
+    const r = famBuscar(q, 45), igual = r.find(f => f.p >= 95);
+    avisoEl.className = 'fam-aviso';
+    if (!famNorm(q)) return { igual: null, r: [] };
+    if (igual) { avisoEl.className = 'fam-aviso ya'; avisoEl.innerHTML = `<b>Ya existe:</b> "${igual.nombre}" (${igual.n} prod.). Elígela en vez de crearla otra vez.`; }
+    else if (r.length) { avisoEl.className = 'fam-aviso par'; avisoEl.innerHTML = `<b>Hay ${r.length} familia(s) parecida(s)</b>: revisa que no sea una de estas antes de crearla.`; }
+    else { avisoEl.className = 'fam-aviso ok'; avisoEl.innerHTML = '✓ No hay ninguna parecida: es una familia nueva.'; }
+    return { igual, r };
+}
+function famPintarNueva() {
+    const q = document.getElementById('famNuevaNombre').value, lista = document.getElementById('famNuevaLista');
+    const { igual, r } = famAviso(q, document.getElementById('famNuevaAviso'));
+    document.getElementById('famNuevaBtn').disabled = !!igual;
+    const ver = famNorm(q) ? r : FAMS.map(f => ({ ...f, p: 0 }));
+    document.getElementById('famNuevaTit').textContent = famNorm(q) ? (r.length ? 'Familias parecidas' : 'Familias parecidas: ninguna') : `Familias que ya existen (${FAMS.length})`;
+    lista.innerHTML = ver.map(f => famFila(f, famNorm(q) ? q : '')).join('') || '<div class="f text-muted">—</div>';
+}
+function famPintarDestino() {
+    const q = document.getElementById('famTrBuscar').value, sel = document.getElementById('famTrDestino').value;
+    const ver = famNorm(q) ? famBuscar(q, 35) : FAMS.map(f => ({ ...f, p: 0 }));
+    const soloUna = Object.keys(famOrigen).length === 1 ? Object.keys(famOrigen)[0] : null;
+    document.getElementById('famTrLista').innerHTML = ver.map(f => famFila(f, famNorm(q) ? q : '',
+        (f.nombre === soloUna ? 'orig' : 'clic') + (f.nombre === sel ? ' sel' : ''))).join('') || '<div class="f text-muted">Ninguna se parece. ¿Es una familia nueva? Usa la opción de la derecha.</div>';
+    famPintarFlecha();
+}
+function famPintarTrNueva() {
+    const q = document.getElementById('famTrNueva').value, lista = document.getElementById('famTrNuevaLista');
+    const { r } = famAviso(q, document.getElementById('famTrNuevaAviso'));
+    lista.style.display = r.length ? '' : 'none';
+    lista.innerHTML = r.map(f => famFila(f, q, 'clic')).join('');
+    famPintarFlecha();
+}
+function famDestinoActual() {
+    const nueva = document.querySelector('input[name=famTrModo]:checked').value === 'nueva';
+    return { nueva, familia: (nueva ? document.getElementById('famTrNueva') : document.getElementById('famTrDestino')).value.trim() };
+}
+function famPintarFlecha() {
+    const { nueva, familia } = famDestinoActual();
+    const de = Object.entries(famOrigen).map(([f, n]) => `${f} (${n})`).join(' + ') || '…';
+    document.getElementById('famTrFlecha').innerHTML = `<span class="text-muted fw-normal small">De:</span> ${de} <span class="mx-1">➜</span> <span class="text-muted fw-normal small">A:</span> ${familia ? (familia + (nueva ? ' <span class="badge bg-success">NUEVA</span>' : '')) : '<span class="text-muted fw-normal">elige el destino</span>'}`;
+}
+function famElegir(nombre) {
+    if (Object.keys(famOrigen).length === 1 && famOrigen[nombre]) return;       // ya están todas ahí
+    document.querySelector('input[name=famTrModo][value=existe]').checked = true; famTrModo(true);
+    document.getElementById('famTrDestino').value = nombre; document.getElementById('famTrBuscar').value = nombre; famPintarDestino();
+}
+document.addEventListener('click', e => {
+    const f = e.target.closest('#famTrLista .f.clic, #famTrNuevaLista .f.clic'); if (!f) return;
+    e.preventDefault(); famElegir(f.dataset.fam);
+});
 function famEnviar(url, datos, boton) {
-    boton.disabled = true;
+    if (boton) boton.disabled = true;
     return fetch(url, { method: 'POST', body: new URLSearchParams(datos), headers: { 'X-Requested-With': 'fetch' } })
-        .then(r => r.json()).finally(() => { boton.disabled = false; });
+        .then(r => r.json()).finally(() => { if (boton) boton.disabled = false; });
 }
 function crearFamiliaMaestro(boton) {
     const nombre = document.getElementById('famNuevaNombre').value.trim();
     if (!nombre) { Swal.fire({ icon: 'warning', title: 'Escribe el nombre de la familia' }); return; }
-    famEnviar({{ url_for('admin_maestro_familia_nueva')|tojson }}, { nombre }, boton).then(d => {
-        if (d.status !== 'success') { Swal.fire({ icon: 'error', title: 'No se creó', text: d.msg }); return; }
-        Swal.fire({ icon: 'success', title: 'Familia creada', text: d.msg }).then(() => location.reload());
-    }).catch(() => Swal.fire({ icon: 'error', title: 'Error de conexión' }));
+    const par = famBuscar(nombre, 70).filter(f => f.p < 95);
+    const seguir = par.length ? Swal.fire({ icon: 'question', title: '¿Crear igual?', html: 'Se parece a: <b>' + par.slice(0, 3).map(f => f.nombre).join('</b>, <b>') + '</b>',
+                                           showCancelButton: true, confirmButtonText: 'Sí, es otra familia', cancelButtonText: 'Revisar' }) : Promise.resolve({ isConfirmed: true });
+    seguir.then(r => {
+        if (!r.isConfirmed) return;
+        famEnviar({{ url_for('admin_maestro_familia_nueva')|tojson }}, { nombre }, boton).then(d => {
+            if (d.status !== 'success') { Swal.fire({ icon: 'error', title: 'No se creó', text: d.msg }); return; }
+            Swal.fire({ icon: 'success', title: 'Familia creada', text: d.msg }).then(() => location.reload());
+        }).catch(() => Swal.fire({ icon: 'error', title: 'Error de conexión' }));
+    });
 }
-function famTrModo() {
+function famTrModo(sinFoco) {
     const nueva = document.querySelector('input[name=famTrModo]:checked').value === 'nueva';
-    document.getElementById('famTrNueva').disabled = !nueva; document.getElementById('famTrDestino').disabled = nueva;
-    (nueva ? document.getElementById('famTrNueva') : document.getElementById('famTrDestino')).focus();
+    document.getElementById('famTrNueva').disabled = !nueva; document.getElementById('famTrBuscar').disabled = nueva;
+    if (sinFoco !== true) (nueva ? document.getElementById('famTrNueva') : document.getElementById('famTrBuscar')).focus();
+    famPintarFlecha();
 }
 function abrirTraspasoFamilia() {
     const skus = obtenerSkusSeleccionadosGlobal();
     if (!skus.length) return;
     document.getElementById('famTrN').textContent = skus.length;
-    const cont = document.getElementById('famTrSkus'); cont.innerHTML = '';
-    skus.forEach(s => { const e = document.createElement('span'); e.textContent = s; cont.appendChild(e); });
+    famOrigen = {}; document.getElementById('famTrOrigen').innerHTML = '<span class="text-muted small">Buscando…</span>'; document.getElementById('famTrTabla').innerHTML = '';
+    document.getElementById('famTrDestino').value = ''; document.getElementById('famTrBuscar').value = '';
+    famPintarDestino();
     bootstrap.Modal.getOrCreateInstance(document.getElementById('modalTraspasoFamilia')).show();
+    famEnviar({{ url_for('admin_maestro_familia_origen')|tojson }}, { skus: skus.join(',') }).then(d => {
+        if (d.status !== 'success') { document.getElementById('famTrOrigen').textContent = d.msg; return; }
+        const esc = s => (s || '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+        d.items.forEach(x => { const f = x.familia || '(no está en el Maestro)'; famOrigen[f] = (famOrigen[f] || 0) + 1; });
+        document.getElementById('famTrOrigen').innerHTML = Object.entries(famOrigen).sort((a, b) => b[1] - a[1])
+            .map(([f, n]) => `<span class="chip">${esc(f)} <b>${n}</b></span>`).join('') +
+            (Object.keys(famOrigen).length > 1 ? '<div class="small text-warning-emphasis mt-1"><i class="bi bi-exclamation-triangle"></i> Los marcados vienen de <b>varias familias</b>: todos pasarán a la misma.</div>' : '');
+        document.getElementById('famTrTabla').innerHTML = d.items.slice().sort((a, b) => (a.familia || '').localeCompare(b.familia || '') || a.sku.localeCompare(b.sku))
+            .map(x => `<tr><td class="fw-bold text-primary">${esc(x.sku)}</td><td>${esc(x.nombre)}</td><td class="text-muted">${esc(x.familia || '—')}</td></tr>`).join('');
+        famPintarDestino();
+    }).catch(() => { document.getElementById('famTrOrigen').textContent = 'No se pudo leer la familia de origen.'; });
 }
 function traspasarFamiliaMaestro(boton) {
     const skus = obtenerSkusSeleccionadosGlobal();
-    const nueva = document.querySelector('input[name=famTrModo]:checked').value === 'nueva';
-    const familia = (nueva ? document.getElementById('famTrNueva') : document.getElementById('famTrDestino')).value.trim();
+    const { nueva, familia } = famDestinoActual();
     if (!familia) { Swal.fire({ icon: 'warning', title: nueva ? 'Escribe el nombre de la familia nueva' : 'Elige la familia a la que pasan' }); return; }
-    Swal.fire({ icon: 'question', title: `¿Pasar ${skus.length} producto(s) a "${familia}"?`, text: 'Se cambia en el Maestro, Anclajes e ImportBolts.',
+    if (nueva && famBuscar(familia, 95).length) { Swal.fire({ icon: 'warning', title: 'Esa familia ya existe', text: 'Elígela en "Una familia que ya existe".' }); return; }
+    const de = Object.entries(famOrigen).map(([f, n]) => `${f} (${n})`).join(', ');
+    Swal.fire({ icon: 'question', title: `¿Pasar ${skus.length} producto(s) a "${familia}"?`,
+                html: (de ? `Desde: <b>${de}</b><br>` : '') + 'Se cambia en el Maestro, Anclajes e ImportBolts.',
                 showCancelButton: true, confirmButtonText: 'Sí, pasar', cancelButtonText: 'Cancelar' }).then(r => {
         if (!r.isConfirmed) return;
         famEnviar({{ url_for('admin_maestro_familia_traspasar')|tojson }}, { skus: skus.join(','), familia, es_nueva: nueva ? '1' : '' }, boton).then(d => {
@@ -592,6 +727,10 @@ function traspasarFamiliaMaestro(boton) {
         }).catch(() => Swal.fire({ icon: 'error', title: 'Error de conexión' }));
     });
 }
+document.addEventListener('DOMContentLoaded', () => {
+    const m = document.getElementById('modalNuevaFamilia');
+    if (m) m.addEventListener('shown.bs.modal', () => { famPintarNueva(); document.getElementById('famNuevaNombre').focus(); });
+});
 </script>
 <div class="modal fade" id="modalEditarMaestro" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered">
