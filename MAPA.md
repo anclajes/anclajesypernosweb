@@ -22,6 +22,7 @@ modulos/
     estadisticas.py      ficha de precios de un insumo (/insumos/ficha/<id>: lotes, históricos, gráfico por proveedor)
                          y ESTADÍSTICAS (/insumos/estadisticas: mejores precios, proveedores, más comprado / gastado / consumido, alertas)
     herramientas.py      HERRAMIENTAS (activos, v30): registro por unidad, préstamo/devolución con firma, baja aprobada (ver "## Insumos: inventario General…")
+    revertir.py          REVERTIR desde el Kardex de insumos (v31): ingresos, salidas, cargas Excel y "pasó a herramientas" (ver "## Insumos: revertir…")
   compras/             ÓRDENES DE COMPRA / SERVICIO y REQUERIMIENTOS
     modelos.py           tablas: OrdenCompra, OrdenCompraItem, entregas, eventos, documentos, proveedores,
                          cuentas, motivos, requerimientos, OCConfig
@@ -148,6 +149,20 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
     opción a reparación) / EN_REPARACION (`herramientas_reparacion`) / BAJA_PEDIDA (`herramientas_baja`, motivo + detalle + foto) → DE_BAJA
     (`herramientas_baja_resolver`: aprueba o rechaza ROLES_HERR_BAJA = admin, logistica; ellos pueden darla de baja directo). Aviso HERR_BAJA.
   · Historial en `HerramientaMovimiento` (firma / foto en S3, `herramientas_archivo`). "Vaciar datos" de Insumos también borra herramientas.
+
+## Insumos: revertir movimientos del Kardex (v31)
+
+- Botón "↩ Revertir" en cada fila del Kardex de insumos (Anclajes, Import Bolts y General) para **Gerencia, Logística y el Jefe de Almacén**
+  (`ROLES_INSUMOS_REVIERTEN` en base.py). Sirve para errores: inventario o ítem equivocado, carga Excel mal hecha, algo que no era herramienta.
+  El botón pregunta primero (`GET /insumos/kardex/movimiento/<id>/revertir`, JSON de `_plan_revertir_mov`) qué va a pasar o **por qué no se
+  puede** (`_usos_lote_txt` dice qué salidas / ajustes sacaron del lote, para revertirlos antes); luego POST con motivo (mín. 5 letras).
+  · COMPRA → anula el INGRESO completo (`_anular_ingreso` en movimientos.py, exige el lote completo; si vino de OC la orden vuelve a
+    "Ingresos pendientes" con evento en la OC). CONSUMO → anula la SALIDA (`_anular_salida`; si fue de varias bolsas solo la de esa bolsa).
+  · IMPORTACION entrada → lote ANULADO (si está completo); IMPORTACION salida → vuelve al mismo lote; A_HERRAMIENTAS → borra esas herramientas
+    (`_herr_de_mov`: mismo insumo, lote y `fecha_creacion`; solo si siguen DISPONIBLE y sin préstamos) y vuelve al lote.
+    Se registra un movimiento ANULACION con `anula_mov_id` (columna nueva) → el original y su reversión no cuentan en los totales.
+  · No se revierten: VALORIZACION / AJUSTE_COSTO (el precio se corrige en el lote) ni las anulaciones. General cerrado: no se le devuelve stock.
+- Los botones "Anular" del detalle de ingreso y de salida ahora también los ven Logística y Almacén (antes solo Gerencia).
 
 ## Insumos: lotes PEPS, precio pendiente y documentos de la OC
 

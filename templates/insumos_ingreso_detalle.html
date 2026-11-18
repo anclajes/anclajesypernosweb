@@ -28,7 +28,7 @@
             {% endif %}
         </div>
     </div>
-    {% if session.get('role') == 'admin' and ing.estado == 'REGISTRADO' %}
+    {% if session.get('role') in ['admin', 'logistica', 'almacen'] and ing.estado == 'REGISTRADO' %}
     <button class="btn btn-outline-secondary" onclick="anular()"><i class="bi bi-x-octagon"></i> Anular ingreso</button>
     {% endif %}
 </div>
@@ -138,7 +138,9 @@ function ponerPrecio(detId, nombre, cantidad, salieron) {
     });
 }
 function anular() {
-    Swal.fire({ title: '¿Anular este ingreso?', html: 'Se descuenta del stock y se revierte el costo promedio. Solo se puede si lo ingresado no se consumió.<br>Escribe el motivo:',
+    Swal.fire({ title: '¿Anular este ingreso?', html: 'Se descuenta del stock (sale el lote completo de esta compra). Solo se puede si lo ingresado no salió.'
+            + {{ ('<br><b>La orden de compra vuelve a "Ingresos pendientes"</b> para registrarla bien (otro inventario o el ítem correcto).' if ing.orden_compra_id else '<br>Si fue al inventario o ítem equivocado, regístralo de nuevo como corresponde.')|tojson }}
+            + '<br>Escribe el motivo:',
         input: 'text', icon: 'warning', showCancelButton: true, confirmButtonText: 'Anular', cancelButtonText: 'Cancelar', confirmButtonColor: '#dc3545',
         inputValidator: v => (!v || v.trim().length < 5) ? 'Escribe el motivo (mín. 5 letras)' : undefined
     }).then(r => { if (r.isConfirmed) { document.getElementById('motivoAnular').value = r.value; document.getElementById('formAnular').submit(); } });

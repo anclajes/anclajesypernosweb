@@ -266,6 +266,7 @@ class InsumoMovimiento(db.Model):
     salida_id = db.Column(db.Integer, db.ForeignKey('insumo_salida.id'), nullable=True)
     area_id = db.Column(db.Integer, db.ForeignKey('insumo_area.id'), nullable=True)
     lote_id = db.Column(db.Integer, nullable=True, index=True)          # lote del que entra / sale (PEPS)
+    anula_mov_id = db.Column(db.Integer, nullable=True)                # v31: este movimiento REVIERTE (anula) a ese otro movimiento suelto
     observacion = db.Column(db.String(255))
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     fecha_registro = db.Column(db.DateTime, default=hora_peru)

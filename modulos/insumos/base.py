@@ -37,6 +37,8 @@ EMPRESA_GENERAL = 'GENERAL'
 EMPRESAS_CON_OC = ('ANCLAJES', 'IMPORTBOLTS')       # las que compran con orden de compra
 ROLES_INSUMOS_EDITAN = ['admin', 'almacen', 'logistica']
 ROLES_INSUMOS_VEN = ['admin', 'almacen', 'logistica', 'administracion']
+# v31: revierten / anulan ingresos, salidas y movimientos del Kardex (errores de inventario o de ítem). Siempre con motivo y queda en el log.
+ROLES_INSUMOS_REVIERTEN = ['admin', 'logistica', 'almacen']
 CATALOGOS_INSUMOS = {'INSUMO_CATEGORIA': 'Categorías', 'INSUMO_UNIDAD': 'Unidades de medida',
                      'INSUMO_MOTIVO': 'Necesario para (motivos)', 'INSUMO_ALMACEN': 'Almacenes / ubicaciones'}
 _INSUMOS_INICIALES = {
@@ -101,6 +103,8 @@ def _asegurar_insumos():
     _agregar_columnas_si_faltan('insumo_movimiento', [('lote_id', 'INTEGER')])
     # v30: salida hecha de varias bolsas a la vez (una salida por empresa, enlazadas por el mismo grupo)
     _agregar_columnas_si_faltan('insumo_salida', [('grupo', 'VARCHAR(20)')])
+    # v31: revertir un movimiento suelto del Kardex (carga Excel, pasó a herramientas): el de reversión apunta al original
+    _agregar_columnas_si_faltan('insumo_movimiento', [('anula_mov_id', 'INTEGER')])
     from sqlalchemy import inspect as sa_inspect
     if 'insumo_proveedor_id' not in {c['name'] for c in sa_inspect(db.engine).get_columns('insumo_ingreso')}:
         es_pg = db.engine.dialect.name == 'postgresql'

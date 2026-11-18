@@ -474,31 +474,19 @@ def insumos_ingreso_factura(ingreso_id):
     return redirect(destino)
 
 
-@app.route('/insumos/ingresos/<int:ingreso_id>/anular', methods=['POST'])
-@_ruta_insumos(solo_admin=True)
-def insumos_ingreso_anular(ingreso_id):
-    """Gerencia: anula un ingreso mal registrado. Solo si su cantidad sigue en stock (no se consumió)."""
-    ing = InsumoIngreso.query.get_or_404(ingreso_id)
-    motivo = ' '.join((request.form.get('motivo') or '').split())[:255]
-    destino = url_for('insumos_ingreso_detalle', ingreso_id=ing.id)
-    if ing.estado != 'REGISTRADO':
-        flash('Este ingreso ya estaba anulado.')
-        return redirect(destino)
-    if len(motivo) < 5:
-        flash('⛔ Escribe el motivo de la anulación.')
-        return redirect(destino)
-    ahora = hora_peru()
+def _plan_anular_ingreso(ing):
+    """Qué sale de cada lote al anular el ingreso: el lote de esa compra tiene que estar COMPLETO (no se sacó nada de él).
+    Los ingresos de antes de pasar a lotes se descuentan del "saldo anterior" en la misma moneda.
+    Devuelve (por_que_no | None, [(detalle, [(lote, cantidad)])]). No cambia nada."""
     mon = ing.moneda if ing.moneda in ('PEN', 'USD') else 'PEN'
-    # qué sale de cada lote: el lote de esa compra tiene que estar COMPLETO (no se sacó nada de él).
-    # Los ingresos de antes de pasar a lotes se descuentan del "saldo anterior" en la misma moneda.
     plan = []
     for d in ing.detalles:
         lote = InsumoLote.query.filter_by(ingreso_detalle_id=d.id, estado='ACTIVO').first()
         if lote:
             if float(lote.cantidad_restante or 0) + 1e-9 < float(lote.cantidad_inicial or 0):
-                flash(f'⛔ No se puede anular: de {d.insumo.codigo} ya salió parte de este lote '
-                      f'(quedan {_cant_txt(lote.cantidad_restante)} de {_cant_txt(lote.cantidad_inicial)}). Anula primero esas salidas.')
-                return redirect(destino)
+                return (f'De {d.insumo.codigo} ya salió parte de este lote (quedan {_cant_txt(lote.cantidad_restante)} de '
+                        f'{_cant_txt(lote.cantidad_inicial)}). {_usos_lote_txt(lote)}Revierte primero eso (desde el Kardex o la salida) '
+                        f'y vuelve a intentarlo.'), []
             plan.append((d, [(lote, float(lote.cantidad_restante))]))
             continue
         iniciales = [l for l in _lotes_activos(d.insumo_id, ing.empresa) if l.origen == 'INICIAL' and (l.moneda or 'PEN') == mon]
@@ -509,9 +497,22 @@ def insumos_ingreso_anular(ingreso_id):
                 partes.append((l, toma))
                 falta -= toma
         if falta > 1e-6:
-            flash(f'⛔ No se puede anular: de {d.insumo.codigo} ya salió parte de lo ingresado.')
-            return redirect(destino)
+            return f'De {d.insumo.codigo} ya salió parte de lo ingresado.', []
         plan.append((d, partes))
+    return None, plan
+
+
+def _anular_ingreso(ing, motivo):
+    """Anula un ingreso (manual o de una OC): su lote sale del stock y deja de contar. Solo si lo ingresado sigue COMPLETO
+    en su lote. La OC (si vino de una) vuelve a quedar pendiente de ingresar. Devuelve (ok, mensaje). NO hace commit."""
+    if ing.estado != 'REGISTRADO':
+        return False, 'Este ingreso ya estaba anulado.'
+    if len(motivo) < 5:
+        return False, '⛔ Escribe el motivo de la anulación (mín. 5 letras).'
+    no, plan = _plan_anular_ingreso(ing)
+    if no:
+        return False, f'⛔ No se puede anular: {no}'
+    ahora = hora_peru()
     for d, partes in plan:
         st = _stock_de(d.insumo_id, ing.empresa)
         for lote, cant in partes:
@@ -527,15 +528,37 @@ def insumos_ingreso_anular(ingreso_id):
                 observacion=motivo, user_id=session.get('user_id'), fecha_registro=ahora))
         d.sin_costo_restante = 0.0
     ing.estado, ing.anulado_por, ing.fecha_anulacion, ing.motivo_anulacion = 'ANULADO', session.get('nombre', ''), ahora, motivo
+    con_oc = False
     try:
         for o in OrdenCompra.query.filter(OrdenCompra.insumo_ingreso_id == ing.id).all():
             o.insumo_ingreso_id = None
-            _oc_evento(o, 'INSUMOS', f"Se anuló el ingreso #{ing.id} en Insumos: la orden vuelve a quedar pendiente de ingresar")
+            con_oc = True
+            _oc_evento(o, 'INSUMOS', f"Se anuló el ingreso #{ing.id} en Insumos ({session.get('nombre', '')}): la orden vuelve a quedar "
+                                     f"pendiente de ingresar. Motivo: {motivo}")
     except Exception:
         app.logger.exception("No se pudo liberar la OC del ingreso anulado")
-    registrar_log(f"Anuló el ingreso de insumos #{ing.id}: {motivo}", 'bi-x-octagon', 'text-danger')
-    db.session.commit()
-    flash('Ingreso anulado: su lote se quitó del stock y ya no cuenta en los totales.')
+    registrar_log(f"Anuló el ingreso de insumos #{ing.id} ({EMPRESAS_INSUMOS.get(ing.empresa, {}).get('corto', ing.empresa)}): {motivo}",
+                  'bi-x-octagon', 'text-danger')
+    return True, ('Ingreso anulado: su lote se quitó del stock y ya no cuenta en los totales.'
+                  + (' La orden de compra volvió a "Ingresos pendientes" para registrarla bien.' if con_oc else
+                     ' Si fue un error de inventario o de ítem, regístralo de nuevo como corresponde.'))
+
+
+@app.route('/insumos/ingresos/<int:ingreso_id>/anular', methods=['POST'])
+@_ruta_insumos(editar=True)
+def insumos_ingreso_anular(ingreso_id):
+    """Anula un ingreso mal registrado (v31: también Logística y el Jefe de Almacén). Solo si su cantidad sigue en stock."""
+    ing = InsumoIngreso.query.get_or_404(ingreso_id)
+    destino = request.form.get('volver') if (request.form.get('volver') or '').startswith('/insumos/') else url_for('insumos_ingreso_detalle', ingreso_id=ing.id)
+    if session.get('role') not in ROLES_INSUMOS_REVIERTEN:
+        flash('⛔ No tienes permiso para anular ingresos.')
+        return redirect(destino)
+    ok, msg = _anular_ingreso(ing, ' '.join((request.form.get('motivo') or '').split())[:255])
+    if ok:
+        db.session.commit()
+    else:
+        db.session.rollback()
+    flash(msg)
     return redirect(destino)
 
 
@@ -866,19 +889,15 @@ def insumos_documento(doc_id):
     return resp
 
 
-@app.route('/insumos/salidas/<int:salida_id>/anular', methods=['POST'])
-@_ruta_insumos(solo_admin=True)
-def insumos_salida_anular(salida_id):
-    """Gerencia: anula una salida mal registrada; lo despachado vuelve a los mismos lotes de los que salió (mismo precio)."""
-    sal = InsumoSalida.query.get_or_404(salida_id)
-    destino = url_for('insumos_salida_detalle', salida_id=sal.id)
-    motivo = ' '.join((request.form.get('motivo') or '').split())[:255]
+def _anular_salida(sal, motivo):
+    """Anula una salida (consumo) mal registrada: lo despachado vuelve a los mismos lotes de los que salió (mismo precio)
+    y deja de contar en el gasto del área. Devuelve (ok, mensaje). NO hace commit."""
     if sal.estado != 'REGISTRADA':
-        flash('Esta salida ya estaba anulada.')
-        return redirect(destino)
+        return False, 'Esta salida ya estaba anulada.'
     if len(motivo) < 5:
-        flash('⛔ Escribe el motivo de la anulación.')
-        return redirect(destino)
+        return False, '⛔ Escribe el motivo de la anulación (mín. 5 letras).'
+    if sal.empresa == EMPRESA_GENERAL and _general_cerrado():
+        return False, '⛔ El inventario General está cerrado: Gerencia tiene que volver a abrirlo para devolverle stock.'
     ahora = hora_peru()
     for d in sal.detalles:
         st = _stock_de(d.insumo_id, sal.empresa)
@@ -911,9 +930,26 @@ def insumos_salida_anular(salida_id):
                 referencia=f'Anulación consumo N° {sal.numero:06d}', salida_id=sal.id, area_id=sal.area_id, observacion=motivo,
                 user_id=session.get('user_id'), fecha_registro=ahora))
     sal.estado, sal.anulado_por, sal.fecha_anulacion, sal.motivo_anulacion = 'ANULADA', session.get('nombre', ''), ahora, motivo
-    registrar_log(f"Anuló la salida de insumos N° {sal.numero:06d}: {motivo}", 'bi-x-octagon', 'text-danger')
-    db.session.commit()
-    flash('Salida anulada: lo despachado volvió al stock y ya no cuenta en el gasto del área.')
+    registrar_log(f"Anuló la salida de insumos N° {sal.numero:06d} ({EMPRESAS_INSUMOS.get(sal.empresa, {}).get('corto', sal.empresa)}): {motivo}",
+                  'bi-x-octagon', 'text-danger')
+    return True, 'Salida anulada: lo despachado volvió al stock y ya no cuenta en el gasto del área.'
+
+
+@app.route('/insumos/salidas/<int:salida_id>/anular', methods=['POST'])
+@_ruta_insumos(editar=True)
+def insumos_salida_anular(salida_id):
+    """Anula una salida mal registrada (v31: también Logística y el Jefe de Almacén)."""
+    sal = InsumoSalida.query.get_or_404(salida_id)
+    destino = request.form.get('volver') if (request.form.get('volver') or '').startswith('/insumos/') else url_for('insumos_salida_detalle', salida_id=sal.id)
+    if session.get('role') not in ROLES_INSUMOS_REVIERTEN:
+        flash('⛔ No tienes permiso para anular salidas.')
+        return redirect(destino)
+    ok, msg = _anular_salida(sal, ' '.join((request.form.get('motivo') or '').split())[:255])
+    if ok:
+        db.session.commit()
+    else:
+        db.session.rollback()
+    flash(msg)
     return redirect(destino)
 
 
@@ -1017,7 +1053,10 @@ def insumos_kardex():
         InsumoIngreso.id.in_({m.ingreso_id for m in todos_movs if m.ingreso_id} or {0}), InsumoIngreso.estado == 'ANULADO').all()}
     sal_anul = {i for (i,) in db.session.query(InsumoSalida.id).filter(
         InsumoSalida.id.in_({m.salida_id for m in todos_movs if m.salida_id} or {0}), InsumoSalida.estado == 'ANULADA').all()}
-    anulado = {m.id for m in todos_movs if m.concepto == 'ANULACION' or (m.ingreso_id in ing_anul and m.tipo in ('ENTRADA', 'SALIDA'))
+    # v31: movimientos sueltos revertidos desde el Kardex (carga Excel, pasó a herramientas): el original también queda anulado
+    revertidos = _movs_revertidos_empresa(empresa)
+    anulado = {m.id for m in todos_movs if m.concepto == 'ANULACION' or m.id in revertidos
+               or (m.ingreso_id in ing_anul and m.tipo in ('ENTRADA', 'SALIDA'))
                or (m.salida_id in sal_anul and m.tipo in ('ENTRADA', 'SALIDA'))}
     ocultar = request.args.get('ocultar') == '1'
     validos = [m for m in todos_movs if m.id not in anulado]
@@ -1058,6 +1097,7 @@ def insumos_kardex():
                            lotes_ficha=lotes_ficha, empresas=EMPRESAS_INSUMOS, movs=movs, insumo=insumo, stock=stock,
                            insumos=lista, desde=desde, hasta=hasta, categoria=categoria, categorias_filtro=_categorias_insumos(),
                            puede_ajustar=session.get('role') == 'admin', concepto=concepto,
+                           puede_revertir=session.get('role') in ROLES_INSUMOS_REVIERTEN, conceptos_revertibles=CONCEPTOS_REVERTIBLES, revertidos=revertidos,
                            tot_entradas=entradas, tot_salidas=salidas, tot_entradas_usd=entradas_usd, tot_salidas_usd=salidas_usd, seccion='kardex')
 
 

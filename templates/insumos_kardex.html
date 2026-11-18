@@ -203,7 +203,12 @@
                         <div class="text-muted" style="font-size:.72rem;" title="{{ 'Valor de lo comprado en dólares que queda' if mon == 'USD' else 'Valor de lo comprado en soles que queda' }}">{{ dinero((q_mon or 0) * (m.costo_prom_despues or 0), mon) }}{% if m.stock_moneda_despues is not none and (m.stock_moneda_despues or 0) != (m.stock_despues or 0) %} · {{ q_mon|cant }} und{% endif %}</div></td>
                     {% endif %}
                     <td class="pe-3 text-nowrap text-muted"><i class="bi bi-person-fill"></i> {{ m.usuario.username if m.usuario else '' }}
-                        {% if m.concepto == 'AJUSTE_COSTO' and m.fecha_registro %}<div style="font-size:.68rem;">{{ m.fecha_registro.strftime('%d/%m/%Y %H:%M') }}</div>{% endif %}</td>
+                        {% if m.concepto == 'AJUSTE_COSTO' and m.fecha_registro %}<div style="font-size:.68rem;">{{ m.fecha_registro.strftime('%d/%m/%Y %H:%M') }}</div>{% endif %}
+                        {#- v31 · revertir (Gerencia, Logística, Jefe de Almacén): pregunta al servidor qué pasará o por qué no se puede -#}
+                        {% if puede_revertir and not es_anul and m.concepto in conceptos_revertibles %}
+                        <div><button type="button" class="btn btn-link btn-sm p-0 kx-rev" data-id="{{ m.id }}" data-url="{{ url_for('insumos_mov_revertir', mov_id=m.id) }}"
+                            title="Revertir por error (inventario o ítem equivocado, carga mal hecha…)"><i class="bi bi-arrow-counterclockwise"></i> Revertir</button></div>
+                        {% endif %}</td>
                 </tr>
             {% else %}
                 <tr><td colspan="9" class="text-center py-5 text-muted"><i class="bi bi-search display-4 opacity-25"></i><p class="mt-2">No se encontraron movimientos con estos filtros.</p></td></tr>
@@ -213,7 +218,49 @@
     </div>
 </div>
 
+<form method="POST" id="formRevertir" class="d-none"><input type="hidden" name="motivo" id="revMotivo"><input type="hidden" name="volver" id="revVolver"></form>
+<style>
+    .kardex-tabla .kx-rev { font-size: .72rem; color: #b91c1c; text-decoration: none; font-weight: 700; }
+    .kardex-tabla .kx-rev:hover { text-decoration: underline; }
+    .rev-lineas { text-align: left; font-size: .85rem; margin: 0; padding-left: 1.1rem; }
+    .rev-caja { text-align: left; font-size: .82rem; border-radius: 8px; padding: 8px 10px; margin-top: 8px; }
+</style>
 <script>
+(function () {
+    const esc = t => String(t ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    document.addEventListener('click', async ev => {
+        const b = ev.target.closest('.kx-rev');
+        if (!b) return;
+        b.disabled = true;
+        let d;
+        try {
+            const r = await fetch(b.dataset.url, { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' });
+            d = await r.json();
+        } catch (e) { d = { status: 'error', msg: 'No se pudo consultar. Recarga la página e intenta de nuevo.' }; }
+        b.disabled = false;
+        if (d.status !== 'ok') { Swal.fire({ icon: 'error', title: 'No se puede', text: d.msg || 'Error' }); return; }
+        const cab = `<div class="text-muted small mb-2">${esc(d.mov)} · ${esc(d.empresa)}</div>`;
+        const ver = d.url ? `<div class="small mt-2"><a href="${esc(d.url)}" target="_blank">Ver el documento completo</a></div>` : '';
+        if (d.bloqueo) {
+            Swal.fire({ icon: 'info', title: 'No se puede revertir todavía', confirmButtonText: 'Entendido',
+                html: cab + `<div class="rev-caja" style="background:#fef2f2;border:1px solid #fecaca;color:#7f1d1d;">${esc(d.bloqueo)}</div>` + ver });
+            return;
+        }
+        const lineas = '<ul class="rev-lineas">' + d.lineas.map(l => `<li>${esc(l)}</li>`).join('') + '</ul>';
+        const aviso = d.aviso ? `<div class="rev-caja" style="background:#fffbeb;border:1px solid #fde68a;color:#78350f;"><i class="bi bi-exclamation-triangle"></i> ${esc(d.aviso)}</div>` : '';
+        const res = await Swal.fire({ icon: 'warning', title: esc(d.titulo) + '?', showCancelButton: true, confirmButtonText: 'Revertir',
+            cancelButtonText: 'Cancelar', confirmButtonColor: '#dc3545', input: 'text', inputPlaceholder: 'Motivo (ej. se ingresó a Anclajes y era Import Bolts)',
+            html: cab + '<div class="text-start small fw-bold mb-1">Qué va a pasar:</div>' + lineas + aviso + ver
+                + '<div class="text-start small text-muted mt-2">Queda en el Kardex (tachado, no cuenta en los totales) con tu nombre y el motivo.</div>',
+            inputValidator: v => (!v || v.trim().length < 5) ? 'Escribe el motivo (mín. 5 letras)' : undefined });
+        if (!res.isConfirmed) return;
+        const f = document.getElementById('formRevertir');
+        f.action = b.dataset.url;
+        document.getElementById('revMotivo').value = res.value;
+        document.getElementById('revVolver').value = location.pathname + location.search;
+        f.submit();
+    });
+})();
 document.addEventListener('DOMContentLoaded', () => {
     if (window.jQuery && jQuery.fn.select2) jQuery('.filtro-s2-k').select2({ width: '100%', allowClear: true, placeholder: 'Todos los insumos' })
         .on('select2:select select2:clear', function () { setTimeout(() => this.form.submit(), 0); });
