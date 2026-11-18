@@ -55,13 +55,17 @@
 <div class="row g-3">
     <div class="col-12 col-lg-5">
         <div class="card border-0 shadow-sm mb-3"><div class="card-body">
-            <label class="small fw-bold text-muted d-block mb-1">EMPRESA QUE COMPRA</label>
+            <label class="small fw-bold text-muted d-block mb-1">EMPRESA QUE COMPRA <span class="fw-normal">(o <b>General</b> si no se sabe)</span></label>
             <div class="emp-opc mb-3">
                 {% for clave, e in empresas.items() %}
-                <input type="radio" class="btn-check" name="empresa" id="emp_{{ clave }}" value="{{ clave }}" {{ 'checked' if clave == empresa }} {{ 'disabled' if oc_prefill and clave != oc_prefill.empresa }} onchange="cambioEmpresa()">
+                <input type="radio" class="btn-check" name="empresa" id="emp_{{ clave }}" value="{{ clave }}" {{ 'checked' if clave == empresa }} {{ 'disabled' if (oc_prefill and clave != oc_prefill.empresa) or (clave == EMPRESA_GENERAL and insumos_general_cerrado()) }} onchange="cambioEmpresa()">
                 <label for="emp_{{ clave }}" style="--c: {{ e.color }};"><img src="{{ url_for('static', filename='img/' ~ e.logo) }}" alt=""> {{ e.corto }}</label>
                 {% endfor %}
             </div>
+            <div class="alert py-2 px-3 small mb-3" id="avisoGeneral" style="display:none; background:#faf5ff; border:1px solid #d8b4fe; color:#581c87;">
+                <b><i class="bi bi-box-seam"></i> Inventario General</b>: para lo que ya está en el almacén y no se sabe por qué empresa se compró.
+                El <b>proveedor, la factura y el precio son opcionales</b> (marca "Precio pendiente" si no lo sabes). No recibe compras con orden de compra.
+                Cuando se vacíe, se cierra y quedan solo las dos empresas.</div>
             <div class="row g-2">
                 <div class="col-6"><label class="small fw-bold">Fecha *</label>
                     <input type="date" name="fecha" id="fecha_ingreso" class="form-control" value="{{ hoy.isoformat() }}" max="{{ hoy.isoformat() }}" required>
@@ -85,7 +89,7 @@
         </div></div>
 
         <div class="card border-0 shadow-sm mb-3"><div class="card-body">
-            <label class="small fw-bold text-muted d-block mb-1">PROVEEDOR *</label>
+            <label class="small fw-bold text-muted d-block mb-1">PROVEEDOR <span id="provObl">*</span></label>
             <input type="hidden" name="insumo_proveedor_id" id="insumo_proveedor_id">
             <input type="hidden" name="proveedor_id" id="proveedor_id">
             <input type="hidden" name="sin_ruc" id="sin_ruc_val" value="">
@@ -308,6 +312,9 @@ function agregarFila(insumoId) {
     return fila;
 }
 function cambioEmpresa() {
+    const gen = (document.querySelector('input[name=empresa]:checked') || {}).value === 'GENERAL';
+    document.getElementById('avisoGeneral').style.display = gen ? '' : 'none';
+    document.getElementById('provObl').textContent = gen ? '(opcional en General)' : '*';
     document.querySelectorAll('#filas .fila-item').forEach(f => { const s = f.querySelector('.sel-insumo'); opcionesInsumos(s); if (window.jQuery) jQuery(s).trigger('change.select2'); pintarInfo(f); });
 }
 window.INSUMO_ELEGIBLE = true;
@@ -428,7 +435,8 @@ function docElegido(inp, tipo) {
 document.getElementById('formIngreso').addEventListener('submit', function (e) {
     const filas = [...document.querySelectorAll('#filas .fila-item')].filter(f => f.querySelector('.sel-insumo').value);
     let error = '';
-    if (!porId('insumo_proveedor_id').value && !porId('proveedor_id').value && !(porId('sinRuc').checked && porId('razon_social').value.trim().length >= 3))
+    const esGeneral = (document.querySelector('input[name=empresa]:checked') || {}).value === 'GENERAL';
+    if (!esGeneral && !porId('insumo_proveedor_id').value && !porId('proveedor_id').value && !(porId('sinRuc').checked && porId('razon_social').value.trim().length >= 3))
         error = 'Elige un proveedor guardado, búscalo por su RUC en SUNAT, o marca "sin RUC" y escribe su nombre.';
     else if (!filas.length) error = 'Agrega al menos un insumo.';
     else if (filas.some(f => !(parseFloat(f.querySelector('.c-cant').value) > 0)))
@@ -468,5 +476,6 @@ if (PREFILL) {
         pintarInfo(fila);
     });
 } else agregarFila();
+document.addEventListener('DOMContentLoaded', () => { const g = document.getElementById('avisoGeneral'); if (g) cambioEmpresa(); });
 </script>
 {% endblock %}

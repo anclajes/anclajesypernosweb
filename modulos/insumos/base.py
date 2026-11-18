@@ -28,7 +28,13 @@ from functools import wraps as _wraps_insumos
 EMPRESAS_INSUMOS = {
     'ANCLAJES': {'nombre': 'Anclajes y Pernos SAC', 'corto': 'Anclajes', 'logo': 'logo.png', 'color': '#0B3D91'},
     'IMPORTBOLTS': {'nombre': 'Import Bolts SAC', 'corto': 'Import Bolts', 'logo': 'logo_import.png', 'color': '#004b87'},
+    # v30 · TERCERA BOLSA: lo antiguo del almacén del que no se sabe por qué empresa se compró ni a qué precio.
+    # Solo ingresos MANUALES (nunca por OC), factura y precio opcionales. Cuando se vacía se CIERRA (ya no acepta ingresos)
+    # y quedan solo las dos empresas. Mismo maestro, lotes PEPS y Kardex de insumos que las otras.
+    'GENERAL': {'nombre': 'Inventario General (sin empresa)', 'corto': 'General', 'logo': 'logo_general.png', 'color': '#6b21a8', 'general': True},
 }
+EMPRESA_GENERAL = 'GENERAL'
+EMPRESAS_CON_OC = ('ANCLAJES', 'IMPORTBOLTS')       # las que compran con orden de compra
 ROLES_INSUMOS_EDITAN = ['admin', 'almacen', 'logistica']
 ROLES_INSUMOS_VEN = ['admin', 'almacen', 'logistica', 'administracion']
 CATALOGOS_INSUMOS = {'INSUMO_CATEGORIA': 'Categorías', 'INSUMO_UNIDAD': 'Unidades de medida',
@@ -93,6 +99,8 @@ def _asegurar_insumos():
                                                            ('fecha_precio', 'TIMESTAMP')])
     _agregar_columnas_si_faltan('insumo_salida_detalle', [('cantidad_sin_costo', 'FLOAT DEFAULT 0'), ('origen_sin_costo', 'VARCHAR(500)')])
     _agregar_columnas_si_faltan('insumo_movimiento', [('lote_id', 'INTEGER')])
+    # v30: salida hecha de varias bolsas a la vez (una salida por empresa, enlazadas por el mismo grupo)
+    _agregar_columnas_si_faltan('insumo_salida', [('grupo', 'VARCHAR(20)')])
     from sqlalchemy import inspect as sa_inspect
     if 'insumo_proveedor_id' not in {c['name'] for c in sa_inspect(db.engine).get_columns('insumo_ingreso')}:
         es_pg = db.engine.dialect.name == 'postgresql'
@@ -153,6 +161,45 @@ def _cant_txt(v):
 
 app.add_template_filter(_cant_txt, 'cant')
 app.add_template_filter(lambda v: f'S/ {float(v or 0):,.2f}', 'soles')
+
+
+def _general_cerrado():
+    """True si el inventario General ya se cerró (se vació y se dejó de usar): no acepta más ingresos."""
+    try:
+        c = SystemConfig.query.get('insumos_general_cerrado')
+        return bool(c and c.value == '1')
+    except Exception:
+        db.session.rollback()
+        return False
+
+
+def _general_stock_total():
+    try:
+        return float(db.session.query(func.coalesce(func.sum(InsumoStock.stock_actual), 0)).filter(InsumoStock.empresa == EMPRESA_GENERAL).scalar() or 0)
+    except Exception:
+        db.session.rollback()
+        return 0.0
+
+
+def _empresa_bloqueo_ingreso(empresa, con_oc=False):
+    """Por qué NO se puede ingresar a esa bolsa (None = sí se puede)."""
+    if empresa not in EMPRESAS_INSUMOS:
+        return 'Elige la empresa del ingreso.'
+    if empresa == EMPRESA_GENERAL:
+        if con_oc:
+            return 'El inventario General no recibe compras con orden de compra: ingrésala a la empresa que hizo la compra.'
+        if _general_cerrado():
+            return 'El inventario General ya está CERRADO (se vació y se dejó de usar): ingresa a Anclajes o Import Bolts.'
+    return None
+
+
+def _empresas_para_ingreso():
+    """Las bolsas que se ofrecen al registrar un ingreso (General no, si ya se cerró)."""
+    return {k: v for k, v in EMPRESAS_INSUMOS.items() if not (k == EMPRESA_GENERAL and _general_cerrado())}
+
+
+app.add_template_global(_general_cerrado, 'insumos_general_cerrado')
+app.add_template_global(EMPRESA_GENERAL, 'EMPRESA_GENERAL')
 
 
 def _empresa_param(nombre='empresa', defecto=None):

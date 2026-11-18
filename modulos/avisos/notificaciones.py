@@ -40,6 +40,8 @@ TIPOS_NOTIF = {
                      'roles': ['admin', 'logistica'], 'defecto': ['logistica', 'admin'], 'icono': 'bi-arrow-counterclockwise', 'color': '#d97706'},
     'OC_REVERSION_LISTA': {'txt': 'Reversión de ingreso resuelta', 'ayuda': 'Cuando Logística confirma (o rechaza) la reversión de un ingreso al Kardex que pediste.',
                            'roles': ['admin', 'almacen', 'logistica'], 'defecto': ['almacen', 'admin'], 'icono': 'bi-arrow-counterclockwise', 'color': '#16a34a'},
+    'HERR_BAJA': {'txt': 'Baja de herramienta por aprobar', 'ayuda': 'Cuando Almacén pide dar de baja una herramienta (malograda, fin de vida útil, perdida...). '
+                  'La aprueba Logística o Gerencia.', 'roles': ['admin', 'logistica'], 'defecto': ['admin', 'logistica'], 'icono': 'bi-tools', 'color': '#dc2626'},
 }
 TIPOS_POR_INGRESAR = ('ING_PENDIENTE', 'INSUMO_PENDIENTE')       # salen en "Por ingresar" de la campana mientras sigan pendientes
 TIPOS_INSISTENTES = ('OC_POR_APROBAR',) + TIPOS_POR_INGRESAR     # su aviso de Windows se queda en pantalla hasta cerrarlo

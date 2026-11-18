@@ -15783,6 +15783,7 @@ MODULOS_EN_ARCHIVOS = [
     'modulos/insumos/movimientos.py',
     'modulos/insumos/gasto_config.py',
     'modulos/insumos/estadisticas.py',
+    'modulos/insumos/herramientas.py',
     'modulos/compras/base.py',
     'modulos/compras/ordenes.py',
     'modulos/compras/reportes.py',

@@ -48,12 +48,13 @@ def insumos_gasto():
     areas, personas, insumos, cats = {}, {}, {}, {}
     for s, monto, monto_usd in salidas:
         a = areas.setdefault(s.area_id, {'id': s.area_id, 'nombre': s.area.nombre if s.area else 'Sin área', 'total': 0, 'total_usd': 0, 'salidas': 0,
-                                         'anclajes': 0, 'importbolts': 0, 'anclajes_usd': 0, 'importbolts_usd': 0})
+                                         'anclajes': 0, 'importbolts': 0, 'anclajes_usd': 0, 'importbolts_usd': 0, 'general': 0, 'general_usd': 0})
         a['total'] += monto
         a['total_usd'] += monto_usd
         a['salidas'] += 1
-        a['anclajes' if s.empresa == 'ANCLAJES' else 'importbolts'] += monto
-        a[('anclajes' if s.empresa == 'ANCLAJES' else 'importbolts') + '_usd'] += monto_usd
+        k_emp = {'ANCLAJES': 'anclajes', 'IMPORTBOLTS': 'importbolts'}.get(s.empresa, 'general')     # v30: + inventario General
+        a[k_emp] += monto
+        a[k_emp + '_usd'] += monto_usd
         quien = s.a_cuenta_de or s.solicitado_por
         if quien:
             p = personas.setdefault(quien.id, {'id': quien.id, 'nombre': quien.nombre, 'area': quien.area.nombre if quien.area else '',
@@ -403,16 +404,24 @@ def insumos_vaciar():
     maestro, proveedores, personal, catalogos = (f.get(k) == '1' for k in ('maestro', 'proveedores', 'personal', 'catalogos'))
     claves = [d.s3_key for d in InsumoDocumento.query.all() if d.s3_key]
     claves += [x.firma_s3_key for x in InsumoSalida.query.filter(InsumoSalida.firma_s3_key.isnot(None)).all()]
-    resumen = {'ingresos': InsumoIngreso.query.count(), 'salidas': InsumoSalida.query.count()}
+    herr = 'Herramienta' in globals()          # v30: el registro de herramientas también es de Insumos
+    if herr:
+        claves += [k for m in HerramientaMovimiento.query.all() for k in (m.firma_s3_key, m.foto_s3_key) if k]
+        claves += [h.foto_s3_key for h in Herramienta.query.filter(Herramienta.foto_s3_key.isnot(None)).all()]
+    resumen = {'ingresos': InsumoIngreso.query.count(), 'salidas': InsumoSalida.query.count(), 'herramientas': Herramienta.query.count() if herr else 0}
     try:
         try:
             OrdenCompra.query.filter(OrdenCompra.insumo_ingreso_id.isnot(None)).update({'insumo_ingreso_id': None}, synchronize_session=False)
         except Exception:
             db.session.rollback()
             app.logger.exception("No se pudo soltar las OC de los ingresos de insumos")
+        if herr:
+            HerramientaMovimiento.query.delete(synchronize_session=False)
+            Herramienta.query.delete(synchronize_session=False)
         for modelo in (InsumoDocumento, InsumoMovimiento, InsumoSalidaLote, InsumoLote, InsumoSalidaDetalle, InsumoSalida,
                        InsumoIngresoDetalle, InsumoIngreso, InsumoStock):
             modelo.query.delete(synchronize_session=False)
+        SystemConfig.query.filter_by(key='insumos_general_cerrado').delete(synchronize_session=False)
         if maestro:
             try:      # las órdenes de compra de insumos conservan su descripción, pero ya no apuntan al insumo borrado
                 OrdenCompraItem.query.filter(OrdenCompraItem.insumo_id.isnot(None)).update({'insumo_id': None}, synchronize_session=False)
@@ -434,7 +443,7 @@ def insumos_vaciar():
             _sembrar_catalogos_insumos()
         extra = [n for n, v in (('maestro', maestro), ('proveedores', proveedores), ('trabajadores y áreas', personal),
                                 ('catálogos', catalogos)) if v]
-        registrar_log(f"VACIÓ los datos de Insumos Internos: {resumen['ingresos']} ingreso(s), {resumen['salidas']} salida(s), "
+        registrar_log(f"VACIÓ los datos de Insumos Internos: {resumen['ingresos']} ingreso(s), {resumen['salidas']} salida(s), {resumen['herramientas']} herramienta(s), "
                       f"{len(claves)} archivo(s){' + ' + ', '.join(extra) if extra else ''}", 'bi-trash3-fill', 'text-danger')
         db.session.commit()
     except Exception as e:

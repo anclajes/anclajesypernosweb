@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Herramientas{% endblock %}
+{% block subtitle %}Registro de herramientas (activos): quién las tiene y en qué estado están{% endblock %}
+{% block content %}
+{% include '_insumos_nav.html' %}
+{#- v30 · modulos/insumos/herramientas.py -#}
+<style>
+    .her-est { display: inline-flex; align-items: center; gap: 4px; font-size: .72rem; font-weight: 800; border-radius: 20px; padding: 2px 9px; color: var(--c);
+               background: color-mix(in srgb, var(--c) 10%, #fff); border: 1px solid color-mix(in srgb, var(--c) 35%, #fff); white-space: nowrap; }
+    .her-kpi { border: 2px solid #e2e8f0; border-radius: 12px; background: #fff; padding: 8px 12px; text-decoration: none; color: #0f172a; display: block; height: 100%; }
+    .her-kpi:hover { border-color: #94a3b8; }
+    .her-kpi.on { border-color: #0f172a; }
+    .her-kpi .n { font-size: 1.35rem; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
+    .her-t td { vertical-align: middle; font-size: .84rem; }
+    .her-cod { font-weight: 800; font-variant-numeric: tabular-nums; text-decoration: none; }
+    .her-emp { font-size: .62rem; font-weight: 800; color: #fff; border-radius: 5px; padding: 0 6px; }
+</style>
+<div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+    <div class="me-auto small text-muted">Una herramienta <b>no se gasta</b>: se presta y se devuelve. Cada una tiene su código, su empresa, su orden de compra (si vino de una) y su historial.
+        Solo deja de estar activa cuando se da de <b>baja</b> (la aprueba Logística o Gerencia).</div>
+    {% if puede_editar %}
+    <a href="{{ url_for('herramientas_desde_insumos') }}" class="btn btn-sm btn-outline-primary fw-bold"><i class="bi bi-box-arrow-right"></i> Pasar desde el stock de insumos
+        {% if pend_insumos %}<span class="badge bg-danger">{{ pend_insumos|sum(attribute=2)|cant }}</span>{% endif %}</a>
+    <a href="{{ url_for('herramientas_nueva') }}" class="btn btn-sm btn-success fw-bold"><i class="bi bi-plus-circle"></i> Registrar herramienta</a>
+    {% endif %}
+</div>
+
+{% if pend_insumos and puede_editar %}
+<a class="alert d-flex flex-wrap gap-2 align-items-center py-2 small text-decoration-none" style="background:#eff6ff; border:1px solid #bfdbfe; color:#1e3a8a;" href="{{ url_for('herramientas_desde_insumos') }}">
+    <i class="bi bi-info-circle-fill fs-5"></i>
+    <span class="flex-fill">Hay <b>{{ pend_insumos|sum(attribute=2)|cant }} unidad(es)</b> de la categoría HERRAMIENTAS en el stock de insumos
+        ({% for i, e, q in pend_insumos[:4] %}{{ i.codigo }} {{ empresas[e].corto }} ×{{ q|cant }}{{ ', ' if not loop.last }}{% endfor %}{{ '…' if pend_insumos|length > 4 }}).
+        Pásalas al registro para controlar quién las tiene.</span>
+    <span class="btn btn-sm btn-primary">Pasarlas</span></a>
+{% endif %}
+
+<div class="row g-2 mb-3">
+    {% for k, t, n, c in [('activas', 'Activas', kpi.activas, '#0f172a'), ('DISPONIBLE', 'En almacén', kpi.disponibles, estados.DISPONIBLE.color),
+                         ('ASIGNADA', 'Prestadas', kpi.prestadas, estados.ASIGNADA.color), ('EN_REPARACION', 'En reparación', kpi.reparacion, estados.EN_REPARACION.color),
+                         ('BAJA_PEDIDA', 'Bajas por aprobar', kpi.bajas_pend, estados.BAJA_PEDIDA.color)] %}
+    <div class="col-6 col-md"><a class="her-kpi {{ 'on' if estado == k and not vida }}" href="{{ url_for('herramientas_lista', estado=k, empresa=empresa) }}">
+        <div class="ins-dato">{{ t }}</div><div class="n" style="color: {{ c }};">{{ n }}</div></a></div>
+    {% endfor %}
+    <div class="col-6 col-md"><a class="her-kpi {{ 'on' if vida }}" href="{{ url_for('herramientas_lista', vida=1, empresa=empresa) }}" title="Se cumplió la vida útil que se le puso">
+        <div class="ins-dato">Vida útil cumplida</div><div class="n {{ 'text-warning' if kpi.vida }}">{{ kpi.vida }}</div></a></div>
+    <div class="col-12 col-md"><div class="her-kpi"><div class="ins-dato">Valor (activas)</div><div class="n" style="font-size:1.05rem;">{{ kpi.valor|soles }}</div>
+        {% if kpi.valor_usd %}<div class="small fw-bold" style="color:#0f766e;">US$ {{ '{:,.2f}'.format(kpi.valor_usd) }}</div>{% endif %}</div></div>
+</div>
+
+<form class="row g-2 align-items-end mb-2" method="GET">
+    <input type="hidden" name="estado" value="{{ estado }}">
+    <div class="col-12 col-md-4"><input type="search" name="q" value="{{ q }}" class="form-control form-control-sm" placeholder="Código, nombre, marca, serie o quién la tiene"></div>
+    <div class="col-6 col-md-2"><select name="empresa" class="form-select form-select-sm" onchange="this.form.submit()"><option value="TODAS">Todas las empresas</option>
+        {% for k, e in empresas.items() %}<option value="{{ k }}" {{ 'selected' if k == empresa }}>{{ e.corto }}</option>{% endfor %}</select></div>
+    <div class="col-6 col-md-3"><select name="trabajador_id" class="form-select form-select-sm" onchange="this.form.submit()"><option value="">Cualquier trabajador</option>
+        {% for t in trabajadores %}<option value="{{ t.id }}" {{ 'selected' if t.id == trabajador_id }}>{{ t.nombre }}</option>{% endfor %}</select></div>
+    <div class="col-6 col-md-2"><select class="form-select form-select-sm" onchange="location.href='?estado=' + this.value + '&empresa={{ empresa }}'">
+        <option value="activas" {{ 'selected' if estado == 'activas' }}>Activas</option>{% for k, e in estados.items() %}<option value="{{ k }}" {{ 'selected' if estado == k }}>{{ e.txt }}</option>{% endfor %}
+        <option value="todas" {{ 'selected' if estado == 'todas' }}>Todas (con las de baja)</option></select></div>
+    <div class="col-6 col-md-1"><button class="btn btn-sm btn-dark w-100"><i class="bi bi-search"></i></button></div>
+</form>
+
+<div class="card border-0 shadow-sm"><div class="table-responsive">
+<table class="table table-hover mb-0 her-t">
+    <thead class="table-light"><tr><th class="ps-3">Código</th><th>Herramienta</th><th>Empresa</th><th>Estado</th><th>Quién la tiene / dónde</th><th class="text-end">Valor</th><th>Vida útil</th><th class="pe-3">Origen</th></tr></thead>
+    <tbody>
+    {% for f in filas %}{% set h = f.h %}{% set e = estados[h.estado] %}{% set em = empresas.get(h.empresa, {}) %}
+    <tr style="{{ 'opacity:.6;' if h.estado == 'DE_BAJA' }}">
+        <td class="ps-3"><a class="her-cod" href="{{ url_for('herramientas_ficha', herr_id=h.id) }}">{{ h.codigo }}</a></td>
+        <td><div class="fw-semibold">{{ h.nombre }}</div><div class="text-muted small">{{ [h.marca, h.modelo]|select|join(' · ') }}{{ (' · S/N ' ~ h.serie) if h.serie }}</div></td>
+        <td><span class="her-emp" style="background: {{ em.get('color', '#334155') }};">{{ em.get('corto', h.empresa) }}</span></td>
+        <td><span class="her-est" style="--c: {{ e.color }};"><i class="bi {{ e.icono }}"></i> {{ e.txt }}</span></td>
+        <td>{% if h.estado == 'ASIGNADA' %}<b>{{ h.asignado_a.nombre if h.asignado_a else '-' }}</b>{% if h.area %} <span class="text-muted">· {{ h.area.nombre }}</span>{% endif %}
+                <div class="text-muted small">desde {{ h.fecha_asignacion.strftime('%d/%m/%Y') if h.fecha_asignacion }}</div>
+            {% else %}<span class="text-muted">{{ h.ubicacion or '—' }}</span>{% endif %}</td>
+        <td class="text-end num">{% if h.valor is not none %}{{ 'US$' if h.moneda == 'USD' else 'S/' }} {{ '{:,.2f}'.format(h.valor) }}{% else %}<span class="text-muted small">sin dato</span>{% endif %}</td>
+        <td class="small">{% if f.vida %}{% if f.vida.cumplida %}<span class="text-warning-emphasis fw-bold"><i class="bi bi-exclamation-triangle"></i> cumplida ({{ f.vida.fin.strftime('%m/%Y') }})</span>
+            {% else %}hasta {{ f.vida.fin.strftime('%m/%Y') }}{% endif %}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+        <td class="pe-3 small">{% if h.orden_compra_id %}<span class="badge text-bg-light border">{{ oc_codigo(h.orden) if h.orden else 'OC' }}</span>{% elif h.origen == 'INSUMOS' %}De insumos{% else %}<span class="text-muted">A mano</span>{% endif %}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="8" class="text-center text-muted py-5"><i class="bi bi-hammer display-6 opacity-25"></i><div class="mt-2">No hay herramientas con este filtro.</div></td></tr>
+    {% endfor %}
+    </tbody>
+</table></div></div>
+{% endblock %}

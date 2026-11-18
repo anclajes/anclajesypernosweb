@@ -171,6 +171,10 @@ def _contador_ordenes():
                                    if rol in ROLES_OC_INGRESAN else 0,
                 'pend_alm': pend_alm,
                 'oc_directo_pend': len(_directos_por_entregar()) if rol in ROLES_OC_CONTABLE else 0,
+                # v29.2: OC con destino Insumos conformes por ingresar al inventario de insumos (viñeta en _oc_nav), por empresa
+                'oc_ins_emp': (pend_alm['ins_emp'] if pend_alm is not None else
+                               {e: len(_ordenes_pendientes_insumos(e)) for e in EMPRESAS_INSUMOS})
+                              if rol in ROLES_INSUMOS_VEN and '_ordenes_pendientes_insumos' in globals() else {},
                 'oc_req_pendientes': len(_req_pendientes_de_oc()) if rol in ROLES_REQ_ATIENDEN else 0,
                 'oc_req_novedades': len(_req_novedades(session.get('user_id'), limite=0)) if rol in ROLES_REQ_CREAN else 0,
                 'oc_alertas': alertas,

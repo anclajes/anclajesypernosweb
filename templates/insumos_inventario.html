@@ -20,12 +20,31 @@
     {% for clave, e in empresas.items() %}
     <a href="{{ url_for('insumos_inventario', empresa=clave) }}" class="{{ 'on' if clave == empresa }}" style="--c: {{ e.color }};">
         <img src="{{ url_for('static', filename='img/' ~ e.logo) }}" alt="{{ e.corto }}"> {{ e.corto }}
+        {% if clave == EMPRESA_GENERAL and insumos_general_cerrado() %}<span class="badge bg-secondary" style="font-size:.6rem;">cerrado</span>{% endif %}
     </a>
     {% endfor %}
     {% if puede_editar %}<a href="{{ url_for('insumos_importar', empresa=empresa) }}" class="ms-auto" style="--c:#15803d; border-color:#bbf7d0; color:#15803d;" title="Cargar insumos y stock desde un Excel a este inventario">
         <i class="bi bi-file-earmark-excel fs-5"></i> Importar Excel</a>{% endif %}
 </div>
 
+{% if empresa == EMPRESA_GENERAL %}{% set cerrado = insumos_general_cerrado() %}{% set queda = general_total %}
+<div class="d-flex flex-wrap gap-2 align-items-center mb-3 px-3 py-2 rounded-3" style="background:#faf5ff; border:1px solid #d8b4fe; color:#581c87;">
+    <i class="bi bi-box-seam fs-4"></i>
+    <div class="flex-fill small"><b>Inventario General (sin empresa){{ ' · CERRADO' if cerrado }}</b>:
+        {% if cerrado %}ya se vació y se dejó de usar; no acepta ingresos. Aquí queda su historial (Kardex, ingresos y salidas).
+        {% else %}lo que ya estaba en el almacén y no se sabe por qué empresa se compró ni a qué precio. Se carga a mano (o por Excel), sin orden de compra;
+        proveedor, factura y precio son opcionales. Al hacer una salida, el sistema recomienda sacar primero de aquí. Cuando quede en 0, ciérralo.{% endif %}</div>
+    {% if puede_editar and not cerrado %}
+    <form method="POST" action="{{ url_for('insumos_general_cerrar') }}" onsubmit="return confirm('¿Cerrar el inventario General? Ya no aceptará ingresos; su historial queda.')">
+        <button class="btn btn-sm {{ 'btn-outline-secondary' if queda > 0 else 'btn-dark' }}" {{ 'disabled' if queda > 0 }}
+                title="{{ ('Todavía quedan ' ~ (queda|cant) ~ ' unidades: sácalas antes de cerrarlo') if queda > 0 else 'Ya no le queda stock: ciérralo para dejar de usarlo' }}">
+            <i class="bi bi-lock"></i> Cerrar inventario General</button></form>
+    {% elif cerrado and session.get('role') == 'admin' %}
+    <form method="POST" action="{{ url_for('insumos_general_cerrar') }}"><input type="hidden" name="abrir" value="1">
+        <button class="btn btn-sm btn-outline-secondary"><i class="bi bi-unlock"></i> Volver a abrir</button></form>
+    {% endif %}
+</div>
+{% endif %}
 <div class="row g-2 mb-3">
     <div class="col-6 col-md-3"><div class="card border-0 shadow-sm h-100"><div class="card-body py-2">
         <div class="ins-dato">Insumos con stock</div><div class="ins-kpi">{{ kpi['items'] }}</div></div></div></div>
@@ -105,6 +124,7 @@
                     <td class="text-end num fw-semibold text-nowrap">{% if f.valor or f.valor_usd %}{% if f.valor or not f.valor_usd %}<div>{{ f.valor|soles }}</div>{% endif %}{% if f.valor_usd %}<div style="color:#0f766e;">US$ {{ '{:,.2f}'.format(f.valor_usd) }}</div>{% endif %}{% else %}-{% endif %}</td>
                     <td class="text-muted">{{ f.s.almacen if f.s and f.s.almacen else '-' }}</td>
                     <td class="pe-3 text-end text-nowrap">
+                        {% if puede_editar and (f.i.categoria or '')|upper == 'HERRAMIENTAS' and f.stock >= 1 %}<a class="btn btn-sm btn-outline-primary py-0" title="Pasar al registro de herramientas (activos): cada unidad con su código, para controlar quién la tiene" href="{{ url_for('herramientas_desde_insumos', insumo_id=f.i.id, empresa=empresa) }}"><i class="bi bi-hammer"></i></a>{% endif %}
                         <a class="btn btn-sm btn-outline-success py-0" title="Lotes, precios e historial" href="{{ url_for('insumos_ficha', insumo_id=f.i.id, empresa=empresa) }}"><i class="bi bi-tags"></i></a>
                         <a class="btn btn-sm btn-outline-secondary py-0" title="Kardex" href="{{ url_for('insumos_kardex', empresa=empresa, insumo_id=f.i.id) }}"><i class="bi bi-clock-history"></i></a>
                         {% if puede_editar %}

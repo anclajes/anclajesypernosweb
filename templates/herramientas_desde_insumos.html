@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Herramientas{% endblock %}
+{% block subtitle %}Pasar herramientas desde el stock de insumos{% endblock %}
+{% block content %}
+{% include '_insumos_nav.html' %}
+{#- v30 · ruta herramientas_desde_insumos: sale del stock de insumos (no es consumo) y se crea una herramienta por unidad, con su lote, precio y OC. -#}
+<div class="card border-0 shadow-sm mb-3"><div class="card-body small">
+    <b><i class="bi bi-box-arrow-right"></i> ¿Para qué?</b> Las herramientas que se compraron con orden de compra entran al stock de <b>insumos</b> (categoría HERRAMIENTAS).
+    Desde aquí pasan al <b>registro de herramientas</b>: salen del stock de insumos (en el Kardex queda "PASÓ A HERRAMIENTAS"; <b>no cuenta como gasto</b>)
+    y se crea <b>una herramienta por unidad</b>, con su código, el precio de su lote, la empresa, el proveedor, la factura y la orden de compra de la que vino.
+</div></div>
+{% if pend %}
+<div class="card border-0 shadow-sm"><div class="table-responsive"><table class="table mb-0 align-middle" style="font-size:.85rem;">
+    <thead class="table-light"><tr><th class="ps-3">Insumo</th><th>Inventario</th><th class="text-end">En stock</th><th style="min-width:420px;">Pasar al registro</th></tr></thead>
+    <tbody>{% for i, e, q in pend %}{% set em = empresas[e] %}
+    <tr class="{{ 'table-primary' if insumo_sel == i.id and empresa_sel == e }}">
+        <td class="ps-3"><b>{{ i.codigo }}</b><div class="text-muted">{{ i.descripcion }}</div></td>
+        <td><span class="badge" style="background: {{ em.color }};">{{ em.corto }}</span></td>
+        <td class="text-end fw-bold num">{{ q|cant }} {{ i.unidad or '' }}</td>
+        <td>{% if puede_editar %}
+            <form method="POST" class="d-flex flex-wrap gap-1 align-items-center" onsubmit="return confirm('¿Pasar ' + this.cantidad.value + ' unidad(es) de {{ i.codigo }} al registro de herramientas? Salen del stock de insumos de {{ em.corto }}.')">
+                <input type="hidden" name="insumo_id" value="{{ i.id }}"><input type="hidden" name="empresa" value="{{ e }}">
+                <input type="number" name="cantidad" min="1" max="{{ [q|int, 50]|min }}" step="1" value="{{ [q|int, 50]|min }}" class="form-control form-control-sm" style="width:80px;" title="Unidades (cada una será una herramienta)">
+                <input name="nombre" value="{{ i.descripcion }}" class="form-control form-control-sm text-uppercase" style="flex:1 1 180px;" maxlength="200" title="Nombre en el registro">
+                <input type="number" name="vida_util_meses" min="1" max="600" class="form-control form-control-sm" style="width:110px;" placeholder="vida útil (meses)">
+                <button class="btn btn-sm btn-primary fw-bold"><i class="bi bi-box-arrow-right"></i> Pasar</button></form>
+            {% if q != q|int %}<div class="form-text">Hay {{ q|cant }}: solo se pasan unidades enteras.</div>{% endif %}
+        {% endif %}</td>
+    </tr>{% endfor %}</tbody>
+</table></div></div>
+{% else %}
+<div class="text-center text-muted py-5 bg-white rounded-3 border"><i class="bi bi-check2-circle display-6 opacity-25"></i>
+    <p class="mt-2 mb-0">No hay herramientas en el stock de insumos (categoría HERRAMIENTAS) por pasar.</p></div>
+{% endif %}
+<div class="mt-3"><a href="{{ url_for('herramientas_lista') }}" class="btn btn-sm btn-light border"><i class="bi bi-arrow-left"></i> Volver a Herramientas</a></div>
+{% endblock %}

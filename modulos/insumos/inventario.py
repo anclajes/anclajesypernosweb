@@ -62,7 +62,7 @@ def insumos_inventario():
                            q=q, categoria=categoria, bajo=bajo, ver=ver, categorias=_categorias_insumos(),
                            almacenes=_catalogo_insumos('INSUMO_ALMACEN'), puede_editar=session.get('role') in ROLES_INSUMOS_EDITAN,
                            puede_ajustar=session.get('role') == 'admin', oc_pendientes=_ordenes_pendientes_insumos(empresa) if _oc_ok else [],
-                           seccion='inventario')
+                           general_total=_general_stock_total() if empresa == EMPRESA_GENERAL else 0, seccion='inventario')
 
 
 @app.route('/insumos/stock/<int:insumo_id>/<empresa>', methods=['POST'])
@@ -219,6 +219,9 @@ def insumos_importar():
         return render_template('insumos_importar.html', empresa=empresa, empresas=EMPRESAS_INSUMOS, filas=None, resumen=None,
                                seccion='inventario')
     request.max_content_length = LIMITE_PETICION_MOVIMIENTO
+    if empresa == EMPRESA_GENERAL and _general_cerrado():
+        flash('⛔ El inventario General ya está CERRADO: no se le puede cargar stock.')
+        return redirect(url_for('insumos_importar', empresa='ANCLAJES'))
     paso = request.form.get('paso', 'previa')
     if paso == 'previa':
         archivo = request.files.get('archivo')

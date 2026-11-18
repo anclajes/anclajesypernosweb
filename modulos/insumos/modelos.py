@@ -2,7 +2,7 @@
 Se importan al final de models.py: "from models import X" sigue funcionando igual. Ver MAPA.md."""
 from models import db, hora_peru
 
-__all__ = ['InsumoArea', 'InsumoTrabajador', 'Insumo', 'InsumoStock', 'InsumoProveedor', 'InsumoIngreso', 'InsumoIngresoDetalle', 'InsumoSalida', 'InsumoSalidaDetalle', 'InsumoMovimiento', 'InsumoDocumento', 'InsumoLote', 'InsumoSalidaLote']
+__all__ = ['InsumoArea', 'InsumoTrabajador', 'Insumo', 'InsumoStock', 'InsumoProveedor', 'InsumoIngreso', 'InsumoIngresoDetalle', 'InsumoSalida', 'InsumoSalidaDetalle', 'InsumoMovimiento', 'InsumoDocumento', 'InsumoLote', 'InsumoSalidaLote', 'Herramienta', 'HerramientaMovimiento']
 
 
 # =====================================================================================
@@ -202,6 +202,7 @@ class InsumoSalida(db.Model):
     total_costo = db.Column(db.Float, default=0)
     total_costo_usd = db.Column(db.Float, default=0)   # gasto en dólares (lo que salió de compras en US$, sin convertir)
     estado = db.Column(db.String(10), default='REGISTRADA')        # REGISTRADA / ANULADA
+    grupo = db.Column(db.String(20), nullable=True, index=True)    # v30: mismas salidas hechas a la vez desde varias bolsas (SAL-...)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)   # grabado / entregado por
     fecha_registro = db.Column(db.DateTime, default=hora_peru)
     firma_s3_key = db.Column(db.String(300))      # firma en pantalla de quien recibe (PNG)
@@ -289,3 +290,76 @@ class InsumoDocumento(db.Model):
     fecha = db.Column(db.DateTime, default=hora_peru)
 
 
+# =====================================================================================
+# v30 · HERRAMIENTAS (ACTIVOS): no se gastan, se PRESTAN y se DEVUELVEN. Cada herramienta es UNA unidad con su código
+# (HER-00001). Viene de una OC (pasándola desde el stock de Insumos) o se registra a mano (las antiguas). Estados:
+# DISPONIBLE (en almacén) -> ASIGNADA (a un trabajador / área) -> DISPONIBLE ... / EN_REPARACION / BAJA_PEDIDA -> DE_BAJA.
+# Solo "desaparece" al darse de BAJA (malograda, fin de vida útil, perdida...), con aprobación de Logística o Gerencia.
+# =====================================================================================
+class Herramienta(db.Model):
+    __tablename__ = 'herramienta'
+    id = db.Column(db.Integer, primary_key=True)
+    codigo = db.Column(db.String(20), nullable=False, unique=True, index=True)      # HER-00001
+    nombre = db.Column(db.String(200), nullable=False)
+    marca = db.Column(db.String(80))
+    modelo = db.Column(db.String(80))
+    serie = db.Column(db.String(80))
+    categoria = db.Column(db.String(100))
+    empresa = db.Column(db.String(15), nullable=False, index=True)                   # ANCLAJES / IMPORTBOLTS / GENERAL
+    estado = db.Column(db.String(15), default='DISPONIBLE', index=True)
+    ubicacion = db.Column(db.String(100))
+    valor = db.Column(db.Float)                       # costo con IGV (None = no se sabe)
+    moneda = db.Column(db.String(3), default='PEN')
+    fecha_compra = db.Column(db.Date)
+    vida_util_meses = db.Column(db.Integer)           # opcional: avisa cuando se cumple
+    garantia_hasta = db.Column(db.Date)
+    proveedor = db.Column(db.String(200))
+    factura = db.Column(db.String(60))
+    origen = db.Column(db.String(10), default='MANUAL')     # MANUAL / INSUMOS (pasada desde el stock de insumos, con su OC)
+    orden_compra_id = db.Column(db.Integer, db.ForeignKey('orden_compra.id'), nullable=True, index=True)
+    insumo_id = db.Column(db.Integer, db.ForeignKey('insumo.id'), nullable=True)
+    insumo_lote_id = db.Column(db.Integer, nullable=True)
+    foto_s3_key = db.Column(db.String(300))
+    observacion = db.Column(db.String(500))
+    # quién la tiene ahora
+    asignado_a_id = db.Column(db.Integer, db.ForeignKey('insumo_trabajador.id'), nullable=True)
+    area_id = db.Column(db.Integer, db.ForeignKey('insumo_area.id'), nullable=True)
+    fecha_asignacion = db.Column(db.DateTime)
+    # baja
+    baja_motivo = db.Column(db.String(30))
+    baja_detalle = db.Column(db.String(500))
+    baja_pedida_por = db.Column(db.String(100))
+    fecha_baja_pedida = db.Column(db.DateTime)
+    estado_antes_baja = db.Column(db.String(15))
+    baja_aprobada_por = db.Column(db.String(100))
+    fecha_baja = db.Column(db.DateTime)
+    creado_por = db.Column(db.String(100))
+    fecha_creacion = db.Column(db.DateTime, default=hora_peru)
+    actualizado_por = db.Column(db.String(100))
+    fecha_actualizacion = db.Column(db.DateTime)
+
+    asignado_a = db.relationship('InsumoTrabajador', foreign_keys=[asignado_a_id])
+    area = db.relationship('InsumoArea', foreign_keys=[area_id])
+    orden = db.relationship('OrdenCompra', foreign_keys=[orden_compra_id])
+    insumo = db.relationship('Insumo', foreign_keys=[insumo_id])
+
+
+class HerramientaMovimiento(db.Model):
+    """Historial de cada herramienta: alta, préstamo, devolución, reparación, baja... con quién, cuándo y su firma."""
+    __tablename__ = 'herramienta_movimiento'
+    id = db.Column(db.Integer, primary_key=True)
+    herramienta_id = db.Column(db.Integer, db.ForeignKey('herramienta.id'), nullable=False, index=True)
+    fecha = db.Column(db.DateTime, nullable=False, index=True)
+    tipo = db.Column(db.String(20), nullable=False)       # ALTA / ASIGNACION / DEVOLUCION / REPARACION / REPARADA / BAJA_PEDIDA / BAJA / BAJA_RECHAZADA / EDICION
+    trabajador_id = db.Column(db.Integer, db.ForeignKey('insumo_trabajador.id'), nullable=True)
+    area_id = db.Column(db.Integer, db.ForeignKey('insumo_area.id'), nullable=True)
+    condicion = db.Column(db.String(15))                  # BUENA / CON_DESGASTE / MALOGRADA (al entregar / devolver)
+    nota = db.Column(db.String(500))
+    firma_s3_key = db.Column(db.String(300))
+    foto_s3_key = db.Column(db.String(300))
+    usuario = db.Column(db.String(100))
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+
+    herramienta = db.relationship('Herramienta', backref=db.backref('movimientos', lazy='dynamic', order_by='HerramientaMovimiento.id.desc()'))
+    trabajador = db.relationship('InsumoTrabajador', foreign_keys=[trabajador_id])
+    area = db.relationship('InsumoArea', foreign_keys=[area_id])

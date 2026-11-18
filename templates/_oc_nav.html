@@ -42,6 +42,15 @@
     <a href="{{ url_for('oc_ingresos_pendientes') }}" class="{{ 'activa' if seccion == 'ingresos' }}"><i class="bi bi-box-arrow-in-down"></i> Ingresos pendientes
         {% if oc_por_ingresar %}<span class="cnt">{{ oc_por_ingresar }}</span>{% endif %}</a>
     {% endif %}
+    {% if session.get('role') in ['admin', 'logistica', 'almacen', 'administracion'] %}
+    {#- v29.2: OC con destino INSUMOS conformes, por ingresar al inventario de insumos (abre la empresa que tenga más) -#}
+    {% set _ins = oc_ins_emp or {} %}{% set _ins_n = _ins.values()|sum %}
+    {% set _ins_e = (_ins|dictsort(by='value')|last)[0] if _ins_n else none %}
+    <a href="{{ url_for('insumos_pendientes_oc', empresa=_ins_e) if _ins_e else url_for('insumos_pendientes_oc') }}" class="{{ 'activa' if seccion == 'oc_pend' }}"
+       title="Órdenes de compra con destino Insumos que ya llegaron y están conformes, esperando ingresar al inventario de insumos{% for e, n in _ins.items() if n %} · {{ e|title }}: {{ n }}{% endfor %}">
+        <i class="bi bi-box2"></i> Ingresos pendientes (Insumos)
+        {% if _ins_n %}<span class="cnt" style="background:#b45309;">{{ _ins_n }}</span>{% endif %}</a>
+    {% endif %}
     {% if session.get('role') in ['admin', 'logistica', 'administracion', 'almacen'] %}
     <a href="{{ url_for('oc_registro_directo') }}" class="{{ 'activa' if seccion == 'directo' }}" title="Bienes comprados para uso de la empresa (no van al inventario): dónde están, quién los tiene, serie y garantía"><i class="bi bi-pc-display"></i> Uso directo
         {% if oc_directo_pend %}<span class="cnt" style="background:#ea580c;" title="Llegaron y falta registrar la entrega">{{ oc_directo_pend }}</span>{% endif %}</a>

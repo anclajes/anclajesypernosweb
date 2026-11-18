@@ -1,0 +1,216 @@
+{% extends "base.html" %}
+{% block title %}Herramienta {{ h.codigo }}{% endblock %}
+{% block subtitle %}{{ h.nombre }}{% endblock %}
+{% block content %}
+{% include '_insumos_nav.html' %}
+{#- v30 · ficha de UNA herramienta: datos, quién la tiene, su OC y documentos, acciones según su estado e historial. Ruta herramientas_ficha. -#}
+{% set e = estados[h.estado] %}{% set em = empresas.get(h.empresa, {}) %}
+<style>
+    .hf-cab { border-radius: 14px; border-left: 6px solid {{ e.color }}; }
+    .hf-est { display: inline-flex; align-items: center; gap: 5px; font-size: .8rem; font-weight: 800; border-radius: 20px; padding: 3px 11px; color: {{ e.color }};
+              background: color-mix(in srgb, {{ e.color }} 10%, #fff); border: 1px solid color-mix(in srgb, {{ e.color }} 35%, #fff); }
+    .hf-dato { font-size: .68rem; text-transform: uppercase; color: #64748b; font-weight: 700; }
+    .hf-linea { position: relative; padding-left: 22px; }
+    .hf-linea::before { content: ''; position: absolute; left: 7px; top: 4px; bottom: 4px; width: 2px; background: #e2e8f0; }
+    .hf-ev { position: relative; padding: 0 0 12px; font-size: .84rem; }
+    .hf-ev::before { content: ''; position: absolute; left: -19px; top: 4px; width: 10px; height: 10px; border-radius: 50%; background: var(--c, #94a3b8); border: 2px solid #fff; box-shadow: 0 0 0 1px #cbd5e1; }
+    .pad-firma { width: 100%; height: 150px; border: 1.5px dashed #94a3b8; border-radius: 10px; background: #fff; display: block; }
+</style>
+<div class="mb-2"><a href="{{ url_for('herramientas_lista') }}" class="small text-decoration-none"><i class="bi bi-arrow-left"></i> Herramientas</a></div>
+<div class="card border-0 shadow-sm hf-cab mb-3"><div class="card-body d-flex flex-wrap gap-3 align-items-center">
+    <div class="me-auto">
+        <div class="small text-muted">{{ h.codigo }} · <span class="fw-bold" style="color: {{ em.get('color', '#334155') }};">{{ em.get('corto', h.empresa) }}</span>{{ (' · ' ~ h.categoria) if h.categoria }}</div>
+        <h4 class="fw-bold mb-1">{{ h.nombre }}</h4>
+        <span class="hf-est"><i class="bi {{ e.icono }}"></i> {{ e.txt }}</span>
+        {% if h.estado == 'ASIGNADA' %}<span class="ms-2">a <b>{{ h.asignado_a.nombre if h.asignado_a else '-' }}</b>{{ (' · ' ~ h.area.nombre) if h.area }} desde {{ h.fecha_asignacion.strftime('%d/%m/%Y') if h.fecha_asignacion }}</span>{% endif %}
+        {% if vida and h.estado != 'DE_BAJA' %}<span class="ms-2 small {{ 'text-warning-emphasis fw-bold' if vida.cumplida }}"><i class="bi bi-hourglass"></i> vida útil {{ 'cumplida el' if vida.cumplida else 'hasta' }} {{ vida.fin.strftime('%d/%m/%Y') }}</span>{% endif %}
+    </div>
+    {% if h.foto_s3_key %}<a href="{{ url_for('herramientas_archivo', herr_id=h.id, mov_id=0, cual='foto') }}" target="_blank"><img src="{{ url_for('herramientas_archivo', herr_id=h.id, mov_id=0, cual='foto') }}" alt="" style="height:80px; border-radius:10px; object-fit:cover;"></a>{% endif %}
+    {% if puede_editar and h.estado != 'DE_BAJA' %}
+    <div class="d-flex flex-wrap gap-2">
+        {% if h.estado == 'DISPONIBLE' %}
+        <button class="btn btn-primary fw-bold" data-bs-toggle="modal" data-bs-target="#mPrestar"><i class="bi bi-person-badge"></i> Prestar</button>
+        <form method="POST" action="{{ url_for('herramientas_reparacion', herr_id=h.id) }}" onsubmit="const n = prompt('¿Qué tiene? (opcional)'); if (n === null) return false; this.nota.value = n; return true;">
+            <input type="hidden" name="nota"><button class="btn btn-outline-warning"><i class="bi bi-wrench-adjustable"></i> A reparación</button></form>
+        {% elif h.estado == 'ASIGNADA' %}
+        <button class="btn btn-success fw-bold" data-bs-toggle="modal" data-bs-target="#mDevolver"><i class="bi bi-box-arrow-in-down"></i> Recibir devolución</button>
+        {% elif h.estado == 'EN_REPARACION' %}
+        <form method="POST" action="{{ url_for('herramientas_reparacion', herr_id=h.id) }}"><input type="hidden" name="vuelve" value="1">
+            <button class="btn btn-success fw-bold"><i class="bi bi-check2-circle"></i> Volvió de reparación</button></form>
+        {% endif %}
+        {% if h.estado in ['DISPONIBLE', 'ASIGNADA', 'EN_REPARACION'] %}
+        <button class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#mBaja"><i class="bi bi-x-octagon"></i> {{ 'Dar de baja' if puede_baja else 'Pedir baja' }}</button>
+        {% endif %}
+        <button class="btn btn-light border" data-bs-toggle="modal" data-bs-target="#mEditar"><i class="bi bi-pencil"></i> Editar</button>
+    </div>
+    {% endif %}
+</div></div>
+
+{% if h.estado == 'BAJA_PEDIDA' %}
+<div class="alert d-flex flex-wrap gap-2 align-items-center" style="background:#fef2f2; border:1px solid #fecaca; color:#7f1d1d;">
+    <i class="bi bi-hourglass-split fs-4"></i>
+    <div class="flex-fill small"><b>Baja pedida</b> por {{ h.baja_pedida_por }} el {{ h.fecha_baja_pedida.strftime('%d/%m/%Y %H:%M') if h.fecha_baja_pedida }}:
+        <b>{{ motivos_baja.get(h.baja_motivo, h.baja_motivo) }}</b> — {{ h.baja_detalle }}
+        {% if not puede_baja %}<div>La aprueba Logística o Gerencia.</div>{% endif %}</div>
+    {% if puede_baja %}
+    <form method="POST" action="{{ url_for('herramientas_baja_resolver', herr_id=h.id) }}" class="d-flex gap-1" onsubmit="return confirm('¿Dar de BAJA {{ h.codigo }}? Deja de estar activa; su historial queda.')">
+        <input type="hidden" name="aprobar" value="1"><button class="btn btn-sm btn-danger fw-bold"><i class="bi bi-check2"></i> Aprobar baja</button></form>
+    <form method="POST" action="{{ url_for('herramientas_baja_resolver', herr_id=h.id) }}" onsubmit="const n = prompt('¿Por qué no se da de baja? (mínimo 5 letras)'); if (!n || n.trim().length < 5) return false; this.nota.value = n; return true;">
+        <input type="hidden" name="nota"><button class="btn btn-sm btn-outline-secondary">Rechazar</button></form>
+    {% endif %}
+</div>
+{% elif h.estado == 'DE_BAJA' %}
+<div class="alert alert-secondary small"><i class="bi bi-x-octagon"></i> <b>De baja</b> desde el {{ h.fecha_baja.strftime('%d/%m/%Y') if h.fecha_baja }}
+    ({{ motivos_baja.get(h.baja_motivo, h.baja_motivo or '') }}{{ (': ' ~ h.baja_detalle) if h.baja_detalle }}) · pidió {{ h.baja_pedida_por or '-' }}, aprobó {{ h.baja_aprobada_por or '-' }}.</div>
+{% endif %}
+
+<div class="row g-3">
+    <div class="col-12 col-lg-5">
+        <div class="card border-0 shadow-sm mb-3"><div class="card-body small">
+            <div class="row g-2">
+                <div class="col-6"><div class="hf-dato">Marca / modelo</div>{{ [h.marca, h.modelo]|select|join(' · ') or '—' }}</div>
+                <div class="col-6"><div class="hf-dato">N° de serie</div>{{ h.serie or '—' }}</div>
+                <div class="col-6"><div class="hf-dato">Valor (con IGV)</div>{% if h.valor is not none %}<b>{{ 'US$' if h.moneda == 'USD' else 'S/' }} {{ '{:,.2f}'.format(h.valor) }}</b>{% else %}sin dato{% endif %}</div>
+                <div class="col-6"><div class="hf-dato">Ubicación</div>{{ h.ubicacion or '—' }}</div>
+                <div class="col-6"><div class="hf-dato">Fecha de compra</div>{{ h.fecha_compra.strftime('%d/%m/%Y') if h.fecha_compra else '—' }}</div>
+                <div class="col-6"><div class="hf-dato">Vida útil</div>{{ (h.vida_util_meses ~ ' meses') if h.vida_util_meses else '—' }}</div>
+                <div class="col-6"><div class="hf-dato">Garantía</div>{{ ('hasta ' ~ h.garantia_hasta.strftime('%d/%m/%Y')) if h.garantia_hasta else '—' }}</div>
+                <div class="col-6"><div class="hf-dato">Origen</div>{{ 'Pasó desde el stock de insumos' if h.origen == 'INSUMOS' else 'Registrada a mano' }}</div>
+                <div class="col-12"><div class="hf-dato">Proveedor / factura</div>{{ h.proveedor or '—' }}{{ (' · ' ~ h.factura) if h.factura }}</div>
+                {% if h.observacion %}<div class="col-12"><div class="hf-dato">Observación</div>{{ h.observacion }}</div>{% endif %}
+                <div class="col-12 text-muted" style="font-size:.7rem;">Registrada por {{ h.creado_por or '-' }} el {{ h.fecha_creacion.strftime('%d/%m/%Y') if h.fecha_creacion }}</div>
+            </div>
+        </div></div>
+        <div class="card border-0 shadow-sm"><div class="card-body small">
+            <div class="fw-bold mb-2"><i class="bi bi-receipt"></i> Orden de compra y documentos</div>
+            {% if h.orden %}
+            <div class="mb-2">{% if puede_ver_oc %}<a class="fw-bold" href="{{ url_for('oc_detalle', orden_id=h.orden.id) }}">{{ oc_codigo(h.orden) }}</a>{% else %}<b>{{ oc_codigo(h.orden) }}</b>{% endif %}
+                · {{ h.orden.razon_social }} · {{ h.orden.fecha.strftime('%d/%m/%Y') if h.orden.fecha }}</div>
+            {% for d in docs_oc %}<div><a href="{{ url_for('herramientas_doc_oc', herr_id=h.id, doc_id=d.id) }}" target="_blank"><i class="bi bi-paperclip"></i> {{ tipos_doc.get(d.tipo, d.tipo) if tipos_doc is mapping else d.tipo }} · {{ d.nombre_original }}</a></div>
+            {% else %}<div class="text-muted">La orden no tiene documentos subidos.</div>{% endfor %}
+            {% else %}<div class="text-muted">No vino de una orden de compra{{ ' (registrada a mano)' if h.origen == 'MANUAL' }}.</div>{% endif %}
+        </div></div>
+    </div>
+    <div class="col-12 col-lg-7">
+        <div class="card border-0 shadow-sm"><div class="card-body">
+            <div class="fw-bold mb-2"><i class="bi bi-clock-history"></i> Historial</div>
+            <div class="hf-linea">
+            {% for m in movs %}{% set c = {'ASIGNACION': '#1d4ed8', 'DEVOLUCION': '#15803d', 'REPARACION': '#b45309', 'REPARADA': '#15803d', 'BAJA_PEDIDA': '#dc2626', 'BAJA': '#475569', 'BAJA_RECHAZADA': '#64748b', 'ALTA': '#6b21a8'}.get(m.tipo, '#94a3b8') %}
+                <div class="hf-ev" style="--c: {{ c }};">
+                    <div><b style="color: {{ c }};">{{ tipos_mov.get(m.tipo, m.tipo) }}</b>{% if m.trabajador %} · {{ m.trabajador.nombre }}{% endif %}{% if m.area %} <span class="text-muted">({{ m.area.nombre }})</span>{% endif %}
+                        {% if m.condicion %}<span class="badge text-bg-light border ms-1">{{ condiciones.get(m.condicion, m.condicion) }}</span>{% endif %}</div>
+                    <div class="text-muted" style="font-size:.72rem;">{{ m.fecha.strftime('%d/%m/%Y %H:%M') if m.fecha }} · {{ m.usuario or '-' }}</div>
+                    {% if m.nota %}<div style="overflow-wrap:anywhere;">{{ m.nota }}</div>{% endif %}
+                    {% if m.firma_s3_key %}<a class="small me-2" target="_blank" href="{{ url_for('herramientas_archivo', herr_id=h.id, mov_id=m.id, cual='firma') }}"><i class="bi bi-pen"></i> firma</a>{% endif %}
+                    {% if m.foto_s3_key %}<a class="small" target="_blank" href="{{ url_for('herramientas_archivo', herr_id=h.id, mov_id=m.id, cual='foto') }}"><i class="bi bi-image"></i> evidencia</a>{% endif %}
+                </div>
+            {% else %}<div class="text-muted small">Sin movimientos.</div>{% endfor %}
+            </div>
+        </div></div>
+    </div>
+</div>
+
+{% if puede_editar and h.estado != 'DE_BAJA' %}
+{#- PRESTAR -#}
+<div class="modal fade" id="mPrestar" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+<form method="POST" action="{{ url_for('herramientas_asignar', herr_id=h.id) }}" onsubmit="return firmaAntes(this, padPrestar)">
+    <input type="hidden" name="firma_png">
+    <div class="modal-header py-2"><h6 class="modal-title fw-bold"><i class="bi bi-person-badge"></i> Prestar {{ h.codigo }}</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+        <label class="small fw-bold">¿A quién? *</label>
+        <select name="trabajador_id" class="form-select mb-2" required><option value="">— Elige —</option>
+            {% for t in trabajadores %}<option value="{{ t.id }}">{{ t.nombre }}{{ (' · ' ~ t.area.nombre) if t.area }}</option>{% endfor %}</select>
+        <div class="row g-2 mb-2">
+            <div class="col-7"><label class="small fw-bold">Área</label><select name="area_id" class="form-select form-select-sm"><option value="">La del trabajador</option>
+                {% for a in areas %}<option value="{{ a.id }}">{{ a.nombre }}</option>{% endfor %}</select></div>
+            <div class="col-5"><label class="small fw-bold">Cómo se entrega</label><select name="condicion" class="form-select form-select-sm">
+                {% for k, t in condiciones.items() if k != 'MALOGRADA' %}<option value="{{ k }}">{{ t }}</option>{% endfor %}</select></div>
+        </div>
+        <input name="nota" class="form-control form-control-sm mb-2" maxlength="300" placeholder="Nota (opcional): para qué trabajo, accesorios que lleva…">
+        <div class="d-flex justify-content-between"><label class="small fw-bold">Firma de quien la recibe <span class="fw-normal">(opcional)</span></label>
+            <button type="button" class="btn btn-sm btn-link p-0" onclick="padPrestar.limpiar()">Borrar</button></div>
+        <canvas class="pad-firma" id="padPrestar"></canvas>
+    </div>
+    <div class="modal-footer p-2"><button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+        <button class="btn btn-primary btn-sm fw-bold"><i class="bi bi-check2"></i> Prestar</button></div>
+</form></div></div></div>
+
+{#- DEVOLVER -#}
+<div class="modal fade" id="mDevolver" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+<form method="POST" action="{{ url_for('herramientas_devolver', herr_id=h.id) }}" onsubmit="return firmaAntes(this, padDevolver)">
+    <input type="hidden" name="firma_png">
+    <div class="modal-header py-2"><h6 class="modal-title fw-bold"><i class="bi bi-box-arrow-in-down"></i> Recibir {{ h.codigo }}{{ (' de ' ~ h.asignado_a.nombre) if h.asignado_a }}</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+        <label class="small fw-bold">¿Cómo vuelve? *</label>
+        <div class="d-flex gap-2 mb-2">{% for k, t in condiciones.items() %}
+            <label class="btn btn-sm btn-outline-{{ 'success' if k == 'BUENA' else 'warning' if k == 'CON_DESGASTE' else 'danger' }}"><input type="radio" name="condicion" value="{{ k }}" class="form-check-input me-1" {{ 'checked' if loop.first }}> {{ t }}</label>{% endfor %}</div>
+        <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="a_reparacion" value="1" id="chkRep">
+            <label class="form-check-label small" for="chkRep">Pasa a <b>reparación</b> (si está malograda pero tiene arreglo). Si ya no sirve, luego pide su baja.</label></div>
+        <input name="nota" class="form-control form-control-sm mb-2" maxlength="300" placeholder="Nota (opcional)">
+        <div class="d-flex justify-content-between"><label class="small fw-bold">Firma de quien la devuelve <span class="fw-normal">(opcional)</span></label>
+            <button type="button" class="btn btn-sm btn-link p-0" onclick="padDevolver.limpiar()">Borrar</button></div>
+        <canvas class="pad-firma" id="padDevolver"></canvas>
+    </div>
+    <div class="modal-footer p-2"><button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+        <button class="btn btn-success btn-sm fw-bold"><i class="bi bi-check2"></i> Recibir</button></div>
+</form></div></div></div>
+
+{#- BAJA -#}
+<div class="modal fade" id="mBaja" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+<form method="POST" action="{{ url_for('herramientas_baja', herr_id=h.id) }}" enctype="multipart/form-data">
+    <div class="modal-header py-2" style="background:#b91c1c;"><h6 class="modal-title fw-bold text-white"><i class="bi bi-x-octagon"></i> {{ 'Dar de baja' if puede_baja else 'Pedir la baja de' }} {{ h.codigo }}</h6><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+        <div class="small text-muted mb-2">La herramienta deja de estar activa (ya no se puede prestar). Su historial, su OC y sus documentos quedan.
+            {% if not puede_baja %} <b>La aprueba Logística o Gerencia.</b>{% endif %}</div>
+        <label class="small fw-bold">Motivo *</label>
+        <select name="motivo" class="form-select mb-2" required><option value="">— Elige —</option>
+            {% for k, t in motivos_baja.items() %}<option value="{{ k }}">{{ t }}</option>{% endfor %}</select>
+        <label class="small fw-bold">¿Qué pasó? *</label>
+        <textarea name="detalle" class="form-control form-control-sm mb-2" rows="2" maxlength="500" required placeholder="Ej: se quemó el motor, no tiene reparación (cotización S/ 280, más que uno nuevo)"></textarea>
+        <label class="small fw-bold">Foto o documento <span class="fw-normal">(opcional: foto del daño, denuncia, informe técnico)</span></label>
+        <input type="file" name="foto" class="form-control form-control-sm" accept="image/*,application/pdf">
+        {% if puede_baja %}<div class="form-check mt-2"><input class="form-check-input" type="checkbox" name="aprobar_ya" value="1" id="chkYa" checked>
+            <label class="form-check-label small" for="chkYa">Aprobarla ya (soy Logística / Gerencia)</label></div>{% endif %}
+    </div>
+    <div class="modal-footer p-2"><button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+        <button class="btn btn-danger btn-sm fw-bold">{{ 'Dar de baja' if puede_baja else 'Pedir baja' }}</button></div>
+</form></div></div></div>
+
+{#- EDITAR -#}
+<div class="modal fade" id="mEditar" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-lg"><div class="modal-content">
+<form method="POST" action="{{ url_for('herramientas_editar', herr_id=h.id) }}" enctype="multipart/form-data">
+    <div class="modal-header py-2"><h6 class="modal-title fw-bold"><i class="bi bi-pencil"></i> Editar {{ h.codigo }}</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body"><div class="row g-2">
+        <div class="col-12 col-md-8"><label class="small fw-bold">Herramienta *</label><input name="nombre" value="{{ h.nombre }}" class="form-control form-control-sm text-uppercase" maxlength="200" required></div>
+        <div class="col-12 col-md-4"><label class="small fw-bold">Categoría</label><input name="categoria" value="{{ h.categoria or '' }}" class="form-control form-control-sm text-uppercase" list="dlCatE" maxlength="100">
+            <datalist id="dlCatE">{% for c in categorias %}<option value="{{ c }}">{% endfor %}</datalist></div>
+        <div class="col-6 col-md-4"><label class="small fw-bold">Marca</label><input name="marca" value="{{ h.marca or '' }}" class="form-control form-control-sm text-uppercase" maxlength="80"></div>
+        <div class="col-6 col-md-4"><label class="small fw-bold">Modelo</label><input name="modelo" value="{{ h.modelo or '' }}" class="form-control form-control-sm text-uppercase" maxlength="80"></div>
+        <div class="col-6 col-md-4"><label class="small fw-bold">N° de serie</label><input name="serie" value="{{ h.serie or '' }}" class="form-control form-control-sm text-uppercase" maxlength="80"></div>
+        <div class="col-6 col-md-4"><label class="small fw-bold">Empresa *</label><select name="empresa" class="form-select form-select-sm">
+            {% for k, x in empresas.items() %}<option value="{{ k }}" {{ 'selected' if k == h.empresa }}>{{ x.corto }}</option>{% endfor %}</select></div>
+        <div class="col-6 col-md-4"><label class="small fw-bold">Valor (con IGV)</label><div class="input-group input-group-sm">
+            <select name="moneda" class="form-select" style="max-width:80px;"><option value="PEN">S/</option><option value="USD" {{ 'selected' if h.moneda == 'USD' }}>US$</option></select>
+            <input name="valor" type="number" step="0.01" min="0" value="{{ h.valor if h.valor is not none else '' }}" class="form-control"></div></div>
+        <div class="col-6 col-md-4"><label class="small fw-bold">Ubicación</label><input name="ubicacion" value="{{ h.ubicacion or '' }}" class="form-control form-control-sm" list="dlAlmE" maxlength="100">
+            <datalist id="dlAlmE">{% for a in almacenes %}<option value="{{ a.valor }}">{% endfor %}</datalist></div>
+        <div class="col-6 col-md-4"><label class="small fw-bold">Fecha de compra</label><input type="date" name="fecha_compra" value="{{ h.fecha_compra.isoformat() if h.fecha_compra else '' }}" max="{{ hoy.isoformat() }}" class="form-control form-control-sm"></div>
+        <div class="col-6 col-md-4"><label class="small fw-bold">Vida útil (meses)</label><input type="number" name="vida_util_meses" min="1" max="600" value="{{ h.vida_util_meses or '' }}" class="form-control form-control-sm"></div>
+        <div class="col-6 col-md-4"><label class="small fw-bold">Garantía hasta</label><input type="date" name="garantia_hasta" value="{{ h.garantia_hasta.isoformat() if h.garantia_hasta else '' }}" class="form-control form-control-sm"></div>
+        <div class="col-12 col-md-6"><label class="small fw-bold">Proveedor</label><input name="proveedor" value="{{ h.proveedor or '' }}" class="form-control form-control-sm text-uppercase" maxlength="200"></div>
+        <div class="col-12 col-md-6"><label class="small fw-bold">Factura</label><input name="factura" value="{{ h.factura or '' }}" class="form-control form-control-sm text-uppercase" maxlength="60"></div>
+        <div class="col-12"><label class="small fw-bold">Observación</label><input name="observacion" value="{{ h.observacion or '' }}" class="form-control form-control-sm" maxlength="500"></div>
+        <div class="col-12"><label class="small fw-bold">Foto de la herramienta <span class="fw-normal">(opcional)</span></label><input type="file" name="foto" accept="image/*" class="form-control form-control-sm"></div>
+    </div><div class="form-text">Los cambios quedan en el historial.</div></div>
+    <div class="modal-footer p-2"><button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-primary btn-sm fw-bold">Guardar</button></div>
+</form></div></div></div>
+
+<script src="{{ url_for('static', filename='js/firma.js') }}?v=2"></script>
+<script>
+const padPrestar = document.getElementById('padPrestar') ? FirmaPad(document.getElementById('padPrestar')) : null;
+const padDevolver = document.getElementById('padDevolver') ? FirmaPad(document.getElementById('padDevolver')) : null;
+['mPrestar', 'mDevolver'].forEach(id => { const m = document.getElementById(id); if (m) m.addEventListener('shown.bs.modal', () => { (id === 'mPrestar' ? padPrestar : padDevolver).ajustar(); }); });
+function firmaAntes(form, pad) { form.firma_png.value = pad && !pad.vacia() ? pad.png() : ''; form.querySelector('button.fw-bold').disabled = true; return true; }
+</script>
+{% endif %}
+{% endblock %}

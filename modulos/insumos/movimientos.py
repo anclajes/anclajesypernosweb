@@ -155,14 +155,19 @@ def insumos_ingreso_guardar():
             flash('⛔ Esa orden de compra ya fue ingresada o no está conforme.')
             return redirect(url_for('insumos_ingreso_nuevo'))
     empresa = (f.get('empresa') or '').upper()
-    if empresa not in EMPRESAS_INSUMOS:
-        flash('⛔ Elige la empresa del ingreso.')
+    bloqueo = _empresa_bloqueo_ingreso(empresa, con_oc=bool(orden_oc))
+    if bloqueo:
+        flash(f'⛔ {bloqueo}')
         return redirect(volver)
     fecha, err = _fecha_movimiento_insumo(f.get('fecha'))
     if err:
         flash(f'⛔ {err}')
         return redirect(volver)
     datos_prov, err = _datos_proveedor_ingreso(f)
+    if err and empresa == EMPRESA_GENERAL and not (f.get('razon_social') or '').strip() and not f.get('insumo_proveedor_id') and not f.get('proveedor_id'):
+        # v30: en el inventario General (cosas antiguas) el proveedor también es opcional
+        datos_prov, err = {'insumo_proveedor_id': None, 'proveedor_id': None, 'ruc': '', 'razon_social': PROVEEDOR_DESCONOCIDO_INSUMOS,
+                           'direccion': '', 'contacto_nombre': '', 'contacto_telefono': ''}, None
     if err:
         flash(f'⛔ {err}')
         return redirect(volver)
@@ -305,6 +310,10 @@ def insumos_ingreso_guardar():
           + (f'. {n_pend} ítem(s) con PRECIO PENDIENTE: entraron como lote sin precio; complétalo aquí cuando tengas la factura' if n_pend else '')
           + (f'. Con esta compra se puso precio a lotes sin precio ({_cant_txt(valorizados)} und) y se recalcularon sus salidas' if valorizados else '')
           + '.' + (' Sin N° de factura: puedes agregarlo después en el ingreso.' if not numero_factura else ''))
+    herr = [i['ins'].codigo for i in items if (i['ins'].categoria or '').upper() == 'HERRAMIENTAS']
+    if herr:      # v30: las herramientas no se gastan: se pasan al registro de herramientas (cada unidad con su código)
+        flash(f'🔨 {", ".join(herr[:4])}{"…" if len(herr) > 4 else ""} son HERRAMIENTAS: pásalas al registro de herramientas '
+              '(Insumos → Herramientas → "Pasar desde el stock de insumos") para controlar quién las tiene.')
     return redirect(url_for('insumos_ingreso_detalle', ingreso_id=ing.id))
 
 
@@ -530,6 +539,33 @@ def insumos_ingreso_anular(ingreso_id):
     return redirect(destino)
 
 
+PROVEEDOR_DESCONOCIDO_INSUMOS = 'SIN PROVEEDOR (INVENTARIO ANTIGUO)'
+
+
+@app.route('/insumos/general/cerrar', methods=['POST'])
+@_ruta_insumos(editar=True)
+def insumos_general_cerrar():
+    """v30 · Cierra (o vuelve a abrir, solo Gerencia) el inventario General. Se cierra solo cuando ya no le queda stock."""
+    abrir = request.form.get('abrir') == '1'
+    volver = url_for('insumos_inventario', empresa=EMPRESA_GENERAL)
+    if abrir:
+        if session.get('role') != 'admin':
+            flash('⛔ Solo Gerencia vuelve a abrir el inventario General.')
+            return redirect(volver)
+    elif _general_stock_total() > 1e-9:
+        flash(f'⛔ Todavía quedan {_cant_txt(_general_stock_total())} unidades en el inventario General: sácalas (o pásalas a una empresa) antes de cerrarlo.')
+        return redirect(volver)
+    c = SystemConfig.query.get('insumos_general_cerrado')
+    if not c:
+        c = SystemConfig(key='insumos_general_cerrado', value='0', updated_by=session.get('nombre', ''))
+        db.session.add(c)
+    c.value, c.updated_by = ('0' if abrir else '1'), session.get('nombre', '')
+    registrar_log(('Volvió a abrir' if abrir else 'Cerró') + ' el inventario General de insumos', 'bi-box-seam', 'text-warning')
+    db.session.commit()
+    flash('Inventario General ' + ('abierto otra vez: ya acepta ingresos.' if abrir else 'CERRADO: ya no acepta ingresos; su historial sigue disponible.'))
+    return redirect(volver)
+
+
 # ---------------------------- SALIDAS ----------------------------
 def _siguiente_numero_salida(empresa):
     ultimo = db.session.query(func.max(InsumoSalida.numero)).filter(InsumoSalida.empresa == empresa).scalar()
@@ -539,13 +575,14 @@ def _siguiente_numero_salida(empresa):
 @app.route('/insumos/salida/nueva')
 @_ruta_insumos(editar=True)
 def insumos_salida_nueva():
-    empresa = _empresa_param()
+    """v30 · Ya NO se elige la empresa primero: se busca el insumo, se ve cuánto hay en cada bolsa (Anclajes, Import Bolts y
+    General) y se elige de cuál sale cada línea (el sistema recomienda). Al guardar se hace UNA salida por bolsa usada."""
     trabajadores = InsumoTrabajador.query.filter_by(activo=True).order_by(InsumoTrabajador.nombre).all()
-    return render_template('insumos_salida_form.html', empresa=empresa, empresas=EMPRESAS_INSUMOS,
+    return render_template('insumos_salida_form.html', empresas=EMPRESAS_INSUMOS,
                            insumos_json={e: _datos_formulario_insumos(e) for e in EMPRESAS_INSUMOS},
                            trabajadores=trabajadores, areas=InsumoArea.query.filter_by(activo=True).order_by(InsumoArea.nombre).all(),
                            motivos=_catalogo_insumos('INSUMO_MOTIVO'), hoy=hora_peru().date(), seccion='salida',
-                           categorias_filtro=_categorias_insumos(),
+                           categorias_filtro=_categorias_insumos(), empresa_general=EMPRESA_GENERAL,
                            siguiente={e: _siguiente_numero_salida(e) for e in EMPRESAS_INSUMOS})
 
 
@@ -565,12 +602,12 @@ def _guardar_firma_png(data_url, salida, claves):
 @app.route('/insumos/salida/guardar', methods=['POST'])
 @_ruta_insumos(editar=True)
 def insumos_salida_guardar():
+    """Cada línea dice de qué bolsa sale (empresa_linea[]; si no viene, la empresa del formulario como antes).
+    Se crea UNA salida por bolsa (cada una con su correlativo, su costo y su PDF), todas con los mismos datos, la misma firma
+    y el mismo `grupo`. Todo o nada."""
     f = request.form
-    volver = url_for('insumos_salida_nueva', empresa=f.get('empresa'))
-    empresa = (f.get('empresa') or '').upper()
-    if empresa not in EMPRESAS_INSUMOS:
-        flash('⛔ Elige la empresa de la salida.')
-        return redirect(volver)
+    volver = url_for('insumos_salida_nueva')
+    emp_form = (f.get('empresa') or '').upper()
     fecha, err = _fecha_movimiento_insumo(f.get('fecha'))
     if err:
         flash(f'⛔ {err}')
@@ -596,14 +633,19 @@ def insumos_salida_guardar():
     if f.get('autorizado_por_id') and not autorizado:
         errores.append('Quien autoriza debe estar marcado como jefe de área.')
     items, pedidos = [], {}
-    for n, (iid, sol, desp) in enumerate(zip(f.getlist('insumo_id[]'), f.getlist('cantidad_solicitada[]'),
-                                             f.getlist('cantidad_despachada[]')), start=1):
+    ids, sols, desps = f.getlist('insumo_id[]'), f.getlist('cantidad_solicitada[]'), f.getlist('cantidad_despachada[]')
+    emps = f.getlist('empresa_linea[]')
+    for n, (iid, sol, desp) in enumerate(zip(ids, sols, desps), start=1):
         if not (iid or '').strip():
             continue
+        emp = ((emps[n - 1] if n - 1 < len(emps) else '') or emp_form).upper()
         ins = Insumo.query.get(int(iid)) if iid.isdigit() else None
         cs, cd = _num(sol), _num(desp)
         if not ins:
             errores.append(f'Fila {n}: el insumo no existe.')
+            continue
+        if emp not in EMPRESAS_INSUMOS:
+            errores.append(f'Fila {n} ({ins.codigo}): elige de qué inventario sale.')
             continue
         if cs is None or cs <= 0:
             errores.append(f'Fila {n} ({ins.codigo}): la cantidad solicitada debe ser mayor a 0.')
@@ -612,14 +654,14 @@ def insumos_salida_guardar():
         if cd <= 0 or cd > cs + 1e-9:
             errores.append(f'Fila {n} ({ins.codigo}): lo despachado debe ser mayor a 0 y no más de lo solicitado.')
             continue
-        pedidos[ins.id] = pedidos.get(ins.id, 0) + cd
-        items.append({'ins': ins, 'cs': cs, 'cd': cd})
-    for iid, total_pedido in pedidos.items():
-        st = _stock_de(iid, empresa, crear=False)
+        pedidos[(ins.id, emp)] = pedidos.get((ins.id, emp), 0) + cd
+        items.append({'ins': ins, 'cs': cs, 'cd': cd, 'emp': emp})
+    for (iid, emp), total_pedido in pedidos.items():
+        st = _stock_de(iid, emp, crear=False)
         disponible = float(st.stock_actual or 0) if st else 0
         if total_pedido > disponible + 1e-9:
             ins = Insumo.query.get(iid)
-            errores.append(f'{ins.codigo}: solo hay {_cant_txt(disponible)} {ins.unidad or ""} en {EMPRESAS_INSUMOS[empresa]["corto"]} '
+            errores.append(f'{ins.codigo}: solo hay {_cant_txt(disponible)} {ins.unidad or ""} en {EMPRESAS_INSUMOS[emp]["corto"]} '
                            f'(pides {_cant_txt(total_pedido)}).')
     if not items and not errores:
         errores.append('Agrega al menos un insumo.')
@@ -627,50 +669,54 @@ def insumos_salida_guardar():
         flash('⛔ ' + ' '.join(errores))
         return redirect(volver)
 
+    orden_emp = list(dict.fromkeys(it['emp'] for it in items))      # en el orden en que aparecen
     ahora = hora_peru()
+    grupo = f"SAL-{ahora.strftime('%y%m%d%H%M%S')}-{uuid.uuid4().hex[:4]}" if len(orden_emp) > 1 else None
+    firma = f.get('firma_png') or ''
     for intento in range(3):
-        claves = []
+        claves, hechas = [], []
         try:
-            sal = InsumoSalida(
-                empresa=empresa, numero=_siguiente_numero_salida(empresa), fecha=fecha, area_id=area.id,
-                solicitado_por_id=solicitado.id, recibido_por_id=(recibido or solicitado).id,
-                autorizado_por_id=autorizado.id if autorizado else None, a_cuenta_de_id=a_cuenta.id if a_cuenta else None,
-                motivo=motivo[:100], motivo_detalle=' '.join((f.get('motivo_detalle') or '').split())[:300] or None,
-                estado='REGISTRADA', user_id=session.get('user_id'), fecha_registro=ahora)
-            db.session.add(sal)
-            db.session.flush()
-            total, total_usd = 0, 0
-            for it in items:
-                st = _stock_de(it['ins'].id, empresa, crear=False)
-                # PEPS: sale primero del lote más antiguo; cada parte con el precio REAL de su lote (S/ o US$, sin convertir).
-                # Si un lote todavía no tiene precio, esa parte sale "sin precio" y se recalcula al ponerle el precio al lote.
-                antes, partes = _sacar_de_lotes(st, it['cd'])
-                st.ultima_salida = fecha
-                t = _totales_partes(partes)
-                total += t['t_pen']
-                total_usd += t['t_usd']
-                det = InsumoSalidaDetalle(salida_id=sal.id, insumo_id=it['ins'].id, cantidad_solicitada=it['cs'], cantidad_despachada=it['cd'],
-                                          unidad=it['ins'].unidad, ubicacion=st.almacen, stock_antes=antes, stock_despues=st.stock_actual)
-                _aplicar_totales_detalle(det, t)
-                db.session.add(det)
+            for empresa in orden_emp:
+                sal = InsumoSalida(
+                    empresa=empresa, numero=_siguiente_numero_salida(empresa), fecha=fecha, area_id=area.id,
+                    solicitado_por_id=solicitado.id, recibido_por_id=(recibido or solicitado).id,
+                    autorizado_por_id=autorizado.id if autorizado else None, a_cuenta_de_id=a_cuenta.id if a_cuenta else None,
+                    motivo=motivo[:100], motivo_detalle=' '.join((f.get('motivo_detalle') or '').split())[:300] or None,
+                    estado='REGISTRADA', grupo=grupo, user_id=session.get('user_id'), fecha_registro=ahora)
+                db.session.add(sal)
                 db.session.flush()
-                for lote, c, u, m_ in partes:
-                    db.session.add(InsumoSalidaLote(salida_id=sal.id, salida_detalle_id=det.id, lote_id=lote.id, cantidad=c,
-                                                    costo_unitario=u, moneda=m_))
-                    db.session.add(InsumoMovimiento(
-                        empresa=empresa, insumo_id=it['ins'].id, fecha=fecha, tipo='SALIDA', concepto='CONSUMO', cantidad=c,
-                        costo_unitario=u or 0, costo_total=round(c * (u or 0), 2), stock_antes=antes, stock_despues=st.stock_actual,
-                        **_datos_mov_lote(lote), referencia=f'Consumo N° {sal.numero:06d} · {area.nombre}'[:120],
-                        observacion='Sin precio (lote con precio pendiente): se recalcula al ponerle el precio' if u is None else None,
-                        salida_id=sal.id, area_id=area.id, user_id=session.get('user_id'), fecha_registro=ahora))
-            sal.total_costo = round(total, 2)
-            sal.total_costo_usd = round(total_usd, 2)
-            firma = f.get('firma_png') or ''
-            if firma:
-                sal.firma_s3_key = _guardar_firma_png(firma, sal, claves)
-                sal.firma_fecha, sal.firma_por = ahora, (recibido or solicitado).nombre
-            registrar_log(f"Salida de insumos {EMPRESAS_INSUMOS[empresa]['corto']} N° {sal.numero:06d} para {area.nombre} "
-                          f"({_montos_txt(sal.total_costo, sal.total_costo_usd)})", 'bi-box-arrow-up', 'text-danger')
+                total, total_usd = 0, 0
+                for it in (x for x in items if x['emp'] == empresa):
+                    st = _stock_de(it['ins'].id, empresa, crear=False)
+                    # PEPS: sale primero del lote más antiguo; cada parte con el precio REAL de su lote (S/ o US$, sin convertir).
+                    # Si un lote todavía no tiene precio, esa parte sale "sin precio" y se recalcula al ponerle el precio al lote.
+                    antes, partes = _sacar_de_lotes(st, it['cd'])
+                    st.ultima_salida = fecha
+                    t = _totales_partes(partes)
+                    total += t['t_pen']
+                    total_usd += t['t_usd']
+                    det = InsumoSalidaDetalle(salida_id=sal.id, insumo_id=it['ins'].id, cantidad_solicitada=it['cs'], cantidad_despachada=it['cd'],
+                                              unidad=it['ins'].unidad, ubicacion=st.almacen, stock_antes=antes, stock_despues=st.stock_actual)
+                    _aplicar_totales_detalle(det, t)
+                    db.session.add(det)
+                    db.session.flush()
+                    for lote, c, u, m_ in partes:
+                        db.session.add(InsumoSalidaLote(salida_id=sal.id, salida_detalle_id=det.id, lote_id=lote.id, cantidad=c,
+                                                        costo_unitario=u, moneda=m_))
+                        db.session.add(InsumoMovimiento(
+                            empresa=empresa, insumo_id=it['ins'].id, fecha=fecha, tipo='SALIDA', concepto='CONSUMO', cantidad=c,
+                            costo_unitario=u or 0, costo_total=round(c * (u or 0), 2), stock_antes=antes, stock_despues=st.stock_actual,
+                            **_datos_mov_lote(lote), referencia=f'Consumo N° {sal.numero:06d} · {area.nombre}'[:120],
+                            observacion='Sin precio (lote con precio pendiente): se recalcula al ponerle el precio' if u is None else None,
+                            salida_id=sal.id, area_id=area.id, user_id=session.get('user_id'), fecha_registro=ahora))
+                sal.total_costo = round(total, 2)
+                sal.total_costo_usd = round(total_usd, 2)
+                if firma:
+                    sal.firma_s3_key = _guardar_firma_png(firma, sal, claves)
+                    sal.firma_fecha, sal.firma_por = ahora, (recibido or solicitado).nombre
+                hechas.append(sal)
+            registrar_log('Salida de insumos ' + ' + '.join(f"{EMPRESAS_INSUMOS[x.empresa]['corto']} N° {x.numero:06d}" for x in hechas)
+                          + f" para {area.nombre} ({' + '.join(_montos_txt(x.total_costo, x.total_costo_usd) for x in hechas)})", 'bi-box-arrow-up', 'text-danger')
             db.session.commit()
             break
         except IntegrityError:
@@ -685,8 +731,14 @@ def insumos_salida_guardar():
             app.logger.exception("No se pudo guardar la salida de insumos")
             flash(f'⛔ No se pudo guardar la salida (no se registró nada): {e}')
             return redirect(volver)
-    flash(f'✅ Salida N° {sal.numero:06d} registrada ({_montos_txt(sal.total_costo, sal.total_costo_usd)} para {area.nombre}).')
-    return redirect(url_for('insumos_salida_detalle', salida_id=sal.id))
+    if len(hechas) == 1:
+        sal = hechas[0]
+        flash(f'✅ Salida N° {sal.numero:06d} ({EMPRESAS_INSUMOS[sal.empresa]["corto"]}) registrada ({_montos_txt(sal.total_costo, sal.total_costo_usd)} para {area.nombre}).')
+    else:
+        flash(f'✅ Se registraron {len(hechas)} salidas (una por inventario): '
+              + ' · '.join(f"{EMPRESAS_INSUMOS[x.empresa]['corto']} N° {x.numero:06d} ({_montos_txt(x.total_costo, x.total_costo_usd)})" for x in hechas)
+              + f' para {area.nombre}.')
+    return redirect(url_for('insumos_salida_detalle', salida_id=hechas[0].id))
 
 
 @app.route('/insumos/salidas')
@@ -734,8 +786,10 @@ def insumos_salida_detalle(salida_id):
     lotes_det = {}      # de qué lote salió cada línea y a qué precio (PEPS)
     for f_ in InsumoSalidaLote.query.filter_by(salida_id=sal.id).order_by(InsumoSalidaLote.id).all():
         lotes_det.setdefault(f_.salida_detalle_id, []).append(f_)
+    hermanas = (InsumoSalida.query.filter(InsumoSalida.grupo == sal.grupo, InsumoSalida.id != sal.id).order_by(InsumoSalida.id).all()
+                if getattr(sal, 'grupo', None) else [])      # v30: la misma salida, de las otras bolsas
     return render_template('insumos_salida_detalle.html', sal=sal, docs=docs, empresas=EMPRESAS_INSUMOS, seccion='salidas', lotes_det=lotes_det,
-                           puede_editar=session.get('role') in ROLES_INSUMOS_EDITAN)
+                           puede_editar=session.get('role') in ROLES_INSUMOS_EDITAN, hermanas=hermanas)
 
 
 @app.route('/insumos/salidas/<int:salida_id>/firmar', methods=['POST'])
@@ -945,7 +999,7 @@ def insumos_kardex():
         insumo_id = None
     q = InsumoMovimiento.query.filter(InsumoMovimiento.empresa == empresa)
     concepto = request.args.get('concepto', '')
-    if concepto in ('COMPRA', 'CONSUMO', 'ANULACION', 'AJUSTE_COSTO', 'IMPORTACION', 'VALORIZACION'):
+    if concepto in ('COMPRA', 'CONSUMO', 'ANULACION', 'AJUSTE_COSTO', 'IMPORTACION', 'VALORIZACION', 'A_HERRAMIENTAS'):
         q = q.filter(InsumoMovimiento.concepto == concepto)
     else:
         concepto = ''

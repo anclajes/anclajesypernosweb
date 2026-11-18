@@ -69,7 +69,7 @@
         <div class="col-12 col-md-6 col-lg-2"><div class="kardex-filtros-grupo">
             <label class="form-label"><i class="bi bi-arrow-left-right"></i> Movimiento</label>
             <select name="concepto" class="form-select form-select-sm" onchange="this.form.submit()">
-                {% for v, t in [('', 'Todos'), ('COMPRA', 'Compras'), ('CONSUMO', 'Consumos'), ('ANULACION', 'Anulaciones'), ('AJUSTE_COSTO', 'Ajustes de costo'), ('VALORIZACION', 'Precios completados'), ('IMPORTACION', 'Carga desde Excel')] %}
+                {% for v, t in [('', 'Todos'), ('COMPRA', 'Compras'), ('CONSUMO', 'Consumos'), ('ANULACION', 'Anulaciones'), ('AJUSTE_COSTO', 'Ajustes de costo'), ('VALORIZACION', 'Precios completados'), ('IMPORTACION', 'Carga desde Excel'), ('A_HERRAMIENTAS', 'Pasó a herramientas')] %}
                 <option value="{{ v }}" {{ 'selected' if v == concepto }}>{{ t }}</option>{% endfor %}</select></div></div>
         <div class="col-12 col-md-6 col-lg-2"><div class="kardex-filtros-grupo">
             <label class="form-label"><i class="bi bi-calendar-range"></i> Fechas</label>
@@ -161,7 +161,7 @@
                     </td>
                     <td class="text-center text-nowrap"><span class="kx-saldo">{{ m.stock_despues|cant }}</span></td>
                     <td class="kx-motivo">
-                        <span class="badge kx-con {{ 'bg-success' if m.concepto == 'COMPRA' else 'bg-danger' if m.concepto == 'CONSUMO' else 'bg-warning text-dark' if m.concepto == 'AJUSTE_COSTO' else 'bg-info text-dark' if m.concepto == 'IMPORTACION' else 'bg-primary' if m.concepto == 'VALORIZACION' else 'bg-secondary' }}">{{ {'AJUSTE_COSTO': 'AJUSTE DE COSTO', 'IMPORTACION': 'CARGA EXCEL', 'VALORIZACION': 'PRECIO COMPLETADO'}.get(m.concepto, m.concepto) }}</span>
+                        <span class="badge kx-con {{ 'bg-success' if m.concepto == 'COMPRA' else 'bg-danger' if m.concepto == 'CONSUMO' else 'bg-warning text-dark' if m.concepto == 'AJUSTE_COSTO' else 'bg-info text-dark' if m.concepto == 'IMPORTACION' else 'bg-primary' if m.concepto == 'VALORIZACION' else 'bg-secondary' }}">{{ {'AJUSTE_COSTO': 'AJUSTE DE COSTO', 'IMPORTACION': 'CARGA EXCEL', 'VALORIZACION': 'PRECIO COMPLETADO', 'A_HERRAMIENTAS': 'PASÓ A HERRAMIENTAS'}.get(m.concepto, m.concepto) }}</span>
                         {% if m.ingreso_id %}<a href="{{ url_for('insumos_ingreso_detalle', ingreso_id=m.ingreso_id) }}" class="fw-bold text-dark">/ {{ m.referencia }}</a>
                         {% elif m.salida_id %}<a href="{{ url_for('insumos_salida_detalle', salida_id=m.salida_id) }}" class="fw-bold text-dark">/ {{ m.referencia }}</a>
                         {% elif m.referencia %}<span class="fw-bold text-dark">/ {{ m.referencia }}</span>{% endif %}

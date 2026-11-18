@@ -21,6 +21,7 @@ modulos/
     gasto_config.py      gasto por área, configuración, vaciar el módulo
     estadisticas.py      ficha de precios de un insumo (/insumos/ficha/<id>: lotes, históricos, gráfico por proveedor)
                          y ESTADÍSTICAS (/insumos/estadisticas: mejores precios, proveedores, más comprado / gastado / consumido, alertas)
+    herramientas.py      HERRAMIENTAS (activos, v30): registro por unidad, préstamo/devolución con firma, baja aprobada (ver "## Insumos: inventario General…")
   compras/             ÓRDENES DE COMPRA / SERVICIO y REQUERIMIENTOS
     modelos.py           tablas: OrdenCompra, OrdenCompraItem, entregas, eventos, documentos, proveedores,
                          cuentas, motivos, requerimientos, OCConfig
@@ -125,6 +126,29 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
 - Requerimientos: los crean admin, logistica, almacen y almacen_visor; los atienden admin y logistica.
 - Insumos: editan admin, almacen y logistica.
 
+## Insumos: inventario General, salida de varias bolsas y Herramientas (v30)
+
+- **Inventario General** = tercera "empresa" de Insumos (`EMPRESAS_INSUMOS['GENERAL']`, `EMPRESA_GENERAL`, logo `static/img/logo_general.png`):
+  lo antiguo del almacén sin empresa ni precio conocidos. Mismo maestro, lotes PEPS y Kardex. Ingresos SOLO manuales o por Excel
+  (`_empresa_bloqueo_ingreso`: nunca con OC; las pantallas de OC solo muestran `EMPRESAS_CON_OC`); proveedor, factura y precio opcionales
+  (sin proveedor = `PROVEEDOR_DESCONOCIDO_INSUMOS`). Lo usan los mismos roles que editan Insumos (admin, almacen, logistica).
+  Cuando queda en 0 se CIERRA (`insumos_general_cerrar`, `SystemConfig('insumos_general_cerrado')`): ya no acepta ingresos; solo Gerencia
+  lo vuelve a abrir. Gasto por área tiene columna General.
+- **Nueva salida sin elegir empresa** (`insumos_salida_form.html`): se busca el insumo (catálogo único con el stock de cada bolsa), cada
+  línea elige "Sale de" (`empresa_linea[]`), con recomendación: General si tiene; si no, la empresa con más stock. Si no alcanza, botón
+  para sacar el resto de otra bolsa (otra línea). `insumos_salida_guardar` crea UNA `InsumoSalida` por bolsa (su correlativo, costo y PDF),
+  con la misma firma y el mismo `grupo` (columna nueva); el detalle muestra las "hermanas". Formularios viejos con `empresa=` siguen sirviendo.
+- **Herramientas (activos)** (`modulos/insumos/herramientas.py`, tablas `herramienta` y `herramienta_movimiento`, plantillas `herramientas_*.html`,
+  pestaña "Herramientas" en `_insumos_nav.html`): cada unidad con código HER-00001, empresa (incl. General), valor, compra, vida útil
+  (`herr_vida`), garantía, serie y su OC (docs por `herramientas_doc_oc`, que Almacén puede abrir).
+  · Alta a mano (`herramientas_nueva`, N iguales con sus series) o `herramientas_desde_insumos`: saca del stock de insumos (PEPS, Kardex
+    concepto `A_HERRAMIENTAS`, no es consumo) y crea una por unidad con el precio de su lote, proveedor, factura y `orden_compra_id` del
+    ingreso. En el inventario de insumos, los de categoría HERRAMIENTAS tienen botón 🔨; al ingresar una compra con herramientas sale aviso.
+  · Estados `HERR_ESTADOS`: DISPONIBLE → ASIGNADA (prestar con firma, `herramientas_asignar`) → devolver con condición (`herramientas_devolver`,
+    opción a reparación) / EN_REPARACION (`herramientas_reparacion`) / BAJA_PEDIDA (`herramientas_baja`, motivo + detalle + foto) → DE_BAJA
+    (`herramientas_baja_resolver`: aprueba o rechaza ROLES_HERR_BAJA = admin, logistica; ellos pueden darla de baja directo). Aviso HERR_BAJA.
+  · Historial en `HerramientaMovimiento` (firma / foto en S3, `herramientas_archivo`). "Vaciar datos" de Insumos también borra herramientas.
+
 ## Insumos: lotes PEPS, precio pendiente y documentos de la OC
 
 - **Sin promedios: cada compra es un LOTE** (`insumo_lote`) con su precio real (S/ o US$, sin convertir). Las salidas sacan
@@ -144,6 +168,8 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
 - Ingresos pendientes de OC (`/insumos/pendientes-oc`, `_ordenes_pendientes_insumos`, contador global `n_oc_pendientes_insumos()`):
   se ven en el MENÚ LATERAL (badge rojo en "Insumos Internos" aunque esté cerrado + opción "Ingresos pendientes (OC)"), en la pestaña
   del módulo y con un aviso amarillo "N compras de insumos llegaron… Ingresarlas" arriba de todas las pantallas de Insumos.
+  v29.2: también hay viñeta "Ingresos pendientes (Insumos)" en la barra de Órdenes de compra (`_oc_nav.html`, `oc_ins_emp` del context
+  processor `_contador_ordenes` en vaciar_menu.py; abre la empresa con más pendientes).
 - BARRA "POR HACER EN ALMACÉN" (solo rol `almacen`, `ROLES_BARRA_PENDIENTES` en vaciar_menu.py): arriba de TODAS las páginas
   (`templates/_barra_pendientes.html`, incluida en base.html debajo de la cabecera) con "Ingresos pendientes (OC)" (material, servicios,
   uso directo, contables) e "Insumos internos · Pendientes de OC", con el número por empresa (cada uno lleva a su pantalla).

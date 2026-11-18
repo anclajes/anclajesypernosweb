@@ -45,6 +45,8 @@
     <a href="{{ url_for('insumos_kardex') }}" class="{{ 'activa' if seccion == 'kardex' }}"><i class="bi bi-clock-history"></i> Kardex</a>
     <a href="{{ url_for('insumos_gasto') }}" class="{{ 'activa' if seccion == 'gasto' }}"><i class="bi bi-pie-chart"></i> Gasto por área</a>
     <a href="{{ url_for('insumos_estadisticas') }}" class="{{ 'activa' if seccion == 'estadisticas' }}"><i class="bi bi-graph-up-arrow"></i> Estadísticas y precios</a>
+    {% set n_baja_herr = herr_bajas_por_aprobar() if session.get('role') in ['admin', 'logistica'] else 0 %}
+    <a href="{{ url_for('herramientas_lista') }}" class="{{ 'activa' if seccion == 'herramientas' }}" title="Herramientas (activos): se prestan, se devuelven y se dan de baja"><i class="bi bi-hammer"></i> Herramientas{% if n_baja_herr %} <span class="cnt-oc" title="Bajas por aprobar">{{ n_baja_herr }}</span>{% endif %}</a>
     <a href="{{ url_for('insumos_maestro') }}" class="{{ 'activa' if seccion == 'maestro' }}"><i class="bi bi-list-columns"></i> Maestro</a>
     {% if puede_editar_insumos %}
     <a href="{{ url_for('insumos_config') }}" class="{{ 'activa' if seccion == 'config' }}"><i class="bi bi-gear"></i> Configuración</a>

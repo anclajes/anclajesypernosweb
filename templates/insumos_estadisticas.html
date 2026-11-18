@@ -22,7 +22,7 @@
 
 <form method="GET" class="row g-2 align-items-end mb-3">
     <div class="col-6 col-md-2"><label class="small fw-bold text-muted">Empresa</label>
-        <select name="empresa" class="form-select form-select-sm" onchange="this.form.submit()"><option value="AMBAS">Las dos</option>
+        <select name="empresa" class="form-select form-select-sm" onchange="this.form.submit()"><option value="AMBAS">Todas</option>
             {% for k, e in empresas.items() %}<option value="{{ k }}" {{ 'selected' if k == empresa }}>{{ e.corto }}</option>{% endfor %}</select></div>
     <div class="col-6 col-md-2"><label class="small fw-bold text-muted">Desde</label><input type="date" name="desde" value="{{ desde.isoformat() }}" class="form-control form-control-sm" onchange="this.form.submit()"></div>
     <div class="col-6 col-md-2"><label class="small fw-bold text-muted">Hasta</label><input type="date" name="hasta" value="{{ hasta.isoformat() }}" class="form-control form-control-sm" onchange="this.form.submit()"></div>

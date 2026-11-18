@@ -18,6 +18,16 @@
     .num-consumo { font-weight: 800; font-size: 1.1rem; color: #b91c1c; font-variant-numeric: tabular-nums; }
     .pad-firma { width: 100%; height: 170px; border: 1.5px dashed #94a3b8; border-radius: 10px; background: #fff; display: block; }
     .total-salida { font-size: 1.35rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+    /* v30: de qué inventario (bolsa) sale cada línea */
+    .bolsas { display: flex; flex-wrap: wrap; gap: 6px; }
+    .bolsas button { border: 2px solid #e2e8f0; background: #fff; border-radius: 10px; padding: 4px 10px; font-size: .8rem; font-weight: 700; color: #334155;
+                     display: inline-flex; align-items: center; gap: 6px; line-height: 1.15; text-align: left; }
+    .bolsas button .q { font-variant-numeric: tabular-nums; font-size: .95rem; }
+    .bolsas button .rec { font-size: .6rem; font-weight: 800; background: #fef3c7; color: #92400e; border-radius: 5px; padding: 0 5px; }
+    .bolsas button.on { border-color: var(--c); color: var(--c); background: color-mix(in srgb, var(--c) 8%, #fff); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 15%, transparent); }
+    .bolsas button:disabled { opacity: .45; cursor: not-allowed; }
+    .resumen-bolsas { font-size: .82rem; }
+    .resumen-bolsas .b { display: flex; justify-content: space-between; gap: 8px; border-left: 4px solid var(--c); padding: 3px 8px; margin-top: 4px; background: #f8fafc; border-radius: 6px; }
 </style>
 
 <form method="POST" action="{{ url_for('insumos_salida_guardar') }}" id="formSalida">
@@ -25,16 +35,10 @@
 <div class="row g-3">
     <div class="col-12 col-lg-5">
         <div class="card border-0 shadow-sm mb-3"><div class="card-body">
-            <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-1">
-                <label class="small fw-bold text-muted">EMPRESA</label>
-                <span class="small text-muted">CONSUMO N° <span class="num-consumo" id="numConsumo"></span></span>
-            </div>
-            <div class="emp-opc mb-3">
-                {% for clave, e in empresas.items() %}
-                <input type="radio" class="btn-check" name="empresa" id="emp_{{ clave }}" value="{{ clave }}" {{ 'checked' if clave == empresa }} onchange="cambioEmpresa()">
-                <label for="emp_{{ clave }}" style="--c: {{ e.color }};"><img src="{{ url_for('static', filename='img/' ~ e.logo) }}" alt=""> {{ e.corto }}</label>
-                {% endfor %}
-            </div>
+            <div class="small mb-3 px-2 py-2 rounded-3" style="background:#f8fafc; border:1px solid #e2e8f0;">
+                <i class="bi bi-info-circle text-primary"></i> No hace falta elegir la empresa: en cada material ves cuánto hay en
+                {% for k, e in empresas.items() %}<b style="color: {{ e.color }};">{{ e.corto }}</b>{{ ', ' if loop.revindex > 2 else (' y ' if loop.revindex == 2 else '') }}{% endfor %}
+                y eliges de cuál sale (el sistema recomienda). Se registra <b>una salida por cada inventario</b> usado, cada una con su número y su PDF.</div>
             <div class="row g-2">
                 <div class="col-12 col-sm-6"><label class="small fw-bold">Fecha *</label>
                     <input type="date" name="fecha" class="form-control" value="{{ hoy.isoformat() }}" max="{{ hoy.isoformat() }}" required></div>
@@ -67,6 +71,7 @@
                 <span class="text-muted">Costo de esta salida <span class="small">(precio real de cada lote, el más antiguo primero)</span></span>
                 <span class="total-salida" id="totalSalida">S/ 0.00</span>
             </div>
+            <div class="resumen-bolsas" id="resumenBolsas"></div>
         </div></div>
 
         <div class="card border-0 shadow-sm"><div class="card-body">
@@ -89,6 +94,7 @@
         <div class="row g-2">
             <div class="col-12 col-md-4"><label><i class="bi bi-funnel"></i> Categoría</label><select class="form-select form-select-sm sel-cat"></select></div>
             <div class="col-12 col-md-8"><label>Insumo *</label><select name="insumo_id[]" class="form-select sel-insumo" style="width:100%;"></select></div>
+            <div class="col-12"><label>Sale de *</label><div class="bolsas"></div><input type="hidden" name="empresa_linea[]" class="emp-linea"></div>
             <div class="col-12 info"></div>
             <div class="col-6"><label>Cantidad solicitada *</label><input name="cantidad_solicitada[]" type="number" step="any" min="0" class="form-control form-control-sm c-sol"></div>
             <div class="col-6"><label>Cantidad despachada *</label><input name="cantidad_despachada[]" type="number" step="any" min="0" class="form-control form-control-sm c-desp"></div>
@@ -101,19 +107,35 @@
 const INSUMOS = {{ insumos_json|tojson }};
 const SIGUIENTE = {{ siguiente|tojson }};
 const CATEGORIAS = {{ categorias_filtro|tojson }};
+const EMPS = [{% for k, e in empresas.items() %}{ k: {{ k|tojson }}, corto: {{ e.corto|tojson }}, color: {{ e.color|tojson }}, general: {{ 'true' if e.general else 'false' }} }{{ ',' if not loop.last }}{% endfor %}];
 const TRAB = [{% for t in trabajadores %}{id: {{ t.id }}, nombre: {{ t.nombre|tojson }}, codigo: {{ (t.codigo or '')|tojson }}, area_id: {{ t.area_id|tojson }}, area: {{ (t.area.nombre if t.area else '')|tojson }}, empresa: {{ (t.empresa or 'AMBAS')|tojson }}, jefe: {{ 'true' if t.es_jefe else 'false' }}}{{ ',' if not loop.last }}{% endfor %}];
 const pad = FirmaPad(document.getElementById('padFirma'));
-function empresaActual() { return document.querySelector('input[name=empresa]:checked').value; }
-function datoInsumo(id) { return (INSUMOS[empresaActual()] || []).find(i => String(i.id) === String(id)); }
+// un solo catálogo: cada insumo con su dato (stock, lotes) en cada inventario
+const CAT = {};
+EMPS.forEach(e => (INSUMOS[e.k] || []).forEach(i => { (CAT[i.id] = CAT[i.id] || { id: i.id, codigo: i.codigo, descripcion: i.descripcion, unidad: i.unidad, categoria: i.categoria, por: {} }).por[e.k] = i; }));
+const LISTA = Object.values(CAT).sort((a, b) => a.codigo.localeCompare(b.codigo, 'es'));
+function stockEn(c, emp) { return c && c.por[emp] ? Number(c.por[emp].stock || 0) : 0; }
+function stockTotal(c) { return EMPS.reduce((t, e) => t + stockEn(c, e.k), 0); }
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function fmt(n, d = 2) { return Number(n || 0).toLocaleString('es-PE', { minimumFractionDigits: d, maximumFractionDigits: d }); }
 function fmtCant(n) { return Number(n || 0).toLocaleString('es-PE', { maximumFractionDigits: 3 }); }
+// RECOMENDACIÓN: primero el inventario General (para ir vaciándolo); si no hay ahí, la empresa con más stock.
+function recomendada(c) {
+    if (!c) return null;
+    const gen = EMPS.find(e => e.general);
+    if (gen && stockEn(c, gen.k) > 0) return gen.k;
+    const con = EMPS.filter(e => !e.general && stockEn(c, e.k) > 0).sort((a, b) => stockEn(c, b.k) - stockEn(c, a.k));
+    return con.length ? con[0].k : null;
+}
+function motivoRec(c, emp) {
+    const e = EMPS.find(x => x.k === emp); if (!e) return '';
+    return e.general ? 'primero se vacía el inventario General' : 'es la que tiene más stock';
+}
 
 function cargarTrabajadores() {
-    const emp = empresaActual();
     document.querySelectorAll('select.sel-trab').forEach(sel => {
         const val = sel.value, soloJefes = sel.dataset.soloJefes === '1';
-        const lista = TRAB.filter(t => (t.empresa === 'AMBAS' || t.empresa === emp) && (!soloJefes || t.jefe));
+        const lista = TRAB.filter(t => !soloJefes || t.jefe);
         sel.innerHTML = '<option value=""></option>' + lista.map(t => `<option value="${t.id}">${esc(t.nombre)}${t.area ? ' · ' + esc(t.area) : ''}</option>`).join('');
         sel.value = val;
         if (window.jQuery && jQuery.fn.select2) {
@@ -127,20 +149,20 @@ function alElegirSolicitante() {
     if (t && t.area_id) document.getElementById('sel_area').value = t.area_id;
 }
 function opcionesCategorias(selCat) {
-    const nombres = [...new Set(CATEGORIAS.concat(Object.values(INSUMOS).flat().map(i => i.categoria).filter(Boolean)))].sort((a, b) => a.localeCompare(b, 'es'));
+    const nombres = [...new Set(CATEGORIAS.concat(LISTA.map(i => i.categoria).filter(Boolean)))].sort((a, b) => a.localeCompare(b, 'es'));
     selCat.innerHTML = '<option value="">Todas</option>' + nombres.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
 }
+function stocksTxt(c) { return EMPS.filter(e => !e.general || stockEn(c, e.k) > 0).map(e => `${e.corto} ${fmtCant(stockEn(c, e.k))}`).join(' · '); }
 function opcionesInsumos(sel) {
     const val = sel.value, fila = sel.closest('.fila-item'), cat = fila ? fila.querySelector('.sel-cat').value : '';
-    sel.innerHTML = '<option value=""></option>' + (INSUMOS[empresaActual()] || []).filter(i => !cat || i.categoria === cat || String(i.id) === String(val)).map(i =>
-        `<option value="${i.id}" ${i.stock > 0 ? '' : 'disabled'}>${esc(i.codigo)} — ${esc(i.descripcion)} (stock ${fmtCant(i.stock)} ${esc(i.unidad)})</option>`).join('');
+    sel.innerHTML = '<option value=""></option>' + LISTA.filter(i => !cat || i.categoria === cat || String(i.id) === String(val)).map(i =>
+        `<option value="${i.id}" ${stockTotal(i) > 0 ? '' : 'disabled'}>${esc(i.codigo)} — ${esc(i.descripcion)} (${stocksTxt(i)} ${esc(i.unidad)})</option>`).join('');
     sel.value = val;
 }
 // PEPS: sale primero del lote más antiguo, cada parte con el precio REAL de su lote (S/ o US$, sin convertir).
-// Un lote sin precio (precio pendiente) sale "sin precio" y se recalcula cuando se le pone el precio.
 function costoSalida(d, cant) {
     let falta = cant; const r = { PEN: 0, USD: 0, SC: 0 };
-    (d.lotes || []).forEach(([q, c, m]) => {
+    (d && d.lotes || []).forEach(([q, c, m]) => {
         const t = Math.min(q, falta); if (t <= 0) return;
         if (c === null || c === undefined) r.SC += t; else r[m === 'USD' ? 'USD' : 'PEN'] += t * c;
         falta -= t;
@@ -148,47 +170,91 @@ function costoSalida(d, cant) {
     return r;
 }
 function montos(r) { const p = []; if (r.PEN || (!r.USD && !r.SC)) p.push('S/ ' + fmt(r.PEN)); if (r.USD) p.push('US$ ' + fmt(r.USD)); if (r.SC) p.push(fmtCant(r.SC) + ' und sin precio'); return p.join(' + '); }
-// precios de los lotes que quedan, en el orden en que salen: "S/ 5.00 × 3 → S/ 5.50 × 5"
 function lotesTxt(d) {
     const l = (d.lotes || []).slice(0, 4).map(([q, c, m]) => c === null || c === undefined ? `<span class="text-warning-emphasis">sin precio × ${fmtCant(q)}</span>`
         : `<span${m === 'USD' ? ' style="color:#0f766e;"' : ''}>${m === 'USD' ? 'US$' : 'S/'} ${fmt(c)} × ${fmtCant(q)}</span>`);
     return l.length ? ' · lotes: ' + l.join(' → ') + ((d.lotes || []).length > 4 ? ' …' : '') : '';
 }
+function filaDatos(fila) {
+    const c = CAT[fila.querySelector('.sel-insumo').value], emp = fila.querySelector('.emp-linea').value;
+    return { c, emp, d: c && emp ? c.por[emp] : null, desp: parseFloat(fila.querySelector('.c-desp').value) || 0 };
+}
+// botones "Sale de": cada inventario con su stock; el recomendado marcado
+function pintarBolsas(fila) {
+    const { c } = filaDatos(fila), cont = fila.querySelector('.bolsas'), inp = fila.querySelector('.emp-linea');
+    if (!c) { cont.innerHTML = '<span class="small text-muted">Elige el insumo</span>'; inp.value = ''; return; }
+    const rec = recomendada(c);
+    if (!inp.value || (!fila.dataset.elegido && inp.value !== rec) || stockEn(c, inp.value) <= 0) { if (!fila.dataset.elegido || stockEn(c, inp.value) <= 0) inp.value = rec || ''; }
+    cont.innerHTML = EMPS.filter(e => !e.general || stockEn(c, e.k) > 0).map(e => {
+        const q = stockEn(c, e.k);
+        return `<button type="button" data-emp="${e.k}" style="--c:${e.color};" class="${inp.value === e.k ? 'on' : ''}" ${q > 0 ? '' : 'disabled'}
+                 title="${q > 0 ? 'Sacar de ' + esc(e.corto) : 'No hay stock en ' + esc(e.corto)}">${esc(e.corto)} <span class="q">${fmtCant(q)}</span>
+                 ${e.k === rec ? `<span class="rec" title="${esc(motivoRec(c, e.k))}">★ recomendado</span>` : ''}</button>`;
+    }).join('');
+}
 function pintarFila(fila) {
-    const d = datoInsumo(fila.querySelector('.sel-insumo').value);
-    const info = fila.querySelector('.info');
-    const desp = parseFloat(fila.querySelector('.c-desp').value) || 0;
-    fila.classList.toggle('sin-stock', !!d && desp > d.stock);
-    if (!d) { info.innerHTML = ''; recalcular(); return; }
-    info.innerHTML = `<span class="badge bg-light text-dark border">${esc(d.unidad)}</span> Stock: <b>${fmtCant(d.stock)}</b>` +
-        `${d.almacen ? ' · ' + esc(d.almacen) : ''}` +
-        lotesTxt(d) +
-        (desp ? ` · <b>${montos(costoSalida(d, Math.min(desp, d.stock)))}</b>` : '') + (desp > d.stock ? ' <span class="text-danger fw-bold">· no alcanza el stock</span>' : '');
+    pintarBolsas(fila);
+    const { c, emp, d, desp } = filaDatos(fila), info = fila.querySelector('.info');
+    const stock = d ? Number(d.stock || 0) : 0;
+    fila.classList.toggle('sin-stock', !!c && (!emp || desp > stock));
+    if (!c) { info.innerHTML = ''; recalcular(); return; }
+    if (!d) { info.innerHTML = '<span class="text-danger fw-bold">No hay stock de este insumo en ningún inventario.</span>'; recalcular(); return; }
+    // si no alcanza en la bolsa elegida y hay en otra: ofrecer sacar el resto de allá (otra línea)
+    let resto = '';
+    if (desp > stock) {
+        const otra = EMPS.filter(e => e.k !== emp && stockEn(c, e.k) > 0).sort((a, b) => stockEn(c, b.k) - stockEn(c, a.k))[0];
+        resto = ' <span class="text-danger fw-bold">· no alcanza en ' + esc(EMPS.find(e => e.k === emp).corto) + '</span>' +
+            (otra ? ` <button type="button" class="btn btn-sm btn-outline-primary py-0 ms-1 btn-resto" data-emp="${otra.k}">Sacar ${fmtCant(stock)} de aquí y ${fmtCant(Math.min(desp - stock, stockEn(c, otra.k)))} de ${esc(otra.corto)}</button>` : '');
+    }
+    info.innerHTML = `<span class="badge bg-light text-dark border">${esc(c.unidad)}</span> Stock en <b>${esc(EMPS.find(e => e.k === emp).corto)}</b>: <b>${fmtCant(stock)}</b>` +
+        `${d.almacen ? ' · ' + esc(d.almacen) : ''}` + lotesTxt(d) +
+        (desp ? ` · <b>${montos(costoSalida(d, Math.min(desp, stock)))}</b>` : '') + resto;
     recalcular();
 }
 function recalcular() {
-    const total = { PEN: 0, USD: 0, SC: 0 };
+    const total = { PEN: 0, USD: 0, SC: 0 }, por = {};
     document.querySelectorAll('#filas .fila-item').forEach(f => {
-        const d = datoInsumo(f.querySelector('.sel-insumo').value);
-        if (d) { const r = costoSalida(d, Math.min(parseFloat(f.querySelector('.c-desp').value) || 0, d.stock)); total.PEN += r.PEN; total.USD += r.USD; total.SC += r.SC; }
+        const { d, emp, desp } = filaDatos(f);
+        if (!d) return;
+        const r = costoSalida(d, Math.min(desp, Number(d.stock || 0)));
+        total.PEN += r.PEN; total.USD += r.USD; total.SC += r.SC;
+        const p = por[emp] = por[emp] || { PEN: 0, USD: 0, SC: 0, n: 0 }; p.PEN += r.PEN; p.USD += r.USD; p.SC += r.SC; p.n += 1;
     });
     document.getElementById('totalSalida').textContent = montos(total);
+    const usadas = EMPS.filter(e => por[e.k]);
+    document.getElementById('resumenBolsas').innerHTML = !usadas.length ? '' :
+        `<div class="text-muted mt-2">Se ${usadas.length > 1 ? 'registrarán <b>' + usadas.length + ' salidas</b> (una por inventario)' : 'registrará <b>1 salida</b>'}:</div>` +
+        usadas.map(e => `<div class="b" style="--c:${e.color};"><span><b style="color:${e.color};">${esc(e.corto)}</b> · Consumo N° ${String(SIGUIENTE[e.k] || 1).padStart(6, '0')} · ${por[e.k].n} ítem(s)</span><b>${montos(por[e.k])}</b></div>`).join('');
 }
 function numerar() { document.querySelectorAll('#filas .fila-item').forEach((f, i) => f.querySelector('.n').textContent = i + 1); }
-function agregarFila() {
+function agregarFila(datos) {
     const fila = document.getElementById('tplFila').content.firstElementChild.cloneNode(true);
     document.getElementById('filas').appendChild(fila);
     const sel = fila.querySelector('.sel-insumo'), selCat = fila.querySelector('.sel-cat');
     opcionesCategorias(selCat);
     opcionesInsumos(sel);
-    if (window.jQuery && jQuery.fn.select2) jQuery(sel).select2({ placeholder: 'Busca por código o descripción', width: '100%' }).on('change', () => pintarFila(fila));
-    else sel.addEventListener('change', () => pintarFila(fila));
+    if (datos) { sel.value = datos.id; fila.querySelector('.emp-linea').value = datos.emp; fila.dataset.elegido = '1';
+                 fila.querySelector('.c-sol').value = datos.cant; fila.querySelector('.c-desp').value = datos.cant; }
+    const alCambiarInsumo = () => { fila.dataset.elegido = ''; fila.querySelector('.emp-linea').value = ''; pintarFila(fila); };
+    if (window.jQuery && jQuery.fn.select2) jQuery(sel).select2({ placeholder: 'Busca por código o descripción', width: '100%' }).on('change', alCambiarInsumo);
+    else sel.addEventListener('change', alCambiarInsumo);
     selCat.addEventListener('change', () => {
-        const d = datoInsumo(sel.value);
-        if (d && selCat.value && d.categoria !== selCat.value) sel.value = '';
+        const c = CAT[sel.value];
+        if (c && selCat.value && c.categoria !== selCat.value) sel.value = '';
         opcionesInsumos(sel);
         if (window.jQuery && jQuery(sel).data('select2')) { jQuery(sel).trigger('change'); if (!sel.value) jQuery(sel).select2('open'); }
         pintarFila(fila);
+    });
+    fila.querySelector('.bolsas').addEventListener('click', e => {
+        const b = e.target.closest('button[data-emp]'); if (!b || b.disabled) return;
+        fila.querySelector('.emp-linea').value = b.dataset.emp; fila.dataset.elegido = '1'; pintarFila(fila);
+    });
+    fila.querySelector('.info').addEventListener('click', e => {
+        const b = e.target.closest('.btn-resto'); if (!b) return;
+        const { c, d, desp } = filaDatos(fila), stock = Number(d.stock || 0), resto = Math.min(desp - stock, stockEn(c, b.dataset.emp));
+        const sol = fila.querySelector('.c-sol'), dsp = fila.querySelector('.c-desp');
+        sol.value = stock; dsp.value = stock; dsp.dataset.tocado = '';
+        agregarFila({ id: c.id, emp: b.dataset.emp, cant: resto }); pintarFila(fila);
     });
     const sol = fila.querySelector('.c-sol'), desp = fila.querySelector('.c-desp');
     sol.addEventListener('input', () => { if (!desp.dataset.tocado) desp.value = sol.value; pintarFila(fila); });
@@ -199,28 +265,27 @@ function agregarFila() {
         fila.remove(); numerar(); recalcular();
     });
     numerar();
-}
-function cambioEmpresa() {
-    document.getElementById('numConsumo').textContent = String(SIGUIENTE[empresaActual()]).padStart(6, '0');
-    document.querySelectorAll('#filas .fila-item').forEach(f => { const s = f.querySelector('.sel-insumo'); opcionesInsumos(s); if (window.jQuery) jQuery(s).trigger('change.select2'); pintarFila(f); });
-    cargarTrabajadores();
+    if (window.jQuery && jQuery(sel).data('select2')) jQuery(sel).trigger('change.select2');
+    pintarFila(fila);
 }
 document.getElementById('formSalida').addEventListener('submit', function (e) {
     const filas = [...document.querySelectorAll('#filas .fila-item')].filter(f => f.querySelector('.sel-insumo').value);
     let error = '';
     if (!document.getElementById('sel_solicitado').value) error = 'Elige quién solicita.';
     else if (!filas.length) error = 'Agrega al menos un insumo.';
+    else if (filas.some(f => !f.querySelector('.emp-linea').value)) error = 'Elige de qué inventario sale cada insumo.';
     else if (filas.some(f => !(parseFloat(f.querySelector('.c-sol').value) > 0) || !(parseFloat(f.querySelector('.c-desp').value) > 0))) error = 'Cada insumo necesita cantidad solicitada y despachada.';
     else if (filas.some(f => parseFloat(f.querySelector('.c-desp').value) > parseFloat(f.querySelector('.c-sol').value))) error = 'Lo despachado no puede ser más de lo solicitado.';
-    else if (document.querySelector('#filas .fila-item.sin-stock')) error = 'Hay insumos sin stock suficiente.';
+    else if (document.querySelector('#filas .fila-item.sin-stock')) error = 'Hay insumos sin stock suficiente en el inventario elegido.';
     if (error) { e.preventDefault(); return Swal.fire('Revisa la salida', error, 'warning'); }
+    // filas vacías fuera, para que insumo_id[] y empresa_linea[] vayan alineados
+    document.querySelectorAll('#filas .fila-item').forEach(f => { if (!f.querySelector('.sel-insumo').value) f.querySelectorAll('input, select').forEach(x => x.disabled = true); });
     document.getElementById('firma_png').value = pad.vacia() ? '' : pad.png();
     const btn = document.getElementById('btnGuardar'); btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Guardando...';
 });
 document.addEventListener('DOMContentLoaded', () => {
     cargarTrabajadores();
     if (window.jQuery) jQuery('#sel_solicitado').on('change', alElegirSolicitante); else document.getElementById('sel_solicitado').addEventListener('change', alElegirSolicitante);
-    cambioEmpresa();
 });
 agregarFila();
 </script>

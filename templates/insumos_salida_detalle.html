@@ -28,6 +28,13 @@
         {% endif %}
     </div>
 </div>
+{% if hermanas %}
+<div class="alert py-2 small d-flex flex-wrap gap-2 align-items-center" style="background:#f5f3ff; border:1px solid #ddd6fe; color:#4c1d95;">
+    <i class="bi bi-diagram-2 fs-5"></i><span>Es parte de la <b>misma salida</b> que salió de varios inventarios (cada uno lleva su número, su costo y su PDF):</span>
+    {% for h in hermanas %}{% set eh = empresas[h.empresa] %}<a class="btn btn-sm btn-light border fw-bold" style="color: {{ eh.color }};" href="{{ url_for('insumos_salida_detalle', salida_id=h.id) }}">
+        {{ eh.corto }} N° {{ '%06d'|format(h.numero) }}{% if h.estado == 'ANULADA' %} <span class="badge bg-secondary">anulada</span>{% endif %}</a>{% endfor %}
+</div>
+{% endif %}
 {% if sal.estado == 'ANULADA' %}
 <div class="alert alert-secondary small py-2"><i class="bi bi-x-octagon"></i> Anulada por <b>{{ sal.anulado_por }}</b> el {{ sal.fecha_anulacion.strftime('%d/%m/%Y %H:%M') if sal.fecha_anulacion else '' }}: {{ sal.motivo_anulacion }}. Lo despachado volvió al stock.</div>
 {% endif %}

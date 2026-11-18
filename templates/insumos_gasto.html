@@ -9,7 +9,7 @@
 </style>
 <form method="GET" class="row g-2 align-items-end mb-3">
     <div class="col-12 col-sm-4 col-md-3"><label class="small fw-bold text-muted">Empresa</label>
-        <select name="empresa" class="form-select" onchange="this.form.submit()"><option value="AMBAS">Las dos</option>
+        <select name="empresa" class="form-select" onchange="this.form.submit()"><option value="AMBAS">Todas</option>
             {% for k, e in empresas.items() %}<option value="{{ k }}" {{ 'selected' if k == empresa }}>{{ e.corto }}</option>{% endfor %}</select></div>
     <div class="col-6 col-sm-3 col-md-2"><label class="small fw-bold text-muted">Desde</label><input type="date" name="desde" class="form-control" value="{{ desde.isoformat() }}"></div>
     <div class="col-6 col-sm-3 col-md-2"><label class="small fw-bold text-muted">Hasta</label><input type="date" name="hasta" class="form-control" value="{{ hasta.isoformat() }}"></div>
@@ -42,7 +42,8 @@
             <div class="card-body p-0 table-responsive">
                 <table class="table align-middle mb-0 small">
                     <thead class="table-light"><tr><th class="ps-3">Área</th><th style="width:35%;"></th><th class="text-end">Gasto</th><th class="text-end">%</th><th class="text-center">Salidas</th>
-                        {% if empresa == 'AMBAS' %}<th class="text-end">Anclajes</th><th class="text-end pe-3">Import Bolts</th>{% endif %}</tr></thead>
+                        {% set hay_gen = areas|selectattr('general')|list or areas|selectattr('general_usd')|list %}
+                        {% if empresa == 'AMBAS' %}<th class="text-end">Anclajes</th><th class="text-end {{ '' if hay_gen else 'pe-3' }}">Import Bolts</th>{% if hay_gen %}<th class="text-end pe-3">General</th>{% endif %}{% endif %}</tr></thead>
                     <tbody>
                     {% for a in areas %}
                         <tr title="{{ a.nombre }}: {{ montos_txt(a.total, a.total_usd) }}">
@@ -51,7 +52,7 @@
                             <td class="text-end fw-bold text-nowrap">{% if a.total or not a.total_usd %}<div>{{ a.total|soles }}</div>{% endif %}{% if a.total_usd %}<div style="color:#0f766e;">US$ {{ '{:,.2f}'.format(a.total_usd) }}</div>{% endif %}</td>
                             <td class="text-end">{% if a.total or not a.total_usd %}<div>{{ a.pct }}%</div>{% endif %}{% if a.total_usd %}<div style="color:#0f766e;">{{ a.pct_usd }}%</div>{% endif %}</td>
                             <td class="text-center">{{ a.salidas }}</td>
-                            {% if empresa == 'AMBAS' %}<td class="text-end text-nowrap">{{ montos_txt(a.anclajes, a.anclajes_usd) }}</td><td class="text-end pe-3 text-nowrap">{{ montos_txt(a.importbolts, a.importbolts_usd) }}</td>{% endif %}
+                            {% if empresa == 'AMBAS' %}<td class="text-end text-nowrap">{{ montos_txt(a.anclajes, a.anclajes_usd) }}</td><td class="text-end {{ '' if hay_gen else 'pe-3' }} text-nowrap">{{ montos_txt(a.importbolts, a.importbolts_usd) }}</td>{% if hay_gen %}<td class="text-end pe-3 text-nowrap">{{ montos_txt(a.general, a.general_usd) }}</td>{% endif %}{% endif %}
                         </tr>
                     {% else %}
                         <tr><td colspan="7" class="text-center text-muted py-4">Sin salidas en este período.</td></tr>

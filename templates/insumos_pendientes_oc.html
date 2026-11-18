@@ -30,7 +30,7 @@
 </style>
 
 <div class="emp-sel">
-    {% for e, info in empresas.items() %}
+    {% for e, info in empresas.items() if e != EMPRESA_GENERAL %}
     <a href="{{ url_for('insumos_pendientes_oc', empresa=e) }}" class="{{ 'on' if e == empresa }}" style="--e: {{ info.color }};">
         <img src="{{ url_for('static', filename='img/' ~ info.logo) }}" alt="" width="60" height="22"> Insumos {{ info.corto }} <span class="c">{{ por_emp[e] }}</span></a>
     {% endfor %}
