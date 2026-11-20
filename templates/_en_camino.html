@@ -1,4 +1,4 @@
-{# "En camino": lo comprado con órdenes aprobadas que todavía no está (o recién se sumó) en este inventario. Solo Gerencia.
+{# "En camino": lo comprado con órdenes aprobadas que todavía no está (o recién se sumó) en este inventario. Gerencia, Logística y Almacén (ROLES_EN_CAMINO).
    Uso:  {% import '_en_camino.html' as camino with context %}  {% set ec = en_camino('GENERAL', 'ANCLAJES') %}
          {{ camino.panel(ec, 'Anclajes') }} · en cada producto {{ camino.badge(ec, p.sku|upper) }} · al final {{ camino.script(ec) }}
          Varios inventarios en la misma página (Inventario General): {{ camino.script_varios([ec1, ec2]) }}
@@ -89,14 +89,14 @@
         {% if r.por_conformidad %}<span class="ec-res" style="--c:{{ E.POR_CONFORMIDAD.color }};--f:{{ E.POR_CONFORMIDAD.fondo }};--b:{{ E.POR_CONFORMIDAD.borde }};">{{ r.por_conformidad }} llegó a planta · por revisar</span>{% endif %}
         {% if r.por_ingresar %}<span class="ec-res" style="--c:{{ E.POR_INGRESAR.color }};--f:{{ E.POR_INGRESAR.fondo }};--b:{{ E.POR_INGRESAR.borde }};">{{ r.por_ingresar }} revisada(s) y conforme(s) · falta sumar</span>{% endif %}
         {% if r.ingresadas %}<span class="ec-res" style="--c:{{ E.INGRESADO.color }};--f:{{ E.INGRESADO.fondo }};--b:{{ E.INGRESADO.borde }};"><i class="bi bi-check2-all"></i> {{ r.ingresadas }} terminada(s): sumadas en los últimos {{ r.dias_reciente }} días</span>{% endif %}
-        {% if r.por_aprobar %}<a class="ec-res" href="{{ url_for('oc_lista', vista='aprobar') }}" onclick="event.stopPropagation();" title="Todavía no son seguras: falta la aprobación de Gerencia">{{ r.por_aprobar }} OC por aprobar</a>{% endif %}
+        {% if r.por_aprobar and session.get('role') in ['admin', 'logistica', 'administracion'] %}<a class="ec-res" href="{{ url_for('oc_lista', vista='aprobar') }}" onclick="event.stopPropagation();" title="Todavía no son seguras: falta la aprobación de Gerencia">{{ r.por_aprobar }} OC por aprobar</a>{% endif %}
         {% if ec.ordenes %}<span class="ver">Ver detalle <i class="bi bi-chevron-down"></i></span>{% endif %}
     </summary>
     {% if ec.ordenes %}
     <div class="ec-ords">
         {% for o in ec.ordenes %}{% set e = E[o.etapa] %}
         <div class="ec-ord {{ 'terminada' if o.terminada }}" style="--c: {{ 'var(--danger,#dc2626)' if o.atrasada and o.etapa == 'EN_CAMINO' else e.color }};">
-            <div class="cab"><a class="cod" href="{{ o.url }}">{{ o.codigo }}</a>{% if o.importacion %}<span class="ec-imp"><i class="bi bi-globe-americas"></i> IMPORTACIÓN</span>{% endif %}
+            <div class="cab">{% if o.url %}<a class="cod" href="{{ o.url }}">{{ o.codigo }}</a>{% else %}<span class="cod">{{ o.codigo }}</span>{% endif %}{% if o.importacion %}<span class="ec-imp"><i class="bi bi-globe-americas"></i> IMPORTACIÓN</span>{% endif %}
                 <span class="ec-et ms-auto" style="--c:{{ e.color }};--f:{{ e.fondo }};--b:{{ e.borde }};"><i class="bi {{ 'bi-check2-all' if o.terminada else e.icono }}"></i> {{ 'Terminada · sumada al inventario' if o.terminada else e.txt }}</span></div>
             <div class="prov">{{ o.proveedor }} · <b>{{ o.monto }}</b> · aprobada {{ o.aprobada }}</div>
             <div class="ec-meta"><i class="bi bi-person-fill"></i> Creó <b>{{ o.creo or '-' }}</b>{% if o.creo_fecha %} el {{ o.creo_fecha }}{% endif %}{% if o.solicito %} · pidió {{ o.solicito }}{% endif %}</div>
@@ -117,7 +117,7 @@
         </div>
         {% endfor %}
     </div>
-    <div class="px-3 pb-2" style="font-size:.7rem; color:#64748b;"><i class="bi bi-info-circle"></i> Solo órdenes <b>aprobadas</b> por Gerencia. Lo ya sumado al inventario se muestra {{ r.dias_reciente }} días (en verde, "Terminada") y luego desaparece. Solo lo ve Gerencia.</div>
+    <div class="px-3 pb-2" style="font-size:.7rem; color:#64748b;"><i class="bi bi-info-circle"></i> Solo órdenes <b>aprobadas</b> por Gerencia. Lo ya sumado al inventario se muestra {{ r.dias_reciente }} días (en verde, "Terminada") y luego desaparece. Lo ven Gerencia, Logística y Almacén.</div>
     {% endif %}
 </details>
 {% endif %}{% endmacro %}
@@ -163,7 +163,7 @@
                 <td class="text-end" style="white-space:nowrap;">${num(t.cant)} ${esc(t.um)}</td><td style="text-align:right;">${t.partes.length ? partesTxt(ET, t.partes, t.um) : '<span class="text-muted" style="font-size:.68rem;">' + esc(t.nota) + '</span>'}</td></tr>`;
         }).join('');
         return `<div class="ec-ord ${o.terminada ? 'terminada' : ''}" style="--c:${col};">
-            <div class="cab"><a class="cod" href="${esc(o.url)}">${esc(o.codigo)}</a>${o.importacion ? '<span class="ec-imp"><i class="bi bi-globe-americas"></i> IMPORTACIÓN</span>' : ''}
+            <div class="cab">${o.url ? `<a class="cod" href="${esc(o.url)}">${esc(o.codigo)}</a>` : `<span class="cod">${esc(o.codigo)}</span>`}${o.importacion ? '<span class="ec-imp"><i class="bi bi-globe-americas"></i> IMPORTACIÓN</span>' : ''}
                 <span class="ec-et ms-auto" style="--c:${e.color};--f:${e.fondo};--b:${e.borde};"><i class="bi ${o.terminada ? 'bi-check2-all' : e.icono}"></i> ${o.terminada ? 'Terminada · sumada al inventario' : esc(e.txt)}</span></div>
             <div class="prov">${esc(o.proveedor)} · <b>${esc(o.monto)}</b> · aprobada ${esc(o.aprobada)}</div>
             <div class="ec-meta"><i class="bi bi-person-fill"></i> Creó <b>${esc(o.creo || '-')}</b>${o.creo_fecha ? ' el ' + esc(o.creo_fecha) : ''}${o.solicito ? ' · pidió ' + esc(o.solicito) : ''}</div>
@@ -173,7 +173,7 @@
             <div class="ec-sec">Lista completa de la orden (${(o.todos || []).length} ítem(s))${clave != null ? ' · en verde, este producto' : ''}</div>
             <div class="ec-lista"><table class="ec-tabla"><thead><tr><th>#</th><th>Producto</th><th class="text-end">Pedido</th><th style="text-align:right;">Estado</th></tr></thead><tbody>${filas}</tbody></table></div>
             <details class="mt-2" open><summary class="ec-sec" style="cursor:pointer;"><i class="bi bi-paperclip"></i> PDF de la orden y documentos (${1 + (o.docs || []).length})</summary><div class="ec-docs">${docs}</div></details>
-            <div class="ec-acc"><a href="${esc(o.url)}"><i class="bi bi-box-arrow-up-right"></i> Abrir la orden</a></div></div>`;
+            ${o.url ? `<div class="ec-acc"><a href="${esc(o.url)}"><i class="bi bi-box-arrow-up-right"></i> Abrir la orden</a></div>` : ''}</div>`;
     }
     function abrir(titulo, html) {
         document.getElementById('ecTitulo').textContent = titulo;

@@ -2,7 +2,7 @@
 # pyright: reportUndefinedVariable=false
 # =====================================================================================
 # COMPRAS · EN CAMINO (lo comprado que todavía no está en el inventario)
-# Para Gerencia (cuentas admin): en el inventario de Anclajes, de Import Bolts y de Insumos se ve, por producto,
+# Para Gerencia, Logística y Almacén (ROLES_EN_CAMINO): en el inventario de Anclajes, de Import Bolts y de Insumos se ve, por producto,
 # cuánto viene en órdenes APROBADAS, cuándo llega (o "sin fecha confirmada"), en qué paso está y si ya se sumó al stock.
 # Este archivo NO se importa: app.py lo carga en su lugar (lista MODULOS_EN_ARCHIVOS), como si
 # su código estuviera escrito ahí. Usa directamente los modelos, variables y funciones de app.py
@@ -13,7 +13,7 @@
 # Lo ya sumado se sigue mostrando DIAS_INGRESO_RECIENTE días ("+300 sumados hace 2 días") y luego desaparece.
 
 DIAS_INGRESO_RECIENTE = 7
-ROLES_EN_CAMINO = ['admin']
+ROLES_EN_CAMINO = ['admin', 'logistica', 'almacen']     # v35: también Logística y el Jefe de Almacén (antes solo Gerencia)
 ETAPAS_CAMINO = {
     'EN_CAMINO': {'txt': 'En camino · todavía no llega a planta', 'corto': 'en camino', 'color': '#b45309', 'fondo': '#fffbeb', 'borde': '#fcd34d', 'icono': 'bi-truck'},
     'POR_CONFORMIDAD': {'txt': 'Llegó a planta · falta revisar la mercadería (conformidad)', 'corto': 'llegó · por revisar', 'color': '#0e7490', 'fondo': '#ecfeff', 'borde': '#a5f3fc', 'icono': 'bi-clipboard-check'},
@@ -90,7 +90,7 @@ def _camino_linea_tiempo(o, rec, hoy, ingreso_fecha, ingreso_completo, quien_ing
 
 def _en_camino(destino, empresa):
     """Lo que viene para un inventario: destino 'GENERAL' (productos de Anclajes / Import Bolts) o 'INSUMOS' (insumos de esa empresa).
-    Devuelve None si el usuario no es de Gerencia. {'items': {clave: [líneas]}, 'ordenes': [...], 'resumen': {...}}"""
+    Devuelve None si el usuario no es de ROLES_EN_CAMINO. {'items': {clave: [líneas]}, 'ordenes': [...], 'resumen': {...}}"""
     if session.get('role') not in ROLES_EN_CAMINO:
         return None
     cache = g.get('_en_camino_cache')
@@ -110,6 +110,7 @@ def _en_camino(destino, empresa):
 
 
 def _en_camino_calcular(destino, empresa):
+    puede_abrir = session.get('role') in ROLES_OC_VEN          # Almacén no abre la ficha de la OC (sí el PDF y los documentos)
     ahora = hora_peru()
     hoy = ahora.date()
     limite = ahora - timedelta(days=DIAS_INGRESO_RECIENTE)
@@ -205,7 +206,7 @@ def _en_camino_calcular(destino, empresa):
                           'partes': [{'etapa': k, 'cant': v} for k, v in ln['partes'].items()] if ln else [],
                           'nota': '' if ln else ('sin código del inventario' if not clave_it else 'ya sumado antes / sin pendientes')})
         estado_frase = _camino_frase(etapa_orden, o, esperada, atrasada, hoy, ultimo_ingreso, quien_txt, terminada, dias_quedan, lineas)
-        resumen_o = {'id': o.id, 'codigo': _oc_codigo(o), 'url': url_for('oc_detalle', orden_id=o.id), 'proveedor': o.razon_social or '',
+        resumen_o = {'id': o.id, 'codigo': _oc_codigo(o), 'url': url_for('oc_detalle', orden_id=o.id) if puede_abrir else None, 'proveedor': o.razon_social or '',
                      'creo': _nom_usuario(o.creado_por), 'creo_fecha': _fecha_txt(o.fecha_registro), 'solicito': _oc_solicitante_txt(o) or '',
                      'terminada': terminada, 'se_oculta': _fecha_txt(dias_quedan) if dias_quedan else '', 'frase': estado_frase, 'todos': todos,
                      'pdf_ver': url_for('oc_pdf', orden_id=o.id, ver=1), 'pdf': url_for('oc_pdf', orden_id=o.id),

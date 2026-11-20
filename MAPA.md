@@ -33,7 +33,7 @@ modulos/
     reportes.py          REPORTES DE COMPRAS (/ordenes/reportes): tablero con Visión ejecutiva y Visión operativa, Excel
     mejores_precios.py   MEJORES PRECIOS (/ordenes/precios, también el menú "Mejores Precios"): por producto, por proveedor,
                          detalle, gráficos, ahorro potencial y Excel con gráficos (productos, insumos y servicios)
-    en_camino.py         EN CAMINO (solo Gerencia): en los inventarios de Anclajes, Import Bolts e Insumos, por producto,
+    en_camino.py         EN CAMINO (Gerencia, Logística y Almacén desde v35): en los inventarios de Anclajes, Import Bolts e Insumos, por producto,
                          lo que viene en OC aprobadas (en camino / llegó / por sumar / sumado hace X días) y la línea de tiempo
     entregas.py          llegadas totales/parciales, conformidad, pago y factura, cuentas bancarias,
                          cliente, ingresos pendientes al inventario e ingreso al Kardex
@@ -116,7 +116,7 @@ Próximos candidatos para separar (cuando se trabajen): inventario Anclajes/Impo
 
 admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectura del Inventario General), vendedor, chofer.
 - Compras: ven `ROLES_OC_VEN` (admin, logistica, administracion); editan admin y logistica; aprueba solo admin.
-- Mejores precios: solo `ROLES_OC_VEN` (admin, logistica, administracion). En camino: solo admin (Gerencia).
+- Mejores precios: solo `ROLES_OC_VEN` (admin, logistica, administracion). En camino: `ROLES_EN_CAMINO` = admin, logistica, almacen (v35); Almacén no ve el enlace a la ficha de la OC (no tiene `ver`), sí el PDF y los documentos.
 
 ## Importaciones
 
@@ -274,7 +274,7 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
   roles que entregan). El formulario manda `entregado_a_sel` (+ `entregado_a_otro`); se acepta aún `entregado_a`.
   Logo de la empresa: `empresa_pill(o)` (global `oc_empresas` = EMPRESAS_OC) en la ventana de entrega y en el Movimiento de Kardex.
 
-## Compras: EN CAMINO en los inventarios (solo Gerencia)
+## Compras: EN CAMINO en los inventarios (Gerencia, Logística y Almacén)
 
 - `_en_camino_calcular` (modulos/compras/en_camino.py) arma por orden: quién la creó (`creo`), una frase clara de en qué va (`frase`:
   cuándo llega / atrasada / llegó y falta revisar / revisada y conforme en planta, falta sumar / TERMINADA con fecha, quién la sumó y
