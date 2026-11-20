@@ -406,7 +406,7 @@ def _poner_precio_lote(lote, precio, ahora, moneda=None, motivo='', concepto='VA
         f.costo_unitario, f.moneda = lote.costo_unitario, mon
         salidas.add(f.salida_id)
     for m in InsumoMovimiento.query.filter(InsumoMovimiento.lote_id == lote.id,
-                                           InsumoMovimiento.concepto.in_(['COMPRA', 'CONSUMO', 'IMPORTACION', 'ANULACION'])).all():
+                                           InsumoMovimiento.concepto.in_(['COMPRA', 'CONSUMO', 'IMPORTACION', 'ANULACION', 'A_HERRAMIENTAS'])).all():
         m.costo_unitario, m.costo_total, m.moneda = lote.costo_unitario, round((m.cantidad or 0) * lote.costo_unitario, 2), mon
         m.costo_prom_despues = lote.costo_unitario
         if m.tipo == 'SALIDA' and m.concepto in ('CONSUMO', 'IMPORTACION'):
@@ -415,6 +415,15 @@ def _poner_precio_lote(lote, precio, ahora, moneda=None, motivo='', concepto='VA
         sal = InsumoSalida.query.get(sid)
         if sal:
             _recalcular_salida(sal)
+    # v32: las herramientas que pasaron desde este lote toman su valor (si no tenían o seguían con el precio anterior)
+    _Herr = globals().get('Herramienta')
+    if _Herr is not None:
+        try:
+            for h in _Herr.query.filter(_Herr.insumo_lote_id == lote.id, _Herr.origen == 'INSUMOS').all():
+                if h.valor is None or (anterior is not None and abs(float(h.valor) - round(anterior, 2)) < 0.006):
+                    h.valor, h.moneda = round(lote.costo_unitario, 2), mon
+        except Exception:
+            app.logger.exception("No se pudo actualizar el valor de las herramientas del lote %s", lote.id)
     # el ítem del ingreso (si viene de una compra)
     if lote.ingreso_detalle_id:
         det = InsumoIngresoDetalle.query.get(lote.ingreso_detalle_id)

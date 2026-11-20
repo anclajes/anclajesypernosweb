@@ -164,7 +164,12 @@
 
 <div class="d-flex justify-content-between align-items-center mb-3">
     <h2 class="mb-0"><i class="bi bi-boxes text-primary"></i> Inventario General</h2>
-    <span class="badge bg-secondary fs-6">{{ total }} productos</span>
+    <div class="d-flex gap-2 align-items-center">
+        {#- v33: productos nuevos (Maestro) y si ya llegaron -#}
+        <a href="{{ url_for('inventario_nuevos', inv='TODOS') }}" class="btn btn-sm btn-outline-primary fw-bold" title="Productos creados hace poco en el Maestro y si ya llegaron (últimos 30 días)">
+            <i class="bi bi-stars"></i> Nuevos{% set _nn = n_productos_nuevos('TODOS') %}{% if _nn %} <span class="badge bg-primary">{{ _nn }}</span>{% endif %}</a>
+        <span class="badge bg-secondary fs-6">{{ total }} productos</span>
+    </div>
 </div>
 
 <div class="alert alert-light border small py-2 mb-3">

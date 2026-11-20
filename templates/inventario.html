@@ -244,6 +244,9 @@
         
         <!-- CAMBIO: flex-wrap para que los botones se acomoden en celular -->
         <div class="d-flex flex-wrap gap-2 w-100 justify-content-md-end">
+            <a href="{{ url_for('inventario_nuevos', inv='ANCLAJES') }}" class="btn btn-outline-primary shadow-sm flex-grow-1 flex-md-grow-0" title="Productos creados hace poco en el Maestro y si ya llegaron (últimos 30 días)">
+                <i class="bi bi-stars"></i> Nuevos{% set _nn = n_productos_nuevos('ANCLAJES') %}{% if _nn %} <span class="badge bg-primary">{{ _nn }}</span>{% endif %}
+            </a>
             {% if session.get('role') in ['admin', 'almacen', 'logistica', 'administracion'] %}
             <a href="{{ url_for('ver_kardex') }}" class="btn btn-outline-dark shadow-sm flex-grow-1 flex-md-grow-0">
                 <i class="bi bi-clock-history"></i> Kardex

@@ -116,7 +116,7 @@
     <div class="d-flex flex-wrap gap-2 align-items-center">
         <div class="input-group input-group-sm flex-grow-1" style="min-width: 220px; max-width: 520px;">
             <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
-            <input type="search" name="q" class="form-control" value="{{ buscar }}" placeholder="N°, proveedor, RUC, factura, solicitante, cliente o producto">
+            <input type="search" name="q" class="form-control" value="{{ buscar }}" placeholder="N°, proveedor, RUC, factura, código (SKU / insumo), producto, solicitante o cliente">
             <button class="btn btn-primary">Buscar</button>
         </div>
         <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#masFiltros" aria-expanded="{{ 'true' if filtros_activos else 'false' }}">
@@ -179,6 +179,23 @@
         </div>
     </div>
 </form>
+{#- v34 · con búsqueda: en qué pestañas hay órdenes que coinciden (así no se pierde una que está en otra pestaña) -#}
+{% if buscar %}
+<div class="d-flex flex-wrap gap-2 align-items-center small my-2 px-3 py-2 rounded-3" style="background:#f0f9ff; border:1px solid #bae6fd; color:#0c4a6e;">
+    <i class="bi bi-search"></i>
+    {% if busq_vistas.get('todas') %}
+    <span>«<b>{{ buscar }}</b>» está en <b>{{ busq_vistas.todas }}</b> orden(es){{ ' de esta empresa' if emp_sel != 'TODAS' }}:</span>
+    {% for k in vistas_orden if k != 'todas' and busq_vistas.get(k) %}
+    <a href="{{ url_vista(k) }}" class="badge rounded-pill text-decoration-none {{ 'text-bg-primary' if k == vista else 'text-bg-light border' }}">{{ nombres_vista[k] }} {{ busq_vistas[k] }}</a>
+    {% endfor %}
+    {% if vista != 'todas' %}<a href="{{ url_vista('todas') }}" class="fw-bold ms-1">Ver todas juntas</a>{% endif %}
+    {% if emp_sel != 'TODAS' %}<a href="{{ url_for('oc_lista', empresa='TODAS', vista=vista, q=buscar) }}" class="ms-1">Buscar en las dos empresas</a>{% endif %}
+    {% else %}
+    <span>No hay órdenes con «<b>{{ buscar }}</b>»{{ ' en esta empresa' if emp_sel != 'TODAS' }}.</span>
+    {% if emp_sel != 'TODAS' %}<a href="{{ url_for('oc_lista', empresa='TODAS', vista='todas', q=buscar) }}" class="fw-bold">Buscar en las dos empresas</a>{% endif %}
+    {% endif %}
+</div>
+{% endif %}
 
 {% if vista == 'aprobar' and session.get('role') == 'admin' and ordenes %}
 <div class="alert py-2 small" style="background:#fffbeb; border:1px solid #fde68a;"><i class="bi bi-pen text-warning"></i> Pulsa <b>Aprobar</b> para ver el resumen (proveedor, ítems, precios, total, PDF) y aprobarla ahí mismo (el PDF llevará tu <b>firma y sello</b>).
@@ -307,7 +324,9 @@
                         <span class="oc-dest {{ o.destino }}" style="font-size:.6rem;" title="{{ oc_destino_txt(o) }}{{ (' → ' ~ o.directo_ubicacion) if o.destino == 'DIRECTO' and o.directo_ubicacion else '' }}">{{ ('Uso directo' if o.destino == 'DIRECTO' else oc_destino_txt(o))|replace('Inventario', 'Inv.') }}</span>
                         {% if o.destino == 'DIRECTO' and o.directo_ubicacion %}<div class="sub text-truncate" style="max-width:150px;" title="{{ (o.directo_categoria or '')|capitalize }} → {{ o.directo_ubicacion }}"><i class="bi bi-geo-alt"></i> {{ o.directo_ubicacion }}</div>{% endif %}</td>
                     <td><div class="prov-cel" title="{{ o.razon_social }}"><b>{{ o.razon_social }}</b>
-                        <div class="sub">{{ o.ruc }} · {{ o.items|length }} ítem(s){% if o.cotizacion %} · Cot. {{ o.cotizacion }}{% endif %}</div></div></td>
+                        <div class="sub">{{ o.ruc }} · {{ o.items|length }} ítem(s){% if o.cotizacion %} · Cot. {{ o.cotizacion }}{% endif %}</div></div>
+                        {% for i in items_match.get(o.id, [])[:3] %}<div class="sub" style="color:#0c4a6e;" title="Ítem que coincide con la búsqueda"><i class="bi bi-search"></i> #{{ i.item }} <b>{{ i.codigo or i.sku_ingreso or '' }}</b> {{ i.descripcion|truncate(60) }} · {{ '{:,.2f}'.format(i.cantidad).rstrip('0').rstrip('.') }} {{ i.um }}</div>{% endfor %}
+                        {% if items_match.get(o.id, [])|length > 3 %}<div class="sub" style="color:#0c4a6e;">y {{ items_match[o.id]|length - 3 }} ítem(s) más</div>{% endif %}</td>
                     <td><div class="sol">{% if o.solicitante_nombre %}<div class="clamp2"><i class="bi bi-person text-muted"></i> {{ oc_solicitante_txt(o) }}</div>
                         {% if o.motivo_compra %}<span class="mot" title="{{ o.motivo_compra }}">{{ o.motivo_compra|capitalize }}</span>{% endif %}
                         {% if o.cliente_razon %}<div class="sub clamp2" title="{{ o.cliente_razon }}">{{ o.cliente_razon }}</div>{% endif %}

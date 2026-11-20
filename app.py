@@ -77,7 +77,7 @@ ROLE_LABELS = {
 # candado las bloquea igual por no estar en la lista de abajo.
 RUTAS_PERMITIDAS_ALMACEN_VISOR = {
     'index', 'login', 'logout', 'static',
-    'inventario_general', 'inventario', 'inventario_importbolts',
+    'inventario_general', 'inventario', 'inventario_importbolts', 'inventario_nuevos',
     'ver_kardex', 'ver_kardex_importbolts',
     'listar_fotos_producto', 'ver_foto_producto',
     'ver_documento_kardex', 'procesos_oc', 'proceso_oc_detalle',
@@ -1977,6 +1977,8 @@ NOMBRES_PAGINA = {
     'inventario': ('Inventario', 'Inventario Anclajes'),
     'inventario_importbolts': ('Inventario', 'Inventario Import Bolts'),
     'inventario_general': ('Inventario', 'Inventario General'),
+    'inventario_nuevos': ('Inventario', 'Productos nuevos'),
+    'salidas_recientes': ('Inventario', 'Últimas salidas'),
     'producto_info': ('Inventario', 'Info de producto (QR)'),
     'ver_kardex': ('Kardex', 'Kardex Anclajes'),
     'ver_kardex_importbolts': ('Kardex', 'Kardex Import Bolts'),
@@ -15802,6 +15804,7 @@ MODULOS_EN_ARCHIVOS = [
     'modulos/kardex/eliminar.py',
     'modulos/kardex/revertir_oc.py',
     'modulos/kardex/maestro_familias.py',
+    'modulos/kardex/novedades.py',
     'modulos/avisos/notificaciones.py',
     'modulos/avisos/push.py',
     'modulos/avisos/agente.py',

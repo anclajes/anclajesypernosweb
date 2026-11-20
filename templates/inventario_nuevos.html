@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Productos nuevos{% endblock %}
+{% block subtitle %}Creados hace poco en el Maestro y si ya llegaron al inventario{% endblock %}
+{% block content %}
+{#- v33 · modulos/kardex/novedades.py (ruta inventario_nuevos) -#}
+<style>
+    .nv-chip { display: inline-flex; align-items: center; gap: 6px; border: 2px solid #e2e8f0; border-radius: 20px; padding: 3px 12px; font-size: .8rem; font-weight: 700;
+               text-decoration: none; color: #334155; background: #fff; white-space: nowrap; }
+    .nv-chip:hover { border-color: #94a3b8; color: #0f172a; }
+    .nv-chip.on { border-color: #0f172a; background: #0f172a; color: #fff; }
+    .nv-t td { vertical-align: top; font-size: .84rem; }
+    .nv-emp { font-size: .62rem; font-weight: 800; color: #fff; border-radius: 5px; padding: 0 6px; background: var(--c); }
+    .nv-inv { border-left: 3px solid var(--c); padding: 2px 0 2px 8px; margin-bottom: 4px; }
+    .nv-inv .sub { font-size: .72rem; color: #64748b; }
+    .nv-stock { font-weight: 800; font-variant-numeric: tabular-nums; }
+    .nv-nuevo { font-size: .62rem; font-weight: 800; color: #7c2d12; background: #ffedd5; border: 1px solid #fdba74; border-radius: 5px; padding: 0 6px; }
+</style>
+
+<div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+    <a href="{{ url_for(volver) }}" class="btn btn-sm btn-light border"><i class="bi bi-arrow-left"></i> Volver al inventario</a>
+    <div class="small text-muted me-auto">Los productos se crean en el <b>Maestro</b> y aparecen en los dos inventarios a la vez;
+        aquí ves los creados en los últimos <b>{{ dias }} días</b> y si ya recibieron <b>ingreso</b> (cuándo llegaron, cuánto y de dónde).</div>
+</div>
+
+<div class="d-flex flex-wrap gap-2 mb-2">
+    <a class="nv-chip {{ 'on' if inv == 'TODOS' }}" href="{{ url_for('inventario_nuevos', inv='TODOS', dias=dias, ver=ver) }}">Los dos inventarios</a>
+    {% for k, c in invs.items() %}
+    <a class="nv-chip {{ 'on' if inv == k }}" href="{{ url_for('inventario_nuevos', inv=k, dias=dias, ver=ver) }}">{{ c.corto }}</a>
+    {% endfor %}
+    <span class="mx-1 border-start"></span>
+    {% for d, t in dias_opciones %}
+    <a class="nv-chip {{ 'on' if dias == d }}" href="{{ url_for('inventario_nuevos', inv=inv, dias=d, ver=ver) }}">{{ t }}</a>
+    {% endfor %}
+</div>
+<div class="d-flex flex-wrap gap-2 mb-3">
+    <a class="nv-chip {{ 'on' if ver == 'con_ingreso' }}" href="{{ url_for('inventario_nuevos', inv=inv, dias=dias, ver='con_ingreso') }}"><i class="bi bi-box-arrow-in-down"></i> Ya llegaron <span class="badge bg-success">{{ n_con }}</span></a>
+    <a class="nv-chip {{ 'on' if ver == 'sin_ingreso' }}" href="{{ url_for('inventario_nuevos', inv=inv, dias=dias, ver='sin_ingreso') }}"><i class="bi bi-hourglass"></i> Creados, sin ingreso todavía <span class="badge bg-secondary">{{ n_sin }}</span></a>
+    <a class="nv-chip {{ 'on' if ver == 'todos' }}" href="{{ url_for('inventario_nuevos', inv=inv, dias=dias, ver='todos') }}">Todos</a>
+</div>
+
+<div class="card border-0 shadow-sm"><div class="table-responsive">
+<table class="table table-hover mb-0 nv-t">
+    <thead class="table-light"><tr><th class="ps-3">Código</th><th>Producto</th><th>Creado</th><th style="min-width:300px;">En el inventario</th></tr></thead>
+    <tbody>
+    {% for f in filas %}{% set m = f.m %}
+    <tr>
+        <td class="ps-3 fw-bold text-nowrap">{{ m.sku }}<div><span class="nv-nuevo">NUEVO</span></div></td>
+        <td><div class="fw-semibold">{{ m.nombre }}</div><div class="text-muted small">{{ m.familia }}{{ (' · ' ~ m.calidad) if m.calidad }}</div></td>
+        <td class="small text-nowrap">{{ m.fecha_creacion.strftime('%d/%m/%Y') if m.fecha_creacion }}
+            <div class="text-muted">{{ m.creado_por or '' }}</div>
+            {% if m.origen and m.origen != 'Manual' %}<div class="text-muted" style="font-size:.68rem;">{{ m.origen }}</div>{% endif %}</td>
+        <td>{% for k in invs_vista %}{% set c = invs[k] %}{% set d = f.inv.get(k) %}
+            <div class="nv-inv" style="--c: {{ c.color }};">
+                <span class="nv-emp" style="--c: {{ c.color }};">{{ c.corto }}</span>
+                {% if not d %}<span class="text-muted small">no está en este inventario</span>
+                {% else %}
+                    <span class="nv-stock ms-1">Stock: {{ '{:,}'.format(d.p.stock_actual or 0) }}</span>
+                    {% if not d.p.activo %}<span class="badge text-bg-secondary">inactivo</span>{% endif %}
+                    {% if ver_kardex %}<a class="small ms-1" href="{{ url_for(c.kardex, busqueda=m.sku) }}">Kardex</a>{% endif %}
+                    {% if d.primero %}{% set mv = d.primero %}
+                    <div class="sub"><i class="bi bi-box-arrow-in-down text-success"></i> Llegó el <b>{{ mv.fecha.strftime('%d/%m/%Y') }}</b>
+                        · {{ '{:,}'.format(mv.cantidad or 0) }} und{{ (' · ' ~ mv.motivo) if mv.motivo }}{{ (' · ' ~ mv.razon_social_proveedor) if mv.razon_social_proveedor }}{{ (' · ' ~ mv.referencia) if mv.referencia }}
+                        {% if d.n > 1 %}<br>{{ d.n }} ingresos en total · {{ '{:,}'.format(d.total) }} und{% endif %}</div>
+                    {% else %}<div class="sub"><i class="bi bi-hourglass"></i> Sin ingreso todavía</div>{% endif %}
+                {% endif %}
+            </div>{% endfor %}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4" class="text-center text-muted py-5"><i class="bi bi-stars display-6 opacity-25"></i>
+        <div class="mt-2">{% if ver == 'con_ingreso' %}Ningún producto nuevo de los últimos {{ dias }} días ha recibido ingreso todavía.{% elif ver == 'sin_ingreso' %}Todos los productos nuevos ya recibieron ingreso.{% else %}No se crearon productos en los últimos {{ dias }} días.{% endif %}</div></td></tr>
+    {% endfor %}
+    </tbody>
+</table></div></div>
+{% endblock %}

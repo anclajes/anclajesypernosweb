@@ -1,0 +1,91 @@
+{#- v33 · "Últimas salidas" (Gerencia y Vendedores): botoncito junto a la campana. SIN sonido ni ventanas emergentes:
+    pregunta cada minuto (solo con la pestaña visible) y pone un numerito con las salidas que todavía no viste.
+    Lo "visto" se guarda en este navegador. Ruta: salidas_recientes_api (modulos/kardex/novedades.py). -#}
+<style>
+    .sw-box { position: relative; }
+    .sw-cnt { position: absolute; top: -7px; right: -8px; min-width: 19px; height: 19px; padding: 0 5px; border-radius: 10px; background: #0f766e; color: #fff;
+              font-size: .66rem; font-weight: 800; line-height: 19px; text-align: center; box-shadow: 0 0 0 2px #fff; }
+    .sw-panel { display: none; position: absolute; right: 0; top: calc(100% + 8px); width: 380px; max-width: calc(100vw - 24px); max-height: min(72vh, 560px); overflow-y: auto;
+                background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; box-shadow: 0 18px 48px rgba(15,23,42,.2); z-index: 1084; text-align: left; }
+    .sw-panel.abierto { display: block; }
+    @media (max-width: 576px) { .sw-panel { position: fixed; left: 12px; right: 12px; top: 64px; width: auto; max-width: none; } }
+    .sw-cab { display: flex; align-items: center; gap: 8px; padding: 9px 14px; border-bottom: 1px solid #e2e8f0; position: sticky; top: 0; background: #fff; }
+    .sw-cab b { font-size: .92rem; color: #0f172a; }
+    .sw-it { padding: 7px 14px; border-bottom: 1px solid #f1f5f9; border-left: 3px solid var(--c, #0B3D91); }
+    .sw-it.nueva { background: #f0fdfa; }
+    .sw-it .l1 { display: flex; gap: 6px; align-items: baseline; }
+    .sw-it .emp { font-size: .58rem; font-weight: 800; color: #fff; border-radius: 4px; padding: 0 5px; background: var(--c); }
+    .sw-it .cod { font-weight: 800; font-size: .8rem; color: #0f172a; }
+    .sw-it .hace { margin-left: auto; font-size: .68rem; color: #64748b; white-space: nowrap; }
+    .sw-it .nom { font-size: .76rem; color: #334155; overflow-wrap: anywhere; }
+    .sw-it .sub { font-size: .7rem; color: #64748b; }
+    .sw-it .cant { font-weight: 800; color: #b91c1c; }
+</style>
+<div class="sw-box" id="swBox">
+    <button type="button" class="btn btn-light border bg-white text-muted position-relative" id="swBtn" title="Últimas salidas del inventario" aria-haspopup="true" aria-expanded="false">
+        <i class="bi bi-box-arrow-up"></i><span class="sw-cnt" id="swCnt" style="display:none;">0</span>
+    </button>
+    <div class="sw-panel" id="swPanel" role="dialog" aria-label="Últimas salidas"></div>
+</div>
+<script>
+(function () {
+    const URL_API = {{ url_for('salidas_recientes_api')|tojson }}, URL_PAG = {{ url_for('salidas_recientes')|tojson }};
+    const CLAVE = 'erp_salidas_visto_' + {{ (session.get('user_id') or 0)|tojson }};
+    const btn = document.getElementById('swBtn'), cnt = document.getElementById('swCnt'), panel = document.getElementById('swPanel');
+    const esc = t => String(t ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const leer = () => { try { return localStorage.getItem(CLAVE); } catch (e) { return null; } };
+    const guardar = v => { try { localStorage.setItem(CLAVE, v); } catch (e) {} };
+    let datos = [], ahoraSrv = null, visto = leer();
+    function hace(iso) {
+        if (!iso || !ahoraSrv) return '';
+        const min = Math.round((new Date(ahoraSrv) - new Date(iso)) / 60000);
+        if (min < 1) return 'ahora'; if (min < 60) return 'hace ' + min + ' min';
+        const h = Math.round(min / 60); if (h < 24) return 'hace ' + h + ' h';
+        return 'hace ' + Math.round(h / 24) + ' d';
+    }
+    function pintarContador() {
+        const n = visto ? datos.filter(s => s.fecha > visto).length : 0;
+        cnt.style.display = n ? '' : 'none';
+        cnt.textContent = n >= datos.length && n > 9 ? n + '+' : n;
+    }
+    function pintarPanel() {
+        let h = `<div class="sw-cab"><b><i class="bi bi-box-arrow-up"></i> Últimas salidas</b><a class="ms-auto" href="${URL_PAG}">Ver más</a></div>`;
+        if (!datos.length) h += '<div class="text-center text-muted small py-4">Todavía no hay salidas.</div>';
+        for (const s of datos) {
+            const extra = [s.motivo, s.ref, s.cliente].filter(Boolean).map(esc).join(' · ');
+            h += `<div class="sw-it ${visto && s.fecha > visto ? 'nueva' : ''}" style="--c:${esc(s.color)}">
+                <div class="l1"><span class="emp">${esc(s.emp)}</span><span class="cod">${esc(s.sku)}</span><span class="hace" title="${esc(s.hora)}">${hace(s.fecha)}</span></div>
+                <div class="nom">${esc(s.nombre)}</div>
+                <div class="sub"><span class="cant">−${Number(s.cant).toLocaleString('es-PE')}</span>${s.queda != null ? ' · quedan ' + Number(s.queda).toLocaleString('es-PE') : ''}${extra ? ' · ' + extra : ''}${s.usuario ? ' · ' + esc(s.usuario) : ''}</div></div>`;
+        }
+        panel.innerHTML = h;
+    }
+    async function consultar() {
+        try {
+            const r = await fetch(URL_API, { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' });
+            if (!r.ok) return;
+            const d = await r.json();
+            if (d.status !== 'ok') return;
+            datos = d.salidas || []; ahoraSrv = d.ahora;
+            if (!visto) { visto = datos.length ? datos[0].fecha : d.ahora; guardar(visto); }   // la primera vez no se marca nada como nuevo
+            pintarContador();
+            if (panel.classList.contains('abierto')) pintarPanel();
+        } catch (e) {}
+    }
+    btn.addEventListener('click', ev => {
+        ev.stopPropagation();
+        const abrir = !panel.classList.contains('abierto');
+        panel.classList.toggle('abierto', abrir); btn.setAttribute('aria-expanded', abrir);
+        if (abrir) {
+            pintarPanel();
+            if (datos.length) { visto = datos[0].fecha > (visto || '') ? datos[0].fecha : visto; guardar(visto); }
+            cnt.style.display = 'none';
+        } else pintarPanel();
+    });
+    document.addEventListener('click', ev => { if (!document.getElementById('swBox').contains(ev.target)) { panel.classList.remove('abierto'); btn.setAttribute('aria-expanded', false); } });
+    document.addEventListener('keydown', ev => { if (ev.key === 'Escape') panel.classList.remove('abierto'); });
+    consultar();
+    setInterval(() => { if (document.visibilityState === 'visible') consultar(); }, 60000);
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') consultar(); });
+})();
+</script>

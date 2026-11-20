@@ -152,6 +152,29 @@ def _herr_pendientes_insumos():
     return [(i, st.empresa, float(st.stock_actual or 0)) for i, st in sorted(filas, key=lambda x: (x[0].codigo, x[1].empresa))]
 
 
+def _herr_compra_de_lote(lote):
+    """v32 · De dónde vino un lote del stock de insumos: el ingreso (factura), su OC y los documentos de ambos.
+    Sirve para la ficha de la herramienta y para ver, antes de pasar, con qué precio y papeles pasa cada unidad."""
+    r = {'lote': lote, 'ingreso': None, 'oc': None, 'docs_oc': [], 'docs_ing': [], 'origen': None}
+    if not lote:
+        return r
+    try:
+        ing = InsumoIngreso.query.get(lote.ingreso_id) if lote.ingreso_id else None
+        r['ingreso'] = ing
+        if ing:
+            ocs, docs = _ocs_de_ingresos([ing])
+            r['oc'] = ocs.get(ing.id)
+            r['docs_oc'] = docs.get(r['oc'].id, []) if r['oc'] else []
+            r['docs_ing'] = (InsumoDocumento.query.filter(InsumoDocumento.ingreso_id == ing.id, InsumoDocumento.tipo != 'SALIDA_FIRMADA')
+                             .order_by(InsumoDocumento.id).all())
+        else:
+            r['origen'] = {'INICIAL': 'Saldo anterior (de antes de los lotes)', 'EXCEL': 'Carga Excel del inventario',
+                           'DEVOLUCION': 'Devolución'}.get(lote.origen, lote.origen)
+    except Exception:      # (sin rollback: se usa también en medio de "Pasar", que todavía no guardó)
+        app.logger.exception("No se pudo leer la compra del lote %s", getattr(lote, 'id', None))
+    return r
+
+
 def _herr_bajas_por_aprobar():
     try:
         return Herramienta.query.filter_by(estado='BAJA_PEDIDA').count() if _herr_ok else 0
@@ -294,7 +317,10 @@ def herramientas_desde_insumos():
     sale del stock (PEPS, Kardex "PASÓ A HERRAMIENTAS", no es consumo) y se crea UNA herramienta por unidad, con el precio
     de su lote, la empresa, el proveedor, la factura y la orden de compra de la que vino."""
     if request.method == 'GET':
-        return render_template('herramientas_desde_insumos.html', pend=_herr_pendientes_insumos(), almacenes=_catalogo_insumos('INSUMO_ALMACEN'),
+        pend = _herr_pendientes_insumos()
+        # v32: de qué compra(s) sale cada unidad (PEPS): precio, factura, OC y documentos, para revisar antes de pasar
+        compras = {(i.id, e): [_herr_compra_de_lote(l) for l in _lotes_activos(i.id, e)] for i, e, _q in pend}
+        return render_template('herramientas_desde_insumos.html', pend=pend, compras=compras, almacenes=_catalogo_insumos('INSUMO_ALMACEN'),
                                insumo_sel=request.args.get('insumo_id', type=int), empresa_sel=request.args.get('empresa'), **_herr_ctx())
     f = request.form
     volver = url_for('herramientas_desde_insumos')
@@ -326,13 +352,16 @@ def herramientas_desde_insumos():
                 costo_unitario=u or 0, costo_total=round(c * (u or 0), 2), stock_antes=antes, stock_despues=st.stock_actual,
                 **_datos_mov_lote(lote), referencia=f'Pasó al registro de herramientas'[:120],
                 observacion='No es consumo: queda como herramienta (activo) con su código', user_id=session.get('user_id'), fecha_registro=ahora))
+        compra_lote = {}
         for k, (lote, u, m_) in enumerate(unidades):
-            ing = InsumoIngreso.query.get(lote.ingreso_id) if lote.ingreso_id else None
+            if lote.id not in compra_lote:
+                compra_lote[lote.id] = _herr_compra_de_lote(lote)
+            ing, oc_l = compra_lote[lote.id]['ingreso'], compra_lote[lote.id]['oc']
             h = Herramienta(codigo=f'HER-{n + k:05d}', nombre=nombre, categoria=ins.categoria or CATEGORIA_HERRAMIENTAS, empresa=empresa,
                             estado='DISPONIBLE', ubicacion=st.almacen, valor=round(u, 2) if u is not None else None, moneda=m_ or 'PEN',
                             fecha_compra=(lote.fecha.date() if lote.fecha else None), vida_util_meses=vu,
                             proveedor=(lote.proveedor or (ing.razon_social if ing else None)), factura=(ing.numero_factura if ing else None),
-                            origen='INSUMOS', orden_compra_id=(ing.orden_compra_id if ing else None), insumo_id=ins.id, insumo_lote_id=lote.id,
+                            origen='INSUMOS', orden_compra_id=(oc_l.id if oc_l else (ing.orden_compra_id if ing else None)), insumo_id=ins.id, insumo_lote_id=lote.id,
                             creado_por=session.get('nombre', ''), fecha_creacion=ahora)
             db.session.add(h)
             db.session.flush()
@@ -360,7 +389,16 @@ def herramientas_desde_insumos():
 def herramientas_ficha(herr_id):
     h = Herramienta.query.get_or_404(herr_id)
     docs_oc = OrdenCompraDocumento.query.filter_by(orden_id=h.orden_compra_id).order_by(OrdenCompraDocumento.id).all() if h.orden_compra_id else []
-    return render_template('herramientas_ficha.html', h=h, movs=h.movimientos.all(), docs_oc=docs_oc, vida=_herr_vida(h),
+    # v32: la compra del stock de insumos de la que salió (ingreso, factura y sus documentos), además de los de la OC
+    compra = _herr_compra_de_lote(InsumoLote.query.get(h.insumo_lote_id)) if h.insumo_lote_id else None
+    if compra and compra['oc'] and not h.orden_compra_id:      # pasadas antes de v32 desde un ingreso antiguo (no guardaba la OC)
+        try:
+            h.orden_compra_id = compra['oc'].id
+            db.session.commit()
+            docs_oc = OrdenCompraDocumento.query.filter_by(orden_id=h.orden_compra_id).order_by(OrdenCompraDocumento.id).all()
+        except Exception:
+            db.session.rollback()
+    return render_template('herramientas_ficha.html', h=h, movs=h.movimientos.all(), docs_oc=docs_oc, vida=_herr_vida(h), compra=compra,
                            trabajadores=InsumoTrabajador.query.filter_by(activo=True).order_by(InsumoTrabajador.nombre).all(),
                            areas=InsumoArea.query.filter_by(activo=True).order_by(InsumoArea.nombre).all(), categorias=_herr_categorias(),
                            almacenes=_catalogo_insumos('INSUMO_ALMACEN'), tipos_doc=TIPOS_DOC_OC, puede_ver_oc=session.get('role') in ROLES_OC_VEN,

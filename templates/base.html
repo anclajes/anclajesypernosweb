@@ -439,6 +439,7 @@
             </div>
             
             <div class="d-flex gap-3">
+                {% if salidas_widget %}{% include '_salidas_widget.html' %}{% endif %}
                 {% if campana_activa %}
                 <div class="campana-box" id="campanaBox">
                     <button type="button" class="btn btn-light border bg-white text-muted position-relative campana-btn" id="campanaBtn" title="Avisos" aria-haspopup="true" aria-expanded="false">

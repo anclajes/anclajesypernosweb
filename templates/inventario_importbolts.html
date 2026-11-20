@@ -259,6 +259,9 @@
             </div>
         </div>
         <div class="d-flex flex-column flex-sm-row flex-wrap gap-2 w-100 w-lg-auto">
+            <a href="{{ url_for('inventario_nuevos', inv='IMPORTBOLTS') }}" class="btn btn-outline-primary shadow-sm w-100 w-sm-auto" title="Productos creados hace poco en el Maestro y si ya llegaron (últimos 30 días)">
+                <i class="bi bi-stars"></i> Nuevos{% set _nn = n_productos_nuevos('IMPORTBOLTS') %}{% if _nn %} <span class="badge bg-primary">{{ _nn }}</span>{% endif %}
+            </a>
             {% if session.get('role') in ['admin', 'almacen', 'logistica', 'administracion'] %}
             <a href="{{ url_for('ver_kardex_importbolts') }}" class="btn btn-outline-dark shadow-sm w-100 w-sm-auto">
                 <i class="bi bi-clock-history"></i> Kardex

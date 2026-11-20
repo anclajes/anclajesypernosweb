@@ -8,6 +8,34 @@
 # y de los archivos que se cargan antes. Ver MAPA.md.
 # =====================================================================================
 
+def _oc_item_busqueda_txt(i):
+    """Texto de un ítem para el buscador: código (SKU / insumo), SKU con el que se ingresó, descripción, detalle, familia y calidad."""
+    return ' '.join(x for x in (i.codigo, i.sku_ingreso, i.descripcion, i.detalle, i.familia, i.calidad) if x).upper()
+
+
+def _busqueda_compacta(t):
+    """Sin espacios, guiones, puntos ni barras: así "PER0001" encuentra "PER-0001" y "3/8" encuentra "3 / 8"."""
+    return re.sub(r'[\s\-./_]+', '', t or '')
+
+
+def _oc_busqueda_txt(o):
+    return (f"{o.tipo} {_oc_numero_txt(o)} {o.numero:06d} {o.razon_social} {o.ruc or ''} {o.cotizacion or ''} {o.numero_factura or ''} {o.numero_guia or ''} "
+                     f"{_oc_solicitante_txt(o)} {o.creado_por.nombre_completo if o.creado_por else ''} {'CONTABLE ' + (o.contable_nota or '') if o.es_contable else ''} {'IMPORTACION IMPORTACIÓN' if o.es_importacion else ''} {('USO DIRECTO ' + ' '.join(x or '' for x in (o.directo_categoria, o.directo_ubicacion, o.directo_detalle, o.directo_entregado_a))) if o.destino == 'DIRECTO' else ''} {o.cliente_razon or ''} {o.cliente_ruc or ''} {' '.join(_oc_item_busqueda_txt(i) for i in o.items)}").upper()
+
+
+def _coincide_busqueda(texto, tokens):
+    """Todas las palabras buscadas están en el texto (normal o compacto)."""
+    comp = None
+    for t in tokens:
+        if t in texto:
+            continue
+        comp = _busqueda_compacta(texto) if comp is None else comp
+        tc = _busqueda_compacta(t)
+        if not tc or tc not in comp:
+            return False
+    return True
+
+
 # ---------------------------- LISTA ----------------------------
 @app.route('/ordenes')
 @_ruta_oc()
@@ -55,6 +83,7 @@ def oc_lista():
     importacion_f = importacion_f if importacion_f in ('si', 'no') else ''
     desde, hasta = _fecha_param('desde', None), _fecha_param('hasta', None)
     buscar = ' '.join((a.get('q') or '').split())
+    buscar_tokens = buscar.upper().split()
     docs = {}
     for d in OrdenCompraDocumento.query.all():
         docs.setdefault(d.orden_id, []).append(d)
@@ -105,11 +134,8 @@ def oc_lista():
             continue
         if hasta and o.fecha > hasta:
             continue
-        if buscar:
-            texto = (f"{o.tipo} {_oc_numero_txt(o)} {o.numero:06d} {o.razon_social} {o.ruc or ''} {o.cotizacion or ''} {o.numero_factura or ''} {o.numero_guia or ''} "
-                     f"{_oc_solicitante_txt(o)} {o.creado_por.nombre_completo if o.creado_por else ''} {'CONTABLE ' + (o.contable_nota or '') if o.es_contable else ''} {'IMPORTACION IMPORTACIÓN' if o.es_importacion else ''} {('USO DIRECTO ' + ' '.join(x or '' for x in (o.directo_categoria, o.directo_ubicacion, o.directo_detalle, o.directo_entregado_a))) if o.destino == 'DIRECTO' else ''} {o.cliente_razon or ''} {o.cliente_ruc or ''} {' '.join(i.descripcion for i in o.items)}").upper()
-            if not all(t in texto for t in buscar.upper().split()):
-                continue
+        if buscar and not _coincide_busqueda(_oc_busqueda_txt(o), buscar_tokens):
+            continue
         ordenes.append(o)
     total_filtrado = len(ordenes)
     if a.get('exportar') == 'excel':
@@ -137,7 +163,20 @@ def oc_lista():
     n_importaciones = sum(1 for o in todas if o.es_importacion and en_vista(o, vista))
     contables_por_confirmar = sum(1 for o in todas if o.es_contable and o.estado == 'CONFORME' and not o.fecha_kardex)
     directos_por_entregar = sum(1 for o in todas if o.destino == 'DIRECTO' and o.estado == 'CONFORME' and not o.fecha_kardex)
-    return render_template('oc_lista.html', ordenes=ordenes, vista=vista, vistas_orden=VISTAS_OC_ORDEN,
+    # v34: con búsqueda, en qué otras pestañas también hay órdenes que coinciden, y qué ítem coincidió (código / producto)
+    busq_vistas, items_match = {}, {}
+    if buscar:
+        coinciden = [o for o in todas if _coincide_busqueda(_oc_busqueda_txt(o), buscar_tokens)]
+        for v in VISTAS_OC_ORDEN:
+            n_v = sum(1 for o in coinciden if en_vista(o, v)) if v != 'todas' else 0
+            if n_v:
+                busq_vistas[v] = n_v
+        busq_vistas['todas'] = len(coinciden)
+        for o in ordenes:
+            its = [i for i in o.items if _coincide_busqueda(_oc_item_busqueda_txt(i), buscar_tokens)]
+            if its:
+                items_match[o.id] = its
+    return render_template('oc_lista.html', ordenes=ordenes, busq_vistas=busq_vistas, items_match=items_match, vista=vista, vistas_orden=VISTAS_OC_ORDEN,
                            nombres_vista={**{k: v[0] for k, v in VISTAS_OC.items()}, **VISTAS_OC_EXTRA}, conteo=conteo, docs=docs, movs=movs_todas, dups=dups,
                            cods_dup={o.id: _oc_codigo(o) for o in todas_emp if o.id in orig_dup},
                            tipo=tipo, destino=destino, prov_id=prov_id, solicitante=solicitante, motivo=motivo, pago_f=pago_f, docs_f=docs_f,

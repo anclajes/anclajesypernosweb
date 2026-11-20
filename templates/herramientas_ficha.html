@@ -89,6 +89,19 @@
             {% for d in docs_oc %}<div><a href="{{ url_for('herramientas_doc_oc', herr_id=h.id, doc_id=d.id) }}" target="_blank"><i class="bi bi-paperclip"></i> {{ tipos_doc.get(d.tipo, d.tipo) if tipos_doc is mapping else d.tipo }} · {{ d.nombre_original }}</a></div>
             {% else %}<div class="text-muted">La orden no tiene documentos subidos.</div>{% endfor %}
             {% else %}<div class="text-muted">No vino de una orden de compra{{ ' (registrada a mano)' if h.origen == 'MANUAL' }}.</div>{% endif %}
+            {#- v32 · la compra del stock de insumos de la que salió: ingreso, factura y sus documentos -#}
+            {% if compra %}{% set l = compra.lote %}
+            <hr class="my-2">
+            <div class="hf-dato">Compra en insumos (lote #{{ l.id if l else '-' }})</div>
+            {% if compra.ingreso %}{% set ing = compra.ingreso %}
+                <div class="mb-1"><a class="fw-bold" href="{{ url_for('insumos_ingreso_detalle', ingreso_id=ing.id) }}">Ingreso #{{ ing.id }}</a>
+                    · {{ ing.fecha.strftime('%d/%m/%Y') if ing.fecha }}{{ (' · Fact. ' ~ ing.numero_factura) if ing.numero_factura }}
+                    {% if l and l.costo_unitario is not none %} · {{ 'US$' if l.moneda == 'USD' else 'S/' }} {{ '{:,.2f}'.format(l.costo_unitario) }} c/u{% elif l %} · <span class="text-danger">lote sin precio</span>{% endif %}
+                    {% if ing.estado != 'REGISTRADO' %}<span class="badge bg-danger">ingreso anulado</span>{% endif %}</div>
+                {% for d in compra.docs_ing %}<div><a href="{{ url_for('insumos_documento', doc_id=d.id) }}" target="_blank"><i class="bi bi-paperclip"></i> {{ d.tipo|capitalize }} del ingreso · {{ d.nombre_original }}</a></div>
+                {% else %}<div class="text-muted">El ingreso no tiene documentos subidos{{ ' (los de la OC están arriba)' if docs_oc }}.</div>{% endfor %}
+            {% elif l %}<div class="text-muted">{{ compra.origen }} · sin factura ni documentos.</div>{% endif %}
+            {% endif %}
         </div></div>
     </div>
     <div class="col-12 col-lg-7">

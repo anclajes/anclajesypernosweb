@@ -8,13 +8,35 @@
     <b><i class="bi bi-box-arrow-right"></i> ¿Para qué?</b> Las herramientas que se compraron con orden de compra entran al stock de <b>insumos</b> (categoría HERRAMIENTAS).
     Desde aquí pasan al <b>registro de herramientas</b>: salen del stock de insumos (en el Kardex queda "PASÓ A HERRAMIENTAS"; <b>no cuenta como gasto</b>)
     y se crea <b>una herramienta por unidad</b>, con su código, el precio de su lote, la empresa, el proveedor, la factura y la orden de compra de la que vino.
+    En su ficha se ven el ingreso y <b>los documentos</b> (factura / guía del ingreso y los de la OC). Debajo de cada insumo ves de qué compra saldrá cada unidad (primero la más antigua).
 </div></div>
+<style>
+    .her-compras { font-size: .72rem; color: #334155; }
+    .her-cp { border-left: 3px solid #93c5fd; padding: 1px 0 1px 7px; margin-top: 2px; }
+    .her-cp.sin { border-left-color: #fca5a5; }
+</style>
 {% if pend %}
 <div class="card border-0 shadow-sm"><div class="table-responsive"><table class="table mb-0 align-middle" style="font-size:.85rem;">
     <thead class="table-light"><tr><th class="ps-3">Insumo</th><th>Inventario</th><th class="text-end">En stock</th><th style="min-width:420px;">Pasar al registro</th></tr></thead>
     <tbody>{% for i, e, q in pend %}{% set em = empresas[e] %}
     <tr class="{{ 'table-primary' if insumo_sel == i.id and empresa_sel == e }}">
-        <td class="ps-3"><b>{{ i.codigo }}</b><div class="text-muted">{{ i.descripcion }}</div></td>
+        <td class="ps-3"><b>{{ i.codigo }}</b><div class="text-muted">{{ i.descripcion }}</div>
+            {#- v32 · de qué compra sale cada unidad (PEPS: primero la más antigua), con su precio y papeles -#}
+            {% set cps = compras.get((i.id, e), []) %}
+            {% if cps %}<div class="her-compras mt-1">{% for c in cps %}{% set l = c.lote %}
+                <div class="her-cp {{ 'sin' if l.costo_unitario is none }}">
+                    <span class="fw-bold">{{ l.cantidad_restante|cant }} {{ i.unidad or '' }}</span>
+                    · {{ l.fecha.strftime('%d/%m/%Y') if l.fecha }}
+                    · {% if l.costo_unitario is not none %}<b>{{ 'US$' if l.moneda == 'USD' else 'S/' }} {{ '{:,.2f}'.format(l.costo_unitario) }}</b> c/u
+                      {% else %}<b class="text-danger">sin precio</b>{% endif %}
+                    {% if c.ingreso %}· {{ c.ingreso.razon_social or l.proveedor or '' }}{% if c.ingreso.numero_factura %} · Fact. {{ c.ingreso.numero_factura }}{% endif %}
+                      {% if c.oc %} · <span class="badge text-bg-light border">{{ oc_codigo(c.oc) }}</span>{% endif %}
+                      {% set nd = c.docs_ing|length + c.docs_oc|length %}
+                      · {% if nd %}<span title="Documentos: los del ingreso y los de la OC"><i class="bi bi-paperclip"></i>{{ nd }} doc.</span>{% else %}<span class="text-warning-emphasis">sin documentos</span>{% endif %}
+                    {% else %}· <span class="text-muted">{{ c.origen }}</span>{% endif %}
+                </div>{% endfor %}
+                {% if cps|selectattr('lote.costo_unitario', 'none')|list %}<div class="text-danger" style="font-size:.7rem;">Si pasa sin precio, la herramienta toma el valor cuando se le ponga el precio al lote.</div>{% endif %}
+            </div>{% endif %}</td>
         <td><span class="badge" style="background: {{ em.color }};">{{ em.corto }}</span></td>
         <td class="text-end fw-bold num">{{ q|cant }} {{ i.unidad or '' }}</td>
         <td>{% if puede_editar %}
@@ -25,6 +47,7 @@
                 <input type="number" name="vida_util_meses" min="1" max="600" class="form-control form-control-sm" style="width:110px;" placeholder="vida útil (meses)">
                 <button class="btn btn-sm btn-primary fw-bold"><i class="bi bi-box-arrow-right"></i> Pasar</button></form>
             {% if q != q|int %}<div class="form-text">Hay {{ q|cant }}: solo se pasan unidades enteras.</div>{% endif %}
+            {% if (i.unidad or '')|upper in ['CAJA', 'CJA', 'JGO', 'JUEGO', 'KIT', 'SET', 'PAQ', 'PAQUETE'] %}<div class="form-text">Está en <b>{{ i.unidad }}</b>: cada {{ i.unidad|lower }} pasa como <b>una</b> herramienta (ej. un juego de sellos = 1). Si la caja trae varias herramientas sueltas, regístralas a mano.</div>{% endif %}
         {% endif %}</td>
     </tr>{% endfor %}</tbody>
 </table></div></div>

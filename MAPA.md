@@ -53,6 +53,7 @@ modulos/
                          los saldos posteriores y guarda la copia en "Movimientos eliminados" (/kardex/eliminados)
     revertir_oc.py       REVERTIR EL INGRESO AL KARDEX de una OC (v28): lo pide Almacén, lo confirma Logística (ver "## Kardex")
     maestro_familias.py  MAESTRO · FAMILIAS (v29): "Nueva familia" sola (Category + CategoryImportBolts, máx. 50 letras, sin
+    novedades.py         v33: PRODUCTOS NUEVOS (Maestro, últimos N días, si ya llegaron) y ÚLTIMAS SALIDAS (Gerencia y Vendedores) (ver "## Novedades del inventario")
                          repetir ignorando mayúsc./espacios) y "Pasar a otra familia" de los productos marcados con los checks del
                          catálogo (misma selección en localStorage que "Imprimir códigos"; máx. 500): cambia MaestroProducto.familia,
                          Product.categoria y ProductImportBolts.categoria, con MaestroCambioLog campo 'familia' (lote FAM-...).
@@ -149,6 +150,32 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
     opción a reparación) / EN_REPARACION (`herramientas_reparacion`) / BAJA_PEDIDA (`herramientas_baja`, motivo + detalle + foto) → DE_BAJA
     (`herramientas_baja_resolver`: aprueba o rechaza ROLES_HERR_BAJA = admin, logistica; ellos pueden darla de baja directo). Aviso HERR_BAJA.
   · Historial en `HerramientaMovimiento` (firma / foto en S3, `herramientas_archivo`). "Vaciar datos" de Insumos también borra herramientas.
+  · v32: `_herr_compra_de_lote(lote)` = ingreso, factura, OC (también la de ingresos antiguos, buscada por `insumo_ingreso_id`) y documentos
+    (del ingreso `InsumoDocumento` + de la OC). "Pasar desde insumos" muestra debajo de cada insumo de qué compra(s) sale (PEPS, precio, factura,
+    OC, n° de documentos, aviso si va sin precio o si la unidad es CAJA/JGO = 1 herramienta). La ficha muestra el ingreso y sus documentos.
+    `_poner_precio_lote` (base.py) también actualiza el movimiento A_HERRAMIENTAS y el `valor` de las herramientas de ese lote (si no tenían
+    o seguían con el precio anterior; si se editó a mano no se toca).
+- IDEA GUARDADA (no hecha, a pedido del usuario): "unidades de inventario" en el carrito de la OC (no sale en la OC: 3 CAJAS → entran 18 UND,
+  precio por unidad convertido; copia la cantidad por defecto; Almacén corrige al ingresar si llega incompleta con nota; recordar la
+  equivalencia por insumo). Primero insumos y herramientas. Por ahora Logística pone siempre unidades finales.
+
+## Buscador de órdenes de compra (v34, modulos/compras/ordenes.py → oc_lista)
+
+- El buscador también busca por **código del ítem** (SKU / código de insumo, `codigo` y `sku_ingreso`), detalle, familia y calidad
+  (`_oc_item_busqueda_txt`, `_oc_busqueda_txt`). Coincide aunque se escriba sin guiones ni espacios (`_busqueda_compacta`: PER0001 = PER-0001).
+- Con búsqueda sale una franja con en qué pestañas hay órdenes que coinciden (`busq_vistas`) + "Ver todas juntas" / "Buscar en las dos
+  empresas"; y en cada orden, debajo del proveedor, el/los ítem(s) que coincidieron (`items_match`).
+
+## Novedades del inventario (v33, modulos/kardex/novedades.py)
+
+- Botón "✨ Nuevos" en Inventario Anclajes, Import Bolts y General (con el numerito de cuántos ya llegaron en 30 días,
+  `n_productos_nuevos(inv)` del context processor) → `/inventario/nuevos?inv=&dias=&ver=`: productos de `MaestroProducto` creados en
+  los últimos N días (sin los de origen "backfill") y, por inventario, su stock y su 1er ENTRADA (fecha, cantidad, motivo, proveedor,
+  referencia) + total ingresado. Filtros: Ya llegaron / Creados sin ingreso / Todos. El visor de inventario también lo puede ver.
+- "Últimas salidas" (`_salidas_widget.html`, incluido en base.html junto a la campana) solo para `ROLES_SALIDAS_RECIENTES` = admin y
+  vendedor: botoncito con numerito de las salidas no vistas (lo visto se guarda en localStorage por usuario), SIN sonido ni ventanas.
+  Consulta `/api/salidas/recientes` cada minuto solo con la pestaña visible. "Ver más" → `/salidas/recientes` (1–30 días, empresa, búsqueda).
+  Sin productos "sombra" (IBT-). El cliente y quién registró solo los ve Gerencia (entre vendedores no se muestran los clientes).
 
 ## Insumos: revertir movimientos del Kardex (v31)
 
