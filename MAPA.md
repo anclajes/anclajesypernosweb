@@ -53,6 +53,7 @@ modulos/
                          los saldos posteriores y guarda la copia en "Movimientos eliminados" (/kardex/eliminados)
     revertir_oc.py       REVERTIR EL INGRESO AL KARDEX de una OC (v28): lo pide Almacén, lo confirma Logística (ver "## Kardex")
     maestro_familias.py  MAESTRO · FAMILIAS (v29): "Nueva familia" sola (Category + CategoryImportBolts, máx. 50 letras, sin
+    maestro_codigos.py   v36: CAMBIAR CÓDIGO de un producto y ver DÓNDE QUEDA en el orden de su familia (ver "## Maestro: códigos y orden")
     novedades.py         v33: PRODUCTOS NUEVOS (Maestro, últimos N días, si ya llegaron) y ÚLTIMAS SALIDAS (Gerencia y Vendedores) (ver "## Novedades del inventario")
                          repetir ignorando mayúsc./espacios) y "Pasar a otra familia" de los productos marcados con los checks del
                          catálogo (misma selección en localStorage que "Imprimir códigos"; máx. 500): cambia MaestroProducto.familia,
@@ -158,6 +159,24 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
 - IDEA GUARDADA (no hecha, a pedido del usuario): "unidades de inventario" en el carrito de la OC (no sale en la OC: 3 CAJAS → entran 18 UND,
   precio por unidad convertido; copia la cantidad por defecto; Almacén corrige al ingresar si llega incompleta con nota; recordar la
   equivalencia por insumo). Primero insumos y herramientas. Por ahora Logística pone siempre unidades finales.
+
+## Maestro: códigos y orden (v36, modulos/kardex/maestro_codigos.py)
+
+- Los códigos ordenan todas las listas; dentro de una familia van por medida (ej. P18128I400A 5/8"×4 1/2" → P18128I420A 5/8"×5").
+- Botón <i>upc</i> "Cambiar código" en cada fila del Maestro (`_maestro_cambiar_codigo.html`) → `admin_maestro_cambiar_codigo`:
+  `_cambiar_codigo_maestro` cambia MaestroProducto, Product, ProductImportBolts, la sombra `IBT-` (+ `shadow_origen_sku`), ítems de OC
+  (`codigo` / `sku_ingreso`, solo los que no son insumo), entregas, requerimientos, MaestroCambioLog y MovimientoEliminado; añade un log
+  campo='codigo'. Kardex, ventas y fotos van por id: no se tocan. Bloquea si el código ya existe en cualquier lado.
+- Vista previa en vivo (`_maestro_codigo_pos.html` + `/api/maestro/codigo/posicion`, `_codigo_posicion`): vecinos de arriba/abajo con la
+  medida leída de la descripción (`_medidas_desc`: "5/8\" X 8\"", "#10 X 3/4", "M10 X 50"), avisos (no sigue el formato de la familia
+  `_forma_codigo` A/9, queda al final, la medida no encaja) y un código libre sugerido entre los vecinos por medida (`_codigo_entre`).
+  También en "Nuevo producto" (y pide confirmar al crear si hay avisos). Placeholder "PER-005" quitado.
+- "Revisar orden" (`/admin/maestro/orden?familia=`): la familia por código con su medida; marca en naranja las que tienen medida menor que
+  la anterior de su calidad o código con otro formato.
+
+## Kardex: eliminar movimientos (v36)
+- El Jefe de Almacén elimina los REGISTRADOS en los últimos 7 días aunque tengan fecha anterior (`_registrado_hace_poco`: id ≥ al primer
+  movimiento con fecha de los últimos 7 días). Gerencia, cualquiera. Si solo lo puede Gerencia, sale "🔒 solo Gerencia" con el motivo.
 
 ## Buscador de órdenes de compra (v34, modulos/compras/ordenes.py → oc_lista)
 

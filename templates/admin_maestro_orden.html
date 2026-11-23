@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Orden de códigos{% endblock %}
+{% block subtitle %}Maestro: revisa que cada familia vaya por medida, de abajo hacia arriba{% endblock %}
+{% block content %}
+{#- v36 · modulos/kardex/maestro_codigos.py (ruta admin_maestro_orden) -#}
+<style>
+    .mo-t td { vertical-align: middle; font-size: .84rem; }
+    .mo-t tr.fuera { background: #fff7ed; }
+    .mo-cod { font-weight: 800; color: #0B3D91; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .mo-av { font-size: .72rem; color: #9a3412; }
+    .mo-md { font-variant-numeric: tabular-nums; white-space: nowrap; color: #334155; }
+</style>
+<div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+    <a href="{{ url_for('admin_maestro', familia=familia or None) }}" class="btn btn-sm btn-light border"><i class="bi bi-arrow-left"></i> Volver al Maestro</a>
+    <form method="GET" class="d-flex gap-2 align-items-center flex-wrap">
+        <input name="familia" class="form-control form-control-sm" list="moFamilias" value="{{ familia }}" placeholder="Elige una familia" style="min-width:260px;" onchange="this.form.submit()">
+        <datalist id="moFamilias">{% for f in familias %}<option value="{{ f }}">{% endfor %}</datalist>
+        <label class="small"><input type="checkbox" name="solo" value="1" {{ 'checked' if solo }} onchange="this.form.submit()"> Solo las que parecen fuera de lugar</label>
+        <button class="btn btn-sm btn-dark"><i class="bi bi-search"></i></button>
+    </form>
+</div>
+<div class="small text-muted mb-2">La lista va <b>por código</b>, como se ve en los inventarios. Al lado va la <b>medida que se lee de la descripción</b>
+    (diámetro × largo). Se marcan en naranja las que tienen una medida menor que la anterior de su misma calidad, o un código que no sigue el
+    formato de la familia{% if formato %} (<code>{{ formato }}</code>: A = letra, 9 = número){% endif %}. Es una ayuda: revisa antes de cambiar.</div>
+{% if familia %}
+<div class="alert {{ 'alert-warning' if n_fuera else 'alert-success' }} py-2 small">
+    {% if n_fuera %}<i class="bi bi-exclamation-triangle-fill"></i> <b>{{ n_fuera }}</b> código(s) parecen fuera de lugar en {{ familia }}. Usa <i class="bi bi-upc"></i> para cambiarles el código: te muestra dónde quedan y te sugiere uno libre.
+    {% else %}<i class="bi bi-check-circle-fill"></i> En {{ familia }} no se ve nada fuera de orden por sus medidas.{% endif %}</div>
+<div class="card border-0 shadow-sm"><div class="table-responsive">
+<table class="table table-hover mb-0 mo-t">
+    <thead class="table-light"><tr><th class="ps-3">#</th><th>Código</th><th>Descripción</th><th>Calidad</th><th class="text-end">Medida</th><th class="pe-3"></th></tr></thead>
+    <tbody>
+    {% for f in filas %}{% set m = f.m %}
+    <tr class="{{ 'fuera' if f.avisos }}">
+        <td class="ps-3 text-muted">{{ loop.index }}</td>
+        <td class="mo-cod">{{ m.sku }}</td>
+        <td>{{ m.nombre }}{% for a in f.avisos %}<div class="mo-av"><i class="bi bi-exclamation-triangle"></i> {{ a }}</div>{% endfor %}</td>
+        <td class="small">{{ m.calidad or '-' }}</td>
+        <td class="text-end mo-md">{{ f.medida or '—' }}</td>
+        <td class="pe-3 text-end"><button class="btn btn-sm btn-outline-primary" title="Cambiar el código"
+            onclick="abrirCambiarCodigo({{ m.sku|tojson|forceescape }}, {{ m.nombre|tojson|forceescape }}, {{ m.familia|tojson|forceescape }}, {{ (m.calidad or '')|tojson|forceescape }})"><i class="bi bi-upc"></i></button></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="text-center text-muted py-5">{{ 'Nada fuera de lugar en esta familia.' if solo else 'Esta familia no tiene productos.' }}</td></tr>
+    {% endfor %}
+    </tbody>
+</table></div></div>
+{% else %}
+<div class="text-center text-muted py-5 bg-white rounded-3 border"><i class="bi bi-sort-numeric-down display-6 opacity-25"></i><p class="mt-2 mb-0">Elige una familia para revisar su orden.</p></div>
+{% endif %}
+
+{% include '_maestro_cambiar_codigo.html' %}
+{% endblock %}

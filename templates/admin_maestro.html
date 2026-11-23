@@ -91,6 +91,8 @@
                     title="Pasa los productos marcados (de cualquier página) a otra familia, en el Maestro, Anclajes e ImportBolts">
                 <i class="bi bi-folder-symlink"></i> Pasar a otra familia (<span id="contadorTraspasoFamilia">0</span>)
             </button>
+            <a class="btn btn-outline-dark btn-sm" href="{{ url_for('admin_maestro_orden', familia=(familia_filtro if familia_filtro != 'todos' else None)) }}"
+               title="Ver una familia en el orden de sus códigos, con sus medidas, y corregir los que están fuera de lugar"><i class="bi bi-sort-numeric-down"></i> Revisar orden</a>
             <button type="button" class="btn btn-outline-success btn-sm" data-bs-toggle="modal" data-bs-target="#modalNuevaFamilia" title="Crear una familia nueva sin tener que crear un producto">
                 <i class="bi bi-folder-plus"></i> Nueva familia
             </button>
@@ -172,6 +174,11 @@
                                     data-editar-sku="{{ m.sku }}"
                                     onclick="abrirEditarMaestro({{ m.sku|tojson|forceescape }}, {{ m.nombre|tojson|forceescape }}, {{ m.familia|tojson|forceescape }}, {{ (m.calidad or '')|tojson|forceescape }}, {{ m.peso_nominal_kg|default(0, true)|tojson|forceescape }})">
                                 <i class="bi bi-pencil"></i>
+                            </button>
+                            {#- v36: cambiar el código (modulos/kardex/maestro_codigos.py) -#}
+                            <button class="btn btn-sm btn-outline-primary" title="Cambiar el código (y ver dónde queda en el orden de su familia)"
+                                    onclick="abrirCambiarCodigo({{ m.sku|tojson|forceescape }}, {{ m.nombre|tojson|forceescape }}, {{ m.familia|tojson|forceescape }}, {{ (m.calidad or '')|tojson|forceescape }})">
+                                <i class="bi bi-upc"></i>
                             </button>
                             {% if session.get('role') in ['admin', 'almacen', 'logistica'] %}
                             <button class="btn btn-sm btn-outline-danger" title="{{ 'Eliminar (Logística: solo con stock 0, sin ingresos ni salidas y sin estar en una OC activa)' if session.get('role') == 'logistica' else 'Eliminar (solo si no tiene movimientos —aparte del Saldo Inicial— ni ventas en ningún inventario)' }}"
@@ -732,6 +739,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (m) m.addEventListener('shown.bs.modal', () => { famPintarNueva(); document.getElementById('famNuevaNombre').focus(); });
 });
 </script>
+{#- v36 · cambiar el código -#}
+{% include '_maestro_cambiar_codigo.html' %}
 <div class="modal fade" id="modalEditarMaestro" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">

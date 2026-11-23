@@ -14,7 +14,7 @@
 # =====================================================================================
 
 ROLES_ELIMINAN_KARDEX = ['admin', 'almacen']          # Gerencia y Jefe de Almacén
-DIAS_ELIMINAR_ALMACEN = 7                             # el Jefe de Almacén: solo movimientos de los últimos 7 días (Gerencia: cualquiera)
+DIAS_ELIMINAR_ALMACEN = 7                             # el Jefe de Almacén: los REGISTRADOS en los últimos 7 días, aunque tengan fecha anterior (Gerencia: cualquiera)
 _MOTIVOS_AUTOMATICOS = ('NP-', 'INTER-EMPRESA', 'SALDO INICIAL', 'CONTEO FÍSICO', 'CONTEO FISICO', 'AUDITOR', 'RETORNO DE MERCADER')
 
 try:
@@ -43,9 +43,28 @@ def _bloqueo_eliminar_mov(origen, m, rol=None):
         return 'Está vinculado a una Orden de Servicio: quita primero el vínculo.'
     if any(x in motivo for x in _MOTIVOS_AUTOMATICOS):
         return 'Es un movimiento automático del sistema (pedido, inter-empresa, saldo inicial o auditoría): no se elimina a mano.'
-    if rol != 'admin' and m.fecha and m.fecha < hora_peru() - timedelta(days=DIAS_ELIMINAR_ALMACEN):
-        return f'Tiene más de {DIAS_ELIMINAR_ALMACEN} días: solo Gerencia puede eliminarlo.'
+    if rol != 'admin' and m.fecha and m.fecha < hora_peru() - timedelta(days=DIAS_ELIMINAR_ALMACEN) and not _registrado_hace_poco(origen, m):
+        return (f'Se registró hace más de {DIAS_ELIMINAR_ALMACEN} días: solo Gerencia puede eliminarlo '
+                f'(los de los últimos {DIAS_ELIMINAR_ALMACEN} días sí, aunque se les haya puesto una fecha anterior).')
     return None
+
+
+def _registrado_hace_poco(origen, m):
+    """v36 · ¿Se REGISTRÓ en los últimos DIAS_ELIMINAR_ALMACEN días, aunque tenga una fecha anterior?
+    (ej. hoy registran una salida por venta con fecha del día 12 y se equivocan: tiene que poder borrarse).
+    Los movimientos no guardan cuándo se registraron, pero su id crece al registrar: todo movimiento con id mayor o igual al
+    del primero con fecha de los últimos días se registró después de ese → es reciente. Se calcula una vez por página."""
+    clave = f'_kx_corte_elim_{origen}'
+    if clave not in g:
+        M, _P = _modelos_kardex(origen)
+        try:
+            corte = db.session.query(func.min(M.id)).filter(M.fecha >= hora_peru() - timedelta(days=DIAS_ELIMINAR_ALMACEN)).scalar()
+        except Exception:
+            db.session.rollback()
+            corte = None
+        setattr(g, clave, corte)
+    corte = getattr(g, clave)
+    return corte is not None and m.id is not None and m.id >= corte
 
 
 def _puede_eliminar_mov(origen, m):
@@ -53,6 +72,7 @@ def _puede_eliminar_mov(origen, m):
 
 
 app.add_template_global(_puede_eliminar_mov, 'puede_eliminar_mov')
+app.add_template_global(_bloqueo_eliminar_mov, 'bloqueo_eliminar_mov')
 app.add_template_global(ROLES_ELIMINAN_KARDEX, 'roles_eliminan_kardex')
 
 

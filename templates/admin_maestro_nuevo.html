@@ -91,10 +91,12 @@
 
                     <div class="mb-3 position-relative">
                         <label class="form-label fw-bold small text-danger">Código <span class="text-danger">*</span></label>
-                        <input type="text" name="sku" id="inputCodigo" class="form-control fw-bold border-danger" placeholder="Ej: PER-005" required value="{{ previo.get('sku', '') }}"
+                        <input type="text" name="sku" id="inputCodigo" class="form-control fw-bold border-danger" placeholder="Sigue la secuencia de su familia (mira abajo dónde queda)" required value="{{ previo.get('sku', '') }}"
                                oninput="this.value = this.value.toUpperCase(); onCodigoInput();" style="text-transform:uppercase;">
                         <div id="codigosSimilares" class="list-group position-absolute w-100 shadow-sm" style="z-index: 20; max-height: 220px; overflow-y:auto; display:none;"></div>
                         <div id="codigoValidacionMsg" class="form-text small mt-1"></div>
+                        {#- v36: dónde queda el código en el orden de la familia (por medida) y un código libre sugerido -#}
+                        <div id="nuevoPos" class="mt-2"></div>
                         <div class="form-text">Mientras tipeas, se muestran códigos ya existentes con esa secuencia para que sigas el mismo patrón y no se repita.</div>
                     </div>
 
@@ -224,6 +226,16 @@ function validarCalidadNueva() {
 function onCodigoInput() {
     buscarCodigosSimilares();
     verificarCodigoExacto();
+    nuevoPosicion();
+}
+
+// v36: vista previa del orden de la familia (_maestro_codigo_pos.html)
+function nuevoPosicion() {
+    if (typeof mcPosicion !== 'function') return;
+    const fam = familiaResuelta();
+    if (document.getElementById('selectFamilia').value === '__nueva__') { document.getElementById('nuevoPos').innerHTML = ''; return; }
+    mcPosicion('nuevoPos', { familia: fam, codigo: document.getElementById('inputCodigo').value.trim(), nombre: document.getElementById('inputNombre').value.trim(),
+                             calidad: calidadResuelta() }, cod => { document.getElementById('inputCodigo').value = cod; onCodigoInput(); });
 }
 
 function buscarCodigosSimilares() {
@@ -299,6 +311,7 @@ function calidadResuelta() {
 }
 
 function buscarProductosSimilares() {
+    nuevoPosicion();
     clearTimeout(timeoutBusquedaSimilares);
     timeoutBusquedaSimilares = setTimeout(() => {
         const familia = familiaResuelta();
@@ -354,6 +367,13 @@ function validarAntesDeEnviar(e) {
     if (!codigoValido) {
         e.preventDefault();
         alert('Verifica el código: espera a que confirme "Código disponible" o corrígelo — ya existe o todavía no se ha verificado.');
+        return false;
+    }
+    // v36: si el código no sigue el formato de la familia o queda fuera de su lugar por medida, que lo confirme
+    const pos = (window._mcpUltimo || {})['nuevoPos'];
+    if (pos && pos.codigo === sku.toUpperCase() && (pos.avisos || []).length
+        && !confirm('Ojo con el código ' + sku + ':\n\n- ' + pos.avisos.join('\n- ') + (pos.sugerido ? '\n\nSugerido: ' + pos.sugerido : '') + '\n\n¿Crear igual con este código?')) {
+        e.preventDefault();
         return false;
     }
     if (document.getElementById('selectFamilia').value === '__nueva__') {
@@ -415,4 +435,5 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 </script>
+{% include '_maestro_codigo_pos.html' %}
 {% endblock %}

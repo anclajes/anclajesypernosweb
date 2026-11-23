@@ -1,0 +1,63 @@
+{#- v36 · Vista previa de DÓNDE QUEDA un código en el orden de su familia (Maestro: nuevo producto y cambiar código).
+    Uso: {% include '_maestro_codigo_pos.html' %} una vez por página, y en JS:
+         mcPosicion('idDelContenedor', {familia, codigo, actual, nombre, calidad}, alElegirSugerido)
+    API: api_maestro_codigo_posicion (modulos/kardex/maestro_codigos.py). -#}
+<style>
+    .mcp-box { border: 1px solid #e2e8f0; border-radius: 10px; background: #fff; font-size: .8rem; overflow: hidden; }
+    .mcp-cab { padding: 6px 10px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; color: #334155; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+    .mcp-fila { display: grid; grid-template-columns: 118px 1fr 92px; gap: 6px; padding: 3px 10px; border-bottom: 1px solid #f1f5f9; align-items: center; }
+    .mcp-fila:last-child { border-bottom: 0; }
+    .mcp-fila .s { font-weight: 800; font-variant-numeric: tabular-nums; color: #0B3D91; overflow-wrap: anywhere; }
+    .mcp-fila .n { color: #475569; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mcp-fila .md { text-align: right; color: #64748b; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .mcp-fila.este { background: #fef9c3; border-left: 4px solid #ca8a04; }
+    .mcp-fila.este .s { color: #854d0e; }
+    .mcp-aviso { padding: 6px 10px; background: #fff7ed; color: #9a3412; border-top: 1px solid #fed7aa; }
+    .mcp-ok { padding: 6px 10px; background: #f0fdf4; color: #166534; border-top: 1px solid #bbf7d0; }
+    .mcp-sug { padding: 7px 10px; background: #eff6ff; color: #1e3a8a; border-top: 1px solid #bfdbfe; }
+</style>
+<script>
+const MCP_URL = {{ url_for('api_maestro_codigo_posicion')|tojson }};
+const _mcpTimers = {};
+function _mcpEsc(t) { return String(t ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function mcPosicion(contId, p, alElegirSugerido) {
+    const cont = document.getElementById(contId);
+    if (!cont) return;
+    clearTimeout(_mcpTimers[contId]);
+    if (!p.familia) { cont.innerHTML = '<div class="text-muted small">Elige la familia para ver dónde queda el código.</div>'; return; }
+    _mcpTimers[contId] = setTimeout(async () => {
+        const qs = new URLSearchParams({ familia: p.familia || '', codigo: p.codigo || '', actual: p.actual || '', nombre: p.nombre || '', calidad: p.calidad || '' });
+        let d;
+        try { d = await (await fetch(MCP_URL + '?' + qs, { credentials: 'same-origin' })).json(); } catch (e) { return; }
+        if (d.status !== 'ok') return;
+        (window._mcpUltimo = window._mcpUltimo || {})[contId] = d;
+        let h = '<div class="mcp-box">';
+        h += `<div class="mcp-cab"><i class="bi bi-sort-down-alt"></i> <b>Orden de ${_mcpEsc(d.familia)}</b> <span class="text-muted">(${d.total} códigos${d.ejemplo ? ' · formato como ' + _mcpEsc(d.ejemplo) : ''})</span>`;
+        if (d.posicion) h += `<span class="ms-auto">queda en el puesto <b>${d.posicion}</b> de ${d.de}</span>`;
+        h += '</div>';
+        for (const f of d.filas || []) {
+            h += `<div class="mcp-fila ${f.es_este ? 'este' : ''}"><span class="s">${f.es_este ? '➜ ' : ''}${_mcpEsc(f.sku)}</span>
+                  <span class="n" title="${_mcpEsc(f.nombre)}">${_mcpEsc(f.nombre)}${f.calidad ? ' · ' + _mcpEsc(f.calidad) : ''}</span><span class="md">${_mcpEsc(f.medida)}</span></div>`;
+        }
+        if (d.existe) h += `<div class="mcp-aviso"><i class="bi bi-x-octagon-fill"></i> <b>Ese código ya existe</b> en ${_mcpEsc(d.existe)}.</div>`;
+        for (const a of d.avisos || []) h += `<div class="mcp-aviso"><i class="bi bi-exclamation-triangle-fill"></i> ${_mcpEsc(a)}</div>`;
+        if (d.codigo && !d.existe && !(d.avisos || []).length && (d.filas || []).length) h += '<div class="mcp-ok"><i class="bi bi-check-circle-fill"></i> Sigue el formato y la medida encaja con los de arriba y abajo.</div>';
+        if (d.sugerido) {
+            const e = d.sugerido_entre || {};
+            h += `<div class="mcp-sug"><i class="bi bi-lightbulb-fill"></i> Por su medida${d.medida ? ' (' + _mcpEsc(d.medida) + ')' : ''} le toca
+                  ${e.antes ? 'después de <b>' + _mcpEsc(e.antes) + '</b>' : 'al inicio'}${e.despues ? ' y antes de <b>' + _mcpEsc(e.despues) + '</b>' : ''}.
+                  Código libre sugerido: <b>${_mcpEsc(d.sugerido)}</b>
+                  <button type="button" class="btn btn-sm btn-primary py-0 ms-1 mcp-usar">Usar</button>
+                  <div class="text-muted" style="font-size:.7rem;">Revísalo: se calcula con los números de los códigos vecinos.</div></div>`;
+        } else if (d.sugerido_entre && !d.codigo) {
+            const e = d.sugerido_entre;
+            h += `<div class="mcp-sug"><i class="bi bi-lightbulb-fill"></i> Por su medida le toca ${e.antes ? 'después de <b>' + _mcpEsc(e.antes) + '</b>' : 'al inicio'}${e.despues ? ' y antes de <b>' + _mcpEsc(e.despues) + '</b>' : ''}
+                  (no hay un número libre entre ellos: elige el código a mano).</div>`;
+        }
+        h += '</div>';
+        cont.innerHTML = h;
+        const b = cont.querySelector('.mcp-usar');
+        if (b && alElegirSugerido) b.addEventListener('click', () => alElegirSugerido(d.sugerido));
+    }, 300);
+}
+</script>

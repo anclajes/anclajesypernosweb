@@ -1,0 +1,54 @@
+{#- v36 · ventana "Cambiar código" del Maestro (admin_maestro y admin_maestro_orden). Ruta admin_maestro_cambiar_codigo. -#}
+{% include '_maestro_codigo_pos.html' %}
+<div class="modal fade" id="modalCambiarCodigo" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-lg"><div class="modal-content">
+    <div class="modal-header bg-primary text-white py-2"><h6 class="modal-title fw-bold"><i class="bi bi-upc"></i> Cambiar código — <span id="ccViejo"></span></h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+        <div class="small mb-2"><b id="ccNombre"></b> <span class="text-muted" id="ccFam"></span></div>
+        <div class="row g-2">
+            <div class="col-12 col-md-5"><label class="small fw-bold">Código nuevo *</label>
+                <input id="ccNuevo" class="form-control fw-bold text-uppercase" maxlength="50" autocomplete="off" oninput="this.value = this.value.toUpperCase().replace(/\s/g, ''); ccRevisar()"></div>
+            <div class="col-12 col-md-7"><label class="small fw-bold">Motivo (opcional)</label>
+                <input id="ccMotivo" class="form-control" maxlength="60" placeholder="Ej: estaba en otra familia / no seguía la secuencia"></div>
+        </div>
+        <div class="form-text mb-2">Se cambia en el Maestro, en <b>Anclajes</b> e <b>Import Bolts</b>, y en las órdenes de compra y requerimientos que lo tengan.
+            Su Kardex, ventas, fotos e historial <b>no se pierden</b>. Las etiquetas impresas con el código viejo hay que volver a imprimirlas.</div>
+        <div id="ccPos"></div>
+    </div>
+    <div class="modal-footer p-2"><button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-primary btn-sm fw-bold" onclick="guardarCambioCodigo(this)"><i class="bi bi-check2"></i> Cambiar código</button></div>
+</div></div></div>
+<script>
+let _cc = {};
+function abrirCambiarCodigo(sku, nombre, familia, calidad) {
+    _cc = { sku, nombre, familia, calidad };
+    document.getElementById('ccViejo').innerText = sku;
+    document.getElementById('ccNombre').innerText = nombre;
+    document.getElementById('ccFam').innerText = '· ' + familia + (calidad ? ' · ' + calidad : '');
+    document.getElementById('ccNuevo').value = '';
+    document.getElementById('ccMotivo').value = '';
+    ccRevisar();
+    new bootstrap.Modal(document.getElementById('modalCambiarCodigo')).show();
+    setTimeout(() => document.getElementById('ccNuevo').focus(), 400);
+}
+function ccRevisar() {
+    mcPosicion('ccPos', { familia: _cc.familia, codigo: document.getElementById('ccNuevo').value.trim() || _cc.sku, actual: _cc.sku, nombre: _cc.nombre, calidad: _cc.calidad },
+               cod => { document.getElementById('ccNuevo').value = cod; ccRevisar(); });
+}
+function guardarCambioCodigo(btn) {
+    const nuevo = document.getElementById('ccNuevo').value.trim();
+    if (!nuevo) { Swal.fire('Falta el código', 'Escribe el código nuevo.', 'warning'); return; }
+    Swal.fire({ icon: 'question', title: `¿Cambiar ${_cc.sku} → ${nuevo}?`, html: 'Se cambia en el Maestro, Anclajes, Import Bolts y en las órdenes de compra.',
+                showCancelButton: true, confirmButtonText: 'Sí, cambiar', cancelButtonText: 'Cancelar' }).then(res => {
+        if (!res.isConfirmed) return;
+        btn.disabled = true;
+        fetch(`/admin/maestro/${encodeURIComponent(_cc.sku)}/cambiar_codigo`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+              body: new URLSearchParams({ nuevo, motivo: document.getElementById('ccMotivo').value.trim() }).toString() })
+            .then(r => r.json()).then(d => {
+                btn.disabled = false;
+                if (d.status !== 'success') { Swal.fire({ icon: 'error', title: 'No se pudo cambiar', text: d.msg }); return; }
+                Swal.fire({ icon: 'success', title: 'Código cambiado', text: d.msg }).then(() => location.reload());
+            }).catch(() => { btn.disabled = false; Swal.fire('Error', 'No se pudo comunicar con el servidor.', 'error'); });
+    });
+}
+</script>
