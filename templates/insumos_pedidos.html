@@ -10,6 +10,13 @@
     .pd-chip.on { border-color: #0f172a; background: #0f172a; color: #fff; }
     .pd-t td { vertical-align: top; font-size: .84rem; }
     .pd-est { font-size: .68rem; font-weight: 800; color: #fff; border-radius: 10px; padding: 1px 9px; }
+    /* v37.3: en tableta vertical / celular cada pedido es una tarjeta */
+    @media (max-width: 768px) {
+        .pd-t thead { display: none; }
+        .pd-t tr { display: block; border-bottom: 1px solid #e2e8f0; padding: 10px 14px; }
+        .pd-t td { display: block; border: 0; padding: 2px 0 !important; text-align: left !important; }
+        .pd-t td:first-child::before { content: 'Pedido N° '; font-weight: 400; color: #64748b; }
+    }
 </style>
 <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
     {% for k, e in estados.items() %}<a class="pd-chip {{ 'on' if estado == k }}" href="{{ url_for('insumos_pedidos', estado=k) }}">{{ e[0] }} <span class="badge text-bg-light">{{ conteo.get(k, 0) }}</span></a>{% endfor %}

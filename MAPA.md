@@ -168,6 +168,8 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
   `RUTAS_TABLETA`. Gerencia lo puede cerrar a distancia como a cualquiera (sesion_version).
 - `insumos_tableta.html` (página sola, sin base.html, todo grande): ¿quién eres? (tarjetas con iniciales, buscador y letras) → PIN de 4
   (teclado) → materiales (categorías, buscador, Disponible/Agotado; sin HERRAMIENTAS) → cantidades con +/−, motivo y área → enviar.
+  v37.2: la tableta solo dice "Ingresa tu clave" (no menciona el DNI). Atajos arriba de las categorías: ⭐ "Lo que siempre pides"
+  (lo que más sacó ese trabajador en 120 días) y 🔥 "Más pedidos" (`_insumos_frecuentes`: salidas + pedidos de 60 días); al buscar se busca en todo.
   Sin tocar 90 s vuelve al inicio. API: `tableta_datos`, `tableta_entrar` (PIN; 5 fallos = bloqueo 10 min), `tableta_pedido`
   (session['tab_t'] vale 10 min), `tableta_cancelar`, `tableta_salir`.
 - PIN (`InsumoTrabajador.pin_hash`, `pin_fallos`, `pin_bloqueo_hasta`): si no tiene uno propio, los 4 primeros dígitos de su DNI/código

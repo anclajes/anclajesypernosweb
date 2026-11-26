@@ -115,6 +115,33 @@ def _stock_total_insumos():
     return tot
 
 
+def _insumos_frecuentes(trabajador_id=None, dias=60, n=12):
+    """v37.2 · Los materiales que más salen (o los que más saca ese trabajador): para el atajo "Más pedidos" de la tableta.
+    Cuenta salidas registradas y pedidos de la tableta de los últimos `dias` días. Devuelve ids de insumo, el más pedido primero."""
+    desde = hora_peru() - timedelta(days=dias)
+    cuenta = {}
+    try:
+        q = (db.session.query(InsumoSalidaDetalle.insumo_id, db.func.count(InsumoSalidaDetalle.id))
+             .join(InsumoSalida, InsumoSalida.id == InsumoSalidaDetalle.salida_id)
+             .filter(InsumoSalida.fecha >= desde, InsumoSalida.estado == 'REGISTRADA'))
+        if trabajador_id:
+            q = q.filter(or_(InsumoSalida.solicitado_por_id == trabajador_id, InsumoSalida.recibido_por_id == trabajador_id))
+        for iid, c in q.group_by(InsumoSalidaDetalle.insumo_id).all():
+            cuenta[iid] = cuenta.get(iid, 0) + c
+        q = (db.session.query(InsumoPedidoItem.insumo_id, db.func.count(InsumoPedidoItem.id))
+             .join(InsumoPedido, InsumoPedido.id == InsumoPedidoItem.pedido_id)
+             .filter(InsumoPedido.fecha >= desde, InsumoPedido.estado.in_(['PENDIENTE', 'ENTREGADO'])))
+        if trabajador_id:
+            q = q.filter(InsumoPedido.trabajador_id == trabajador_id)
+        for iid, c in q.group_by(InsumoPedidoItem.insumo_id).all():
+            cuenta[iid] = cuenta.get(iid, 0) + c
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("No se pudieron contar los insumos más pedidos")
+        return []
+    return [iid for iid, _c in sorted(cuenta.items(), key=lambda x: -x[1])[:n]]
+
+
 def _pedido_json(p, con_bolsas=False):
     d = {'id': p.id, 'estado': p.estado, 'estado_txt': ESTADOS_PEDIDO.get(p.estado, (p.estado,))[0],
          'fecha': p.fecha.isoformat(timespec='seconds') if p.fecha else None, 'hora': p.fecha.strftime('%d/%m %H:%M') if p.fecha else '',
@@ -192,7 +219,8 @@ def tableta_datos():
             'motivos': [m.valor for m in _catalogo_insumos('INSUMO_MOTIVO')],
             'insumos': [{'id': i.id, 'codigo': i.codigo, 'descripcion': i.descripcion, 'unidad': i.unidad or '', 'categoria': i.categoria or 'OTROS',
                          'hay': round(tot.get(i.id, 0), 3)} for i in Insumo.query.filter_by(activo=True).order_by(Insumo.descripcion).all()
-                        if (i.categoria or '').upper() != 'HERRAMIENTAS']}
+                        if (i.categoria or '').upper() != 'HERRAMIENTAS'],
+            'top': _insumos_frecuentes()}
 
 
 @app.route('/tableta/api/entrar', methods=['POST'])
@@ -206,9 +234,9 @@ def tableta_entrar():
     ahora = hora_peru()
     if t.pin_bloqueo_hasta and t.pin_bloqueo_hasta > ahora:
         mins = max(1, int((t.pin_bloqueo_hasta - ahora).total_seconds() // 60) + 1)
-        return {'status': 'error', 'msg': f'Demasiados intentos. Espera {mins} min o pide a Almacén que revise tu PIN.', 'bloqueado': True}
+        return {'status': 'error', 'msg': f'Demasiados intentos. Espera {mins} min o acércate a Almacén.', 'bloqueado': True}
     if not _pin_tipo(t):
-        return {'status': 'error', 'msg': 'Todavía no tienes PIN: pide a Almacén que registre tu DNI o te ponga un PIN.'}
+        return {'status': 'error', 'msg': 'Todavía no tienes clave: acércate a Almacén.'}
     if not _pin_correcto(t, str(d.get('pin') or '')):
         t.pin_fallos = (t.pin_fallos or 0) + 1
         quedan = PIN_MAX_FALLOS - t.pin_fallos
@@ -216,13 +244,13 @@ def tableta_entrar():
             t.pin_fallos, t.pin_bloqueo_hasta = 0, ahora + timedelta(minutes=PIN_BLOQUEO_MIN)
             registrar_log(f"Tableta de almacén: PIN de {t.nombre} bloqueado {PIN_BLOQUEO_MIN} min por intentos fallidos", 'bi-shield-lock', 'text-danger')
         db.session.commit()
-        return {'status': 'error', 'msg': 'PIN incorrecto.' + (f' Te quedan {quedan} intento(s).' if quedan > 0 else f' Bloqueado {PIN_BLOQUEO_MIN} minutos.')}
+        return {'status': 'error', 'msg': 'Clave incorrecta.' + (f' Te quedan {quedan} intento(s).' if quedan > 0 else f' Bloqueado {PIN_BLOQUEO_MIN} minutos.')}
     t.pin_fallos, t.pin_bloqueo_hasta = 0, None
     db.session.commit()
     session['tab_t'] = {'id': t.id, 'h': ahora.isoformat()}
     mios = InsumoPedido.query.filter(InsumoPedido.trabajador_id == t.id).order_by(InsumoPedido.id.desc()).limit(5).all()
     return {'status': 'ok', 'trabajador': {'id': t.id, 'nombre': t.nombre, 'area_id': t.area_id, 'area': t.area.nombre if t.area else ''},
-            'mis_pedidos': [_pedido_json(p) for p in mios]}
+            'mis_pedidos': [_pedido_json(p) for p in mios], 'frecuentes': _insumos_frecuentes(t.id, dias=120)}
 
 
 @app.route('/tableta/api/salir', methods=['POST'])
@@ -237,7 +265,7 @@ def tableta_pedido():
         return {'status': 'error', 'msg': 'No autorizado'}, 403
     t = _trabajador_de_la_tableta()
     if not t:
-        return {'status': 'error', 'msg': 'Se acabó el tiempo: vuelve a elegir tu nombre y poner tu PIN.', 'reiniciar': True}
+        return {'status': 'error', 'msg': 'Se acabó el tiempo: vuelve a elegir tu nombre y poner tu clave.', 'reiniciar': True}
     d = request.get_json(silent=True) or {}
     area = InsumoArea.query.get(int(d.get('area_id') or 0)) if d.get('area_id') else t.area
     motivo = (d.get('motivo') or '').strip()
@@ -277,7 +305,7 @@ def tableta_cancelar(pedido_id):
     t = _trabajador_de_la_tableta()
     p = InsumoPedido.query.get_or_404(pedido_id)
     if not t or p.trabajador_id != t.id:
-        return {'status': 'error', 'msg': 'Vuelve a poner tu PIN.'}
+        return {'status': 'error', 'msg': 'Vuelve a poner tu clave.'}
     if p.estado != 'PENDIENTE':
         return {'status': 'error', 'msg': 'Ese pedido ya fue atendido.'}
     p.estado, p.fecha_atencion, p.motivo_rechazo = 'CANCELADO', hora_peru(), 'Lo canceló el trabajador'
