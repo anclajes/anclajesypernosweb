@@ -170,6 +170,9 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
   (teclado) → materiales (categorías, buscador, Disponible/Agotado; sin HERRAMIENTAS) → cantidades con +/−, motivo y área → enviar.
   v37.2: la tableta solo dice "Ingresa tu clave" (no menciona el DNI). Atajos arriba de las categorías: ⭐ "Lo que siempre pides"
   (lo que más sacó ese trabajador en 120 días) y 🔥 "Más pedidos" (`_insumos_frecuentes`: salidas + pedidos de 60 días); al buscar se busca en todo.
+  v37.4 FIRMA: paso "Firma aquí con tu dedo" (static/js/firma.js) antes de enviar; Insumos → Configuración → pestaña Tableta:
+  Obligatoria / Opcional / No pedir (SystemConfig 'insumos_tableta_firma', `_firma_tableta`). Se guarda en S3 (`InsumoPedido.firma_s3_key`)
+  y al entregar se COPIA a cada salida (`_pedido_marcar_entregado`) → sale en el PDF. El globito y "Pedidos tableta" dan el PDF de la salida.
   Sin tocar 90 s vuelve al inicio. API: `tableta_datos`, `tableta_entrar` (PIN; 5 fallos = bloqueo 10 min), `tableta_pedido`
   (session['tab_t'] vale 10 min), `tableta_cancelar`, `tableta_salir`.
 - PIN (`InsumoTrabajador.pin_hash`, `pin_fallos`, `pin_bloqueo_hasta`): si no tiene uno propio, los 4 primeros dígitos de su DNI/código

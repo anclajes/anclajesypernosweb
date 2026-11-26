@@ -43,7 +43,7 @@
         let h = `<div class="pt-cab"><b><i class="bi bi-tablet"></i> Pedidos de la tableta</b><a class="ms-auto small" href="${URL_LISTA}">Ver todos</a></div>`;
         for (const p of peds) {
             h += `<div class="pt-ped" data-id="${p.id}"><div class="l1"><span class="quien">${esc(p.trabajador)}</span><span class="text-muted small">N° ${p.id}</span><span class="hace">${hace(p.fecha)}</span></div>
-                  <div class="sub">${esc(p.area)} · ${esc(p.motivo)}${p.nota ? ' · “' + esc(p.nota) + '”' : ''}</div>`;
+                  <div class="sub">${esc(p.area)} · ${esc(p.motivo)}${p.nota ? ' · “' + esc(p.nota) + '”' : ''}${p.firmo ? ' · <span class="text-success fw-bold">✍️ firmó</span>' : ''}</div>`;
             for (const it of p.items) h += `<div class="pt-it"><span class="q">${fmt(it.cantidad)} ${esc(it.unidad)}</span><span>${esc(it.descripcion)}</span>
                   <span class="b ${it.bolsa ? '' : 'no'}" title="${esc(Object.entries(it.stocks || {}).map(([k, v]) => k + ': ' + fmt(v)).join(' · '))}">${it.bolsa ? 'de ' + esc(it.bolsa_txt) : 'no alcanza'}</span></div>`;
             h += `<div class="pt-acc">${p.entrega_rapida ? `<button class="btn btn-success" data-acc="entregar"><i class="bi bi-check2-circle"></i> Entregar</button>` : `<span class="small text-danger fw-bold align-self-center">${esc(p.por_que_no)}</span>`}
@@ -67,7 +67,11 @@
             if (!ok.isConfirmed) return;
             b.disabled = true;
             const d = await (await fetch(`/insumos/pedidos/${id}/entregar`, { method: 'POST', credentials: 'same-origin' })).json().catch(() => ({ status: 'error', msg: 'No se pudo comunicar.' }));
-            if (d.status === 'success') { Swal.fire({ icon: 'success', title: 'Entregado', html: (d.salidas || []).map(s => `<a href="${s.url}">${esc(s.txt)}</a>`).join(' · '), timer: 4000 }); consultar(); }
+            if (d.status === 'success') {
+                Swal.fire({ icon: 'success', title: 'Entregado', confirmButtonText: 'Listo',
+                            html: (d.salidas || []).map(s => `<div class="mb-2"><a href="${s.url}">${esc(s.txt)}</a>
+                                  <a class="btn btn-sm btn-danger fw-bold ms-2" href="${s.pdf}" target="_blank"><i class="bi bi-file-earmark-pdf"></i> PDF</a></div>`).join('') });
+                consultar(); }
             else { b.disabled = false; Swal.fire({ icon: 'error', title: 'No se pudo entregar', text: d.msg, showCancelButton: !!d.revisar, confirmButtonText: d.revisar ? 'Revisar' : 'OK' })
                        .then(x => { if (x.isConfirmed && d.revisar) location.href = d.revisar; }); }
         } else {

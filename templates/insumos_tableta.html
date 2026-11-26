@@ -113,6 +113,9 @@
         .nota { font-size: 1.2rem; padding: 14px 16px; border-radius: 14px; border: 2px solid #cbd5e1; width: 100%; }
         #pListo.on { display: flex; min-height: 100%; align-items: center; justify-content: center; }
         .listo { text-align: center; }
+        #pFirma.on { display: flex; flex-direction: column; height: 100%; }
+        .pad-firma { flex: 1 1 auto; width: 100%; min-height: 180px; background: #fff; border: 3px dashed #94a3b8; border-radius: 18px; display: block; touch-action: none; }
+        .resumen-firma { font-size: .95rem; color: #475569; margin-bottom: 8px; }
         .listo .ico { font-size: 7rem; color: var(--ok); line-height: 1; }
         .listo h2 { font-size: 2.3rem; font-weight: 800; margin-top: 12px; }
         .listo p { font-size: 1.3rem; color: #334155; }
@@ -193,6 +196,16 @@
     <input class="nota" id="nota" maxlength="300" placeholder="Ej: para la máquina 3, para la obra de…">
 </div>
 
+<!-- 4b. Firma (v37.4: obligatoria / opcional / no, según Insumos → Configuración → Tableta) -->
+<div class="paso" id="pFirma">
+    <div class="d-flex align-items-center gap-2 flex-wrap mb-2">
+        <div class="titulo mb-0 me-auto">✍️ Firma aquí con tu dedo <span class="sub" id="firmaOpc"></span></div>
+        <button class="btn-gr gris" type="button" onclick="borrarFirma()"><i class="bi bi-eraser"></i> Borrar</button>
+    </div>
+    <div class="resumen-firma" id="resumenFirma"></div>
+    <canvas class="pad-firma" id="padFirma"></canvas>
+</div>
+
 <!-- 5. Listo -->
 <div class="paso" id="pListo">
     <div class="listo">
@@ -211,6 +224,7 @@
     <button class="btn-gr verde" id="btnSig" onclick="siguiente()">Siguiente <i class="bi bi-arrow-right"></i></button>
 </div></div>
 
+<script src="{{ url_for('static', filename='js/firma.js') }}?v=2"></script>
 <script>
 const API = { datos: {{ url_for('tableta_datos')|tojson }}, entrar: {{ url_for('tableta_entrar')|tojson }}, pedido: {{ url_for('tableta_pedido')|tojson }},
               salir: {{ url_for('tableta_salir')|tojson }}, cancelar: {{ url_for('tableta_cancelar', pedido_id=0)|tojson }} };
@@ -237,7 +251,7 @@ async function cargar() {
 function ir(p) {
     paso = p;
     document.querySelectorAll('.paso').forEach(x => x.classList.toggle('on', x.id === p));
-    $('barra').classList.toggle('on', p === 'pMat' || p === 'pConf');
+    $('barra').classList.toggle('on', p === 'pMat' || p === 'pConf' || p === 'pFirma');
     $('quien').style.display = yo && p !== 'pQuien' ? 'inline-block' : 'none';
     $('zona').scrollTop = 0;
     pintarBarra();
@@ -246,6 +260,7 @@ function ir(p) {
 function reiniciar() {
     if (yo) api(API.salir, {}).catch(() => {});
     yo = null; pin = ''; carrito = {}; cat = ''; motivo = ''; area = null; $('nota').value = ''; $('buscaTrab').value = ''; $('buscaIns').value = ''; letra = '';
+    if (pad) pad.limpiar();
     ir('pQuien'); pintarTrab();
 }
 // ---------- 1. trabajadores ----------
@@ -365,16 +380,36 @@ function pintarBarra() {
     } else if (paso === 'pConf') {
         const malas = Object.values(carrito).some(v => !(v > 0));
         $('barraTxt').innerHTML = !motivo ? 'Elige para qué es' : (!area ? 'Elige el área' : (malas ? 'Revisa las cantidades' : `${n} material(es) · listo para enviar`));
-        $('btnSig').innerHTML = '<i class="bi bi-send-fill"></i> Enviar pedido'; $('btnSig').disabled = !n || !motivo || !area || malas; $('btnAtras').innerHTML = '<i class="bi bi-arrow-left"></i> Atrás';
+        $('btnSig').innerHTML = pideFirma() ? 'Siguiente: firmar <i class="bi bi-arrow-right"></i>' : '<i class="bi bi-send-fill"></i> Enviar pedido';
+        $('btnSig').disabled = !n || !motivo || !area || malas; $('btnAtras').innerHTML = '<i class="bi bi-arrow-left"></i> Atrás';
+    } else if (paso === 'pFirma') {
+        const vacia = !pad || pad.vacia(), oblig = D.firma === 'OBLIGATORIA';
+        $('barraTxt').innerHTML = vacia ? (oblig ? 'Firma para poder enviar' : 'Puedes firmar o enviar sin firma') : '<i class="bi bi-check-circle"></i> Firmado';
+        $('btnSig').innerHTML = '<i class="bi bi-send-fill"></i> ' + (vacia && !oblig ? 'Enviar sin firma' : 'Enviar pedido');
+        $('btnSig').disabled = vacia && oblig; $('btnAtras').innerHTML = '<i class="bi bi-arrow-left"></i> Atrás';
     }
 }
-function atras() { if (paso === 'pConf') { ir('pMat'); pintarIns(); } else reiniciar(); }
+// ---------- firma ----------
+let pad = null;
+function pideFirma() { return D.firma === 'OBLIGATORIA' || D.firma === 'OPCIONAL'; }
+function borrarFirma() { if (pad) pad.limpiar(); pintarBarra(); }
+function abrirFirma() {
+    $('firmaOpc').textContent = D.firma === 'OPCIONAL' ? '(opcional)' : '';
+    $('resumenFirma').innerHTML = `<b>${esc(yo ? yo.nombre : '')}</b> · ` + Object.entries(carrito).map(([id, c]) => {
+        const i = D.insumos.find(x => x.id === Number(id)); return `${fmt(c)} ${esc(i ? i.unidad : '')} ${esc(i ? i.descripcion : '')}`; }).join(' · ');
+    ir('pFirma');
+    if (!pad) { pad = FirmaPad($('padFirma')); $('padFirma').addEventListener('pointerup', () => setTimeout(pintarBarra, 30)); }
+    setTimeout(() => { pad.ajustar(); pintarBarra(); }, 60);
+}
+function atras() { if (paso === 'pFirma') { ir('pConf'); } else if (paso === 'pConf') { ir('pMat'); pintarIns(); } else reiniciar(); }
 async function siguiente() {
     if (paso === 'pMat') { pintarConf(); ir('pConf'); return; }
-    if (paso !== 'pConf') return;
+    if (paso === 'pConf' && pideFirma()) { abrirFirma(); return; }
+    if (paso !== 'pConf' && paso !== 'pFirma') return;
     $('btnSig').disabled = true;
+    const firma = paso === 'pFirma' && pad && !pad.vacia() ? pad.png() : '';
     let d;
-    try { d = await api(API.pedido, { area_id: area, motivo, nota: $('nota').value, items: Object.entries(carrito).map(([id, c]) => ({ insumo_id: Number(id), cantidad: c })) }); }
+    try { d = await api(API.pedido, { area_id: area, motivo, nota: $('nota').value, firma_png: firma, items: Object.entries(carrito).map(([id, c]) => ({ insumo_id: Number(id), cantidad: c })) }); }
     catch (e) { $('btnSig').disabled = false; return; }
     if (d.status === 'ok') {
         $('listoTxt').textContent = `¡Pedido N° ${d.numero} enviado!`;
@@ -386,6 +421,7 @@ function medir() {
     const alto = (window.visualViewport ? window.visualViewport.height : window.innerHeight);
     document.documentElement.style.setProperty('--vh', alto + 'px');
     const z = $('zona'); if (z) document.documentElement.style.setProperty('--alto-zona', z.clientHeight + 'px');
+    if (pad && paso === 'pFirma') pad.ajustar();
 }
 window.addEventListener('resize', medir);
 window.addEventListener('orientationchange', () => setTimeout(medir, 300));

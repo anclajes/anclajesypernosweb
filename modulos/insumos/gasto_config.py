@@ -145,7 +145,7 @@ def insumos_config():
                          'insumos': Insumo.query.count(), 'proveedores': InsumoProveedor.query.count(),
                          'trabajadores': InsumoTrabajador.query.count(), 'areas': InsumoArea.query.count(),
                          'stocks': InsumoStock.query.count()}
-    return render_template('insumos_config.html', pin_tipo=_pin_tipo, ahora_insumos=hora_peru(), areas=InsumoArea.query.order_by(InsumoArea.nombre).all(),
+    return render_template('insumos_config.html', pin_tipo=_pin_tipo, ahora_insumos=hora_peru(), firma_tableta=_firma_tableta(), firma_opciones=FIRMA_TABLETA_OPCIONES, areas=InsumoArea.query.order_by(InsumoArea.nombre).all(),
                            trabajadores=InsumoTrabajador.query.order_by(InsumoTrabajador.activo.desc(), InsumoTrabajador.nombre).all(),
                            catalogos={t: _catalogo_insumos(t, incluir_inactivos=True) for t in CATALOGOS_INSUMOS},
                            nombres_catalogo=CATALOGOS_INSUMOS, formato=formato, formato_def=FORMATO_SALIDA_DEF, empresas=EMPRESAS_INSUMOS,
@@ -412,6 +412,10 @@ def insumos_vaciar():
     maestro, proveedores, personal, catalogos = (f.get(k) == '1' for k in ('maestro', 'proveedores', 'personal', 'catalogos'))
     claves = [d.s3_key for d in InsumoDocumento.query.all() if d.s3_key]
     claves += [x.firma_s3_key for x in InsumoSalida.query.filter(InsumoSalida.firma_s3_key.isnot(None)).all()]
+    try:      # v37.4: firmas de los pedidos de la tableta
+        claves += [x.firma_s3_key for x in InsumoPedido.query.filter(InsumoPedido.firma_s3_key.isnot(None)).all()]
+    except Exception:
+        db.session.rollback()
     herr = 'Herramienta' in globals()          # v30: el registro de herramientas también es de Insumos
     if herr:
         claves += [k for m in HerramientaMovimiento.query.all() for k in (m.firma_s3_key, m.foto_s3_key) if k]

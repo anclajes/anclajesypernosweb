@@ -35,7 +35,8 @@
 {% if pedido %}<input type="hidden" name="pedido_id" value="{{ pedido.id }}">
 <div class="alert d-flex flex-wrap gap-2 align-items-center py-2 small" style="background:#f5f3ff; border:1px solid #ddd6fe; color:#4c1d95;">
     <i class="bi bi-tablet fs-5"></i><span class="flex-fill"><b>Atendiendo el pedido N° {{ pedido.id }} de la tableta</b> · {{ pedido.trabajador }} · {{ pedido.hora }}
-        {% if pedido.nota %}· “{{ pedido.nota }}”{% endif %}<br>Revisa cantidades e inventario de cada material; al registrar, el pedido queda <b>entregado</b>.</span>
+        {% if pedido.nota %}· “{{ pedido.nota }}”{% endif %}<br>Revisa cantidades e inventario de cada material; al registrar, el pedido queda <b>entregado</b>.
+        {% if pedido.firmo %}<br><i class="bi bi-pen"></i> <b>Ya firmó en la tableta:</b> si no firma abajo, la salida lleva esa firma.{% endif %}</span>
     <a href="{{ url_for('insumos_pedidos') }}" class="btn btn-sm btn-light border">Volver a pedidos</a></div>{% endif %}
 <div class="row g-3">
     <div class="col-12 col-lg-5">

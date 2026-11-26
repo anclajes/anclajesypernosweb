@@ -31,6 +31,7 @@
     <li class="nav-item"><button class="nav-link {{ 'active' if tab == t }}" data-bs-toggle="tab" data-bs-target="#c-{{ t }}">{{ nombre }}</button></li>
     {% endfor %}
     <li class="nav-item"><button class="nav-link {{ 'active' if tab == 'formato' }}" data-bs-toggle="tab" data-bs-target="#c-formato"><i class="bi bi-file-earmark-pdf"></i> Formato PDF</button></li>
+    <li class="nav-item"><button class="nav-link {{ 'active' if tab == 'tableta' }}" data-bs-toggle="tab" data-bs-target="#c-tableta"><i class="bi bi-tablet"></i> Tableta</button></li>
     {% if es_admin %}
     <li class="nav-item"><button class="nav-link peligro {{ 'active' if tab == 'vaciar' }}" data-bs-toggle="tab" data-bs-target="#c-vaciar"><i class="bi bi-trash3"></i> Vaciar datos del módulo</button></li>
     {% endif %}
@@ -147,6 +148,20 @@
         </div><div class="card-footer bg-white d-flex justify-content-between">
             <button class="btn btn-outline-secondary btn-sm" name="accion" value="restablecer" onclick="return confirm('¿Volver a {{ formato_def.codigo }} / versión {{ formato_def.version }} en las dos empresas?')"><i class="bi bi-arrow-counterclockwise"></i> Restablecer</button>
             <button class="btn btn-primary btn-sm fw-bold"><i class="bi bi-save"></i> Guardar</button></div></form>
+    </div>
+    <!-- v37.4 · TABLETA DE ALMACÉN -->
+    <div class="tab-pane fade {{ 'show active' if tab == 'tableta' }}" id="c-tableta">
+        <div class="card border-0 shadow-sm" style="max-width: 640px;"><div class="card-body">
+            <h6 class="fw-bold"><i class="bi bi-pen"></i> Firma del trabajador al pedir en la tableta</h6>
+            <p class="small text-muted mb-2">La firma queda en el pedido y, al entregarlo, pasa a la salida y a su PDF (si en "Revisar" firman de nuevo, vale esa).</p>
+            {% for k, txt in firma_opciones.items() %}
+            <div class="form-check mb-1"><input class="form-check-input" type="radio" name="firma_tab" id="ft_{{ k }}" value="{{ k }}" {{ 'checked' if firma_tableta == k }}
+                onchange="enviar('tableta', {firma: this.value}).then(d => d.status === 'success' ? Swal.fire({ icon: 'success', title: 'Guardado', timer: 1200, showConfirmButton: false }) : Swal.fire('No se pudo', d.msg, 'warning'))"><label class="form-check-label" for="ft_{{ k }}">{{ txt }}</label></div>
+            {% endfor %}
+            <hr>
+            <div class="small text-muted"><i class="bi bi-info-circle"></i> La tableta se usa con un usuario de rol <b>Tableta de almacén</b> (Usuarios). Las claves de los trabajadores se ven en la pestaña <b>Trabajadores</b>.
+                <a href="{{ url_for('tableta') }}" target="_blank">Abrir la pantalla de la tableta</a></div>
+        </div></div>
     </div>
     {% if es_admin %}
     <!-- VACIAR DATOS DEL MÓDULO -->

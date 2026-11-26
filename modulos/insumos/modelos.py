@@ -389,6 +389,7 @@ class InsumoPedido(db.Model):
     fecha_atencion = db.Column(db.DateTime, nullable=True)
     motivo_rechazo = db.Column(db.String(255))
     salida_ids = db.Column(db.String(120))                                  # "12,13" (una salida por inventario)
+    firma_s3_key = db.Column(db.String(300))                                # v37.4: firma del trabajador en la tableta (PNG en S3)
 
     trabajador = db.relationship('InsumoTrabajador')
     area = db.relationship('InsumoArea')

@@ -37,6 +37,7 @@ def _asegurar_pedidos():
     try:
         InsumoPedido.__table__.create(bind=db.engine, checkfirst=True)
         InsumoPedidoItem.__table__.create(bind=db.engine, checkfirst=True)
+        _agregar_columnas_si_faltan('insumo_pedido', [('firma_s3_key', 'VARCHAR(300)')])      # v37.4
         _ped_ok = True
     except Exception as e:
         print(f"Aviso: no se pudo preparar los pedidos de la tableta: {e}")
@@ -58,6 +59,33 @@ def _restringir_tableta():
 
 
 # ------------------------------------------------ PIN ------------------------------------------------
+FIRMA_TABLETA_OPCIONES = {'OBLIGATORIA': 'Obligatoria: no puede enviar sin firmar', 'OPCIONAL': 'Opcional: puede firmar o no', 'NO': 'No pedir firma'}
+CLAVE_FIRMA_TABLETA = 'insumos_tableta_firma'
+
+
+def _firma_tableta():
+    """Si la tableta pide la firma del trabajador: OBLIGATORIA / OPCIONAL / NO (se cambia en Insumos → Configuración → Tableta)."""
+    try:
+        c = SystemConfig.query.get(CLAVE_FIRMA_TABLETA)
+        return c.value if c and c.value in FIRMA_TABLETA_OPCIONES else 'OBLIGATORIA'
+    except Exception:
+        db.session.rollback()
+        return 'OBLIGATORIA'
+
+
+def _guardar_firma_pedido(data_url, pedido, claves):
+    """Firma dibujada en la tableta (data:image/png;base64,...) -> S3. Devuelve la clave o lanza ValueError."""
+    if not (data_url or '').startswith('data:image/png;base64,'):
+        raise ValueError('Firma no válida.')
+    datos = base64.b64decode(data_url.split(',', 1)[1], validate=True)
+    if not datos.startswith(b'\x89PNG\r\n\x1a\n') or len(datos) > 400 * 1024:
+        raise ValueError('Firma no válida o demasiado grande.')
+    key = f"insumos/pedidos/firmas/pedido_{pedido.id}_{uuid.uuid4().hex[:8]}.png"
+    s3_client.upload_fileobj(io.BytesIO(datos), S3_BUCKET_NAME, key, ExtraArgs={'ContentType': 'image/png'})
+    claves.append(key)
+    return key
+
+
 def _pin_por_defecto(t):
     """Los 4 primeros dígitos de su DNI / código (si tiene al menos 4)."""
     dig = re.sub(r'\D', '', t.codigo or '')
@@ -147,7 +175,7 @@ def _pedido_json(p, con_bolsas=False):
          'fecha': p.fecha.isoformat(timespec='seconds') if p.fecha else None, 'hora': p.fecha.strftime('%d/%m %H:%M') if p.fecha else '',
          'trabajador': p.trabajador.nombre if p.trabajador else '', 'trabajador_id': p.trabajador_id,
          'area': p.area.nombre if p.area else '', 'area_id': p.area_id, 'motivo': p.motivo or '', 'nota': p.nota or '',
-         'motivo_rechazo': p.motivo_rechazo or '', 'atendido_por': p.atendido_por or '',
+         'motivo_rechazo': p.motivo_rechazo or '', 'atendido_por': p.atendido_por or '', 'firmo': bool(p.firma_s3_key),
          'items': [{'id': it.id, 'insumo_id': it.insumo_id, 'codigo': it.insumo.codigo if it.insumo else '', 'descripcion': it.insumo.descripcion if it.insumo else '',
                     'unidad': (it.insumo.unidad or '') if it.insumo else '', 'cantidad': it.cantidad, 'entregada': it.cantidad_entregada} for it in p.items]}
     if con_bolsas:
@@ -187,6 +215,20 @@ def _pedido_marcar_entregado(p, hechas, items):
     p.estado, p.fecha_atencion = 'ENTREGADO', hora_peru()
     p.atendido_por, p.atendido_user_id = session.get('nombre') or session.get('username'), session.get('user_id')
     p.salida_ids = ','.join(str(s.id) for s in hechas)[:120]
+    # v37.4: la firma que puso el trabajador en la tableta pasa a cada salida (copia propia: si luego se vuelve a firmar
+    # la salida, se borra su copia y no la del pedido). Si en "Revisar" firmaron ahí, se respeta esa.
+    if p.firma_s3_key:
+        for sal in hechas:
+            if sal.firma_s3_key:
+                continue
+            try:
+                nueva = f"insumos/{sal.empresa.lower()}/firmas/salida_{sal.id}_{uuid.uuid4().hex[:8]}.png"
+                s3_client.copy_object(Bucket=S3_BUCKET_NAME, Key=nueva, CopySource={'Bucket': S3_BUCKET_NAME, 'Key': p.firma_s3_key},
+                                      ContentType='image/png', MetadataDirective='REPLACE')
+                sal.firma_s3_key, sal.firma_fecha = nueva, p.fecha
+                sal.firma_por = p.trabajador.nombre if p.trabajador else ''
+            except Exception:
+                app.logger.exception("No se pudo pasar la firma del pedido %s a la salida %s", p.id, sal.id)
 
 
 # ------------------------------------------------ pantalla de la tableta ------------------------------------------------
@@ -220,7 +262,7 @@ def tableta_datos():
             'insumos': [{'id': i.id, 'codigo': i.codigo, 'descripcion': i.descripcion, 'unidad': i.unidad or '', 'categoria': i.categoria or 'OTROS',
                          'hay': round(tot.get(i.id, 0), 3)} for i in Insumo.query.filter_by(activo=True).order_by(Insumo.descripcion).all()
                         if (i.categoria or '').upper() != 'HERRAMIENTAS'],
-            'top': _insumos_frecuentes()}
+            'top': _insumos_frecuentes(), 'firma': _firma_tableta()}
 
 
 @app.route('/tableta/api/entrar', methods=['POST'])
@@ -289,12 +331,27 @@ def tableta_pedido():
     ahora = hora_peru()
     p = InsumoPedido(trabajador_id=t.id, area_id=area.id, motivo=motivo[:100], nota=' '.join((d.get('nota') or '').split())[:300] or None,
                      estado='PENDIENTE', fecha=ahora, dispositivo_user_id=session.get('user_id'))
+    modo_firma, firma_png = _firma_tableta(), d.get('firma_png') or ''
+    if modo_firma == 'OBLIGATORIA' and not firma_png:
+        return {'status': 'error', 'msg': 'Falta tu firma.'}
     db.session.add(p)
     db.session.flush()
     for ins, cant in lineas:
         db.session.add(InsumoPedidoItem(pedido_id=p.id, insumo_id=ins.id, cantidad=cant))
-    registrar_log(f"Tableta: {t.nombre} pidió {len(lineas)} material(es) (pedido N° {p.id}, {area.nombre})", 'bi-tablet', 'text-primary')
-    db.session.commit()
+    claves = []
+    try:
+        if firma_png and modo_firma != 'NO':
+            p.firma_s3_key = _guardar_firma_pedido(firma_png, p, claves)
+        registrar_log(f"Tableta: {t.nombre} pidió {len(lineas)} material(es) (pedido N° {p.id}, {area.nombre})", 'bi-tablet', 'text-primary')
+        db.session.commit()
+    except ValueError as e:
+        db.session.rollback()
+        return {'status': 'error', 'msg': str(e)}
+    except Exception:
+        db.session.rollback()
+        _borrar_de_s3(claves)
+        app.logger.exception("No se pudo guardar el pedido de la tableta")
+        return {'status': 'error', 'msg': 'No se pudo enviar el pedido. Inténtalo otra vez.'}
     session.pop('tab_t', None)
     return {'status': 'ok', 'numero': p.id, 'items': len(lineas)}
 
@@ -367,7 +424,8 @@ def insumos_pedido_entregar(pedido_id):
     if err:
         return {'status': 'error', 'msg': err, 'revisar': url_for('insumos_salida_nueva', pedido=p.id)}
     return {'status': 'success', 'msg': 'Entregado: ' + ' · '.join(f"{EMPRESAS_INSUMOS[s.empresa]['corto']} N° {s.numero:06d}" for s in hechas),
-            'salidas': [{'url': url_for('insumos_salida_detalle', salida_id=s.id), 'txt': f"{EMPRESAS_INSUMOS[s.empresa]['corto']} N° {s.numero:06d}"} for s in hechas]}
+            'salidas': [{'url': url_for('insumos_salida_detalle', salida_id=s.id), 'pdf': url_for('insumos_salida_pdf', salida_id=s.id),
+                         'txt': f"{EMPRESAS_INSUMOS[s.empresa]['corto']} N° {s.numero:06d}"} for s in hechas]}
 
 
 @app.route('/insumos/pedidos/<int:pedido_id>/rechazar', methods=['POST'])
@@ -406,3 +464,30 @@ def insumos_pedidos():
     return render_template('insumos_pedidos.html', pedidos=pedidos, estado=estado, estados=ESTADOS_PEDIDO, conteo=conteo, salidas=salidas,
                            empresas=EMPRESAS_INSUMOS, seccion='pedidos', puede_atender=session.get('role') in ROLES_ATIENDEN_PEDIDOS,
                            hay_tableta=User.query.filter_by(role=ROL_TABLETA).count() > 0)
+
+
+@app.route('/insumos/pedidos/<int:pedido_id>/firma')
+@_ruta_insumos()
+def insumos_pedido_firma(pedido_id):
+    p = InsumoPedido.query.get_or_404(pedido_id)
+    if not p.firma_s3_key:
+        return "Este pedido no tiene firma", 404
+    obj = s3_client.get_object(Bucket=S3_BUCKET_NAME, Key=p.firma_s3_key)
+    return send_file(io.BytesIO(obj['Body'].read()), mimetype='image/png', download_name=f'firma_pedido_{p.id}.png')
+
+
+@app.route('/insumos/config/tableta', methods=['POST'])
+@_ruta_insumos(editar=True, como_json=True)
+def insumos_config_tableta():
+    """Firma del trabajador en la tableta: obligatoria / opcional / no pedir."""
+    valor = (request.form.get('firma') or '').upper()
+    if valor not in FIRMA_TABLETA_OPCIONES:
+        return {'status': 'error', 'msg': 'Opción no válida.'}
+    c = SystemConfig.query.get(CLAVE_FIRMA_TABLETA)
+    if c:
+        c.value, c.updated_by = valor, session.get('username', '')
+    else:
+        db.session.add(SystemConfig(key=CLAVE_FIRMA_TABLETA, value=valor, updated_by=session.get('username', '')))
+    registrar_log(f"Tableta de almacén: firma del trabajador → {FIRMA_TABLETA_OPCIONES[valor]}", 'bi-pen', 'text-info')
+    db.session.commit()
+    return {'status': 'success'}

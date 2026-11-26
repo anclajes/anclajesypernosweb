@@ -37,14 +37,16 @@
         <td class="ps-3 fw-bold">{{ p.id }}</td>
         <td class="text-nowrap">{{ p.fecha.strftime('%d/%m/%Y %H:%M') if p.fecha }}</td>
         <td><b>{{ p.trabajador.nombre if p.trabajador else '-' }}</b><div class="text-muted small">{{ p.area.nombre if p.area else '-' }} · {{ p.motivo or '-' }}</div>
-            {% if p.nota %}<div class="small fst-italic">“{{ p.nota }}”</div>{% endif %}</td>
+            {% if p.nota %}<div class="small fst-italic">“{{ p.nota }}”</div>{% endif %}
+            {% if p.firma_s3_key %}<a class="small text-success fw-bold" href="{{ url_for('insumos_pedido_firma', pedido_id=p.id) }}" target="_blank"><i class="bi bi-pen"></i> Ver firma</a>{% endif %}</td>
         <td>{% for it in p.items %}<div><b>{{ it.cantidad|cant }} {{ it.insumo.unidad or '' }}</b> {{ it.insumo.descripcion }}
             {% if it.cantidad_entregada is not none and it.cantidad_entregada != it.cantidad %}<span class="text-warning-emphasis small">(entregado {{ it.cantidad_entregada|cant }})</span>{% endif %}</div>{% endfor %}</td>
         <td><span class="pd-est" style="background: {{ e[1] }};">{{ e[0] }}</span>
             {% if p.atendido_por %}<div class="small text-muted">{{ p.atendido_por }} · {{ p.fecha_atencion.strftime('%d/%m %H:%M') if p.fecha_atencion }}</div>{% endif %}
             {% if p.motivo_rechazo %}<div class="small text-danger">{{ p.motivo_rechazo }}</div>{% endif %}
             {% for sid in (p.salida_ids or '').split(',') if sid.strip().isdigit() and salidas.get(sid|int) %}{% set s = salidas[sid|int] %}
-            <div><a class="small" href="{{ url_for('insumos_salida_detalle', salida_id=s.id) }}">{{ empresas[s.empresa].corto }} N° {{ '%06d' % s.numero }}</a></div>{% endfor %}</td>
+            <div class="d-flex gap-2 align-items-center mt-1"><a class="small" href="{{ url_for('insumos_salida_detalle', salida_id=s.id) }}">{{ empresas[s.empresa].corto }} N° {{ '%06d' % s.numero }}</a>
+                <a class="btn btn-sm btn-outline-danger py-0 px-2 fw-bold" href="{{ url_for('insumos_salida_pdf', salida_id=s.id) }}" target="_blank" title="PDF de la salida"><i class="bi bi-file-earmark-pdf"></i> PDF</a></div>{% endfor %}</td>
         <td class="pe-3 text-end text-nowrap">{% if p.estado == 'PENDIENTE' and puede_atender %}
             <a class="btn btn-sm btn-primary fw-bold" href="{{ url_for('insumos_salida_nueva', pedido=p.id) }}"><i class="bi bi-box-arrow-up"></i> Atender</a>
             <div class="small text-muted mt-1">o “Entregar” rápido en el globito</div>{% endif %}</td>
