@@ -60,7 +60,7 @@
                             {% if t.pin_bloqueo_hasta and t.pin_bloqueo_hasta > ahora_insumos %}<div class="text-danger" style="font-size:.65rem;">bloqueado por intentos</div>{% endif %}</td>
                         <td class="text-center">{% if t.activo %}<span class="badge bg-success">Activo</span>{% else %}<span class="badge bg-secondary">Inactivo</span>{% endif %}</td>
                         <td class="pe-3 acciones">
-                            <button class="btn btn-sm btn-outline-primary" title="Editar" onclick="editarTrab({{ {'id': t.id, 'nombre': t.nombre, 'codigo': t.codigo or '', 'cargo': t.cargo or '', 'area_id': t.area_id or '', 'empresa': t.empresa or 'AMBAS', 'es_jefe': t.es_jefe, 'pin_propio': bool(t.pin_hash)}|tojson|forceescape }})"><i class="bi bi-pencil"></i></button>
+                            <button class="btn btn-sm btn-outline-primary" title="Editar" onclick="editarTrab({{ {'id': t.id, 'nombre': t.nombre, 'codigo': t.codigo or '', 'cargo': t.cargo or '', 'area_id': t.area_id or '', 'empresa': t.empresa or 'AMBAS', 'es_jefe': t.es_jefe, 'pin_propio': t.pin_hash is not none}|tojson|forceescape }})"><i class="bi bi-pencil"></i></button>
                             <button class="btn btn-sm btn-outline-secondary" title="{{ 'Desactivar' if t.activo else 'Activar' }}" onclick="post('trabajador', {accion: 'toggle', id: {{ t.id }}})"><i class="bi {{ 'bi-toggle-on' if t.activo else 'bi-toggle-off' }}"></i></button>
                             <button class="btn btn-sm btn-outline-danger" title="Borrar" onclick="borrar('trabajador', {{ t.id }}, {{ t.nombre|tojson|forceescape }})"><i class="bi bi-trash"></i></button>
                         </td>
