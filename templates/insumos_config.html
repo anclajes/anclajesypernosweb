@@ -45,7 +45,7 @@
         </div>
         <div class="card border-0 shadow-sm"><div class="card-body p-0 table-responsive">
             <table class="table table-hover align-middle mb-0 small">
-                <thead class="table-light"><tr><th class="ps-3">Nombre</th><th>Código / DNI</th><th>Cargo</th><th>Área</th><th>Empresa</th><th class="text-center">Jefe de área</th><th class="text-center">Estado</th><th class="pe-3"></th></tr></thead>
+                <thead class="table-light"><tr><th class="ps-3">Nombre</th><th>Código / DNI</th><th>Cargo</th><th>Área</th><th>Empresa</th><th class="text-center">Jefe de área</th><th class="text-center" title="PIN para pedir en la tableta de almacén">PIN tableta</th><th class="text-center">Estado</th><th class="pe-3"></th></tr></thead>
                 <tbody>
                 {% for t in trabajadores %}
                     <tr class="{{ 'opacity-50' if not t.activo }}">
@@ -54,14 +54,18 @@
                         <td>{{ {'AMBAS': 'Las dos', 'ANCLAJES': 'Anclajes', 'IMPORTBOLTS': 'Import Bolts'}.get(t.empresa or 'AMBAS') }}</td>
                         <td class="text-center"><button type="button" class="jefe-btn {{ 'si' if t.es_jefe }}" title="Puede autorizar salidas"
                                 onclick="post('trabajador', {accion: 'jefe', id: {{ t.id }}})"><i class="bi {{ 'bi-check-circle-fill' if t.es_jefe else 'bi-circle' }}"></i> {{ 'Sí' if t.es_jefe else 'No' }}</button></td>
+                        <td class="text-center">{% set _pt = pin_tipo(t) %}{% if _pt == 'PROPIO' %}<span class="badge text-bg-primary" title="Tiene un PIN propio">Propio</span>
+                            {% elif _pt == 'DNI' %}<span class="badge text-bg-light border" title="Los 4 primeros dígitos de su DNI / código">4 del DNI</span>
+                            {% else %}<span class="badge text-bg-warning" title="Sin DNI ni PIN: no puede pedir en la tableta">Sin PIN</span>{% endif %}
+                            {% if t.pin_bloqueo_hasta and t.pin_bloqueo_hasta > ahora_insumos %}<div class="text-danger" style="font-size:.65rem;">bloqueado por intentos</div>{% endif %}</td>
                         <td class="text-center">{% if t.activo %}<span class="badge bg-success">Activo</span>{% else %}<span class="badge bg-secondary">Inactivo</span>{% endif %}</td>
                         <td class="pe-3 acciones">
-                            <button class="btn btn-sm btn-outline-primary" title="Editar" onclick="editarTrab({{ {'id': t.id, 'nombre': t.nombre, 'codigo': t.codigo or '', 'cargo': t.cargo or '', 'area_id': t.area_id or '', 'empresa': t.empresa or 'AMBAS', 'es_jefe': t.es_jefe}|tojson|forceescape }})"><i class="bi bi-pencil"></i></button>
+                            <button class="btn btn-sm btn-outline-primary" title="Editar" onclick="editarTrab({{ {'id': t.id, 'nombre': t.nombre, 'codigo': t.codigo or '', 'cargo': t.cargo or '', 'area_id': t.area_id or '', 'empresa': t.empresa or 'AMBAS', 'es_jefe': t.es_jefe, 'pin_propio': bool(t.pin_hash)}|tojson|forceescape }})"><i class="bi bi-pencil"></i></button>
                             <button class="btn btn-sm btn-outline-secondary" title="{{ 'Desactivar' if t.activo else 'Activar' }}" onclick="post('trabajador', {accion: 'toggle', id: {{ t.id }}})"><i class="bi {{ 'bi-toggle-on' if t.activo else 'bi-toggle-off' }}"></i></button>
                             <button class="btn btn-sm btn-outline-danger" title="Borrar" onclick="borrar('trabajador', {{ t.id }}, {{ t.nombre|tojson|forceescape }})"><i class="bi bi-trash"></i></button>
                         </td>
                     </tr>
-                {% else %}<tr><td colspan="8" class="text-center text-muted py-4">Todavía no hay trabajadores.</td></tr>{% endfor %}
+                {% else %}<tr><td colspan="9" class="text-center text-muted py-4">Todavía no hay trabajadores.</td></tr>{% endfor %}
                 </tbody>
             </table>
         </div></div>
@@ -192,6 +196,13 @@
                 <option value="AMBAS">Las dos</option><option value="ANCLAJES">Anclajes</option><option value="IMPORTBOLTS">Import Bolts</option></select></div>
         </div>
         <div class="form-check"><input class="form-check-input" type="checkbox" name="es_jefe" value="1" id="t_jefe"><label class="form-check-label small" for="t_jefe">Es jefe de área (puede autorizar salidas)</label></div>
+        <div class="border rounded-3 p-2 mt-2" style="background:#f8fafc;">
+            <label class="small fw-bold"><i class="bi bi-tablet"></i> PIN para la tableta de almacén</label>
+            <input name="pin" id="t_pin" class="form-control" inputmode="numeric" pattern="\d{4}" maxlength="4" autocomplete="off" placeholder="4 números (ej. su cumpleaños 0512)">
+            <div class="form-text" id="t_pin_txt">Si lo dejas vacío, su PIN son los <b>4 primeros dígitos de su DNI / código</b>.</div>
+            <div class="form-check mt-1 d-none" id="t_pin_quitar_box"><input class="form-check-input" type="checkbox" name="pin_quitar" value="1" id="t_pin_quitar">
+                <label class="form-check-label small" for="t_pin_quitar">Quitar su PIN propio (vuelve a los 4 del DNI y se desbloquea)</label></div>
+        </div>
     </div>
     <div class="modal-footer p-2"><button class="btn btn-primary w-100 fw-bold">Guardar</button></div>
 </form></div></div>
@@ -263,6 +274,11 @@ function editarTrab(t) {
     document.getElementById('t_area').value = t.area_id || '';
     document.getElementById('t_empresa').value = t.empresa || 'AMBAS';
     document.getElementById('t_jefe').checked = !!t.es_jefe;
+    document.getElementById('t_pin').value = '';
+    document.getElementById('t_pin_quitar').checked = false;
+    document.getElementById('t_pin_quitar_box').classList.toggle('d-none', !t.pin_propio);
+    document.getElementById('t_pin_txt').innerHTML = t.pin_propio ? 'Ya tiene un <b>PIN propio</b>: escribe otro para cambiarlo, o déjalo vacío para mantenerlo.'
+        : 'Si lo dejas vacío, su PIN son los <b>4 primeros dígitos de su DNI / código</b>.';
     bootstrap.Modal.getOrCreateInstance(document.getElementById('modalTrab')).show();
 }
 function editarProv(p) {

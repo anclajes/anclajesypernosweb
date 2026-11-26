@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Insumos internos{% endblock %}
+{% block subtitle %}Pedidos desde la tableta de almacén{% endblock %}
+{% block content %}
+{% include '_insumos_nav.html' %}
+{#- v37 · modulos/insumos/tableta.py (ruta insumos_pedidos). Los pendientes también salen en el globito de abajo a la izquierda. -#}
+<style>
+    .pd-chip { display: inline-flex; align-items: center; gap: 6px; border: 2px solid #e2e8f0; border-radius: 20px; padding: 3px 12px; font-size: .8rem; font-weight: 700;
+               text-decoration: none; color: #334155; background: #fff; }
+    .pd-chip.on { border-color: #0f172a; background: #0f172a; color: #fff; }
+    .pd-t td { vertical-align: top; font-size: .84rem; }
+    .pd-est { font-size: .68rem; font-weight: 800; color: #fff; border-radius: 10px; padding: 1px 9px; }
+</style>
+<div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+    {% for k, e in estados.items() %}<a class="pd-chip {{ 'on' if estado == k }}" href="{{ url_for('insumos_pedidos', estado=k) }}">{{ e[0] }} <span class="badge text-bg-light">{{ conteo.get(k, 0) }}</span></a>{% endfor %}
+    <a class="pd-chip {{ 'on' if estado == 'TODOS' }}" href="{{ url_for('insumos_pedidos', estado='TODOS') }}">Todos</a>
+    <a class="btn btn-sm btn-outline-secondary ms-auto" href="{{ url_for('tableta') }}" target="_blank"><i class="bi bi-tablet"></i> Abrir la pantalla de la tableta</a>
+</div>
+{% if not hay_tableta %}
+<div class="alert alert-info small py-2"><i class="bi bi-info-circle"></i> Para usarla: en <b>Usuarios</b> crea un usuario con rol <b>“Tableta de almacén”</b> e
+    ingresa con él en la tableta (queda conectado siempre y solo ve esta pantalla). Cada trabajador entra con su <b>PIN</b>: por defecto los 4 primeros
+    dígitos de su DNI (en Insumos → Configuración → Trabajadores puedes ponerle uno propio, como su cumpleaños).</div>
+{% endif %}
+<div class="card border-0 shadow-sm"><div class="table-responsive">
+<table class="table table-hover mb-0 pd-t">
+    <thead class="table-light"><tr><th class="ps-3">N°</th><th>Fecha</th><th>Trabajador</th><th>Materiales</th><th>Estado</th><th class="pe-3"></th></tr></thead>
+    <tbody>
+    {% for p in pedidos %}{% set e = estados.get(p.estado, (p.estado, '#334155')) %}
+    <tr>
+        <td class="ps-3 fw-bold">{{ p.id }}</td>
+        <td class="text-nowrap">{{ p.fecha.strftime('%d/%m/%Y %H:%M') if p.fecha }}</td>
+        <td><b>{{ p.trabajador.nombre if p.trabajador else '-' }}</b><div class="text-muted small">{{ p.area.nombre if p.area else '-' }} · {{ p.motivo or '-' }}</div>
+            {% if p.nota %}<div class="small fst-italic">“{{ p.nota }}”</div>{% endif %}</td>
+        <td>{% for it in p.items %}<div><b>{{ it.cantidad|cant }} {{ it.insumo.unidad or '' }}</b> {{ it.insumo.descripcion }}
+            {% if it.cantidad_entregada is not none and it.cantidad_entregada != it.cantidad %}<span class="text-warning-emphasis small">(entregado {{ it.cantidad_entregada|cant }})</span>{% endif %}</div>{% endfor %}</td>
+        <td><span class="pd-est" style="background: {{ e[1] }};">{{ e[0] }}</span>
+            {% if p.atendido_por %}<div class="small text-muted">{{ p.atendido_por }} · {{ p.fecha_atencion.strftime('%d/%m %H:%M') if p.fecha_atencion }}</div>{% endif %}
+            {% if p.motivo_rechazo %}<div class="small text-danger">{{ p.motivo_rechazo }}</div>{% endif %}
+            {% for sid in (p.salida_ids or '').split(',') if sid.strip().isdigit() and salidas.get(sid|int) %}{% set s = salidas[sid|int] %}
+            <div><a class="small" href="{{ url_for('insumos_salida_detalle', salida_id=s.id) }}">{{ empresas[s.empresa].corto }} N° {{ '%06d' % s.numero }}</a></div>{% endfor %}</td>
+        <td class="pe-3 text-end text-nowrap">{% if p.estado == 'PENDIENTE' and puede_atender %}
+            <a class="btn btn-sm btn-primary fw-bold" href="{{ url_for('insumos_salida_nueva', pedido=p.id) }}"><i class="bi bi-box-arrow-up"></i> Atender</a>
+            <div class="small text-muted mt-1">o “Entregar” rápido en el globito</div>{% endif %}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="text-center text-muted py-5"><i class="bi bi-tablet display-6 opacity-25"></i><div class="mt-2">No hay pedidos {{ estados[estado][0]|lower if estado in estados else '' }}.</div></td></tr>
+    {% endfor %}
+    </tbody>
+</table></div></div>
+{% endblock %}

@@ -32,6 +32,11 @@
 
 <form method="POST" action="{{ url_for('insumos_salida_guardar') }}" id="formSalida">
 <input type="hidden" name="firma_png" id="firma_png">
+{% if pedido %}<input type="hidden" name="pedido_id" value="{{ pedido.id }}">
+<div class="alert d-flex flex-wrap gap-2 align-items-center py-2 small" style="background:#f5f3ff; border:1px solid #ddd6fe; color:#4c1d95;">
+    <i class="bi bi-tablet fs-5"></i><span class="flex-fill"><b>Atendiendo el pedido N° {{ pedido.id }} de la tableta</b> · {{ pedido.trabajador }} · {{ pedido.hora }}
+        {% if pedido.nota %}· “{{ pedido.nota }}”{% endif %}<br>Revisa cantidades e inventario de cada material; al registrar, el pedido queda <b>entregado</b>.</span>
+    <a href="{{ url_for('insumos_pedidos') }}" class="btn btn-sm btn-light border">Volver a pedidos</a></div>{% endif %}
 <div class="row g-3">
     <div class="col-12 col-lg-5">
         <div class="card border-0 shadow-sm mb-3"><div class="card-body">
@@ -233,7 +238,7 @@ function agregarFila(datos) {
     const sel = fila.querySelector('.sel-insumo'), selCat = fila.querySelector('.sel-cat');
     opcionesCategorias(selCat);
     opcionesInsumos(sel);
-    if (datos) { sel.value = datos.id; fila.querySelector('.emp-linea').value = datos.emp; fila.dataset.elegido = '1';
+    if (datos) { sel.value = datos.id; fila.querySelector('.emp-linea').value = datos.emp || ''; fila.dataset.elegido = datos.emp ? '1' : '';
                  fila.querySelector('.c-sol').value = datos.cant; fila.querySelector('.c-desp').value = datos.cant; }
     const alCambiarInsumo = () => { fila.dataset.elegido = ''; fila.querySelector('.emp-linea').value = ''; pintarFila(fila); };
     if (window.jQuery && jQuery.fn.select2) jQuery(sel).select2({ placeholder: 'Busca por código o descripción', width: '100%' }).on('change', alCambiarInsumo);
@@ -287,6 +292,17 @@ document.addEventListener('DOMContentLoaded', () => {
     cargarTrabajadores();
     if (window.jQuery) jQuery('#sel_solicitado').on('change', alElegirSolicitante); else document.getElementById('sel_solicitado').addEventListener('change', alElegirSolicitante);
 });
-agregarFila();
+const PEDIDO = {{ (pedido or none)|tojson }};
+if (PEDIDO && PEDIDO.items.length) {
+    // v37: pedido de la tableta → cada material con el inventario recomendado (si alcanza), y quién / área / motivo
+    PEDIDO.items.forEach(it => { const c = CAT[it.insumo_id]; if (c) agregarFila({ id: it.insumo_id, emp: recomendada(c), cant: it.cantidad }); });
+    if (!document.querySelector('#filas .fila-item')) agregarFila();
+    document.addEventListener('DOMContentLoaded', () => {
+        ['sel_solicitado', 'sel_recibido'].forEach(id => { const s = document.getElementById(id); s.value = PEDIDO.trabajador_id; if (window.jQuery) jQuery(s).trigger('change.select2'); });
+        if (PEDIDO.area_id) document.getElementById('sel_area').value = PEDIDO.area_id;
+        const m = document.querySelector('select[name="motivo"]'); if (m && PEDIDO.motivo) m.value = PEDIDO.motivo;
+        const d = document.querySelector('input[name="motivo_detalle"]'); if (d) d.value = (`Pedido N° ${PEDIDO.id} desde la tableta` + (PEDIDO.nota ? ' · ' + PEDIDO.nota : '')).slice(0, 300);
+    });
+} else agregarFila();
 </script>
 {% endblock %}

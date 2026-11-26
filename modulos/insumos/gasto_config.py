@@ -145,7 +145,7 @@ def insumos_config():
                          'insumos': Insumo.query.count(), 'proveedores': InsumoProveedor.query.count(),
                          'trabajadores': InsumoTrabajador.query.count(), 'areas': InsumoArea.query.count(),
                          'stocks': InsumoStock.query.count()}
-    return render_template('insumos_config.html', areas=InsumoArea.query.order_by(InsumoArea.nombre).all(),
+    return render_template('insumos_config.html', pin_tipo=_pin_tipo, ahora_insumos=hora_peru(), areas=InsumoArea.query.order_by(InsumoArea.nombre).all(),
                            trabajadores=InsumoTrabajador.query.order_by(InsumoTrabajador.activo.desc(), InsumoTrabajador.nombre).all(),
                            catalogos={t: _catalogo_insumos(t, incluir_inactivos=True) for t in CATALOGOS_INSUMOS},
                            nombres_catalogo=CATALOGOS_INSUMOS, formato=formato, formato_def=FORMATO_SALIDA_DEF, empresas=EMPRESAS_INSUMOS,
@@ -211,8 +211,9 @@ def insumos_config_trabajador():
         t = InsumoTrabajador.query.get_or_404(tid)
         n = InsumoSalida.query.filter(or_(InsumoSalida.solicitado_por_id == t.id, InsumoSalida.recibido_por_id == t.id,
                                           InsumoSalida.autorizado_por_id == t.id, InsumoSalida.a_cuenta_de_id == t.id)).count()
+        n += InsumoPedido.query.filter(InsumoPedido.trabajador_id == t.id).count()
         if n:
-            return {'status': 'error', 'msg': f'{t.nombre} figura en {n} salida(s) (solicitó, recibió, autorizó o fue a su cuenta): '
+            return {'status': 'error', 'msg': f'{t.nombre} figura en {n} salida(s) o pedido(s) de la tableta (solicitó, recibió, autorizó o fue a su cuenta): '
                                               f'si se borra, esas salidas quedarían sin nombre. Desactívalo para que ya no aparezca.'}
         registrar_log(f"Borró al trabajador de insumos {t.nombre}", 'bi-trash', 'text-danger')
         db.session.delete(t)
@@ -228,6 +229,13 @@ def insumos_config_trabajador():
     t.area_id = area.id if area else None
     t.empresa = empresa if empresa in ('ANCLAJES', 'IMPORTBOLTS', 'AMBAS') else 'AMBAS'
     t.es_jefe = f.get('es_jefe') == '1'
+    # v37 · PIN de la tableta: 4 números; vacío = se queda como estaba; "quitar" = vuelve a los 4 primeros dígitos del DNI
+    if f.get('pin_quitar') == '1':
+        _poner_pin(t, '')
+    elif (f.get('pin') or '').strip():
+        err = _poner_pin(t, f.get('pin'))
+        if err:
+            return {'status': 'error', 'msg': err}
     if not tid:
         db.session.add(t)
     db.session.commit()
@@ -415,6 +423,12 @@ def insumos_vaciar():
         except Exception:
             db.session.rollback()
             app.logger.exception("No se pudo soltar las OC de los ingresos de insumos")
+        try:      # v37: pedidos de la tableta
+            InsumoPedidoItem.query.delete(synchronize_session=False)
+            InsumoPedido.query.delete(synchronize_session=False)
+        except Exception:
+            db.session.rollback()
+            app.logger.exception("No se pudo borrar los pedidos de la tableta")
         if herr:
             HerramientaMovimiento.query.delete(synchronize_session=False)
             Herramienta.query.delete(synchronize_session=False)

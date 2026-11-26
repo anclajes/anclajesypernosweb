@@ -1,0 +1,85 @@
+{#- v37 · GLOBITO de pedidos de la TABLETA (Almacén, Logística, Gerencia). Abajo a la izquierda, solo aparece si hay pedidos.
+    SIN sonido ni ventanas que salten. Pregunta cada 30 s (con la pestaña visible). "Entregar" = salida en un toque con el inventario
+    recomendado; "Revisar" = Nueva salida con todo cargado; "✕" = rechazar con motivo. Rutas en modulos/insumos/tableta.py -#}
+<style>
+    .pt-glob { position: fixed; left: 16px; bottom: 16px; z-index: 1080; font-family: inherit; }
+    .pt-pill { display: none; align-items: center; gap: 8px; border: 0; border-radius: 30px; padding: 9px 16px; background: #7c3aed; color: #fff; font-weight: 800;
+               box-shadow: 0 8px 24px rgba(124,58,237,.35); font-size: .9rem; }
+    .pt-pill .n { background: #fff; color: #7c3aed; border-radius: 20px; padding: 0 8px; font-size: .8rem; }
+    .pt-panel { display: none; position: absolute; left: 0; bottom: calc(100% + 10px); width: 400px; max-width: calc(100vw - 24px); max-height: min(70vh, 620px); overflow-y: auto;
+                background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; box-shadow: 0 18px 48px rgba(15,23,42,.22); }
+    .pt-panel.on { display: block; }
+    .pt-cab { position: sticky; top: 0; background: #fff; padding: 9px 14px; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; gap: 8px; z-index: 1; }
+    .pt-ped { padding: 9px 14px; border-bottom: 1px solid #f1f5f9; }
+    .pt-ped .l1 { display: flex; gap: 6px; align-items: baseline; }
+    .pt-ped .quien { font-weight: 800; color: #0f172a; font-size: .86rem; }
+    .pt-ped .hace { margin-left: auto; font-size: .7rem; color: #64748b; white-space: nowrap; }
+    .pt-ped .sub { font-size: .72rem; color: #64748b; }
+    .pt-it { font-size: .78rem; display: flex; gap: 6px; padding: 1px 0; }
+    .pt-it .q { font-weight: 800; white-space: nowrap; }
+    .pt-it .b { margin-left: auto; font-size: .65rem; font-weight: 800; border-radius: 5px; padding: 0 5px; background: #f1f5f9; color: #334155; white-space: nowrap; }
+    .pt-it .b.no { background: #fee2e2; color: #b91c1c; }
+    .pt-acc { display: flex; gap: 6px; margin-top: 6px; }
+    .pt-acc button, .pt-acc a { font-size: .76rem; font-weight: 800; border-radius: 8px; padding: 4px 10px; }
+</style>
+<div class="pt-glob" id="ptGlob">
+    <button type="button" class="pt-pill" id="ptPill" title="Pedidos de la tableta de almacén"><i class="bi bi-tablet"></i> Pedidos <span class="n" id="ptN">0</span></button>
+    <div class="pt-panel" id="ptPanel"></div>
+</div>
+<script>
+(function () {
+    const URL_API = {{ url_for('insumos_pedidos_pendientes_api')|tojson }}, URL_LISTA = {{ url_for('insumos_pedidos')|tojson }};
+    const pill = document.getElementById('ptPill'), panel = document.getElementById('ptPanel'), nEl = document.getElementById('ptN');
+    const esc = t => String(t ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const fmt = n => Number(n || 0).toLocaleString('es-PE', { maximumFractionDigits: 3 });
+    let peds = [], ahora = null;
+    function hace(iso) { if (!iso || !ahora) return ''; const m = Math.round((new Date(ahora) - new Date(iso)) / 60000);
+        return m < 1 ? 'ahora' : m < 60 ? `hace ${m} min` : m < 1440 ? `hace ${Math.round(m / 60)} h` : `hace ${Math.round(m / 1440)} d`; }
+    function pintar() {
+        pill.style.display = peds.length ? 'inline-flex' : 'none';
+        nEl.textContent = peds.length;
+        if (!peds.length) panel.classList.remove('on');
+        let h = `<div class="pt-cab"><b><i class="bi bi-tablet"></i> Pedidos de la tableta</b><a class="ms-auto small" href="${URL_LISTA}">Ver todos</a></div>`;
+        for (const p of peds) {
+            h += `<div class="pt-ped" data-id="${p.id}"><div class="l1"><span class="quien">${esc(p.trabajador)}</span><span class="text-muted small">N° ${p.id}</span><span class="hace">${hace(p.fecha)}</span></div>
+                  <div class="sub">${esc(p.area)} · ${esc(p.motivo)}${p.nota ? ' · “' + esc(p.nota) + '”' : ''}</div>`;
+            for (const it of p.items) h += `<div class="pt-it"><span class="q">${fmt(it.cantidad)} ${esc(it.unidad)}</span><span>${esc(it.descripcion)}</span>
+                  <span class="b ${it.bolsa ? '' : 'no'}" title="${esc(Object.entries(it.stocks || {}).map(([k, v]) => k + ': ' + fmt(v)).join(' · '))}">${it.bolsa ? 'de ' + esc(it.bolsa_txt) : 'no alcanza'}</span></div>`;
+            h += `<div class="pt-acc">${p.entrega_rapida ? `<button class="btn btn-success" data-acc="entregar"><i class="bi bi-check2-circle"></i> Entregar</button>` : `<span class="small text-danger fw-bold align-self-center">${esc(p.por_que_no)}</span>`}
+                  <a class="btn btn-outline-primary" href="{{ url_for('insumos_salida_nueva') }}?pedido=${p.id}">Revisar</a>
+                  <button class="btn btn-outline-danger ms-auto" data-acc="rechazar" title="Rechazar"><i class="bi bi-x-lg"></i></button></div></div>`;
+        }
+        panel.innerHTML = h;
+    }
+    async function consultar() {
+        try { const r = await fetch(URL_API, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } }); if (!r.ok) return;
+              const d = await r.json(); if (d.status !== 'ok') return; peds = d.pedidos || []; ahora = d.ahora; pintar(); } catch (e) {}
+    }
+    pill.addEventListener('click', e => { e.stopPropagation(); panel.classList.toggle('on'); });
+    document.addEventListener('click', e => { if (!document.getElementById('ptGlob').contains(e.target) && !e.target.closest('.swal2-container')) panel.classList.remove('on'); });
+    panel.addEventListener('click', async e => {
+        const b = e.target.closest('button[data-acc]'); if (!b) return;
+        const id = b.closest('.pt-ped').dataset.id, p = peds.find(x => String(x.id) === id);
+        if (b.dataset.acc === 'entregar') {
+            const ok = await Swal.fire({ icon: 'question', title: `¿Entregar el pedido N° ${id}?`, html: `<div class="text-start small">${p.items.map(i => `<b>${fmt(i.cantidad)} ${esc(i.unidad)}</b> ${esc(i.descripcion)} <span class="text-muted">(de ${esc(i.bolsa_txt)})</span>`).join('<br>')}<br><br>A <b>${esc(p.trabajador)}</b> · ${esc(p.area)}. Se registra la salida y se descuenta del stock.</div>`,
+                                          showCancelButton: true, confirmButtonText: 'Sí, entregar', cancelButtonText: 'Cancelar', confirmButtonColor: '#15803d' });
+            if (!ok.isConfirmed) return;
+            b.disabled = true;
+            const d = await (await fetch(`/insumos/pedidos/${id}/entregar`, { method: 'POST', credentials: 'same-origin' })).json().catch(() => ({ status: 'error', msg: 'No se pudo comunicar.' }));
+            if (d.status === 'success') { Swal.fire({ icon: 'success', title: 'Entregado', html: (d.salidas || []).map(s => `<a href="${s.url}">${esc(s.txt)}</a>`).join(' · '), timer: 4000 }); consultar(); }
+            else { b.disabled = false; Swal.fire({ icon: 'error', title: 'No se pudo entregar', text: d.msg, showCancelButton: !!d.revisar, confirmButtonText: d.revisar ? 'Revisar' : 'OK' })
+                       .then(x => { if (x.isConfirmed && d.revisar) location.href = d.revisar; }); }
+        } else {
+            const r = await Swal.fire({ icon: 'warning', title: `¿Rechazar el pedido N° ${id}?`, input: 'text', inputPlaceholder: 'Motivo (ej. no hay stock, no corresponde)', showCancelButton: true,
+                                        confirmButtonText: 'Rechazar', cancelButtonText: 'Cancelar', confirmButtonColor: '#b91c1c', inputValidator: v => (!v || v.trim().length < 3) ? 'Escribe el motivo' : undefined });
+            if (!r.isConfirmed) return;
+            const d = await (await fetch(`/insumos/pedidos/${id}/rechazar`, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                                          body: new URLSearchParams({ motivo: r.value }).toString() })).json().catch(() => ({ status: 'error', msg: 'No se pudo comunicar.' }));
+            if (d.status === 'success') consultar(); else Swal.fire('No se pudo', d.msg, 'error');
+        }
+    });
+    consultar();
+    setInterval(() => { if (document.visibilityState === 'visible') consultar(); }, 30000);
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') consultar(); });
+})();
+</script>

@@ -116,6 +116,8 @@
                             <span class="badge mb-1 text-white" style="background-color:#0f766e;"><i class="bi bi-truck-flatbed"></i> Logística</span>
                         {% elif u.role == 'chofer' %}
                             <span class="badge bg-secondary mb-1"><i class="bi bi-truck"></i> Chofer</span>
+                        {% elif u.role == 'tableta' %}
+                            <span class="badge mb-1 text-white" style="background-color:#7c3aed;"><i class="bi bi-tablet"></i> Tableta almacén</span>
                         {% elif u.role == 'almacen_visor' %}
                             <span class="badge bg-light text-dark border mb-1"><i class="bi bi-eye-fill"></i> Visor Inventario</span>
                         {% endif %}
@@ -271,6 +273,7 @@
                             <option value="almacen">Jefe de Almacén</option>
                             <option value="logistica">Logística (Inventarios, Kardex, Insumos y Órdenes de Compra)</option>
                             <option value="chofer">Chofer / Transportista</option>
+                            <option value="tableta">Tableta de almacén (pedidos de insumos · queda siempre conectada)</option>
                             <option value="administracion">Administración</option>
                             <option value="auditor_stock">Auditor de Stock (Conteo Físico)</option>
                             <option value="almacen_visor">Visor de Inventario (Solo Lectura)</option>

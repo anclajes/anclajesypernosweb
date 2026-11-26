@@ -65,6 +65,7 @@ ROLE_LABELS = {
     'logistica': 'Logística',
     'chofer': 'Chofer',
     'auditor_stock': 'Auditor de Stock',
+    'tableta': 'Tableta de almacén',  # v37: pantalla de pedidos de insumos (siempre conectada; solo ve /tableta)
     'almacen_visor': 'Visor de Inventario'  # rol de solo lectura: Inventario (General/Anclajes/ImportBolts) y Kardex
 }
 
@@ -654,6 +655,8 @@ def index():
         return redirect(url_for('auditoria_inicio'))
     if rol == 'almacen_visor':
         return redirect(url_for('inventario_general'))
+    if rol == 'tableta':
+        return redirect(url_for('tableta'))
     if rol == 'logistica':
         return redirect(url_for('oc_lista'))
     if rol in ['admin', 'administracion']:
@@ -1857,6 +1860,9 @@ def login():
                 session['es_superadmin'] = bool(getattr(user, 'es_superadmin', False))
                 session['sv'] = user.sesion_version or 0
                 session['ult'] = ahora.isoformat()
+                if user.role == 'tableta':          # v37: la tableta de almacén queda conectada (no se borra al cerrar el navegador)
+                    session.permanent = True
+                    return redirect(url_for('tableta'))
                 return redirect(url_for('index'))
             db.session.commit()
         else:
@@ -1912,7 +1918,7 @@ def _control_sesion_usuario():
             ultima = datetime.fromisoformat(session['ult']) if session.get('ult') else None
         except (TypeError, ValueError):
             ultima = None
-        if ultima and ahora - ultima > INACTIVIDAD_MAXIMA:
+        if ultima and ahora - ultima > INACTIVIDAD_MAXIMA and user.role != 'tableta':   # v37: la tableta de almacén no se cierra
             horas = int(INACTIVIDAD_MAXIMA.total_seconds() // 3600)
             motivo, evento, detalle = (f'Tu sesión se cerró por inactividad ({horas} horas sin uso). Vuelve a ingresar.',
                                        'INACTIVIDAD', f'{horas} horas sin uso')
@@ -1979,6 +1985,8 @@ NOMBRES_PAGINA = {
     'inventario_general': ('Inventario', 'Inventario General'),
     'inventario_nuevos': ('Inventario', 'Productos nuevos'),
     'admin_maestro_orden': ('Maestro', 'Orden de códigos'),
+    'tableta': ('Insumos', 'Tableta de almacén'),
+    'insumos_pedidos': ('Insumos', 'Pedidos de la tableta'),
     'salidas_recientes': ('Inventario', 'Últimas salidas'),
     'producto_info': ('Inventario', 'Info de producto (QR)'),
     'ver_kardex': ('Kardex', 'Kardex Anclajes'),
@@ -15788,6 +15796,7 @@ MODULOS_EN_ARCHIVOS = [
     'modulos/insumos/estadisticas.py',
     'modulos/insumos/herramientas.py',
     'modulos/insumos/revertir.py',
+    'modulos/insumos/tableta.py',
     'modulos/compras/base.py',
     'modulos/compras/ordenes.py',
     'modulos/compras/reportes.py',

@@ -601,7 +601,12 @@ def insumos_salida_nueva():
     """v30 · Ya NO se elige la empresa primero: se busca el insumo, se ve cuánto hay en cada bolsa (Anclajes, Import Bolts y
     General) y se elige de cuál sale cada línea (el sistema recomienda). Al guardar se hace UNA salida por bolsa usada."""
     trabajadores = InsumoTrabajador.query.filter_by(activo=True).order_by(InsumoTrabajador.nombre).all()
-    return render_template('insumos_salida_form.html', empresas=EMPRESAS_INSUMOS,
+    # v37: atender un pedido de la tableta → todo cargado (quién, área, motivo y materiales); al guardar, el pedido queda ENTREGADO
+    pedido = InsumoPedido.query.get(request.args.get('pedido', type=int)) if request.args.get('pedido', type=int) else None
+    if pedido and pedido.estado != 'PENDIENTE':
+        flash(f'El pedido N° {pedido.id} ya fue atendido ({pedido.estado.lower()}).')
+        pedido = None
+    return render_template('insumos_salida_form.html', empresas=EMPRESAS_INSUMOS, pedido=_pedido_json(pedido) if pedido else None,
                            insumos_json={e: _datos_formulario_insumos(e) for e in EMPRESAS_INSUMOS},
                            trabajadores=trabajadores, areas=InsumoArea.query.filter_by(activo=True).order_by(InsumoArea.nombre).all(),
                            motivos=_catalogo_insumos('INSUMO_MOTIVO'), hoy=hora_peru().date(), seccion='salida',
@@ -622,19 +627,14 @@ def _guardar_firma_png(data_url, salida, claves):
     return s3_key
 
 
-@app.route('/insumos/salida/guardar', methods=['POST'])
-@_ruta_insumos(editar=True)
-def insumos_salida_guardar():
-    """Cada línea dice de qué bolsa sale (empresa_linea[]; si no viene, la empresa del formulario como antes).
-    Se crea UNA salida por bolsa (cada una con su correlativo, su costo y su PDF), todas con los mismos datos, la misma firma
-    y el mismo `grupo`. Todo o nada."""
-    f = request.form
-    volver = url_for('insumos_salida_nueva')
+def _salida_insumos_crear(f, antes_de_commit=None):
+    """v37 · Crea la(s) salida(s) de insumos con los datos de un formulario (MultiDict). Lo usan el formulario de "Nueva salida"
+    y la entrega rápida de un pedido de la tableta. `antes_de_commit(hechas, items)` corre dentro de la misma transacción.
+    Devuelve (salidas, area, None) o (None, None, "por qué no")."""
     emp_form = (f.get('empresa') or '').upper()
     fecha, err = _fecha_movimiento_insumo(f.get('fecha'))
     if err:
-        flash(f'⛔ {err}')
-        return redirect(volver)
+        return None, None, err
 
     def trab(nombre, obligatorio=False, jefe=False):
         t = InsumoTrabajador.query.get(f.get(nombre, type=int)) if f.get(nombre, type=int) else None
@@ -689,8 +689,7 @@ def insumos_salida_guardar():
     if not items and not errores:
         errores.append('Agrega al menos un insumo.')
     if errores:
-        flash('⛔ ' + ' '.join(errores))
-        return redirect(volver)
+        return None, None, ' '.join(errores)
 
     orden_emp = list(dict.fromkeys(it['emp'] for it in items))      # en el orden en que aparecen
     ahora = hora_peru()
@@ -738,6 +737,8 @@ def insumos_salida_guardar():
                     sal.firma_s3_key = _guardar_firma_png(firma, sal, claves)
                     sal.firma_fecha, sal.firma_por = ahora, (recibido or solicitado).nombre
                 hechas.append(sal)
+            if antes_de_commit:
+                antes_de_commit(hechas, items)
             registrar_log('Salida de insumos ' + ' + '.join(f"{EMPRESAS_INSUMOS[x.empresa]['corto']} N° {x.numero:06d}" for x in hechas)
                           + f" para {area.nombre} ({' + '.join(_montos_txt(x.total_costo, x.total_costo_usd) for x in hechas)})", 'bi-box-arrow-up', 'text-danger')
             db.session.commit()
@@ -746,14 +747,31 @@ def insumos_salida_guardar():
             db.session.rollback()
             _borrar_de_s3(claves)
             if intento == 2:
-                flash('⛔ Otro usuario registró una salida al mismo tiempo. Vuelve a intentarlo.')
-                return redirect(volver)
+                return None, None, 'Otro usuario registró una salida al mismo tiempo. Vuelve a intentarlo.'
         except Exception as e:
             db.session.rollback()
             _borrar_de_s3(claves)
             app.logger.exception("No se pudo guardar la salida de insumos")
-            flash(f'⛔ No se pudo guardar la salida (no se registró nada): {e}')
-            return redirect(volver)
+            return None, None, f'No se pudo guardar la salida (no se registró nada): {e}'
+    return hechas, area, None
+
+
+@app.route('/insumos/salida/guardar', methods=['POST'])
+@_ruta_insumos(editar=True)
+def insumos_salida_guardar():
+    """Cada línea dice de qué bolsa sale (empresa_linea[]; si no viene, la empresa del formulario como antes).
+    Se crea UNA salida por bolsa (cada una con su correlativo, su costo y su PDF), todas con los mismos datos, la misma firma
+    y el mismo `grupo`. Todo o nada. v37: si viene `pedido_id` (pedido de la tableta), el pedido queda ENTREGADO con esas salidas."""
+    f = request.form
+    pedido = InsumoPedido.query.get(f.get('pedido_id', type=int)) if f.get('pedido_id', type=int) else None
+    if pedido and pedido.estado != 'PENDIENTE':
+        flash(f'⛔ El pedido N° {pedido.id} ya fue atendido ({pedido.estado.lower()}).')
+        return redirect(url_for('insumos_pedidos'))
+    volver = url_for('insumos_salida_nueva', pedido=pedido.id if pedido else None)
+    hechas, area, err = _salida_insumos_crear(f, antes_de_commit=(lambda hs, its: _pedido_marcar_entregado(pedido, hs, its)) if pedido else None)
+    if err:
+        flash(f'⛔ {err}')
+        return redirect(volver)
     if len(hechas) == 1:
         sal = hechas[0]
         flash(f'✅ Salida N° {sal.numero:06d} ({EMPRESAS_INSUMOS[sal.empresa]["corto"]}) registrada ({_montos_txt(sal.total_costo, sal.total_costo_usd)} para {area.nombre}).')

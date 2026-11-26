@@ -23,6 +23,7 @@ modulos/
                          y ESTADÍSTICAS (/insumos/estadisticas: mejores precios, proveedores, más comprado / gastado / consumido, alertas)
     herramientas.py      HERRAMIENTAS (activos, v30): registro por unidad, préstamo/devolución con firma, baja aprobada (ver "## Insumos: inventario General…")
     revertir.py          REVERTIR desde el Kardex de insumos (v31): ingresos, salidas, cargas Excel y "pasó a herramientas" (ver "## Insumos: revertir…")
+    tableta.py           TABLETA DE ALMACÉN (v37): trabajadores piden insumos con su PIN; Almacén entrega (ver "## Tableta de almacén")
   compras/             ÓRDENES DE COMPRA / SERVICIO y REQUERIMIENTOS
     modelos.py           tablas: OrdenCompra, OrdenCompraItem, entregas, eventos, documentos, proveedores,
                          cuentas, motivos, requerimientos, OCConfig
@@ -159,6 +160,24 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
 - IDEA GUARDADA (no hecha, a pedido del usuario): "unidades de inventario" en el carrito de la OC (no sale en la OC: 3 CAJAS → entran 18 UND,
   precio por unidad convertido; copia la cantidad por defecto; Almacén corrige al ingresar si llega incompleta con nota; recordar la
   equivalencia por insumo). Primero insumos y herramientas. Por ahora Logística pone siempre unidades finales.
+
+## Tableta de almacén (v37, modulos/insumos/tableta.py)
+
+- Usuario con rol **'tableta'** ("Tableta de almacén" en Usuarios): al ingresar va a `/tableta`; `session.permanent` (cookie 400 días,
+  `PERMANENT_SESSION_LIFETIME`), NO se cierra por inactividad (`_control_sesion` en app.py lo salta) y `_restringir_tableta` solo le deja
+  `RUTAS_TABLETA`. Gerencia lo puede cerrar a distancia como a cualquiera (sesion_version).
+- `insumos_tableta.html` (página sola, sin base.html, todo grande): ¿quién eres? (tarjetas con iniciales, buscador y letras) → PIN de 4
+  (teclado) → materiales (categorías, buscador, Disponible/Agotado; sin HERRAMIENTAS) → cantidades con +/−, motivo y área → enviar.
+  Sin tocar 90 s vuelve al inicio. API: `tableta_datos`, `tableta_entrar` (PIN; 5 fallos = bloqueo 10 min), `tableta_pedido`
+  (session['tab_t'] vale 10 min), `tableta_cancelar`, `tableta_salir`.
+- PIN (`InsumoTrabajador.pin_hash`, `pin_fallos`, `pin_bloqueo_hasta`): si no tiene uno propio, los 4 primeros dígitos de su DNI/código
+  (`_pin_por_defecto`). Se pone/quita en Insumos → Configuración → Trabajadores (columna "PIN tableta").
+- `InsumoPedido` / `InsumoPedidoItem` (PENDIENTE / ENTREGADO / RECHAZADO / CANCELADO): NO descuentan stock.
+- Almacén / Logística / Gerencia: globito abajo a la izquierda (`_pedidos_tableta_widget.html`, en base.html; consulta cada 30 s, sin
+  sonido). "Entregar" (`insumos_pedido_entregar`) arma un MultiDict y llama a `_salida_insumos_crear` (movimientos.py: el núcleo de la
+  Nueva salida, sacado de `insumos_salida_guardar`) con el inventario recomendado por línea (`_bolsa_para`: General si alcanza, si no la
+  empresa con más stock que alcance). "Revisar" = `insumos_salida_nueva?pedido=` con todo cargado (pedido_id oculto → al guardar queda
+  ENTREGADO, `_pedido_marcar_entregado`). "Rechazar" con motivo. Lista: `insumos_pedidos` (chip "Pedidos tableta" en el menú de Insumos).
 
 ## Maestro: códigos y orden (v36, modulos/kardex/maestro_codigos.py)
 

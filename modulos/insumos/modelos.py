@@ -2,7 +2,7 @@
 Se importan al final de models.py: "from models import X" sigue funcionando igual. Ver MAPA.md."""
 from models import db, hora_peru
 
-__all__ = ['InsumoArea', 'InsumoTrabajador', 'Insumo', 'InsumoStock', 'InsumoProveedor', 'InsumoIngreso', 'InsumoIngresoDetalle', 'InsumoSalida', 'InsumoSalidaDetalle', 'InsumoMovimiento', 'InsumoDocumento', 'InsumoLote', 'InsumoSalidaLote', 'Herramienta', 'HerramientaMovimiento']
+__all__ = ['InsumoArea', 'InsumoTrabajador', 'Insumo', 'InsumoStock', 'InsumoProveedor', 'InsumoIngreso', 'InsumoIngresoDetalle', 'InsumoSalida', 'InsumoSalidaDetalle', 'InsumoMovimiento', 'InsumoDocumento', 'InsumoLote', 'InsumoSalidaLote', 'Herramienta', 'HerramientaMovimiento', 'InsumoPedido', 'InsumoPedidoItem']
 
 
 # =====================================================================================
@@ -33,6 +33,10 @@ class InsumoTrabajador(db.Model):
     es_jefe = db.Column(db.Boolean, default=False)    # puede autorizar salidas
     activo = db.Column(db.Boolean, default=True)
     creado_en = db.Column(db.DateTime, default=hora_peru)
+    # v37 · TABLETA de almacén: PIN de 4 dígitos para pedir insumos (si no tiene uno propio, vale el inicio de su DNI / código)
+    pin_hash = db.Column(db.String(200), nullable=True)
+    pin_fallos = db.Column(db.Integer, default=0)
+    pin_bloqueo_hasta = db.Column(db.DateTime, nullable=True)
 
     area = db.relationship('InsumoArea')
 
@@ -364,3 +368,39 @@ class HerramientaMovimiento(db.Model):
     herramienta = db.relationship('Herramienta', backref=db.backref('movimientos', lazy='dynamic', order_by='HerramientaMovimiento.id.desc()'))
     trabajador = db.relationship('InsumoTrabajador', foreign_keys=[trabajador_id])
     area = db.relationship('InsumoArea', foreign_keys=[area_id])
+
+
+# =====================================================================================
+# v37 · PEDIDOS DESDE LA TABLETA DE ALMACÉN: el trabajador elige su nombre, pone su PIN y pide lo que va a sacar.
+# NO descuenta stock: el Jefe de Almacén lo entrega (se crea la salida normal, con lotes y costo) o lo rechaza.
+# =====================================================================================
+class InsumoPedido(db.Model):
+    __tablename__ = 'insumo_pedido'
+    id = db.Column(db.Integer, primary_key=True)
+    trabajador_id = db.Column(db.Integer, db.ForeignKey('insumo_trabajador.id'), nullable=False)
+    area_id = db.Column(db.Integer, db.ForeignKey('insumo_area.id'), nullable=True)
+    motivo = db.Column(db.String(100))
+    nota = db.Column(db.String(300))
+    estado = db.Column(db.String(15), default='PENDIENTE', index=True)     # PENDIENTE / ENTREGADO / RECHAZADO / CANCELADO
+    fecha = db.Column(db.DateTime, default=hora_peru, index=True)
+    dispositivo_user_id = db.Column(db.Integer, nullable=True)              # el usuario "tableta" desde el que se pidió
+    atendido_por = db.Column(db.String(150))
+    atendido_user_id = db.Column(db.Integer, nullable=True)
+    fecha_atencion = db.Column(db.DateTime, nullable=True)
+    motivo_rechazo = db.Column(db.String(255))
+    salida_ids = db.Column(db.String(120))                                  # "12,13" (una salida por inventario)
+
+    trabajador = db.relationship('InsumoTrabajador')
+    area = db.relationship('InsumoArea')
+    items = db.relationship('InsumoPedidoItem', backref='pedido', cascade='all, delete-orphan', order_by='InsumoPedidoItem.id')
+
+
+class InsumoPedidoItem(db.Model):
+    __tablename__ = 'insumo_pedido_item'
+    id = db.Column(db.Integer, primary_key=True)
+    pedido_id = db.Column(db.Integer, db.ForeignKey('insumo_pedido.id'), nullable=False, index=True)
+    insumo_id = db.Column(db.Integer, db.ForeignKey('insumo.id'), nullable=False)
+    cantidad = db.Column(db.Float, nullable=False)
+    cantidad_entregada = db.Column(db.Float, nullable=True)
+
+    insumo = db.relationship('Insumo')

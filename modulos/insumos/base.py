@@ -105,6 +105,8 @@ def _asegurar_insumos():
     _agregar_columnas_si_faltan('insumo_salida', [('grupo', 'VARCHAR(20)')])
     # v31: revertir un movimiento suelto del Kardex (carga Excel, pasó a herramientas): el de reversión apunta al original
     _agregar_columnas_si_faltan('insumo_movimiento', [('anula_mov_id', 'INTEGER')])
+    # v37: PIN de la tableta de almacén
+    _agregar_columnas_si_faltan('insumo_trabajador', [('pin_hash', 'VARCHAR(200)'), ('pin_fallos', 'INTEGER DEFAULT 0'), ('pin_bloqueo_hasta', 'TIMESTAMP')])
     from sqlalchemy import inspect as sa_inspect
     if 'insumo_proveedor_id' not in {c['name'] for c in sa_inspect(db.engine).get_columns('insumo_ingreso')}:
         es_pg = db.engine.dialect.name == 'postgresql'

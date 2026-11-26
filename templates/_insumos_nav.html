@@ -41,6 +41,8 @@
     {% set n_pend_oc = n_oc_pendientes_insumos() %}
     <a href="{{ url_for('insumos_pendientes_oc') }}" class="{{ 'activa' if seccion == 'oc_pend' }} {{ 'pend-oc' if n_pend_oc and seccion != 'oc_pend' }}"><i class="bi bi-cart-check"></i> Ingresos pendientes (OC){% if n_pend_oc %} <span class="cnt-oc">{{ n_pend_oc }}</span>{% endif %}</a>
     <a href="{{ url_for('insumos_salidas') }}" class="{{ 'activa' if seccion == 'salidas' }}"><i class="bi bi-journal-arrow-up"></i> Salidas</a>
+    {#- v37 · pedidos de la tableta de almacén -#}{% set _npt = n_pedidos_tableta() if n_pedidos_tableta is defined else 0 %}
+    <a href="{{ url_for('insumos_pedidos') }}" class="{{ 'activa' if seccion == 'pedidos' }} {{ 'pend-oc' if _npt and seccion != 'pedidos' }}"><i class="bi bi-tablet"></i> Pedidos tableta{% if _npt %} <span class="cnt-oc">{{ _npt }}</span>{% endif %}</a>
     <a href="{{ url_for('insumos_ingresos') }}" class="{{ 'activa' if seccion == 'ingresos' }}"><i class="bi bi-journal-arrow-down"></i> Ingresos</a>
     <a href="{{ url_for('insumos_kardex') }}" class="{{ 'activa' if seccion == 'kardex' }}"><i class="bi bi-clock-history"></i> Kardex</a>
     <a href="{{ url_for('insumos_gasto') }}" class="{{ 'activa' if seccion == 'gasto' }}"><i class="bi bi-pie-chart"></i> Gasto por área</a>
