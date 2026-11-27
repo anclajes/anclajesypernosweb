@@ -47,7 +47,15 @@
     .sello-rech { color: #b91c1c; font-weight: bold; font-size: 14pt; }
     .sello-anul { color: #334155; font-weight: bold; font-size: 14pt; }
     .chico { font-size: 6.6pt; color: #444; }
+    td.aviso-prev { color: #1d4ed8; font-weight: bold; font-size: 8pt; text-align: center; background-color: #dbeafe; }
 </style>
+{% if vista_html %}{# v38: la misma plantilla vista en el navegador (vista previa rápida, sin guardar): se dibuja como una hoja A4 #}
+<style>
+    html { background: #cbd5e1; }
+    table { font-size: inherit; }      /* sin esto, el navegador no hereda el tamaño de letra en las tablas (xhtml2pdf sí) */
+    body { width: 190mm; min-height: 272mm; margin: 14px auto; padding: 10px 12px; background: #fff; border: 1px solid #111; box-shadow: 0 6px 24px rgba(0,0,0,.25); box-sizing: border-box; }
+</style>
+{% endif %}
 </head>
 <body>
 <!-- ENCABEZADO -->
@@ -69,6 +77,7 @@
         </td>
     </tr>
 </table>
+{% if vista_previa %}<table><tr><td class="aviso-prev">{{ vista_previa }}</td></tr></table>{% endif %}
 {% if o.estado == 'RECHAZADA' %}
 <table><tr><td class="aviso-rech">ORDEN RECHAZADA por Gerencia el {{ o.fecha_rechazo.strftime('%d/%m/%Y') }} — {{ oc_rechazo_txt(o) }}. DOCUMENTO SIN VALIDEZ.</td></tr></table>
 {% elif o.estado == 'ANULADA' %}

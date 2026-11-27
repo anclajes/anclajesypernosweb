@@ -378,7 +378,46 @@ def _orden_a_previo(o, items=None):
                    'directo_cat': i.directo_categoria if (i.directo_categoria and i.directo_categoria != o.directo_categoria) else '',
                    'directo_ubi': i.directo_ubicacion if (i.directo_ubicacion and i.directo_ubicacion != o.directo_ubicacion) else ''}
                   for i in (items or o.items)]
+    _stock_actual_items(d['items'], o.empresa)
     return d
+
+
+def _stock_actual_items(items, empresa):
+    """v38 · Al editar / DUPLICAR, cada ítem vinculado lleva el stock de HOY (no el que había al crear la orden original):
+    insumos → stock / mínimo / costo del inventario de insumos de la empresa; productos → stock en Anclajes e Import Bolts."""
+    ids = {it['insumo_id'] for it in items if it.get('origen') == 'INSUMO' and it.get('insumo_id')}
+    st_ins = {}
+    if ids:
+        for st in InsumoStock.query.filter(InsumoStock.insumo_id.in_(list(ids))).all():
+            st_ins.setdefault(st.insumo_id, {})[st.empresa] = st
+    skus = {(it.get('codigo') or '').upper() for it in items if it.get('codigo') and it.get('origen') != 'INSUMO'}
+    st_prod = {}
+    for origen, Modelo in (('ANCLAJES', Product), ('IMPORTBOLTS', ProductImportBolts)):
+        if not skus:
+            break
+        q = Modelo.query.filter(db.func.upper(Modelo.sku).in_(list(skus)))
+        if Modelo is Product:
+            q = q.filter(Product.es_shadow_importbolts.isnot(True))
+        for pr in q.all():
+            dd = st_prod.setdefault((pr.sku or '').upper(), {})
+            dd[f'stock_{origen}'] = pr.stock_actual or 0
+            if getattr(pr, 'peso_kg', None) and (origen == empresa or not dd.get('peso')):
+                dd['peso'] = pr.peso_kg
+    for it in items:
+        if it.get('origen') == 'INSUMO' and it.get('insumo_id'):
+            por_emp = st_ins.get(it['insumo_id'], {})
+            st = por_emp.get(empresa)
+            it['stock_insumo'] = (st.stock_actual or 0) if st else 0
+            it['minimo_insumo'] = (st.stock_minimo or 0) if st else 0
+            it['costo_insumo'] = (st.costo_promedio or 0) if st else 0
+            it['stocks_ins'] = {e: ((por_emp[e].stock_actual or 0) if e in por_emp else 0) for e in EMPRESAS_INSUMOS}
+        elif it.get('codigo'):
+            dd = st_prod.get(it['codigo'].upper(), {})
+            it['stock_ANCLAJES'] = dd.get('stock_ANCLAJES')       # None = no existe en ese inventario
+            it['stock_IMPORTBOLTS'] = dd.get('stock_IMPORTBOLTS')
+            if dd.get('peso'):
+                it['peso'] = dd['peso']
+    return items
 
 
 @app.route('/ordenes/nueva')

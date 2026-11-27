@@ -46,6 +46,7 @@ modulos/
     certificados.py      CERTIFICADOS POR SUBIR (/ordenes/certificados): importaciones sin certificado de calidad
                          (el certificado es opcional: nunca frena la conformidad ni el ingreso)
     pdf_proveedores_config.py   PDF de la orden, proveedores y contactos, buscador de productos, configuración
+    vista_previa.py      v38: VISTA PREVIA de la orden SIN guardar (foto rápida / PDF / Excel) y EXCEL de una orden guardada
     requerimientos.py    requerimientos de compra (Inventario General o Insumos internos), seguimiento, novedades
     vaciar_menu.py       vaciar datos de órdenes (pruebas) y los números del menú
   kardex/              KARDEX (lo nuevo; el resto del Kardex sigue en app.py)
@@ -183,6 +184,23 @@ admin (Gerencia), administracion, logistica, almacen, almacen_visor (solo lectur
   Nueva salida, sacado de `insumos_salida_guardar`) con el inventario recomendado por línea (`_bolsa_para`: General si alcanza, si no la
   empresa con más stock que alcance). "Revisar" = `insumos_salida_nueva?pedido=` con todo cargado (pedido_id oculto → al guardar queda
   ENTREGADO, `_pedido_marcar_entregado`). "Rechazar" con motivo. Lista: `insumos_pedidos` (chip "Pedidos tableta" en el menú de Insumos).
+
+## Compras: vista previa, Excel y stock al duplicar (v38, modulos/compras/vista_previa.py)
+- Formulario de la orden → "Vista previa del PDF" / "Excel": arma la orden EN MEMORIA con lo escrito (`_oc_desde_form` usa
+  `_leer_orden_form`, que solo lee) → NO guarda nada y NO gasta número. Ruta POST `oc_vista_previa` (formato_vista = html | pdf | xlsx).
+  html = la misma plantilla pdf_orden_compra.html vista en el navegador (`vista_html=True`: se dibuja como hoja A4; en el celular se
+  achica para que entre de ancho) dentro de un modal; "Abrir PDF real" = xhtml2pdf igual que oc_pdf. Si faltan datos, igual se arma y
+  muestra arriba "Al guardar te pedirá corregir: …".
+- NÚMERO: orden nueva sin guardar → N° AAAA-00000 + franja azul "VISTA PREVIA … el N° se asigna al guardar" (`vista_previa` en la
+  plantilla). Editando → su número real (si cambia de empresa: 00000, porque al guardar toma el siguiente de la otra). Al guardar
+  se toma el correlativo como siempre (`_siguiente_numero_oc`), así la vista previa nunca deja huecos.
+- Excel de una orden guardada: GET `oc_excel` (/ordenes/<id>/excel, permiso 'docs' como el PDF), botón "Excel" en el detalle y en
+  el menú 📎 de documentos. `_oc_excel_bytes(o, empresa, firma, banner)` = mismo contenido del PDF (logo, RUC/tipo/N°, proveedor,
+  ítems, totales/detracción, condiciones, términos, horario, firma si está aprobada), A4 vertical ajustado a 1 hoja de ancho.
+  Importación: columnas QUANTITY / KGS/1000PCS / TOTAL KGS / USD/PCS / AMOUNT/USD y condiciones de pago con %.
+- DUPLICAR / EDITAR: `_stock_actual_items` (ordenes.py, desde `_orden_a_previo`) pone en cada ítem el stock de HOY
+  (insumos: stock/mínimo/costo de la empresa de la orden; productos: stock Anclajes / Import Bolts) y oc_form.html lo pasa a
+  `vincular()`. Antes salía 0 (y "por reponer") porque el ítem precargado no traía stock.
 
 ## Maestro: códigos y orden (v36, modulos/kardex/maestro_codigos.py)
 

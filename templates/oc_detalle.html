@@ -273,6 +273,7 @@
     <div class="acciones d-flex flex-wrap gap-2 mt-3">
         <a class="btn btn-outline-danger" href="{{ url_for('oc_pdf', orden_id=orden.id, ver=1) }}" target="_blank"><i class="bi bi-file-earmark-pdf"></i> Ver PDF</a>
         <a class="btn btn-outline-secondary" href="{{ url_for('oc_pdf', orden_id=orden.id) }}"><i class="bi bi-download"></i> Descargar</a>
+        <a class="btn btn-outline-success" href="{{ url_for('oc_excel', orden_id=orden.id) }}" title="Mismo contenido del PDF, en Excel"><i class="bi bi-file-earmark-excel"></i> Excel</a>
         {% if p.editar %}<a class="btn btn-outline-primary" href="{{ url_for('oc_editar', orden_id=orden.id) }}"><i class="bi bi-pencil"></i> Editar</a>{% endif %}
         {% if p.reeditar %}<a class="btn btn-outline-warning" href="{{ url_for('oc_editar', orden_id=orden.id) }}" title="Vuelve a Gerencia para re-aprobación, con motivo obligatorio"><i class="bi bi-pencil-square"></i> Editar (re-aprobación)</a>{% endif %}
         {% if p.enviar %}<form method="POST" action="{{ url_for('oc_enviar', orden_id=orden.id) }}" onsubmit="return confirmar(this, '¿Enviar a Gerencia para aprobación?')"><button class="btn btn-success"><i class="bi bi-send-check"></i> Enviar a Gerencia</button></form>{% endif %}

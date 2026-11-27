@@ -20,6 +20,11 @@
             <a href="{{ url_for('oc_pdf', orden_id=o.id, ver=1) }}" target="_blank" rel="noopener" title="Abrir en una pestaña nueva"><i class="bi bi-box-arrow-up-right"></i><span>Abrir</span></a>
             <a href="{{ url_for('oc_pdf', orden_id=o.id) }}" title="Descargar al equipo"><i class="bi bi-download"></i><span>Descargar</span></a>
         </li>
+        <li class="oc-docs-fila">
+            <i class="bi bi-file-earmark-excel-fill text-success"></i>
+            <span class="nom"><b>{{ 'Orden de servicio' if o.tipo == 'OS' else 'Orden de compra' }}</b><small>Excel (mismo contenido del PDF)</small></span>
+            <a href="{{ url_for('oc_excel', orden_id=o.id) }}" title="Descargar en Excel"><i class="bi bi-download"></i><span>Excel</span></a>
+        </li>
         {% endif %}
         {% for d in ds|sort(attribute='id') %}
         {% set num = o.numero_guia if d.tipo == 'GUIA' else (o.numero_factura if d.tipo == 'FACTURA' else '') %}

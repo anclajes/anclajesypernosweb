@@ -15808,6 +15808,7 @@ MODULOS_EN_ARCHIVOS = [
     'modulos/compras/duplicados.py',
     'modulos/compras/certificados.py',
     'modulos/compras/pdf_proveedores_config.py',
+    'modulos/compras/vista_previa.py',
     'modulos/compras/requerimientos.py',
     'modulos/compras/vaciar_menu.py',
     'modulos/kardex/venta_servicio.py',

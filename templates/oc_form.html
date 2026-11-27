@@ -84,6 +84,7 @@
     .ficha .x { border: 0; background: none; color: #94a3b8; padding: 0 3px; }
     .est { display: inline-block; font-weight: 800; border-radius: 6px; padding: 0 6px; background: #fef3c7; color: #92400e; }
     .est.sin { background: #f1f5f9; color: #64748b; font-weight: 700; }
+    .vp-barra { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 10px; border: 1px dashed #cbd5e1; border-radius: 10px; background: #f8fafc; }
     .stk { display: inline-block; font-weight: 800; border-radius: 6px; padding: 0 6px; background: #fff; border: 1px solid #e2e8f0; color: #0f172a; }
     .res-prod { border: 1px solid #e2e8f0; border-radius: 10px; padding: 8px 10px; margin-bottom: 6px; cursor: pointer; background: #fff; }
     .res-prod:hover { border-color: #0B3D91; background: #f8fbff; }
@@ -499,6 +500,12 @@
         <div class="card border-0 shadow-sm"><div class="card-body">
             <div class="lbl">Observaciones (opcional)</div>
             <textarea name="observaciones" class="form-control mb-3" rows="2" maxlength="500" placeholder="Salen en el PDF debajo de los ítems">{{ pv.observaciones or '' }}</textarea>
+            {#- v38: vista previa SIN guardar (no gasta número) -#}
+            <div class="vp-barra mb-2">
+                <button type="button" class="btn btn-outline-dark fw-bold" data-vp="html"><i class="bi bi-eye"></i> Vista previa del PDF</button>
+                <button type="button" class="btn btn-outline-success fw-bold" data-vp="xlsx"><i class="bi bi-file-earmark-excel"></i> Excel</button>
+                <span class="small text-muted">Se arma con lo que está escrito, <b>sin guardar</b>{% if not orden %} y sin gastar número (sale N° …-00000){% endif %}.</span>
+            </div>
             <div class="d-flex flex-column flex-sm-row gap-2">
                 {% if reaprob %}
                 <a href="{{ url_for('oc_detalle', orden_id=orden.id) }}" class="btn btn-outline-secondary btn-lg fw-bold">Cancelar</a>
@@ -517,6 +524,28 @@
     </div>
 </div>
 </form>
+
+{#- v38 · VISTA PREVIA de la orden (sin guardar). Ruta: oc_vista_previa (modulos/compras/vista_previa.py) -#}
+<div class="modal fade" id="mVistaPrevia" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-fullscreen-md-down modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header py-2">
+                <h6 class="modal-title fw-bold"><i class="bi bi-eye"></i> Vista previa · <span id="vpNum"></span></h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
+            <div class="modal-body p-0" style="background:#cbd5e1;">
+                <div id="vpAvisos"></div>
+                <iframe id="vpFrame" title="Vista previa de la orden" style="width:100%; height:78vh; border:0; display:block; background:#cbd5e1;"></iframe>
+            </div>
+            <div class="modal-footer py-2">
+                <span class="small text-muted me-auto">Es una foto rápida: el PDF real puede cambiar un poco en el espaciado.</span>
+                <button type="button" class="btn btn-outline-danger fw-bold" data-vp="pdf"><i class="bi bi-file-earmark-pdf"></i> Abrir PDF real</button>
+                <button type="button" class="btn btn-outline-success fw-bold" data-vp="xlsx"><i class="bi bi-file-earmark-excel"></i> Descargar Excel</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+            </div>
+        </div>
+    </div>
+</div>
 
 <template id="tplItem">
     <div class="item">
@@ -1117,7 +1146,10 @@ function agregarItem(datos) {
     fila.querySelector('.i-serv-box').style.display = tipo() === 'OS' ? 'block' : 'none';
     fila.querySelector('.i-pmodo').value = datos.peso_modo === 'T' ? 'T' : 'U';
     fila.querySelector('.i-pval').value = datos.peso_valor || '';
-    if (datos.codigo) vincular(fila, { origen: datos.origen, sku: datos.codigo, insumo_id: datos.insumo_id, familia: datos.familia, calidad: datos.calidad, estado: datos.estado });
+    // v38: al editar / duplicar, el servidor manda el stock de HOY (no el de la orden original)
+    if (datos.codigo) vincular(fila, { origen: datos.origen, sku: datos.codigo, insumo_id: datos.insumo_id, familia: datos.familia, calidad: datos.calidad, estado: datos.estado,
+                                       stock_insumo: datos.stock_insumo, minimo_insumo: datos.minimo_insumo, costo_insumo: datos.costo_insumo, stocks_ins: datos.stocks_ins,
+                                       stock_ANCLAJES: datos.stock_ANCLAJES, stock_IMPORTBOLTS: datos.stock_IMPORTBOLTS, peso: datos.peso });
     else if (ES_EDICION && datos.descripcion) fila._legado = datos.descripcion;
     if (datos.req_item) { fila.querySelector('.i-req').value = datos.req_item; fila.querySelector('.i-reqtxt').value = datos.req_txt || ''; }
     if (datos.quitar_rec) {     // corrección de un rechazo: Gerencia recomendó quitar este ítem (Logística decide)
@@ -1428,7 +1460,7 @@ function archivarContacto(c) {
 // ================= VALIDACIÓN Y ENVÍO =================
 let accionPulsada = ES_REAPROBACION ? 'enviar' : 'guardar';
 document.querySelectorAll('#formOC button[type=submit]').forEach(b => b.addEventListener('click', () => accionPulsada = b.dataset.accion));
-porId('formOC').addEventListener('submit', function (e) {
+function copiarDatosEscritos() {
     if (porId('provManual').style.display === 'block') {
         porId('ruc').value = esImp() ? porId('m_ruc').value.toUpperCase().replace(/[^0-9A-Z]/g, '') : porId('m_ruc').value.replace(/\D/g, '');
         porId('razon_social').value = porId('m_razon').value.trim(); porId('direccion').value = porId('m_dir').value.trim();
@@ -1437,6 +1469,9 @@ porId('formOC').addEventListener('submit', function (e) {
     if (!porId('contacto_id').value && porId('formContacto').style.display === 'block' && porId('fc_nombre').value.trim()) {
         porId('contacto').value = porId('fc_nombre').value.trim(); porId('telefono').value = porId('fc_tel').value.trim(); porId('email').value = porId('fc_mail').value.trim();
     }
+}
+porId('formOC').addEventListener('submit', function (e) {
+    copiarDatosEscritos();
     const err = [];
     if (!porId('solicitante').value) err.push('Elige QUIÉN SOLICITÓ la compra.');
     if (!porId('area_solicitante').value) err.push('Elige el ÁREA que solicita.');
@@ -1495,6 +1530,58 @@ porId('formOC').addEventListener('submit', function (e) {
     porId('accion').value = accionPulsada;
     this.querySelectorAll('button[type=submit]').forEach(b => b.disabled = true);
 });
+
+// ================= v38 · VISTA PREVIA (sin guardar) =================
+const URL_VISTA_PREVIA = {{ url_for('oc_vista_previa')|tojson }};
+function nombreDe(resp, def) {
+    const cd = resp.headers.get('Content-Disposition') || '';
+    const m = cd.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i);
+    return m ? decodeURIComponent(m[1]) : def;
+}
+function ajustarVistaPrevia() {      // en el celular se achica para que entre la hoja entera de ancho (como una foto)
+    const fr = porId('vpFrame');
+    try { const doc = fr.contentDocument; if (!doc || !doc.body || !fr.clientWidth) return;
+          doc.documentElement.style.zoom = '';
+          const k = Math.min(1, fr.clientWidth / (doc.body.scrollWidth + 30));
+          doc.documentElement.style.zoom = k < 1 ? String(k) : ''; } catch (e) {}
+}
+porId('mVistaPrevia').addEventListener('shown.bs.modal', ajustarVistaPrevia);
+window.addEventListener('resize', () => { if (porId('mVistaPrevia').classList.contains('show')) ajustarVistaPrevia(); });
+async function vistaPrevia(formato, boton) {
+    copiarDatosEscritos();
+    const fd = new FormData(porId('formOC'));
+    fd.set('formato_vista', formato);
+    const win = formato === 'pdf' ? window.open('', '_blank') : null;      // se abre YA (si se abre después de esperar, el navegador la bloquea)
+    const txt = boton ? boton.innerHTML : '';
+    if (boton) { boton.disabled = true; boton.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Armando…'; }
+    try {
+        const r = await fetch(URL_VISTA_PREVIA, { method: 'POST', body: fd, credentials: 'same-origin' });
+        const tipoResp = r.headers.get('Content-Type') || '';
+        if (tipoResp.includes('application/json')) {
+            const d = await r.json();
+            if (d.status !== 'ok') { if (win) win.close(); Swal.fire('No se pudo', d.msg || 'Error al armar la vista previa.', 'error'); return; }
+            porId('vpNum').innerHTML = esc((tipo() === 'OS' ? 'OS' : 'OC') + ' N° ' + d.numero) + (d.nuevo ? ' <small class="text-muted fw-normal">· el N° real se asigna al guardar</small>' : '');
+            porId('vpAvisos').innerHTML = (d.avisos || []).length ? `<div class="alert alert-warning small m-2 mb-0 py-2"><b><i class="bi bi-exclamation-triangle-fill"></i> Al guardar te pedirá corregir:</b><br>${[...new Set(d.avisos)].map(esc).join('<br>')}</div>` : '';
+            const fr = porId('vpFrame');
+            fr.onload = ajustarVistaPrevia;
+            fr.srcdoc = d.html;
+            bootstrap.Modal.getOrCreateInstance(porId('mVistaPrevia')).show();
+            return;
+        }
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const blob = await r.blob(), url = URL.createObjectURL(blob);
+        if (formato === 'pdf' && win) { win.location.href = url; }
+        else {
+            const a = document.createElement('a'); a.href = url; a.download = nombreDe(r, formato === 'pdf' ? 'vista_previa.pdf' : 'vista_previa.xlsx');
+            document.body.appendChild(a); a.click(); a.remove();
+        }
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) {
+        if (win) win.close();
+        Swal.fire('No se pudo', 'No se pudo armar la vista previa (' + e.message + '). Intenta otra vez.', 'error');
+    } finally { if (boton) { boton.disabled = false; boton.innerHTML = txt; } }
+}
+document.querySelectorAll('[data-vp]').forEach(b => b.addEventListener('click', () => vistaPrevia(b.dataset.vp, b)));
 
 // ================= INICIO =================
 pintarNumero(); pintarEntrega(); pintarMotivo(); pintarTipo();
